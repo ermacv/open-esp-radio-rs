@@ -213,11 +213,12 @@ the RX path: the 59,008-byte runtime ESF pool, 56,320-byte cold ESF pool, and
 their capacities are similar; their simultaneous lifetimes and transfer of
 descriptor ownership must be proved before storage is overlaid or removed.
 
-`audit-state-esp32s31 --enforce-primary-baseline` uses the corrected numbers as
-improvement-friendly upper bounds. It rejects growth in runtime blob objects,
-ROM-ABI cells, strict static storage, the vendor call graph, cold PHY state, or
-other linked mutable blob state; every ownership transfer may reduce those
-bounds.
+The former state auditor used the corrected numbers as improvement-friendly
+upper bounds. It rejected growth in runtime blob objects, ROM-ABI cells,
+strict static storage, the vendor call graph, cold PHY state, or other linked
+mutable blob state; every ownership transfer could reduce those bounds. The
+generated report remains in this repository, while the analyzer source is
+preserved by Git history.
 
 ## Focused radio-only porting set
 

@@ -93,8 +93,8 @@ Hardware inspection also corrected the live RX extraction contract:
 - the copied 802.11 MPDU is `sig_len - 4`, because the FCS is not exposed;
 - the recovered dump-length field observed on S31 is `sig_len + 4`.
 
-The old migration copy remains historical source only. New scan work must use
-the live MAC module.
+The old migration copy was removed after qualification; Git history preserves
+it. New scan work must use the live MAC module.
 
 Planned split:
 

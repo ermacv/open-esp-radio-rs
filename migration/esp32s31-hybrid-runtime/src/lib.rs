@@ -67,24 +67,8 @@ mod net80211_timer;
 #[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
 mod net80211_tx;
 pub mod osi;
-pub mod phy_bb;
-pub mod phy_cold;
-pub mod phy_dc_iq;
-pub mod phy_dcode;
-pub mod phy_frequency;
-pub mod phy_signal_power;
-pub mod phy_temperature;
-#[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
-mod phy_channel;
-pub mod phy_i2c;
-pub mod phy_pbus;
-pub mod phy_pbus_memory;
-mod phy_param;
-pub mod phy_pwdet;
-pub mod phy_rfpll;
-pub mod phy_rx_dco;
-pub mod phy_rx_saturation;
-pub mod phy_xtal_duty;
+// Qualified PHY modules now live only in
+// `crates/open-esp-radio-phy-esp32s31`; see `../PORTING_MAP.md`.
 pub mod policy;
 pub mod queue;
 pub mod radio;
@@ -105,7 +89,8 @@ mod rx_proto;
 mod rx_ampdu_ap;
 pub mod rx_ampdu_hw;
 mod rx_descriptor;
-pub mod scan;
+// Qualified passive-scan parsing and records now live only in
+// `crates/open-esp-radio-mac-esp32s31`; see `../PORTING_MAP.md`.
 mod sta_link;
 #[cfg(target_arch = "riscv32")]
 mod static_bindings;
@@ -342,14 +327,6 @@ pub use rx_ampdu_ap::{
     wait_for_gap as wait_for_rx_ampdu_gap, RxAmpduApSnapshot, RxAmpduGapFuture,
 };
 pub use rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError};
-pub use scan::{
-    best_matching_ssid, StrictScanError, StrictScanRecord, StrictScanSummary,
-    STRICT_SCAN_EXTENDED_RATES_CAPACITY, STRICT_SCAN_HE_CAPABILITY_IE_CAPACITY,
-    STRICT_SCAN_HE_OPERATION_IE_CAPACITY, STRICT_SCAN_RECORD_CAPACITY, STRICT_SCAN_RSNXE_CAPACITY,
-    STRICT_SCAN_RSN_IE_CAPACITY,
-};
-#[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
-pub use scan::{passive_scan_2_4ghz, tune_home_channel};
 #[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
 pub use sta_link::{associate_sta, authenticate_open};
 #[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]

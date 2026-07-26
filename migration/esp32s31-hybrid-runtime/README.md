@@ -1,15 +1,15 @@
-# ESP32-S31 stackless Wi-Fi runtime
+# ESP32-S31 upper-stack porting archive
 
-> Migration source only. This directory is not a workspace member and must
-> not be linked by an application. It preserves the complete Rust driver
-> workset that previously lived beside `esp-wifi-sys`, including temporary
-> blob-interposition boundaries. Source-owned pieces are being moved into
-> PAC/HAL/PHY and future MAC/security crates. Each compatibility path is
-> deleted here after its source-only replacement is qualified.
+> Source archive only: this directory intentionally has no Cargo manifest and
+> must not be linked by an application. Qualified PHY and passive-scan copies
+> have already been removed. The remaining files preserve unported upper
+> MAC/STA/AP/security logic and historical blob-interposition boundaries.
+> [`PORTING_MAP.md`](PORTING_MAP.md) is the maintained inventory.
 
-This experimental crate replaces the infinite vendor `ppTask` loop with a
-wake-driven Rust `Future`. It does not modify the vendor archives and does not
-initialize Wi-Fi peripherals.
+The archived prototype replaced the infinite vendor `ppTask` loop with a
+wake-driven Rust `Future`. It did not modify the vendor archives or initialize
+Wi-Fi peripherals. Some descriptions and commands below are historical and
+refer to the former integration workspace.
 
 The current prototype provides:
 
@@ -39,13 +39,10 @@ The current prototype provides:
 - a strict future wrapper that fails on observed blocking, allocation, or core-stall paths;
 - allocation-free recording of unexpected blocking calls.
 
-The binary audit and exact dispatch table are in
-[`../docs/esp32s31-async-runtime-audit.md`](../docs/esp32s31-async-runtime-audit.md).
-Regenerate and validate them with:
-
-```console
-cargo +stable run -p xtask --bin analyze-esp32s31 -- --write
-```
+The historical binary audit and exact dispatch table are in
+[`../../docs/esp32s31-async-runtime-audit.md`](../../docs/esp32s31-async-runtime-audit.md).
+The old generator was removed after the library-analysis phase; Git history
+preserves its source.
 
 ## Integration boundary
 
@@ -479,22 +476,9 @@ strict mode,
 unexpected AMPDU, power-save, BSS-color, modem-beacon, or coexistence events
 fail closed instead of entering vendor handlers with reachable delay paths.
 
-This feature is not yet a claim that every remaining PP path is strict. Run the
-fail-closed relocation audit while replacing them:
-
-```console
-cargo +stable run -p xtask --bin audit-strict-esp32s31 -- --enforce
-cargo +stable run -p xtask --bin audit-strict-esp32s31 -- \
-    --elf path/to/final-firmware.elf --enforce
-cargo +stable run -p xtask --bin audit-strict-esp32s31 -- \
-    --include-static-binding-init --include-static-pm-init \
-    --elf path/to/final-firmware.elf --enforce
-cargo +stable run -p xtask --bin audit-state-esp32s31 -- \
-    --elf path/to/final-firmware.elf \
-    --write docs/esp32s31-linked-state-audit.md
-```
-
-The archive audit rejects direct heap/delay/RTOS/flash/logging paths, every
+This feature was not a claim that every remaining PP path was strict. The
+former fail-closed relocation audit rejected direct
+heap/delay/RTOS/flash/logging paths, every
 unproven register-indirect call, and every unproven backward branch. The
 final-ELF audit additionally rejects forbidden symbols and vendor entries that
 the strict Rust dispatcher replaced. Direct allocator references are accepted
@@ -502,7 +486,7 @@ only when the corresponding `__wrap_malloc`, `__wrap_calloc`,
 `__wrap_realloc`, or `__wrap_free` symbol is linked. `lmacTxDone` must resolve
 through `__wrap_lmacTxDone`; its callback bitmap, inline `ppProcTxDone`/PM tail,
 and TX-queue resume are then executor continuations.
-Stock initialization and bypassed WPA objects keep a few forbidden symbol
+Stock initialization and bypassed WPA objects kept a few forbidden symbol
 definitions in the image. The final audit permits them only while every call
 site remains in its pinned pre-handoff or dormant owner: a new caller of
 `esp_event_post`, libc printing, or the vendor assert immediately fails the

@@ -1,9 +1,9 @@
 //! Allocation-free passive-scan records and management-frame parsing.
 //!
-//! This is the source-owned part of the previously hardware-qualified
-//! `migration/esp32s31-hybrid-runtime/src/scan.rs` frontier. Channel changes,
+//! This is the maintained source-owned passive-scan frontier. Channel changes,
 //! dwell timers, and RX ownership remain explicit responsibilities of the
-//! radio owner; this module owns only bounded observations and selection.
+//! radio owner; this module owns only bounded observations and selection. The
+//! earlier hybrid-runtime copy was removed after hardware qualification.
 
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;

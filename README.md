@@ -36,11 +36,13 @@ resulting `Radio<P, Powered>` exposes the register capability used by finite
 PHY target bindings. Wi-Fi MAC clocks remain outside this transition and
 belong to the later MAC start state.
 
-The complete former hybrid Rust workset is retained under
-`migration/esp32s31-hybrid-runtime` as non-buildable migration source. It is
-not an application dependency and is excluded from the Cargo workspace.
-Modules leave that directory only after their blob/ROM boundary has been
-removed and their source-only replacement is tested.
+The not-yet-ported upper MAC/STA/AP/security workset is retained under
+`migration/esp32s31-hybrid-runtime` as a non-buildable source archive. It is
+not a Cargo crate or an application dependency. Qualified PHY and passive-scan
+copies have been removed from the archive; their only maintained
+implementations are the live crates above. The archive's
+[`PORTING_MAP.md`](migration/esp32s31-hybrid-runtime/PORTING_MAP.md) records
+what remains and the criteria for moving each piece.
 
 Hardware integration belongs in a separate application workspace. The
 `esp32s31_rust` HIL project may depend on this repository for the open driver

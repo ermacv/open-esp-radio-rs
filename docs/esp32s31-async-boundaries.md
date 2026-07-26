@@ -490,10 +490,10 @@ sufficient because setters and blob operations may themselves enter flash.
 5. For strict heap-free Enterprise support, replace EAP/TLS with fixed protocol
    buffers on the implemented async crypto boundary. There is no ABI-only shortcut.
 
-## Strict no-wait gate
+## Historical strict no-wait gate
 
-`audit-strict-esp32s31` builds a direct call graph from RISC-V relocations in
-all S31 archives. Its roots are the PP handlers still called by the Rust
+The former `audit-strict-esp32s31` built a direct call graph from RISC-V
+relocations in all S31 archives. Its roots were the PP handlers called by the Rust
 dispatcher plus the vendor leaves called by Rust replacements. Direct heap,
 delay, RTOS wait, NVS, logging, abort, and core-stall symbols are forbidden.
 An unresolved `jalr`/`jr` is also rejected until its OSI slot or callback is

@@ -27,8 +27,12 @@
 - retained code wrappers: 85
 
 The archive relocation graph supplies `vendor function -> data symbol`; the final ELF supplies liveness, address, size and section. A wrapper boundary stops traversal into the replaced vendor body. “Outside strict roots” means linked but not proven runtime-reachable by this vendor-leaf graph; it is not automatically safe to delete because cold initialization and non-Wi-Fi owners can still use it.
-Run `audit-strict-esp32s31 --include-static-binding-init --include-static-pm-init --enforce` to prove the fixed-storage cold-init leaves together with the runtime roots.
-Run this auditor with `--enforce-primary-baseline` to reject growth beyond the qualified heap-free image while allowing vendor roots, linked blob state, and Rust static storage to shrink.
+The former strict audit proved the fixed-storage cold-init leaves together
+with the runtime roots. Its primary baseline rejected growth beyond the
+qualified heap-free image while allowing vendor roots, linked blob state, and
+Rust static storage to shrink. The analyzer was removed after the
+vendor-library analysis phase; this generated result and Git history preserve
+the evidence.
 The application `wifi-rust-static-cold-init-hil` final-ELF audit additionally proves the three fixed SRAM locks, the exact direct init/deinit call targets, the taskless PP tail calls, and the absence of control-flow cycles.
 
 ## Strict runtime archive function frontier

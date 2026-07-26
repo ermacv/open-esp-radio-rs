@@ -337,11 +337,17 @@ impl PhyPbusMemoryTransition {
                         command_accumulator: next_accumulator,
                     }
                 } else if group + 1 != GROUP_COUNT {
+                    // `header_accumulator` is the unshifted PBUS-memory entry
+                    // number stored in the six group-boundary registers.
+                    // `command_accumulator` is that address plus the 0x200
+                    // command-space base, shifted left by 11. They advance in
+                    // lockstep but are not interchangeable representations.
                     PhyPbusMemoryStep::Program {
                         group: group + 1,
                         index: 0,
-                        header_accumulator: next_accumulator,
-                        command_accumulator: next_accumulator.wrapping_add(0x200) << 11,
+                        header_accumulator: header_accumulator
+                            .wrapping_add(group_count(group) as u32),
+                        command_accumulator: next_accumulator,
                     }
                 } else {
                     PhyPbusMemoryStep::Capture
@@ -418,6 +424,20 @@ mod tests {
     #[test]
     fn exact_sixty_entry_rom_sequence_is_explicit() {
         let expected_counts = [8_u8, 5, 8, 5, 3, 1, 8, 5, 8, 5, 3, 1];
+        let expected_control_values = [
+            0x0000_0700,
+            0x0c08_0000,
+            0x0000_140d,
+            0x1915_0000,
+            0x0000_1c1a,
+            0x1d1d_0000,
+            0x0000_251e,
+            0x2a26_0000,
+            0x0000_322b,
+            0x3733_0000,
+            0x0000_3a38,
+            0x3b3b_0000,
+        ];
         let mut seen_counts = [0_u8; 12];
         let mut seen = 0_u8;
         let mut transition = PhyPbusMemoryTransition::new(PARAMETERS);
@@ -425,7 +445,10 @@ mod tests {
         while let PhyPbusMemoryAction::Program(entry) = transition.action() {
             assert_eq!(entry.index(), seen_counts[entry.group() as usize]);
             if entry.index() == 0 {
-                assert!(entry.control().is_some());
+                assert_eq!(
+                    entry.control().unwrap().value(),
+                    expected_control_values[entry.group() as usize]
+                );
             } else {
                 assert_eq!(entry.control(), None);
             }

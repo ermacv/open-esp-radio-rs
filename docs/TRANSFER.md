@@ -2,7 +2,7 @@
 
 Transferred from the experimental `esp-wifi-sys` worktree:
 
-- the complete source-only ESP32-S31 PHY frontier and its 233 host tests;
+- the complete source-only ESP32-S31 PHY frontier and its 237 host tests;
 - the async cold-PHY executor and identity-bound hardware actions;
 - all project audit and ownership-migration documents;
 - the complete former Rust async runtime/MAC/WPA workset under `migration/`.

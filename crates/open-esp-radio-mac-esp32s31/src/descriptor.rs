@@ -109,6 +109,10 @@ pub const fn rx_done(word0: u32) -> bool {
 }
 
 /// Fresh/recycled RX word: bit31 set, bit30/29 clear, length equals capacity.
+///
+/// S31 keeps bit31 set when it completes RX and sets bit30 as the completion
+/// marker. Software ownership must therefore be tested with [`rx_done`], not
+/// by waiting for bit31 to clear.
 pub const fn rx_armed_word(capacity: u32) -> Option<u32> {
     if capacity == 0 || capacity > SIZE_MASK {
         None

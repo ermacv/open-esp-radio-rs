@@ -5,12 +5,14 @@
 //! separates command publication from completion observation so an outer
 //! Rust async owner can arrange a wakeup and inspect the register once.
 //!
-//! Reference: `esp32s31_rev0_rom.elf`, SHA-256
+//! References: `esp32s31_rev0_rom.elf`, SHA-256
 //! `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`.
 //! The relevant complete ROM bodies are `phy_chip_i2c_readReg_org` at
 //! `0x2f82_9ffa`, `phy_chip_i2c_writeReg` at `0x2f82_a30e`, and
-//! `phy_get_rc_dout` at `0x2f82_61ac`. The ELF is an analysis oracle and is
-//! not linked into the firmware.
+//! `phy_get_rc_dout` at `0x2f82_61ac`. ESP32-S31 `libphy.a[phy_i2c.o]`
+//! supplies the target-specific host configuration and read-mask callbacks
+//! installed around those ROM leaves. Neither oracle is linked into the
+//! firmware.
 
 use crate::phy_frequency::{
     PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion,
@@ -35,15 +37,18 @@ const MODEM_LPCON_CLK_CONF_ADDRESS: usize = 0x2070_4184;
 const MODEM_LPCON_I2C_MST_CLK_CONF_ADDRESS: usize = 0x2070_40f0;
 const MODEM_LPCON_I2C_MST_DATE_ADDRESS: usize = 0x2070_4208;
 const PHY_I2C_BUSY: u32 = 1 << 25;
-const PHY_I2C_READ: u32 = 1 << 30;
-const PHY_I2C_WRITE: u32 = 1 << 28 | 1 << 30;
+// ESP32-S31 ROM `phy_chip_i2c_readReg` publishes `0x0400_0000` and
+// `phy_chip_i2c_writeReg` publishes `0x0500_0000`. These command bits differ
+// from the older ESP PHY-I2C layout by one hexadecimal digit.
+const PHY_I2C_READ: u32 = 1 << 26;
+const PHY_I2C_WRITE: u32 = 1 << 24 | 1 << 26;
 const PHY_I2C_MASTER_COMMAND_COUNT: usize = 45;
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
 const PHY_I2C_SDM_DEADLINE_CYCLES: u32 = 9_999;
 
 const PHY_I2C_READ_MASKS: [u16; 13] = [
-    0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0200, 0x0040, 0x0008, 0x0000,
-    0x0400,
+    0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0800, 0x0040, 0x0008, 0x0000,
+    0x8000,
 ];
 const PHY_I2C_HOST_ONE_BLOCKS: u16 = 0x0647;
 
@@ -97,7 +102,7 @@ const fn command_register_address(host: u8) -> usize {
 }
 
 const fn with_phy_i2c_host_config(value: u32) -> u32 {
-    (value & 0xffff_e00f) | 0x0000_1a00
+    (value & 0xfffc_000f) | 0x0003_fa00
 }
 
 const fn encode_read(address: PhyI2cAddress) -> u32 {
@@ -2693,7 +2698,11 @@ impl RcCalibrationTransition {
                 address: BLOCK_6B_REG_13,
                 high_bit: 0,
                 low_bit: 0,
-                value: 0,
+                // ROM `phy_get_rc_dout` asserts the RC-calibration enable
+                // before pulsing bit 1. Leaving this clear makes the result
+                // register stay at zero and poisons every derived RX filter
+                // code in PHY-I2C block 0x67.
+                value: 1,
             },
             2 => RcCalibrationAction::WriteMasked {
                 address: BLOCK_6B_REG_13,
@@ -3295,11 +3304,11 @@ mod tests {
             (0x66, 0, 0x080),
             (0x67, 1, 0x004),
             (0x68, 0, 0x000),
-            (0x69, 0, 0x200),
+            (0x69, 0, 0x800),
             (0x6a, 1, 0x040),
             (0x6b, 1, 0x008),
             (0x6c, 0, 0x000),
-            (0x6d, 0, 0x400),
+            (0x6d, 0, 0x8000),
         ];
         for (block, host, mask) in expected {
             let address = PhyI2cAddress::new(block, 0x12).unwrap();
@@ -3314,13 +3323,13 @@ mod tests {
     fn command_words_match_complete_rom_leaf_encoding() {
         let address = PhyI2cAddress::new(0x6b, 0x14).unwrap();
         assert_eq!(command_register_address(address.host()), 0x2010_f804);
-        assert_eq!(encode_read(address), 0x4000_146b);
-        assert_eq!(encode_write(address, 0xa5), 0x50a5_146b);
-        assert!(!command_is_busy(0x50a5_146b));
-        assert!(command_is_busy(0x52a5_146b));
-        assert_eq!(read_result(0x403c_146b), 0x3c);
+        assert_eq!(encode_read(address), 0x0400_146b);
+        assert_eq!(encode_write(address, 0xa5), 0x05a5_146b);
+        assert!(!command_is_busy(0x05a5_146b));
+        assert!(command_is_busy(0x07a5_146b));
+        assert_eq!(read_result(0x043c_146b), 0x3c);
         assert_eq!(with_phy_i2c_host_config(0xffff_ffff), 0xffff_fa0f);
-        assert_eq!(with_phy_i2c_host_config(0), 0x1a00);
+        assert_eq!(with_phy_i2c_host_config(0), 0x3fa00);
     }
 
     #[test]
@@ -4251,7 +4260,7 @@ mod tests {
                 address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
                 high_bit: 0,
                 low_bit: 0,
-                value: 0,
+                value: 1,
             },
             RcCalibrationAction::WriteMasked {
                 address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),

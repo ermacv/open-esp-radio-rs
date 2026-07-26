@@ -74,6 +74,10 @@ const fn initial_parameter_image() -> [u8; PHY_PARAM_LEN] {
     parameter[0x016] = 0x02;
     parameter[0x018] = 0x50;
     parameter[0x024] = 0x30;
+    // The pinned ESP32-S31 `esp-phy` oracle does not issue
+    // `phy_init_param_set(1)`: its live cold image keeps byte 0x196 at zero.
+    // That matters because a nonzero byte makes `phy_bb_init` turn Wi-Fi RX
+    // back off immediately after the initial channel selection.
     parameter[0x1ab] = 0x01;
     parameter[0x1af] = 0x01;
 
@@ -272,6 +276,15 @@ impl PhyColdState {
                 &mut self.parameter,
                 0x1b4 + index * 4,
                 outcome.shared_index_dc[index],
+            );
+            index += 1;
+        }
+        index = 0;
+        while index != outcome.rxbb_dc_adjustments.len() {
+            put_pair(
+                &mut self.parameter,
+                0x1e0 + index * 4,
+                outcome.rxbb_dc_adjustments[index],
             );
             index += 1;
         }
@@ -1282,6 +1295,10 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
             address,
             value,
         })
+        | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+            action: RfpllFrequencyAction::WriteByte { address, value },
+            ..
+        })
         | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
             XtalDutyPassAction::WriteByte { address, value },
         ))
@@ -1301,6 +1318,10 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
         | PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::ReadByte { address })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::ReadByte {
             address,
+        })
+        | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+            action: RfpllFrequencyAction::ReadByte { address },
+            ..
         })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
             PhyFrequencyI2cAction::ReadByte { address },
@@ -1339,6 +1360,16 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
             high_bit,
             low_bit,
             value,
+        })
+        | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+            action:
+                RfpllFrequencyAction::WriteMasked {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value,
+                },
+            ..
         })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
             PhyFrequencyI2cAction::WriteMasked {
@@ -1387,6 +1418,15 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
             high_bit,
             low_bit,
         }
+        | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+            action:
+                RfpllFrequencyAction::ReadMasked {
+                    address,
+                    high_bit,
+                    low_bit,
+                },
+            ..
+        })
         | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::ReadInitialDuty {
             address,
             high_bit,
@@ -1585,6 +1625,73 @@ fn lower_prefix_i2c_completion(
             },
         ) if address == completed => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
             PhyChannelFrequencyInitCompletion::ByteRead { address, value },
+        )),
+        (
+            PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action:
+                    RfpllFrequencyAction::WriteMasked {
+                        address,
+                        high_bit,
+                        low_bit,
+                        ..
+                    },
+                ..
+            }),
+            PhyColdI2cOutcome::Written { address: completed },
+        ) if address == completed => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
+            PhyChannelFrequencyInitCompletion::Rfpll(RfpllFrequencyCompletion::MaskedWrite {
+                address,
+                high_bit,
+                low_bit,
+            }),
+        )),
+        (
+            PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action: RfpllFrequencyAction::WriteByte { address, .. },
+                ..
+            }),
+            PhyColdI2cOutcome::Written { address: completed },
+        ) if address == completed => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
+            PhyChannelFrequencyInitCompletion::Rfpll(RfpllFrequencyCompletion::ByteWrite {
+                address,
+            }),
+        )),
+        (
+            PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action:
+                    RfpllFrequencyAction::ReadMasked {
+                        address,
+                        high_bit,
+                        low_bit,
+                    },
+                ..
+            }),
+            PhyColdI2cOutcome::Read {
+                address: completed,
+                value,
+            },
+        ) if address == completed => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
+            PhyChannelFrequencyInitCompletion::Rfpll(RfpllFrequencyCompletion::MaskedRead {
+                address,
+                high_bit,
+                low_bit,
+                value,
+            }),
+        )),
+        (
+            PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action: RfpllFrequencyAction::ReadByte { address },
+                ..
+            }),
+            PhyColdI2cOutcome::Read {
+                address: completed,
+                value,
+            },
+        ) if address == completed => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
+            PhyChannelFrequencyInitCompletion::Rfpll(RfpllFrequencyCompletion::ByteRead {
+                address,
+                value,
+            }),
         )),
         (
             PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
@@ -2224,9 +2331,11 @@ impl PhyColdTimerBinding {
             | PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::DelayMicros(micros))
             | PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::DelayMicros(micros))
             | PhyRfInitPrefixAction::RcCalibration(RcCalibrationAction::DelayMicros(micros))
-            | PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::DelayMicros(micros)) => {
-                micros
-            }
+            | PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::DelayMicros(micros))
+            | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action: RfpllFrequencyAction::DelayMicros(micros),
+                ..
+            }) => micros,
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::Rfpll(
                     RfpllFrequencyAction::DelayMicros(micros),
@@ -2286,6 +2395,14 @@ impl PhyColdTimerBinding {
             PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::DelayMicros(_)) => Ok(
                 PhyRfInitPrefixCompletion::RfpllChargePump(RfpllChargePumpCompletion::Delay),
             ),
+            PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Rfpll {
+                action: RfpllFrequencyAction::DelayMicros(micros),
+                ..
+            }) => Ok(PhyRfInitPrefixCompletion::ChannelFrequency(
+                PhyChannelFrequencyInitCompletion::Rfpll(RfpllFrequencyCompletion::DelayElapsed(
+                    micros,
+                )),
+            )),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::Rfpll(
                     RfpllFrequencyAction::DelayMicros(micros),

@@ -2634,7 +2634,7 @@ impl RcCalibrationTransition {
                 address: BLOCK_6B_REG_13,
                 high_bit: 0,
                 low_bit: 0,
-                value: 0,
+                value: 1,
             },
             2 => RcCalibrationAction::WriteMasked {
                 address: BLOCK_6B_REG_13,
@@ -4192,7 +4192,7 @@ mod tests {
                 address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
                 high_bit: 0,
                 low_bit: 0,
-                value: 0,
+                value: 1,
             },
             RcCalibrationAction::WriteMasked {
                 address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),

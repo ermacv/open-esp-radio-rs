@@ -14,8 +14,8 @@ pub const PHY_REGISTER_I2C_STATUS_1_ADDRESS: usize = 0x2010_f804;
 const PHY_REGISTER_FINAL_I2C_ADDRESS: crate::phy_i2c::PhyI2cAddress =
     crate::phy_i2c::PhyI2cAddress::new_internal(0x63, 0);
 
-/// Exact 128-byte local fallback constructed by the pinned parent when its
-/// init-profile pointer is null.
+/// ESP-IDF/`esp-phy` ESP32-S31 production init profile used by the working
+/// vendor oracle when it calls `register_chipv7_phy`.
 pub const fn default_phy_register_init_profile() -> [u8; PHY_REGISTER_INIT_PROFILE_LEN] {
     let mut profile = [0_u8; PHY_REGISTER_INIT_PROFILE_LEN];
     profile[0x00] = 1;
@@ -28,15 +28,16 @@ pub const fn default_phy_register_init_profile() -> [u8; PHY_REGISTER_INIT_PROFI
     profile[0x08] = 0x50;
     profile[0x09] = 0x50;
     profile[0x0a] = 0x4c;
-    profile[0x0b] = 0x44;
+    profile[0x0b] = 0x48;
     profile[0x0c] = 0x40;
-    profile[0x0d] = 0x38;
-    profile[0x0e] = 0x38;
-    profile[0x0f] = 0x38;
+    profile[0x0d] = 0x3c;
+    profile[0x0e] = 0x3c;
+    profile[0x0f] = 0x3c;
     profile[0x10] = 0x4c;
     profile[0x11] = 0x4c;
     profile[0x12] = 0x48;
     profile[0x13] = 0x44;
+    profile[0x7f] = 0x51;
     profile
 }
 
@@ -192,20 +193,33 @@ enum Phase {
 pub struct PhyRegisterTransition {
     state: Option<crate::phy_cold::PhyColdState>,
     profile: Option<[u8; PHY_REGISTER_INIT_PROFILE_LEN]>,
+    channel_or_frequency: u16,
     phase: Option<Phase>,
 }
 
 impl PhyRegisterTransition {
     pub const fn new(profile: [u8; PHY_REGISTER_INIT_PROFILE_LEN]) -> Self {
+        Self::new_on_channel(profile, 11)
+    }
+
+    pub const fn new_on_channel(
+        profile: [u8; PHY_REGISTER_INIT_PROFILE_LEN],
+        channel_or_frequency: u16,
+    ) -> Self {
         Self {
             state: Some(crate::phy_cold::PhyColdState::new()),
             profile: Some(profile),
+            channel_or_frequency,
             phase: Some(Phase::Prelude(PreludeStep::Prepare)),
         }
     }
 
     pub const fn with_default_profile() -> Self {
         Self::new(default_phy_register_init_profile())
+    }
+
+    pub const fn with_default_profile_on_channel(channel_or_frequency: u16) -> Self {
+        Self::new_on_channel(default_phy_register_init_profile(), channel_or_frequency)
     }
 
     pub fn state(&self) -> Option<&crate::phy_cold::PhyColdState> {
@@ -407,7 +421,10 @@ impl PhyRegisterTransition {
                     let state = transition.into_state();
                     if successful {
                         self.phase = Some(Phase::Baseband(
-                            crate::phy_bb::PhyBbInitTransition::new(state),
+                            crate::phy_bb::PhyBbInitTransition::new_on_channel(
+                                state,
+                                self.channel_or_frequency,
+                            ),
                         ));
                     } else {
                         self.state = Some(state);
@@ -1180,16 +1197,17 @@ mod tests {
     }
 
     #[test]
-    fn default_profile_matches_the_parent_stack_image() {
+    fn default_profile_matches_the_vendor_oracle_init_data() {
         let profile = default_phy_register_init_profile();
         assert_eq!(
             &profile[..0x14],
             &[
-                1, 0, 0x54, 0x54, 0x50, 0x50, 0x4c, 0x48, 0x50, 0x50, 0x4c, 0x44, 0x40, 0x38, 0x38,
-                0x38, 0x4c, 0x4c, 0x48, 0x44,
+                1, 0, 0x54, 0x54, 0x50, 0x50, 0x4c, 0x48, 0x50, 0x50, 0x4c, 0x48, 0x40, 0x3c, 0x3c,
+                0x3c, 0x4c, 0x4c, 0x48, 0x44,
             ]
         );
-        assert!(profile[0x14..].iter().all(|byte| *byte == 0));
+        assert!(profile[0x14..0x7f].iter().all(|byte| *byte == 0));
+        assert_eq!(profile[0x7f], 0x51);
     }
 
     #[test]

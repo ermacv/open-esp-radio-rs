@@ -36,6 +36,12 @@ pub const RX_DESCRIPTOR_HIGH_WINDOW: u32 = 0x2f00_0000;
 
 pub const TX_Q0_CONTROL: u32 = 0x2010_4d70;
 pub const TX_Q0_CONFIG: u32 = 0x2010_4d6c;
+pub const TX_Q0_PPDU_CONTROL: u32 = 0x2010_4d68;
+pub const TX_Q0_PROTECTION: u32 = 0x2010_4d64;
+pub const TX_Q0_PLCP1: u32 = 0x2010_54d8;
+pub const TX_Q0_PTI: u32 = 0x2010_54e0;
+pub const TX_Q0_POWER: u32 = 0x2010_5500;
+pub const TX_Q0_LENGTH_CONTROL: u32 = 0x2010_5510;
 pub const TX_Q_ENABLE: u32 = 0x8000_0000;
 pub const TX_Q_VALID: u32 = 0x4000_0000;
 pub const TX_Q_ENABLE_VALID: u32 = TX_Q_ENABLE | TX_Q_VALID;

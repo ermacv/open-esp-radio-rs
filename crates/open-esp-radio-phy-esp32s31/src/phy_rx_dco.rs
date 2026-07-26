@@ -212,8 +212,13 @@ impl PhyRxDcMinimumTransition {
             .readiness_activity_edges
             .wrapping_add(outcome.readiness_activity_edges);
 
+        // `phy_iq_est_enable` clears `phy_param[0x1ac]` before every child
+        // estimate.  The minimum selector therefore tests only this
+        // attempt's activity count.  Keep the sum solely as an owned
+        // diagnostic; using it as the acceptance gate would permanently
+        // reject clean later attempts after one active sample.
         if outcome.estimate.power < self.minimum_power
-            && (self.readiness_activity_edges == 0 || self.request.rx_saturation_detected)
+            && (outcome.readiness_activity_edges == 0 || self.request.rx_saturation_detected)
         {
             self.best = outcome.estimate;
             self.minimum_power = outcome.estimate.power;
@@ -1163,6 +1168,26 @@ mod tests {
         };
         assert_eq!(outcome.attempts, 3);
         assert_eq!(outcome.estimate.power, 40);
+    }
+
+    #[test]
+    fn rx_dc_minimum_accepts_a_clean_attempt_after_prior_activity() {
+        let mut transition = PhyRxDcMinimumTransition::new(MINIMUM_REQUEST);
+        transition.accept_outcome(minimum_outcome(0, 20, 1));
+        transition.accept_outcome(minimum_outcome(1, 35, 0));
+        let PhyRxDcMinimumAction::Complete(outcome) = transition.action() else {
+            panic!("clean second attempt was not accepted");
+        };
+        assert_eq!(outcome.attempts, 2);
+        assert_eq!(
+            outcome.estimate,
+            PhyDcIqEstimate {
+                i: 1,
+                q: -1,
+                power: 35,
+            }
+        );
+        assert_eq!(outcome.readiness_activity_edges, 1);
     }
 
     #[test]

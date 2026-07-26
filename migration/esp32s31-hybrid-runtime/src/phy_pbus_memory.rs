@@ -340,8 +340,9 @@ impl PhyPbusMemoryTransition {
                     PhyPbusMemoryStep::Program {
                         group: group + 1,
                         index: 0,
-                        header_accumulator: next_accumulator,
-                        command_accumulator: next_accumulator.wrapping_add(0x200) << 11,
+                        header_accumulator: header_accumulator
+                            .wrapping_add(group_count(group) as u32),
+                        command_accumulator: next_accumulator,
                     }
                 } else {
                     PhyPbusMemoryStep::Capture

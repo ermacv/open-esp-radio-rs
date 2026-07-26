@@ -147,6 +147,23 @@ pub fn publish_cold_ring<M: Mmio>(
     Ok(())
 }
 
+/// Stop the RX walker and confirm that the peripheral released its enable
+/// edge before the owner rebuilds descriptor words or links.
+///
+/// The pinned `hal_mac_rx_disable` body is exactly this bit clear. The fence
+/// and readback turn that raw leaf into an explicit Rust ownership boundary:
+/// callers may mutate the ring only after this function returns `Ok(())`.
+pub fn disable_receive<M: Mmio>(mmio: &M) -> Result<(), RxRingError> {
+    let control = mmio.read32(RX_CONTROL);
+    mmio.write32(RX_CONTROL, control & !RX_ENABLE);
+    mmio.fence();
+    if mmio.read32(RX_CONTROL) & RX_ENABLE != 0 {
+        Err(RxRingError::Busy)
+    } else {
+        Ok(())
+    }
+}
+
 /// Returns one CPU-owned completed descriptor to the cold/live ring.
 pub fn rearm_descriptor(
     descriptor: &Descriptor,
@@ -161,7 +178,7 @@ pub fn rearm_descriptor(
     {
         return Err(RxRingError::Corrupt);
     }
-    if word0 & BIT_31 != 0 {
+    if !rx_done(word0) {
         return Err(RxRingError::Busy);
     }
     descriptor.write_word0(rx_rearm_word(word0).ok_or(RxRingError::Size)?);
@@ -199,7 +216,7 @@ fn segment_valid(segment: &RxSegment<'_>) -> bool {
     let capacity = descriptor_size(segment.descriptor_word0) as usize;
     let length = descriptor_length(segment.descriptor_word0) as usize;
     descriptor_address_valid(segment.descriptor_address)
-        && segment.descriptor_word0 & BIT_31 == 0
+        && segment.descriptor_word0 & BIT_31 != 0
         && capacity != 0
         && length != 0
         && length <= capacity
@@ -291,7 +308,12 @@ pub fn extract_management(
     if config.flags & INGRESS_STRICT_RXEND != 0 && rxend_state != 0 {
         return Err(RxError::RxFailure);
     }
-    let dump_matches = signal_length >= FCS_SIZE && dump_length == signal_length - FCS_SIZE;
+    // S31 hardware reports the second 14-bit dump field as `sig_len + 4`.
+    // The first field includes the four-byte 802.11 FCS, while the DMA
+    // protocol view may omit those bytes and retain only alignment padding.
+    let dump_matches = signal_length
+        .checked_add(FCS_SIZE)
+        .is_some_and(|expected| dump_length == expected);
     if config.flags & INGRESS_STRICT_DUMP != 0 && !dump_matches {
         return Err(RxError::Metadata);
     }
@@ -306,10 +328,10 @@ pub fn extract_management(
             .checked_add(descriptor_length(segment.descriptor_word0) as usize)
             .ok_or(RxError::Bounds)?;
     }
-    if signal_length > available {
+    let frame_length = signal_length - FCS_SIZE;
+    if frame_length > available {
         return Err(RxError::Bounds);
     }
-    let frame_length = signal_length - FCS_SIZE;
     if frame_length > output.len() {
         return Err(RxError::OutputSmall);
     }

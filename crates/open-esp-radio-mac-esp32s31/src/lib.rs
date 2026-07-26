@@ -7,7 +7,9 @@
 //! owns the interrupt binding; the state machines here stay host-testable.
 
 pub mod descriptor;
+pub mod init;
 pub mod irq;
 pub mod registers;
 pub mod rx;
+pub mod scan;
 pub mod tx;

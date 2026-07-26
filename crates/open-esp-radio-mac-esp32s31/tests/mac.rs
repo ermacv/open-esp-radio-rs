@@ -14,10 +14,10 @@ use open_esp_radio_mac_esp32s31::{
         TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE,
     },
     rx::{
-        build_cold_ring, extract_management, publish_cold_ring, rearm_descriptor, RxError,
-        RxIngressConfig, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
+        build_cold_ring, disable_receive, extract_management, publish_cold_ring, rearm_descriptor,
+        RxError, RxIngressConfig, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
     },
-    tx::{TxError, TxSlot, TxSlotState},
+    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ fn descriptor_words_preserve_the_recovered_geometry() {
     assert_ne!(rx & BIT_31, 0);
     assert_eq!(rx & BIT_30, 0);
 
-    let completed = (rx & !BIT_31) | BIT_30 | (96 << LENGTH_SHIFT);
+    let completed = 1700 | (96 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     let recycled = rx_rearm_word(completed).unwrap();
     assert_eq!(size(recycled), 1700);
     assert_eq!(length(recycled), 1700);
@@ -124,7 +124,7 @@ fn cold_rx_ring_publishes_links_and_hardware_in_order() {
 #[test]
 fn completed_rx_descriptor_rearms_only_for_the_expected_storage() {
     let descriptor = Descriptor::new();
-    let completed = 256 | (80 << LENGTH_SHIFT) | BIT_30;
+    let completed = 256 | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     descriptor.publish(completed, 0x2f00_3000, 0);
     rearm_descriptor(&descriptor, 0x2f00_3000, 0).unwrap();
     assert_eq!(length(descriptor.word0()), 256);
@@ -134,22 +134,39 @@ fn completed_rx_descriptor_rearms_only_for_the_expected_storage() {
     assert!(rearm_descriptor(&descriptor, 0x2f00_3400, 0).is_err());
 }
 
+#[test]
+fn receive_disable_confirms_the_ring_ownership_edge() {
+    let mmio = MockMmio::default();
+    mmio.set(RX_CONTROL, RX_ENABLE | 0x1234);
+    disable_receive(&mmio).unwrap();
+    assert_eq!(mmio.words.borrow().get(&RX_CONTROL), Some(&0x1234));
+    assert_eq!(
+        mmio.operations(),
+        vec![
+            Operation::Read(RX_CONTROL),
+            Operation::Write(RX_CONTROL, 0x1234),
+            Operation::Fence,
+            Operation::Read(RX_CONTROL),
+        ]
+    );
+}
+
 fn management_segment<'a>(storage: &'a mut [u8; 128]) -> RxSegment<'a> {
     const SIGNAL_LENGTH: usize = 34;
-    const FRAME_LENGTH: usize = SIGNAL_LENGTH - 4;
     const TAIL_OFFSET: usize = 0x38;
     const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
     const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
 
-    storage[TAIL_OFFSET..TAIL_OFFSET + 4]
-        .copy_from_slice(&((FRAME_LENGTH as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes());
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
     storage[FRAME_OFFSET] = 0xb0;
     storage[FRAME_OFFSET + 1] = 0;
     storage[FRAME_OFFSET + 22] = 0;
 
     RxSegment {
         descriptor_address: 0x2f00_4000,
-        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
         buffer: storage,
         next_descriptor_address: 0,
     }
@@ -173,7 +190,7 @@ fn management_rx_extracts_one_bounded_mpdu_and_strips_fcs() {
 
     assert_eq!(frame.length, 30);
     assert_eq!(frame.signal_length, 34);
-    assert_eq!(frame.dump_length, 30);
+    assert_eq!(frame.dump_length, 38);
     assert!(frame.dump_length_matches);
     assert_eq!(output[0], 0xb0);
 }
@@ -251,4 +268,13 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
     slot.detach_completed(&mmio, cookie).unwrap();
     assert_eq!(slot.state(), TxSlotState::Free);
+}
+
+#[test]
+fn legacy_q0_image_reproduces_the_recovered_management_profile() {
+    let image = legacy_q0_image(0x2f00_5000, LegacyTxConfig::management_1m(0x40)).unwrap();
+    assert_eq!(image.plcp0, 0x0060_5000);
+    assert_eq!(image.plcp1, 0x0000_0040);
+    assert_eq!(image.power, 0x0808_0008);
+    assert_eq!(image.length_control, 0x0040_0004);
 }

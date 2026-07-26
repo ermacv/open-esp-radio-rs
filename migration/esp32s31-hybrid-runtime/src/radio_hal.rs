@@ -58,7 +58,7 @@ const PHY_AGC_SAT_GAIN_VALUE: u32 = 0x0818_212d;
 const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
 const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
-const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_1894;
+const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_0894;
 const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
 const PHY_RX_DCO_CONTROL_ADDRESS: usize = 0x2010_0434;
 const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
@@ -1341,7 +1341,7 @@ pub(crate) unsafe fn try_finish_phy_pbus_force_test() -> Result<(), PhyPbusError
 ///
 /// The rev0 ROM chain
 /// `phy_pbus_rd(1, 2) -> phy_pbus_rd_addr/phy_pbus_rd_shift` resolves to one
-/// volatile read at `0x2010_1894`, shift zero, masked to nine bits. The jump
+/// volatile read at `0x2010_0894`, shift zero, masked to nine bits. The jump
 /// tables are present in `esp32s31_rev0_rom.elf` at `0x2f84_d910` and
 /// `0x2f84_d924`. This Rust leaf has no call, branch, loop, wait, allocation,
 /// callback, or non-MMIO state access.

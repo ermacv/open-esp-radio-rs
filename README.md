@@ -13,8 +13,8 @@ Current workspace layers:
 - `open-esp-radio-pac-esp32s31`: register access and peripheral ownership;
 - `open-esp-radio-hal-esp32s31`: finite radio transactions and async boundary
   traits;
-- `open-esp-radio-mac-esp32s31`: allocation-free descriptor, RX/TX ownership
-  and interrupt primitives;
+- `open-esp-radio-mac-esp32s31`: allocation-free descriptor, RX/TX ownership,
+  interrupt primitives, and a bounded passive-scan table/parser;
 - `open-esp-radio-phy-esp32s31`: Rust-owned cold PHY/calibration state
   machines;
 - `open-esp-radio`: application-facing facade.
@@ -22,6 +22,11 @@ Current workspace layers:
 The PHY port is still experimental. Its state machines and source-only link
 gate are usable, while the temporary register leaf module is progressively
 being moved down into HAL/PAC.
+
+Cold source-only PHY initialization, open promiscuous RX, and a passive scan
+across channels 1 through 13 have passed on ESP32-S31 hardware without vendor
+radio initialization. Management TX, association, and encrypted data traffic
+remain unqualified in the live crates.
 
 The ESP32-S31 HAL binds the integration layer's singleton peripheral token to
 `Radio<P, Owned>`. Its finite `power_up` transition reproduces the

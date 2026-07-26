@@ -594,9 +594,10 @@ pub struct PhyBbInitOutcome {
 
 /// Terminal failures from the owned children of `phy_bb_init`.
 ///
-/// `phy_bt_tx_gain_init` deliberately has no variant. Its complete
-/// relocation graph mutates BT/coexistence state only, so the current Wi-Fi
-/// AP/STA profile skips it rather than retaining a vendor escape.
+/// `phy_bt_tx_gain_init` does not yet have a variant. Its complete relocation
+/// graph reaches shared RFPLL, TXDC and PWDET calibration in addition to BT
+/// gain publication, so callers must not treat the current omission as a
+/// proved Wi-Fi-only optimization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyBbInitFailure {
     TxDc(crate::phy_txdc::PhyTxDcFailure),
@@ -822,14 +823,23 @@ pub enum PhyBbInitLocalStep {
 /// pointer to `phy_param`, or ROM callback table.
 pub struct PhyBbInitTransition {
     state: crate::phy_cold::PhyColdState,
+    channel_or_frequency: u16,
     step: PhyBbInitStep,
     calibration_performed: bool,
 }
 
 impl PhyBbInitTransition {
     pub const fn new(state: crate::phy_cold::PhyColdState) -> Self {
+        Self::new_on_channel(state, 11)
+    }
+
+    pub const fn new_on_channel(
+        state: crate::phy_cold::PhyColdState,
+        channel_or_frequency: u16,
+    ) -> Self {
         Self {
             state,
+            channel_or_frequency,
             step: PhyBbInitStep::EnableInitialization,
             calibration_performed: false,
         }
@@ -850,7 +860,7 @@ impl PhyBbInitTransition {
     fn channel_transition(&self) -> crate::phy_channel::PhyChipChannelTransition {
         crate::phy_channel::PhyChipChannelTransition::new(
             crate::phy_channel::PhyChipChannelRequest {
-                channel_or_frequency: 11,
+                channel_or_frequency: self.channel_or_frequency,
                 cbw: 0,
                 parameters: self.state.channel_parameters(),
             },
@@ -976,9 +986,10 @@ impl PhyBbInitTransition {
             },
             PhyBbInitStep::TxCfr(transition) => match transition.action() {
                 PhyTxCfrAction::Complete(_) => {
-                    // The next vendor call is `phy_bt_tx_gain_init`. Complete
-                    // disassembly shows only BT/coex state, so the Wi-Fi-only
-                    // parent proceeds directly to PBus-memory publication.
+                    // The next vendor call is `phy_bt_tx_gain_init`. Its
+                    // relocation graph includes shared RFPLL, TXDC and PWDET
+                    // calibration, so this remains a known parent-graph gap
+                    // until those operations have a Rust-owned transition.
                     self.step = PhyBbInitStep::PbusMemory(
                         crate::phy_pbus_memory::PhyPbusMemoryTransition::new(
                             self.state.pbus_memory_parameters(),

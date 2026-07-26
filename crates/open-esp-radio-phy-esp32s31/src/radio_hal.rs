@@ -61,7 +61,7 @@ const PHY_AGC_SAT_GAIN_VALUE: u32 = 0x0818_212d;
 const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
 const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
-const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_1894;
+const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_0894;
 const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
 const PHY_RX_DCO_CONTROL_ADDRESS: usize = 0x2010_0434;
 const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
@@ -201,9 +201,9 @@ const fn with_phy_register_xtal_frequency(value: u32, frequency_mhz: u8) -> u32 
 
 const fn with_phy_channel_frequency_switch(value: u32, enabled: bool) -> u32 {
     if enabled {
-        value | (1 << 23)
+        value | (1 << 19)
     } else {
-        value & !(1 << 23)
+        value & !(1 << 19)
     }
 }
 
@@ -832,7 +832,9 @@ unsafe fn configure_phy_tx_pa_on() {
     replace_register_field(0x2010_7c30, 0x0000_03ff, 0x0000_001e);
 
     let control = 0x2010_0870 as *mut u32;
-    control.write_volatile((control.read_volatile() & 0x0000_ffff) | 0xa0e0_0000);
+    // ROM `lui a4, 0xa0e0` materializes 0x0a0e_0000 (the immediate is
+    // shifted by twelve), not 0xa0e0_0000.
+    control.write_volatile((control.read_volatile() & 0x0000_ffff) | 0x0a0e_0000);
     replace_register_field(0x2010_0870, 0x0000_ff00, 0x0000_c800);
 }
 
@@ -1042,6 +1044,58 @@ const fn phy_pbus_is_busy(value: u32) -> bool {
 
 const fn phy_pbus_rx_dco_read_value(value: u32) -> u16 {
     (value & 0x1ff) as u16
+}
+
+const fn phy_pbus_read_address(selector: u8, path: u8) -> usize {
+    match selector {
+        0 => 0x2010_08a4,
+        1 => 0x2010_0894,
+        2 => {
+            if path == 1 {
+                0x2010_0898
+            } else {
+                0x2010_089c
+            }
+        }
+        3 => 0x2010_089c,
+        4 => {
+            if path == 1 {
+                0x2010_08a0
+            } else {
+                0x2010_08a4
+            }
+        }
+        5 => 0x2010_08a4,
+        _ => 0x2010_08a4,
+    }
+}
+
+const fn phy_pbus_read_shift(selector: u8, path: u8) -> u8 {
+    match selector {
+        0 => {
+            if path == 1 {
+                18
+            } else {
+                9
+            }
+        }
+        1 | 3 => {
+            if path == 1 {
+                9
+            } else {
+                0
+            }
+        }
+        2 | 4 => {
+            if path == 1 {
+                0
+            } else {
+                18
+            }
+        }
+        5 => 0,
+        _ => 0,
+    }
 }
 
 const fn with_phy_tx_clock(value: u32, enabled: bool) -> u32 {
@@ -1781,7 +1835,7 @@ pub(crate) unsafe fn try_finish_phy_pbus_force_test() -> Result<(), PhyPbusError
 ///
 /// The rev0 ROM chain
 /// `phy_pbus_rd(1, 2) -> phy_pbus_rd_addr/phy_pbus_rd_shift` resolves to one
-/// volatile read at `0x2010_1894`, shift zero, masked to nine bits. The jump
+/// volatile read at `0x2010_0894`, shift zero, masked to nine bits. The jump
 /// tables are present in `esp32s31_rev0_rom.elf` at `0x2f84_d910` and
 /// `0x2f84_d924`. This Rust leaf has no call, branch, loop, wait, allocation,
 /// callback, or non-MMIO state access.
@@ -1970,55 +2024,9 @@ pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(enabled: bool) {
 /// jump tables at `0x2f84_d910` and `0x2f84_d924`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn read_phy_pbus_field(selector: u8, path: u8) -> u16 {
-    let address = match selector {
-        0 => 0x2010_18a4,
-        1 => 0x2010_1894,
-        2 => {
-            if path == 1 {
-                0x2010_1898
-            } else {
-                0x2010_189c
-            }
-        }
-        3 => 0x2010_189c,
-        4 => {
-            if path == 1 {
-                0x2010_18a0
-            } else {
-                0x2010_18a4
-            }
-        }
-        5 => 0x2010_18a4,
-        _ => {
-            debug_assert!(false, "unrecovered PBus selector");
-            0x2010_18a4
-        }
-    };
-    let shift = match selector {
-        0 => {
-            if path == 1 {
-                18
-            } else {
-                9
-            }
-        }
-        1 | 3 => {
-            if path == 1 {
-                9
-            } else {
-                0
-            }
-        }
-        2 | 4 => {
-            if path == 1 {
-                0
-            } else {
-                18
-            }
-        }
-        5 => 0,
-        _ => 0,
-    };
+    debug_assert!(selector <= 5, "unrecovered PBus selector");
+    let address = phy_pbus_read_address(selector, path);
+    let shift = phy_pbus_read_shift(selector, path);
     (((address as *const u32).read_volatile() >> shift) & 0x1ff) as u16
 }
 
@@ -2895,9 +2903,9 @@ mod tests {
         encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
         mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
         mac_rx_management_policy_address, phy_channel_cbw_fields, phy_pbus_is_busy,
-        phy_pbus_rx_dco_read_value, tsf_latch_mask, tx_baseband_gain_index,
-        tx_queue_control_address, tx_queue_is_valid, with_bbpll_calibration,
-        with_mac_rx_control_address_policy, with_mac_rx_control_policy,
+        phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value, tsf_latch_mask,
+        tx_baseband_gain_index, tx_queue_control_address, tx_queue_is_valid,
+        with_bbpll_calibration, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
         with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
         with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_agc_control, with_phy_agc_window,
         with_phy_antenna_control0, with_phy_antenna_control1, with_phy_antenna_control2,
@@ -2959,11 +2967,11 @@ mod tests {
         );
         assert_eq!(
             with_phy_channel_frequency_switch(0x1200_0000, true),
-            0x1280_0000
+            0x1208_0000
         );
         assert_eq!(
             with_phy_channel_frequency_switch(0x12ff_ffff, false),
-            0x127f_ffff
+            0x12f7_ffff
         );
         assert_eq!(
             with_phy_channel_nrx_frequency(0x0200_0000, 0xab00_1234, 2_462),
@@ -3131,6 +3139,20 @@ mod tests {
         assert!(phy_pbus_is_busy(0x8000_0000));
         assert_eq!(phy_pbus_rx_dco_read_value(0xffff_ffff), 0x01ff);
         assert_eq!(phy_pbus_rx_dco_read_value(0x1234_0123), 0x0123);
+        assert_eq!(phy_pbus_read_address(0, 0), 0x2010_08a4);
+        assert_eq!(phy_pbus_read_address(1, 2), 0x2010_0894);
+        assert_eq!(phy_pbus_read_address(2, 1), 0x2010_0898);
+        assert_eq!(phy_pbus_read_address(2, 0), 0x2010_089c);
+        assert_eq!(phy_pbus_read_address(3, 0), 0x2010_089c);
+        assert_eq!(phy_pbus_read_address(4, 1), 0x2010_08a0);
+        assert_eq!(phy_pbus_read_address(4, 0), 0x2010_08a4);
+        assert_eq!(phy_pbus_read_address(5, 0), 0x2010_08a4);
+        assert_eq!(phy_pbus_read_shift(0, 0), 9);
+        assert_eq!(phy_pbus_read_shift(0, 1), 18);
+        assert_eq!(phy_pbus_read_shift(1, 2), 0);
+        assert_eq!(phy_pbus_read_shift(1, 1), 9);
+        assert_eq!(phy_pbus_read_shift(2, 0), 18);
+        assert_eq!(phy_pbus_read_shift(2, 1), 0);
 
         assert_eq!(with_phy_pbus_work_mode_pulse_setup(u32::MAX), 0x32ff_ffff);
         assert_eq!(with_phy_pbus_work_mode_pulse(0), 0x0080_0000);

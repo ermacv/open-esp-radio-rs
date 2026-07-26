@@ -89,9 +89,10 @@ pub struct RfpllFrequencyOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyFailure {
-    /// ROM can miss its `offset == 10` equality bound after entering the
-    /// upward phase. Rust permits ten externally completed upward samples and
-    /// then terminates instead of retaining a hardware-dependent open loop.
+    /// Defensive terminal retained for callers which persist this public
+    /// outcome. The bounded rev0 ROM search completes both ten-sample phases,
+    /// including the no-accepted-sample case, so the exact transition does
+    /// not normally emit it.
     CapacitorSearchDeadlineExceeded {
         initial_cap: u16,
         accepted_samples: u8,
@@ -545,17 +546,7 @@ impl RfpllFrequencyTransition {
                     search.offset = search.offset.wrapping_add(1);
                     search.phase_attempts = search.phase_attempts.wrapping_add(1);
                     if search.phase_attempts == CAP_SEARCH_LIMIT {
-                        if search.phase == CapSearchPhase::Up {
-                            self.step = RfpllFrequencyStep::Failed(
-                                RfpllFrequencyFailure::CapacitorSearchDeadlineExceeded {
-                                    initial_cap: search.initial,
-                                    accepted_samples: search.accepted,
-                                    offset: search.offset,
-                                },
-                            );
-                        } else {
-                            self.finish_cap_phase(search);
-                        }
+                        self.finish_cap_phase(search);
                     } else {
                         self.step =
                             RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
@@ -566,17 +557,7 @@ impl RfpllFrequencyTransition {
                     search.offset = search.offset.wrapping_add(1);
                     search.phase_attempts = search.phase_attempts.wrapping_add(1);
                     if search.phase_attempts == CAP_SEARCH_LIMIT {
-                        if search.phase == CapSearchPhase::Up {
-                            self.step = RfpllFrequencyStep::Failed(
-                                RfpllFrequencyFailure::CapacitorSearchDeadlineExceeded {
-                                    initial_cap: search.initial,
-                                    accepted_samples: search.accepted,
-                                    offset: search.offset,
-                                },
-                            );
-                        } else {
-                            self.finish_cap_phase(search);
-                        }
+                        self.finish_cap_phase(search);
                     } else {
                         self.step =
                             RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
@@ -785,7 +766,7 @@ mod tests {
         address, calculate_rfpll_sdm, RfpllFrequencyAction, RfpllFrequencyBindingError,
         RfpllFrequencyCompletion, RfpllFrequencyExternalBinding, RfpllFrequencyFailure,
         RfpllFrequencyI2cBinding, RfpllFrequencyOutcome, RfpllFrequencyRequest,
-        RfpllFrequencyTransition, RFPLL_BLOCK,
+        RfpllFrequencyTransition, CAP_SEARCH_LIMIT, RFPLL_BLOCK,
     };
 
     fn complete_write(action: RfpllFrequencyAction) -> RfpllFrequencyCompletion {
@@ -965,7 +946,7 @@ mod tests {
     }
 
     #[test]
-    fn unbounded_rom_cap_path_is_a_typed_failure() {
+    fn bounded_rom_cap_path_preserves_initial_when_no_sample_is_accepted() {
         let mut transition = RfpllFrequencyTransition::new(RfpllFrequencyRequest {
             crystal_selector: 0x31,
             frequency_code: 0x983,
@@ -973,18 +954,20 @@ mod tests {
         });
         enter_cap_search(&mut transition, 100, 0);
         let mut index = 0;
-        while index != 20 {
+        while index != CAP_SEARCH_LIMIT * 2 {
             complete_cap_candidate(&mut transition, 1);
             index += 1;
         }
-        assert_eq!(
-            transition.action(),
-            RfpllFrequencyAction::Failed(RfpllFrequencyFailure::CapacitorSearchDeadlineExceeded {
-                initial_cap: 100,
-                accepted_samples: 0,
-                offset: 20,
-            })
-        );
+        advance_writes(&mut transition, 2);
+        transition
+            .advance(RfpllFrequencyCompletion::DelayElapsed(5))
+            .unwrap();
+        let RfpllFrequencyAction::Complete(outcome) = transition.action() else {
+            panic!("expected completion");
+        };
+        assert_eq!(outcome.initial_cap, 100);
+        assert_eq!(outcome.final_cap, 100);
+        assert_eq!(outcome.accepted_cap_samples, 0);
     }
 
     #[test]

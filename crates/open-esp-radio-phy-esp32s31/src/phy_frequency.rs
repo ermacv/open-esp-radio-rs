@@ -21,7 +21,11 @@ use crate::{
 
 pub const PHY_FREQUENCY_TABLE_ENTRY_COUNT: u8 = 85;
 pub const PHY_FREQUENCY_TABLE_FIRST_CODE: u16 = 0x960;
-const PHY_FREQUENCY_MEMORY_BASE: u16 = 0x12;
+// `phy_get_freq_mem_param(2)` packs three distinct values: the low byte is
+// the kind-2 I2C-memory base (0x12), the middle byte is the stride (7), and
+// the high byte is the RF-record base (0x20 = 0x12 + 2 * 7).
+const PHY_FREQUENCY_I2C_MEMORY_BASE: u16 = 0x12;
+const PHY_RF_FREQUENCY_MEMORY_BASE: u16 = 0x20;
 const PHY_FREQUENCY_MEMORY_ENTRY_STRIDE: u16 = 7;
 const PHY_FREQUENCY_MEMORY_WORD_STRIDE: u16 = 3;
 const PHY_FREQUENCY_MEMORY_MODE: u8 = 7;
@@ -161,7 +165,7 @@ impl PhyFrequencyTableTransition {
     }
 
     const fn address(self) -> u16 {
-        PHY_FREQUENCY_MEMORY_BASE
+        PHY_RF_FREQUENCY_MEMORY_BASE
             .wrapping_add((self.entry_index as u16).wrapping_mul(PHY_FREQUENCY_MEMORY_ENTRY_STRIDE))
             .wrapping_add((self.word_index as u16).wrapping_mul(PHY_FREQUENCY_MEMORY_WORD_STRIDE))
     }
@@ -291,7 +295,7 @@ struct PhyFrequencyI2cDescriptor {
     block: u8,
     register: u8,
     encoded_index: u8,
-    data: u8,
+    data: [u8; 3],
 }
 
 impl PhyFrequencyI2cDescriptor {
@@ -320,8 +324,11 @@ impl PhyFrequencyI2cDescriptor {
     }
 
     const fn memory_write(self, copy_index: u8) -> (u16, u32, u8) {
-        let block_register = ((self.block as u32) << 8) | self.register as u32;
-        let data_word = ((self.data as u32) << 16) | block_register;
+        // `phy_freq_i2c_write_set` stores the register byte before the block
+        // byte in frequency command memory: `[block, register, data]` as the
+        // little-endian word `data << 16 | register << 8 | block`.
+        let register_block = ((self.register as u32) << 8) | self.block as u32;
+        let data_word = ((self.data[copy_index as usize] as u32) << 16) | register_block;
         match self.kind() {
             0 => match copy_index {
                 0 => (
@@ -331,23 +338,23 @@ impl PhyFrequencyI2cDescriptor {
                 ),
                 1 => (
                     (self.index() as u16 + 1) * 3,
-                    block_register,
+                    data_word,
                     PHY_FREQUENCY_MEMORY_MODE,
                 ),
                 _ => (
                     self.index() as u16 * 3 + 6,
-                    block_register,
+                    data_word,
                     PHY_FREQUENCY_MEMORY_MODE,
                 ),
             },
             1 => (
                 self.index() as u16 * 3 + 9,
-                data_word,
+                ((self.data[0] as u32) << 16) | register_block,
                 PHY_FREQUENCY_MEMORY_MODE,
             ),
             _ => (
-                self.index() as u16 * 2 + PHY_FREQUENCY_MEMORY_BASE,
-                block_register,
+                self.index() as u16 * 2 + PHY_FREQUENCY_I2C_MEMORY_BASE,
+                register_block,
                 3,
             ),
         }
@@ -366,68 +373,71 @@ const fn frequency_i2c_descriptor(
             block: 0x62,
             register: 1,
             encoded_index: 0x20,
-            data: 0,
+            data: [0; 3],
         },
         1 => PhyFrequencyI2cDescriptor {
             block: 0x62,
             register: 2,
             encoded_index: 0x21,
-            data: 0,
+            data: [0; 3],
         },
         2 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 0,
             encoded_index: 0x10,
-            data: sdm_register_0 & 0xf7,
+            data: [sdm_register_0 & 0xf7, 0, 0],
         },
         3 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 6,
             encoded_index: 0x22,
-            data: 0,
+            data: [0; 3],
         },
         4 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 5,
             encoded_index: 0x23,
-            data: 0,
+            data: [0; 3],
         },
         5 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 4,
             encoded_index: 0x24,
-            data: 0,
+            data: [0; 3],
         },
         6 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 3,
             encoded_index: 0x25,
-            data: 0,
+            data: [0; 3],
         },
         7 => PhyFrequencyI2cDescriptor {
             block: 0x63,
             register: 0,
             encoded_index: 0x11,
-            data: sdm_register_0 | 8,
+            data: [sdm_register_0 | 8, 0, 0],
         },
         8 => PhyFrequencyI2cDescriptor {
             block: 0x62,
             register: 0x0b,
             encoded_index: 0x12,
-            data: rfpll_register_0b,
+            data: [rfpll_register_0b, 0, 0],
         },
         9 => PhyFrequencyI2cDescriptor {
             block: 0x61,
             register: 0x0a,
             encoded_index: 0x26,
-            data: 0,
+            data: [0; 3],
         },
-        _ => PhyFrequencyI2cDescriptor {
-            block: 0x67,
-            register: 3,
-            encoded_index: front_end_register_3 | if front_end_parameter_bit { 4 } else { 0 },
-            data: 1,
-        },
+        _ => {
+            let selected = front_end_register_3 | if front_end_parameter_bit { 4 } else { 0 };
+            PhyFrequencyI2cDescriptor {
+                block: 0x67,
+                register: 3,
+                encoded_index: 0,
+                data: [selected, front_end_register_3 & !4, selected],
+            }
+        }
     }
 }
 
@@ -1313,7 +1323,7 @@ mod tests {
                     assert_eq!(mode, 7);
                     assert_eq!(
                         address,
-                        0x12 + u16::from(entry_index) * 7 + u16::from(word_index) * 3
+                        0x20 + u16::from(entry_index) * 7 + u16::from(word_index) * 3
                     );
                     transition
                         .advance(PhyFrequencyTableCompletion {
@@ -1335,7 +1345,7 @@ mod tests {
             transition.advance(PhyFrequencyTableCompletion {
                 entry_index: 0,
                 word_index: 0,
-                address: 0x12,
+                address: 0x20,
             }),
             Err(PhyFrequencyTableTransitionError::AlreadyComplete)
         );
@@ -1348,7 +1358,7 @@ mod tests {
             transition.advance(PhyFrequencyTableCompletion {
                 entry_index: 0,
                 word_index: 1,
-                address: 0x15,
+                address: 0x23,
             }),
             Err(PhyFrequencyTableTransitionError::WrongCompletion)
         );
@@ -1360,14 +1370,14 @@ mod tests {
             phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, false),
             super::PhyFrequencyI2cNumberAddressImage {
                 control_field: 0x0000_a400,
-                words: [0x0494_1cc1, 0x0000_0543, 0],
+                words: [0x0494_1cc1, 0x0000_0143, 0],
             }
         );
         assert_eq!(
             phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, true),
             super::PhyFrequencyI2cNumberAddressImage {
                 control_field: 0x0000_a400,
-                words: [0x0494_1cc1, 0x0000_1543, 0],
+                words: [0x0494_1cc1, 0x0000_0143, 0],
             }
         );
     }
@@ -1437,18 +1447,25 @@ mod tests {
     }
 
     #[test]
-    fn i2c_transition_publishes_the_fixed_graph_and_dynamic_kind_one_tail() {
+    fn i2c_transition_publishes_the_fixed_graph_and_three_copy_tail() {
         let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
             front_end_parameter_bit: false,
         });
         complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0x10);
 
         let writes = collect_i2c_memory_writes(&mut transition);
-        assert_eq!(writes.len(), 11);
-        assert_eq!(writes[2], (2, 0, 9, 0x0087_6300, 7));
-        assert_eq!(writes[7], (7, 0, 12, 0x008f_6300, 7));
-        assert_eq!(writes[8], (8, 0, 15, 0x005a_620b, 7));
-        assert_eq!(writes[10], (10, 0, 9, 0x0001_6703, 7));
+        assert_eq!(writes.len(), 13);
+        assert_eq!(writes[2], (2, 0, 9, 0x0087_0063, 7));
+        assert_eq!(writes[7], (7, 0, 12, 0x008f_0063, 7));
+        assert_eq!(writes[8], (8, 0, 15, 0x005a_0b62, 7));
+        assert_eq!(
+            &writes[10..],
+            &[
+                (10, 0, 0, 0x0010_0367, 7),
+                (10, 1, 3, 0x0010_0367, 7),
+                (10, 2, 6, 0x0010_0367, 7),
+            ]
+        );
 
         let image = phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, false);
         assert_eq!(
@@ -1472,20 +1489,20 @@ mod tests {
     }
 
     #[test]
-    fn i2c_transition_expands_a_dynamic_kind_zero_tail_to_three_writes() {
+    fn i2c_transition_applies_the_parameter_bit_only_to_outer_tail_copies() {
         let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-            front_end_parameter_bit: false,
+            front_end_parameter_bit: true,
         });
-        complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0);
+        complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0x10);
 
         let writes = collect_i2c_memory_writes(&mut transition);
         assert_eq!(writes.len(), 13);
         assert_eq!(
             &writes[10..],
             &[
-                (10, 0, 0, 0x0001_6703, 7),
-                (10, 1, 3, 0x0000_6703, 7),
-                (10, 2, 6, 0x0000_6703, 7),
+                (10, 0, 0, 0x0014_0367, 7),
+                (10, 1, 3, 0x0010_0367, 7),
+                (10, 2, 6, 0x0014_0367, 7),
             ]
         );
     }

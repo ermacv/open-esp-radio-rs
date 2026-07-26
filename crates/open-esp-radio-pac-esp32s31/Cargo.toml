@@ -1,0 +1,10 @@
+[package]
+name = "open-esp-radio-pac-esp32s31"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Source-described ESP32-S31 radio register access"
+
+[lints]
+workspace = true

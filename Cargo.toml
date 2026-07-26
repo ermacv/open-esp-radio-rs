@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/open-esp-radio",
+    "crates/open-esp-radio-hal-esp32s31",
+    "crates/open-esp-radio-pac-esp32s31",
+    "crates/open-esp-radio-phy-esp32s31",
+]
+exclude = ["migration/esp32s31-hybrid-runtime"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ermacv/open-esp-radio-rs"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[profile.release]
+opt-level = 3
+debug = true
+lto = "fat"
+codegen-units = 1

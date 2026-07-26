@@ -1,0 +1,17 @@
+[package]
+name = "open-esp-radio-phy-esp32s31"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free Rust ESP32-S31 PHY state machines"
+
+[features]
+default = []
+strict-no-wait = []
+
+[dependencies]
+open-esp-radio-hal-esp32s31 = { path = "../open-esp-radio-hal-esp32s31" }
+
+[lints]
+workspace = true

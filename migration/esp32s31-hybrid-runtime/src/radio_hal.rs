@@ -1,0 +1,2585 @@
+//! Narrow ESP32-S31 radio-register leaves.
+//!
+//! These functions reproduce complete, finite ROM bodies whose only state is
+//! documented MMIO. They are temporary runtime-local HAL boundaries until the
+//! register layer moves into the ESP32-S31 radio HAL crate.
+
+const TSF_CONTROL_ADDRESS: usize = 0x2010_d814;
+const TSF_LOW_ADDRESS: usize = 0x2010_d820;
+const TSF_HIGH_ADDRESS: usize = 0x2010_d824;
+const RX_DESCRIPTOR_LAST_LOW_ADDRESS: usize = 0x2010_408c;
+const RX_DESCRIPTOR_LAST_HIGH_ADDRESS: usize = 0x2010_4c70;
+const TX_CCA_CONTROL_ADDRESS: usize = 0x2010_4c5c;
+const TX_QUEUE_CONTROL_BASE_ADDRESS: usize = 0x2010_4d70;
+const TX_QUEUE_CONTROL_STRIDE: usize = 0x10;
+const MAC_ADDRESS_LOW_BASE_ADDRESS: usize = 0x2010_405c;
+const MAC_ADDRESS_HIGH_BASE_ADDRESS: usize = 0x2010_4060;
+const MAC_ADDRESS_STRIDE: usize = 8;
+const MAC_RX_ADDRESS_POLICY_BASE_ADDRESS: usize = 0x2010_4004;
+const MAC_RX_ADDRESS_POLICY_STRIDE: usize = 8;
+const MAC_RX_FRAME_POLICY_BASE_ADDRESS: usize = 0x2010_40d8;
+const MAC_RX_MANAGEMENT_POLICY_BASE_ADDRESS: usize = 0x2010_4060;
+const MAC_RX_MANAGEMENT_POLICY_STRIDE: usize = 8;
+const MAC_CONTROL_ADDRESS: usize = 0x2010_4cac;
+const WIFI_MAC_REGDMA_CONTROL_ADDRESS: usize = 0x2010_d83c;
+const MAC_ADDRESS_VALID_BIT: u32 = 1 << 16;
+const MAC_RX_MODE_MASK: u32 = (1 << 10) | (1 << 4);
+const MAC_RX_CONTROL_POLICY_BIT: u32 = 1 << 6;
+const MAC_RX_CONTROL_ADDRESS_BIT: u32 = 1 << 31;
+const MAC_RX_MANAGEMENT_POLICY_BIT: u32 = 1 << 16;
+const MAC_RX_UNIQUE_BSSID_BITS: u32 = (1 << 8) | (1 << 1);
+const MAC_NO_RETENTION_CLEAR_BITS: u32 = 0x00ff_1000;
+const WIFI_MAC_REGDMA_LINK_MASK: u32 = 0x001e_0000;
+const WIFI_MAC_ACTIVE_REGDMA_LINK: u32 = 4;
+const MAC_INTERFACE_COUNT: u32 = 4;
+const MAC_RX_POLICY_QUEUE_COUNT: u32 = 3;
+const PHY_RX_COMP_LOW_ADDRESS: usize = 0x2010_702c;
+const PHY_DC_MEMORY_CONTROL_ADDRESS: usize = 0x2010_703c;
+const PHY_RX_COMP_HIGH_ADDRESS: usize = 0x2010_70a0;
+const PHY_DC_MEMORY_CLEAR_BIT: u32 = 1 << 20;
+const PHY_GAIN_MEMORY_INDEX_SOURCE_ADDRESS: usize = 0x2010_0408;
+const PHY_GAIN_MEMORY_CONTROL_ADDRESS: usize = 0x2010_0844;
+const PHY_GAIN_MEMORY_WORD0_ADDRESS: usize = 0x2010_0848;
+const PHY_GAIN_MEMORY_WORD1_ADDRESS: usize = 0x2010_084c;
+const PHY_GAIN_MEMORY_WORD2_ADDRESS: usize = 0x2010_0850;
+const PHY_GAIN_MEMORY_MAX_ENTRIES: u32 = 32;
+const PHY_FE_CLOCK_GATE_ADDRESS: usize = 0x2010_0400;
+const PHY_FE_BB_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0800;
+const PHY_BB_CLOCK_GATE_ADDRESS: usize = 0x2010_7c80;
+const PHY_BBPLL_CAL_CONTROL_ADDRESS: usize = 0x2010_f818;
+const MODEM_LPCON_CLOCK_CONF_ADDRESS: usize = 0x2070_401c;
+const PHY_AGC_CONTROL_ADDRESS: usize = 0x2010_705c;
+const PHY_AGC_SAT_GAIN_LOW_ADDRESS: usize = 0x2010_7064;
+const PHY_AGC_SAT_GAIN_HIGH_ADDRESS: usize = 0x2010_7114;
+const PHY_AGC_WINDOW_ADDRESS: usize = 0x2010_7104;
+const PHY_RX_CONTROL_ADDRESS: usize = 0x2010_78c8;
+const PHY_FTM_CONTROL_ADDRESS: usize = 0x2010_7d4c;
+const PHY_AGC_SAT_GAIN_VALUE: u32 = 0x0818_212d;
+const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
+const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
+const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
+const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_1894;
+const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
+const PHY_RX_DCO_CONTROL_ADDRESS: usize = 0x2010_0434;
+const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
+const PHY_TONE_PATH1_CONTROL_ADDRESS: usize = 0x2010_0420;
+const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
+const PHY_TONE_SELECTOR_CONTROL_ADDRESS: usize = 0x2010_0428;
+const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
+const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
+const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
+const PHY_IQ_EST_CONFIG_ADDRESS: usize = 0x2010_044c;
+const PHY_IQ_EST_CONTROL_ADDRESS: usize = 0x2010_0450;
+const PHY_SIGNAL_POWER_SUM_I_ADDRESS: usize = 0x2010_0454;
+const PHY_SIGNAL_POWER_DIFFERENCE_I_ADDRESS: usize = 0x2010_0458;
+const PHY_SIGNAL_POWER_DIFFERENCE_Q_ADDRESS: usize = 0x2010_045c;
+const PHY_SIGNAL_POWER_SUM_Q_ADDRESS: usize = 0x2010_0460;
+const PHY_IQ_EST_I_ACCUMULATOR_ADDRESS: usize = 0x2010_0464;
+const PHY_IQ_EST_Q_ACCUMULATOR_ADDRESS: usize = 0x2010_0468;
+const PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS: usize = 0x2010_046c;
+const PHY_IQ_EST_READY_ADDRESS: usize = 0x2010_047c;
+const PHY_IQ_EST_ACTIVITY_ADDRESS: usize = 0x2010_08d0;
+const PHY_PBUS_SETTLE_CONDITION_ADDRESS: usize = 0x2010_9c18;
+const PHY_PBUS_WORK_MODE_PULSE_ADDRESS: usize = 0x2010_702c;
+const PHY_SDM_CYCLE_COUNTER_ADDRESS: usize = 0x2010_d800;
+const PHY_I2C_CLOCK_SELECTION_0_ADDRESS: usize = 0x2010_f824;
+const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
+const PHY_I2C_CLOCK_SELECTION_2_ADDRESS: usize = 0x2010_f82c;
+const PHY_FE_TXRX_RESET_ADDRESS: usize = 0x2010_0440;
+const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
+const PHY_I2C_MASTER_REGISTER_CONTROL_ADDRESS: usize = 0x2010_f818;
+const PHY_POWER_DETECTOR_CONTROL_ADDRESS: usize = 0x2010_0808;
+const PHY_POWER_DETECTOR_TABLE_0_ADDRESS: usize = 0x2010_0810;
+const PHY_POWER_DETECTOR_TABLE_1_ADDRESS: usize = 0x2010_0814;
+const PHY_POWER_DETECTOR_TABLE_2_ADDRESS: usize = 0x2010_0818;
+const PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS: usize = 0x2070_1068;
+const PHY_FE_CONTROL_0408_ADDRESS: usize = 0x2010_0408;
+const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
+const PHY_FE_CONTROL_0438_ADDRESS: usize = 0x2010_0438;
+const PHY_FE_CONTROL_0444_ADDRESS: usize = 0x2010_0444;
+const PHY_FE_CONTROL_0448_ADDRESS: usize = 0x2010_0448;
+const PHY_FE_CONTROL_086C_ADDRESS: usize = 0x2010_086c;
+const PHY_FE_CONTROL_0894_ADDRESS: usize = 0x2010_0894;
+const PHY_FE_CONTROL_0C08_ADDRESS: usize = 0x2010_0c08;
+const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
+const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
+const PHY_FREQUENCY_CONTROL_ADDRESS: usize = 0x2010_001c;
+const PHY_FREQUENCY_PARAMETER_0_ADDRESS: usize = 0x2010_0024;
+const PHY_FREQUENCY_PARAMETER_1_ADDRESS: usize = 0x2010_0028;
+const PHY_FREQUENCY_MEMORY_DATA_ADDRESS: usize = 0x2010_002c;
+const PHY_FREQUENCY_I2C_NUMBER_CONTROL_ADDRESS: usize = 0x2010_0030;
+const PHY_FREQUENCY_I2C_NUMBER_WORD_0_ADDRESS: usize = 0x2010_0034;
+const PHY_FREQUENCY_I2C_NUMBER_WORD_1_ADDRESS: usize = 0x2010_0038;
+const PHY_FREQUENCY_I2C_NUMBER_WORD_2_ADDRESS: usize = 0x2010_003c;
+const PHY_TEMPERATURE_SENSOR_POWER_ADDRESS: usize = 0x2081_8000;
+const PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS: usize = 0x2081_8018;
+const PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS: usize = 0x2071_0030;
+const PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS: usize = 0x2010_080c;
+const PHY_BASEBAND_MODE_ADDRESS: usize = 0x2010_0028;
+const PHY_WIFI_ENABLE_ADDRESS: usize = 0x2010_9c18;
+const PHY_AGC_ENABLE_CONTROL_ADDRESS: usize = 0x2010_702c;
+const PHY_AGC_ENABLE_AUX_ADDRESS: usize = 0x2010_7030;
+const PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS: usize = 0x2010_7454;
+const PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS: usize = 0x2010_7458;
+const PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS: usize = 0x2010_745c;
+const PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS: usize = 0x2010_7460;
+const PHY_RF_RX_SATURATION_CONFIG_ADDRESS: usize = 0x2010_7068;
+const PHY_RF_RX_SATURATION_CONTROL_ADDRESS: usize = 0x2010_705c;
+const PHY_I2C_TX_RATE_CONTROL_ADDRESS: usize = 0x2010_448c;
+const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
+const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
+const PHY_BB_WATCHDOG_CONTROL_ADDRESS: usize = 0x2010_7c3c;
+const PHY_BB_WATCHDOG_ENABLE_ADDRESS: usize = 0x2010_7c40;
+const PHY_BT_FILTER_CONTROL_ADDRESS: usize = 0x2010_0874;
+const PHY_NOISE_FLOOR_CONTROL_ADDRESS: usize = 0x2010_7018;
+const PHY_NOISE_FLOOR_ENABLE_0_ADDRESS: usize = 0x2010_7c44;
+const PHY_NOISE_FLOOR_ENABLE_1_ADDRESS: usize = 0x2010_7c50;
+const PHY_ANTENNA_CONTROL_0_ADDRESS: usize = 0x2010_711c;
+const PHY_ANTENNA_CONTROL_1_ADDRESS: usize = 0x2010_7030;
+const PHY_ANTENNA_CONTROL_2_ADDRESS: usize = 0x2010_7120;
+const PHY_PBUS_FORCE_MODE_BIT: u32 = 1 << 26;
+const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
+const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
+const PHY_PBUS_SETTLE_CONDITION_BIT: u32 = 1 << 1;
+const PHY_PBUS_WORK_MODE_PULSE_BIT: u32 = 1 << 23;
+const PHY_IQ_EST_CONTROL_FIELD_MASK: u32 = 0x0001_fffc;
+const PHY_IQ_EST_START_BIT: u32 = 1 << 0;
+const PHY_IQ_EST_MEASUREMENT_BIT: u32 = 1 << 1;
+const PHY_IQ_EST_READY_BIT: u32 = 1 << 16;
+const PHY_IQ_EST_ACTIVITY_MASK: u32 = 0x0030_0000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PhyPbusError {
+    Busy,
+}
+
+/// Publish exactly one entry of the cold TX-CFR table.
+///
+/// The transition and register encoding live in `phy_bb`; this narrow target
+/// leaf performs the four finite MMIO accesses from the pinned vendor body.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn program_phy_tx_cfr_entry(entry: crate::phy_bb::PhyTxCfrEntry) {
+    let data = PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32;
+    let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
+
+    data.write_volatile(entry.data);
+    control.write_volatile(crate::phy_bb::phy_tx_cfr_control_word(
+        control.read_volatile(),
+        entry,
+    ));
+    control.write_volatile(control.read_volatile() | 0x0020_0000);
+    control.write_volatile(control.read_volatile() & !0x0020_0000);
+}
+
+/// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn enable_phy_baseband_initialization() {
+    set_register_bits(PHY_FE_BB_CLOCK_CONTROL_ADDRESS, 1 << 2);
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn set_phy_baseband_mode(mode: u8) {
+    replace_register_field(PHY_BASEBAND_MODE_ADDRESS, 0x3, u32::from(mode) & 0x3);
+}
+
+/// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_bb_agc_register_update() {
+    (0x2010_8070 as *mut u32).write_volatile(0x0000_08c7);
+    (0x2010_78a4 as *mut u32).write_volatile(0x0001_721f);
+    clear_register_bits(0x2010_8004, 0x0400_0000);
+    (0x2010_8010 as *mut u32).write_volatile(0x0008_52a1);
+    (0x2010_8018 as *mut u32).write_volatile(0x0060_0030);
+    (0x2010_801c as *mut u32).write_volatile(0x0100_00a0);
+    (0x2010_8020 as *mut u32).write_volatile(0x0000_0180);
+    (0x2010_8028 as *mut u32).write_volatile(0xc040_3020);
+    (0x2010_802c as *mut u32).write_volatile(0x0100_0080);
+    set_register_bits(0x2010_8078, 0x0070_0000);
+    (0x2010_7044 as *mut u32).write_volatile(0xfe3f_e1fe);
+    (0x2010_7048 as *mut u32).write_volatile(0xff7d_a4f3);
+    (0x2010_7104 as *mut u32).write_volatile(0x06ac_c7c8);
+    (0x2010_7124 as *mut u32).write_volatile(0xb220_8553);
+    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_3800);
+}
+
+/// Complete rev0 ROM `phy_enable_agc`, size `0x28`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn enable_phy_agc() {
+    clear_register_bits(PHY_AGC_ENABLE_AUX_ADDRESS, 0x2000_0000);
+    set_register_bits(PHY_AGC_ENABLE_CONTROL_ADDRESS, 0x0080_0000);
+    clear_register_bits(PHY_AGC_ENABLE_CONTROL_ADDRESS, 0x0080_0000);
+}
+
+/// Complete rev0 ROM `phy_wifi_enable_set`, size `0x18`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn set_phy_wifi_enabled(enabled: bool) {
+    if enabled {
+        set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 1 << 1);
+    } else {
+        clear_register_bits(PHY_WIFI_ENABLE_ADDRESS, 1 << 1);
+    }
+}
+
+/// Complete pinned `phy_bb_txpwr_track`, size `0xf4`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_bb_tx_power_tracking(enabled: bool) {
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS,
+        0x0000_0001,
+        u32::from(enabled),
+    );
+    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS, 0x0000_001e);
+    set_register_bits(PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS, 0x0000_03e0);
+    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS, 0x0000_0001);
+    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS, 0x0000_0002);
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS,
+        0x0000_ff00,
+        0x0000_7900,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS,
+        0x0000_00ff,
+        0x0000_0083,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
+        0xff00_0000,
+        0x8d00_0000,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
+        0x00ff_0000,
+        0x0096_0000,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
+        0x0000_ff00,
+        0x0000_a000,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
+        0x0000_00ff,
+        0x0000_00b1,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
+        0x7f80_0000,
+        0x5f00_0000,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
+        0x007f_8000,
+        0x0069_0000,
+    );
+    replace_register_field(
+        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
+        0x0000_7f80,
+        0x0000_7300,
+    );
+}
+
+/// Complete rev0 ROM `phy_rfrx_sat_rst`, size `0x42`.
+///
+/// `enabled=false` is the pre-check call and `enabled=true` is the
+/// post-gain-table call. Both retain the reference's repeated fresh reads.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_rf_rx_saturation(enabled: bool) {
+    (PHY_RF_RX_SATURATION_CONFIG_ADDRESS as *mut u32).write_volatile(0x0000_0404);
+    let control = PHY_RF_RX_SATURATION_CONTROL_ADDRESS as *mut u32;
+    if enabled {
+        control.write_volatile(control.read_volatile() | 0xd108_0000);
+        control.write_volatile((control.read_volatile() & 0xfff8_0000) | 0x0000_0800);
+    } else {
+        control.write_volatile(control.read_volatile() & 0x2ef7_ffff);
+        control.write_volatile((control.read_volatile() & 0xfff8_0000) | 0x0000_0400);
+    }
+}
+
+/// Complete rev0 ROM `phy_i2c_txrate_init`, size `0x38`.
+///
+/// The ROM tail dispatches through `g_phyFuns+0x30`. The pinned table target
+/// is complete archive leaf `phy_txgain_comp_pacfg_new(1)`, whose four
+/// ordered MMIO writes are reproduced directly below.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_i2c_tx_rate() {
+    replace_register_field(PHY_I2C_TX_RATE_CONTROL_ADDRESS, 0x03fc_0000, 0x0154_0000);
+    replace_register_field(PHY_I2C_TX_RATE_CONTROL_ADDRESS, 0x0000_0003, 0x0000_0002);
+
+    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
+    compensation.write_volatile(without_phy_tx_gain_compensation_low_byte(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(with_phy_tx_gain_compensation_byte1(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(with_phy_tx_gain_compensation_byte2(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(without_phy_tx_gain_compensation_high_byte(
+        compensation.read_volatile(),
+    ));
+}
+
+/// Complete rev0 ROM `phy_write_gain_mem`, size `0x2a`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn program_phy_gain_memory_entry(entry: crate::phy_bb::PhyGainMemoryEntry) {
+    (PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32).write_volatile(entry.word0);
+    (PHY_GAIN_MEMORY_WORD1_ADDRESS as *mut u32).write_volatile(entry.word1);
+    (PHY_GAIN_MEMORY_WORD2_ADDRESS as *mut u32).write_volatile(entry.word2);
+    let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(crate::phy_bb::phy_gain_memory_control_word(
+        control.read_volatile(),
+        entry,
+    ));
+}
+
+/// Complete rev0 ROM `phy_iq_corr_enable`, size `0x24`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn enable_phy_iq_correction() {
+    set_register_bits(PHY_IQ_CORRECTION_CONTROL_ADDRESS, 0x6000_0000);
+    set_register_bits(PHY_IQ_CORRECTION_AUX_ADDRESS, 0x0000_6000);
+}
+
+/// Complete rev0 ROM `phy_wifi_agc_sat_gain`, size `0x0c`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn set_phy_wifi_agc_saturation_gain(value: u32) {
+    write_phy_wifi_agc_sat_gain(value);
+}
+
+/// Complete rev0 ROM `phy_bb_wdg_cfg`, size `0x2c`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_baseband_watchdog() {
+    let control = PHY_BB_WATCHDOG_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_baseband_watchdog(control.read_volatile()));
+    set_register_bits(PHY_BB_WATCHDOG_ENABLE_ADDRESS, 0x8000_0000);
+}
+
+/// Complete rev0 ROM `phy_mac_enable_bb`, size `0x2a`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn enable_phy_mac_baseband() {
+    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x1000_0000);
+    clear_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0002);
+    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0002);
+}
+
+/// Complete rev0 ROM `phy_noise_floor_auto_set`, size `0x36`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_noise_floor_auto() {
+    set_register_bits(PHY_NOISE_FLOOR_CONTROL_ADDRESS, 0x0080_0000);
+    set_register_bits(PHY_NOISE_FLOOR_CONTROL_ADDRESS, 0x1000_0000);
+    set_register_bits(PHY_NOISE_FLOOR_ENABLE_0_ADDRESS, 1);
+    set_register_bits(PHY_NOISE_FLOOR_ENABLE_1_ADDRESS, 1);
+}
+
+/// Complete rev0 ROM `phy_ant_init`, size `0x44`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_antenna() {
+    let control0 = PHY_ANTENNA_CONTROL_0_ADDRESS as *mut u32;
+    control0.write_volatile(with_phy_antenna_control0(control0.read_volatile()));
+    let control1 = PHY_ANTENNA_CONTROL_1_ADDRESS as *mut u32;
+    control1.write_volatile(with_phy_antenna_control1(control1.read_volatile()));
+    let control2 = PHY_ANTENNA_CONTROL_2_ADDRESS as *mut u32;
+    control2.write_volatile(with_phy_antenna_control2(control2.read_volatile()));
+}
+
+/// Complete rev0 ROM `phy_bt_filter_reg`, size `0x34`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_bt_filter() {
+    set_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0200_0000);
+    clear_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0040_0000);
+    clear_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0180_0000);
+}
+
+/// Complete rev0 ROM `phy_agc_reg_init`, size `0xd8`.
+#[cfg(target_arch = "riscv32")]
+unsafe fn configure_phy_agc_registers(parameter_121: u8, parameter_120: u8) {
+    let gain_minus_one = u32::from(parameter_121).wrapping_sub(1);
+    replace_register_field(
+        0x2010_713c,
+        0x01fc_0000,
+        (gain_minus_one << 18) & 0x01fc_0000,
+    );
+    replace_register_field(
+        0x2010_7094,
+        0x0000_01fc,
+        (gain_minus_one << 2) & 0x0000_01fc,
+    );
+    replace_register_field(
+        0x2010_702c,
+        0x0000_7f00,
+        (u32::from(parameter_121) << 8) & 0x0000_7f00,
+    );
+    replace_register_field(0x2010_705c, 0x0007_ffff, 0x0000_0bb8);
+    replace_register_field(0x2010_08bc, 0x0000_0ff0, u32::from(parameter_121) << 4);
+    replace_register_field(
+        0x2010_08bc,
+        0x000f_f000,
+        (u32::from(parameter_120).wrapping_add(0x50) << 12) & 0x000f_f000,
+    );
+    replace_register_field(0x2010_702c, 0xff00_0000, 0x3200_0000);
+    set_register_bits(0x2010_702c, 0x0080_0000);
+    clear_register_bits(0x2010_702c, 0x0080_0000);
+    replace_register_field(0x2010_7128, 0xff00_0000, 0xd200_0000);
+}
+
+/// Complete rev0 ROM `phy_bb_reg_init`, size `0x140`, including its
+/// `phy_btbb_wifi_bb_cfg2` tail.
+#[cfg(target_arch = "riscv32")]
+unsafe fn configure_phy_baseband_registers() {
+    set_register_bits(0x2010_7400, 0x0000_6000);
+    replace_register_field(0x2010_7848, 0x00ff_ffff, 0x0004_33af);
+    replace_register_field(0x2010_7848, 0x1f00_0000, 0x1700_0000);
+    replace_register_field(0x2010_7808, 0x0000_3f80, 0x0000_3000);
+    replace_register_field(0x2010_78dc, 0x0000_3f80, 0x0000_0100);
+    clear_register_bits(0x2010_78e4, 0x0040_0000);
+    clear_register_bits(0x2010_7c30, 0x000f_f000);
+    clear_register_bits(0x2010_790c, 0x0000_0800);
+    set_register_bits(0x2010_7ca8, 0x0010_0000);
+    clear_register_bits(0x2010_7980, 0x0200_0000);
+    clear_register_bits(0x2010_7890, 0x0200_0000);
+    set_register_bits(0x2010_7890, 0x0100_0000);
+    clear_register_bits(0x2010_7a28, 0x0040_0000);
+    set_register_bits(0x2010_7cd0, 0x000f_000f);
+    set_register_bits(0x2010_7c00, 0x0000_0200);
+    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0800);
+    clear_register_bits(0x2010_743c, 0x0000_00c0);
+    clear_register_bits(0x2010_743c, 0x0000_0100);
+    set_register_bits(0x2010_7428, 0x0000_4000);
+    replace_register_field(0x2010_7428, 0x0000_3f00, 0x0000_1500);
+    set_register_bits(0x2010_7cd0, 0x000f_000b);
+}
+
+/// Complete rev0 ROM `phy_tx_paon_set`, size `0x78`.
+#[cfg(target_arch = "riscv32")]
+unsafe fn configure_phy_tx_pa_on() {
+    replace_register_field(0x2010_7c00, 0x001f_f800, 0x0000_a000);
+    replace_register_field(0x2010_086c, 0x0000_ff00, 0x0000_7800);
+    (0x2010_7c6c as *mut u32).write_volatile(0x0661_a45f);
+    replace_register_field(0x2010_7c30, 0x0000_03ff, 0x0000_001e);
+
+    let control = 0x2010_0870 as *mut u32;
+    control.write_volatile((control.read_volatile() & 0x0000_ffff) | 0xa0e0_0000);
+    replace_register_field(0x2010_0870, 0x0000_ff00, 0x0000_c800);
+}
+
+/// Complete both branches of rev0 ROM `phy_rx_11b_opt`, size `0xc4`.
+#[cfg(target_arch = "riscv32")]
+unsafe fn configure_phy_rx_11b_optimization(enabled: bool) {
+    if enabled {
+        set_register_bits(0x2010_7044, 0x003f_0000);
+        replace_register_field(0x2010_7044, 0x0000_3f00, 0x0000_2100);
+        replace_register_field(0x2010_7124, 0x0000_fc00, 0x0000_8400);
+        replace_register_field(0x2010_7124, 0x0000_000f, 0x0000_0003);
+        replace_register_field(0x2010_8004, 0x0000_f000, 0x0000_9000);
+    } else {
+        replace_register_field(0x2010_7044, 0x003f_0000, 0x003e_0000);
+        replace_register_field(0x2010_7044, 0x0000_3f00, 0x0000_1800);
+        replace_register_field(0x2010_7124, 0x0000_fc00, 0x0000_6000);
+        replace_register_field(0x2010_7124, 0x0000_000f, 0x0000_0004);
+        replace_register_field(0x2010_8004, 0x0000_f000, 0x0000_6000);
+    }
+    replace_register_field(0x2010_7104, 0x0000_01ff, 0x0000_01c8);
+}
+
+/// Complete rev0 ROM `phy_reg_init`, size `0x52`, with every direct and tail
+/// child reproduced by finite Rust MMIO.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_registers(parameters: crate::phy_bb::PhyRegisterInitParameters) {
+    enable_phy_iq_correction();
+    configure_phy_agc_registers(parameters.parameter_121, parameters.parameter_120);
+    set_phy_wifi_agc_saturation_gain(0x0008_1825);
+    configure_phy_baseband_registers();
+    configure_phy_baseband_watchdog();
+    configure_phy_tx_pa_on();
+    configure_phy_rx_11b_optimization(true);
+    configure_phy_tx_power_control_background();
+    configure_phy_noise_floor_auto();
+    configure_phy_antenna();
+    configure_phy_bt_filter();
+    enable_phy_mac_baseband();
+}
+
+/// Complete pinned `libphy.a[phy_rx_gain.o]::phy_rx_table_init`, size `0x7c`.
+///
+/// The unique [`crate::phy_cold::PhyColdState`] owner must call
+/// `prepare_rx_table_init` before executing this action. That explicit local
+/// step performs the reference's `phy_param[0x120] = 0x4f` mutation. This leaf
+/// then publishes exactly 79 gain entries and runs the already complete
+/// register-init, AGC-update and AGC-enable suffix.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_rx_table(parameters: crate::phy_bb::PhyRxTableInitParameters) {
+    let mut index = 0_u8;
+    while index != crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT {
+        program_phy_gain_memory_entry(crate::phy_bb::phy_rx_table_gain_entry(parameters, index));
+        index += 1;
+    }
+    configure_phy_registers(crate::phy_bb::PhyRegisterInitParameters {
+        parameter_121: parameters.parameter_121,
+        parameter_120: crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT,
+    });
+    configure_phy_bb_agc_register_update();
+    enable_phy_agc();
+}
+
+const fn tsf_latch_mask(interface: u32) -> u32 {
+    if interface == 0 {
+        1
+    } else {
+        2
+    }
+}
+
+const fn join_rx_descriptor_address(low_word: u32, high_word: u32) -> usize {
+    ((low_word & 0x000f_ffff) | (high_word & 0xfff0_0000)) as usize
+}
+
+const fn tx_queue_control_address(queue: u8) -> usize {
+    TX_QUEUE_CONTROL_BASE_ADDRESS.wrapping_sub((queue as usize) * TX_QUEUE_CONTROL_STRIDE)
+}
+
+const fn mac_address_registers(interface: u32) -> (usize, usize) {
+    let offset = (interface as usize) * MAC_ADDRESS_STRIDE;
+    (
+        MAC_ADDRESS_LOW_BASE_ADDRESS + offset,
+        MAC_ADDRESS_HIGH_BASE_ADDRESS + offset,
+    )
+}
+
+const fn encode_mac_address(address: [u8; 6]) -> (u32, u32) {
+    (
+        u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
+        u16::from_le_bytes([address[4], address[5]]) as u32 | MAC_ADDRESS_VALID_BIT,
+    )
+}
+
+const fn mac_rx_frame_policy_address(queue: u32) -> usize {
+    MAC_RX_FRAME_POLICY_BASE_ADDRESS + (queue as usize) * core::mem::size_of::<u32>()
+}
+
+const fn mac_rx_address_policy_address(queue: u32) -> usize {
+    MAC_RX_ADDRESS_POLICY_BASE_ADDRESS + (queue as usize) * MAC_RX_ADDRESS_POLICY_STRIDE
+}
+
+const fn mac_rx_management_policy_address(queue: u32) -> usize {
+    MAC_RX_MANAGEMENT_POLICY_BASE_ADDRESS + (queue as usize) * MAC_RX_MANAGEMENT_POLICY_STRIDE
+}
+
+const fn with_mac_rx_mode(value: u32, mode: u32) -> u32 {
+    if mode <= 1 {
+        value & !MAC_RX_MODE_MASK
+    } else {
+        value | MAC_RX_MODE_MASK
+    }
+}
+
+const fn with_mac_rx_control_policy(value: u32, control: u32) -> u32 {
+    if control <= 1 {
+        value & !MAC_RX_CONTROL_POLICY_BIT
+    } else {
+        value | MAC_RX_CONTROL_POLICY_BIT
+    }
+}
+
+const fn with_mac_rx_control_address_policy(value: u32, control: u32) -> u32 {
+    match control {
+        0 => value & !MAC_RX_CONTROL_ADDRESS_BIT,
+        1 => value | MAC_RX_CONTROL_ADDRESS_BIT,
+        _ => value,
+    }
+}
+
+const fn with_mac_rx_management_policy(value: u32, management: u32) -> u32 {
+    if management == 0 {
+        value & !MAC_RX_MANAGEMENT_POLICY_BIT
+    } else {
+        value | MAC_RX_MANAGEMENT_POLICY_BIT
+    }
+}
+
+const fn with_mac_rx_unique_bssid_policy(value: u32, enabled: u32) -> u32 {
+    if enabled == 0 {
+        value & !MAC_RX_UNIQUE_BSSID_BITS
+    } else {
+        value | MAC_RX_UNIQUE_BSSID_BITS
+    }
+}
+
+const fn without_mac_tx_retention(value: u32) -> u32 {
+    value & !MAC_NO_RETENTION_CLEAR_BITS
+}
+
+const fn with_wifi_mac_regdma_link(value: u32, link: u32) -> u32 {
+    (value & !WIFI_MAC_REGDMA_LINK_MASK) | ((link << 17) & WIFI_MAC_REGDMA_LINK_MASK)
+}
+
+const fn with_tx_cca(value: u32, cca: u32) -> u32 {
+    (value & 0x3fff_ffff) | (cca << 30)
+}
+
+const fn tx_queue_is_valid(value: u32) -> u32 {
+    (value >> 30) & 1
+}
+
+const fn without_tx_queue_valid(value: u32) -> u32 {
+    value & 0xbfff_ffff
+}
+
+const fn without_tx_queue_enable(value: u32) -> u32 {
+    value & 0x3fff_ffff
+}
+
+const fn without_fe_bb_clock_enable(value: u32) -> u32 {
+    value & !0x3
+}
+
+const fn with_bbpll_calibration(value: u32, enable: u32) -> u32 {
+    let value = value & !0x0c;
+    if enable == 0 {
+        value | 0x04
+    } else {
+        value | 0x08
+    }
+}
+
+const fn with_phy_pbus_debug_mode(value: u32) -> u32 {
+    value & !PHY_PBUS_FORCE_MODE_BIT
+}
+
+const fn with_phy_pbus_debug_control(value: u32) -> u32 {
+    value | 1
+}
+
+const fn with_phy_pbus_work_mode(value: u32) -> u32 {
+    value | PHY_PBUS_FORCE_MODE_BIT
+}
+
+const fn with_phy_pbus_work_control(value: u32) -> u32 {
+    value & !1
+}
+
+const fn with_phy_pbus_force_test(value: u32, selector: u8, path: u8, test_value: u16) -> u32 {
+    let command = ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15);
+    (value & 0xfffe_0001) | (command & 0x0001_fffc) | PHY_PBUS_TRANSACTION_BIT
+}
+
+const fn phy_pbus_is_busy(value: u32) -> bool {
+    value & PHY_PBUS_BUSY_BIT != 0
+}
+
+const fn phy_pbus_rx_dco_read_value(value: u32) -> u16 {
+    (value & 0x1ff) as u16
+}
+
+const fn with_phy_tx_clock(value: u32, enabled: bool) -> u32 {
+    (value & !0x0003_0000) | if enabled { 0x0003_0000 } else { 0 }
+}
+
+const fn with_phy_rx_clock(value: u32, enabled: bool) -> u32 {
+    (value & !0x0000_c000) | if enabled { 0x0000_c000 } else { 0 }
+}
+
+const fn without_phy_rx_dco_control_field(value: u32) -> u32 {
+    value & !0x00c0_0000
+}
+
+const fn with_restored_phy_rx_dco_control_field(value: u32, saved_field: u32) -> u32 {
+    without_phy_rx_dco_control_field(value) | (saved_field & 0x00c0_0000)
+}
+
+const fn with_phy_tone_path(value: u32, enable: i32, selector: i32, step: i32) -> u32 {
+    let encoded = (enable as u32).wrapping_shl(18)
+        | ((selector >> 2) as u32)
+        | ((step.wrapping_neg() as u32) & 0xff).wrapping_shl(10);
+    (value & 0xf000_0000) | (encoded & 0x0fff_ffff)
+}
+
+const fn with_phy_tone_path0_selector(value: u32, selector: i32) -> u32 {
+    (value & !0x3) | ((selector as u32) & 0x3)
+}
+
+const fn with_phy_tone_path1_selector(value: u32, selector: i32) -> u32 {
+    (value & !0xc) | (((selector as u32).wrapping_shl(2)) & 0xc)
+}
+
+const fn without_phy_tx_gain_compensation_low_byte(value: u32) -> u32 {
+    value & 0xffff_ff00
+}
+
+const fn with_phy_tx_gain_compensation_byte1(value: u32) -> u32 {
+    (value & 0xffff_00ff) | 0x0000_fa00
+}
+
+const fn with_phy_tx_gain_compensation_byte2(value: u32) -> u32 {
+    value | 0x00ff_0000
+}
+
+const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
+    value & 0x00ff_ffff
+}
+
+const fn with_phy_iq_est_config(value: u32) -> u32 {
+    (value & !(0x3 << 26)) | (1 << 26)
+}
+
+const fn with_phy_iq_est_mode(value: u32) -> u32 {
+    (value & !(0x3 << 19)) | (1 << 20)
+}
+
+const fn with_phy_iq_est_control(value: u32, control: u16) -> u32 {
+    (value & !PHY_IQ_EST_CONTROL_FIELD_MASK)
+        | ((control as u32).wrapping_shl(2) & PHY_IQ_EST_CONTROL_FIELD_MASK)
+}
+
+const fn with_phy_iq_est_enable(value: u32, bit: u32, enabled: bool) -> u32 {
+    if enabled {
+        value | bit
+    } else {
+        value & !bit
+    }
+}
+
+const fn with_phy_pbus_work_mode_pulse_setup(value: u32) -> u32 {
+    (value & 0x00ff_ffff) | 0x3200_0000
+}
+
+const fn with_phy_pbus_work_mode_pulse(value: u32) -> u32 {
+    value | PHY_PBUS_WORK_MODE_PULSE_BIT
+}
+
+const fn without_phy_pbus_work_mode_pulse(value: u32) -> u32 {
+    value & !PHY_PBUS_WORK_MODE_PULSE_BIT
+}
+
+const fn with_phy_i2c_clock_selection_high(value: u32, selection: u32) -> u32 {
+    (value & !0x0000_07c0) | ((selection << 4) & 0x0000_07c0)
+}
+
+const fn with_phy_i2c_clock_selection_low(value: u32, selection: u32) -> u32 {
+    (value & !0x0000_003f) | ((selection >> 1) & 0x0000_003f)
+}
+
+const fn without_phy_fe_txrx_reset(value: u32) -> u32 {
+    value & !0x0600_0000
+}
+
+const fn with_phy_fe_txrx_reset(value: u32) -> u32 {
+    value | 0x0600_0000
+}
+
+const fn with_phy_adc_rate_high(value: u32, rate: u32) -> u32 {
+    (value & !0x0000_0002) | ((rate << 1) & 0x0000_0002)
+}
+
+const fn with_phy_adc_rate_low(value: u32, rate: u32) -> u32 {
+    (value & !0x0000_0001) | (rate & 0x0000_0001)
+}
+
+const fn with_phy_i2c_master_register_mode(value: u32) -> u32 {
+    (value & !0x0000_0600) | 0x0000_0400
+}
+
+const fn with_phy_i2c_master_register_enable(value: u32) -> u32 {
+    value | 0x0000_0040
+}
+
+const fn with_phy_power_detector_low_field(value: u32) -> u32 {
+    (value & 0xffff_f00f) | 0x0000_0500
+}
+
+const fn with_phy_power_detector_high_field(value: u32) -> u32 {
+    (value & 0xff8f_ffff) | 0x0020_0000
+}
+
+const fn with_phy_power_detector_aux_mode(value: u32) -> u32 {
+    (value & !0x0000_0007) | 0x0000_0004
+}
+
+const fn with_register_bits(value: u32, bits: u32) -> u32 {
+    value | bits
+}
+
+const fn with_phy_front_end_update_first(value: u32) -> u32 {
+    with_register_bits(value, 0x0200_0000)
+}
+
+const fn with_phy_front_end_update_second(value: u32) -> u32 {
+    with_register_bits(value, 0x0400_0000)
+}
+
+const fn with_phy_front_end_adc_update(value: u32) -> u32 {
+    with_register_bits(value, 0x0000_0003)
+}
+
+const fn without_phy_frequency_reset_fields(value: u32) -> u32 {
+    value & 0x7ff7_ffff
+}
+
+const fn with_phy_frequency_module_enabled(value: u32) -> u32 {
+    value | 0x4000_0000
+}
+
+const fn with_phy_frequency_register_mode(value: u32, parameter_override: bool) -> u32 {
+    let (first, second) = if parameter_override {
+        (0_u32, 2_u32)
+    } else {
+        (2_u32, 4_u32)
+    };
+    (value & 0xc03f_ffff) | ((((second << 4) | first) << 22) & 0x3fc0_0000)
+}
+
+const fn with_phy_frequency_memory_address(value: u32, address: u16) -> u32 {
+    (value & 0xfff8_00ff) | ((address as u32 & 0x7ff) << 8)
+}
+
+const fn with_phy_frequency_i2c_number_control(value: u32, control_field: u32) -> u32 {
+    (value & 0xfffc_00ff) | (control_field & 0x0003_ff00)
+}
+
+const fn without_register_bits(value: u32, bits: u32) -> u32 {
+    value & !bits
+}
+
+const fn with_register_field(value: u32, mask: u32, field: u32) -> u32 {
+    (value & !mask) | (field & mask)
+}
+
+const fn with_phy_agc_control(value: u32) -> u32 {
+    value | 0x0400_0000
+}
+
+const fn with_phy_agc_window(value: u32) -> u32 {
+    (value & !0x1ff) | 0x1c0
+}
+
+const fn with_phy_rx_control_low(value: u32) -> u32 {
+    (value & !0x7f) | 0x17
+}
+
+const fn with_phy_rx_control_high(value: u32) -> u32 {
+    (value & 0xffff_c07f) | 0x0b80
+}
+
+const fn with_phy_ftm_enable(value: u32, enable: u32) -> u32 {
+    (value & !1) | (enable & 1)
+}
+
+const fn with_phy_rx_comp_low(value: u32) -> u32 {
+    (value & 0xffff_ff00) | 0xed
+}
+
+const fn with_phy_rx_comp_high(value: u32) -> u32 {
+    (value & 0x00ff_ffff) | 0xed00_0000
+}
+
+const fn tx_baseband_gain_index(gain: u16) -> usize {
+    match gain {
+        0x0080 => 1,
+        0x0100 => 2,
+        0x0020 => 3,
+        0x00a0 => 4,
+        _ => 0,
+    }
+}
+
+const fn encode_phy_gain_memory_words(
+    gain_72: u16,
+    gain_64: u16,
+    gain_32: u8,
+    seed_0: u16,
+    seed_1: u16,
+    seed_2: u16,
+    seed_3: u16,
+    config: u16,
+) -> (u32, u32, u32) {
+    let gain_72 = gain_72 as u32;
+    let gain_64 = gain_64 as u32;
+    let word_0 = ((config & 0x1fff) as u32)
+        | ((seed_2 as u32) << 22)
+        | ((seed_1 as u32) << 31)
+        | ((seed_3 as u32) << 13);
+    let word_1 = ((seed_0 as u32) << 8)
+        | ((seed_1 as u32) >> 1)
+        | (((gain_64 >> 6) & 0xff) << 17)
+        | ((gain_72 & 7) << 31)
+        | ((gain_64 & 0x3f) << 20)
+        | 0x1000_0000;
+    let word_2 =
+        ((gain_72 & 7) >> 1) | ((gain_72 >> 1) & 0x1c) | ((gain_32 as u32) << 15) | 0x0000_7f80;
+    (word_0, word_1, word_2)
+}
+
+const fn with_phy_gain_memory_index(value: u32, index: u8) -> u32 {
+    (value & 0xfff0_0000) | ((index as u32) << 11) | 0x0008_0000
+}
+
+const fn with_phy_baseband_watchdog(value: u32) -> u32 {
+    (value & 0xbfff_0000) | 0x4000_00aa
+}
+
+const fn with_phy_antenna_control0(value: u32) -> u32 {
+    value & 0xffff_e800
+}
+
+const fn with_phy_antenna_control1(value: u32) -> u32 {
+    (value & 0xfffc_07ff) | 0x0001_a000
+}
+
+const fn with_phy_antenna_control2(value: u32) -> u32 {
+    (value & 0x00ff_00ff) | 0x1e00_1e00
+}
+
+/// Read one of the two MAC TSF domains through the hardware latch.
+///
+/// Reference: `esp32s31_rev0_rom.elf`, SHA-256
+/// `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+/// `hal_get_tsf_time` at `0x2f82b9f8`, size `0x3e`.
+///
+/// The meaning of the three registers is inferred from the complete ROM body:
+/// setting control bit zero or one latches the selected domain, the ROM reads
+/// high then low, and clearing the same bit releases the latch. No polling,
+/// delay, call, allocation, or ROM-owned RAM is involved.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_get_tsf_time(interface: u32) -> u64 {
+    let mask = tsf_latch_mask(interface);
+    let control = TSF_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(control.read_volatile() | mask);
+
+    // Preserve the ROM read order while returning the standard RV32 u64 ABI:
+    // low in a0 and high in a1.
+    let high = (TSF_HIGH_ADDRESS as *const u32).read_volatile();
+    let low = (TSF_LOW_ADDRESS as *const u32).read_volatile();
+
+    control.write_volatile(control.read_volatile() & !mask);
+    (u64::from(high) << 32) | u64::from(low)
+}
+
+/// Read the MAC's last completed RX descriptor address.
+///
+/// Reference: `esp32s31_rev0_rom.elf`, SHA-256
+/// `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+/// `hal_mac_rx_get_last_dscr` at `0x2f8386a2`, size `0x1e`.
+///
+/// The complete ROM body reads the low-address register first, keeps its low
+/// 20 bits, reads the high-address register, keeps its high 12 bits, and joins
+/// the two fields. It has no call, cycle, wait, allocation, or ROM-owned RAM
+/// access. Preserve that read order because the hardware publication contract
+/// beyond the recovered two-register snapshot is not yet known.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_rx_get_last_dscr() -> *mut u8 {
+    let low_word = (RX_DESCRIPTOR_LAST_LOW_ADDRESS as *const u32).read_volatile();
+    let high_word = (RX_DESCRIPTOR_LAST_HIGH_ADDRESS as *const u32).read_volatile();
+    join_rx_descriptor_address(low_word, high_word) as *mut u8
+}
+
+/// Program one of the four recovered MAC-address register pairs.
+///
+/// References: pinned `libpp.a[if_hwctrl.o]::ic_set_mac`, an exact tail call,
+/// and `libpp.a[hal_mac.o]::hal_mac_set_addr`, size `0x48`. The complete leaf
+/// packs the six input bytes little-endian, writes the low four bytes first,
+/// writes the high two bytes, then sets bit 16 in the high register through a
+/// fresh read/modify/write. No C/ROM-owned state, call, loop, wait, delay or
+/// allocation remains. The meaning of high-register bit 16 is inferred only
+/// as address-valid from that transaction.
+///
+/// The archive callers are interface setup paths, not radio interrupt
+/// handlers. This leaf therefore remains flash-mapped so it does not consume
+/// the interrupt-only SRAM reserve.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+pub unsafe extern "C" fn wifi_strict_ic_set_mac(interface: u32, address: *const u8) {
+    if interface >= MAC_INTERFACE_COUNT || address.is_null() {
+        core::arch::asm!("ebreak", options(noreturn));
+    }
+
+    let bytes = [
+        address.read(),
+        address.add(1).read(),
+        address.add(2).read(),
+        address.add(3).read(),
+        address.add(4).read(),
+        address.add(5).read(),
+    ];
+    let (low_word, high_word) = encode_mac_address(bytes);
+    let (low_address, high_address) = mac_address_registers(interface);
+    (low_address as *mut u32).write_volatile(low_word);
+
+    let high = high_address as *mut u32;
+    high.write_volatile(high_word & !MAC_ADDRESS_VALID_BIT);
+    high.write_volatile(high.read_volatile() | MAC_ADDRESS_VALID_BIT);
+}
+
+/// Program the recovered RX frame/control/management policy for one queue.
+///
+/// References: pinned `libpp.a[if_hwctrl.o]::ic_set_rx_policy`, size `0x14`,
+/// and `libpp.a[hal_mac.o]::hal_mac_rx_set_policy`, size `0xd2`.
+/// The wrapper accepts queues 0..=2 and returns one after the finite MMIO
+/// transaction. Register field names describe only the vendor arguments and
+/// exact masks; broader MAC semantics are not assumed.
+///
+/// The evidenced callers configure scan/supplicant state from the radio
+/// executor, not an interrupt. Keep this leaf flash-mapped.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+pub unsafe extern "C" fn wifi_strict_ic_set_rx_policy(
+    queue: u32,
+    mode: u32,
+    control: u32,
+    management: u32,
+) -> u32 {
+    if queue >= MAC_RX_POLICY_QUEUE_COUNT {
+        return 1;
+    }
+
+    let frame_policy = mac_rx_frame_policy_address(queue) as *mut u32;
+    frame_policy.write_volatile(with_mac_rx_mode(frame_policy.read_volatile(), mode));
+
+    let address_policy = mac_rx_address_policy_address(queue) as *mut u32;
+    if queue == 1 {
+        // The pinned body sets bit 30 only for queue one before applying the
+        // shared control-address policy below.
+        address_policy.write_volatile(address_policy.read_volatile() | (1 << 30));
+    } else {
+        address_policy.write_volatile(address_policy.read_volatile() & !(1 << 30));
+    }
+
+    frame_policy.write_volatile(with_mac_rx_control_policy(
+        frame_policy.read_volatile(),
+        control,
+    ));
+    if control <= 1 {
+        address_policy.write_volatile(with_mac_rx_control_address_policy(
+            address_policy.read_volatile(),
+            control,
+        ));
+    }
+
+    let management_policy = mac_rx_management_policy_address(queue) as *mut u32;
+    management_policy.write_volatile(with_mac_rx_management_policy(
+        management_policy.read_volatile(),
+        management,
+    ));
+    1
+}
+
+/// Enable or disable the recovered unique-BSSID checks for one RX queue.
+///
+/// References: pinned
+/// `libpp.a[if_hwctrl.o]::ic_set_rx_policy_ubssid_check`, size `0x1e`, and
+/// `libpp.a[hal_mac.o]::hal_mac_set_rxq_policy`, size `0x2c`. The vendor
+/// wrapper admits queues 0..=3, returns zero outside that range, and otherwise
+/// returns one after two ordered read/modify/write operations.
+///
+/// The evidenced caller is the same non-interrupt policy setup path, so this
+/// leaf is flash-mapped.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+pub unsafe extern "C" fn wifi_strict_ic_set_rx_policy_ubssid_check(
+    queue: u32,
+    enabled: u32,
+) -> u32 {
+    if queue >= MAC_INTERFACE_COUNT {
+        return 0;
+    }
+
+    let policy = mac_rx_frame_policy_address(queue) as *mut u32;
+    if enabled == 0 {
+        policy.write_volatile(policy.read_volatile() & !(1 << 8));
+        policy.write_volatile(policy.read_volatile() & !(1 << 1));
+    } else {
+        policy.write_volatile(policy.read_volatile() | (1 << 8));
+        policy.write_volatile(policy.read_volatile() | (1 << 1));
+    }
+    1
+}
+
+/// Select the two-bit MAC clear-channel-assessment mode.
+///
+/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_tx_set_cca`, size `0x18`.
+/// The complete body replaces bits 31:30 of `0x2010_4c5c` and returns zero.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_tx_set_cca(cca: u32) -> u32 {
+    let control = TX_CCA_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_tx_cca(control.read_volatile(), cca));
+    0
+}
+
+/// Return the recovered TX queue valid bit.
+///
+/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_is_txq_valid`, size `0x14`.
+/// Queue zero starts at `0x2010_4d70`; successive queue registers descend by
+/// 16 bytes. The result is register bit 30 normalized to zero or one.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_is_txq_valid(queue: u8) -> u32 {
+    let control = tx_queue_control_address(queue) as *const u32;
+    tx_queue_is_valid(control.read_volatile())
+}
+
+/// Clear only the recovered TX queue valid bit.
+///
+/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_set_txq_invalid`, size
+/// `0x1c`. The body is one finite read/modify/write of register bit 30.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_set_txq_invalid(queue: u8) {
+    let control = tx_queue_control_address(queue) as *mut u32;
+    control.write_volatile(without_tx_queue_valid(control.read_volatile()));
+}
+
+/// Clear both recovered TX queue control bits.
+///
+/// Reference: pinned `libpp.a[hal_mac_tx.o]::hal_mac_txq_disable`, size
+/// `0x18`. The body is one finite read/modify/write of bits 31:30.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_txq_disable(queue: u8) {
+    let control = tx_queue_control_address(queue) as *mut u32;
+    control.write_volatile(without_tx_queue_enable(control.read_volatile()));
+}
+
+/// Preserve the ESP32-S31 CSI bandwidth hook's explicit no-op contract.
+///
+/// The complete pinned `libpp.a[hal_mac_ctl.o]::hal_mac_set_csi_cbw` body is
+/// one two-byte `ret`; it ignores its argument and owns no state.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_hal_mac_set_csi_cbw(_cbw: u32) {}
+
+/// Restart the MAC for the strict `WIFI_PS_NONE` profile.
+///
+/// The complete pinned chain is
+/// `libpp.a[if_hwctrl.o]::ic_mac_init` (40 bytes),
+/// `libpp.a[hal_mac.o]::hal_mac_init` (48 bytes), and
+/// `libpp.a[hal_pwr.o]::pwr_hal_select_wifimac_regdma_link` (32 bytes).
+/// With power save disabled, `pm_get_tx_blocks_retention_mask` returns all
+/// ones, so the first read/modify/write clears `0x00ff_1000` at
+/// `0x2010_4cac`. The second selects evidenced REGDMA link four in bits
+/// 20:17 of `0x2010_d83c`.
+///
+/// The vendor tail also writes one to
+/// `g_wifimac_regdma_link_selected`. That byte is a cache for the vendor PM
+/// getters; every strict PM hook is disabled under the read-back-verified
+/// `WIFI_PS_NONE` invariant, so publishing it would retain hidden C state
+/// without a strict consumer.
+///
+/// This finite leaf contains no call, loop, wait, allocation, or non-MMIO
+/// state. The surrounding Rust channel state machine owns serialization.
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+pub(crate) unsafe fn restart_mac_without_power_save() {
+    let mac_control = MAC_CONTROL_ADDRESS as *mut u32;
+    mac_control.write_volatile(without_mac_tx_retention(mac_control.read_volatile()));
+
+    let regdma_control = WIFI_MAC_REGDMA_CONTROL_ADDRESS as *mut u32;
+    regdma_control.write_volatile(with_wifi_mac_regdma_link(
+        regdma_control.read_volatile(),
+        WIFI_MAC_ACTIVE_REGDMA_LINK,
+    ));
+}
+
+/// Program the two recovered PHY RX compensation fields.
+///
+/// Reference: pinned `libphy.a[phy_reg.o]::phy_set_rx_comp_new`, size `0x28`.
+/// The complete body replaces bits 7:0 of `0x2010_702c` and bits 31:24 of
+/// `0x2010_70a0` with `0xed`, in that order. The field meaning is not yet
+/// known; this function intentionally documents only the evidenced register
+/// transaction. It contains no call, loop, wait, allocation, or data-symbol
+/// access.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_phy_set_rx_comp_new() {
+    let low = PHY_RX_COMP_LOW_ADDRESS as *mut u32;
+    low.write_volatile(with_phy_rx_comp_low(low.read_volatile()));
+
+    let high = PHY_RX_COMP_HIGH_ADDRESS as *mut u32;
+    high.write_volatile(with_phy_rx_comp_high(high.read_volatile()));
+}
+
+/// Pulse the recovered PHY DC-memory clear control bit.
+///
+/// Reference: pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`.
+/// The complete body sets then clears bit 20 of `0x2010_703c`, performing a
+/// fresh volatile read before each write. The exact hardware side effect is
+/// not yet documented beyond the vendor symbol name and this transaction.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_phy_dc_mem_clr() {
+    let control = PHY_DC_MEMORY_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(control.read_volatile() | PHY_DC_MEMORY_CLEAR_BIT);
+    control.write_volatile(control.read_volatile() & !PHY_DC_MEMORY_CLEAR_BIT);
+}
+
+/// Close the recovered front-end and baseband clock gates.
+///
+/// Reference: the complete pinned
+/// `libphy.a[phy_init.o]::phy_close_fe_bb_clk` body, size `0x20`. It writes
+/// zero to `0x2010_0400`, clears bits 1:0 of `0x2010_0800`, then writes zero
+/// to `0x2010_7c80`. The field names are retained from the vendor symbol; no
+/// broader register meaning is assumed. There is no call, loop, wait,
+/// allocation, or non-MMIO state access.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_phy_close_fe_bb_clk() {
+    (PHY_FE_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0);
+
+    let control = PHY_FE_BB_CLOCK_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(without_fe_bb_clock_enable(control.read_volatile()));
+
+    (PHY_BB_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0);
+}
+
+/// Open the recovered front-end and baseband clock gates.
+///
+/// Reference: complete rev0 ROM `phy_open_fe_bb_clk` body at `0x2f82_3ec0`,
+/// size `0x38`. The four writes retain their exact order and the two
+/// read/modify/write operations use fresh volatile reads. Unknown MODEM_LPCON
+/// bit meanings are not inferred beyond the ROM function name.
+///
+/// This cold-init leaf has no call, branch, loop, wait, allocation, callback,
+/// or non-MMIO state access.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
+    (PHY_FE_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0x1e7);
+
+    let control = PHY_FE_BB_CLOCK_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(control.read_volatile() | 0x3);
+
+    (PHY_BB_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(u32::MAX);
+
+    let modem_clock = MODEM_LPCON_CLOCK_CONF_ADDRESS as *mut u32;
+    modem_clock.write_volatile(modem_clock.read_volatile() | 0x0040_000f);
+}
+
+/// Select the recovered baseband-PLL calibration control state.
+///
+/// Reference: complete rev0 ROM `phy_bbpll_cal` body at `0x2f82_7dbc`, size
+/// `0x1c`. Both branches clear bits 3:2 of `0x2010_f818`; zero selects bit 2
+/// and every nonzero argument selects bit 3. The exact field meaning remains
+/// opaque until register documentation or differential evidence names it.
+///
+/// This leaf is used by both cold initialization and strict channel changes,
+/// so it remains in internal SRAM and contains no call, loop, wait,
+/// allocation, callback, or hidden state access.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_phy_bbpll_cal(enable: u32) {
+    let control = PHY_BBPLL_CAL_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_bbpll_calibration(control.read_volatile(), enable));
+}
+
+/// Enter the exact debug-mode prefix of rev0 ROM `phy_pbus_clear_reg`.
+///
+/// The complete `phy_pbus_debugmode -> phy_pbus_force_mode(1)` path clears
+/// bit 26 at `0x2010_088c`, then sets bit zero at `0x2010_0884`. It contains
+/// no delay or readiness loop.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_pbus_debug_mode() {
+    let mode = PHY_PBUS_MODE_ADDRESS as *mut u32;
+    mode.write_volatile(with_phy_pbus_debug_mode(mode.read_volatile()));
+
+    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_pbus_debug_control(control.read_volatile()));
+}
+
+/// Publish one PBus force-test command after one fail-fast readiness sample.
+///
+/// The ROM leaf publishes the same encoded command and then busy-waits on bit
+/// 31 at `0x2010_0890`. Rust rejects an already busy owner before publication
+/// and leaves all post-command observation to
+/// [`try_finish_phy_pbus_force_test`].
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_start_phy_pbus_force_test(
+    transaction: crate::phy_pbus::PhyPbusForceTest,
+) -> Result<(), PhyPbusError> {
+    if phy_pbus_is_busy((PHY_PBUS_STATUS_ADDRESS as *const u32).read_volatile()) {
+        return Err(PhyPbusError::Busy);
+    }
+
+    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_pbus_force_test(
+        control.read_volatile(),
+        transaction.selector(),
+        transaction.path(),
+        transaction.value(),
+    ));
+    Ok(())
+}
+
+/// Observe one PBus command once after an external readiness/timer edge.
+///
+/// `Busy` is an incomplete or timeout result, never permission to spin or
+/// self-wake. A completed command clears the transaction bit exactly as the
+/// ROM leaf does after its loop.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_finish_phy_pbus_force_test() -> Result<(), PhyPbusError> {
+    if phy_pbus_is_busy((PHY_PBUS_STATUS_ADDRESS as *const u32).read_volatile()) {
+        return Err(PhyPbusError::Busy);
+    }
+
+    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(control.read_volatile() & !PHY_PBUS_TRANSACTION_BIT);
+    Ok(())
+}
+
+/// Read the exact PBus field consumed by RX-DCO calibration.
+///
+/// The rev0 ROM chain
+/// `phy_pbus_rd(1, 2) -> phy_pbus_rd_addr/phy_pbus_rd_shift` resolves to one
+/// volatile read at `0x2010_1894`, shift zero, masked to nine bits. The jump
+/// tables are present in `esp32s31_rev0_rom.elf` at `0x2f84_d910` and
+/// `0x2f84_d924`. This Rust leaf has no call, branch, loop, wait, allocation,
+/// callback, or non-MMIO state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_pbus_rx_dco_value() -> u16 {
+    phy_pbus_rx_dco_read_value((PHY_PBUS_RX_DCO_READ_ADDRESS as *const u32).read_volatile())
+}
+
+/// Enter PBus work mode and return the one sampled settle-condition bit.
+///
+/// The returned boolean selects the ROM's optional 1 us / pulse / 2 us tail;
+/// this leaf itself never delays or samples twice.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_pbus_work_mode() -> bool {
+    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_pbus_work_control(control.read_volatile()));
+
+    let mode = PHY_PBUS_MODE_ADDRESS as *mut u32;
+    mode.write_volatile(with_phy_pbus_work_mode(mode.read_volatile()));
+
+    (PHY_PBUS_SETTLE_CONDITION_ADDRESS as *const u32).read_volatile()
+        & PHY_PBUS_SETTLE_CONDITION_BIT
+        != 0
+}
+
+/// Apply the finite work-mode pulse setup after the async 1 us timer edge.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_pbus_work_mode_pulse() {
+    let pulse = PHY_PBUS_WORK_MODE_PULSE_ADDRESS as *mut u32;
+    pulse.write_volatile(with_phy_pbus_work_mode_pulse_setup(pulse.read_volatile()));
+    pulse.write_volatile(with_phy_pbus_work_mode_pulse(pulse.read_volatile()));
+}
+
+/// Clear the work-mode pulse bit after the async 2 us timer edge.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn clear_phy_pbus_work_mode_pulse() {
+    let pulse = PHY_PBUS_WORK_MODE_PULSE_ADDRESS as *mut u32;
+    pulse.write_volatile(without_phy_pbus_work_mode_pulse(pulse.read_volatile()));
+}
+
+/// Publish one entry of the recovered `phy_write_pbus_mem` sequence.
+///
+/// The optional group-header update is one RMW, followed by one data write
+/// and one address-command RMW. The caller supplies a transition-issued
+/// identity token; this leaf has no loop, readiness check, delay, callback,
+/// allocation, or access to ROM-owned RAM.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn program_phy_pbus_memory_entry(
+    entry: crate::phy_pbus_memory::PhyPbusMemoryEntry,
+) {
+    if let Some(field) = entry.control() {
+        let control = field.address() as *mut u32;
+        control.write_volatile(
+            (control.read_volatile() & !field.mask()) | (field.value() & field.mask()),
+        );
+    }
+
+    (crate::phy_pbus_memory::PHY_PBUS_MEMORY_DATA_ADDRESS as *mut u32)
+        .write_volatile(entry.data());
+    let command = crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_ADDRESS as *mut u32;
+    command.write_volatile(
+        (command.read_volatile()
+            & crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_PRESERVE_MASK)
+            | (entry.command_bits() & crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_MASK),
+    );
+}
+
+/// Capture the six words formerly stored through ROM's global `phy_param`.
+///
+/// This is a fixed six-read snapshot with no readiness loop. Ownership and
+/// commit into `PhyColdState` remain outside the MMIO leaf.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn capture_phy_pbus_memory_registers() -> [u32; 6] {
+    [
+        (0x2010_0854 as *const u32).read_volatile(),
+        (0x2010_0858 as *const u32).read_volatile(),
+        (0x2010_085c as *const u32).read_volatile(),
+        (0x2010_0860 as *const u32).read_volatile(),
+        (0x2010_0864 as *const u32).read_volatile(),
+        (0x2010_0868 as *const u32).read_volatile(),
+    ]
+}
+
+/// Sample the temperature-sensor code exactly once.
+///
+/// Readiness and PHY-I2C range selection belong to the caller-driven
+/// temperature transition. This leaf has no loop, delay, or hidden state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_temperature_code() -> u32 {
+    (crate::phy_temperature::PHY_TEMPERATURE_CODE_ADDRESS as *const u32).read_volatile()
+        & crate::phy_temperature::PHY_TEMPERATURE_CODE_MASK
+}
+
+/// Apply complete ROM `phy_nrx_freq_set` for one nonzero D-code frequency.
+///
+/// The two source reads are retained because the high byte is hardware state.
+/// The caller only issues the four recovered nonzero frequency codes.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_nrx_frequency(frequency_code: u8) {
+    debug_assert!(frequency_code != 0);
+    let control = crate::phy_dcode::PHY_NRX_FREQUENCY_CONTROL_ADDRESS as *mut u32;
+    let shift = control.read_volatile() >> 24;
+    let numerator = 0x50_u32.wrapping_shl(shift);
+    let previous = control.read_volatile();
+    let quotient = numerator / u32::from(frequency_code);
+    control.write_volatile((previous & 0xff00_0000) | (quotient & 0x000f_ffff));
+}
+
+/// Sample the free-running counter used by the ROM SDM-stability deadline.
+///
+/// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f82_3e76` samples
+/// `0x2010_d800` before and after each independently completed PHY-I2C read.
+/// This leaf performs exactly one volatile read; deadline ownership and
+/// wraparound arithmetic stay in the Rust cold-init state machine.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_sdm_cycle_counter() -> u32 {
+    (PHY_SDM_CYCLE_COUNTER_ADDRESS as *const u32).read_volatile()
+}
+
+/// Select the two recovered TX-clock enable bits.
+///
+/// Reference: complete rev0 ROM `phy_set_txclk_en` at `0x2f82_7cd2`, size
+/// `0x24`. It performs one read/modify/write of bits 17:16 at
+/// `0x2010_0890`. There is no call, loop, wait, allocation, callback, or
+/// ROM-owned data access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_tx_clock(enabled: bool) {
+    let control = PHY_CLOCK_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_tx_clock(control.read_volatile(), enabled));
+}
+
+/// Select the two recovered RX-clock enable bits.
+///
+/// Reference: complete rev0 ROM `phy_set_rxclk_en` at `0x2f82_7cf6`, size
+/// `0x20`. It performs one read/modify/write of bits 15:14 at
+/// `0x2010_0890`. There is no call, loop, wait, allocation, callback, or
+/// ROM-owned data access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_rx_clock(enabled: bool) {
+    let control = PHY_CLOCK_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_rx_clock(control.read_volatile(), enabled));
+}
+
+/// Program the complete crystal-duty calibration tone without `g_phyFuns`.
+///
+/// Primary reference: pinned
+/// `libphy.a[phy_reg.o]::phy_start_tx_tone_step_new`, size `0xc2`, together
+/// with its `g_phyFuns + 0x30` target
+/// `phy_txgain_comp_pacfg_new`, size `0x54`.
+///
+/// The calibration caller supplies only the three nonzero-capable arguments;
+/// the second path is zero in both evidenced calls. `enabled=true` reproduces
+/// `(1, 0x80, 0, 0, 0, 0)`, while `enabled=false` reproduces
+/// `(0, 0x80, 0x28, 0, 0, 0)`. Every fresh volatile read and intermediate
+/// write is retained because the registers are hardware state. There is no
+/// callback, loop, wait, allocation, or software-global access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_calibration_tone(enabled: bool, selector: u8, step: u8) {
+    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
+    let compensation_aux = PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS as *mut u32;
+
+    // Exact `configure_tx_gain_compensation(0)` callback body.
+    compensation.write_volatile(0);
+    compensation_aux.write_volatile(0);
+
+    let selectors = PHY_TONE_SELECTOR_CONTROL_ADDRESS as *mut u32;
+    selectors.write_volatile(with_phy_tone_path0_selector(
+        selectors.read_volatile(),
+        i32::from(selector),
+    ));
+    selectors.write_volatile(with_phy_tone_path1_selector(selectors.read_volatile(), 0));
+
+    let path0 = PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32;
+    path0.write_volatile(with_phy_tone_path(
+        path0.read_volatile(),
+        enabled as i32,
+        i32::from(selector),
+        i32::from(step),
+    ));
+
+    let path1 = PHY_TONE_PATH1_CONTROL_ADDRESS as *mut u32;
+    path1.write_volatile(with_phy_tone_path(path1.read_volatile(), 0, 0, 0));
+
+    // Exact `configure_tx_gain_compensation(1)` callback body. Preserve the
+    // four writes rather than collapsing their final value.
+    compensation.write_volatile(without_phy_tx_gain_compensation_low_byte(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(with_phy_tx_gain_compensation_byte1(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(with_phy_tx_gain_compensation_byte2(
+        compensation.read_volatile(),
+    ));
+    compensation.write_volatile(without_phy_tx_gain_compensation_high_byte(
+        compensation.read_volatile(),
+    ));
+}
+
+/// Save and clear bits 23:22 around crystal-duty RX-DCO calibration.
+///
+/// Reference: pinned `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal` offsets
+/// `0x3c..0xfc`. The returned value contains only the two owned field bits;
+/// the leaf performs one finite read/modify/write and owns no software state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn mask_phy_rx_dco_control_field() -> u32 {
+    let control = PHY_RX_DCO_CONTROL_ADDRESS as *mut u32;
+    let previous = control.read_volatile();
+    control.write_volatile(without_phy_rx_dco_control_field(previous));
+    previous & 0x00c0_0000
+}
+
+/// Restore the saved bits 23:22 without replacing concurrently unrelated
+/// register fields.
+///
+/// Reference: pinned `phy_xtal_duty_cal` offsets `0x114..0x126`. There is no
+/// loop, wait, allocation, callback, or mutable software state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn restore_phy_rx_dco_control_field(saved_field: u32) {
+    let control = PHY_RX_DCO_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_restored_phy_rx_dco_control_field(
+        control.read_volatile(),
+        saved_field,
+    ));
+}
+
+/// Apply the finite register prefix of rev0 ROM `phy_iq_est_enable`.
+///
+/// Reference: `esp32s31_rev0_rom.elf` at `0x2f82_89d4`. The ROM function
+/// performs these three fresh-read transforms before setting either enable
+/// bit. Its write to `phy_param_rom + 0x1ac` is intentionally absent: the
+/// corresponding diagnostic counter is owned by `PhyDcIqEstimateTransition`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_dc_iq_estimator(control_field: u16) {
+    let config = PHY_IQ_EST_CONFIG_ADDRESS as *mut u32;
+    config.write_volatile(with_phy_iq_est_config(config.read_volatile()));
+
+    let control = PHY_IQ_EST_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_iq_est_mode(control.read_volatile()));
+    control.write_volatile(with_phy_iq_est_control(
+        control.read_volatile(),
+        control_field,
+    ));
+}
+
+/// Set or clear exactly one DC/IQ estimator enable bit.
+///
+/// The caller owns ordering and the asynchronous one-microsecond intervals.
+/// This leaf is one finite read/modify/write with no wait or hidden state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn set_phy_dc_iq_estimator_enable(
+    phase: crate::phy_dc_iq::PhyDcIqEnablePhase,
+    enabled: bool,
+) {
+    let bit = match phase {
+        crate::phy_dc_iq::PhyDcIqEnablePhase::Start => PHY_IQ_EST_START_BIT,
+        crate::phy_dc_iq::PhyDcIqEnablePhase::Measurement => PHY_IQ_EST_MEASUREMENT_BIT,
+    };
+    let control = PHY_IQ_EST_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_iq_est_enable(
+        control.read_volatile(),
+        bit,
+        enabled,
+    ));
+}
+
+/// Sample the estimator-ready and diagnostic-activity fields exactly once.
+///
+/// A false result is only an observation; this leaf never loops, delays, or
+/// requests another sample.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn sample_phy_dc_iq_readiness() -> crate::phy_dc_iq::PhyDcIqReadinessSnapshot {
+    crate::phy_dc_iq::PhyDcIqReadinessSnapshot {
+        ready: (PHY_IQ_EST_READY_ADDRESS as *const u32).read_volatile() & PHY_IQ_EST_READY_BIT != 0,
+        activity: (PHY_IQ_EST_ACTIVITY_ADDRESS as *const u32).read_volatile()
+            & PHY_IQ_EST_ACTIVITY_MASK
+            != 0,
+    }
+}
+
+/// Read the three signed DC/IQ accumulator words exactly once each.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_dc_iq_accumulators() -> crate::phy_dc_iq::PhyDcIqAccumulatorSnapshot {
+    crate::phy_dc_iq::PhyDcIqAccumulatorSnapshot {
+        i: (PHY_IQ_EST_I_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
+        q: (PHY_IQ_EST_Q_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
+        power: (PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
+    }
+}
+
+/// Read the four signed accumulator words consumed by `phy_get_rx_sig_pwr`.
+///
+/// Reference: complete rev0 ROM body at `0x2f82_9ea2`, offsets
+/// `0x2c..0x4a`. Arithmetic remains in the Rust transition; this leaf is four
+/// ordered volatile reads with no loop, wait, callback, or software state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_signal_power_accumulators(
+) -> crate::phy_signal_power::PhySignalPowerAccumulatorSnapshot {
+    crate::phy_signal_power::PhySignalPowerAccumulatorSnapshot {
+        sum_i: (PHY_SIGNAL_POWER_SUM_I_ADDRESS as *const i32).read_volatile(),
+        difference_i: (PHY_SIGNAL_POWER_DIFFERENCE_I_ADDRESS as *const i32).read_volatile(),
+        difference_q: (PHY_SIGNAL_POWER_DIFFERENCE_Q_ADDRESS as *const i32).read_volatile(),
+        sum_q: (PHY_SIGNAL_POWER_SUM_Q_ADDRESS as *const i32).read_volatile(),
+    }
+}
+
+/// Apply the complete rev0 ROM `phy_i2c_clk_sel` register transform.
+///
+/// The pinned body at `0x2f82_9f1c`, size `0x68`, updates the high field and
+/// then the low field separately in each of three consecutive registers.
+/// Keeping the six writes preserves the observed intermediate hardware
+/// states; this leaf contains no wait, branch, call, or mutable software
+/// state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_i2c_clock_selection(selection: u32) {
+    unsafe fn configure_register(address: usize, selection: u32) {
+        let register = address as *mut u32;
+        register.write_volatile(with_phy_i2c_clock_selection_high(
+            register.read_volatile(),
+            selection,
+        ));
+        register.write_volatile(with_phy_i2c_clock_selection_low(
+            register.read_volatile(),
+            selection,
+        ));
+    }
+
+    configure_register(PHY_I2C_CLOCK_SELECTION_0_ADDRESS, selection);
+    configure_register(PHY_I2C_CLOCK_SELECTION_1_ADDRESS, selection);
+    configure_register(PHY_I2C_CLOCK_SELECTION_2_ADDRESS, selection);
+}
+
+/// Apply the complete rev0 ROM `phy_fe_txrx_reset` pulse.
+///
+/// The pinned body at `0x2f82_788c`, size `0x24`, ignores its argument,
+/// clears bits 25 and 26 at `0x2010_0440`, then sets both bits. There is no
+/// delay or status observation between the two writes.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_fe_txrx_reset() {
+    let register = PHY_FE_TXRX_RESET_ADDRESS as *mut u32;
+    register.write_volatile(without_phy_fe_txrx_reset(register.read_volatile()));
+    register.write_volatile(with_phy_fe_txrx_reset(register.read_volatile()));
+}
+
+/// Apply the finite MMIO suffix of rev0 ROM `phy_adc_rate_set`.
+///
+/// The complete parent action performs its masked PHY-I2C transaction first.
+/// This leaf preserves the following two fresh-read writes to `0x2010_0448`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_adc_rate(rate: u32) {
+    let register = PHY_ADC_RATE_ADDRESS as *mut u32;
+    register.write_volatile(with_phy_adc_rate_high(register.read_volatile(), rate));
+    register.write_volatile(with_phy_adc_rate_low(register.read_volatile(), rate));
+}
+
+/// Apply complete rev0 ROM `phy_i2cmst_reg_init`.
+///
+/// The pinned body at `0x2f82_76c4`, size `0x22`, uses two fresh reads of
+/// `0x2010_f818`: field `0x600` becomes `0x400`, then bit `0x40` is set.
+/// It contains no call, branch, wait, delay, or mutable software state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_i2c_master_registers() {
+    let register = PHY_I2C_MASTER_REGISTER_CONTROL_ADDRESS as *mut u32;
+    register.write_volatile(with_phy_i2c_master_register_mode(register.read_volatile()));
+    register.write_volatile(with_phy_i2c_master_register_enable(
+        register.read_volatile(),
+    ));
+}
+
+/// Apply complete rev0 ROM `phy_pwdet_reg_init`.
+///
+/// The pinned body at `0x2f82_634a`, size `0x5c`, performs six finite stores
+/// with no branch, call, loop, delay, or mutable software-state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_power_detector_registers() {
+    (PHY_POWER_DETECTOR_TABLE_0_ADDRESS as *mut u32).write_volatile(0x0f0f_0fff);
+    (PHY_POWER_DETECTOR_TABLE_1_ADDRESS as *mut u32).write_volatile(0x00ff_0f64);
+
+    let control = PHY_POWER_DETECTOR_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_power_detector_low_field(control.read_volatile()));
+
+    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_aaaa);
+
+    control.write_volatile(with_phy_power_detector_high_field(control.read_volatile()));
+
+    let auxiliary = PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS as *mut u32;
+    auxiliary.write_volatile(with_phy_power_detector_aux_mode(auxiliary.read_volatile()));
+}
+
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+unsafe fn set_register_bits(address: usize, bits: u32) {
+    let register = address as *mut u32;
+    register.write_volatile(with_register_bits(register.read_volatile(), bits));
+}
+
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+unsafe fn clear_register_bits(address: usize, bits: u32) {
+    let register = address as *mut u32;
+    register.write_volatile(without_register_bits(register.read_volatile(), bits));
+}
+
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+unsafe fn replace_register_field(address: usize, mask: u32, field: u32) {
+    let register = address as *mut u32;
+    register.write_volatile(with_register_field(register.read_volatile(), mask, field));
+}
+
+/// Apply complete rev0 ROM `phy_fe_reg_init`.
+///
+/// The pinned body at `0x2f82_7740`, size `0xf6`, is a finite sequence of
+/// seventeen MMIO writes. Calls below are deliberately unrolled and retain
+/// repeated fresh-read writes to the same register. There is no wait, delay,
+/// loop, callback, or mutable software-state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_front_end_registers() {
+    set_register_bits(PHY_FE_CONTROL_0894_ADDRESS, 0x0010_0000);
+    set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0200_0000);
+    set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0400_0000);
+    clear_register_bits(PHY_FE_CONTROL_0444_ADDRESS, 0x0000_0100);
+    replace_register_field(PHY_FE_CONTROL_0408_ADDRESS, 0xff00_0000, 0xa000_0000);
+    set_register_bits(PHY_FE_CONTROL_040C_ADDRESS, 0x0000_0004);
+    set_register_bits(PHY_FE_CONTROL_0438_ADDRESS, 0x6000_0000);
+    set_register_bits(PHY_FE_CONTROL_0C0C_ADDRESS, 0x0000_6000);
+    clear_register_bits(PHY_FE_CONTROL_0444_ADDRESS, 0x0000_0800);
+    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0002);
+    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0001);
+    replace_register_field(PHY_FE_CONTROL_086C_ADDRESS, 0x0000_00ff, 0x0000_0004);
+    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0001);
+    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0002);
+    set_register_bits(PHY_FE_CONTROL_0438_ADDRESS, 0x8000_0000);
+    set_register_bits(PHY_FE_CONTROL_0C0C_ADDRESS, 0x0000_8000);
+    replace_register_field(PHY_FE_CONTROL_0C20_ADDRESS, 0x0000_00ff, 0x0000_0057);
+}
+
+/// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
+///
+/// The 0x32-byte archive body used by `phy_rf_init` is smaller than the
+/// similarly named ROM function: it performs exactly three fresh-read MMIO
+/// updates and returns. In particular, this call site does not include the ROM
+/// tail-call to `phy_dac_scale_set`. There is no loop, delay, callback, or
+/// mutable software-state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_front_end_update() {
+    let front_end = PHY_FE_CONTROL_0C08_ADDRESS as *mut u32;
+    front_end.write_volatile(with_phy_front_end_update_first(front_end.read_volatile()));
+    front_end.write_volatile(with_phy_front_end_update_second(front_end.read_volatile()));
+
+    let adc = PHY_FE_CONTROL_0448_ADDRESS as *mut u32;
+    adc.write_volatile(with_phy_front_end_adc_update(adc.read_volatile()));
+}
+
+/// Apply complete rev0 ROM `phy_freq_reg_init(2, 4)` with its hidden
+/// `phy_param[0x193]` branch made explicit.
+///
+/// The body is five fresh finite MMIO stores. `parameter_override` selects the
+/// ROM's `(0, 2)` override instead of the call-site `(2, 4)` pair.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_frequency_registers(parameter_override: bool) {
+    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(without_phy_frequency_reset_fields(control.read_volatile()));
+    control.write_volatile(with_phy_frequency_module_enabled(control.read_volatile()));
+    control.write_volatile(with_phy_frequency_register_mode(
+        control.read_volatile(),
+        parameter_override,
+    ));
+    (PHY_FREQUENCY_PARAMETER_0_ADDRESS as *mut u32).write_volatile(0x1980_0249);
+    (PHY_FREQUENCY_PARAMETER_1_ADDRESS as *mut u32).write_volatile(0x2582_4e58);
+}
+
+/// Apply complete rev0 ROM `phy_freq_i2c_mem_write`.
+///
+/// This leaf selects one eleven-bit frequency-memory address, writes its
+/// caller-owned data/mode word, then generates the exact bit-20 write pulse.
+/// It has no busy observation, loop, callback, or software-state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn write_phy_frequency_memory(address: u16, value: u32, mode: u8) {
+    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_frequency_memory_address(
+        control.read_volatile(),
+        address,
+    ));
+    (PHY_FREQUENCY_MEMORY_DATA_ADDRESS as *mut u32).write_volatile((u32::from(mode) << 24) | value);
+    control.write_volatile(with_register_bits(control.read_volatile(), 0x0010_0000));
+    control.write_volatile(without_register_bits(control.read_volatile(), 0x0010_0000));
+}
+
+/// Publish the complete rev0 ROM `phy_freq_i2c_num_addr` register image.
+///
+/// `control_field` and `words` are prepared by the safe Rust transition from
+/// its eleven owned descriptor number-addresses. This finite leaf performs
+/// one read-modify-write and three stores; it has no wait, callback, or hidden
+/// software-state access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_frequency_i2c_number_addresses(
+    control_field: u32,
+    words: [u32; 3],
+) {
+    let control = PHY_FREQUENCY_I2C_NUMBER_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_frequency_i2c_number_control(
+        control.read_volatile(),
+        control_field,
+    ));
+    (PHY_FREQUENCY_I2C_NUMBER_WORD_0_ADDRESS as *mut u32).write_volatile(words[0]);
+    (PHY_FREQUENCY_I2C_NUMBER_WORD_1_ADDRESS as *mut u32).write_volatile(words[1]);
+    (PHY_FREQUENCY_I2C_NUMBER_WORD_2_ADDRESS as *mut u32).write_volatile(words[2]);
+}
+
+/// Apply complete vendor `phy_tsens_read_init` and its ROM tail leaf.
+///
+/// The pinned 0x36-byte archive body ignores both ABI arguments, performs
+/// four MMIO writes, forces power argument one, and tail-calls the complete
+/// 0x1c-byte ROM `phy_set_tsens_power_` body. Rust therefore needs no
+/// `phy_param[0x16]` input.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_temperature_sensor_read() {
+    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0000_0001);
+    set_register_bits(PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS, 0x4000_0000);
+    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0080_0000);
+    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0000_0200);
+    replace_register_field(
+        PHY_TEMPERATURE_SENSOR_POWER_ADDRESS,
+        0x0040_0000,
+        0x0040_0000,
+    );
+}
+
+/// Apply complete rev0 ROM `phy_tx_pwctrl_bg_init` including both callees.
+///
+/// The exact chain clears three power-detector bits as separate fresh-read
+/// writes, configures SAR2, republishes the auxiliary mode, and finally sets
+/// the background-control bit. It is finite and owns no software state.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_tx_power_control_background() {
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0004);
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0002);
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0008);
+    set_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_3000);
+    clear_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_0200);
+    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_016a);
+    replace_register_field(
+        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
+        0x0000_0007,
+        0x0000_0004,
+    );
+    set_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0001_0000);
+}
+
+/// Enable the power-detector/SAR path used by TX calibration.
+///
+/// Reference: complete rev0 ROM `phy_en_pwdet` at `0x2f82_63da`, including
+/// `phy_pwdet_sar2_init`. The auxiliary field is left in mode four here; the
+/// caller performs the later mode-two write from `phy_txcal_debuge_mode_` as
+/// a separately ordered action. This leaf is finite and contains no poll,
+/// delay, callback, allocation, or software-global access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_power_detector_enabled() {
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0004);
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0002);
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0008);
+    set_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_3000);
+    clear_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_0200);
+    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_016a);
+    replace_register_field(
+        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
+        0x0000_0007,
+        0x0000_0004,
+    );
+}
+
+/// Select the final auxiliary calibration mode from `phy_txcal_debuge_mode_`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_power_detector_calibration_mode() {
+    replace_register_field(
+        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
+        0x0000_0007,
+        0x0000_0002,
+    );
+}
+
+/// Publish one of the exact `0`, `0x5555`, or `0xaaaa` PWDET reference words.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn write_phy_power_detector_reference_control(value: u16) {
+    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(u32::from(value));
+}
+
+/// Arm one PWDET tone sample before the async one-microsecond timer edge.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn arm_phy_power_detector_tone() {
+    set_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
+}
+
+/// Publish the two fresh-read SAR trigger writes after the first timer edge.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn trigger_phy_power_detector_sar() {
+    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0001);
+    set_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0001);
+}
+
+/// Clear the temporary tone-arm bit selected by former `phy_param[0x1aa]`.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn clear_phy_power_detector_tone_arm() {
+    clear_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
+}
+
+/// Read one PWDET readiness sample. Repetition and deadline ownership belong
+/// to the Rust transition/executor, never to this leaf.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_power_detector_ready_status() -> u32 {
+    (PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS as *const u32).read_volatile()
+}
+
+/// Read the first PWDET SAR word. The caller extracts the evidenced upper
+/// 13-bit sample and never aliases the four-word ROM stack buffer.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn read_phy_power_detector_sar_word() -> u32 {
+    (0x2010_081c as *const u32).read_volatile()
+}
+
+/// Stop the calibration tone exactly as `phy_stop_tx_tone(1)`.
+///
+/// This includes the two fresh-read `phy_dac_scale_set(1)` field writes. It
+/// is an unconditional cleanup leaf with no wait, branch, callback, or
+/// software-global access.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn stop_phy_power_detector_tone() {
+    clear_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
+    clear_register_bits(PHY_TONE_PATH1_CONTROL_ADDRESS, 0x0004_0000);
+    set_register_bits(PHY_TONE_STOP_CONTROL_ADDRESS, 0x0000_0003);
+    replace_register_field(
+        PHY_DAC_SCALE_CONTROL_ADDRESS,
+        0x00ff_0000,
+        0x00ff_0000,
+    );
+    replace_register_field(
+        PHY_DAC_SCALE_CONTROL_ADDRESS,
+        0x0000_ff00,
+        0x0000_ff00,
+    );
+}
+
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+unsafe fn write_phy_wifi_agc_sat_gain(value: u32) {
+    (PHY_AGC_SAT_GAIN_LOW_ADDRESS as *mut u32).write_volatile(value);
+    (PHY_AGC_SAT_GAIN_HIGH_ADDRESS as *mut u32).write_volatile(value);
+}
+
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+unsafe fn write_phy_ftm_enable(enable: u32) {
+    let control = PHY_FTM_CONTROL_ADDRESS as *mut u32;
+    control.write_volatile(with_phy_ftm_enable(control.read_volatile(), enable));
+}
+
+/// Apply the complete recovered post-initialization PHY register update.
+///
+/// Reference: the complete pinned
+/// `libphy.a[phy_init.o]::phy_reg_update_new` body, size `0x70`, plus the
+/// complete rev0 ROM `phy_wifi_agc_sat_gain` body at `0x2f827db0`, size
+/// `0x0c`, and pinned `libphy.a[phy_reg.o]::phy_set_ftm_en`, size `0x14`.
+/// Every read/modify/write and the two saturation-gain writes retain vendor
+/// order, including the fresh second read of `0x2010_78c8`.
+///
+/// This is a finite MMIO-only transaction: no callback, ROM/vendor call,
+/// allocation, wait, delay, loop, or hidden mutable state remains.
+/// Its two evidenced callers are `register_chipv7_phy` and
+/// caller-task `phy_wakeup_init`; neither is an interrupt handler, so this
+/// cold/wakeup leaf intentionally remains flash-mapped instead of consuming
+/// the interrupt-only SRAM reserve.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+pub unsafe extern "C" fn wifi_strict_phy_reg_update_new() {
+    let agc_control = PHY_AGC_CONTROL_ADDRESS as *mut u32;
+    agc_control.write_volatile(with_phy_agc_control(agc_control.read_volatile()));
+
+    write_phy_wifi_agc_sat_gain(PHY_AGC_SAT_GAIN_VALUE);
+
+    let agc_window = PHY_AGC_WINDOW_ADDRESS as *mut u32;
+    agc_window.write_volatile(with_phy_agc_window(agc_window.read_volatile()));
+
+    let rx_control = PHY_RX_CONTROL_ADDRESS as *mut u32;
+    rx_control.write_volatile(with_phy_rx_control_low(rx_control.read_volatile()));
+    rx_control.write_volatile(with_phy_rx_control_high(rx_control.read_volatile()));
+
+    write_phy_ftm_enable(1);
+}
+
+/// Encode and publish a finite PHY transmit-gain table.
+///
+/// Reference: pinned
+/// `libphy.a[phy_tx_gain.o]::phy_set_tx_gain_mem_new`, size `0x130`, plus the
+/// complete rev0 ROM leaves `phy_txbbgain_to_index` at `0x2f826ac8` and
+/// `phy_write_gain_mem` at `0x2f8274f0`.
+///
+/// The vendor body accepts 16 BT or 32 Wi-Fi entries. The strict runtime only
+/// calls the 32-entry Wi-Fi form, but this ABI boundary preserves both finite
+/// counts and traps any larger input rather than admitting an unbounded raw
+/// pointer walk. `seed_and_output_32` names the start of the vendor's
+/// contiguous `6 * u32` seed followed immediately by its `8 * u32` 32-byte
+/// gain output. This unusual overlap is part of the recovered ABI: baseband
+/// gain indices three and four select words in the latter region.
+///
+/// Every iteration performs three ordinary input reads, selects four
+/// halfwords from that contiguous layout, encodes three register words, then
+/// writes `0x2010_0848`, `0x2010_084c`, `0x2010_0850` and finally updates
+/// `0x2010_0844`. There is no allocation, wait, indirect call, hidden state,
+/// or hardware-dependent loop exit.
+#[cfg(target_arch = "riscv32")]
+#[no_mangle]
+#[link_section = ".rwtext.wifi_strict.radio_hal"]
+pub unsafe extern "C" fn wifi_strict_phy_set_tx_gain_mem_new(
+    bank: u32,
+    entries: u32,
+    output_72: *const u32,
+    output_64: *const u32,
+    output_32: *const u32,
+    seed_and_output_32: *const u32,
+    config: *const u16,
+) {
+    if entries > PHY_GAIN_MEMORY_MAX_ENTRIES
+        || (entries != 0
+            && (output_72.is_null()
+                || output_64.is_null()
+                || output_32.is_null()
+                || seed_and_output_32.is_null()
+                || config.is_null()))
+    {
+        core::arch::asm!("ebreak", options(noreturn));
+    }
+
+    let hardware_base =
+        ((PHY_GAIN_MEMORY_INDEX_SOURCE_ADDRESS as *const u32).read_volatile() >> 24) as u8;
+    let memory_base = hardware_base.wrapping_add(if bank == 0 { 0 } else { 32 });
+    let seed_halfwords = seed_and_output_32.cast::<u16>();
+    let output_72_halfwords = output_72.cast::<u16>();
+    let output_64_halfwords = output_64.cast::<u16>();
+    let output_32_bytes = output_32.cast::<u8>();
+
+    let mut entry = 0_u32;
+    while entry != entries {
+        let entry_index = entry as usize;
+        let gain_72 = output_72_halfwords.add(entry_index).read();
+        let gain_64 = output_64_halfwords.add(entry_index).read();
+        let gain_32 = output_32_bytes.add(entry_index).read();
+        let seed_index = tx_baseband_gain_index(gain_64) * 4;
+        let (word_0, word_1, word_2) = encode_phy_gain_memory_words(
+            gain_72,
+            gain_64,
+            gain_32,
+            seed_halfwords.add(seed_index).read(),
+            seed_halfwords.add(seed_index + 1).read(),
+            seed_halfwords.add(seed_index + 2).read(),
+            seed_halfwords.add(seed_index + 3).read(),
+            config.read(),
+        );
+
+        (PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32).write_volatile(word_0);
+        (PHY_GAIN_MEMORY_WORD1_ADDRESS as *mut u32).write_volatile(word_1);
+        (PHY_GAIN_MEMORY_WORD2_ADDRESS as *mut u32).write_volatile(word_2);
+        let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
+        control.write_volatile(with_phy_gain_memory_index(
+            control.read_volatile(),
+            memory_base.wrapping_add(entry as u8),
+        ));
+        entry += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
+        mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
+        mac_rx_management_policy_address, phy_pbus_is_busy, phy_pbus_rx_dco_read_value,
+        tsf_latch_mask, tx_baseband_gain_index, tx_queue_control_address, tx_queue_is_valid,
+        with_bbpll_calibration, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
+        with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
+        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_agc_control, with_phy_agc_window,
+        with_phy_antenna_control0, with_phy_antenna_control1, with_phy_antenna_control2,
+        with_phy_baseband_watchdog, with_phy_fe_txrx_reset, with_phy_frequency_i2c_number_control,
+        with_phy_frequency_memory_address, with_phy_frequency_module_enabled,
+        with_phy_frequency_register_mode, with_phy_front_end_adc_update,
+        with_phy_front_end_update_first, with_phy_front_end_update_second, with_phy_ftm_enable,
+        with_phy_gain_memory_index, with_phy_i2c_clock_selection_high,
+        with_phy_i2c_clock_selection_low, with_phy_i2c_master_register_enable,
+        with_phy_i2c_master_register_mode, with_phy_iq_est_config, with_phy_iq_est_control,
+        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_debug_control,
+        with_phy_pbus_debug_mode, with_phy_pbus_force_test, with_phy_pbus_work_control,
+        with_phy_pbus_work_mode, with_phy_pbus_work_mode_pulse,
+        with_phy_pbus_work_mode_pulse_setup, with_phy_power_detector_aux_mode,
+        with_phy_power_detector_high_field, with_phy_power_detector_low_field, with_phy_rx_clock,
+        with_phy_rx_comp_high, with_phy_rx_comp_low, with_phy_rx_control_high,
+        with_phy_rx_control_low, with_phy_tone_path, with_phy_tone_path0_selector,
+        with_phy_tone_path1_selector, with_phy_tx_clock, with_phy_tx_gain_compensation_byte1,
+        with_phy_tx_gain_compensation_byte2, with_register_bits, with_register_field,
+        with_restored_phy_rx_dco_control_field, with_tx_cca, with_wifi_mac_regdma_link,
+        without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_fe_txrx_reset,
+        without_phy_frequency_reset_fields, without_phy_pbus_work_mode_pulse,
+        without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
+        without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
+        without_tx_queue_valid, PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT,
+        WIFI_MAC_ACTIVE_REGDMA_LINK,
+    };
+
+    #[test]
+    fn selects_the_two_recovered_tsf_latch_bits() {
+        assert_eq!(tsf_latch_mask(0), 1);
+        assert_eq!(tsf_latch_mask(1), 2);
+        assert_eq!(tsf_latch_mask(u32::MAX), 2);
+    }
+
+    #[test]
+    fn joins_only_the_recovered_rx_descriptor_address_fields() {
+        assert_eq!(
+            join_rx_descriptor_address(0xabc5_4321, 0x123f_edcb),
+            0x1235_4321
+        );
+        assert_eq!(join_rx_descriptor_address(u32::MAX, 0), 0x000f_ffff);
+        assert_eq!(join_rx_descriptor_address(0, u32::MAX), 0xfff0_0000);
+    }
+
+    #[test]
+    fn tx_queue_registers_descend_by_the_recovered_stride() {
+        assert_eq!(tx_queue_control_address(0), 0x2010_4d70);
+        assert_eq!(tx_queue_control_address(1), 0x2010_4d60);
+        assert_eq!(tx_queue_control_address(3), 0x2010_4d40);
+    }
+
+    #[test]
+    fn tx_queue_control_fields_match_the_pinned_leaves() {
+        assert_eq!(with_tx_cca(0xffff_ffff, 0), 0x3fff_ffff);
+        assert_eq!(with_tx_cca(0x0123_4567, 1), 0x4123_4567);
+        assert_eq!(with_tx_cca(0x0123_4567, 2), 0x8123_4567);
+        assert_eq!(with_tx_cca(0x0123_4567, 3), 0xc123_4567);
+        assert_eq!(with_tx_cca(0, 7), 0xc000_0000);
+        assert_eq!(tx_queue_is_valid(0x4000_0000), 1);
+        assert_eq!(tx_queue_is_valid(0x8000_0000), 0);
+        assert_eq!(without_tx_queue_valid(u32::MAX), 0xbfff_ffff);
+        assert_eq!(without_tx_queue_enable(u32::MAX), 0x3fff_ffff);
+    }
+
+    #[test]
+    fn mac_address_registers_and_encoding_match_the_pinned_leaf() {
+        assert_eq!(mac_address_registers(0), (0x2010_405c, 0x2010_4060));
+        assert_eq!(mac_address_registers(3), (0x2010_4074, 0x2010_4078));
+        assert_eq!(
+            encode_mac_address([0x02, 0x11, 0x22, 0x33, 0x44, 0x55]),
+            (0x3322_1102, 0x0001_5544)
+        );
+    }
+
+    #[test]
+    fn rx_policy_addresses_and_masks_match_the_pinned_leaf() {
+        assert_eq!(mac_rx_frame_policy_address(0), 0x2010_40d8);
+        assert_eq!(mac_rx_frame_policy_address(3), 0x2010_40e4);
+        assert_eq!(mac_rx_address_policy_address(2), 0x2010_4014);
+        assert_eq!(mac_rx_management_policy_address(2), 0x2010_4070);
+
+        assert_eq!(with_mac_rx_mode(u32::MAX, 0), 0xffff_fbef);
+        assert_eq!(with_mac_rx_mode(0, 2), 0x0000_0410);
+        assert_eq!(with_mac_rx_control_policy(u32::MAX, 1), 0xffff_ffbf);
+        assert_eq!(with_mac_rx_control_policy(0, 2), 0x0000_0040);
+        assert_eq!(with_mac_rx_control_address_policy(u32::MAX, 0), 0x7fff_ffff);
+        assert_eq!(with_mac_rx_control_address_policy(0, 1), 0x8000_0000);
+        assert_eq!(
+            with_mac_rx_control_address_policy(0x1234_5678, 2),
+            0x1234_5678
+        );
+        assert_eq!(with_mac_rx_management_policy(u32::MAX, 0), 0xfffe_ffff);
+        assert_eq!(with_mac_rx_management_policy(0, 1), 0x0001_0000);
+        assert_eq!(with_mac_rx_unique_bssid_policy(u32::MAX, 0), 0xffff_fefd);
+        assert_eq!(with_mac_rx_unique_bssid_policy(0, 1), 0x0000_0102);
+    }
+
+    #[test]
+    fn no_power_save_mac_restart_matches_the_complete_pinned_chain() {
+        assert_eq!(without_mac_tx_retention(u32::MAX), 0xff00_efff);
+        assert_eq!(without_mac_tx_retention(0x12ff_3456), 0x1200_2456);
+
+        assert_eq!(
+            with_wifi_mac_regdma_link(0, WIFI_MAC_ACTIVE_REGDMA_LINK),
+            0x0008_0000
+        );
+        assert_eq!(
+            with_wifi_mac_regdma_link(u32::MAX, WIFI_MAC_ACTIVE_REGDMA_LINK),
+            0xffe9_ffff
+        );
+        assert_eq!(with_wifi_mac_regdma_link(0x1234_5678, 0), 0x1220_5678);
+    }
+
+    #[test]
+    fn phy_rx_comp_fields_match_the_pinned_leaf() {
+        assert_eq!(with_phy_rx_comp_low(0x1234_5678), 0x1234_56ed);
+        assert_eq!(with_phy_rx_comp_low(u32::MAX), 0xffff_ffed);
+        assert_eq!(with_phy_rx_comp_high(0x1234_5678), 0xed34_5678);
+        assert_eq!(with_phy_rx_comp_high(u32::MAX), 0xedff_ffff);
+    }
+
+    #[test]
+    fn phy_fe_bb_clock_mask_matches_the_pinned_leaf() {
+        assert_eq!(without_fe_bb_clock_enable(u32::MAX), 0xffff_fffc);
+        assert_eq!(without_fe_bb_clock_enable(0x1234_567b), 0x1234_5678);
+    }
+
+    #[test]
+    fn phy_bbpll_calibration_mask_matches_both_rom_branches() {
+        assert_eq!(with_bbpll_calibration(0, 0), 0x04);
+        assert_eq!(with_bbpll_calibration(0, 1), 0x08);
+        assert_eq!(with_bbpll_calibration(u32::MAX, 0), 0xffff_fff7);
+        assert_eq!(with_bbpll_calibration(u32::MAX, 7), 0xffff_fffb);
+    }
+
+    #[test]
+    fn phy_pbus_masks_and_command_encoding_match_complete_rom_leaves() {
+        assert_eq!(with_phy_pbus_debug_mode(u32::MAX), 0xfbff_ffff);
+        assert_eq!(with_phy_pbus_debug_control(0), 1);
+        assert_eq!(with_phy_pbus_work_control(u32::MAX), 0xffff_fffe);
+        assert_eq!(with_phy_pbus_work_mode(0), 0x0400_0000);
+
+        assert_eq!(with_phy_pbus_force_test(0, 4, 1, 0), 0x0000_8012);
+        assert_eq!(with_phy_pbus_force_test(u32::MAX, 3, 2, 0x100), 0xffff_400f);
+        assert!(!phy_pbus_is_busy(0x7fff_ffff));
+        assert!(phy_pbus_is_busy(0x8000_0000));
+        assert_eq!(phy_pbus_rx_dco_read_value(0xffff_ffff), 0x01ff);
+        assert_eq!(phy_pbus_rx_dco_read_value(0x1234_0123), 0x0123);
+
+        assert_eq!(with_phy_pbus_work_mode_pulse_setup(u32::MAX), 0x32ff_ffff);
+        assert_eq!(with_phy_pbus_work_mode_pulse(0), 0x0080_0000);
+        assert_eq!(without_phy_pbus_work_mode_pulse(u32::MAX), 0xff7f_ffff);
+        assert_eq!(without_phy_rx_dco_control_field(0x12ff_5678), 0x123f_5678);
+        assert_eq!(
+            with_restored_phy_rx_dco_control_field(0xffff_ffff, 0x0040_0000),
+            0xff7f_ffff
+        );
+        assert_eq!(
+            with_restored_phy_rx_dco_control_field(0x1234_5678, 0xffff_ffff),
+            0x12f4_5678
+        );
+    }
+
+    #[test]
+    fn phy_tx_and_rx_clock_masks_match_both_rom_branches() {
+        assert_eq!(with_phy_tx_clock(0, true), 0x0003_0000);
+        assert_eq!(with_phy_tx_clock(u32::MAX, false), 0xfffc_ffff);
+        assert_eq!(with_phy_tx_clock(0x1234_5678, true), 0x1237_5678);
+        assert_eq!(with_phy_tx_clock(0x1234_5678, false), 0x1234_5678);
+
+        assert_eq!(with_phy_rx_clock(0, true), 0x0000_c000);
+        assert_eq!(with_phy_rx_clock(u32::MAX, false), 0xffff_3fff);
+        assert_eq!(with_phy_rx_clock(0x1234_5678, true), 0x1234_d678);
+        assert_eq!(with_phy_rx_clock(0x1234_5678, false), 0x1234_1678);
+    }
+
+    #[test]
+    fn phy_calibration_tone_matches_both_evidenced_call_images() {
+        assert_eq!(with_phy_tone_path0_selector(u32::MAX, 0x80), 0xffff_fffc);
+        assert_eq!(with_phy_tone_path1_selector(u32::MAX, 0), 0xffff_fff3);
+
+        assert_eq!(with_phy_tone_path(0xa000_0000, 1, 0x80, 0), 0xa004_0020);
+        assert_eq!(with_phy_tone_path(0xa000_0000, 0, 0x80, 0x28), 0xa003_6020);
+        assert_eq!(with_phy_tone_path(0xbfff_ffff, 0, 0, 0), 0xb000_0000);
+    }
+
+    #[test]
+    fn phy_tone_gain_compensation_preserves_all_four_vendor_writes() {
+        let first = without_phy_tx_gain_compensation_low_byte(0x1234_5678);
+        let second = with_phy_tx_gain_compensation_byte1(first);
+        let third = with_phy_tx_gain_compensation_byte2(second);
+        let fourth = without_phy_tx_gain_compensation_high_byte(third);
+
+        assert_eq!(first, 0x1234_5600);
+        assert_eq!(second, 0x1234_fa00);
+        assert_eq!(third, 0x12ff_fa00);
+        assert_eq!(fourth, 0x00ff_fa00);
+    }
+
+    #[test]
+    fn phy_dc_iq_estimator_masks_match_the_complete_rom_prefix() {
+        assert_eq!(with_phy_iq_est_config(0), 0x0400_0000);
+        assert_eq!(with_phy_iq_est_config(u32::MAX), 0xf7ff_ffff);
+        assert_eq!(with_phy_iq_est_mode(0), 0x0010_0000);
+        assert_eq!(with_phy_iq_est_mode(u32::MAX), 0xfff7_ffff);
+        assert_eq!(with_phy_iq_est_control(0, 0x0fa0), 0x0000_3e80);
+        assert_eq!(with_phy_iq_est_control(u32::MAX, 0x0fa0), 0xfffe_3e83);
+        assert_eq!(with_phy_iq_est_enable(0, PHY_IQ_EST_START_BIT, true), 1);
+        assert_eq!(
+            with_phy_iq_est_enable(u32::MAX, PHY_IQ_EST_MEASUREMENT_BIT, false),
+            0xffff_fffd
+        );
+    }
+
+    #[test]
+    fn phy_i2c_clock_selection_matches_all_rom_field_transforms() {
+        assert_eq!(with_phy_i2c_clock_selection_high(0, 8), 0x0000_0080);
+        assert_eq!(
+            with_phy_i2c_clock_selection_low(with_phy_i2c_clock_selection_high(0, 8), 8,),
+            0x0000_0084
+        );
+        assert_eq!(with_phy_i2c_clock_selection_high(u32::MAX, 8), 0xffff_f8bf);
+        assert_eq!(with_phy_i2c_clock_selection_low(u32::MAX, 8), 0xffff_ffc4);
+    }
+
+    #[test]
+    fn phy_fe_txrx_reset_matches_both_rom_writes() {
+        assert_eq!(without_phy_fe_txrx_reset(u32::MAX), 0xf9ff_ffff);
+        assert_eq!(with_phy_fe_txrx_reset(0), 0x0600_0000);
+        assert_eq!(
+            with_phy_fe_txrx_reset(without_phy_fe_txrx_reset(0xa5a5_5a5a)),
+            0xa7a5_5a5a
+        );
+    }
+
+    #[test]
+    fn phy_adc_rate_mmio_suffix_matches_both_rom_fields() {
+        assert_eq!(with_phy_adc_rate_high(0, 1), 0x0000_0002);
+        assert_eq!(with_phy_adc_rate_low(0x0000_0002, 1), 0x0000_0003);
+        assert_eq!(with_phy_adc_rate_high(u32::MAX, 0), 0xffff_fffd);
+        assert_eq!(with_phy_adc_rate_low(u32::MAX, 0), 0xffff_fffe);
+    }
+
+    #[test]
+    fn phy_i2c_master_register_init_matches_both_rom_writes() {
+        assert_eq!(with_phy_i2c_master_register_mode(0), 0x0000_0400);
+        assert_eq!(with_phy_i2c_master_register_mode(u32::MAX), 0xffff_fdff);
+        assert_eq!(
+            with_phy_i2c_master_register_enable(0x0000_0400),
+            0x0000_0440
+        );
+    }
+
+    #[test]
+    fn phy_power_detector_fields_match_complete_rom_body() {
+        assert_eq!(with_phy_power_detector_low_field(0), 0x0000_0500);
+        assert_eq!(with_phy_power_detector_low_field(u32::MAX), 0xffff_f50f);
+        assert_eq!(with_phy_power_detector_high_field(u32::MAX), 0xffaf_ffff);
+        assert_eq!(with_phy_power_detector_aux_mode(u32::MAX), 0xffff_fffc);
+        assert_eq!(with_phy_power_detector_aux_mode(0), 0x0000_0004);
+    }
+
+    #[test]
+    fn phy_front_end_register_transforms_preserve_exact_masks() {
+        assert_eq!(with_register_bits(0x1234_5678, 0x0010_0000), 0x1234_5678);
+        assert_eq!(with_register_bits(0x1234_5678, 0x8000_0000), 0x9234_5678);
+        assert_eq!(without_register_bits(u32::MAX, 0x0000_0900), 0xffff_f6ff);
+        assert_eq!(
+            with_register_field(u32::MAX, 0xff00_0000, 0xa000_0000),
+            0xa0ff_ffff
+        );
+        assert_eq!(
+            with_register_field(0x1234_56ff, 0x0000_00ff, 0x0000_0057),
+            0x1234_5657
+        );
+    }
+
+    #[test]
+    fn phy_front_end_update_preserves_archive_masks_and_fresh_read_order() {
+        let initial = 0x8100_4000;
+        let first = with_phy_front_end_update_first(initial);
+        let second = with_phy_front_end_update_second(first);
+
+        assert_eq!(first, 0x8300_4000);
+        assert_eq!(second, 0x8700_4000);
+        assert_eq!(with_phy_front_end_adc_update(0xa5a5_0100), 0xa5a5_0103);
+    }
+
+    #[test]
+    fn phy_frequency_register_init_preserves_both_exact_rom_modes() {
+        let initial = 0x9abc_def0;
+        assert_eq!(without_phy_frequency_reset_fields(initial), 0x1ab4_def0);
+        assert_eq!(with_phy_frequency_module_enabled(0x1ab4_def0), 0x5ab4_def0);
+        assert_eq!(
+            with_phy_frequency_register_mode(0xffff_ffff, false),
+            0xd0bf_ffff
+        );
+        assert_eq!(
+            with_phy_frequency_register_mode(0xffff_ffff, true),
+            0xc83f_ffff
+        );
+    }
+
+    #[test]
+    fn phy_frequency_memory_address_replaces_only_the_eleven_bit_field() {
+        assert_eq!(
+            with_phy_frequency_memory_address(0xa5f8_00a5, 0x712),
+            0xa5ff_12a5
+        );
+        assert_eq!(
+            with_phy_frequency_memory_address(0xffff_ffff, 0xffff),
+            0xffff_ffff
+        );
+    }
+
+    #[test]
+    fn phy_frequency_i2c_number_control_replaces_only_the_ten_bit_field() {
+        assert_eq!(
+            with_phy_frequency_i2c_number_control(0xa5fc_00a5, 0x0000_a400),
+            0xa5fc_a4a5
+        );
+        assert_eq!(
+            with_phy_frequency_i2c_number_control(0xffff_ffff, u32::MAX),
+            0xffff_ffff
+        );
+    }
+
+    #[test]
+    fn phy_temperature_sensor_power_forces_the_instruction_proven_constant() {
+        assert_eq!(
+            with_register_field(0, 0x0040_0000, 0x0040_0000),
+            0x0040_0000
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x0040_0000, 0x0040_0000),
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn phy_tx_power_background_masks_match_complete_rom_chain() {
+        assert_eq!(without_register_bits(u32::MAX, 0x0000_000e), 0xffff_fff1);
+        assert_eq!(
+            with_register_bits(0, 0x0000_3000 | 0x0001_0000),
+            0x0001_3000
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x0000_0007, 0x0000_0004),
+            0xffff_fffc
+        );
+    }
+
+    #[test]
+    fn phy_post_init_register_masks_match_the_complete_pinned_chain() {
+        assert_eq!(with_phy_agc_control(0), 0x0400_0000);
+        assert_eq!(with_phy_agc_control(u32::MAX), u32::MAX);
+        assert_eq!(with_phy_agc_window(u32::MAX), 0xffff_ffc0);
+        assert_eq!(with_phy_agc_window(0x1234_5600), 0x1234_57c0);
+        assert_eq!(with_phy_rx_control_low(u32::MAX), 0xffff_ff97);
+        assert_eq!(with_phy_rx_control_high(u32::MAX), 0xffff_cbff);
+        assert_eq!(with_phy_rx_control_high(0), 0x0000_0b80);
+        assert_eq!(with_phy_ftm_enable(0xffff_fffe, 1), u32::MAX);
+        assert_eq!(with_phy_ftm_enable(u32::MAX, 0), 0xffff_fffe);
+        assert_eq!(with_phy_ftm_enable(0, 3), 1);
+    }
+
+    #[test]
+    fn phy_bb_tx_power_tracking_fields_match_the_complete_archive_body() {
+        assert_eq!(
+            with_register_field(u32::MAX, 0x0000_ff00, 0x0000_7900),
+            0xffff_79ff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0xff00_0000, 0x8d00_0000),
+            0x8dff_ffff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x00ff_0000, 0x0096_0000),
+            0xff96_ffff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x0000_ff00, 0x0000_a000),
+            0xffff_a0ff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x7f80_0000, 0x5f00_0000),
+            0xdf7f_ffff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x007f_8000, 0x0069_0000),
+            0xffe9_7fff
+        );
+        assert_eq!(
+            with_register_field(u32::MAX, 0x0000_7f80, 0x0000_7300),
+            0xffff_f37f
+        );
+    }
+
+    #[test]
+    fn phy_rf_rx_saturation_masks_match_both_rom_branches() {
+        let initial = 0xa5a5_5a5a_u32;
+        assert_eq!(initial & 0x2ef7_ffff, 0x24a5_5a5a);
+        assert_eq!((initial & 0xfff8_0000) | 0x0000_0400, 0xa5a0_0400);
+        assert_eq!(initial | 0xd108_0000, 0xf5ad_5a5a);
+        assert_eq!((initial & 0xfff8_0000) | 0x0000_0800, 0xa5a0_0800);
+    }
+
+    #[test]
+    fn phy_i2c_tx_rate_removes_the_indirect_callback_with_exact_fields() {
+        assert_eq!(
+            with_register_field(0xa5a5_5a5a, 0x03fc_0000, 0x0154_0000),
+            0xa555_5a5a
+        );
+        assert_eq!(
+            with_register_field(0xa5a5_5a5a, 0x0000_0003, 0x0000_0002),
+            0xa5a5_5a5a
+        );
+        let first = without_phy_tx_gain_compensation_low_byte(0x1234_5678);
+        let second = with_phy_tx_gain_compensation_byte1(first);
+        let third = with_phy_tx_gain_compensation_byte2(second);
+        let fourth = without_phy_tx_gain_compensation_high_byte(third);
+        assert_eq!(
+            (first, second, third, fourth),
+            (0x1234_5600, 0x1234_fa00, 0x12ff_fa00, 0x00ff_fa00)
+        );
+    }
+
+    #[test]
+    fn phy_reg_init_small_leaf_masks_match_the_rom_bodies() {
+        let initial = 0xa5a5_5a5a;
+        assert_eq!(with_phy_baseband_watchdog(initial), 0xe5a5_00aa);
+        assert_eq!(with_phy_antenna_control0(initial), 0xa5a5_4800);
+        assert_eq!(with_phy_antenna_control1(initial), 0xa5a5_a25a);
+        assert_eq!(with_phy_antenna_control2(initial), 0x1ea5_1e5a);
+    }
+
+    #[test]
+    fn phy_baseband_gain_indices_match_the_rom_leaf() {
+        assert_eq!(tx_baseband_gain_index(0x0080), 1);
+        assert_eq!(tx_baseband_gain_index(0x0100), 2);
+        assert_eq!(tx_baseband_gain_index(0x0020), 3);
+        assert_eq!(tx_baseband_gain_index(0x00a0), 4);
+        assert_eq!(tx_baseband_gain_index(0), 0);
+        assert_eq!(tx_baseband_gain_index(u16::MAX), 0);
+    }
+
+    #[test]
+    fn phy_gain_words_match_the_complete_vendor_transform() {
+        assert_eq!(
+            encode_phy_gain_memory_words(0, 0, 0, 0, 0, 0, 0, 0),
+            (0, 0x1000_0000, 0x0000_7f80)
+        );
+        assert_eq!(
+            encode_phy_gain_memory_words(
+                0x0007, 0x00bf, 0xa5, 0x1234, 0x5678, 0x9abc, 0xdef0, 0xffff,
+            ),
+            (0xbfde_1fff, 0x93f6_3f3c, 0x0052_ff83)
+        );
+        assert_eq!(with_phy_gain_memory_index(0xabc5_4321, 0x12), 0xabc8_9000);
+    }
+}

@@ -1,9 +1,14 @@
 #![no_std]
 
+#[cfg(test)]
+extern crate std;
+
 use core::future::Future;
 use core::marker::PhantomData;
 
 pub use open_esp_radio_pac_esp32s31::RadioRegisters;
+pub mod power;
+pub use power::{PowerCheckpoint, PowerError, PowerOperation, PowerSequence};
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
@@ -31,6 +36,29 @@ pub struct Radio<P, State = state::Owned> {
     state: PhantomData<State>,
 }
 
+/// Failed power transition retaining the unique unpowered radio owner.
+pub struct PowerUpFailure<P> {
+    radio: Radio<P, state::Owned>,
+    error: PowerError,
+}
+
+impl<P> PowerUpFailure<P> {
+    /// Inspect the exact failed read-back checkpoint.
+    pub const fn error(&self) -> PowerError {
+        self.error
+    }
+
+    /// Recover the owner for diagnostics, reset, or a controlled retry.
+    pub fn into_radio(self) -> Radio<P, state::Owned> {
+        self.radio
+    }
+
+    /// Recover both the owner and the checkpoint error.
+    pub fn into_parts(self) -> (Radio<P, state::Owned>, PowerError) {
+        (self.radio, self.error)
+    }
+}
+
 impl<P> Radio<P, state::Owned> {
     /// Bind the integration layer's unique peripheral token to the open
     /// driver's register capability.
@@ -53,22 +81,29 @@ impl<P> Radio<P, state::Owned> {
         self.peripheral
     }
 
-    /// Mark externally established clock/reset prerequisites as complete.
+    /// Execute the finite modem/PHY clock and reset prerequisites.
     ///
-    /// # Safety
-    ///
-    /// The caller must have enabled every clock and power domain required by
-    /// the PHY register graph, released the documented resets, selected the
-    /// correct 40 MHz source, and excluded concurrent ROM/vendor access.
-    ///
-    /// This temporary integration seam will become safe once those
-    /// prerequisites are implemented by the source-owned ESP32-S31 HAL.
-    pub unsafe fn assume_powered(self) -> Radio<P, state::Powered> {
-        Radio {
+    /// The method is target-only because host tests use a private fake
+    /// register backend. A successful read-back is the only safe path into
+    /// `Radio<P, Powered>`.
+    #[cfg(target_arch = "riscv32")]
+    pub fn power_up(self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        self.power_up_with(&mut power::VolatileRegisterIo)
+    }
+
+    #[cfg(any(test, target_arch = "riscv32"))]
+    fn power_up_with(
+        self,
+        io: &mut impl power::RegisterIo,
+    ) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        if let Err(error) = power::execute(io) {
+            return Err(PowerUpFailure { radio: self, error });
+        }
+        Ok(Radio {
             peripheral: self.peripheral,
             registers: self.registers,
             state: PhantomData,
-        }
+        })
     }
 }
 
@@ -104,13 +139,43 @@ pub trait AsyncEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{state, Radio};
+    use std::vec::Vec;
+
+    use super::{power::RegisterIo, state, Radio};
 
     #[derive(Debug, Eq, PartialEq)]
     struct TestPeripheral(u8);
 
     fn require_owned(_: &Radio<TestPeripheral, state::Owned>) {}
     fn require_powered(_: &Radio<TestPeripheral, state::Powered>) {}
+
+    #[derive(Default)]
+    struct FakeRegisters {
+        values: Vec<(usize, u32)>,
+        writes: Vec<(usize, u32)>,
+    }
+
+    impl RegisterIo for FakeRegisters {
+        fn read(&mut self, address: usize) -> u32 {
+            self.values
+                .iter()
+                .find_map(|(candidate, value)| (*candidate == address).then_some(*value))
+                .unwrap_or(0)
+        }
+
+        fn write(&mut self, address: usize, value: u32) {
+            if let Some(entry) = self
+                .values
+                .iter_mut()
+                .find(|(candidate, _)| *candidate == address)
+            {
+                entry.1 = value;
+            } else {
+                self.values.push((address, value));
+            }
+            self.writes.push((address, value));
+        }
+    }
 
     #[test]
     fn peripheral_token_follows_the_type_state_owner() {
@@ -119,8 +184,9 @@ mod tests {
         let owned = unsafe { Radio::claim(TestPeripheral(7)) };
         require_owned(&owned);
 
-        // SAFETY: no target operation is executed in this host-only test.
-        let powered = unsafe { owned.assume_powered() };
+        let powered = owned
+            .power_up_with(&mut FakeRegisters::default())
+            .unwrap_or_else(|_| panic!("fake prerequisite sequence failed"));
         require_powered(&powered);
         assert_eq!(powered.peripheral(), &TestPeripheral(7));
     }
@@ -130,5 +196,32 @@ mod tests {
         // SAFETY: this test token represents no real hardware.
         let owned = unsafe { Radio::claim(TestPeripheral(9)) };
         assert_eq!(owned.release(), TestPeripheral(9));
+    }
+
+    #[test]
+    fn failed_power_transition_returns_the_unique_owned_radio() {
+        struct StuckReset;
+
+        impl RegisterIo for StuckReset {
+            fn read(&mut self, address: usize) -> u32 {
+                if address == 0x2010_9c10 {
+                    (1 << 8) | (1 << 9)
+                } else {
+                    0
+                }
+            }
+
+            fn write(&mut self, _address: usize, _value: u32) {}
+        }
+
+        // SAFETY: this test token represents no real hardware.
+        let owned = unsafe { Radio::claim(TestPeripheral(11)) };
+        let failure = match owned.power_up_with(&mut StuckReset) {
+            Ok(_) => panic!("stuck reset unexpectedly powered the radio"),
+            Err(failure) => failure,
+        };
+        let recovered = failure.into_radio();
+        require_owned(&recovered);
+        assert_eq!(recovered.release(), TestPeripheral(11));
     }
 }

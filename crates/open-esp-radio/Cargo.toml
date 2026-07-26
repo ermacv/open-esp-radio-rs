@@ -10,12 +10,14 @@ description = "Application facade for the source-only Rust ESP radio stack"
 default = ["esp32s31"]
 esp32s31 = [
     "dep:open-esp-radio-hal-esp32s31",
+    "dep:open-esp-radio-mac-esp32s31",
     "dep:open-esp-radio-pac-esp32s31",
     "dep:open-esp-radio-phy-esp32s31",
 ]
 
 [dependencies]
 open-esp-radio-hal-esp32s31 = { path = "../open-esp-radio-hal-esp32s31", optional = true }
+open-esp-radio-mac-esp32s31 = { path = "../open-esp-radio-mac-esp32s31", optional = true }
 open-esp-radio-pac-esp32s31 = { path = "../open-esp-radio-pac-esp32s31", optional = true }
 open-esp-radio-phy-esp32s31 = { path = "../open-esp-radio-phy-esp32s31", optional = true }
 

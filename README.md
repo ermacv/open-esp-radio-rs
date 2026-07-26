@@ -13,6 +13,8 @@ Current workspace layers:
 - `open-esp-radio-pac-esp32s31`: register access and peripheral ownership;
 - `open-esp-radio-hal-esp32s31`: finite radio transactions and async boundary
   traits;
+- `open-esp-radio-mac-esp32s31`: allocation-free descriptor, RX/TX ownership
+  and interrupt primitives;
 - `open-esp-radio-phy-esp32s31`: Rust-owned cold PHY/calibration state
   machines;
 - `open-esp-radio`: application-facing facade.

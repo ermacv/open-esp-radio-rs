@@ -913,31 +913,38 @@ impl PhyRegisterMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRegisterMmioCompletion {
+    pub fn execute_target<P>(
+        self,
+        radio: &mut open_esp_radio_hal_esp32s31::Radio<
+            P,
+            open_esp_radio_hal_esp32s31::state::Powered,
+        >,
+    ) -> PhyRegisterMmioCompletion {
+        let registers = radio.registers_mut();
         match self.action {
             PhyRegisterMmioAction::PrepareColdStart => {
-                crate::radio_hal::prepare_phy_register_cold_start()
+                crate::radio_hal::prepare_phy_register_cold_start(registers)
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {
-                crate::radio_hal::configure_phy_register_force_txrx(enabled, phase)
+                crate::radio_hal::configure_phy_register_force_txrx(registers, enabled, phase)
             }
             PhyRegisterMmioAction::ResetFrequencyModule => {
-                crate::radio_hal::reset_phy_frequency_module()
+                crate::radio_hal::reset_phy_frequency_module(registers)
             }
             PhyRegisterMmioAction::SetHardwareFrequencyControl { enabled } => {
-                crate::radio_hal::set_phy_hardware_frequency_control(enabled)
+                crate::radio_hal::set_phy_hardware_frequency_control(registers, enabled)
             }
             PhyRegisterMmioAction::PulseI2cMasterReset { index } => {
-                crate::radio_hal::pulse_phy_i2c_master_reset(index)
+                crate::radio_hal::pulse_phy_i2c_master_reset(registers, index)
             }
             PhyRegisterMmioAction::ConfigureXtal40Mhz => {
-                crate::radio_hal::configure_phy_register_xtal_frequency()
+                crate::radio_hal::configure_phy_register_xtal_frequency(registers)
             }
             PhyRegisterMmioAction::SetCalibrationClock { enabled } => {
-                crate::radio_hal::set_phy_register_calibration_clock(enabled)
+                crate::radio_hal::set_phy_register_calibration_clock(registers, enabled)
             }
             PhyRegisterMmioAction::SetBbpllCalibration { enabled } => {
-                crate::radio_hal::wifi_strict_phy_bbpll_cal(u32::from(enabled))
+                crate::radio_hal::set_phy_bbpll_calibration(registers, enabled)
             }
         }
         PhyRegisterMmioCompletion {
@@ -973,12 +980,18 @@ impl PhyRegisterResetSampleBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRegisterCompletion {
+    pub fn execute_target<P>(
+        self,
+        radio: &mut open_esp_radio_hal_esp32s31::Radio<
+            P,
+            open_esp_radio_hal_esp32s31::state::Powered,
+        >,
+    ) -> PhyRegisterCompletion {
         PhyRegisterCompletion::I2cMasterResetSampled {
             index: self.index,
             address: self.address,
             sample: self.sample,
-            value: crate::radio_hal::sample_phy_i2c_master_reset(self.index),
+            value: crate::radio_hal::sample_phy_i2c_master_reset(radio.registers_mut(), self.index),
         }
     }
 }

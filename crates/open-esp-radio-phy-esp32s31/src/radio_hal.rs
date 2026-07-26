@@ -4,6 +4,9 @@
 //! documented MMIO. They are temporary runtime-local HAL boundaries until the
 //! register layer moves into the ESP32-S31 radio HAL crate.
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_hal_esp32s31::RadioRegisters;
+
 const TSF_CONTROL_ADDRESS: usize = 0x2010_d814;
 const TSF_LOW_ADDRESS: usize = 0x2010_d820;
 const TSF_HIGH_ADDRESS: usize = 0x2010_d824;
@@ -319,67 +322,91 @@ pub(crate) unsafe fn set_phy_baseband_mode(mode: u8) {
 /// Clear the two low Wi-Fi control bits at the start of
 /// `register_chipv7_phy`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn prepare_phy_register_cold_start() {
-    clear_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x3);
+pub(crate) fn prepare_phy_register_cold_start(registers: &mut RadioRegisters) {
+    // SAFETY: this finite binding owns the powered radio and the recovered
+    // parent operation proves this register permits the masked RMW.
+    unsafe {
+        registers.replace_bits(PHY_WIFI_ENABLE_ADDRESS, 0x3, 0);
+    }
 }
 
 /// Apply one of the two finite register writes surrounding each one
 /// microsecond edge in complete ROM `phy_force_txrx_off`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_register_force_txrx(enabled: bool, phase: u8) {
-    let register = PHY_REGISTER_FORCE_TXRX_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_register_force_txrx(
-        register.read_volatile(),
-        enabled,
-        phase,
-    ));
+pub(crate) fn configure_phy_register_force_txrx(
+    registers: &mut RadioRegisters,
+    enabled: bool,
+    phase: u8,
+) {
+    // SAFETY: the identity-bound action restricts the address and field
+    // encoding to the recovered finite parent operation.
+    unsafe {
+        let previous = registers.read(PHY_REGISTER_FORCE_TXRX_ADDRESS);
+        registers.write(
+            PHY_REGISTER_FORCE_TXRX_ADDRESS,
+            with_phy_register_force_txrx(previous, enabled, phase),
+        );
+    }
 }
 
 /// Pulse bit 18 exactly as complete ROM `phy_freq_module_resetn`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn reset_phy_frequency_module() {
-    let register = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_frequency_module_reset(
-        register.read_volatile(),
-        false,
-    ));
-    register.write_volatile(with_phy_frequency_module_reset(
-        register.read_volatile(),
-        true,
-    ));
+pub(crate) fn reset_phy_frequency_module(registers: &mut RadioRegisters) {
+    // SAFETY: the recovered parent operation permits this two-write reset
+    // pulse while the caller uniquely owns the powered radio.
+    unsafe {
+        let previous = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
+        registers.write(
+            PHY_FREQUENCY_CONTROL_ADDRESS,
+            with_phy_frequency_module_reset(previous, false),
+        );
+        let asserted = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
+        registers.write(
+            PHY_FREQUENCY_CONTROL_ADDRESS,
+            with_phy_frequency_module_reset(asserted, true),
+        );
+    }
 }
 
 /// Select whether hardware owns the frequency-update field.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_hardware_frequency_control(enabled: bool) {
-    let register = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_hardware_frequency_control(
-        register.read_volatile(),
-        enabled,
-    ));
+pub(crate) fn set_phy_hardware_frequency_control(registers: &mut RadioRegisters, enabled: bool) {
+    // SAFETY: the binding validates the only value-bearing field.
+    unsafe {
+        let previous = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
+        registers.write(
+            PHY_FREQUENCY_CONTROL_ADDRESS,
+            with_phy_hardware_frequency_control(previous, enabled),
+        );
+    }
 }
 
 /// Observe one PHY-I2C master reset status register.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn sample_phy_i2c_master_reset(index: u8) -> u32 {
+pub(crate) fn sample_phy_i2c_master_reset(registers: &mut RadioRegisters, index: u8) -> u32 {
     let address = if index == 0 {
         PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS
     } else {
         PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS
     };
-    (address as *const u32).read_volatile()
+    // SAFETY: lowering validates `index` and binds the exact status address.
+    unsafe { registers.read(address) }
 }
 
 /// Issue one reset command. Completion is sampled asynchronously by the
 /// caller; this leaf never waits for the busy bit to clear.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn pulse_phy_i2c_master_reset(index: u8) {
+pub(crate) fn pulse_phy_i2c_master_reset(registers: &mut RadioRegisters, index: u8) {
     let address = if index == 0 {
         PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS
     } else {
         PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS
     };
-    (address as *mut u32).write_volatile(PHY_REGISTER_I2C_MASTER_RESET_BIT);
+    // SAFETY: lowering validates `index`; the recovered parent writes exactly
+    // the documented reset command.
+    unsafe {
+        registers.write(address, PHY_REGISTER_I2C_MASTER_RESET_BIT);
+    }
 }
 
 /// Whether the exact busy bit sampled by complete ROM
@@ -390,23 +417,30 @@ pub(crate) const fn phy_i2c_master_reset_busy(value: u32) -> bool {
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_register_calibration_clock(enabled: bool) {
-    if enabled {
-        set_register_bits(PHY_FE_BB_CLOCK_CONTROL_ADDRESS, 1 << 2);
-    } else {
-        clear_register_bits(PHY_FE_BB_CLOCK_CONTROL_ADDRESS, 1 << 2);
+pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters, enabled: bool) {
+    // SAFETY: this action owns the powered radio and only changes the
+    // recovered calibration clock bit.
+    unsafe {
+        registers.replace_bits(
+            PHY_FE_BB_CLOCK_CONTROL_ADDRESS,
+            1 << 2,
+            u32::from(enabled) << 2,
+        );
     }
 }
 
 /// Program the S31's fixed 40 MHz crystal field without consulting hidden
 /// RTC or ROM state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_register_xtal_frequency() {
-    let register = PHY_REGISTER_XTAL_CONTROL_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_register_xtal_frequency(
-        register.read_volatile(),
-        40,
-    ));
+pub(crate) fn configure_phy_register_xtal_frequency(registers: &mut RadioRegisters) {
+    // SAFETY: ESP32-S31 uses the recovered fixed 40 MHz crystal field.
+    unsafe {
+        let previous = registers.read(PHY_REGISTER_XTAL_CONTROL_ADDRESS);
+        registers.write(
+            PHY_REGISTER_XTAL_CONTROL_ADDRESS,
+            with_phy_register_xtal_frequency(previous, 40),
+        );
+    }
 }
 
 /// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
@@ -1673,6 +1707,20 @@ pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
 pub unsafe extern "C" fn wifi_strict_phy_bbpll_cal(enable: u32) {
     let control = PHY_BBPLL_CAL_CONTROL_ADDRESS as *mut u32;
     control.write_volatile(with_bbpll_calibration(control.read_volatile(), enable));
+}
+
+/// Owned-register version used by the Rust registration parent.
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn set_phy_bbpll_calibration(registers: &mut RadioRegisters, enabled: bool) {
+    // SAFETY: the identity-bound parent action supplies only the recovered
+    // boolean field value and uniquely borrows the powered radio.
+    unsafe {
+        let previous = registers.read(PHY_BBPLL_CAL_CONTROL_ADDRESS);
+        registers.write(
+            PHY_BBPLL_CAL_CONTROL_ADDRESS,
+            with_bbpll_calibration(previous, u32::from(enabled)),
+        );
+    }
 }
 
 /// Enter the exact debug-mode prefix of rev0 ROM `phy_pbus_clear_reg`.

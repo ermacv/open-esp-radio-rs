@@ -23,6 +23,13 @@ The PHY port is still experimental. Its state machines and source-only link
 gate are usable, while the temporary register leaf module is progressively
 being moved down into HAL/PAC.
 
+The ESP32-S31 HAL now binds the integration layer's singleton peripheral token
+to `Radio<P, Owned>`. Only `Radio<P, Powered>` exposes the register capability
+used by finite PHY target bindings. The current `Owned -> Powered` transition
+is intentionally `unsafe` until the source-owned clock, reset, power-domain
+and 40 MHz prerequisites are implemented and tested by the hardware
+integration.
+
 The complete former hybrid Rust workset is retained under
 `migration/esp32s31-hybrid-runtime` as non-buildable migration source. It is
 not an application dependency and is excluded from the Cargo workspace.

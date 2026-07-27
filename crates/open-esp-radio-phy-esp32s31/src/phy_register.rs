@@ -905,7 +905,8 @@ impl PhyRegisterMmioBinding {
 
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
-        P: open_esp_radio_hal_esp32s31::phy_prelude::PhyPreludePlatformControl,
+        P: open_esp_radio_hal_esp32s31::phy_prelude::PhyPreludePlatformControl
+            + open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl,
     >(
         self,
         radio: &mut open_esp_radio_hal_esp32s31::Radio<
@@ -915,8 +916,9 @@ impl PhyRegisterMmioBinding {
     ) -> PhyRegisterMmioCompletion {
         match self.action {
             PhyRegisterMmioAction::PrepareColdStart => {
+                let (platform, registers) = radio.parts_mut();
                 open_esp_radio_hal_esp32s31::phy_frequency::prepare_wifi_control(
-                    radio.registers_mut(),
+                    platform, registers,
                 )
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {

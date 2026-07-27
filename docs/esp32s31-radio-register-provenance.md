@@ -41,7 +41,7 @@ actually inside the S31 PMU block:
 The PMU header labels fields in `IMM_HP_CK_POWER_0` as `WT`, while the
 complete S31 blob body loads the register before masking and storing it. CMSIS
 SVD has no write-trigger access class. The official PAC fork at
-`d02f0b719` therefore models the register `read-write`, records the conflict
+`a633848ad` therefore models the register `read-write`, records the conflict
 and blob source in its SVD patch, and lets the platform adapter preserve the
 evidenced read/modify/write sequence. PMU is no longer described by the custom
 radio SVD.
@@ -114,12 +114,13 @@ the internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
 names. It adds only instruction-proven fields: the disable bit, enable pulse,
 six 11b fields, one cleared bit and one three-bit set field in the baseband
 update, plus the post-init AGC, RX and FTM fields. The final three-bit
-baseband update at `0x20109c18` is represented on the already exact S31
-`MODEM_SYSCON.WIFI_BB_CFG` register, alongside the unrelated PBus settle
-condition.
+baseband update at `0x20109c18` is represented by the official S31 PAC's
+`MODEM_SYSCON.WIFI_BB_CFG` field, alongside the unrelated PBus settle
+condition. The custom radio SVD no longer duplicates this system peripheral.
 
-The `phy_agc` HAL preserves the complete ROM access order: fifteen ordered
-baseband-update writes, three fresh-read edges when enabling AGC, one
+The `phy_agc` HAL preserves the complete ROM access order: fourteen internal
+baseband-update writes followed by one platform-PAC RMW, three fresh-read
+edges when enabling AGC, one
 fresh-read write when disabling it, and six ordered writes in either 11b
 branch. Host register models cover the exact addresses, values, masks and
 preservation of unrelated bits. Baseband initialization, RX-table
@@ -230,16 +231,17 @@ The remaining recovered layout includes:
 - the complete NRX twenty-bit quotient, cleared middle nibble, and preserved
   high-byte shift source;
 - shared FBW/Bluetooth-filter fields, TX-offset and both CBW control words;
-- Wi-Fi enable, BSS-CBW, MAC-baseband and cold-start fields on the already
-  exact `MODEM_SYSCON.WIFI_BB_CFG` identity;
+- Wi-Fi enable, BSS-CBW, MAC-baseband and cold-start fields on the official
+  `MODEM_SYSCON.WIFI_BB_CFG` identity from PAC fork `a633848ad`;
 - TX-cap publication through existing
   `PHY_I2C_COMMAND_RAM.COMMAND_MEMORY[1]`, whose block/register/data byte
   layout already describes `value << 16 | 0x026b`.
 
 The `phy_frequency` HAL preserves all fresh-read edges, full-word constants,
 packed images and ROM branch encodings. Host tests record both reads and
-writes, not only final values. Cold init, baseband init, D-code and every
-channel action now borrow the same `&mut RadioRegisters`; the D-code MMIO
+writes, not only final values. Cold init, baseband init and channel actions
+coordinate the platform capability with the same `&mut RadioRegisters`; the
+D-code MMIO
 binding is no longer `unsafe` and cannot manufacture a second peripheral
 owner. The source-only audit rejects all raw accesses to `0x001c..0x003c`,
 `0x0874`, `0x4400`, `0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`,

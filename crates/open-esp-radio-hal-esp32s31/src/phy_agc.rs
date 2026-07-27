@@ -8,10 +8,7 @@
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(any(test, target_arch = "riscv32"))]
-use open_esp_radio_pac_esp32s31::{
-    power::{modem_syscon, phy_agc_oracle},
-    Field32, Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::phy_agc_oracle, Field32, Register32};
 
 #[cfg(any(test, target_arch = "riscv32"))]
 const fn field_value(field: Field32, value: u32) -> u32 {
@@ -50,8 +47,12 @@ impl RegisterIo for RadioRegisters {
 /// and fresh-read updates in instruction order. OPAQUE full-word values are
 /// intentionally kept as exact ROM constants.
 #[cfg(target_arch = "riscv32")]
-pub fn update_baseband_registers(registers: &mut RadioRegisters) {
+pub fn update_baseband_registers(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+) {
     update_baseband_registers_with(registers);
+    crate::wifi_bb::enable_agc_register_update(platform);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
@@ -80,9 +81,6 @@ fn update_baseband_registers_with(io: &mut impl RegisterIo) {
     io.write(phy_agc_oracle::AGC_UPDATE_7048_OPAQUE, 0xff7d_a4f3);
     io.write(phy_agc_oracle::RX_11B_WINDOW_CONTROL, 0x06ac_c7c8);
     io.write(phy_agc_oracle::RX_11B_PATH_CONTROL_1, 0xb220_8553);
-
-    let enable = modem_syscon::wifi_bb_cfg::BB_AGC_UPDATE_ENABLE_UNKNOWN;
-    io.modify(modem_syscon::WIFI_BB_CFG, enable.mask(), enable.mask());
 }
 
 /// Select the exact AGC state used by the open channel transition.
@@ -516,10 +514,7 @@ mod tests {
         set_saturation_gain_with, update_baseband_registers_with, update_post_initialization_with,
         RegisterIo,
     };
-    use open_esp_radio_pac_esp32s31::{
-        power::{modem_syscon, phy_agc_oracle},
-        Register32,
-    };
+    use open_esp_radio_pac_esp32s31::{power::phy_agc_oracle, Register32};
 
     #[derive(Default)]
     struct FakeRegisters {
@@ -564,8 +559,7 @@ mod tests {
     fn baseband_update_preserves_the_complete_rom_order() {
         let mut io = FakeRegisters::default()
             .with(phy_agc_oracle::RX_11B_MODE_CONTROL, u32::MAX)
-            .with(phy_agc_oracle::AGC_UPDATE_8078_CONTROL, 0x8000_0042)
-            .with(modem_syscon::WIFI_BB_CFG, 0x0000_0002);
+            .with(phy_agc_oracle::AGC_UPDATE_8078_CONTROL, 0x8000_0042);
 
         update_baseband_registers_with(&mut io);
 
@@ -586,7 +580,6 @@ mod tests {
                 (phy_agc_oracle::AGC_UPDATE_7048_OPAQUE, 0xff7d_a4f3),
                 (phy_agc_oracle::RX_11B_WINDOW_CONTROL, 0x06ac_c7c8),
                 (phy_agc_oracle::RX_11B_PATH_CONTROL_1, 0xb220_8553),
-                (modem_syscon::WIFI_BB_CFG, 0x0000_3802),
             ]
         );
     }

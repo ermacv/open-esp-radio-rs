@@ -816,8 +816,9 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub unsafe fn execute_target<P: open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl>(
         self,
+        platform: &mut P,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyChipChannelCompletion {
         match self.action {
@@ -864,7 +865,9 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz }
             }
             PhyChipChannelAction::ConfigureBssCbw { cbw } => {
-                open_esp_radio_hal_esp32s31::phy_frequency::configure_bss_cbw(registers, cbw);
+                open_esp_radio_hal_esp32s31::phy_frequency::configure_bss_cbw(
+                    platform, registers, cbw,
+                );
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
             PhyChipChannelAction::ConfigureRxCompensation { pass } => {

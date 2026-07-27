@@ -8,7 +8,7 @@
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(any(test, target_arch = "riscv32"))]
 use open_esp_radio_pac_esp32s31::{
-    power::{modem_syscon, phy_frequency_channel_oracle, phy_i2c_command_ram},
+    power::{phy_frequency_channel_oracle, phy_i2c_command_ram},
     Field32, Register32,
 };
 
@@ -48,15 +48,12 @@ impl RegisterIo for RadioRegisters {
 /// this fresh-read update before `phy_force_txrx_off`. Bit 1 is independently
 /// identified by complete ROM `phy_wifi_enable_set`; bit 0 remains unknown.
 #[cfg(target_arch = "riscv32")]
-pub fn prepare_wifi_control(registers: &mut RadioRegisters) {
-    prepare_wifi_control_with(registers);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn prepare_wifi_control_with(io: &mut impl RegisterIo) {
-    let unknown = modem_syscon::wifi_bb_cfg::COLD_START_CLEAR_UNKNOWN;
-    let wifi = modem_syscon::wifi_bb_cfg::WIFI_ENABLE;
-    io.modify(modem_syscon::WIFI_BB_CFG, unknown.mask() | wifi.mask(), 0);
+pub fn prepare_wifi_control(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+) {
+    crate::wifi_bb::prepare_cold_start(platform);
+    registers.set_wifi_baseband_enabled_image(false);
 }
 
 /// Select the two-bit baseband mode used by the Rust cold-init transition.
@@ -372,15 +369,8 @@ fn initialize_nrx_baseband_with(io: &mut impl RegisterIo) {
 /// recovered three-bit AGC-update field occupies bits 13:11, so this method
 /// sets only its low encoding bit and preserves the other two.
 #[cfg(target_arch = "riscv32")]
-pub fn set_baseband_init_control(registers: &mut RadioRegisters) {
-    set_baseband_init_control_with(registers);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn set_baseband_init_control_with(io: &mut impl RegisterIo) {
-    let field = modem_syscon::wifi_bb_cfg::BB_AGC_UPDATE_ENABLE_UNKNOWN;
-    let low_bit = field_value(field, 1);
-    io.modify(modem_syscon::WIFI_BB_CFG, low_bit, low_bit);
+pub fn set_baseband_init_control(platform: &mut impl crate::wifi_bb::PhyWifiBbControl) {
+    crate::wifi_bb::set_baseband_init_control(platform);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
@@ -401,26 +391,28 @@ const fn bss_tx_offset(cbw: u8) -> u32 {
 /// `phy_wifi_fbw_sel`. This method retains their five fresh-read writes and
 /// exact zero/nonzero CBW branches.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_bss_cbw(registers: &mut RadioRegisters, cbw: u8) {
-    configure_bss_cbw_with(registers, cbw);
+pub fn configure_bss_cbw(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+    cbw: u8,
+) {
+    configure_bss_cbw_prefix_with(registers, cbw);
+    crate::wifi_bb::set_bss_cbw_40_digital(platform, cbw != 0);
+    configure_bss_cbw_suffix_with(registers, cbw);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
-fn configure_bss_cbw_with(io: &mut impl RegisterIo, cbw: u8) {
+fn configure_bss_cbw_prefix_with(io: &mut impl RegisterIo, cbw: u8) {
     let offset = phy_frequency_channel_oracle::channel_tx_offset_control::CHANNEL_OFFSET_UNKNOWN;
     io.modify(
         phy_frequency_channel_oracle::CHANNEL_TX_OFFSET_CONTROL,
         offset.mask(),
         field_value(offset, bss_tx_offset(cbw)),
     );
+}
 
-    let digital = modem_syscon::wifi_bb_cfg::BSS_CBW_40_DIGITAL_UNKNOWN;
-    io.modify(
-        modem_syscon::WIFI_BB_CFG,
-        digital.mask(),
-        field_value(digital, u32::from(cbw != 0)),
-    );
-
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_bss_cbw_suffix_with(io: &mut impl RegisterIo, cbw: u8) {
     let clear_low = phy_frequency_channel_oracle::fbw_bt_filter_control::FBW_CLEAR_LOW_UNKNOWN;
     let clear_high = phy_frequency_channel_oracle::fbw_bt_filter_control::FBW_CLEAR_HIGH_UNKNOWN;
     io.modify(
@@ -544,18 +536,13 @@ fn configure_channel_cbw_with(io: &mut impl RegisterIo, cbw: u8) {
 /// The body at `0x2f82_8220`, size `0x18`, performs one fresh-read set or
 /// clear of the instruction- and symbol-identified Wi-Fi enable bit.
 #[cfg(target_arch = "riscv32")]
-pub fn set_wifi_enabled(registers: &mut RadioRegisters, enabled: bool) {
-    set_wifi_enabled_with(registers, enabled);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn set_wifi_enabled_with(io: &mut impl RegisterIo, enabled: bool) {
-    let wifi = modem_syscon::wifi_bb_cfg::WIFI_ENABLE;
-    io.modify(
-        modem_syscon::WIFI_BB_CFG,
-        wifi.mask(),
-        if enabled { wifi.mask() } else { 0 },
-    );
+pub fn set_wifi_enabled(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+    enabled: bool,
+) {
+    crate::wifi_bb::set_wifi_enabled(platform, enabled);
+    registers.set_wifi_baseband_enabled_image(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_mac_enable_bb`.
@@ -563,17 +550,12 @@ fn set_wifi_enabled_with(io: &mut impl RegisterIo, enabled: bool) {
 /// The body at `0x2f82_7836`, size `0x2a`, sets bit 28, clears Wi-Fi enable,
 /// then sets Wi-Fi enable, with a fresh read before every store.
 #[cfg(target_arch = "riscv32")]
-pub fn enable_mac_baseband(registers: &mut RadioRegisters) {
-    enable_mac_baseband_with(registers);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn enable_mac_baseband_with(io: &mut impl RegisterIo) {
-    let baseband = modem_syscon::wifi_bb_cfg::MAC_BASEBAND_ENABLE_UNKNOWN;
-    io.modify(modem_syscon::WIFI_BB_CFG, baseband.mask(), baseband.mask());
-    let wifi = modem_syscon::wifi_bb_cfg::WIFI_ENABLE;
-    io.modify(modem_syscon::WIFI_BB_CFG, wifi.mask(), 0);
-    io.modify(modem_syscon::WIFI_BB_CFG, wifi.mask(), wifi.mask());
+pub fn enable_mac_baseband(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+) {
+    crate::wifi_bb::enable_mac_baseband(platform);
+    registers.set_wifi_baseband_enabled_image(true);
 }
 
 /// Apply complete rev0 ROM `phy_bt_filter_reg`.
@@ -612,16 +594,15 @@ mod tests {
     use std::{vec, vec::Vec};
 
     use super::{
-        clear_channel_switch_with, configure_bss_cbw_with, configure_bt_filter_with,
-        configure_channel_cbw_with, configure_i2c_number_addresses_with,
-        configure_nrx_frequency_with, enable_mac_baseband_with, initialize_nrx_baseband_with,
-        initialize_registers_with, prepare_wifi_control_with, publish_tx_cap_with,
-        reset_module_with, sample_frequency_ready_with, set_baseband_init_control_with,
-        set_baseband_mode_with, set_hardware_control_with, set_wifi_enabled_with,
-        start_channel_switch_with, write_memory_with, RegisterIo,
+        clear_channel_switch_with, configure_bss_cbw_prefix_with, configure_bss_cbw_suffix_with,
+        configure_bt_filter_with, configure_channel_cbw_with, configure_i2c_number_addresses_with,
+        configure_nrx_frequency_with, initialize_nrx_baseband_with, initialize_registers_with,
+        publish_tx_cap_with, reset_module_with, sample_frequency_ready_with,
+        set_baseband_mode_with, set_hardware_control_with, start_channel_switch_with,
+        write_memory_with, RegisterIo,
     };
     use open_esp_radio_pac_esp32s31::{
-        power::{modem_syscon, phy_frequency_channel_oracle, phy_i2c_command_ram},
+        power::{phy_frequency_channel_oracle, phy_i2c_command_ram},
         Register32,
     };
 
@@ -807,39 +788,31 @@ mod tests {
         let control_1 = phy_frequency_channel_oracle::CHANNEL_CBW_CONTROL_1;
         let mut io = FakeRegisters::default()
             .with(tx, 0x1234_567f)
-            .with(modem_syscon::WIFI_BB_CFG, 0x0000_0002)
             .with(fbw, 0x03ff_ffff)
             .with(control_0, 0xa5a5_5a5a)
             .with(control_1, 0xa5a5_5a5a);
 
-        configure_bss_cbw_with(&mut io, 2);
+        configure_bss_cbw_prefix_with(&mut io, 2);
+        configure_bss_cbw_suffix_with(&mut io, 2);
         configure_channel_cbw_with(&mut io, 0x50);
 
         assert_eq!(io.value(tx), 0x1234_5674);
-        assert_eq!(io.value(modem_syscon::WIFI_BB_CFG), 0x0000_0006);
         assert_eq!(io.value(fbw), 0x03d2_ffff);
         assert_eq!(io.value(control_0), 0xa5a5_5a58);
         assert_eq!(io.value(control_1), 0xa5a5_5a44);
     }
 
     #[test]
-    fn shared_wifi_and_filter_methods_preserve_fresh_read_order() {
-        let wifi = modem_syscon::WIFI_BB_CFG;
+    fn shared_frequency_and_filter_methods_preserve_fresh_read_order() {
         let filter = phy_frequency_channel_oracle::FBW_BT_FILTER_CONTROL;
         let status = phy_frequency_channel_oracle::FREQUENCY_PARAMETER_1_STATUS;
         let mut io = FakeRegisters::default()
-            .with(wifi, u32::MAX)
             .with(filter, u32::MAX)
             .with(status, u32::MAX);
 
-        prepare_wifi_control_with(&mut io);
         set_baseband_mode_with(&mut io, 2);
-        set_baseband_init_control_with(&mut io);
-        set_wifi_enabled_with(&mut io, false);
-        enable_mac_baseband_with(&mut io);
         configure_bt_filter_with(&mut io);
 
-        assert_eq!(io.value(wifi), 0xffff_fffe);
         assert_eq!(io.value(status), 0xffff_fffe);
         assert_eq!(io.value(filter), 0xfe3f_ffff);
     }

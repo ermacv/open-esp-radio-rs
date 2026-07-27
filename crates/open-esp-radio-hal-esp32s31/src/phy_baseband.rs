@@ -327,13 +327,16 @@ fn configure_noise_floor_auto_with(io: &mut impl RegisterIo) {
 /// `phy_freq_nrx_init_baseband` and `phy_btbb_wifi_bb_cfg2` leaves remain at
 /// their original positions in the sequence.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_baseband(registers: &mut RadioRegisters) {
+pub fn initialize_baseband(
+    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
+    registers: &mut RadioRegisters,
+) {
     use crate::phy_frequency;
 
     initialize_baseband_prefix_with(registers);
     phy_frequency::initialize_nrx_baseband(registers);
     initialize_baseband_middle_with(registers);
-    phy_frequency::set_baseband_init_control(registers);
+    phy_frequency::set_baseband_init_control(platform);
     initialize_baseband_tail_with(registers);
 }
 

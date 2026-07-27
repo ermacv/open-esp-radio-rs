@@ -20,6 +20,7 @@ pub mod phy_prelude;
 pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
+pub mod wifi_bb;
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 
 /// Type states for the coarse radio power lifecycle.
@@ -105,7 +106,12 @@ impl<P> Radio<P, state::Owned> {
     /// reset prerequisites represented by [`state::Powered`]. No external
     /// driver may continue accessing the radio after this transition; the
     /// peripheral token and returned value must remain the unique owner.
-    pub unsafe fn assume_powered_after_external_initialization(self) -> Radio<P, state::Powered> {
+    pub unsafe fn assume_powered_after_external_initialization(mut self) -> Radio<P, state::Powered>
+    where
+        P: wifi_bb::PhyWifiBbControl,
+    {
+        self.registers
+            .set_wifi_baseband_enabled_image(self.peripheral.wifi_baseband_is_enabled());
         Radio {
             peripheral: self.peripheral,
             registers: self.registers,
@@ -160,17 +166,24 @@ impl<P> Radio<P, state::Powered> {
     /// on the powered owner makes that final lifecycle edge explicit and
     /// prevents application code from writing `WIFI_BB_CFG` without owning the
     /// radio peripheral.
-    #[cfg(target_arch = "riscv32")]
-    pub fn enable_wifi_rx(&mut self) {
-        phy_frequency::set_wifi_enabled(&mut self.registers, true);
-    }
-
     /// Internal register capability used by source-owned target bindings.
     ///
     /// The returned borrow cannot outlive the unique powered radio owner.
     #[doc(hidden)]
     pub fn registers_mut(&mut self) -> &mut RadioRegisters {
         &mut self.registers
+    }
+}
+
+impl<P: wifi_bb::PhyWifiBbControl> Radio<P, state::Powered> {
+    /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
+    ///
+    /// The official system register and the PBus-visible owned state are
+    /// updated together under the unique radio owner.
+    #[cfg(target_arch = "riscv32")]
+    pub fn enable_wifi_rx(&mut self) {
+        let (platform, registers) = self.parts_mut();
+        phy_frequency::set_wifi_enabled(platform, registers, true);
     }
 }
 
@@ -229,6 +242,17 @@ mod tests {
                 phy_i2c_master_clock_enabled: self.ready,
             }
         }
+    }
+
+    impl crate::wifi_bb::PhyWifiBbControl for TestPeripheral {
+        fn clear_cold_start_wifi_control(&mut self) {}
+        fn wifi_baseband_is_enabled(&self) -> bool {
+            false
+        }
+        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
+        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
+        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
+        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
     }
 
     #[test]

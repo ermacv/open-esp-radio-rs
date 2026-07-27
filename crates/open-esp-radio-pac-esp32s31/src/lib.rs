@@ -155,6 +155,7 @@ impl Field32 {
 /// Higher layers retain semantic sequencing and borrow this owner mutably.
 pub struct RadioRegisters {
     peripherals: svd::Peripherals,
+    wifi_baseband_enabled: bool,
 }
 
 impl RadioRegisters {
@@ -169,7 +170,24 @@ impl RadioRegisters {
             // SAFETY: the caller establishes the same unique ownership
             // invariant required by `svd2rust::Peripherals::steal`.
             peripherals: unsafe { svd::Peripherals::steal() },
+            wifi_baseband_enabled: false,
         }
+    }
+
+    /// Synchronize the owned Wi-Fi-enable image after a platform PAC update.
+    ///
+    /// This state replaces deep calibration reads through a second, custom
+    /// `MODEM_SYSCON` description. The unique [`RadioRegisters`] owner and
+    /// its platform token update it together.
+    #[doc(hidden)]
+    pub fn set_wifi_baseband_enabled_image(&mut self, enabled: bool) {
+        self.wifi_baseband_enabled = enabled;
+    }
+
+    /// Return the Wi-Fi-enable image owned by this radio instance.
+    #[doc(hidden)]
+    pub fn wifi_baseband_enabled_image(&self) -> bool {
+        self.wifi_baseband_enabled
     }
 
     pub const fn contains(address: usize) -> bool {

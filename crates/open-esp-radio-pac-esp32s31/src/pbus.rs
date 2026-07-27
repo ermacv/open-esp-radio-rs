@@ -62,14 +62,9 @@ impl RadioRegisters {
             .modify(|_, w| w.debug_mode_enable().bit(enabled));
     }
 
-    /// Whether the Wi-Fi baseband path is currently enabled.
+    /// Whether the uniquely owned Wi-Fi baseband path is currently enabled.
     pub fn wifi_baseband_is_enabled(&mut self) -> bool {
-        self.peripherals
-            .modem_syscon
-            .wifi_bb_cfg()
-            .read()
-            .wifi_enable()
-            .bit_is_set()
+        self.wifi_baseband_enabled_image()
     }
 
     /// Sample the PBus busy bit exactly once.

@@ -4,6 +4,7 @@
 //! documented MMIO. They are temporary runtime-local HAL boundaries until the
 //! register layer moves into the ESP32-S31 radio HAL crate.
 
+use open_esp_radio_hal_esp32s31::radio_registers::{phy_clock_oracle, pmu};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_hal_esp32s31::RadioRegisters;
 
@@ -46,11 +47,13 @@ const PHY_GAIN_MEMORY_WORD0_ADDRESS: usize = 0x2010_0848;
 const PHY_GAIN_MEMORY_WORD1_ADDRESS: usize = 0x2010_084c;
 const PHY_GAIN_MEMORY_WORD2_ADDRESS: usize = 0x2010_0850;
 const PHY_GAIN_MEMORY_MAX_ENTRIES: u32 = 32;
-const PHY_FE_CLOCK_GATE_ADDRESS: usize = 0x2010_0400;
-const PHY_FE_BB_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0800;
-const PHY_BB_CLOCK_GATE_ADDRESS: usize = 0x2010_7c80;
 const PHY_BBPLL_CAL_CONTROL_ADDRESS: usize = 0x2010_f818;
-const MODEM_LPCON_CLOCK_CONF_ADDRESS: usize = 0x2070_401c;
+const PHY_FE_BB_ENABLE_MASK: u32 =
+    phy_clock_oracle::fe_bb_clock_control_opaque::ROM_FE_BB_ENABLE_UNKNOWN.mask();
+const PHY_CALIBRATION_CLOCK_MASK: u32 =
+    phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
+const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
+    | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
 const PHY_AGC_CONTROL_ADDRESS: usize = 0x2010_705c;
 const PHY_AGC_SAT_GAIN_LOW_ADDRESS: usize = 0x2010_7064;
 const PHY_AGC_SAT_GAIN_HIGH_ADDRESS: usize = 0x2010_7114;
@@ -311,7 +314,10 @@ pub(crate) unsafe fn program_phy_tx_cfr_entry(entry: crate::phy_bb::PhyTxCfrEntr
 /// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn enable_phy_baseband_initialization() {
-    set_register_bits(PHY_FE_BB_CLOCK_CONTROL_ADDRESS, 1 << 2);
+    set_register_bits(
+        phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
+        PHY_CALIBRATION_CLOCK_MASK,
+    );
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -418,15 +424,15 @@ pub(crate) const fn phy_i2c_master_reset_busy(value: u32) -> bool {
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters, enabled: bool) {
-    // SAFETY: this action owns the powered radio and only changes the
-    // recovered calibration clock bit.
-    unsafe {
-        registers.replace_bits(
-            PHY_FE_BB_CLOCK_CONTROL_ADDRESS,
-            1 << 2,
-            u32::from(enabled) << 2,
-        );
-    }
+    registers.modify32(
+        phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,
+        PHY_CALIBRATION_CLOCK_MASK,
+        if enabled {
+            PHY_CALIBRATION_CLOCK_MASK
+        } else {
+            0
+        },
+    );
 }
 
 /// Program the S31's fixed 40 MHz crystal field without consulting hidden
@@ -1005,7 +1011,7 @@ const fn without_tx_queue_enable(value: u32) -> u32 {
 }
 
 const fn without_fe_bb_clock_enable(value: u32) -> u32 {
-    value & !0x3
+    value & !PHY_FE_BB_ENABLE_MASK
 }
 
 const fn with_bbpll_calibration(value: u32, enable: u32) -> u32 {
@@ -1714,35 +1720,37 @@ pub unsafe extern "C" fn wifi_strict_phy_dc_mem_clr() {
 #[no_mangle]
 #[link_section = ".rwtext.wifi_strict.radio_hal"]
 pub unsafe extern "C" fn wifi_strict_phy_close_fe_bb_clk() {
-    (PHY_FE_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0);
+    (phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0);
 
-    let control = PHY_FE_BB_CLOCK_CONTROL_ADDRESS as *mut u32;
+    let control = phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address() as *mut u32;
     control.write_volatile(without_fe_bb_clock_enable(control.read_volatile()));
 
-    (PHY_BB_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0);
+    (phy_clock_oracle::BB_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0);
 }
 
 /// Open the recovered front-end and baseband clock gates.
 ///
 /// Reference: complete rev0 ROM `phy_open_fe_bb_clk` body at `0x2f82_3ec0`,
 /// size `0x38`. The four writes retain their exact order and the two
-/// read/modify/write operations use fresh volatile reads. Unknown MODEM_LPCON
-/// bit meanings are not inferred beyond the ROM function name.
+/// read/modify/write operations use fresh volatile reads. PMU bit 22 is named
+/// by the S31 PMU description; the low four PMU bits and the three PHY gate
+/// registers remain explicitly opaque rather than borrowing neighboring-chip
+/// names.
 ///
 /// This cold-init leaf has no call, branch, loop, wait, allocation, callback,
 /// or non-MMIO state access.
 #[cfg(target_arch = "riscv32")]
 #[no_mangle]
 pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
-    (PHY_FE_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(0x1e7);
+    (phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0x1e7);
 
-    let control = PHY_FE_BB_CLOCK_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(control.read_volatile() | 0x3);
+    let control = phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address() as *mut u32;
+    control.write_volatile(control.read_volatile() | PHY_FE_BB_ENABLE_MASK);
 
-    (PHY_BB_CLOCK_GATE_ADDRESS as *mut u32).write_volatile(u32::MAX);
+    (phy_clock_oracle::BB_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(u32::MAX);
 
-    let modem_clock = MODEM_LPCON_CLOCK_CONF_ADDRESS as *mut u32;
-    modem_clock.write_volatile(modem_clock.read_volatile() | 0x0040_000f);
+    let active_clock_power = pmu::HP_ACTIVE_HP_CK_POWER.address() as *mut u32;
+    active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
 }
 
 /// Select the recovered baseband-PLL calibration control state.
@@ -2010,7 +2018,10 @@ pub(crate) unsafe fn restore_phy_register_field(address: usize, field_mask: u32,
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(enabled: bool) {
     if enabled {
-        set_register_bits(PHY_FE_BB_CLOCK_CONTROL_ADDRESS, 1 << 2);
+        set_register_bits(
+            phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
+            PHY_CALIBRATION_CLOCK_MASK,
+        );
         set_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
     } else {
         clear_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);

@@ -7,6 +7,10 @@ audit_dir="$(mktemp -d)"
 
 cd "$repo_root"
 
+# The SVD is the editable clock/power register source. Fail closed if the
+# checked-in PAC was edited directly or generation is no longer reproducible.
+tools/generate-esp32s31-radio-pac.py --check
+
 # HAL/MAC may select only PAC-described peripheral registers. Descriptor
 # volatile access is intentionally excluded: those words live in owned DMA
 # memory, not in the peripheral address space.

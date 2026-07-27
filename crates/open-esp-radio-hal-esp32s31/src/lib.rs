@@ -6,9 +6,9 @@ extern crate std;
 use core::future::Future;
 use core::marker::PhantomData;
 
-pub use open_esp_radio_pac_esp32s31::{RadioRegisters, Register32};
+pub use open_esp_radio_pac_esp32s31::{power as radio_registers, RadioRegisters, Register32};
 pub mod power;
-pub use power::{PowerCheckpoint, PowerError, PowerOperation, PowerSequence};
+pub use power::{PowerCheckpoint, PowerError, PowerEvidence, PowerOperation, PowerSequence};
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
@@ -82,6 +82,12 @@ impl<P> Radio<P, state::Owned> {
     }
 
     /// Execute the finite modem/PHY clock and reset prerequisites.
+    ///
+    /// Register fields come from the pinned ESP32-S31 modem/PMU headers and
+    /// SVD. The exact operation order and field values reproduce the pinned
+    /// S31 `esp-hal` clock path at commit `6899213e`; the ROM-only frontend
+    /// gates are a later owned PHY transition and are not folded into this
+    /// type-state change.
     ///
     /// The method is target-only because host tests use a private fake
     /// register backend. A successful read-back is the only safe path into
@@ -213,7 +219,7 @@ mod tests {
 
         impl RegisterIo for StuckReset {
             fn read(&mut self, register: Register32) -> u32 {
-                if register == modem_syscon::RST_CONF {
+                if register == modem_syscon::MODEM_RST_CONF {
                     (1 << 8) | (1 << 9)
                 } else {
                     0

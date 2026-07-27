@@ -8,22 +8,75 @@
 #[cfg(any(test, target_arch = "riscv32"))]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 use open_esp_radio_pac_esp32s31::{
-    power::{hp_modem, modem_lpcon, modem_syscon, pmu},
-    Register32,
+    power::{hp_sys_clkrst, modem_lpcon, modem_syscon, pmu},
+    Field32, Register32,
 };
 
-const WIFI_BB_AND_MAC_RESET: u32 = (1 << 8) | (1 << 9);
-const WIFI_BB_RESET: u32 = 1 << 8;
-const HP_ACTIVE_MODEM_ICG_CODE: u32 = 2 << 30;
-const PMU_UPDATE_MODEM_ICG: u32 = 1 << 31;
-const PMU_UPDATE_ICG_SWITCH: u32 = 1 << 28;
-const MODEM_BUS_CLOCK: u32 = 1;
-const HP_ACTIVE_MODEM_CLOCK_MAP: u32 = 0x6464_6400;
-const HP_MODEM_SHARED_CLOCK_MAP: u32 = 0x6666_0000;
-const HP_MODEM_PLL_CONFIGURATION: u32 = 0x3d;
-const PHY_AND_CALIBRATION_CLOCKS: u32 = 0x003b_e5ff;
-const I2C_MASTER_SELECT_160M: u32 = 1 << 12;
-const I2C_MASTER_CLOCK: u32 = 1 << 2;
+const fn field_value(field: Field32, value: u32) -> u32 {
+    match field.checked_value(value) {
+        Some(value) => value,
+        None => panic!("value does not fit recovered register field"),
+    }
+}
+
+const WIFI_BB_AND_MAC_RESET: u32 = modem_syscon::modem_rst_conf::RST_WIFIBB.mask()
+    | modem_syscon::modem_rst_conf::RST_WIFIMAC.mask();
+const WIFI_BB_RESET: u32 = modem_syscon::modem_rst_conf::RST_WIFIBB.mask();
+const HP_ACTIVE_MODEM_ICG_CODE: u32 =
+    field_value(pmu::hp_active_icg_modem::HP_ACTIVE_DIG_ICG_MODEM_CODE, 2);
+const PMU_UPDATE_MODEM_ICG: u32 = pmu::imm_modem_icg::UPDATE_DIG_ICG_MODEM_EN.mask();
+const PMU_UPDATE_ICG_SWITCH: u32 = pmu::imm_sleep_sysclk::UPDATE_DIG_ICG_SWITCH.mask();
+const MODEM_BUS_CLOCK: u32 = hp_sys_clkrst::modem_ctrl0::REG_MODEM_CLK_EN.mask();
+const HP_ACTIVE_MODEM_CLOCK_MAP: u32 =
+    field_value(modem_syscon::clk_conf_power_st::CLK_ZB_ST_MAP, 4)
+        | field_value(modem_syscon::clk_conf_power_st::CLK_FE_ST_MAP, 6)
+        | field_value(modem_syscon::clk_conf_power_st::CLK_BT_ST_MAP, 4)
+        | field_value(modem_syscon::clk_conf_power_st::CLK_WIFI_ST_MAP, 6)
+        | field_value(modem_syscon::clk_conf_power_st::CLK_MODEM_PERI_ST_MAP, 4)
+        | field_value(modem_syscon::clk_conf_power_st::CLK_MODEM_APB_ST_MAP, 6);
+const HP_MODEM_SHARED_CLOCK_MAP: u32 =
+    field_value(modem_lpcon::clk_conf_power_st::CLK_WIFIPWR_ST_MAP, 6)
+        | field_value(modem_lpcon::clk_conf_power_st::CLK_COEX_ST_MAP, 6)
+        | field_value(modem_lpcon::clk_conf_power_st::CLK_I2C_MST_ST_MAP, 6)
+        | field_value(modem_lpcon::clk_conf_power_st::CLK_LP_APB_ST_MAP, 6);
+const HP_MODEM_PLL_CONFIGURATION: u32 = hp_sys_clkrst::modem_conf::MODEM_APB_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_CLK_SOURCE_SEL.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_PLL_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_XTAL_CLK_EN.mask();
+const PHY_AND_CALIBRATION_CLOCKS: u32 = modem_syscon::clk_conf1::CLK_WIFIBB_22M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_44M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40X_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80X_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_160X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFI_APB_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_80M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_160M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_APB_EN.mask()
+    | modem_syscon::clk_conf1::CLK_BT_APB_EN.mask()
+    | modem_syscon::clk_conf1::CLK_BTBB_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_PWDET_ADC_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_ADC_EN.mask()
+    | modem_syscon::clk_conf1::CLK_FE_DAC_EN.mask();
+const I2C_MASTER_SELECT_160M: u32 = modem_syscon::clk_conf::CLK_I2C_MST_SEL_160M.mask();
+const I2C_MASTER_CLOCK: u32 = modem_lpcon::clk_conf::CLK_I2C_MST_EN.mask();
+
+/// Evidence family for one cold power operation.
+///
+/// The SVD supplies register layout; the sequence source independently
+/// supplies order and values. This distinction prevents a neighboring-chip
+/// field name from being mistaken for S31 execution evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PowerEvidence {
+    /// S31 modem headers plus the pinned S31 `esp-hal` clock implementation.
+    S31ModemHeadersAndClockOracle,
+    /// S31 SoC SVD/PMU headers plus the pinned S31 `esp-hal` clock implementation.
+    S31SocDescriptionAndClockOracle,
+}
 
 /// One finite register operation in the cold modem/PHY prerequisite path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,14 +100,39 @@ pub enum PowerOperation {
     },
 }
 
+impl PowerOperation {
+    /// State which recovered sources justify this register operation.
+    ///
+    /// MODEM_SYSCON/LPCON layout comes from the pinned S31 headers at
+    /// `esp-wifi-sys` commit `2585f278`; HP_SYS_CLKRST/PMU layout comes from
+    /// the S31 SVD and PMU headers. Operation ordering and values are from the
+    /// pinned S31 `esp-hal` clock path at commit `6899213e`.
+    pub const fn evidence(self) -> PowerEvidence {
+        let register = match self {
+            Self::Modify { register, .. } | Self::Write { register, .. } => register,
+        };
+        if register.address() == modem_syscon::BASE
+            || (register.address() > modem_syscon::BASE
+                && register.address() < modem_syscon::BASE + 0x34)
+            || register.address() == modem_lpcon::BASE
+            || (register.address() > modem_lpcon::BASE
+                && register.address() < modem_lpcon::BASE + 0x5c)
+        {
+            PowerEvidence::S31ModemHeadersAndClockOracle
+        } else {
+            PowerEvidence::S31SocDescriptionAndClockOracle
+        }
+    }
+}
+
 const POWER_OPERATIONS: [PowerOperation; 14] = [
     PowerOperation::Modify {
-        register: modem_syscon::RST_CONF,
+        register: modem_syscon::MODEM_RST_CONF,
         mask: WIFI_BB_AND_MAC_RESET,
         value: WIFI_BB_AND_MAC_RESET,
     },
     PowerOperation::Modify {
-        register: modem_syscon::RST_CONF,
+        register: modem_syscon::MODEM_RST_CONF,
         mask: WIFI_BB_AND_MAC_RESET,
         value: 0,
     },
@@ -71,7 +149,7 @@ const POWER_OPERATIONS: [PowerOperation; 14] = [
         value: PMU_UPDATE_ICG_SWITCH,
     },
     PowerOperation::Modify {
-        register: hp_modem::CTRL0,
+        register: hp_sys_clkrst::MODEM_CTRL0,
         mask: MODEM_BUS_CLOCK,
         value: MODEM_BUS_CLOCK,
     },
@@ -86,16 +164,16 @@ const POWER_OPERATIONS: [PowerOperation; 14] = [
         value: HP_MODEM_SHARED_CLOCK_MAP,
     },
     PowerOperation::Write {
-        register: hp_modem::CONF,
+        register: hp_sys_clkrst::MODEM_CONF,
         value: HP_MODEM_PLL_CONFIGURATION,
     },
     PowerOperation::Modify {
-        register: modem_syscon::RST_CONF,
+        register: modem_syscon::MODEM_RST_CONF,
         mask: WIFI_BB_RESET,
         value: WIFI_BB_RESET,
     },
     PowerOperation::Modify {
-        register: modem_syscon::RST_CONF,
+        register: modem_syscon::MODEM_RST_CONF,
         mask: WIFI_BB_RESET,
         value: 0,
     },
@@ -194,7 +272,7 @@ struct Verification {
 const VERIFICATIONS: [Verification; 9] = [
     Verification {
         checkpoint: PowerCheckpoint::ResetReleased,
-        register: modem_syscon::RST_CONF,
+        register: modem_syscon::MODEM_RST_CONF,
         mask: WIFI_BB_AND_MAC_RESET,
         expected: 0,
     },
@@ -206,7 +284,7 @@ const VERIFICATIONS: [Verification; 9] = [
     },
     Verification {
         checkpoint: PowerCheckpoint::ModemBusClock,
-        register: hp_modem::CTRL0,
+        register: hp_sys_clkrst::MODEM_CTRL0,
         mask: MODEM_BUS_CLOCK,
         expected: MODEM_BUS_CLOCK,
     },
@@ -224,8 +302,13 @@ const VERIFICATIONS: [Verification; 9] = [
     },
     Verification {
         checkpoint: PowerCheckpoint::ModemClockSource,
-        register: hp_modem::CONF,
-        mask: 0x3f,
+        register: hp_sys_clkrst::MODEM_CONF,
+        mask: hp_sys_clkrst::modem_conf::MODEM_APB_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_RST_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_CLK_SOURCE_SEL.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_PLL_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_XTAL_CLK_EN.mask(),
         expected: HP_MODEM_PLL_CONFIGURATION,
     },
     Verification {
@@ -318,9 +401,9 @@ mod tests {
     use open_esp_radio_pac_esp32s31::{power::modem_syscon, Register32};
 
     use super::{
-        execute, PowerCheckpoint, PowerError, PowerOperation, PowerSequence, RegisterIo,
-        HP_ACTIVE_MODEM_CLOCK_MAP, HP_MODEM_SHARED_CLOCK_MAP, PHY_AND_CALIBRATION_CLOCKS,
-        WIFI_BB_AND_MAC_RESET,
+        execute, PowerCheckpoint, PowerError, PowerEvidence, PowerOperation, PowerSequence,
+        RegisterIo, HP_ACTIVE_MODEM_CLOCK_MAP, HP_MODEM_PLL_CONFIGURATION,
+        HP_MODEM_SHARED_CLOCK_MAP, PHY_AND_CALIBRATION_CLOCKS, WIFI_BB_AND_MAC_RESET,
     };
 
     #[derive(Default)]
@@ -370,7 +453,7 @@ mod tests {
         assert_eq!(
             operations[0],
             PowerOperation::Modify {
-                register: modem_syscon::RST_CONF,
+                register: modem_syscon::MODEM_RST_CONF,
                 mask: WIFI_BB_AND_MAC_RESET,
                 value: WIFI_BB_AND_MAC_RESET,
             }
@@ -378,7 +461,7 @@ mod tests {
         assert_eq!(
             operations[1],
             PowerOperation::Modify {
-                register: modem_syscon::RST_CONF,
+                register: modem_syscon::MODEM_RST_CONF,
                 mask: WIFI_BB_AND_MAC_RESET,
                 value: 0,
             }
@@ -386,13 +469,42 @@ mod tests {
     }
 
     #[test]
+    fn named_fields_reconstruct_every_qualified_clock_image() {
+        assert_eq!(HP_ACTIVE_MODEM_CLOCK_MAP, 0x6464_6400);
+        assert_eq!(HP_MODEM_SHARED_CLOCK_MAP, 0x6666_0000);
+        assert_eq!(HP_MODEM_PLL_CONFIGURATION, 0x3d);
+        assert_eq!(PHY_AND_CALIBRATION_CLOCKS, 0x003b_e5ff);
+    }
+
+    #[test]
+    fn every_operation_exposes_layout_and_sequence_evidence() {
+        let evidence: Vec<_> = PowerSequence::new().map(PowerOperation::evidence).collect();
+        assert_eq!(
+            evidence
+                .iter()
+                .filter(|item| **item == PowerEvidence::S31ModemHeadersAndClockOracle)
+                .count(),
+            9
+        );
+        assert_eq!(
+            evidence
+                .iter()
+                .filter(|item| **item == PowerEvidence::S31SocDescriptionAndClockOracle)
+                .count(),
+            5
+        );
+    }
+
+    #[test]
     fn complete_sequence_preserves_unowned_bits_and_passes_all_checkpoints() {
         let mut registers = FakeRegisters::default();
-        registers.values.push((modem_syscon::RST_CONF, 0x55aa_00f0));
+        registers
+            .values
+            .push((modem_syscon::MODEM_RST_CONF, 0x55aa_00f0));
 
         assert_eq!(execute(&mut registers), Ok(()));
         assert_eq!(
-            registers.value(modem_syscon::RST_CONF) & !WIFI_BB_AND_MAC_RESET,
+            registers.value(modem_syscon::MODEM_RST_CONF) & !WIFI_BB_AND_MAC_RESET,
             0x55aa_00f0
         );
         assert_eq!(
@@ -417,7 +529,7 @@ mod tests {
     #[test]
     fn failed_readback_names_the_exact_checkpoint() {
         let mut registers = FakeRegisters {
-            corrupt_read: Some((modem_syscon::RST_CONF, WIFI_BB_AND_MAC_RESET)),
+            corrupt_read: Some((modem_syscon::MODEM_RST_CONF, WIFI_BB_AND_MAC_RESET)),
             ..FakeRegisters::default()
         };
 
@@ -425,7 +537,7 @@ mod tests {
             execute(&mut registers),
             Err(PowerError {
                 checkpoint: PowerCheckpoint::ResetReleased,
-                address: modem_syscon::RST_CONF.address(),
+                address: modem_syscon::MODEM_RST_CONF.address(),
                 mask: WIFI_BB_AND_MAC_RESET,
                 expected: 0,
                 observed: WIFI_BB_AND_MAC_RESET,

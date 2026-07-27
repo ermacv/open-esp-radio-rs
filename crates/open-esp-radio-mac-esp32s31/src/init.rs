@@ -7,7 +7,7 @@
 
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as registers},
-    power::{hp_modem, modem_lpcon, modem_syscon},
+    power::{hp_sys_clkrst, modem_lpcon, modem_syscon},
     Register32,
 };
 
@@ -17,8 +17,23 @@ const MAC_INIT_REQUEST: u32 = 1 << 1;
 const MAC_INIT_READY: u32 = 1;
 const RX_SNIFFER_REJECT_MASK: u32 = 0x0000_038f;
 const RX_SNIFFER_ENABLE: u32 = 0x0002_0000;
-const WIFI_CLOCKS: u32 = 0x0000_07ff;
-const COEX_CLOCK: u32 = 1 << 1;
+const WIFI_CLOCKS: u32 = modem_syscon::clk_conf1::CLK_WIFIBB_22M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_44M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80M_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40X_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80X_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_40X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_80X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIBB_160X1_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFIMAC_EN.mask()
+    | modem_syscon::clk_conf1::CLK_WIFI_APB_EN.mask();
+const COEX_CLOCK: u32 = modem_lpcon::clk_conf::CLK_COEX_EN.mask();
+const HP_MODEM_CLOCK_CONFIGURATION: u32 = hp_sys_clkrst::modem_conf::MODEM_APB_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_CLK_SOURCE_SEL.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_PLL_CLK_EN.mask()
+    | hp_sys_clkrst::modem_conf::MODEM_XTAL_CLK_EN.mask();
 const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,6 +143,11 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 /// Establish the reset-state MAC register configuration and accept all RX
 /// frame classes.
 ///
+/// The modem clock fields come from the pinned S31 register descriptions and
+/// reproduce `esp-radio`'s S31 `enable_wifi(true)` operation. The remaining
+/// ordered MAC writes come from the complete pinned `libpp.a` bodies named in
+/// this module's documentation.
+///
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
 pub fn initialize_promiscuous_receive<M: Mmio>(
@@ -141,7 +161,7 @@ pub fn initialize_promiscuous_receive<M: Mmio>(
     // freshly calibrated baseband.
     modify(mmio, modem_syscon::CLK_CONF1, WIFI_CLOCKS, WIFI_CLOCKS);
     modify(mmio, modem_lpcon::CLK_CONF, COEX_CLOCK, COEX_CLOCK);
-    mmio.write32(hp_modem::CONF, 0x3d);
+    mmio.write32(hp_sys_clkrst::MODEM_CONF, HP_MODEM_CLOCK_CONFIGURATION);
 
     modify(
         mmio,

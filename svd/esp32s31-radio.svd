@@ -1,0 +1,525 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device xmlns:xs="http://www.w3.org/2001/XMLSchema-instance"
+        schemaVersion="1.3"
+        xs:noNamespaceSchemaLocation="CMSIS-SVD.xsd">
+  <vendor>Espressif</vendor>
+  <vendorID>ESP</vendorID>
+  <name>ESP32S31_RADIO</name>
+  <series>ESP32-S31</series>
+  <version>0.1</version>
+  <description>
+    Recovered ESP32-S31 radio clock, reset and power subset. Unknown fields are
+    omitted; OPAQUE names describe instruction-level evidence without assigning
+    an unproven hardware meaning.
+  </description>
+  <licenseText>MIT OR Apache-2.0</licenseText>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>MODEM_SYSCON</name>
+      <description>
+        SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout].
+        Names and offsets come from the pinned ESP32-S31 register structure;
+        writable use is independently exercised by its LL setters and the clock oracle.
+      </description>
+      <baseAddress>0x20109c00</baseAddress>
+      <registers>
+        <register>
+          <name>TEST_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem test and force configuration.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_ANT_FORCE_SEL_BT</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_ANT_FORCE_SEL_WIFI</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FPGA_DEBUG_CLKSWITCH</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FPGA_DEBUG_CLK80</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FPGA_DEBUG_CLK40</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FPGA_DEBUG_CLK20</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FPGA_DEBUG_CLK10</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_MEM_MODE_FORCE</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_DIS_WIFI6_FORCE</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem peripheral clock configuration.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PWDET_SAR_CLOCK_ENA</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PWDET_CLK_DIV_NUM</name><bitOffset>1</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>CLK_TX_DAC_INV_ENA</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_RX_ADC_INV_ENA</name><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_PWDET_ADC_INV_ENA</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_I2C_MST_SEL_160M</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_DATA_DUMP_MUX</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ETM_EN</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ZB_APB_EN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ZBMAC_EN</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_ECB_EN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_CCM_EN</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_BAH_EN</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_APB_EN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_EN</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BLE_TIMER_EN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_DATA_DUMP_EN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_FORCE_ON</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Force-on bits for modem domain clocks.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIBB_FO</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIMAC_FO</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFI_APB_FO</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_FO</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_APB_FO</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BTBB_FO</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BTMAC_FO</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BT_APB_FO</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ZBMAC_FO</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ZBMAC_APB_FO</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_ETM_FO</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_MODEM_SEC_FO</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BLE_TIMER_FO</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_DATA_DUMP_FO</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_POWER_ST</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Four-bit power-state clock maps.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_ZB_ST_MAP</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_FE_ST_MAP</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_BT_ST_MAP</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_WIFI_ST_MAP</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_MODEM_PERI_ST_MAP</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_MODEM_APB_ST_MAP</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_RST_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem subsystem reset lines.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>RST_WIFIBB</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_WIFIMAC</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_FE_PWDET_ADC</name><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_FE_DAC</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_FE_ADC</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_FE_AHB</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_FE</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_BTMAC_APB</name><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_BTMAC</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_BTBB_APB</name><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_BTBB</name><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_COEX_BTMAC_APB</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_COEX_BTMAC</name><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_ETM</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_ZBMAC_APB</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_ZBMAC</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_MODEM_ECB</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_MODEM_CCM</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_MODEM_BAH</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_MODEM_SEC</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_BLE_TIMER</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_DATA_DUMP</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF1</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Wi-Fi, frontend and Bluetooth functional clock gates.</description>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIBB_22M_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_40M_EN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_44M_EN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_80M_EN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_40X_EN</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_80X_EN</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_40X1_EN</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_80X1_EN</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIBB_160X1_EN</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIMAC_EN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFI_APB_EN</name><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_20M_EN</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_40M_EN</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_80M_EN</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_160M_EN</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_APB_EN</name><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BT_APB_EN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BTBB_EN</name><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_BTMAC_EN</name><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_PWDET_ADC_EN</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_ADC_EN</name><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_DAC_EN</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>WIFI_BB_CFG</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE Wi-Fi baseband configuration word.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>FE_CFG</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE radio frontend configuration word.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>MEM_RF1_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE modem memory RF1 configuration.</description>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>MEM_RF2_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE modem memory RF2 configuration.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>BTMAC_CLK_CFG</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Bluetooth MAC low-rate clock selection.</description>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_BTMAC_LOW_RATE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MEM_MODE_CONF</name>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem RF memory mode selection.</description>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>MODEM_RF1_MEM_SEL</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MODEM_RF2_MEM_SEL</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>MODEM_LPCON</name>
+      <description>
+        SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout].
+        Names and offsets come from the pinned ESP32-S31 low-power modem structure;
+        writable use is independently exercised by its LL setters and the clock oracle.
+      </description>
+      <baseAddress>0x2010f000</baseAddress>
+      <registers>
+        <register>
+          <name>TEST_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Low-power modem test clock control.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>CLK_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>LP_TIMER_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Low-power timer clock source and divider.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_LP_TIMER_SEL_OSC_SLOW</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_SEL_OSC_FAST</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_SEL_XTAL</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_SEL_XTAL32K</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_DIV_NUM</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>COEX_LP_CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Coexistence low-power clock source and divider.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_COEX_LP_SEL_OSC_SLOW</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_LP_SEL_OSC_FAST</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_LP_SEL_XTAL</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_LP_SEL_XTAL32K</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_LP_DIV_NUM</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>WIFI_LP_CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Wi-Fi power low-power clock source and divider.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIPWR_LP_SEL_OSC_SLOW</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIPWR_LP_SEL_OSC_FAST</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIPWR_LP_SEL_XTAL</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIPWR_LP_SEL_XTAL32K</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_WIFIPWR_LP_DIV_NUM</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_SRC_CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Always-on modem and power-clock source forcing.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_MODEM_AON_FORCE</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>MODEM_PWR_CLK_SRC_FO</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_32K_CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem 32 kHz source selector.</description>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>CLK_MODEM_32K_SEL</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CLK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Shared low-power modem clock gates.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIPWR_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_EN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_I2C_MST_EN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_EN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_FORCE_ON</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Force-on controls for low-power modem clocks and frontend memory.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIPWR_FO</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_COEX_FO</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_I2C_MST_FO</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_LP_TIMER_FO</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_FE_MEM_FO</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_POWER_ST</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Four-bit shared-domain power-state clock maps.</description>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CLK_WIFIPWR_ST_MAP</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_COEX_ST_MAP</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_I2C_MST_ST_MAP</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CLK_LP_APB_ST_MAP</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RST_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Shared low-power modem reset lines.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>RST_WIFIPWR</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_COEX</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_I2C_MST</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_LP_TIMER</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RST_DCMEM</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TICK_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem power tick target.</description>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>MODEM_PWR_TICK_TARGET</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>MEM_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Mode and force fields for seven low-power modem memories.</description>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>DC_MEM_MODE</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>DC_MEM_FORCE</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>AGC_MEM_MODE</name><bitOffset>4</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>AGC_MEM_FORCE</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PBUS_MEM_MODE</name><bitOffset>8</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>PBUS_MEM_FORCE</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BC_MEM_MODE</name><bitOffset>12</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>BC_MEM_FORCE</name><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>I2C_MST_MEM_MODE</name><bitOffset>16</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>I2C_MST_MEM_FORCE</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CHAN_FREQ_MEM_MODE</name><bitOffset>20</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>CHAN_FREQ_MEM_FORCE</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CFR_MEM_MODE</name><bitOffset>24</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>CFR_MEM_FORCE</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MEM_RF1_AUX_CTRL</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE low-power memory RF1 control.</description>
+          <addressOffset>0x30</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>MEM_RF2_AUX_CTRL</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE low-power memory RF2 control.</description>
+          <addressOffset>0x34</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>APB_MEM_SEL</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. APB selection for modem memories and power-memory base.</description>
+          <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CHAN_FREQ_MEM_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PBUS_MEM_EN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>AGC_MEM_EN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CFR_MEM_EN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PWR_MEM_BASE</name><bitOffset>4</bitOffset><bitWidth>16</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_INTR_WAKEUP_CONF</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Interrupt sources allowed to wake the modem domain.</description>
+          <addressOffset>0x4c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>WIFI_MAC_INTR_WAKEUP_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WIFI_MAC_NMI_WAKEUP_EN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WIFI_PWR_INTR_WAKEUP_EN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WIFI_BB_INTR_WAKEUP_EN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BT_MAC_INTR_WAKEUP_EN</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BT_BB_INTR_WAKEUP_EN</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BT_BB_NMI_WAKEUP_EN</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>LP_TIMER_INTR_WAKEUP_EN</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>COEX_INTR_WAKEUP_EN</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BLE_TIMER_INTR_WAKEUP_EN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BLE_SEC_INTR_WAKEUP_EN</name><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>I2C_MST_INTR_WAKEUP_EN</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>ZB_MAC_INTR_WAKEUP_EN</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BT_MAC_INT1_WAKEUP_EN</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MEM_CONF2</name>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Power-memory mode selection.</description>
+          <addressOffset>0x54</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>PWR_MEM_MODE_SEL</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>HP_SYS_CLKRST</name>
+      <description>
+        SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd].
+        ESP32-S31 high-performance clock/reset fields used by the modem sequence.
+      </description>
+      <baseAddress>0x20587000</baseAddress>
+      <registers>
+        <register>
+          <name>MODEM_CTRL0</name>
+          <description>SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem register-bus clock enable.</description>
+          <addressOffset>0x40</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000001</resetValue>
+          <fields><field><name>REG_MODEM_CLK_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>MODEM_CONF</name>
+          <description>SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB, reset and source-clock configuration.</description>
+          <addressOffset>0x1e0</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000025</resetValue>
+          <fields>
+            <field><name>MODEM_APB_CLK_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_RST_EN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_CLK_EN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_CLK_SOURCE_SEL</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_PLL_CLK_EN</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_XTAL_CLK_EN</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PMU</name>
+      <description>
+        SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,ROM_REV0_PHY_OPEN_FE_BB_CLK];
+        CONFIDENCE[mixed-per-field]. S31 PMU modem ICG triggers and the active-state
+        clock/power word touched by the rev0 ROM.
+      </description>
+      <baseAddress>0x20704000</baseAddress>
+      <registers>
+        <register>
+          <name>HP_ACTIVE_ICG_MODEM</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS]; CONFIDENCE[exact-s31-layout]. HP-active modem ICG code.</description>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>HP_ACTIVE_DIG_ICG_MODEM_CODE</name><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>HP_ACTIVE_HP_CK_POWER</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,ROM_REV0_PHY_OPEN_FE_BB_CLK]; CONFIDENCE[mixed]. Active-state clock power; bits 3:0 are deliberately unnamed beyond the ROM operation.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>ROM_OPEN_FE_BB_UNKNOWN_LOW</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Rev0 ROM sets bits 3:0; individual meanings are unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>4</bitWidth>
+            </field>
+            <field><name>HP_ACTIVE_XPD_XTALX2</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HP_ACTIVE_I2C_ISO_EN</name><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HP_ACTIVE_I2C_RETENTION</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HP_ACTIVE_XPD_BB_I2C</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HP_ACTIVE_XPD_PLL_I2C</name><bitOffset>23</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HP_ACTIVE_XPD_PLL</name><bitOffset>27</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_SLEEP_SYSCLK</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS]; CONFIDENCE[exact-s31-layout]. Immediate system-clock update triggers.</description>
+          <addressOffset>0xf8</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field><name>UPDATE_DIG_ICG_SWITCH</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_ICG_SLP_SEL</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_ICG_SLP_SEL</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>UPDATE_DIG_SYS_CLK_SEL</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_MODEM_ICG</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS]; CONFIDENCE[exact-s31-layout]. Immediate modem ICG update trigger.</description>
+          <addressOffset>0x104</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>UPDATE_DIG_ICG_MODEM_EN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_CLOCK_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
+        CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate
+        registers recovered from complete no-call ROM/blob leaves.
+      </description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>FE_CLOCK_GATE_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes 0x1e7 to open and the blob writes zero to close.</description>
+          <addressOffset>0x0400</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>FE_BB_CLOCK_CONTROL_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM sets bits 1:0 and the blob clears them.</description>
+          <addressOffset>0x0800</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>ROM_FE_BB_ENABLE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit open/close mask; individual meanings are unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>PHY_CALIBRATION_CLOCK_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_BB_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. The phy_bb_init parent sets bit 2 before calibration; the individual hardware meaning remains unknown.</description>
+              <bitOffset>2</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>BB_CLOCK_GATE_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes all ones to open and the blob writes zero to close.</description>
+          <addressOffset>0x7c80</addressOffset><size>32</size><access>write-only</access>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+  <vendorExtensions>
+    <openEspRadioProvenance>
+      <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>
+      <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
+      <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
+      <source id="S31_PMU_HEADERS">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/soc/pmu_reg.h and pmu_struct.h</source>
+      <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
+      <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
+      <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>
+    </openEspRadioProvenance>
+  </vendorExtensions>
+</device>

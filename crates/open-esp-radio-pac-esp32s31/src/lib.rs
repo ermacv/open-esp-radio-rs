@@ -5,6 +5,22 @@ use core::ptr::{read_volatile, write_volatile};
 pub mod mac;
 pub mod power;
 
+/// Access policy recovered for one MMIO register.
+///
+/// The generated radio PAC takes this value from
+/// `svd/esp32s31-radio.svd`. Handwritten legacy MAC entries default to
+/// [`ReadWrite`](RegisterAccess::ReadWrite) until their access policy is
+/// recovered.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RegisterAccess {
+    /// Software may only observe the register.
+    ReadOnly,
+    /// Software may only publish a value or trigger.
+    WriteOnly,
+    /// Software may observe and update the register.
+    ReadWrite,
+}
+
 /// One PAC-described 32-bit MMIO register.
 ///
 /// The address is intentionally private: downstream crates can use registers
@@ -12,16 +28,116 @@ pub mod power;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Register32 {
     address: usize,
+    access: RegisterAccess,
+    reset_value: Option<u32>,
 }
 
 impl Register32 {
     pub(crate) const fn new(address: usize) -> Self {
-        Self { address }
+        Self {
+            address,
+            access: RegisterAccess::ReadWrite,
+            reset_value: None,
+        }
+    }
+
+    pub(crate) const fn described(
+        address: usize,
+        access: RegisterAccess,
+        reset_value: Option<u32>,
+    ) -> Self {
+        Self {
+            address,
+            access,
+            reset_value,
+        }
     }
 
     /// Numeric address for diagnostics and host-side register models.
     pub const fn address(self) -> usize {
         self.address
+    }
+
+    /// SVD-described software access policy.
+    pub const fn access(self) -> RegisterAccess {
+        self.access
+    }
+
+    /// Reset value when the recovered source names one.
+    ///
+    /// `None` means unknown, not necessarily zero.
+    pub const fn reset_value(self) -> Option<u32> {
+        self.reset_value
+    }
+}
+
+/// One named bit-field inside a 32-bit register.
+///
+/// Instances are generated from the recovered SVD. Construction remains
+/// crate-private so higher layers cannot assign guessed bit positions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Field32 {
+    offset: u8,
+    width: u8,
+}
+
+impl Field32 {
+    pub(crate) const fn new(offset: u8, width: u8) -> Self {
+        assert!(width != 0 && width <= 32);
+        assert!(offset < 32 && (offset as u16) + (width as u16) <= 32);
+        Self { offset, width }
+    }
+
+    /// Least-significant bit position recovered for this field.
+    pub const fn offset(self) -> u8 {
+        self.offset
+    }
+
+    /// Number of adjacent bits recovered for this field.
+    pub const fn width(self) -> u8 {
+        self.width
+    }
+
+    /// Register mask occupied by this field.
+    pub const fn mask(self) -> u32 {
+        if self.width == 32 {
+            u32::MAX
+        } else {
+            ((1_u32 << self.width) - 1) << self.offset
+        }
+    }
+
+    /// Maximum unshifted value representable by this field.
+    pub const fn max_value(self) -> u32 {
+        if self.width == 32 {
+            u32::MAX
+        } else {
+            (1_u32 << self.width) - 1
+        }
+    }
+
+    /// Encode a value, returning `None` rather than truncating an invalid one.
+    pub const fn checked_value(self, value: u32) -> Option<u32> {
+        if value <= self.max_value() {
+            Some(value << self.offset)
+        } else {
+            None
+        }
+    }
+
+    /// Extract the unshifted field value from a register image.
+    pub const fn extract(self, register: u32) -> u32 {
+        (register & self.mask()) >> self.offset
+    }
+
+    /// Replace this field while preserving every other register bit.
+    ///
+    /// Returns `None` when `value` does not fit the recovered field width.
+    pub const fn checked_insert(self, register: u32, value: u32) -> Option<u32> {
+        match self.checked_value(value) {
+            Some(encoded) => Some((register & !self.mask()) | encoded),
+            None => None,
+        }
     }
 }
 
@@ -56,6 +172,7 @@ impl RadioRegisters {
 
     /// Read one PAC-described 32-bit register.
     pub fn read32(&self, register: Register32) -> u32 {
+        debug_assert_ne!(register.access(), RegisterAccess::WriteOnly);
         // SAFETY: only this crate constructs `Register32`, and
         // `RadioRegisters` represents the unique live radio MMIO owner.
         unsafe { read_volatile(register.address as *const u32) }
@@ -63,6 +180,7 @@ impl RadioRegisters {
 
     /// Write one PAC-described 32-bit register.
     pub fn write32(&mut self, register: Register32, value: u32) {
+        debug_assert_ne!(register.access(), RegisterAccess::ReadOnly);
         // SAFETY: only this crate constructs `Register32`, and the mutable
         // borrow serializes writes through the unique live radio owner.
         unsafe { write_volatile(register.address as *mut u32, value) }
@@ -127,7 +245,7 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{mac, power, RadioRegisters, Register32};
+    use super::{mac, power, Field32, RadioRegisters, Register32, RegisterAccess};
 
     fn assert_valid(register: Register32) {
         assert!(RadioRegisters::contains(register.address()));
@@ -143,9 +261,40 @@ mod tests {
 
     #[test]
     fn hp_modem_region_is_part_of_the_radio_capability() {
-        assert!(RadioRegisters::contains(power::hp_modem::CTRL0.address()));
-        assert!(RadioRegisters::contains(power::hp_modem::CONF.address()));
+        assert!(RadioRegisters::contains(
+            power::hp_sys_clkrst::MODEM_CTRL0.address()
+        ));
+        assert!(RadioRegisters::contains(
+            power::hp_sys_clkrst::MODEM_CONF.address()
+        ));
         assert!(!RadioRegisters::contains(0x2057_ffff));
+    }
+
+    #[test]
+    fn fields_reject_values_that_do_not_fit() {
+        let field = Field32::new(8, 4);
+        assert_eq!(field.mask(), 0x0000_0f00);
+        assert_eq!(field.checked_value(6), Some(0x0000_0600));
+        assert_eq!(field.checked_value(16), None);
+        assert_eq!(field.checked_insert(0xffff_f0ff, 6), Some(0xffff_f6ff));
+        assert_eq!(field.extract(0x0000_0a00), 10);
+    }
+
+    #[test]
+    fn generated_access_and_reset_metadata_are_preserved() {
+        assert_eq!(
+            power::pmu::IMM_MODEM_ICG.access(),
+            RegisterAccess::WriteOnly
+        );
+        assert_eq!(power::hp_sys_clkrst::MODEM_CONF.reset_value(), Some(0x25));
+        assert_eq!(
+            power::phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.access(),
+            RegisterAccess::ReadWrite
+        );
+        assert_eq!(
+            power::phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.reset_value(),
+            None
+        );
     }
 
     #[test]

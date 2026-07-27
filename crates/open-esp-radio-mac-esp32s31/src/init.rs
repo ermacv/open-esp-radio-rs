@@ -66,9 +66,9 @@ fn program_interface_address<M: Mmio>(mmio: &mut M, interface: usize, address: [
 
 /// Direct register portion of `hal_init_bf` and `hal_he_init`.
 ///
-/// The omitted vendor children only configure transmit power, trigger-based
-/// transmit and debug output. The operations below are the complete receive
+/// The operations below cover the common legacy TX/RX fields plus the receive
 /// parser, multi-BSSID and baseband-hang configuration used by `hal_init`.
+/// Trigger-based HE transmit and debug output remain outside this cold path.
 fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
     // `hal_init_bf`: establish the common PHY/MAC receive timing fields.
     modify(mmio, registers::R_4C78, 0x0020_0000, 0);
@@ -106,6 +106,9 @@ fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
     modify(mmio, registers::R_4C88, 0x0000_0003, 0x0000_0003);
     modify(mmio, registers::R_42B8, 0xc000_0000, 0x4000_0000);
     modify(mmio, registers::R_4400, 0x0002_0000, 0x0002_0000);
+    // `hal_set_tx_min_pwr(-11)`: the signed six-bit minimum-power field is
+    // shared by legacy management TX and the later HE transmit paths.
+    modify(mmio, registers::R_4400, 0x0000_03f0, 0x0000_0350);
     modify(mmio, registers::R_410C, 0x0000_0001, 0);
     modify(mmio, registers::R_4C7C, 0x0040_0000, 0);
 

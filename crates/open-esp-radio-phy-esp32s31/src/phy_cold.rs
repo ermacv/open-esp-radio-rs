@@ -1886,7 +1886,10 @@ impl PhyColdMmioBinding {
     /// Execute exactly one finite target MMIO transaction and consume its
     /// identity token.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<P: open_esp_radio_hal_esp32s31::analog_i2c::PhyPmuControl>(
+    pub unsafe fn execute_target<
+        P: open_esp_radio_hal_esp32s31::analog_i2c::PhyPmuControl
+            + open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
+    >(
         self,
         radio: &mut open_esp_radio_hal_esp32s31::Radio<
             P,
@@ -1903,6 +1906,20 @@ impl PhyColdMmioBinding {
             PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay) => {
                 let (platform, _) = radio.parts_mut();
                 crate::phy_i2c::configure_open_i2c_pre_delay(platform);
+                return self.into_completion();
+            }
+            PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
+                let (platform, registers) = radio.parts_mut();
+                open_esp_radio_hal_esp32s31::phy_power_detector::initialize_registers(
+                    platform, registers,
+                );
+                return self.into_completion();
+            }
+            PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
+                let (platform, registers) = radio.parts_mut();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(
+                    platform, registers,
+                );
                 return self.into_completion();
             }
             _ => {}
@@ -1935,17 +1952,11 @@ impl PhyColdMmioBinding {
             PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_master_registers(registers)
             }
-            PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                open_esp_radio_hal_esp32s31::phy_power_detector::initialize_registers(registers)
-            }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
                 crate::radio_hal::configure_phy_front_end_registers(registers)
             }
             PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
                 open_esp_radio_hal_esp32s31::phy_temperature::initialize(registers)
-            }
-            PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(registers)
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterCommandMemory { parameter } => {
                 crate::phy_i2c::configure_i2c_master_command_memory(registers, parameter)

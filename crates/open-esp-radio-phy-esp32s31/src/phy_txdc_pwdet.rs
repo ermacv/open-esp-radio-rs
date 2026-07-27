@@ -943,8 +943,11 @@ impl PhyTxDcPwdetMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub unsafe fn execute_target<
+        P: open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
+    >(
         self,
+        platform: &mut P,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyTxDcPwdetCompletion {
         match self.action {
@@ -961,7 +964,9 @@ impl PhyTxDcPwdetMmioBinding {
                 PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
             }
             PhyTxDcPwdetAction::ConfigurePowerDetector => {
-                open_esp_radio_hal_esp32s31::phy_power_detector::configure_enabled(registers);
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_enabled(
+                    platform, registers,
+                );
                 PhyTxDcPwdetCompletion::PowerDetectorConfigured
             }
             PhyTxDcPwdetAction::ConfigurePbusDebugMode => {

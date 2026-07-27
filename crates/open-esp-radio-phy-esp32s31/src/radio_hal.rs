@@ -76,7 +76,10 @@ fn configure_phy_rx_11b_optimization(registers: &mut RadioRegisters, enabled: bo
 /// every direct and tail child reproduced by source-owned safe HAL leaves.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_registers(
-    platform: &mut impl open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl,
+    platform: &mut (
+         impl open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl
+         + open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl
+     ),
     registers: &mut RadioRegisters,
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
@@ -91,7 +94,7 @@ pub(crate) fn configure_phy_registers(
     open_esp_radio_hal_esp32s31::phy_baseband::configure_watchdog(registers);
     open_esp_radio_hal_esp32s31::phy_baseband::configure_tx_pa_on(registers);
     configure_phy_rx_11b_optimization(registers, true);
-    open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(registers);
+    open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(platform, registers);
     open_esp_radio_hal_esp32s31::phy_baseband::configure_noise_floor_auto(registers);
     open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers);
     open_esp_radio_hal_esp32s31::phy_frequency::configure_bt_filter(registers);
@@ -107,7 +110,10 @@ pub(crate) fn configure_phy_registers(
 /// register-init, AGC-update and AGC-enable suffix.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_rx_table(
-    platform: &mut impl open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl,
+    platform: &mut (
+         impl open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl
+         + open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl
+     ),
     registers: &mut RadioRegisters,
     parameters: crate::phy_bb::PhyRxTableInitParameters,
 ) {

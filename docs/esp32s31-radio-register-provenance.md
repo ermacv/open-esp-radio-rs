@@ -322,6 +322,14 @@ same `&mut RadioRegisters` capability for configuration and sampling. In
 particular, ready/result reads at the PWDET control/result identities no
 longer manufacture global volatile pointers.
 
+SVD v2.1 removes `PHY_POWER_DETECTOR_AUX_ORACLE`. Its sole address,
+`0x2070_1068`, is exactly the official
+`LP_AON_CLKRST.RTC_SAR2_PWDET_CCT` register and field. The platform adapter
+now owns the `LP_AON_CLKRST` singleton and exposes only the two complete-ROM
+encodings: four for `phy_pwdet_reg_init`/`phy_pwdet_sar2_init`, and two for
+`phy_txcal_debuge_mode_`. The official PAC patch records those same ROM
+sources, while the open PHY crate retains their required operation order.
+
 Public Espressif sources do not currently define these S31 internal PHY
 fields. The public
 [ESP32 Open MAC project](https://github.com/esp32-open-mac/esp32-open-mac)

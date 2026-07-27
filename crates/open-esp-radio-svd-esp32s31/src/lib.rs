@@ -6783,69 +6783,6 @@ pub mod phy_baseband_config_oracle {
         }
     }
 }
-#[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Auxiliary PWDET mode register in the independently addressed radio aperture."]
-pub type PhyPowerDetectorAuxOracle =
-    crate::Periph<phy_power_detector_aux_oracle::RegisterBlock, 0x2070_1000>;
-impl core::fmt::Debug for PhyPowerDetectorAuxOracle {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("PhyPowerDetectorAuxOracle").finish()
-    }
-}
-#[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Auxiliary PWDET mode register in the independently addressed radio aperture."]
-pub mod phy_power_detector_aux_oracle {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        _reserved0: [u8; 0x68],
-        aux_mode_control: AuxModeControl,
-    }
-    impl RegisterBlock {
-        #[doc = "0x68 - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. PWDET initialization and calibration select modes four and two."]
-        #[inline(always)]
-        pub const fn aux_mode_control(&self) -> &AuxModeControl {
-            &self.aux_mode_control
-        }
-    }
-    #[doc = "AUX_MODE_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. PWDET initialization and calibration select modes four and two.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_mode_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_mode_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_mode_control`] module"]
-    #[doc(alias = "AUX_MODE_CONTROL")]
-    pub type AuxModeControl = crate::Reg<aux_mode_control::AuxModeControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. PWDET initialization and calibration select modes four and two."]
-    pub mod aux_mode_control {
-        #[doc = "Register `AUX_MODE_CONTROL` reader"]
-        pub type R = crate::R<AuxModeControlSpec>;
-        #[doc = "Register `AUX_MODE_CONTROL` writer"]
-        pub type W = crate::W<AuxModeControlSpec>;
-        #[doc = "Field `MODE_UNKNOWN` reader - "]
-        pub type ModeUnknownR = crate::FieldReader;
-        #[doc = "Field `MODE_UNKNOWN` writer - "]
-        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
-        impl R {
-            #[doc = "Bits 0:2"]
-            #[inline(always)]
-            pub fn mode_unknown(&self) -> ModeUnknownR {
-                ModeUnknownR::new((self.bits & 7) as u8)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:2"]
-            #[inline(always)]
-            pub fn mode_unknown(&mut self) -> ModeUnknownW<'_, AuxModeControlSpec> {
-                ModeUnknownW::new(self, 0)
-            }
-        }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. PWDET initialization and calibration select modes four and two.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_mode_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_mode_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AuxModeControlSpec;
-        impl crate::RegisterSpec for AuxModeControlSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`aux_mode_control::R`](R) reader structure"]
-        impl crate::Readable for AuxModeControlSpec {}
-        #[doc = "`write(|w| ..)` method takes [`aux_mode_control::W`](W) writer structure"]
-        impl crate::Writable for AuxModeControlSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
 #[doc = "SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. DC/IQ estimator configuration, signed result and activity registers recovered from complete S31 rev0 ROM bodies and the complete pinned phy_check_rx_sat blob leaf. Unknown electrical roles remain explicit."]
 pub type PhyIqEstimatorOracle = crate::Periph<phy_iq_estimator_oracle::RegisterBlock, 0x2010_0000>;
 impl core::fmt::Debug for PhyIqEstimatorOracle {
@@ -8737,8 +8674,6 @@ pub struct Peripherals {
     pub phy_agc_oracle: PhyAgcOracle,
     #[doc = "PHY_BASEBAND_CONFIG_ORACLE"]
     pub phy_baseband_config_oracle: PhyBasebandConfigOracle,
-    #[doc = "PHY_POWER_DETECTOR_AUX_ORACLE"]
-    pub phy_power_detector_aux_oracle: PhyPowerDetectorAuxOracle,
     #[doc = "PHY_IQ_ESTIMATOR_ORACLE"]
     pub phy_iq_estimator_oracle: PhyIqEstimatorOracle,
     #[doc = "PHY_RX_DCO_ORACLE"]
@@ -8782,7 +8717,6 @@ impl Peripherals {
             phy_i2c_command_ram: PhyI2cCommandRam::steal(),
             phy_agc_oracle: PhyAgcOracle::steal(),
             phy_baseband_config_oracle: PhyBasebandConfigOracle::steal(),
-            phy_power_detector_aux_oracle: PhyPowerDetectorAuxOracle::steal(),
             phy_iq_estimator_oracle: PhyIqEstimatorOracle::steal(),
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),

@@ -511,7 +511,10 @@ impl PhyBbMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<P: open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl>(
+    pub unsafe fn execute_target<
+        P: open_esp_radio_hal_esp32s31::wifi_bb::PhyWifiBbControl
+            + open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
+    >(
         self,
         platform: &mut P,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,

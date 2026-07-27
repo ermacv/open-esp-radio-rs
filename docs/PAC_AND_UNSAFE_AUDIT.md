@@ -128,7 +128,7 @@ chip-level peripherals:
 | `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` | removed |
 | `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` | pending |
 | `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` | removed |
-| `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | pending |
+| `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | removed |
 | `PMU` | `esp32s31::PMU` | `0x2070_4000` | removed |
 | `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | pending |
 | `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | pending |

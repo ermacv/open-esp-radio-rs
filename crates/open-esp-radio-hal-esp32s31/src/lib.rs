@@ -20,6 +20,7 @@ pub mod phy_prelude;
 pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
+pub mod power_detector_platform;
 pub mod wifi_bb;
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 

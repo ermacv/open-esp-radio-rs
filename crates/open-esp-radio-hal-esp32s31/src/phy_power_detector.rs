@@ -7,10 +7,7 @@
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(any(test, target_arch = "riscv32"))]
-use open_esp_radio_pac_esp32s31::{
-    power::{phy_baseband_config_oracle as pd, phy_power_detector_aux_oracle as auxiliary},
-    Field32, Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::phy_baseband_config_oracle as pd, Field32, Register32};
 
 #[cfg(any(test, target_arch = "riscv32"))]
 const fn field_value(field: Field32, value: u32) -> u32 {
@@ -60,8 +57,12 @@ impl RegisterIo for RadioRegisters {
 /// performs six finite stores through the PAC's table-zero, table-one,
 /// control, reference, and auxiliary-mode identities.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_registers(registers: &mut RadioRegisters) {
+pub fn initialize_registers(
+    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
+    registers: &mut RadioRegisters,
+) {
     initialize_registers_with(registers);
+    crate::power_detector_platform::select_initialization_mode(platform);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
@@ -79,7 +80,6 @@ fn initialize_registers_with(io: &mut impl RegisterIo) {
         pd::power_detector_control::INITIALIZATION_MODE_UNKNOWN,
         2,
     );
-    set_auxiliary_mode_with(io, 4);
 }
 
 /// Configure and enable the background TX power-control path.
@@ -90,11 +90,18 @@ fn initialize_registers_with(io: &mut impl RegisterIo) {
 /// `POWER_DETECTOR_CONTROL`. All eight fresh-read/full-write operations are
 /// preserved.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_background(registers: &mut RadioRegisters) {
-    configure_background_with(registers);
+pub fn configure_background(
+    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
+    registers: &mut RadioRegisters,
+) {
+    configure_enabled(platform, registers);
+    registers.set(
+        pd::POWER_DETECTOR_CONTROL,
+        pd::power_detector_control::BACKGROUND_CONTROL_ENABLE_UNKNOWN,
+    );
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 fn configure_background_with(io: &mut impl RegisterIo) {
     configure_enabled_with(io);
     io.set(
@@ -109,8 +116,12 @@ fn configure_background_with(io: &mut impl RegisterIo) {
 /// complete `phy_pwdet_sar2_init` callee at `0x2f82_63a6`, size `0x34`,
 /// supply the eight ordered operations.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_enabled(registers: &mut RadioRegisters) {
+pub fn configure_enabled(
+    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
+    registers: &mut RadioRegisters,
+) {
     configure_enabled_with(registers);
+    crate::power_detector_platform::select_enabled_mode(platform);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
@@ -130,7 +141,6 @@ fn configure_enabled_with(io: &mut impl RegisterIo) {
         pd::power_detector_sar_control_status::SAR_CONFIG_CLEAR_UNKNOWN,
     );
     io.write(pd::POWER_DETECTOR_REFERENCE, 0x0000_016a);
-    set_auxiliary_mode_with(io, 4);
 }
 
 /// Select the auxiliary power-detector calibration mode.
@@ -139,17 +149,10 @@ fn configure_enabled_with(io: &mut impl RegisterIo) {
 /// replaces the PAC's three-bit auxiliary-mode field with mode two after
 /// enabling PWDET.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_calibration_mode(registers: &mut RadioRegisters) {
-    set_auxiliary_mode_with(registers, 2);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn set_auxiliary_mode_with(io: &mut impl RegisterIo, mode: u32) {
-    io.replace(
-        auxiliary::AUX_MODE_CONTROL,
-        auxiliary::aux_mode_control::MODE_UNKNOWN,
-        mode,
-    );
+pub fn configure_calibration_mode(
+    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
+) {
+    crate::power_detector_platform::select_calibration_mode(platform);
 }
 
 /// Capture and replace the two TX-DC power-detector fields.
@@ -334,11 +337,11 @@ mod tests {
     }
 
     #[test]
-    fn register_initialization_is_six_oracle_stores() {
+    fn register_initialization_is_five_internal_oracle_stores() {
         let mut io = FakeRegisters::default();
         initialize_registers_with(&mut io);
 
-        assert_eq!(io.writes.len(), 6);
+        assert_eq!(io.writes.len(), 5);
         assert_eq!(
             io.writes,
             [
@@ -347,7 +350,6 @@ mod tests {
                 (pd::POWER_DETECTOR_CONTROL, 0x0000_0500),
                 (pd::POWER_DETECTOR_REFERENCE, 0x0000_aaaa),
                 (pd::POWER_DETECTOR_CONTROL, 0x0020_0500),
-                (auxiliary::AUX_MODE_CONTROL, 4),
             ]
         );
     }
@@ -359,11 +361,14 @@ mod tests {
             .with(pd::POWER_DETECTOR_SAR_CONTROL_STATUS, 0xffff_ffff);
         configure_enabled_with(&mut io);
 
-        assert_eq!(io.writes.len(), 7);
+        assert_eq!(io.writes.len(), 6);
         assert_eq!(io.writes[0].1 & 0x0e, 0x0a);
         assert_eq!(io.writes[1].1 & 0x0e, 0x08);
         assert_eq!(io.writes[2].1 & 0x0e, 0);
-        assert_eq!(io.writes.last(), Some(&(auxiliary::AUX_MODE_CONTROL, 4)));
+        assert_eq!(
+            io.writes.last(),
+            Some(&(pd::POWER_DETECTOR_REFERENCE, 0x0000_016a))
+        );
     }
 
     #[test]
@@ -371,7 +376,7 @@ mod tests {
         let mut io = FakeRegisters::default();
         configure_background_with(&mut io);
 
-        assert_eq!(io.writes.len(), 8);
+        assert_eq!(io.writes.len(), 7);
         assert_eq!(
             io.writes.last(),
             Some(&(pd::POWER_DETECTOR_CONTROL, 0x0001_0000))

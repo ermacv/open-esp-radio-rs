@@ -2263,35 +2263,6 @@ pub mod phy_baseband_config_oracle {
     }
 }
 
-/// SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol].
-/// Auxiliary PWDET mode register in the independently addressed radio aperture.
-pub mod phy_power_detector_aux_oracle {
-    use crate::{Register32, RegisterAccess};
-
-    /// Peripheral base address. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
-    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Auxiliary PWDET mode register in
-    /// the independently addressed radio aperture.
-    pub const BASE: usize = 0x20701000;
-
-    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
-    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
-    /// calibration select modes four and two.
-    pub const AUX_MODE_CONTROL: Register32 =
-        Register32::described(0x20701068, RegisterAccess::ReadWrite, None);
-
-    /// Recovered fields of [`AUX_MODE_CONTROL`]. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
-    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
-    /// calibration select modes four and two.
-    pub mod aux_mode_control {
-        use crate::Field32;
-
-        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
-        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
-        /// calibration select modes four and two.
-        pub const MODE_UNKNOWN: Field32 = Field32::new(0, 3);
-    }
-}
-
 /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
 /// CONFIDENCE[instruction-exact-semantics-partial]. DC/IQ estimator configuration, signed
 /// result and activity registers recovered from complete S31 rev0 ROM bodies and the complete
@@ -3029,7 +3000,7 @@ pub mod wifi_mac_rx_dma {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 195] = [
+pub const ALL: [Register32; 194] = [
     phy_memory::COMMAND,
     phy_memory::DATA_0,
     phy_memory::DATA_1,
@@ -3180,7 +3151,6 @@ pub const ALL: [Register32; 195] = [
     phy_baseband_config_oracle::TX_PA_TABLE_OPAQUE,
     phy_baseband_config_oracle::BASEBAND_INIT_7CA8,
     phy_baseband_config_oracle::BASEBAND_INIT_7CD0,
-    phy_power_detector_aux_oracle::AUX_MODE_CONTROL,
     phy_iq_estimator_oracle::ESTIMATOR_CONFIG,
     phy_iq_estimator_oracle::ESTIMATOR_CONTROL,
     phy_iq_estimator_oracle::SIGNAL_POWER_SUM_I,

@@ -3084,3 +3084,34 @@ borrow. The two raw exported C leaves, the unused raw master-register wrapper,
 and their duplicate masks/tests are removed. The target audit rejects raw
 `0x703c` and `0xf818`, leaving no alternate access path for either physical
 register.
+
+## Owned frequency-memory and channel control
+
+SVD v0.8 and the generated PAC now own the complete frequency/channel MMIO
+slice used by open cold init and channel changes. Complete rev0 ROM bodies
+prove all addresses, masks and fresh-read ordering; complete pinned
+`register_chipv7_phy`, `phy_bb_init`, and `phy_chip_set_chan` bodies prove the
+parent order. The public Espressif tree contains no source definitions for
+these internal PHY symbols, so uncertain electrical roles remain explicitly
+`UNKNOWN`.
+
+The new safe `phy_frequency` HAL owns frequency-module reset and hardware
+ownership, register initialization, the 85-entry frequency-memory publisher,
+packed PHY-I2C number-address words, channel-switch pulse and readiness
+sampling, NRX quotient calculation, BSS/CBW fields, shared FBW/BT filtering,
+Wi-Fi/baseband enable fields, and TX-cap command-memory publication. Host
+models record every read and write, including the two-read NRX operation and
+all pulse edges.
+
+Cold init, baseband init, register init, D-code and channel transitions pass
+their existing `&mut RadioRegisters` into these methods. In particular,
+`PhyDcodeMmioBinding::execute_target` is now safe and requires the explicit
+borrow; it can no longer access `0x7848` through a hidden volatile pointer.
+The old raw wrappers, address constants, duplicate arithmetic helpers and
+their unit tests are deleted.
+
+The source audit now rejects raw `0x001c..0x003c`, `0x0874`, `0x4400`,
+`0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`, together with the old
+wrapper names. This leaves one PAC identity for each physical register,
+including the documented mode-dependent collision of frequency-memory
+address bit ten and module-reset bit 18.

@@ -36,18 +36,18 @@ fi
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.
 if rg -n \
-    'try_(start|finish)_(read|write)_unowned|try_(start|finish)_phy_pbus_force_test|pub[[:space:]]+unsafe[[:space:]]+fn[[:space:]]+(start_target|observe_target_edge|sample_target_once)' \
+    'try_(start|finish)_(read|write)_unowned|try_(start|finish)_phy_pbus_force_test|pub[[:space:]]+unsafe[[:space:]]+fn[[:space:]]+(start_target|observe_target_edge|sample_target_once)|start_phy_channel_frequency_switch|configure_phy_(channel_nrx_frequency|nrx_frequency|frequency_registers|frequency_i2c_number_addresses|bt_filter)|write_phy_frequency_memory|set_phy_(baseband_mode|wifi_enabled)|enable_phy_mac_baseband' \
     crates/open-esp-radio-phy-esp32s31/src
 then
     echo "unowned PHY-I2C/PBus target access returned" >&2
     exit 1
 fi
 
-# Complete PBus mode, AGC, antenna, RX-compensation, DC-memory, BBPLL, 11b and
-# post-init leaves are PAC/HAL-owned. These addresses have no remaining live
-# raw consumer.
+# Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
+# DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
+# addresses have no remaining live raw consumer.
 if rg -n \
-    '0x2010_(0884|088c|08bc|702c|7030|703c|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|78a4|78c8|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078|f818)' \
+    '0x2010_(001c|0024|0028|002c|0030|0034|0038|003c|0874|0884|088c|08bc|4400|702c|7030|703c|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|7848|78a4|78c8|7ce0|7ce4|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078|9c18|f818|fc04)' \
     crates/open-esp-radio-phy-esp32s31/src
 then
     echo "raw recovered PHY address escaped the PAC/HAL boundary" >&2

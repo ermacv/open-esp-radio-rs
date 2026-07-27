@@ -1942,7 +1942,10 @@ impl PhyColdMmioBinding {
             }
             PhyRfInitPrefixAction::ChannelFrequency(
                 PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters { parameter_override },
-            ) => crate::radio_hal::configure_phy_frequency_registers(parameter_override),
+            ) => open_esp_radio_hal_esp32s31::phy_frequency::initialize_registers(
+                registers,
+                parameter_override,
+            ),
             PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::Table(
                 PhyFrequencyTableAction::WriteMemory {
                     address,
@@ -1958,10 +1961,13 @@ impl PhyColdMmioBinding {
                     mode,
                     ..
                 },
-            )) => crate::radio_hal::write_phy_frequency_memory(address, value, mode),
+            )) => open_esp_radio_hal_esp32s31::phy_frequency::write_memory(
+                registers, address, value, mode,
+            ),
             PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
                 PhyFrequencyI2cAction::ConfigureNumberAddresses(image),
-            )) => crate::radio_hal::configure_phy_frequency_i2c_number_addresses(
+            )) => open_esp_radio_hal_esp32s31::phy_frequency::configure_i2c_number_addresses(
+                registers,
                 image.control_field,
                 image.words,
             ),

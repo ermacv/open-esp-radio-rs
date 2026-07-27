@@ -186,6 +186,62 @@ channel changes all pass their existing `RadioRegisters` borrow. The raw C
 ABIs, address constants, and duplicate mask helpers are deleted; the
 source-only audit rejects raw `0x703c` and `0xf818`.
 
+## Frequency and channel control
+
+SVD v0.8 adds one `PHY_FREQUENCY_CHANNEL_ORACLE` identity for the thirteen
+physical registers used by frequency-memory initialization and open channel
+changes. The primary evidence is the pinned rev0 ROM, SHA-256
+`a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`:
+
+- `phy_freq_module_resetn`, `phy_freq_chan_en_sw`,
+  `phy_freq_i2c_mem_write`, `phy_freq_reg_init`,
+  `phy_freq_num_get_data`, `phy_freq_i2c_num_addr`,
+  `phy_en_hw_set_freq`, and `phy_dis_hw_set_freq`;
+- `phy_bb_bss_cbw40` and its digital child, `phy_mac_tx_chan_offset`,
+  `phy_wifi_fbw_sel`, `phy_bt_filter_reg`, `phy_nrx_freq_set`,
+  `phy_bb_cbw_chan_cfg`, `phy_wifi_enable_set`, `phy_mac_enable_bb`,
+  `phy_bb_reg_init`, and `phy_i2c_master_mem_txcap`.
+
+The complete pinned `libphy.a`, SHA-256
+`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+supplies the parent order through `register_chipv7_phy`, `phy_bb_init`, and
+`phy_chip_set_chan`. Exact symbol searches in the public ESP-IDF tree expose
+no definitions for these internal leaves. Public HT20/HT40 API terminology is
+therefore not used to invent S31 electrical identities; fields remain
+`UNKNOWN` unless a complete instruction body and its symbol establish more.
+
+`FREQUENCY_CONTROL` at `0x2010001c` is deliberately modeled as one
+multifunction word. Complete bodies prove the channel index in bits 7:0,
+frequency-memory address in bits 18:8, channel-switch and memory-write pulses
+in bits 19 and 20, initialization mode in bits 29:22, module enable in bit 30,
+and active-low hardware-frequency ownership in bit 31. Bit 18 is also the
+reset/release bit used by `phy_freq_module_resetn`; the PAC names that
+mode-dependent collision instead of creating two aliases.
+
+The remaining recovered layout includes:
+
+- baseband mode and frequency-ready fields in shared parameter/status word
+  `0x20100028`;
+- a 24-bit frequency-memory payload plus eight-bit mode, two five-bit number
+  addresses in the control word, and three words of six five-bit slots;
+- the complete NRX twenty-bit quotient, cleared middle nibble, and preserved
+  high-byte shift source;
+- shared FBW/Bluetooth-filter fields, TX-offset and both CBW control words;
+- Wi-Fi enable, BSS-CBW, MAC-baseband and cold-start fields on the already
+  exact `MODEM_SYSCON.WIFI_BB_CFG` identity;
+- TX-cap publication through existing
+  `PHY_I2C_COMMAND_RAM.COMMAND_MEMORY[1]`, whose block/register/data byte
+  layout already describes `value << 16 | 0x026b`.
+
+The `phy_frequency` HAL preserves all fresh-read edges, full-word constants,
+packed images and ROM branch encodings. Host tests record both reads and
+writes, not only final values. Cold init, baseband init, D-code and every
+channel action now borrow the same `&mut RadioRegisters`; the D-code MMIO
+binding is no longer `unsafe` and cannot manufacture a second peripheral
+owner. The source-only audit rejects all raw accesses to `0x001c..0x003c`,
+`0x0874`, `0x4400`, `0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`,
+as well as the removed wrapper names.
+
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent
 complete rev0 ROM bodies establish:

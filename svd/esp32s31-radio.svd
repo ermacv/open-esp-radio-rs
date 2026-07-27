@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.7</version>
+  <version>0.8</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
     Unknown fields are omitted; OPAQUE and UNKNOWN names describe
@@ -160,18 +160,33 @@
         </register>
         <register>
           <name>WIFI_BB_CFG</name>
-          <description>SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC]; CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only instruction-tested fields are presently recovered.</description>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]; CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only instruction-tested fields are presently recovered.</description>
           <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field>
-              <name>PBUS_WORK_MODE_SETTLE_PULSE_REQUIRED</name>
-              <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown]. phy_pbus_force_mode samples bit 1 and, when set, performs the evidenced delayed pulse tail; the underlying electrical condition is unknown.</description>
+              <name>COLD_START_CLEAR_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_REGISTER_CHIPV7_PHY]; CONFIDENCE[instruction-exact-semantics-unknown]. register_chipv7_phy clears bit 0 together with WIFI_ENABLE before taking ownership of the powered PHY; its individual electrical meaning is unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>WIFI_ENABLE</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_REGISTER_CHIPV7_PHY]; CONFIDENCE[instruction-exact-semantics-from-symbol-and-consumers]. Complete phy_wifi_enable_set controls bit 1; phy_pbus_force_mode samples the same bit before its delayed settle tail, and register_chipv7_phy initially clears it.</description>
               <bitOffset>1</bitOffset><bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>BSS_CBW_40_DIGITAL_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_bss_cbw40_dig replaces bits 3:2 with zero or encoding one; only bit 2 is set by the evidenced nonzero branch.</description>
+              <bitOffset>2</bitOffset><bitWidth>2</bitWidth>
+            </field>
+            <field>
               <name>BB_AGC_UPDATE_ENABLE_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets bits 13:11 as its final read/modify/write; the individual hardware meanings remain unknown.</description>
+              <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets bits 13:11 as its final read/modify/write; complete phy_bb_reg_init independently sets only the low bit. The individual hardware meanings remain unknown.</description>
               <bitOffset>11</bitOffset><bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>MAC_BASEBAND_ENABLE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_mac_enable_bb sets bit 28 before pulsing WIFI_ENABLE.</description>
+              <bitOffset>28</bitOffset><bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -600,6 +615,176 @@
             <field><name>EVEN_GROUP_LAST_ENTRY</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>ODD_GROUP_FIRST_ENTRY</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>ODD_GROUP_LAST_ENTRY</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_FREQUENCY_CHANNEL_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+        CONFIDENCE[instruction-exact-multifunction].
+        Frequency-memory, hardware channel-switch, NRX and channel-bandwidth
+        registers recovered from complete finite ROM/blob bodies. Names retain
+        UNKNOWN where the instructions prove a field but not its electrical
+        meaning. One physical word has one identity even when a bit has
+        different mode-dependent roles.
+      </description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>FREQUENCY_CONTROL</name>
+          <description>
+            SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+            CONFIDENCE[instruction-exact-multifunction].
+            Shared frequency module control word. Bit 18 is both the high bit
+            of an eleven-bit command-memory address and the reset/release bit
+            pulsed by phy_freq_module_resetn.
+          </description>
+          <addressOffset>0x001c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>CHANNEL_INDEX</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_chan_en_sw replaces the low byte with the caller's frequency-table index.</description>
+              <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>MEMORY_ADDRESS_LOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Low ten bits of the eleven-bit address selected by phy_freq_i2c_mem_write.</description>
+              <bitOffset>8</bitOffset><bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-mode-dependent]. High address bit during frequency-memory writes; independently cleared then set by complete phy_freq_module_resetn.</description>
+              <bitOffset>18</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CHANNEL_SWITCH_PULSE</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_chan_en_sw sets bit 19, delays one microsecond, then clears it.</description>
+              <bitOffset>19</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MEMORY_WRITE_PULSE</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_i2c_mem_write sets then clears bit 20 after publishing data.</description>
+              <bitOffset>20</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>REGISTER_MODE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_freq_reg_init replaces bits 29:22 with its two input nibbles; the electrical encoding is unknown.</description>
+              <bitOffset>22</bitOffset><bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>MODULE_ENABLE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_reg_init sets bit 30.</description>
+              <bitOffset>30</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HARDWARE_FREQUENCY_DISABLE</name>
+              <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_REGISTER_CHIPV7_PHY]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_dis_hw_set_freq sets bit 31 before its two-microsecond delay; complete phy_en_hw_set_freq clears it.</description>
+              <bitOffset>31</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>FREQUENCY_PARAMETER_0_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.</description>
+          <addressOffset>0x0024</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>FREQUENCY_PARAMETER_1_STATUS</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]; CONFIDENCE[instruction-exact-multifunction]. Complete phy_freq_reg_init writes 0x25824e58; phy_bb_init replaces the low baseband-mode field, and the open channel state machine samples bit 8 for the evidenced ready edge.</description>
+          <addressOffset>0x0028</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>BASEBAND_MODE_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_BB_INIT]; CONFIDENCE[instruction-exact-semantics-from-parent]. Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup.</description>
+              <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>FREQUENCY_READY</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_RFPLL_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-consumer]. The complete channel parent samples bit 8 after the frequency-switch delay and branches on its asserted edge.</description>
+              <bitOffset>8</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>FREQUENCY_MEMORY_DATA</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-command-layout]. Data/mode word published by complete phy_freq_i2c_mem_write.</description>
+          <addressOffset>0x002c</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field><name>DATA</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field>
+            <field><name>MODE</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C_NUMBER_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-packed-layout]. First two five-bit PHY-I2C number addresses packed by complete phy_freq_i2c_num_addr.</description>
+          <addressOffset>0x0030</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C_NUMBER_WORD%s</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number addresses packed by complete phy_freq_num_get_data; unused slots are zero.</description>
+          <addressOffset>0x0034</addressOffset><size>32</size><access>write-only</access>
+          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
+          <fields>
+            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_2_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_3_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_4_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_5_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>FBW_BT_FILTER_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and phy_bt_filter_reg.</description>
+          <addressOffset>0x0874</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>FBW_CLEAR_LOW_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FBW_SELECT_MID_UNKNOWN</name><bitOffset>17</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>FBW_CLEAR_HIGH_UNKNOWN</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FBW_SELECT_HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BT_FILTER_LOW_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BT_FILTER_MODE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BT_FILTER_ENABLE_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_TX_OFFSET_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Low channel-offset field shared by complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg.</description>
+          <addressOffset>0x4400</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>CHANNEL_OFFSET_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>NRX_FREQUENCY_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient.</description>
+          <addressOffset>0x7848</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+            <field><name>INIT_MIDDLE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>SHIFT_LOW_OR_INIT_HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>SHIFT_HIGH_UNKNOWN</name><bitOffset>29</bitOffset><bitWidth>3</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_CBW_CONTROL_0</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg replaces the low two-bit CBW-derived field.</description>
+          <addressOffset>0x7ce0</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CHANNEL_CBW_CONTROL_1</name>
+          <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements.</description>
+          <addressOffset>0x7ce4</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>CBW_HIGH_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>3</bitWidth></field>
           </fields>
         </register>
       </registers>
@@ -1248,7 +1433,10 @@
       <source id="ROM_REV0_PHY_ANT_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_ant_init at 0x2f827df4 size 0x44</source>
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_bbpll_cal at 0x2f827dbc size 0x1c, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
+      <source id="ROM_REV0_PHY_FREQUENCY_CHANNEL">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_freq_module_resetn at 0x2f824abe size 0x1c, phy_freq_chan_en_sw at 0x2f824ada size 0x38, phy_freq_i2c_mem_write at 0x2f824bb6 size 0x3e, phy_freq_reg_init at 0x2f824c46 size 0x60, phy_freq_num_get_data at 0x2f824ca6 size 0x24, phy_freq_i2c_num_addr at 0x2f824cca size 0x6a, phy_en_hw_set_freq at 0x2f824f9e size 0x14, phy_dis_hw_set_freq at 0x2f824fb2 size 0x14, phy_bb_bss_cbw40 and child at 0x2f826052, phy_mac_tx_chan_offset at 0x2f827550 size 0x38, phy_mac_enable_bb at 0x2f827836 size 0x2a, phy_bb_reg_init at 0x2f8279c6 size 0x140, phy_wifi_fbw_sel at 0x2f827e38 size 0x58, phy_bt_filter_reg at 0x2f827e90 size 0x34, phy_nrx_freq_set at 0x2f8280ec size 0x32, phy_wifi_enable_set at 0x2f828220 size 0x18, phy_bb_cbw_chan_cfg at 0x2f828238 size 0x74 and phy_i2c_master_mem_txcap at 0x2f82a832 size 0x24</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
+      <source id="BLOB_LIBPHY_REGISTER_CHIPV7_PHY">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o register_chipv7_phy body, size 0x1e6, and relocation graph</source>
+      <source id="BLOB_LIBPHY_PHY_RFPLL_CHANNEL">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rfpll.o phy_chip_set_chan body, size 0x10e, and its finite ROM leaf call graph</source>
       <source id="BLOB_LIBPHY_PHY_SET_TX_CFR_MEM">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_cfr_mem body, size 0x76</source>
       <source id="BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_gain_mem_new body and complete ROM phy_write_gain_mem leaf</source>
       <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body</source>

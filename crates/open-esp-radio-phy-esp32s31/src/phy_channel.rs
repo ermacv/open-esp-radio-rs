@@ -8,7 +8,8 @@
 //!
 //! The rev0 ROM fast-frequency child used for 2.4-GHz channels contains a
 //! one-microsecond delay, a ten-microsecond delay and an unbounded poll of
-//! `0x2010_0028[8]`.  Rust represents both delays and every readiness sample
+//! `FREQUENCY_PARAMETER_1_STATUS.FREQUENCY_READY`. Rust represents both delays
+//! and every readiness sample
 //! as caller-completed actions.  Because no completion interrupt for that bit
 //! is proved by the available PAC/SVD or ROM symbols, the outer async owner
 //! may deliver further samples; it must deliver `FrequencyReadyTimedOut` at
@@ -22,8 +23,14 @@ use crate::{
     },
 };
 
-pub const PHY_FREQUENCY_READY_ADDRESS: usize = 0x2010_0028;
-pub const PHY_FREQUENCY_READY_MASK: u32 = 1 << 8;
+pub const PHY_FREQUENCY_READY_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_frequency_channel_oracle::
+        FREQUENCY_PARAMETER_1_STATUS
+        .address();
+pub const PHY_FREQUENCY_READY_MASK: u32 =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_frequency_channel_oracle::
+        frequency_parameter_1_status::FREQUENCY_READY
+        .mask();
 
 const TX_CAP_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
 
@@ -828,9 +835,9 @@ impl PhyChipChannelMmioBinding {
                 frequency_index,
                 crystal_selector,
             } => {
-                crate::radio_hal::start_phy_channel_frequency_switch(
+                open_esp_radio_hal_esp32s31::phy_frequency::start_channel_switch(
+                    registers,
                     frequency_index,
-                    crystal_selector,
                 );
                 PhyChipChannelCompletion::FrequencySwitchStarted {
                     frequency_index,
@@ -838,21 +845,26 @@ impl PhyChipChannelMmioBinding {
                 }
             }
             PhyChipChannelAction::ClearFrequencySwitch => {
-                crate::radio_hal::clear_phy_channel_frequency_switch();
+                open_esp_radio_hal_esp32s31::phy_frequency::clear_channel_switch(registers);
                 PhyChipChannelCompletion::FrequencySwitchCleared
             }
             PhyChipChannelAction::AwaitFrequencyReadyEdge { address, .. } => {
                 PhyChipChannelCompletion::FrequencyReadyObserved {
                     address,
-                    value: crate::radio_hal::sample_phy_channel_frequency_ready(),
+                    value: open_esp_radio_hal_esp32s31::phy_frequency::sample_frequency_ready(
+                        registers,
+                    ),
                 }
             }
             PhyChipChannelAction::ConfigureNrx { frequency_mhz } => {
-                crate::radio_hal::configure_phy_channel_nrx_frequency(frequency_mhz);
+                open_esp_radio_hal_esp32s31::phy_frequency::configure_nrx_frequency(
+                    registers,
+                    frequency_mhz,
+                );
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz }
             }
             PhyChipChannelAction::ConfigureBssCbw { cbw } => {
-                crate::radio_hal::configure_phy_channel_bss_cbw(cbw);
+                open_esp_radio_hal_esp32s31::phy_frequency::configure_bss_cbw(registers, cbw);
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
             PhyChipChannelAction::ConfigureRxCompensation { pass } => {
@@ -864,11 +876,11 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::TxGainPublished
             }
             PhyChipChannelAction::PublishTxCapCommandMemory { value } => {
-                crate::radio_hal::publish_phy_tx_cap_command_memory(value);
+                open_esp_radio_hal_esp32s31::phy_frequency::publish_tx_cap(registers, value);
                 PhyChipChannelCompletion::TxCapCommandMemoryPublished { value }
             }
             PhyChipChannelAction::ConfigureChannelCbw { cbw } => {
-                crate::radio_hal::configure_phy_channel_cbw(cbw);
+                open_esp_radio_hal_esp32s31::phy_frequency::configure_channel_cbw(registers, cbw);
                 PhyChipChannelCompletion::ChannelCbwConfigured { cbw }
             }
             PhyChipChannelAction::ClearDcMemory => {

@@ -86,20 +86,10 @@ const PHY_FE_CONTROL_0894_ADDRESS: usize = 0x2010_0894;
 const PHY_FE_CONTROL_0C08_ADDRESS: usize = 0x2010_0c08;
 const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
 const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
-const PHY_FREQUENCY_CONTROL_ADDRESS: usize = 0x2010_001c;
-const PHY_FREQUENCY_PARAMETER_0_ADDRESS: usize = 0x2010_0024;
-const PHY_FREQUENCY_PARAMETER_1_ADDRESS: usize = 0x2010_0028;
-const PHY_FREQUENCY_MEMORY_DATA_ADDRESS: usize = 0x2010_002c;
-const PHY_FREQUENCY_I2C_NUMBER_CONTROL_ADDRESS: usize = 0x2010_0030;
-const PHY_FREQUENCY_I2C_NUMBER_WORD_0_ADDRESS: usize = 0x2010_0034;
-const PHY_FREQUENCY_I2C_NUMBER_WORD_1_ADDRESS: usize = 0x2010_0038;
-const PHY_FREQUENCY_I2C_NUMBER_WORD_2_ADDRESS: usize = 0x2010_003c;
 const PHY_TEMPERATURE_SENSOR_POWER_ADDRESS: usize = 0x2081_8000;
 const PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS: usize = 0x2081_8018;
 const PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS: usize = 0x2071_0030;
 const PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS: usize = 0x2010_080c;
-const PHY_BASEBAND_MODE_ADDRESS: usize = 0x2010_0028;
-const PHY_WIFI_ENABLE_ADDRESS: usize = 0x2010_9c18;
 const PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS: usize = 0x2010_7454;
 const PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS: usize = 0x2010_7458;
 const PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS: usize = 0x2010_745c;
@@ -109,16 +99,9 @@ const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
 const PHY_BB_WATCHDOG_CONTROL_ADDRESS: usize = 0x2010_7c3c;
 const PHY_BB_WATCHDOG_ENABLE_ADDRESS: usize = 0x2010_7c40;
-const PHY_BT_FILTER_CONTROL_ADDRESS: usize = 0x2010_0874;
 const PHY_NOISE_FLOOR_CONTROL_ADDRESS: usize = 0x2010_7018;
 const PHY_NOISE_FLOOR_ENABLE_0_ADDRESS: usize = 0x2010_7c44;
 const PHY_NOISE_FLOOR_ENABLE_1_ADDRESS: usize = 0x2010_7c50;
-const PHY_CHANNEL_TX_OFFSET_ADDRESS: usize = 0x2010_4400;
-const PHY_CHANNEL_BSS_CBW_DIG_ADDRESS: usize = 0x2010_9c18;
-const PHY_CHANNEL_FBW_ADDRESS: usize = 0x2010_0874;
-const PHY_CHANNEL_CBW_CONTROL_0_ADDRESS: usize = 0x2010_7ce0;
-const PHY_CHANNEL_CBW_CONTROL_1_ADDRESS: usize = 0x2010_7ce4;
-const PHY_TX_CAP_COMMAND_MEMORY_ADDRESS: usize = 0x2010_fc04;
 const PHY_REGISTER_FORCE_TXRX_ADDRESS: usize = 0x2010_0890;
 const PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS: usize = 0x2010_f800;
 const PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS: usize = 0x2010_f804;
@@ -134,10 +117,6 @@ const PHY_IQ_EST_MEASUREMENT_BIT: u32 = 1 << 1;
 const PHY_IQ_EST_READY_BIT: u32 = 1 << 16;
 const PHY_IQ_EST_ACTIVITY_MASK: u32 = 0x0030_0000;
 
-const fn with_phy_channel_frequency_index(value: u32, frequency_index: u8) -> u32 {
-    (value & !0xff) | frequency_index as u32
-}
-
 const fn with_phy_register_force_txrx(value: u32, enabled: bool, phase: u8) -> u32 {
     let forced = match (enabled, phase) {
         (true, 0) => 0x0000_0800,
@@ -148,110 +127,8 @@ const fn with_phy_register_force_txrx(value: u32, enabled: bool, phase: u8) -> u
     (value & PHY_REGISTER_FORCE_TXRX_RETAIN_MASK) | forced
 }
 
-const fn with_phy_frequency_module_reset(value: u32, released: bool) -> u32 {
-    if released {
-        value | 0x0004_0000
-    } else {
-        value & !0x0004_0000
-    }
-}
-
-const fn with_phy_hardware_frequency_control(value: u32, enabled: bool) -> u32 {
-    if enabled {
-        value & !0x8000_0000
-    } else {
-        value | 0x8000_0000
-    }
-}
-
 const fn with_phy_register_xtal_frequency(value: u32, frequency_mhz: u8) -> u32 {
     (value & !0x3f) | (frequency_mhz.wrapping_sub(1) & 0x3f) as u32
-}
-
-const fn with_phy_channel_frequency_switch(value: u32, enabled: bool) -> u32 {
-    if enabled {
-        value | (1 << 19)
-    } else {
-        value & !(1 << 19)
-    }
-}
-
-const fn with_phy_channel_tx_offset(value: u32, cbw: u8) -> u32 {
-    let field = if cbw == 2 {
-        2
-    } else if cbw == 3 {
-        1
-    } else {
-        0
-    };
-    (value & !0xf) | field
-}
-
-const fn with_phy_channel_bss_cbw_digital(value: u32, cbw: u8) -> u32 {
-    (value & !0x0c) | ((cbw != 0) as u32) << 2
-}
-
-const fn without_phy_channel_fbw_first(value: u32) -> u32 {
-    value & 0xfff6_ffff
-}
-
-const fn with_phy_channel_fbw_second(value: u32, enabled: bool) -> u32 {
-    let value = value & 0xfff9_ffff;
-    if enabled {
-        value | 0x0002_0000
-    } else {
-        value
-    }
-}
-
-const fn with_phy_channel_fbw_third(value: u32, enabled: bool) -> u32 {
-    let value = value & 0xffcf_ffff;
-    if enabled {
-        value | 0x0010_0000
-    } else {
-        value
-    }
-}
-
-const fn with_phy_channel_nrx_frequency(
-    shift_source: u32,
-    previous: u32,
-    frequency_mhz: u16,
-) -> u32 {
-    let shift = shift_source >> 24;
-    let numerator = 0x50_u32.wrapping_shl(shift);
-    let quotient = numerator / frequency_mhz as u32;
-    (previous & 0xff00_0000) | (quotient & 0x000f_ffff)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PhyChannelCbwFields {
-    tx_offset: u32,
-    control_0: u32,
-    control_1_high: u32,
-    control_1_low: u32,
-}
-
-const fn phy_channel_cbw_fields(cbw: u8) -> PhyChannelCbwFields {
-    let high = cbw >> 4;
-    if high != 0 {
-        let normalized = high.wrapping_sub(1) as u32;
-        PhyChannelCbwFields {
-            tx_offset: normalized,
-            control_0: normalized & 3,
-            control_1_high: normalized,
-            control_1_low: normalized & 3,
-        }
-    } else {
-        let low = cbw & 0x0f;
-        let normalized = if low < 2 { 0 } else { low - 2 } as u32;
-        PhyChannelCbwFields {
-            tx_offset: normalized,
-            control_0: normalized & 3,
-            control_1_high: ((low != 0) as u32) << 2,
-            control_1_low: ((cbw & 0x0e != 0) as u32) & 3,
-        }
-    }
 }
 
 /// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
@@ -261,22 +138,6 @@ pub(crate) unsafe fn enable_phy_baseband_initialization() {
         phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
         PHY_CALIBRATION_CLOCK_MASK,
     );
-}
-
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_baseband_mode(mode: u8) {
-    replace_register_field(PHY_BASEBAND_MODE_ADDRESS, 0x3, u32::from(mode) & 0x3);
-}
-
-/// Clear the two low Wi-Fi control bits at the start of
-/// `register_chipv7_phy`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn prepare_phy_register_cold_start(registers: &mut RadioRegisters) {
-    // SAFETY: this finite binding owns the powered radio and the recovered
-    // parent operation proves this register permits the masked RMW.
-    unsafe {
-        registers.replace_bits(PHY_WIFI_ENABLE_ADDRESS, 0x3, 0);
-    }
 }
 
 /// Apply one of the two finite register writes surrounding each one
@@ -294,38 +155,6 @@ pub(crate) fn configure_phy_register_force_txrx(
         registers.write(
             PHY_REGISTER_FORCE_TXRX_ADDRESS,
             with_phy_register_force_txrx(previous, enabled, phase),
-        );
-    }
-}
-
-/// Pulse bit 18 exactly as complete ROM `phy_freq_module_resetn`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn reset_phy_frequency_module(registers: &mut RadioRegisters) {
-    // SAFETY: the recovered parent operation permits this two-write reset
-    // pulse while the caller uniquely owns the powered radio.
-    unsafe {
-        let previous = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
-        registers.write(
-            PHY_FREQUENCY_CONTROL_ADDRESS,
-            with_phy_frequency_module_reset(previous, false),
-        );
-        let asserted = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
-        registers.write(
-            PHY_FREQUENCY_CONTROL_ADDRESS,
-            with_phy_frequency_module_reset(asserted, true),
-        );
-    }
-}
-
-/// Select whether hardware owns the frequency-update field.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_hardware_frequency_control(registers: &mut RadioRegisters, enabled: bool) {
-    // SAFETY: the binding validates the only value-bearing field.
-    unsafe {
-        let previous = registers.read(PHY_FREQUENCY_CONTROL_ADDRESS);
-        registers.write(
-            PHY_FREQUENCY_CONTROL_ADDRESS,
-            with_phy_hardware_frequency_control(previous, enabled),
         );
     }
 }
@@ -413,114 +242,6 @@ pub(crate) fn enable_phy_agc(registers: &mut RadioRegisters) {
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn set_phy_channel_agc(registers: &mut RadioRegisters, enabled: bool) {
     open_esp_radio_hal_esp32s31::phy_agc::set_enabled(registers, enabled);
-}
-
-/// Publish the first half of complete ROM `phy_freq_chan_en_sw`.
-///
-/// The crystal selector is part of the pinned ABI but is not consumed by the
-/// rev0 body. Rust retains it in the action identity without inventing a
-/// register effect.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn start_phy_channel_frequency_switch(
-    frequency_index: u8,
-    _crystal_selector: u8,
-) {
-    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_channel_frequency_index(
-        control.read_volatile(),
-        frequency_index,
-    ));
-    control.write_volatile(with_phy_channel_frequency_switch(
-        control.read_volatile(),
-        true,
-    ));
-}
-
-/// Complete the pulse begun by [`start_phy_channel_frequency_switch`].
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn clear_phy_channel_frequency_switch() {
-    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_channel_frequency_switch(
-        control.read_volatile(),
-        false,
-    ));
-}
-
-/// Sample the readiness word once after an externally completed settle delay.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn sample_phy_channel_frequency_ready() -> u32 {
-    (crate::phy_channel::PHY_FREQUENCY_READY_ADDRESS as *const u32).read_volatile()
-}
-
-/// Complete rev0 ROM `phy_nrx_freq_set` for a 2.4-GHz channel frequency.
-///
-/// The two source reads and wrapping shift match the ROM instruction order.
-/// Request validation proves `frequency_mhz != 0` before this leaf is issued.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_channel_nrx_frequency(frequency_mhz: u16) {
-    debug_assert!(frequency_mhz != 0);
-    let control = crate::phy_dcode::PHY_NRX_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    let shift_source = control.read_volatile();
-    let previous = control.read_volatile();
-    control.write_volatile(with_phy_channel_nrx_frequency(
-        shift_source,
-        previous,
-        frequency_mhz,
-    ));
-}
-
-/// Complete `phy_bb_bss_cbw40` for the caller-owned CBW byte.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_channel_bss_cbw(cbw: u8) {
-    let tx_offset = PHY_CHANNEL_TX_OFFSET_ADDRESS as *mut u32;
-    tx_offset.write_volatile(with_phy_channel_tx_offset(tx_offset.read_volatile(), cbw));
-
-    let digital = PHY_CHANNEL_BSS_CBW_DIG_ADDRESS as *mut u32;
-    digital.write_volatile(with_phy_channel_bss_cbw_digital(
-        digital.read_volatile(),
-        cbw,
-    ));
-
-    let fbw = PHY_CHANNEL_FBW_ADDRESS as *mut u32;
-    fbw.write_volatile(without_phy_channel_fbw_first(fbw.read_volatile()));
-    fbw.write_volatile(with_phy_channel_fbw_second(fbw.read_volatile(), cbw != 0));
-    fbw.write_volatile(with_phy_channel_fbw_third(fbw.read_volatile(), cbw != 0));
-}
-
-/// Publish the value captured from PHY-I2C TX-cap register 2 to command memory.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn publish_phy_tx_cap_command_memory(value: u8) {
-    (PHY_TX_CAP_COMMAND_MEMORY_ADDRESS as *mut u32)
-        .write_volatile((u32::from(value) << 16) | 0x026b);
-}
-
-/// Complete rev0 ROM `phy_bb_cbw_chan_cfg`, size `0x74`.
-///
-/// The opaque fields are derived exactly once from the explicit CBW byte.
-/// Each register update retains the ROM's fresh-read ordering.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_channel_cbw(cbw: u8) {
-    let fields = phy_channel_cbw_fields(cbw);
-
-    let tx_offset = PHY_CHANNEL_TX_OFFSET_ADDRESS as *mut u32;
-    tx_offset.write_volatile((tx_offset.read_volatile() & !0x0f) | (fields.tx_offset & 0x0f));
-
-    let control_0 = PHY_CHANNEL_CBW_CONTROL_0_ADDRESS as *mut u32;
-    control_0.write_volatile((control_0.read_volatile() & !0x03) | (fields.control_0 & 0x03));
-
-    let control_1 = PHY_CHANNEL_CBW_CONTROL_1_ADDRESS as *mut u32;
-    control_1.write_volatile((control_1.read_volatile() & !0x1c) | (fields.control_1_high & 0x1c));
-    control_1.write_volatile((control_1.read_volatile() & !0x03) | (fields.control_1_low & 0x03));
-}
-
-/// Complete rev0 ROM `phy_wifi_enable_set`, size `0x18`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_wifi_enabled(enabled: bool) {
-    if enabled {
-        set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 1 << 1);
-    } else {
-        clear_register_bits(PHY_WIFI_ENABLE_ADDRESS, 1 << 1);
-    }
 }
 
 /// Complete pinned `phy_bb_txpwr_track`, size `0xf4`.
@@ -622,14 +343,6 @@ pub(crate) unsafe fn configure_phy_baseband_watchdog() {
     set_register_bits(PHY_BB_WATCHDOG_ENABLE_ADDRESS, 0x8000_0000);
 }
 
-/// Complete rev0 ROM `phy_mac_enable_bb`, size `0x2a`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn enable_phy_mac_baseband() {
-    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x1000_0000);
-    clear_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0002);
-    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0002);
-}
-
 /// Complete rev0 ROM `phy_noise_floor_auto_set`, size `0x36`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn configure_phy_noise_floor_auto() {
@@ -639,21 +352,12 @@ pub(crate) unsafe fn configure_phy_noise_floor_auto() {
     set_register_bits(PHY_NOISE_FLOOR_ENABLE_1_ADDRESS, 1);
 }
 
-/// Complete rev0 ROM `phy_bt_filter_reg`, size `0x34`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_bt_filter() {
-    set_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0200_0000);
-    clear_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0040_0000);
-    clear_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0180_0000);
-}
-
 /// Complete rev0 ROM `phy_bb_reg_init`, size `0x140`, including its
 /// `phy_btbb_wifi_bb_cfg2` tail.
 #[cfg(target_arch = "riscv32")]
-unsafe fn configure_phy_baseband_registers() {
+unsafe fn configure_phy_baseband_registers(registers: &mut RadioRegisters) {
     set_register_bits(0x2010_7400, 0x0000_6000);
-    replace_register_field(0x2010_7848, 0x00ff_ffff, 0x0004_33af);
-    replace_register_field(0x2010_7848, 0x1f00_0000, 0x1700_0000);
+    open_esp_radio_hal_esp32s31::phy_frequency::initialize_nrx_baseband(registers);
     replace_register_field(0x2010_7808, 0x0000_3f80, 0x0000_3000);
     replace_register_field(0x2010_78dc, 0x0000_3f80, 0x0000_0100);
     clear_register_bits(0x2010_78e4, 0x0040_0000);
@@ -666,7 +370,7 @@ unsafe fn configure_phy_baseband_registers() {
     clear_register_bits(0x2010_7a28, 0x0040_0000);
     set_register_bits(0x2010_7cd0, 0x000f_000f);
     set_register_bits(0x2010_7c00, 0x0000_0200);
-    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_0800);
+    open_esp_radio_hal_esp32s31::phy_frequency::set_baseband_init_control(registers);
     clear_register_bits(0x2010_743c, 0x0000_00c0);
     clear_register_bits(0x2010_743c, 0x0000_0100);
     set_register_bits(0x2010_7428, 0x0000_4000);
@@ -709,15 +413,15 @@ pub(crate) unsafe fn configure_phy_registers(
         parameters.parameter_120,
     );
     open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, 0x0008_1825);
-    configure_phy_baseband_registers();
+    configure_phy_baseband_registers(registers);
     configure_phy_baseband_watchdog();
     configure_phy_tx_pa_on();
     configure_phy_rx_11b_optimization(registers, true);
     configure_phy_tx_power_control_background();
     configure_phy_noise_floor_auto();
     open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers);
-    configure_phy_bt_filter();
-    enable_phy_mac_baseband();
+    open_esp_radio_hal_esp32s31::phy_frequency::configure_bt_filter(registers);
+    open_esp_radio_hal_esp32s31::phy_frequency::enable_mac_baseband(registers);
 }
 
 /// Complete pinned `libphy.a[phy_rx_gain.o]::phy_rx_table_init`, size `0x7c`.
@@ -1100,31 +804,6 @@ const fn with_phy_front_end_update_second(value: u32) -> u32 {
 
 const fn with_phy_front_end_adc_update(value: u32) -> u32 {
     with_register_bits(value, 0x0000_0003)
-}
-
-const fn without_phy_frequency_reset_fields(value: u32) -> u32 {
-    value & 0x7ff7_ffff
-}
-
-const fn with_phy_frequency_module_enabled(value: u32) -> u32 {
-    value | 0x4000_0000
-}
-
-const fn with_phy_frequency_register_mode(value: u32, parameter_override: bool) -> u32 {
-    let (first, second) = if parameter_override {
-        (0_u32, 2_u32)
-    } else {
-        (2_u32, 4_u32)
-    };
-    (value & 0xc03f_ffff) | ((((second << 4) | first) << 22) & 0x3fc0_0000)
-}
-
-const fn with_phy_frequency_memory_address(value: u32, address: u16) -> u32 {
-    (value & 0xfff8_00ff) | ((address as u32 & 0x7ff) << 8)
-}
-
-const fn with_phy_frequency_i2c_number_control(value: u32, control_field: u32) -> u32 {
-    (value & 0xfffc_00ff) | (control_field & 0x0003_ff00)
 }
 
 const fn without_register_bits(value: u32, bits: u32) -> u32 {
@@ -1520,21 +1199,6 @@ pub(crate) unsafe fn read_phy_pbus_rx_dco_value() -> u16 {
 pub(crate) unsafe fn read_phy_temperature_code() -> u32 {
     (crate::phy_temperature::PHY_TEMPERATURE_CODE_ADDRESS as *const u32).read_volatile()
         & crate::phy_temperature::PHY_TEMPERATURE_CODE_MASK
-}
-
-/// Apply complete ROM `phy_nrx_freq_set` for one nonzero D-code frequency.
-///
-/// The two source reads are retained because the high byte is hardware state.
-/// The caller only issues the four recovered nonzero frequency codes.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_nrx_frequency(frequency_code: u8) {
-    debug_assert!(frequency_code != 0);
-    let control = crate::phy_dcode::PHY_NRX_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    let shift = control.read_volatile() >> 24;
-    let numerator = 0x50_u32.wrapping_shl(shift);
-    let previous = control.read_volatile();
-    let quotient = numerator / u32::from(frequency_code);
-    control.write_volatile((previous & 0xff00_0000) | (quotient & 0x000f_ffff));
 }
 
 /// Sample the free-running counter used by the ROM SDM-stability deadline.
@@ -2084,62 +1748,6 @@ pub(crate) unsafe fn configure_phy_front_end_update() {
     adc.write_volatile(with_phy_front_end_adc_update(adc.read_volatile()));
 }
 
-/// Apply complete rev0 ROM `phy_freq_reg_init(2, 4)` with its hidden
-/// `phy_param[0x193]` branch made explicit.
-///
-/// The body is five fresh finite MMIO stores. `parameter_override` selects the
-/// ROM's `(0, 2)` override instead of the call-site `(2, 4)` pair.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_frequency_registers(parameter_override: bool) {
-    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(without_phy_frequency_reset_fields(control.read_volatile()));
-    control.write_volatile(with_phy_frequency_module_enabled(control.read_volatile()));
-    control.write_volatile(with_phy_frequency_register_mode(
-        control.read_volatile(),
-        parameter_override,
-    ));
-    (PHY_FREQUENCY_PARAMETER_0_ADDRESS as *mut u32).write_volatile(0x1980_0249);
-    (PHY_FREQUENCY_PARAMETER_1_ADDRESS as *mut u32).write_volatile(0x2582_4e58);
-}
-
-/// Apply complete rev0 ROM `phy_freq_i2c_mem_write`.
-///
-/// This leaf selects one eleven-bit frequency-memory address, writes its
-/// caller-owned data/mode word, then generates the exact bit-20 write pulse.
-/// It has no busy observation, loop, callback, or software-state access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn write_phy_frequency_memory(address: u16, value: u32, mode: u8) {
-    let control = PHY_FREQUENCY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_frequency_memory_address(
-        control.read_volatile(),
-        address,
-    ));
-    (PHY_FREQUENCY_MEMORY_DATA_ADDRESS as *mut u32).write_volatile((u32::from(mode) << 24) | value);
-    control.write_volatile(with_register_bits(control.read_volatile(), 0x0010_0000));
-    control.write_volatile(without_register_bits(control.read_volatile(), 0x0010_0000));
-}
-
-/// Publish the complete rev0 ROM `phy_freq_i2c_num_addr` register image.
-///
-/// `control_field` and `words` are prepared by the safe Rust transition from
-/// its eleven owned descriptor number-addresses. This finite leaf performs
-/// one read-modify-write and three stores; it has no wait, callback, or hidden
-/// software-state access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_frequency_i2c_number_addresses(
-    control_field: u32,
-    words: [u32; 3],
-) {
-    let control = PHY_FREQUENCY_I2C_NUMBER_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_frequency_i2c_number_control(
-        control.read_volatile(),
-        control_field,
-    ));
-    (PHY_FREQUENCY_I2C_NUMBER_WORD_0_ADDRESS as *mut u32).write_volatile(words[0]);
-    (PHY_FREQUENCY_I2C_NUMBER_WORD_1_ADDRESS as *mut u32).write_volatile(words[1]);
-    (PHY_FREQUENCY_I2C_NUMBER_WORD_2_ADDRESS as *mut u32).write_volatile(words[2]);
-}
-
 /// Apply complete vendor `phy_tsens_read_init` and its ROM tail leaf.
 ///
 /// The pinned 0x36-byte archive body ignores both ABI arguments, performs
@@ -2397,18 +2005,13 @@ mod tests {
     use super::{
         encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
         mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
-        mac_rx_management_policy_address, packed_byte, packed_halfword, phy_channel_cbw_fields,
-        phy_pbus_is_busy, phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value,
-        tsf_latch_mask, tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address,
-        tx_queue_is_valid, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
+        mac_rx_management_policy_address, packed_byte, packed_halfword, phy_pbus_is_busy,
+        phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value, tsf_latch_mask,
+        tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address, tx_queue_is_valid,
+        with_mac_rx_control_address_policy, with_mac_rx_control_policy,
         with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
         with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_baseband_watchdog,
-        with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second, with_phy_channel_fbw_third,
-        with_phy_channel_frequency_index, with_phy_channel_frequency_switch,
-        with_phy_channel_nrx_frequency, with_phy_channel_tx_offset, with_phy_fe_txrx_reset,
-        with_phy_frequency_i2c_number_control, with_phy_frequency_memory_address,
-        with_phy_frequency_module_enabled, with_phy_frequency_register_mode,
-        with_phy_front_end_adc_update, with_phy_front_end_update_first,
+        with_phy_fe_txrx_reset, with_phy_front_end_adc_update, with_phy_front_end_update_first,
         with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
         with_phy_i2c_clock_selection_low, with_phy_iq_est_config, with_phy_iq_est_control,
         with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_force_test,
@@ -2422,12 +2025,10 @@ mod tests {
         with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
         with_register_field, with_restored_phy_rx_dco_control_field, with_tx_cca,
         with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
-        without_phy_channel_fbw_first, without_phy_fe_txrx_reset,
-        without_phy_frequency_reset_fields, without_phy_rx_dco_control_field,
+        without_phy_fe_txrx_reset, without_phy_rx_dco_control_field,
         without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
         without_register_bits, without_tx_queue_enable, without_tx_queue_valid,
-        PhyChannelCbwFields, PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT,
-        WIFI_MAC_ACTIVE_REGDMA_LINK,
+        PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT, WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
 
     #[test]
@@ -2445,82 +2046,6 @@ mod tests {
         );
         assert_eq!(join_rx_descriptor_address(u32::MAX, 0), 0x000f_ffff);
         assert_eq!(join_rx_descriptor_address(0, u32::MAX), 0xfff0_0000);
-    }
-
-    #[test]
-    fn phy_channel_frequency_switch_and_nrx_match_complete_rom_masks() {
-        assert_eq!(
-            with_phy_channel_frequency_index(0x1234_56aa, 62),
-            0x1234_563e
-        );
-        assert_eq!(
-            with_phy_channel_frequency_switch(0x1200_0000, true),
-            0x1208_0000
-        );
-        assert_eq!(
-            with_phy_channel_frequency_switch(0x12ff_ffff, false),
-            0x12f7_ffff
-        );
-        assert_eq!(
-            with_phy_channel_nrx_frequency(0x0200_0000, 0xab00_1234, 2_462),
-            0xab00_0000
-        );
-        assert_eq!(
-            with_phy_channel_nrx_frequency(0x0800_0000, 0xcdff_ffff, 2_412),
-            0xcd00_0008
-        );
-    }
-
-    #[test]
-    fn phy_channel_bss_cbw_masks_match_all_rom_branches() {
-        assert_eq!(with_phy_channel_tx_offset(0x1234_567f, 0), 0x1234_5670);
-        assert_eq!(with_phy_channel_tx_offset(0x1234_567f, 2), 0x1234_5672);
-        assert_eq!(with_phy_channel_tx_offset(0x1234_567f, 3), 0x1234_5671);
-        assert_eq!(
-            with_phy_channel_bss_cbw_digital(0x1234_567f, 0),
-            0x1234_5673
-        );
-        assert_eq!(
-            with_phy_channel_bss_cbw_digital(0x1234_5670, 1),
-            0x1234_5674
-        );
-
-        assert_eq!(without_phy_channel_fbw_first(u32::MAX), 0xfff6_ffff);
-        assert_eq!(with_phy_channel_fbw_second(u32::MAX, false), 0xfff9_ffff);
-        assert_eq!(with_phy_channel_fbw_second(0, true), 0x0002_0000);
-        assert_eq!(with_phy_channel_fbw_third(u32::MAX, false), 0xffcf_ffff);
-        assert_eq!(with_phy_channel_fbw_third(0, true), 0x0010_0000);
-    }
-
-    #[test]
-    fn phy_channel_cbw_fields_match_low_and_high_nibble_paths() {
-        assert_eq!(
-            phy_channel_cbw_fields(0),
-            PhyChannelCbwFields {
-                tx_offset: 0,
-                control_0: 0,
-                control_1_high: 0,
-                control_1_low: 0,
-            }
-        );
-        assert_eq!(
-            phy_channel_cbw_fields(3),
-            PhyChannelCbwFields {
-                tx_offset: 1,
-                control_0: 1,
-                control_1_high: 4,
-                control_1_low: 1,
-            }
-        );
-        assert_eq!(
-            phy_channel_cbw_fields(0x30),
-            PhyChannelCbwFields {
-                tx_offset: 2,
-                control_0: 2,
-                control_1_high: 2,
-                control_1_low: 2,
-            }
-        );
     }
 
     #[test]
@@ -2778,45 +2303,6 @@ mod tests {
         assert_eq!(first, 0x8300_4000);
         assert_eq!(second, 0x8700_4000);
         assert_eq!(with_phy_front_end_adc_update(0xa5a5_0100), 0xa5a5_0103);
-    }
-
-    #[test]
-    fn phy_frequency_register_init_preserves_both_exact_rom_modes() {
-        let initial = 0x9abc_def0;
-        assert_eq!(without_phy_frequency_reset_fields(initial), 0x1ab4_def0);
-        assert_eq!(with_phy_frequency_module_enabled(0x1ab4_def0), 0x5ab4_def0);
-        assert_eq!(
-            with_phy_frequency_register_mode(0xffff_ffff, false),
-            0xd0bf_ffff
-        );
-        assert_eq!(
-            with_phy_frequency_register_mode(0xffff_ffff, true),
-            0xc83f_ffff
-        );
-    }
-
-    #[test]
-    fn phy_frequency_memory_address_replaces_only_the_eleven_bit_field() {
-        assert_eq!(
-            with_phy_frequency_memory_address(0xa5f8_00a5, 0x712),
-            0xa5ff_12a5
-        );
-        assert_eq!(
-            with_phy_frequency_memory_address(0xffff_ffff, 0xffff),
-            0xffff_ffff
-        );
-    }
-
-    #[test]
-    fn phy_frequency_i2c_number_control_replaces_only_the_ten_bit_field() {
-        assert_eq!(
-            with_phy_frequency_i2c_number_control(0xa5fc_00a5, 0x0000_a400),
-            0xa5fc_a4a5
-        );
-        assert_eq!(
-            with_phy_frequency_i2c_number_control(0xffff_ffff, u32::MAX),
-            0xffff_ffff
-        );
     }
 
     #[test]

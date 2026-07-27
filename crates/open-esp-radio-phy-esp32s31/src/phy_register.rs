@@ -940,16 +940,16 @@ impl PhyRegisterMmioBinding {
         let registers = radio.registers_mut();
         match self.action {
             PhyRegisterMmioAction::PrepareColdStart => {
-                crate::radio_hal::prepare_phy_register_cold_start(registers)
+                open_esp_radio_hal_esp32s31::phy_frequency::prepare_wifi_control(registers)
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {
                 crate::radio_hal::configure_phy_register_force_txrx(registers, enabled, phase)
             }
             PhyRegisterMmioAction::ResetFrequencyModule => {
-                crate::radio_hal::reset_phy_frequency_module(registers)
+                open_esp_radio_hal_esp32s31::phy_frequency::reset_module(registers)
             }
             PhyRegisterMmioAction::SetHardwareFrequencyControl { enabled } => {
-                crate::radio_hal::set_phy_hardware_frequency_control(registers, enabled)
+                open_esp_radio_hal_esp32s31::phy_frequency::set_hardware_control(registers, enabled)
             }
             PhyRegisterMmioAction::PulseI2cMasterReset { index } => {
                 crate::radio_hal::pulse_phy_i2c_master_reset(registers, index)

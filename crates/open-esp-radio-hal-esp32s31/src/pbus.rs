@@ -53,9 +53,7 @@ pub fn configure_work_mode(registers: &mut RadioRegisters) -> bool {
     let work_mode = phy_pbus::mode::WORK_MODE_ENABLE.mask();
     registers.modify32(phy_pbus::MODE, work_mode, work_mode);
 
-    modem_syscon::wifi_bb_cfg::PBUS_WORK_MODE_SETTLE_PULSE_REQUIRED
-        .extract(registers.read32(modem_syscon::WIFI_BB_CFG))
-        != 0
+    modem_syscon::wifi_bb_cfg::WIFI_ENABLE.extract(registers.read32(modem_syscon::WIFI_BB_CFG)) != 0
 }
 
 /// Publish one PBus force-test command after one fail-fast busy sample.

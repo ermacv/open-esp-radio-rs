@@ -17,7 +17,10 @@ use crate::phy_rfpll::{
 };
 
 pub const PHY_DCODE_FREQUENCY_CODES: [u8; 4] = [115, 116, 117, 118];
-pub const PHY_NRX_FREQUENCY_CONTROL_ADDRESS: usize = 0x2010_7848;
+pub const PHY_NRX_FREQUENCY_CONTROL_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_frequency_channel_oracle::
+        NRX_FREQUENCY_CONTROL
+        .address();
 
 const RFPLL_BLOCK: u8 = 0x62;
 const CKGEN_WRITES: [(u8, u8, u8, u8); 4] = [
@@ -321,8 +324,14 @@ impl PhyDcodeMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyDcodeCompletion {
-        crate::radio_hal::configure_phy_nrx_frequency(self.frequency_code);
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyDcodeCompletion {
+        open_esp_radio_hal_esp32s31::phy_frequency::configure_nrx_frequency(
+            registers,
+            u16::from(self.frequency_code),
+        );
         PhyDcodeCompletion::NrxConfigured {
             frequency_code: self.frequency_code,
             address: self.address,

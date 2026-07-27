@@ -361,27 +361,45 @@ pub mod modem_syscon {
         pub const CLK_FE_DAC_EN: Field32 = Field32::new(21, 1);
     }
 
-    /// SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC];
+    ///
+    /// SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT];
     /// CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only instruction-tested
     /// fields are presently recovered.
     pub const WIFI_BB_CFG: Register32 =
         Register32::described(0x20109c18, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`WIFI_BB_CFG`].
-    /// SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC];
+    /// SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT];
     /// CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only instruction-tested
     /// fields are presently recovered.
     pub mod wifi_bb_cfg {
         use crate::Field32;
 
-        /// SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown].
-        /// phy_pbus_force_mode samples bit 1 and, when set, performs the evidenced delayed
-        /// pulse tail; the underlying electrical condition is unknown.
-        pub const PBUS_WORK_MODE_SETTLE_PULSE_REQUIRED: Field32 = Field32::new(1, 1);
-        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-        /// phy_bb_agc_reg_update sets bits 13:11 as its final read/modify/write; the individual
-        /// hardware meanings remain unknown.
+        /// SOURCE[BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. register_chipv7_phy clears bit 0
+        /// together with WIFI_ENABLE before taking ownership of the powered PHY; its individual
+        /// electrical meaning is unknown.
+        pub const COLD_START_CLEAR_UNKNOWN: Field32 = Field32::new(0, 1);
+        ///
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol-and-consumers]. Complete
+        /// phy_wifi_enable_set controls bit 1; phy_pbus_force_mode samples the same bit before
+        /// its delayed settle tail, and register_chipv7_phy initially clears it.
+        pub const WIFI_ENABLE: Field32 = Field32::new(1, 1);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_bss_cbw40_dig
+        /// replaces bits 3:2 with zero or encoding one; only bit 2 is set by the evidenced
+        /// nonzero branch.
+        pub const BSS_CBW_40_DIGITAL_UNKNOWN: Field32 = Field32::new(2, 2);
+        /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets
+        /// bits 13:11 as its final read/modify/write; complete phy_bb_reg_init independently
+        /// sets only the low bit. The individual hardware meanings remain unknown.
         pub const BB_AGC_UPDATE_ENABLE_UNKNOWN: Field32 = Field32::new(11, 3);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_mac_enable_bb sets
+        /// bit 28 before pulsing WIFI_ENABLE.
+        pub const MAC_BASEBAND_ENABLE_UNKNOWN: Field32 = Field32::new(28, 1);
     }
 
     /// SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE radio
@@ -1315,6 +1333,346 @@ pub mod phy_memory {
         /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
         /// groups.
         pub const ODD_GROUP_LAST_ENTRY: Field32 = Field32::new(24, 8);
+    }
+}
+
+///
+/// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+/// CONFIDENCE[instruction-exact-multifunction]. Frequency-memory, hardware channel-switch, NRX
+/// and channel-bandwidth registers recovered from complete finite ROM/blob bodies. Names retain
+/// UNKNOWN where the instructions prove a field but not its electrical meaning. One physical
+/// word has one identity even when a bit has different mode-dependent roles.
+pub mod phy_frequency_channel_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address.
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+    /// CONFIDENCE[instruction-exact-multifunction]. Frequency-memory, hardware channel-switch,
+    /// NRX and channel-bandwidth registers recovered from complete finite ROM/blob bodies.
+    /// Names retain UNKNOWN where the instructions prove a field but not its electrical
+    /// meaning. One physical word has one identity even when a bit has different mode-dependent
+    /// roles.
+    pub const BASE: usize = 0x20100000;
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+    /// CONFIDENCE[instruction-exact-multifunction]. Shared frequency module control word. Bit
+    /// 18 is both the high bit of an eleven-bit command-memory address and the reset/release
+    /// bit pulsed by phy_freq_module_resetn.
+    pub const FREQUENCY_CONTROL: Register32 =
+        Register32::described(0x2010001c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`FREQUENCY_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+    /// CONFIDENCE[instruction-exact-multifunction]. Shared frequency module control word. Bit
+    /// 18 is both the high bit of an eleven-bit command-memory address and the reset/release
+    /// bit pulsed by phy_freq_module_resetn.
+    pub mod frequency_control {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_chan_en_sw
+        /// replaces the low byte with the caller's frequency-table index.
+        pub const CHANNEL_INDEX: Field32 = Field32::new(0, 8);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Low ten bits of the eleven-bit
+        /// address selected by phy_freq_i2c_mem_write.
+        pub const MEMORY_ADDRESS_LOW_UNKNOWN: Field32 = Field32::new(8, 10);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. High address bit during
+        /// frequency-memory writes; independently cleared then set by complete
+        /// phy_freq_module_resetn.
+        pub const MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN: Field32 = Field32::new(18, 1);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_chan_en_sw
+        /// sets bit 19, delays one microsecond, then clears it.
+        pub const CHANNEL_SWITCH_PULSE: Field32 = Field32::new(19, 1);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_i2c_mem_write
+        /// sets then clears bit 20 after publishing data.
+        pub const MEMORY_WRITE_PULSE: Field32 = Field32::new(20, 1);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_freq_reg_init replaces
+        /// bits 29:22 with its two input nibbles; the electrical encoding is unknown.
+        pub const REGISTER_MODE_UNKNOWN: Field32 = Field32::new(22, 8);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_freq_reg_init sets
+        /// bit 30.
+        pub const MODULE_ENABLE_UNKNOWN: Field32 = Field32::new(30, 1);
+        /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_REGISTER_CHIPV7_PHY];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_dis_hw_set_freq
+        /// sets bit 31 before its two-microsecond delay; complete phy_en_hw_set_freq clears it.
+        pub const HARDWARE_FREQUENCY_DISABLE: Field32 = Field32::new(31, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init writes
+    /// the full constant 0x19800249; no constituent electrical fields are public.
+    pub const FREQUENCY_PARAMETER_0_OPAQUE: Register32 =
+        Register32::described(0x20100024, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`FREQUENCY_PARAMETER_0_OPAQUE`].
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init writes
+    /// the full constant 0x19800249; no constituent electrical fields are public.
+    pub mod frequency_parameter_0_opaque {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init
+        /// writes the full constant 0x19800249; no constituent electrical fields are public.
+        pub const OPAQUE_VALUE: Field32 = Field32::new(0, 32);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT];
+    /// CONFIDENCE[instruction-exact-multifunction]. Complete phy_freq_reg_init writes
+    /// 0x25824e58; phy_bb_init replaces the low baseband-mode field, and the open channel state
+    /// machine samples bit 8 for the evidenced ready edge.
+    pub const FREQUENCY_PARAMETER_1_STATUS: Register32 =
+        Register32::described(0x20100028, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`FREQUENCY_PARAMETER_1_STATUS`].
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT];
+    /// CONFIDENCE[instruction-exact-multifunction]. Complete phy_freq_reg_init writes
+    /// 0x25824e58; phy_bb_init replaces the low baseband-mode field, and the open channel state
+    /// machine samples bit 8 for the evidenced ready edge.
+    pub mod frequency_parameter_1_status {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_BB_INIT];
+        /// CONFIDENCE[instruction-exact-semantics-from-parent]. Complete phy_bb_init writes
+        /// encoding two before calibration and zero after the initial channel setup.
+        pub const BASEBAND_MODE_UNKNOWN: Field32 = Field32::new(0, 2);
+        /// SOURCE[BLOB_LIBPHY_PHY_RFPLL_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-consumer]. The complete channel parent
+        /// samples bit 8 after the frequency-switch delay and branches on its asserted edge.
+        pub const FREQUENCY_READY: Field32 = Field32::new(8, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-command-layout].
+    /// Data/mode word published by complete phy_freq_i2c_mem_write.
+    pub const FREQUENCY_MEMORY_DATA: Register32 =
+        Register32::described(0x2010002c, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`FREQUENCY_MEMORY_DATA`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-command-layout]. Data/mode word published by complete
+    /// phy_freq_i2c_mem_write.
+    pub mod frequency_memory_data {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-command-layout]. Data/mode word published by complete
+        /// phy_freq_i2c_mem_write.
+        pub const DATA: Field32 = Field32::new(0, 24);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-command-layout]. Data/mode word published by complete
+        /// phy_freq_i2c_mem_write.
+        pub const MODE: Field32 = Field32::new(24, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-packed-layout].
+    /// First two five-bit PHY-I2C number addresses packed by complete phy_freq_i2c_num_addr.
+    pub const I2C_NUMBER_CONTROL: Register32 =
+        Register32::described(0x20100030, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`I2C_NUMBER_CONTROL`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-packed-layout]. First two five-bit PHY-I2C number addresses
+    /// packed by complete phy_freq_i2c_num_addr.
+    pub mod i2c_number_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. First two five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_i2c_num_addr.
+        pub const NUMBER_ADDRESS_0_UNKNOWN: Field32 = Field32::new(8, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. First two five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_i2c_num_addr.
+        pub const NUMBER_ADDRESS_1_UNKNOWN: Field32 = Field32::new(13, 5);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-packed-layout]. Six
+    /// consecutive five-bit PHY-I2C number addresses packed by complete phy_freq_num_get_data;
+    /// unused slots are zero.
+    pub const I2C_NUMBER_WORD: [Register32; 3] = [
+        Register32::described(0x20100034, RegisterAccess::WriteOnly, None),
+        Register32::described(0x20100038, RegisterAccess::WriteOnly, None),
+        Register32::described(0x2010003c, RegisterAccess::WriteOnly, None),
+    ];
+
+    /// Recovered fields of [`I2C_NUMBER_WORD`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+    /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+    pub mod i2c_number_word {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_0_UNKNOWN: Field32 = Field32::new(0, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_1_UNKNOWN: Field32 = Field32::new(5, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_2_UNKNOWN: Field32 = Field32::new(10, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_3_UNKNOWN: Field32 = Field32::new(15, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_4_UNKNOWN: Field32 = Field32::new(20, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number
+        /// addresses packed by complete phy_freq_num_get_data; unused slots are zero.
+        pub const NUMBER_ADDRESS_5_UNKNOWN: Field32 = Field32::new(25, 5);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-multifunction].
+    /// Shared filter-bandwidth and Bluetooth-filter word independently updated by complete
+    /// phy_wifi_fbw_sel and phy_bt_filter_reg.
+    pub const FBW_BT_FILTER_CONTROL: Register32 =
+        Register32::described(0x20100874, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`FBW_BT_FILTER_CONTROL`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+    /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+    /// phy_bt_filter_reg.
+    pub mod fbw_bt_filter_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const FBW_CLEAR_LOW_UNKNOWN: Field32 = Field32::new(16, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const FBW_SELECT_MID_UNKNOWN: Field32 = Field32::new(17, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const FBW_CLEAR_HIGH_UNKNOWN: Field32 = Field32::new(19, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const FBW_SELECT_HIGH_UNKNOWN: Field32 = Field32::new(20, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const BT_FILTER_LOW_UNKNOWN: Field32 = Field32::new(22, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const BT_FILTER_MODE_UNKNOWN: Field32 = Field32::new(23, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. Shared filter-bandwidth and
+        /// Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and
+        /// phy_bt_filter_reg.
+        pub const BT_FILTER_ENABLE_UNKNOWN: Field32 = Field32::new(25, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Low channel-offset field shared by
+    /// complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg.
+    pub const CHANNEL_TX_OFFSET_CONTROL: Register32 =
+        Register32::described(0x20104400, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`CHANNEL_TX_OFFSET_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Low channel-offset field shared by
+    /// complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg.
+    pub mod channel_tx_offset_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Low channel-offset field shared
+        /// by complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg.
+        pub const CHANNEL_OFFSET_UNKNOWN: Field32 = Field32::new(0, 4);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-multifunction]. NRX
+    /// initialization and frequency quotient word. Complete phy_nrx_freq_set samples and
+    /// preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient.
+    pub const NRX_FREQUENCY_CONTROL: Register32 =
+        Register32::described(0x20107848, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`NRX_FREQUENCY_CONTROL`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency quotient
+    /// word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20,
+    /// and writes a twenty-bit quotient.
+    pub mod nrx_frequency_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency
+        /// quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears
+        /// bits 23:20, and writes a twenty-bit quotient.
+        pub const FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN: Field32 = Field32::new(0, 20);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency
+        /// quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears
+        /// bits 23:20, and writes a twenty-bit quotient.
+        pub const INIT_MIDDLE_UNKNOWN: Field32 = Field32::new(20, 4);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency
+        /// quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears
+        /// bits 23:20, and writes a twenty-bit quotient.
+        pub const SHIFT_LOW_OR_INIT_HIGH_UNKNOWN: Field32 = Field32::new(24, 5);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-multifunction]. NRX initialization and frequency
+        /// quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears
+        /// bits 23:20, and writes a twenty-bit quotient.
+        pub const SHIFT_HIGH_UNKNOWN: Field32 = Field32::new(29, 3);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+    /// replaces the low two-bit CBW-derived field.
+    pub const CHANNEL_CBW_CONTROL_0: Register32 =
+        Register32::described(0x20107ce0, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`CHANNEL_CBW_CONTROL_0`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+    /// replaces the low two-bit CBW-derived field.
+    pub mod channel_cbw_control_0 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+        /// replaces the low two-bit CBW-derived field.
+        pub const CBW_LOW_UNKNOWN: Field32 = Field32::new(0, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+    /// performs two fresh-read CBW-derived replacements.
+    pub const CHANNEL_CBW_CONTROL_1: Register32 =
+        Register32::described(0x20107ce4, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`CHANNEL_CBW_CONTROL_1`]. SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+    /// performs two fresh-read CBW-derived replacements.
+    pub mod channel_cbw_control_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+        /// performs two fresh-read CBW-derived replacements.
+        pub const CBW_LOW_UNKNOWN: Field32 = Field32::new(0, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
+        /// performs two fresh-read CBW-derived replacements.
+        pub const CBW_HIGH_UNKNOWN: Field32 = Field32::new(2, 3);
     }
 }
 
@@ -2341,7 +2699,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 143] = [
+pub const ALL: [Register32; 156] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2390,6 +2748,19 @@ pub const ALL: [Register32; 143] = [
     phy_memory::GROUP_BOUNDARY[3],
     phy_memory::GROUP_BOUNDARY[4],
     phy_memory::GROUP_BOUNDARY[5],
+    phy_frequency_channel_oracle::FREQUENCY_CONTROL,
+    phy_frequency_channel_oracle::FREQUENCY_PARAMETER_0_OPAQUE,
+    phy_frequency_channel_oracle::FREQUENCY_PARAMETER_1_STATUS,
+    phy_frequency_channel_oracle::FREQUENCY_MEMORY_DATA,
+    phy_frequency_channel_oracle::I2C_NUMBER_CONTROL,
+    phy_frequency_channel_oracle::I2C_NUMBER_WORD[0],
+    phy_frequency_channel_oracle::I2C_NUMBER_WORD[1],
+    phy_frequency_channel_oracle::I2C_NUMBER_WORD[2],
+    phy_frequency_channel_oracle::FBW_BT_FILTER_CONTROL,
+    phy_frequency_channel_oracle::CHANNEL_TX_OFFSET_CONTROL,
+    phy_frequency_channel_oracle::NRX_FREQUENCY_CONTROL,
+    phy_frequency_channel_oracle::CHANNEL_CBW_CONTROL_0,
+    phy_frequency_channel_oracle::CHANNEL_CBW_CONTROL_1,
     phy_pbus::COMMAND,
     phy_pbus::MODE,
     phy_pbus::STATUS_CLOCK_FORCE,

@@ -819,7 +819,9 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::AgcSet { enabled }
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {
-                crate::radio_hal::wifi_strict_phy_bbpll_cal(u32::from(enabled));
+                open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
+                    registers, enabled,
+                );
                 PhyChipChannelCompletion::BbpllCalibrationSet { enabled }
             }
             PhyChipChannelAction::StartFrequencySwitch {
@@ -870,7 +872,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::ChannelCbwConfigured { cbw }
             }
             PhyChipChannelAction::ClearDcMemory => {
-                crate::radio_hal::wifi_strict_phy_dc_mem_clr();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_dc_memory(registers);
                 PhyChipChannelCompletion::DcMemoryCleared
             }
             _ => unreachable!(),

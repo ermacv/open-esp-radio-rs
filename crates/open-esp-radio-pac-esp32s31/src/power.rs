@@ -1814,20 +1814,20 @@ pub mod phy_i2c_command_ram {
 }
 
 ///
-/// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+/// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_DC_MEM_CLR,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, PBus-pulse, antenna,
-/// RX-compensation, post-initialization and 11b-control registers recovered from complete,
-/// finite rev0 ROM/blob bodies. One physical register has one identity even when independent
-/// bodies prove different fields. Names describe their proven operation role, not an
-/// unevidenced electrical identity.
+/// RX-compensation, DC-memory, post-initialization and 11b-control registers recovered from
+/// complete, finite rev0 ROM/blob bodies. One physical register has one identity even when
+/// independent bodies prove different fields. Names describe their proven operation role, not
+/// an unevidenced electrical identity.
 pub mod phy_agc_oracle {
     use crate::{Register32, RegisterAccess};
 
     /// Peripheral base address.
-    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_DC_MEM_CLR,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, PBus-pulse, antenna,
-    /// RX-compensation, post-initialization and 11b-control registers recovered from complete,
-    /// finite rev0 ROM/blob bodies. One physical register has one identity even when
+    /// RX-compensation, DC-memory, post-initialization and 11b-control registers recovered from
+    /// complete, finite rev0 ROM/blob bodies. One physical register has one identity even when
     /// independent bodies prove different fields. Names describe their proven operation role,
     /// not an unevidenced electrical identity.
     pub const BASE: usize = 0x20100000;
@@ -1905,6 +1905,23 @@ pub mod phy_agc_oracle {
         /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown].
         /// Instruction-exact AGC disable/enable gate.
         pub const AGC_DISABLE_UNKNOWN: Field32 = Field32::new(29, 1);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_DC_MEM_CLR]; CONFIDENCE[instruction-exact-semantics-unknown].
+    /// Complete phy_dc_mem_clr sets then clears bit 20 using a fresh read before each write.
+    pub const DC_MEMORY_CONTROL: Register32 =
+        Register32::described(0x2010703c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`DC_MEMORY_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_DC_MEM_CLR];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_dc_mem_clr sets then
+    /// clears bit 20 using a fresh read before each write.
+    pub mod dc_memory_control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_DC_MEM_CLR]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Instruction-exact set/clear pulse; the vendor symbol qualifies the operation while
+        /// the electrical effect remains unknown.
+        pub const CLEAR_PULSE_UNKNOWN: Field32 = Field32::new(20, 1);
     }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -2324,7 +2341,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 142] = [
+pub const ALL: [Register32; 143] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2437,6 +2454,7 @@ pub const ALL: [Register32; 142] = [
     phy_agc_oracle::AGC_PARAMETER_CONTROL,
     phy_agc_oracle::AGC_SHARED_CONTROL,
     phy_agc_oracle::AGC_ANTENNA_CONTROL,
+    phy_agc_oracle::DC_MEMORY_CONTROL,
     phy_agc_oracle::RX_11B_PATH_CONTROL_0,
     phy_agc_oracle::AGC_UPDATE_7048_OPAQUE,
     phy_agc_oracle::AGC_SATURATION_CONTROL,

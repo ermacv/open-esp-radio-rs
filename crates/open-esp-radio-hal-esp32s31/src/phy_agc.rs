@@ -225,6 +225,27 @@ fn configure_rx_compensation_with(io: &mut impl RegisterIo) {
     );
 }
 
+/// Pulse the complete pinned `phy_dc_mem_clr` field.
+///
+/// The 0x1c-byte `libphy.a[phy_reg.o]` body sets then clears bit 20 of the
+/// same register, with a fresh read before each write and no other side
+/// effect visible in the complete body.
+#[cfg(target_arch = "riscv32")]
+pub fn clear_dc_memory(registers: &mut RadioRegisters) {
+    clear_dc_memory_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn clear_dc_memory_with(io: &mut impl RegisterIo) {
+    let pulse = phy_agc_oracle::dc_memory_control::CLEAR_PULSE_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::DC_MEMORY_CONTROL,
+        pulse.mask(),
+        pulse.mask(),
+    );
+    io.modify(phy_agc_oracle::DC_MEMORY_CONTROL, pulse.mask(), 0);
+}
+
 /// Apply the two MMIO updates after the 1 us edge in `phy_pbus_force_mode`.
 ///
 /// Complete rev0 ROM first replaces the shared high byte with `0x32`, then
@@ -488,7 +509,7 @@ mod tests {
     use std::{vec, vec::Vec};
 
     use super::{
-        clear_pbus_work_mode_pulse_with, configure_antenna_with,
+        clear_dc_memory_with, clear_pbus_work_mode_pulse_with, configure_antenna_with,
         configure_pbus_work_mode_pulse_with, configure_rf_rx_saturation_with,
         configure_rx_11b_optimization_with, configure_rx_compensation_with,
         configure_rx_gain_limits_with, initialize_registers_with, set_enabled_with,
@@ -636,6 +657,21 @@ mod tests {
             vec![
                 (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1234_56ed),
                 (phy_agc_oracle::RX_COMPENSATION_HIGH_CONTROL, 0xed34_5678),
+            ]
+        );
+    }
+
+    #[test]
+    fn dc_memory_clear_retains_both_fresh_blob_edges() {
+        let mut io = FakeRegisters::default().with(phy_agc_oracle::DC_MEMORY_CONTROL, 0x1224_5678);
+
+        clear_dc_memory_with(&mut io);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::DC_MEMORY_CONTROL, 0x1234_5678),
+                (phy_agc_oracle::DC_MEMORY_CONTROL, 0x1224_5678),
             ]
         );
     }

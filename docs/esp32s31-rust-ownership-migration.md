@@ -3062,3 +3062,25 @@ The raw C ABI, raw antenna/PBus wrappers, and duplicate mask helpers are
 deleted. The target source audit rejects `0x0884`, `0x088c`, `0x702c`,
 `0x7030`, `0x70a0`, `0x711c`, and `0x7120`, closing this shared-register
 migration without assigning guessed neighboring-chip names.
+
+## Typed channel cleanup and BBPLL control
+
+The channel cleanup's final two raw leaves are now behind the same
+`RadioRegisters` capability. Complete pinned
+`libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`, proves two fresh-read
+edges at `0x2010_703c`: set bit 20, then clear it. SVD v0.7 records that
+single instruction-exact field as `CLEAR_PULSE_UNKNOWN`.
+
+Complete rev0 ROM `phy_bbpll_cal` at `0x2f827dbc`, size `0x1c`, proves one
+fresh-read replacement at `0x2010_f818`: false selects encoded value one in
+bits 3:2 and true selects encoded value two. The word is already the PAC's
+`PHY_I2C_MASTER.MASTER_CONTROL`, shared with independently recovered
+master-register fields, so the new HAL method reuses that identity and
+preserves every unrelated bit.
+
+Cold initialization, reusable register initialization, and every channel
+change now call the safe HAL methods with their existing unique register
+borrow. The two raw exported C leaves, the unused raw master-register wrapper,
+and their duplicate masks/tests are removed. The target audit rejects raw
+`0x703c` and `0xf818`, leaving no alternate access path for either physical
+register.

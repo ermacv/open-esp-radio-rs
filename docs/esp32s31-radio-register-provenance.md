@@ -171,6 +171,21 @@ raw wrappers and duplicate mask helpers are removed. The source-only audit
 now rejects raw `0x0884`, `0x088c`, `0x702c`, `0x7030`, `0x70a0`, `0x711c`,
 and `0x7120` in addition to the earlier AGC addresses.
 
+The channel cleanup tail is now fully capability-bound as well. Complete
+pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`, proves a
+fresh-read set/clear pulse on bit 20 of `0x703c`; the SVD v0.7 adds that field
+without claiming an unevidenced electrical meaning. Complete rev0 ROM
+`phy_bbpll_cal` at `0x2f827dbc`, size `0x1c`, proves the two encodings in bits
+3:2 of shared `PHY_I2C_MASTER.MASTER_CONTROL` at `0xf818`. That register
+already owns the independently proven master-register enable and mode fields,
+so no second alias is introduced.
+
+The `phy_agc` and `phy_i2c` HAL methods preserve the two DC-memory reads and
+the single BBPLL RMW. Cold initialization, register initialization, and
+channel changes all pass their existing `RadioRegisters` borrow. The raw C
+ABIs, address constants, and duplicate mask helpers are deleted; the
+source-only audit rejects raw `0x703c` and `0xf818`.
+
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent
 complete rev0 ROM bodies establish:

@@ -961,7 +961,9 @@ impl PhyRegisterMmioBinding {
                 crate::radio_hal::set_phy_register_calibration_clock(registers, enabled)
             }
             PhyRegisterMmioAction::SetBbpllCalibration { enabled } => {
-                crate::radio_hal::set_phy_bbpll_calibration(registers, enabled)
+                open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
+                    registers, enabled,
+                )
             }
         }
         PhyRegisterMmioCompletion {

@@ -1895,7 +1895,9 @@ impl PhyColdMmioBinding {
                 crate::radio_hal::wifi_strict_phy_open_fe_bb_clk()
             }
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {
-                crate::radio_hal::wifi_strict_phy_bbpll_cal(enabled as u32)
+                open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
+                    registers, enabled,
+                )
             }
             PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay) => {
                 crate::phy_i2c::configure_open_i2c_pre_delay(registers)

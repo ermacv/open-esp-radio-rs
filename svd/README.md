@@ -51,7 +51,7 @@ identities for every entry.
 | `ROM_REV0_PHY_AGC` | Complete rev0 ROM AGC enable/disable, 11b, register-init, register-update and RF RX saturation bodies |
 | `ROM_REV0_PHY_ANT_INIT` | Complete 0x44-byte rev0 ROM `phy_ant_init` body |
 | `ROM_REV0_PHY_CLOCK_FORCE` | Complete force-TX/RX and RX/TX clock-pair bodies |
-| `ROM_REV0_PHY_I2C` | Complete clock-select, master-init/reset and host read/write bodies |
+| `ROM_REV0_PHY_I2C` | Complete clock-select, master-init/reset, BBPLL-calibration and host read/write bodies |
 | `BLOB_LIBPHY_PHY_I2C` | Complete S31 PHY-I2C callbacks and command-RAM initializer |
 | `BLOB_LIBPHY_PHY_SET_TX_CFR_MEM` | Complete 0x76-byte `phy_set_tx_cfr_mem` body from `phy_tx_gain.o` |
 | `BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW` | Complete `phy_set_tx_gain_mem_new` body from `phy_tx_gain.o` and its complete ROM write leaf |
@@ -59,6 +59,7 @@ identities for every entry.
 | `BLOB_LIBPHY_PHY_REG_UPDATE_NEW` | Complete post-initialization register update, FTM tail, and ROM saturation-gain leaf |
 | `BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE` | Complete RX-gain-table body, including its final two register limit writes |
 | `BLOB_LIBPHY_PHY_SET_RX_COMP_NEW` | Complete 0x28-byte RX-compensation body from `phy_reg.o` |
+| `BLOB_LIBPHY_PHY_DC_MEM_CLR` | Complete 0x1c-byte DC-memory-clear body from `phy_reg.o` |
 | `BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK` | Complete 0x20-byte `libphy.a[phy_init.o]` body |
 | `BLOB_LIBPHY_PHY_BB_INIT` | Complete 0x16a-byte `phy_bb_init` body and relocation graph |
 

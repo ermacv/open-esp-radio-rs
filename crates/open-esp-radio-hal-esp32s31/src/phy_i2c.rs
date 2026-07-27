@@ -1,10 +1,9 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
+#[cfg(any(test, target_arch = "riscv32"))]
+use open_esp_radio_pac_esp32s31::power::phy_i2c_master;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_pac_esp32s31::{
-    power::{phy_i2c_command_ram, phy_i2c_master},
-    RadioRegisters, Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::phy_i2c_command_ram, RadioRegisters, Register32};
 
 /// One of the two command hosts selected by the S31 libphy block table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,6 +182,28 @@ pub fn configure_master_registers(registers: &mut RadioRegisters) {
     registers.modify32(phy_i2c_master::MASTER_CONTROL, enable, enable);
 }
 
+#[cfg(any(test, target_arch = "riscv32"))]
+fn bbpll_calibration_bits(enabled: bool) -> u32 {
+    let mode = phy_i2c_master::master_control::BBPLL_CAL_MODE_UNKNOWN;
+    mode.checked_value(if enabled { 2 } else { 1 }).unwrap_or(0)
+}
+
+/// Select the complete rev0 ROM `phy_bbpll_cal` mode.
+///
+/// The body at `0x2f82_7dbc`, size `0x1c`, performs one fresh-read
+/// replacement of `MASTER_CONTROL` bits 3:2. Zero selects encoded mode one;
+/// every nonzero input selects encoded mode two. The boolean API makes that
+/// two-state contract explicit while preserving all unrelated shared fields.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_bbpll_calibration(registers: &mut RadioRegisters, enabled: bool) {
+    let mode = phy_i2c_master::master_control::BBPLL_CAL_MODE_UNKNOWN;
+    registers.modify32(
+        phy_i2c_master::MASTER_CONTROL,
+        mode.mask(),
+        bbpll_calibration_bits(enabled),
+    );
+}
+
 /// Write one of the 45 recovered PHY-I2C command-RAM words.
 ///
 /// Basis: complete S31
@@ -201,4 +222,15 @@ pub fn write_command_memory(
         .ok_or(PhyI2cError::CommandMemoryIndexOutOfRange)?;
     registers.write32(register, command);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bbpll_calibration_bits;
+
+    #[test]
+    fn bbpll_calibration_retains_both_complete_rom_encodings() {
+        assert_eq!(bbpll_calibration_bits(false), 0x04);
+        assert_eq!(bbpll_calibration_bits(true), 0x08);
+    }
 }

@@ -37,9 +37,6 @@ const WIFI_MAC_REGDMA_LINK_MASK: u32 = 0x001e_0000;
 const WIFI_MAC_ACTIVE_REGDMA_LINK: u32 = 4;
 const MAC_INTERFACE_COUNT: u32 = 4;
 const MAC_RX_POLICY_QUEUE_COUNT: u32 = 3;
-const PHY_DC_MEMORY_CONTROL_ADDRESS: usize = 0x2010_703c;
-const PHY_DC_MEMORY_CLEAR_BIT: u32 = 1 << 20;
-const PHY_BBPLL_CAL_CONTROL_ADDRESS: usize = 0x2010_f818;
 const PHY_FE_BB_ENABLE_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::ROM_FE_BB_ENABLE_UNKNOWN.mask();
 const PHY_CALIBRATION_CLOCK_MASK: u32 =
@@ -75,7 +72,6 @@ const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
 const PHY_I2C_CLOCK_SELECTION_2_ADDRESS: usize = 0x2010_f82c;
 const PHY_FE_TXRX_RESET_ADDRESS: usize = 0x2010_0440;
 const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
-const PHY_I2C_MASTER_REGISTER_CONTROL_ADDRESS: usize = 0x2010_f818;
 const PHY_POWER_DETECTOR_CONTROL_ADDRESS: usize = 0x2010_0808;
 const PHY_POWER_DETECTOR_TABLE_0_ADDRESS: usize = 0x2010_0810;
 const PHY_POWER_DETECTOR_TABLE_1_ADDRESS: usize = 0x2010_0814;
@@ -868,15 +864,6 @@ const fn without_fe_bb_clock_enable(value: u32) -> u32 {
     value & !PHY_FE_BB_ENABLE_MASK
 }
 
-const fn with_bbpll_calibration(value: u32, enable: u32) -> u32 {
-    let value = value & !0x0c;
-    if enable == 0 {
-        value | 0x04
-    } else {
-        value | 0x08
-    }
-}
-
 const fn with_phy_pbus_force_test(value: u32, selector: u8, path: u8, test_value: u16) -> u32 {
     let command = ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15);
     (value & 0xfffe_0001) | (command & 0x0001_fffc) | PHY_PBUS_TRANSACTION_BIT
@@ -1085,14 +1072,6 @@ const fn with_phy_adc_rate_high(value: u32, rate: u32) -> u32 {
 
 const fn with_phy_adc_rate_low(value: u32, rate: u32) -> u32 {
     (value & !0x0000_0001) | (rate & 0x0000_0001)
-}
-
-const fn with_phy_i2c_master_register_mode(value: u32) -> u32 {
-    (value & !0x0000_0600) | 0x0000_0400
-}
-
-const fn with_phy_i2c_master_register_enable(value: u32) -> u32 {
-    value | 0x0000_0040
 }
 
 const fn with_phy_power_detector_low_field(value: u32) -> u32 {
@@ -1475,21 +1454,6 @@ pub(crate) unsafe fn restart_mac_without_power_save() {
     ));
 }
 
-/// Pulse the recovered PHY DC-memory clear control bit.
-///
-/// Reference: pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`.
-/// The complete body sets then clears bit 20 of `0x2010_703c`, performing a
-/// fresh volatile read before each write. The exact hardware side effect is
-/// not yet documented beyond the vendor symbol name and this transaction.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_phy_dc_mem_clr() {
-    let control = PHY_DC_MEMORY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(control.read_volatile() | PHY_DC_MEMORY_CLEAR_BIT);
-    control.write_volatile(control.read_volatile() & !PHY_DC_MEMORY_CLEAR_BIT);
-}
-
 /// Close the recovered front-end and baseband clock gates.
 ///
 /// Reference: the complete pinned
@@ -1533,38 +1497,6 @@ pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
 
     let active_clock_power = pmu::HP_ACTIVE_HP_CK_POWER.address() as *mut u32;
     active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
-}
-
-/// Select the recovered baseband-PLL calibration control state.
-///
-/// Reference: complete rev0 ROM `phy_bbpll_cal` body at `0x2f82_7dbc`, size
-/// `0x1c`. Both branches clear bits 3:2 of `0x2010_f818`; zero selects bit 2
-/// and every nonzero argument selects bit 3. The exact field meaning remains
-/// opaque until register documentation or differential evidence names it.
-///
-/// This leaf is used by both cold initialization and strict channel changes,
-/// so it remains in internal SRAM and contains no call, loop, wait,
-/// allocation, callback, or hidden state access.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_phy_bbpll_cal(enable: u32) {
-    let control = PHY_BBPLL_CAL_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_bbpll_calibration(control.read_volatile(), enable));
-}
-
-/// Owned-register version used by the Rust registration parent.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_bbpll_calibration(registers: &mut RadioRegisters, enabled: bool) {
-    // SAFETY: the identity-bound parent action supplies only the recovered
-    // boolean field value and uniquely borrows the powered radio.
-    unsafe {
-        let previous = registers.read(PHY_BBPLL_CAL_CONTROL_ADDRESS);
-        registers.write(
-            PHY_BBPLL_CAL_CONTROL_ADDRESS,
-            with_bbpll_calibration(previous, u32::from(enabled)),
-        );
-    }
 }
 
 /// Read the exact PBus field consumed by RX-DCO calibration.
@@ -2067,20 +1999,6 @@ pub(crate) unsafe fn configure_phy_adc_rate(rate: u32) {
     register.write_volatile(with_phy_adc_rate_low(register.read_volatile(), rate));
 }
 
-/// Apply complete rev0 ROM `phy_i2cmst_reg_init`.
-///
-/// The pinned body at `0x2f82_76c4`, size `0x22`, uses two fresh reads of
-/// `0x2010_f818`: field `0x600` becomes `0x400`, then bit `0x40` is set.
-/// It contains no call, branch, wait, delay, or mutable software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_i2c_master_registers() {
-    let register = PHY_I2C_MASTER_REGISTER_CONTROL_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_i2c_master_register_mode(register.read_volatile()));
-    register.write_volatile(with_phy_i2c_master_register_enable(
-        register.read_volatile(),
-    ));
-}
-
 /// Apply complete rev0 ROM `phy_pwdet_reg_init`.
 ///
 /// The pinned body at `0x2f82_634a`, size `0x5c`, performs six finite stores
@@ -2482,35 +2400,34 @@ mod tests {
         mac_rx_management_policy_address, packed_byte, packed_halfword, phy_channel_cbw_fields,
         phy_pbus_is_busy, phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value,
         tsf_latch_mask, tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address,
-        tx_queue_is_valid, with_bbpll_calibration, with_mac_rx_control_address_policy,
-        with_mac_rx_control_policy, with_mac_rx_management_policy, with_mac_rx_mode,
-        with_mac_rx_unique_bssid_policy, with_phy_adc_rate_high, with_phy_adc_rate_low,
-        with_phy_baseband_watchdog, with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second,
-        with_phy_channel_fbw_third, with_phy_channel_frequency_index,
-        with_phy_channel_frequency_switch, with_phy_channel_nrx_frequency,
-        with_phy_channel_tx_offset, with_phy_fe_txrx_reset, with_phy_frequency_i2c_number_control,
-        with_phy_frequency_memory_address, with_phy_frequency_module_enabled,
-        with_phy_frequency_register_mode, with_phy_front_end_adc_update,
-        with_phy_front_end_update_first, with_phy_front_end_update_second,
-        with_phy_i2c_clock_selection_high, with_phy_i2c_clock_selection_low,
-        with_phy_i2c_master_register_enable, with_phy_i2c_master_register_mode,
-        with_phy_iq_est_config, with_phy_iq_est_control, with_phy_iq_est_enable,
-        with_phy_iq_est_mode, with_phy_pbus_force_test, with_phy_power_detector_aux_mode,
-        with_phy_power_detector_high_field, with_phy_power_detector_low_field, with_phy_rx_clock,
-        with_phy_rxiq_calibration_mode, with_phy_rxiq_gain, with_phy_rxiq_phase,
-        with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin, with_phy_tone_path,
-        with_phy_tone_path0_selector, with_phy_tone_path1_selector, with_phy_tx_clock,
-        with_phy_tx_gain_compensation_byte1, with_phy_tx_gain_compensation_byte2,
-        with_phy_txiq_calibration_complete, with_phy_txiq_calibration_enabled,
-        with_phy_txiq_first_polarity, with_phy_txiq_gain, with_phy_txiq_phase,
-        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
-        with_restored_phy_rx_dco_control_field, with_tx_cca, with_wifi_mac_regdma_link,
-        without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_channel_fbw_first,
-        without_phy_fe_txrx_reset, without_phy_frequency_reset_fields,
-        without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
-        without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
-        without_tx_queue_valid, PhyChannelCbwFields, PHY_IQ_EST_MEASUREMENT_BIT,
-        PHY_IQ_EST_START_BIT, WIFI_MAC_ACTIVE_REGDMA_LINK,
+        tx_queue_is_valid, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
+        with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
+        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_baseband_watchdog,
+        with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second, with_phy_channel_fbw_third,
+        with_phy_channel_frequency_index, with_phy_channel_frequency_switch,
+        with_phy_channel_nrx_frequency, with_phy_channel_tx_offset, with_phy_fe_txrx_reset,
+        with_phy_frequency_i2c_number_control, with_phy_frequency_memory_address,
+        with_phy_frequency_module_enabled, with_phy_frequency_register_mode,
+        with_phy_front_end_adc_update, with_phy_front_end_update_first,
+        with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
+        with_phy_i2c_clock_selection_low, with_phy_iq_est_config, with_phy_iq_est_control,
+        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_force_test,
+        with_phy_power_detector_aux_mode, with_phy_power_detector_high_field,
+        with_phy_power_detector_low_field, with_phy_rx_clock, with_phy_rxiq_calibration_mode,
+        with_phy_rxiq_gain, with_phy_rxiq_phase, with_phy_rxiq_root_aux_begin,
+        with_phy_rxiq_root_correction_begin, with_phy_tone_path, with_phy_tone_path0_selector,
+        with_phy_tone_path1_selector, with_phy_tx_clock, with_phy_tx_gain_compensation_byte1,
+        with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
+        with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
+        with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
+        with_register_field, with_restored_phy_rx_dco_control_field, with_tx_cca,
+        with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
+        without_phy_channel_fbw_first, without_phy_fe_txrx_reset,
+        without_phy_frequency_reset_fields, without_phy_rx_dco_control_field,
+        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
+        without_register_bits, without_tx_queue_enable, without_tx_queue_valid,
+        PhyChannelCbwFields, PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT,
+        WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
 
     #[test]
@@ -2682,14 +2599,6 @@ mod tests {
     }
 
     #[test]
-    fn phy_bbpll_calibration_mask_matches_both_rom_branches() {
-        assert_eq!(with_bbpll_calibration(0, 0), 0x04);
-        assert_eq!(with_bbpll_calibration(0, 1), 0x08);
-        assert_eq!(with_bbpll_calibration(u32::MAX, 0), 0xffff_fff7);
-        assert_eq!(with_bbpll_calibration(u32::MAX, 7), 0xffff_fffb);
-    }
-
-    #[test]
     fn phy_pbus_masks_and_command_encoding_match_complete_rom_leaves() {
         assert_eq!(with_phy_pbus_force_test(0, 4, 1, 0), 0x0000_8012);
         assert_eq!(with_phy_pbus_force_test(u32::MAX, 3, 2, 0x100), 0xffff_400f);
@@ -2834,16 +2743,6 @@ mod tests {
         assert_eq!(with_phy_adc_rate_low(0x0000_0002, 1), 0x0000_0003);
         assert_eq!(with_phy_adc_rate_high(u32::MAX, 0), 0xffff_fffd);
         assert_eq!(with_phy_adc_rate_low(u32::MAX, 0), 0xffff_fffe);
-    }
-
-    #[test]
-    fn phy_i2c_master_register_init_matches_both_rom_writes() {
-        assert_eq!(with_phy_i2c_master_register_mode(0), 0x0000_0400);
-        assert_eq!(with_phy_i2c_master_register_mode(u32::MAX), 0xffff_fdff);
-        assert_eq!(
-            with_phy_i2c_master_register_enable(0x0000_0400),
-            0x0000_0440
-        );
     }
 
     #[test]

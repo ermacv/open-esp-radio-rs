@@ -809,7 +809,10 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyChipChannelCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyChipChannelCompletion {
         match self.action {
             PhyChipChannelAction::SetAgc { enabled } => {
                 crate::radio_hal::set_phy_channel_agc(enabled);
@@ -855,15 +858,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::RxCompensationConfigured { pass }
             }
             PhyChipChannelAction::PublishTxGain(image) => {
-                crate::radio_hal::wifi_strict_phy_set_tx_gain_mem_new(
-                    0,
-                    32,
-                    image.output_72.as_ptr(),
-                    image.output_64.as_ptr(),
-                    image.output_32.as_ptr(),
-                    image.seed.as_ptr(),
-                    &image.config,
-                );
+                crate::radio_hal::publish_phy_tx_gain_memory(registers, false, image);
                 PhyChipChannelCompletion::TxGainPublished
             }
             PhyChipChannelAction::PublishTxCapCommandMemory { value } => {

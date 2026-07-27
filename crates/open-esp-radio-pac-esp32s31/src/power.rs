@@ -1191,9 +1191,23 @@ pub mod phy_memory {
     pub mod command {
         use crate::Field32;
 
-        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM]; CONFIDENCE[instruction-exact-mode-dependent].
-        /// Ten-bit PBUS memory command; other memory modes use subsets and different encodings.
-        pub const MEMORY_COMMAND: Field32 = Field32::new(11, 10);
+        /// SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Gain-memory writes clear bits 10:0;
+        /// their individual meanings are unknown.
+        pub const GAIN_COMMAND_LOW_ZERO_UNKNOWN: Field32 = Field32::new(0, 11);
+        ///
+        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. Low eight bits of the PBUS command and
+        /// complete CFR/gain memory index.
+        pub const MEMORY_INDEX: Field32 = Field32::new(11, 8);
+        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. Gain-memory write selector or PBUS
+        /// command bit 8.
+        pub const GAIN_WRITE_OR_PBUS_COMMAND_BIT_8: Field32 = Field32::new(19, 1);
+        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM];
+        /// CONFIDENCE[instruction-exact-semantics-from-complete-body]. PBUS command bit 9; CFR
+        /// and gain-memory preserve it.
+        pub const PBUS_COMMAND_BIT_9: Field32 = Field32::new(20, 1);
         /// SOURCE[BLOB_LIBPHY_PHY_SET_TX_CFR_MEM];
         /// CONFIDENCE[instruction-exact-semantics-from-symbol]. TX-CFR entry commit pulse.
         pub const TX_CFR_COMMIT: Field32 = Field32::new(21, 1);
@@ -1794,14 +1808,15 @@ pub mod phy_i2c_command_ram {
     }
 }
 
-/// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
+///
+/// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers recovered
 /// from complete no-call ROM/blob leaves.
 pub mod phy_clock_oracle {
     use crate::{Register32, RegisterAccess};
 
     /// Peripheral base address.
-    /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
+    /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers
     /// recovered from complete no-call ROM/blob leaves.
     pub const BASE: usize = 0x20100000;
@@ -1811,6 +1826,29 @@ pub mod phy_clock_oracle {
     /// writes zero to close.
     pub const FE_CLOCK_GATE_OPAQUE: Register32 =
         Register32::described(0x20100400, RegisterAccess::WriteOnly, None);
+
+    ///
+    /// SOURCE[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Shared high-byte base index
+    /// configured by PHY front-end initialization, then sampled before CFR and gain-memory
+    /// publication; other fields remain unknown.
+    pub const TABLE_MEMORY_INDEX_SOURCE: Register32 =
+        Register32::described(0x20100408, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TABLE_MEMORY_INDEX_SOURCE`].
+    /// SOURCE[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Shared high-byte base index
+    /// configured by PHY front-end initialization, then sampled before CFR and gain-memory
+    /// publication; other fields remain unknown.
+    pub mod table_memory_index_source {
+        use crate::Field32;
+
+        ///
+        /// SOURCE[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Eight-bit table-memory base
+        /// index; the complete front-end initializer writes 0xa0.
+        pub const BASE_INDEX: Field32 = Field32::new(24, 8);
+    }
 
     /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. ROM sets bits 1:0 and the blob clears
@@ -1843,7 +1881,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 112] = [
+pub const ALL: [Register32; 113] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -1954,6 +1992,7 @@ pub const ALL: [Register32; 112] = [
     phy_i2c_command_ram::COMMAND_MEMORY[43],
     phy_i2c_command_ram::COMMAND_MEMORY[44],
     phy_clock_oracle::FE_CLOCK_GATE_OPAQUE,
+    phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,
     phy_clock_oracle::BB_CLOCK_GATE_OPAQUE,
 ];

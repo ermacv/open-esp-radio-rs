@@ -42,6 +42,7 @@ identities for every entry.
 | `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the SVD, plus local hashed copies in `esp-wifi-sys` |
 | `S31_ESP_PACS_SVD` | Local `esp-pacs` commit `f823dd9d`, ESP32-S31 generated SVD |
 | `ROM_REV0_PHY_OPEN_FE_BB_CLK` | Complete 0x38-byte rev0 ROM body at `0x2f823ec0` |
+| `ROM_REV0_PHY_FE_REG_INIT` | Complete 0xf6-byte rev0 ROM `phy_fe_reg_init` body at `0x2f827740` |
 | `ROM_REV0_PHY_PBUS` | Complete PBus mode/force bodies and read address/shift jump tables |
 | `ROM_REV0_PHY_SET_PBUS_MEM` | Complete 0x180-byte `phy_set_pbus_mem` parent at `0x2f82479e` |
 | `ROM_REV0_PHY_WRITE_PBUS_MEM` | Complete 0x16a-byte `phy_write_pbus_mem` body at `0x2f824634` |
@@ -51,6 +52,7 @@ identities for every entry.
 | `ROM_REV0_PHY_I2C` | Complete clock-select, master-init/reset and host read/write bodies |
 | `BLOB_LIBPHY_PHY_I2C` | Complete S31 PHY-I2C callbacks and command-RAM initializer |
 | `BLOB_LIBPHY_PHY_SET_TX_CFR_MEM` | Complete 0x76-byte `phy_set_tx_cfr_mem` body from `phy_tx_gain.o` |
+| `BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW` | Complete `phy_set_tx_gain_mem_new` body from `phy_tx_gain.o` and its complete ROM write leaf |
 | `BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW` | Complete PMU-based analog-I2C power/reset body |
 | `BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK` | Complete 0x20-byte `libphy.a[phy_init.o]` body |
 | `BLOB_LIBPHY_PHY_BB_INIT` | Complete 0x16a-byte `phy_bb_init` body and relocation graph |

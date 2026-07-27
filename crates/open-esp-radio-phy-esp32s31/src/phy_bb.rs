@@ -14,15 +14,8 @@
 //! hardware-dependent exit.
 
 pub const PHY_TX_CFR_ENTRY_COUNT: u8 = 32;
-pub const PHY_TX_CFR_INDEX_SOURCE_ADDRESS: usize = 0x2010_0408;
-
 const PHY_TX_CFR_DATA_PREFIX_ENTRY_COUNT: u8 = 10;
 const PHY_TX_CFR_DATA_PREFIX_VALUE: u32 = 0x0000_0e13;
-const PHY_TX_CFR_INDEX_FIELD_MASK: u32 = 0x0007_f800;
-const PHY_TX_CFR_INDEX_FIELD_SHIFT: u8 = 11;
-const PHY_GAIN_MEMORY_CONTROL_RETAIN_MASK: u32 = 0xfff0_0000;
-const PHY_GAIN_MEMORY_WRITE_BIT: u32 = 0x0008_0000;
-const PHY_GAIN_MEMORY_INDEX_SHIFT: u8 = 11;
 pub const PHY_RX_TABLE_ENTRY_COUNT: u8 = 0x4f;
 pub const PHY_WIFI_RX_GAIN_GENERATED_CAPACITY: usize = 0x55;
 
@@ -247,13 +240,6 @@ pub const fn phy_rx_table_gain_entry(
     }
 }
 
-/// Reproduce the final control-register value of `phy_write_gain_mem`.
-pub const fn phy_gain_memory_control_word(current: u32, entry: PhyGainMemoryEntry) -> u32 {
-    (current & PHY_GAIN_MEMORY_CONTROL_RETAIN_MASK)
-        | ((entry.index as u32) << PHY_GAIN_MEMORY_INDEX_SHIFT)
-        | PHY_GAIN_MEMORY_WRITE_BIT
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyTxCfrEntry {
     pub index: u8,
@@ -275,14 +261,14 @@ pub struct PhyTxCfrOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxCfrAction {
-    ReadStartIndex { address: usize },
+    ReadStartIndex,
     ProgramEntry(PhyTxCfrEntry),
     Complete(PhyTxCfrOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxCfrCompletion {
-    StartIndexRead { address: usize, register_value: u32 },
+    StartIndexRead { base_index: u8 },
     EntryProgrammed(PhyTxCfrEntry),
 }
 
@@ -317,9 +303,7 @@ impl PhyTxCfrTransition {
 
     pub const fn action(self) -> PhyTxCfrAction {
         match self.step {
-            PhyTxCfrStep::ReadStartIndex => PhyTxCfrAction::ReadStartIndex {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-            },
+            PhyTxCfrStep::ReadStartIndex => PhyTxCfrAction::ReadStartIndex,
             PhyTxCfrStep::Entries { start_index, index } => {
                 PhyTxCfrAction::ProgramEntry(PhyTxCfrEntry {
                     index,
@@ -340,16 +324,12 @@ impl PhyTxCfrTransition {
         completion: PhyTxCfrCompletion,
     ) -> Result<(), PhyTxCfrTransitionError> {
         self.step = match (self.step, completion) {
-            (
-                PhyTxCfrStep::ReadStartIndex,
-                PhyTxCfrCompletion::StartIndexRead {
-                    address,
-                    register_value,
-                },
-            ) if address == PHY_TX_CFR_INDEX_SOURCE_ADDRESS => PhyTxCfrStep::Entries {
-                start_index: (register_value >> 24) as u8,
-                index: 0,
-            },
+            (PhyTxCfrStep::ReadStartIndex, PhyTxCfrCompletion::StartIndexRead { base_index }) => {
+                PhyTxCfrStep::Entries {
+                    start_index: base_index,
+                    index: 0,
+                }
+            }
             (
                 PhyTxCfrStep::Entries { start_index, index },
                 PhyTxCfrCompletion::EntryProgrammed(completed),
@@ -390,12 +370,6 @@ impl Default for PhyTxCfrTransition {
     }
 }
 
-/// Exact control word written before the vendor commit-bit pulse.
-pub const fn phy_tx_cfr_control_word(current: u32, entry: PhyTxCfrEntry) -> u32 {
-    (current & !PHY_TX_CFR_INDEX_FIELD_MASK)
-        | ((entry.memory_index() as u32) << PHY_TX_CFR_INDEX_FIELD_SHIFT)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxCfrBindingError {
     TerminalAction,
@@ -410,9 +384,7 @@ pub struct PhyTxCfrMmioBinding {
 impl PhyTxCfrMmioBinding {
     pub fn new(action: PhyTxCfrAction) -> Result<Self, PhyTxCfrBindingError> {
         match action {
-            PhyTxCfrAction::ReadStartIndex { .. } | PhyTxCfrAction::ProgramEntry(_) => {
-                Ok(Self { action })
-            }
+            PhyTxCfrAction::ReadStartIndex | PhyTxCfrAction::ProgramEntry(_) => Ok(Self { action }),
             PhyTxCfrAction::Complete(_) => Err(PhyTxCfrBindingError::TerminalAction),
         }
     }
@@ -423,14 +395,22 @@ impl PhyTxCfrMmioBinding {
 
     /// Execute exactly one finite target transaction and consume its token.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxCfrCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxCfrCompletion {
         match self.action {
-            PhyTxCfrAction::ReadStartIndex { address } => PhyTxCfrCompletion::StartIndexRead {
-                address,
-                register_value: (address as *const u32).read_volatile(),
+            PhyTxCfrAction::ReadStartIndex => PhyTxCfrCompletion::StartIndexRead {
+                base_index: open_esp_radio_hal_esp32s31::phy_memory::read_table_memory_base_index(
+                    registers,
+                ),
             },
             PhyTxCfrAction::ProgramEntry(entry) => {
-                crate::radio_hal::program_phy_tx_cfr_entry(entry);
+                open_esp_radio_hal_esp32s31::phy_memory::program_tx_cfr_entry(
+                    registers,
+                    entry.data,
+                    entry.memory_index(),
+                );
                 PhyTxCfrCompletion::EntryProgrammed(entry)
             }
             PhyTxCfrAction::Complete(_) => unreachable!(),
@@ -531,7 +511,10 @@ impl PhyBbMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyBbMmioCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyBbMmioCompletion {
         match self.action {
             PhyBbMmioAction::EnableBasebandInitialization => {
                 crate::radio_hal::enable_phy_baseband_initialization()
@@ -557,7 +540,11 @@ impl PhyBbMmioBinding {
             }
             PhyBbMmioAction::ConfigureI2cTxRate => crate::radio_hal::configure_phy_i2c_tx_rate(),
             PhyBbMmioAction::ProgramGainMemory(entry) => {
-                crate::radio_hal::program_phy_gain_memory_entry(entry)
+                open_esp_radio_hal_esp32s31::phy_memory::program_gain_memory_entry(
+                    registers,
+                    [entry.word0, entry.word1, entry.word2],
+                    entry.index,
+                )
             }
             PhyBbMmioAction::EnableIqCorrection => crate::radio_hal::enable_phy_iq_correction(),
             PhyBbMmioAction::SetWifiAgcSaturationGain { value } => {
@@ -576,7 +563,7 @@ impl PhyBbMmioBinding {
                 crate::radio_hal::configure_phy_registers(parameters)
             }
             PhyBbMmioAction::ConfigureRxTable { parameters } => {
-                crate::radio_hal::configure_phy_rx_table(parameters)
+                crate::radio_hal::configure_phy_rx_table(registers, parameters)
             }
         }
         PhyBbMmioCompletion {
@@ -1343,13 +1330,12 @@ impl PhyBbInitStep {
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_phy_rx_gain_table, phy_gain_memory_control_word,
-        phy_generated_rx_gain_memory_entry, phy_tx_cfr_control_word, PhyBbBasebandMode,
+        generate_phy_rx_gain_table, phy_generated_rx_gain_memory_entry, PhyBbBasebandMode,
         PhyBbMmioAction, PhyBbMmioBinding, PhyGainMemoryEntry, PhyRegisterInitParameters,
         PhyRfRxSaturationPhase, PhyRxGainBank, PhyRxGainMemoryParameters, PhyRxTableInitParameters,
         PhyTxCfrAction, PhyTxCfrBindingError, PhyTxCfrCompletion, PhyTxCfrEntry,
         PhyTxCfrMmioBinding, PhyTxCfrOutcome, PhyTxCfrTransition, PhyTxCfrTransitionError,
-        PHY_TX_CFR_ENTRY_COUNT, PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
+        PHY_TX_CFR_ENTRY_COUNT,
     };
 
     #[test]
@@ -1396,17 +1382,9 @@ mod tests {
     #[test]
     fn transition_reproduces_all_32_reference_entries() {
         let mut transition = PhyTxCfrTransition::new();
-        assert_eq!(
-            transition.action(),
-            PhyTxCfrAction::ReadStartIndex {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-            }
-        );
+        assert_eq!(transition.action(), PhyTxCfrAction::ReadStartIndex);
         transition
-            .advance(PhyTxCfrCompletion::StartIndexRead {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-                register_value: 0xfa00_0000,
-            })
+            .advance(PhyTxCfrCompletion::StartIndexRead { base_index: 0xfa })
             .unwrap();
 
         for index in 0..PHY_TX_CFR_ENTRY_COUNT {
@@ -1444,34 +1422,10 @@ mod tests {
     }
 
     #[test]
-    fn control_word_replaces_only_the_index_field() {
-        let current = 0xa5a5_5a5a;
-        let entry = PhyTxCfrEntry {
-            index: 2,
-            start_index: 0x40,
-            data: 0xe13,
-        };
-        assert_eq!(
-            phy_tx_cfr_control_word(current, entry),
-            (current & !0x0007_f800) | (0x42 << 11)
-        );
-    }
-
-    #[test]
     fn transition_rejects_foreign_or_late_completions() {
         let mut transition = PhyTxCfrTransition::new();
-        assert_eq!(
-            transition.advance(PhyTxCfrCompletion::StartIndexRead {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS + 4,
-                register_value: 0,
-            }),
-            Err(PhyTxCfrTransitionError::WrongCompletion)
-        );
         transition
-            .advance(PhyTxCfrCompletion::StartIndexRead {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-                register_value: 0x1200_0000,
-            })
+            .advance(PhyTxCfrCompletion::StartIndexRead { base_index: 0x12 })
             .unwrap();
         assert_eq!(
             transition.advance(PhyTxCfrCompletion::EntryProgrammed(PhyTxCfrEntry {
@@ -1492,10 +1446,7 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(
-            transition.advance(PhyTxCfrCompletion::StartIndexRead {
-                address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-                register_value: 0,
-            }),
+            transition.advance(PhyTxCfrCompletion::StartIndexRead { base_index: 0 }),
             Err(PhyTxCfrTransitionError::AlreadyComplete)
         );
     }
@@ -1565,22 +1516,6 @@ mod tests {
         ] {
             assert_eq!(PhyBbMmioBinding::new(action).action(), action);
         }
-    }
-
-    #[test]
-    fn gain_memory_control_word_matches_the_complete_rom_leaf() {
-        assert_eq!(
-            phy_gain_memory_control_word(
-                0xabc5_4321,
-                PhyGainMemoryEntry {
-                    word0: 0x1111_1111,
-                    word1: 0x2222_2222,
-                    word2: 0x3333_3333,
-                    index: 0x12,
-                },
-            ),
-            0xabc8_9000
-        );
     }
 
     #[test]
@@ -1663,9 +1598,7 @@ mod tests {
         assert_eq!(
             retained.step_local().unwrap(),
             super::PhyBbInitLocalStep::External(super::PhyBbInitAction::TxCfr(
-                PhyTxCfrAction::ReadStartIndex {
-                    address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-                }
+                PhyTxCfrAction::ReadStartIndex
             ))
         );
     }
@@ -1676,10 +1609,7 @@ mod tests {
         transition.step = super::PhyBbInitStep::TxCfr(PhyTxCfrTransition::new());
         transition
             .advance_external(super::PhyBbInitCompletion::TxCfr(
-                PhyTxCfrCompletion::StartIndexRead {
-                    address: PHY_TX_CFR_INDEX_SOURCE_ADDRESS,
-                    register_value: 3 << 24,
-                },
+                PhyTxCfrCompletion::StartIndexRead { base_index: 3 },
             ))
             .unwrap();
         let mut index = 0;

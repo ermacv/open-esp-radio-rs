@@ -41,12 +41,6 @@ const PHY_RX_COMP_LOW_ADDRESS: usize = 0x2010_702c;
 const PHY_DC_MEMORY_CONTROL_ADDRESS: usize = 0x2010_703c;
 const PHY_RX_COMP_HIGH_ADDRESS: usize = 0x2010_70a0;
 const PHY_DC_MEMORY_CLEAR_BIT: u32 = 1 << 20;
-const PHY_GAIN_MEMORY_INDEX_SOURCE_ADDRESS: usize = 0x2010_0408;
-const PHY_GAIN_MEMORY_CONTROL_ADDRESS: usize = 0x2010_0844;
-const PHY_GAIN_MEMORY_WORD0_ADDRESS: usize = 0x2010_0848;
-const PHY_GAIN_MEMORY_WORD1_ADDRESS: usize = 0x2010_084c;
-const PHY_GAIN_MEMORY_WORD2_ADDRESS: usize = 0x2010_0850;
-const PHY_GAIN_MEMORY_MAX_ENTRIES: u32 = 32;
 const PHY_BBPLL_CAL_CONTROL_ADDRESS: usize = 0x2010_f818;
 const PHY_FE_BB_ENABLE_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::ROM_FE_BB_ENABLE_UNKNOWN.mask();
@@ -100,7 +94,6 @@ const PHY_POWER_DETECTOR_TABLE_0_ADDRESS: usize = 0x2010_0810;
 const PHY_POWER_DETECTOR_TABLE_1_ADDRESS: usize = 0x2010_0814;
 const PHY_POWER_DETECTOR_TABLE_2_ADDRESS: usize = 0x2010_0818;
 const PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS: usize = 0x2070_1068;
-const PHY_FE_CONTROL_0408_ADDRESS: usize = 0x2010_0408;
 const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
 const PHY_FE_CONTROL_0438_ADDRESS: usize = 0x2010_0438;
 const PHY_FE_CONTROL_0444_ADDRESS: usize = 0x2010_0444;
@@ -286,24 +279,6 @@ const fn phy_channel_cbw_fields(cbw: u8) -> PhyChannelCbwFields {
             control_1_low: ((cbw & 0x0e != 0) as u32) & 3,
         }
     }
-}
-
-/// Publish exactly one entry of the cold TX-CFR table.
-///
-/// The transition and register encoding live in `phy_bb`; this narrow target
-/// leaf performs the four finite MMIO accesses from the pinned vendor body.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn program_phy_tx_cfr_entry(entry: crate::phy_bb::PhyTxCfrEntry) {
-    let data = PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32;
-    let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
-
-    data.write_volatile(entry.data);
-    control.write_volatile(crate::phy_bb::phy_tx_cfr_control_word(
-        control.read_volatile(),
-        entry,
-    ));
-    control.write_volatile(control.read_volatile() | 0x0020_0000);
-    control.write_volatile(control.read_volatile() & !0x0020_0000);
 }
 
 /// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
@@ -695,19 +670,6 @@ pub(crate) unsafe fn configure_phy_i2c_tx_rate() {
     ));
 }
 
-/// Complete rev0 ROM `phy_write_gain_mem`, size `0x2a`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn program_phy_gain_memory_entry(entry: crate::phy_bb::PhyGainMemoryEntry) {
-    (PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32).write_volatile(entry.word0);
-    (PHY_GAIN_MEMORY_WORD1_ADDRESS as *mut u32).write_volatile(entry.word1);
-    (PHY_GAIN_MEMORY_WORD2_ADDRESS as *mut u32).write_volatile(entry.word2);
-    let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(crate::phy_bb::phy_gain_memory_control_word(
-        control.read_volatile(),
-        entry,
-    ));
-}
-
 /// Complete rev0 ROM `phy_iq_corr_enable`, size `0x24`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn enable_phy_iq_correction() {
@@ -884,10 +846,18 @@ pub(crate) unsafe fn configure_phy_registers(parameters: crate::phy_bb::PhyRegis
 /// then publishes exactly 79 gain entries and runs the already complete
 /// register-init, AGC-update and AGC-enable suffix.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_table(parameters: crate::phy_bb::PhyRxTableInitParameters) {
+pub(crate) unsafe fn configure_phy_rx_table(
+    registers: &mut RadioRegisters,
+    parameters: crate::phy_bb::PhyRxTableInitParameters,
+) {
     let mut index = 0_u8;
     while index != crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT {
-        program_phy_gain_memory_entry(crate::phy_bb::phy_rx_table_gain_entry(parameters, index));
+        let entry = crate::phy_bb::phy_rx_table_gain_entry(parameters, index);
+        open_esp_radio_hal_esp32s31::phy_memory::program_gain_memory_entry(
+            registers,
+            [entry.word0, entry.word1, entry.word2],
+            entry.index,
+        );
         index += 1;
     }
     configure_phy_registers(crate::phy_bb::PhyRegisterInitParameters {
@@ -1390,8 +1360,23 @@ const fn encode_phy_gain_memory_words(
     (word_0, word_1, word_2)
 }
 
-const fn with_phy_gain_memory_index(value: u32, index: u8) -> u32 {
-    (value & 0xfff0_0000) | ((index as u32) << 11) | 0x0008_0000
+#[cfg(any(target_arch = "riscv32", test))]
+const fn packed_halfword(words: &[u32], index: usize) -> u16 {
+    (words[index >> 1] >> ((index & 1) * 16)) as u16
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+const fn packed_byte(words: &[u32], index: usize) -> u8 {
+    (words[index >> 2] >> ((index & 3) * 8)) as u8
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: usize) -> u16 {
+    if index < image.seed.len() * 2 {
+        packed_halfword(&image.seed, index)
+    } else {
+        packed_halfword(&image.output_32, index - image.seed.len() * 2)
+    }
 }
 
 const fn with_phy_baseband_watchdog(value: u32) -> u32 {
@@ -2404,12 +2389,12 @@ unsafe fn replace_register_field(address: usize, mask: u32, field: u32) {
 /// repeated fresh-read writes to the same register. There is no wait, delay,
 /// loop, callback, or mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_front_end_registers() {
+pub(crate) unsafe fn configure_phy_front_end_registers(registers: &mut RadioRegisters) {
     set_register_bits(PHY_FE_CONTROL_0894_ADDRESS, 0x0010_0000);
     set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0200_0000);
     set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0400_0000);
     clear_register_bits(PHY_FE_CONTROL_0444_ADDRESS, 0x0000_0100);
-    replace_register_field(PHY_FE_CONTROL_0408_ADDRESS, 0xff00_0000, 0xa000_0000);
+    open_esp_radio_hal_esp32s31::phy_memory::configure_table_memory_base_index(registers, 0xa0);
     set_register_bits(PHY_FE_CONTROL_040C_ADDRESS, 0x0000_0004);
     set_register_bits(PHY_FE_CONTROL_0438_ADDRESS, 0x6000_0000);
     set_register_bits(PHY_FE_CONTROL_0C0C_ADDRESS, 0x0000_6000);
@@ -2748,76 +2733,50 @@ pub unsafe extern "C" fn wifi_strict_phy_reg_update_new() {
 /// complete rev0 ROM leaves `phy_txbbgain_to_index` at `0x2f826ac8` and
 /// `phy_write_gain_mem` at `0x2f8274f0`.
 ///
-/// The vendor body accepts 16 BT or 32 Wi-Fi entries. The strict runtime only
-/// calls the 32-entry Wi-Fi form, but this ABI boundary preserves both finite
-/// counts and traps any larger input rather than admitting an unbounded raw
-/// pointer walk. `seed_and_output_32` names the start of the vendor's
-/// contiguous `6 * u32` seed followed immediately by its `8 * u32` 32-byte
-/// gain output. This unusual overlap is part of the recovered ABI: baseband
-/// gain indices three and four select words in the latter region.
+/// The vendor body accepts 16 BT or 32 Wi-Fi entries. The open channel path
+/// owns and publishes the exact 32-entry Wi-Fi image. Its historical
+/// `seed_and_output_32` pointer treated the six seed words and eight packed
+/// output words as one contiguous halfword view; Rust models that
+/// concatenation explicitly instead of relying on struct layout or pointer
+/// arithmetic.
 ///
 /// Every iteration performs three ordinary input reads, selects four
 /// halfwords from that contiguous layout, encodes three register words, then
-/// writes `0x2010_0848`, `0x2010_084c`, `0x2010_0850` and finally updates
-/// `0x2010_0844`. There is no allocation, wait, indirect call, hidden state,
-/// or hardware-dependent loop exit.
+/// publishes the three words through the owned `PHY_MEMORY` HAL. There is no
+/// allocation, wait, indirect call, hidden state, raw pointer, or
+/// hardware-dependent loop exit.
 #[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_phy_set_tx_gain_mem_new(
-    bank: u32,
-    entries: u32,
-    output_72: *const u32,
-    output_64: *const u32,
-    output_32: *const u32,
-    seed_and_output_32: *const u32,
-    config: *const u16,
+pub(crate) fn publish_phy_tx_gain_memory(
+    registers: &mut RadioRegisters,
+    bank: bool,
+    image: crate::phy_channel::PhyWifiTxGainImage,
 ) {
-    if entries > PHY_GAIN_MEMORY_MAX_ENTRIES
-        || (entries != 0
-            && (output_72.is_null()
-                || output_64.is_null()
-                || output_32.is_null()
-                || seed_and_output_32.is_null()
-                || config.is_null()))
-    {
-        core::arch::asm!("ebreak", options(noreturn));
-    }
-
     let hardware_base =
-        ((PHY_GAIN_MEMORY_INDEX_SOURCE_ADDRESS as *const u32).read_volatile() >> 24) as u8;
-    let memory_base = hardware_base.wrapping_add(if bank == 0 { 0 } else { 32 });
-    let seed_halfwords = seed_and_output_32.cast::<u16>();
-    let output_72_halfwords = output_72.cast::<u16>();
-    let output_64_halfwords = output_64.cast::<u16>();
-    let output_32_bytes = output_32.cast::<u8>();
-
-    let mut entry = 0_u32;
-    while entry != entries {
-        let entry_index = entry as usize;
-        let gain_72 = output_72_halfwords.add(entry_index).read();
-        let gain_64 = output_64_halfwords.add(entry_index).read();
-        let gain_32 = output_32_bytes.add(entry_index).read();
+        open_esp_radio_hal_esp32s31::phy_memory::read_table_memory_base_index(registers);
+    let memory_base = hardware_base.wrapping_add(if bank { 32 } else { 0 });
+    let mut entry = 0_u8;
+    while entry != 32 {
+        let entry_index = usize::from(entry);
+        let gain_72 = packed_halfword(&image.output_72, entry_index);
+        let gain_64 = packed_halfword(&image.output_64, entry_index);
+        let gain_32 = packed_byte(&image.output_32, entry_index);
         let seed_index = tx_baseband_gain_index(gain_64) * 4;
         let (word_0, word_1, word_2) = encode_phy_gain_memory_words(
             gain_72,
             gain_64,
             gain_32,
-            seed_halfwords.add(seed_index).read(),
-            seed_halfwords.add(seed_index + 1).read(),
-            seed_halfwords.add(seed_index + 2).read(),
-            seed_halfwords.add(seed_index + 3).read(),
-            config.read(),
+            tx_gain_seed_halfword(&image, seed_index),
+            tx_gain_seed_halfword(&image, seed_index + 1),
+            tx_gain_seed_halfword(&image, seed_index + 2),
+            tx_gain_seed_halfword(&image, seed_index + 3),
+            image.config,
         );
 
-        (PHY_GAIN_MEMORY_WORD0_ADDRESS as *mut u32).write_volatile(word_0);
-        (PHY_GAIN_MEMORY_WORD1_ADDRESS as *mut u32).write_volatile(word_1);
-        (PHY_GAIN_MEMORY_WORD2_ADDRESS as *mut u32).write_volatile(word_2);
-        let control = PHY_GAIN_MEMORY_CONTROL_ADDRESS as *mut u32;
-        control.write_volatile(with_phy_gain_memory_index(
-            control.read_volatile(),
-            memory_base.wrapping_add(entry as u8),
-        ));
+        open_esp_radio_hal_esp32s31::phy_memory::program_gain_memory_entry(
+            registers,
+            [word_0, word_1, word_2],
+            memory_base.wrapping_add(entry),
+        );
         entry += 1;
     }
 }
@@ -2827,21 +2786,21 @@ mod tests {
     use super::{
         encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
         mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
-        mac_rx_management_policy_address, phy_channel_cbw_fields, phy_pbus_is_busy,
-        phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value, tsf_latch_mask,
-        tx_baseband_gain_index, tx_queue_control_address, tx_queue_is_valid,
-        with_bbpll_calibration, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
-        with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
-        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_agc_control, with_phy_agc_window,
-        with_phy_antenna_control0, with_phy_antenna_control1, with_phy_antenna_control2,
-        with_phy_baseband_watchdog, with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second,
-        with_phy_channel_fbw_third, with_phy_channel_frequency_index,
-        with_phy_channel_frequency_switch, with_phy_channel_nrx_frequency,
-        with_phy_channel_tx_offset, with_phy_fe_txrx_reset, with_phy_frequency_i2c_number_control,
-        with_phy_frequency_memory_address, with_phy_frequency_module_enabled,
-        with_phy_frequency_register_mode, with_phy_front_end_adc_update,
-        with_phy_front_end_update_first, with_phy_front_end_update_second, with_phy_ftm_enable,
-        with_phy_gain_memory_index, with_phy_i2c_clock_selection_high,
+        mac_rx_management_policy_address, packed_byte, packed_halfword, phy_channel_cbw_fields,
+        phy_pbus_is_busy, phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value,
+        tsf_latch_mask, tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address,
+        tx_queue_is_valid, with_bbpll_calibration, with_mac_rx_control_address_policy,
+        with_mac_rx_control_policy, with_mac_rx_management_policy, with_mac_rx_mode,
+        with_mac_rx_unique_bssid_policy, with_phy_adc_rate_high, with_phy_adc_rate_low,
+        with_phy_agc_control, with_phy_agc_window, with_phy_antenna_control0,
+        with_phy_antenna_control1, with_phy_antenna_control2, with_phy_baseband_watchdog,
+        with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second, with_phy_channel_fbw_third,
+        with_phy_channel_frequency_index, with_phy_channel_frequency_switch,
+        with_phy_channel_nrx_frequency, with_phy_channel_tx_offset, with_phy_fe_txrx_reset,
+        with_phy_frequency_i2c_number_control, with_phy_frequency_memory_address,
+        with_phy_frequency_module_enabled, with_phy_frequency_register_mode,
+        with_phy_front_end_adc_update, with_phy_front_end_update_first,
+        with_phy_front_end_update_second, with_phy_ftm_enable, with_phy_i2c_clock_selection_high,
         with_phy_i2c_clock_selection_low, with_phy_i2c_master_register_enable,
         with_phy_i2c_master_register_mode, with_phy_iq_est_config, with_phy_iq_est_control,
         with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_debug_control,
@@ -3421,6 +3380,39 @@ mod tests {
             ),
             (0xbfde_1fff, 0x93f6_3f3c, 0x0052_ff83)
         );
-        assert_eq!(with_phy_gain_memory_index(0xabc5_4321, 0x12), 0xabc8_9000);
+    }
+
+    #[test]
+    fn tx_gain_seed_view_crosses_the_owned_field_boundary_explicitly() {
+        let image = crate::phy_channel::PhyWifiTxGainImage {
+            seed: [
+                0x0100_0000,
+                0x0302_0000,
+                0x0504_0000,
+                0x0706_0000,
+                0x0908_0000,
+                0x0b0a_0000,
+            ],
+            output_32: [
+                0x0f0e_0d0c,
+                0x1312_1110,
+                0x1716_1514,
+                0x1b1a_1918,
+                0,
+                0,
+                0,
+                0,
+            ],
+            output_64: [0; 16],
+            output_72: [0; 18],
+            config: 0,
+        };
+
+        assert_eq!(tx_gain_seed_halfword(&image, 10), 0);
+        assert_eq!(tx_gain_seed_halfword(&image, 11), 0x0b0a);
+        assert_eq!(tx_gain_seed_halfword(&image, 12), 0x0d0c);
+        assert_eq!(tx_gain_seed_halfword(&image, 19), 0x1b1a);
+        assert_eq!(packed_halfword(&image.output_32, 1), 0x0f0e);
+        assert_eq!(packed_byte(&image.output_32, 3), 0x0f);
     }
 }

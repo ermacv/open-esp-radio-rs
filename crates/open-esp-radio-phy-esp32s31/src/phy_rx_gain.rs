@@ -499,7 +499,10 @@ impl PhyRxGainPublishMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxGainPublishCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxGainPublishCompletion {
         match self.action {
             PhyRxGainPublishAction::ConfigurePbusDebugMode { bank } => {
                 crate::radio_hal::configure_phy_pbus_debug_mode();
@@ -521,7 +524,11 @@ impl PhyRxGainPublishMmioBinding {
                 }
             }
             PhyRxGainPublishAction::ProgramEntry { bank, entry } => {
-                crate::radio_hal::program_phy_gain_memory_entry(entry);
+                open_esp_radio_hal_esp32s31::phy_memory::program_gain_memory_entry(
+                    registers,
+                    [entry.word0, entry.word1, entry.word2],
+                    entry.index,
+                );
                 PhyRxGainPublishCompletion::EntryProgrammed { bank, entry }
             }
             PhyRxGainPublishAction::ConfigurePbusWorkMode { bank } => {

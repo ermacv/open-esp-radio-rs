@@ -2933,6 +2933,19 @@ finds no `unsafe start_target`, `unsafe observe_target_edge`, or
 `unsafe sample_target_once`.
 
 This closes ownership migration for the recovered PHY-I2C and PBus command
-engines. Other calibration MMIO remains separate work: it can move behind the
-same capability only after each register identity and field mask has been
-added to the recovered SVD/PAC.
+engines.
+
+The shared PHY table-memory aperture is now behind the same capability. The
+recovered SVD/PAC owns its base-index source, three data words, multifunction
+command word and six PBUS boundary words. PBUS-memory, TX-CFR, baseband
+RX-table, RX-gain and channel TX-gain publications all require
+`&mut RadioRegisters`. The old TX-gain `extern "C"` leaf accepted five raw
+pointers and depended on seed/output fields being adjacent in memory; its
+replacement receives an owned `PhyWifiTxGainImage` and expresses the vendor
+halfword concatenation with ordinary Rust indexing. The open front-end
+initializer also configures the shared high-byte base index through the PAC,
+so active code no longer reaches this aperture by address.
+
+Other calibration MMIO remains separate work: it can move behind the same
+capability only after each register identity and field mask has been added to
+the recovered SVD/PAC.

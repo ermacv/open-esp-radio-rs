@@ -47,8 +47,10 @@ preserves the blob's read/modify/write sequence in the HAL.
 
 `PHY_MEMORY` at `0x20100800` now owns the shared table-memory aperture:
 
-- `COMMAND` at `0x44`, with the widest instruction-evidenced ten-bit command
-  in bits 20:11 and the TX-CFR commit pulse in bit 21;
+- `COMMAND` at `0x44`, with gain-mode's instruction-evidenced cleared bits
+  10:0, the common eight-bit table index in bits 18:11, the shared
+  gain-write/PBUS-command bit in bit 19, the final PBUS-command bit in bit 20,
+  and the TX-CFR commit pulse in bit 21;
 - three mode-dependent data words at `0x48..0x50`;
 - six packed PBUS group-boundary words at `0x54..0x68`.
 
@@ -56,19 +58,36 @@ Complete rev0 ROM `phy_set_pbus_mem`, `phy_write_pbus_mem`, and
 `phy_save_pbus_reg` prove the full 60-entry sequence and the twelve packed
 `first/last` group pairs. Complete ROM `phy_write_gain_mem` and complete blob
 `phy_set_tx_cfr_mem` prove that the command and data words are shared with
-gain-memory and CFR modes. Their overlapping subfields are therefore modeled
-as one mode-dependent `MEMORY_COMMAND`, not as mutually contradictory aliases.
+gain-memory and CFR modes. The SVD therefore exposes the common index and the
+instruction-proven mode-dependent bits separately instead of assigning one
+contradictory semantic identity to bits 20:11.
+
+`PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE` at `0x20100408` completes the
+chain. Complete rev0 ROM `phy_fe_reg_init` replaces its high byte with
+`0xa0`; complete S31 `phy_set_tx_cfr_mem` and `phy_set_tx_gain_mem_new`
+bodies each sample that byte once before their finite publication loops. The
+lower 24 bits remain intentionally unnamed.
 
 The public ESP32-S31 `esp-pacs` SVD pinned by this repository does not name
 `0x20100844..0x20100868`. Public cross-chip PBUS memory-power fields are not
 used to invent S31 identities for this internal aperture; complete S31
 instructions remain the primary source.
 
-The `phy_memory` HAL reproduces one optional boundary RMW, one data write and
-one command RMW in ROM order. It captures the six boundary words through the
-same PAC identities. The transition carries only group and entry values and
-must borrow `&mut RadioRegisters`; raw addresses and volatile pointers no
-longer cross the PBUS-memory binding.
+The `phy_memory` HAL reproduces every recovered mode in exact order:
+
+- PBUS memory: optional boundary RMW, data write, ten-bit command RMW;
+- TX-CFR: data write, eight-bit index RMW, fresh-read commit set, fresh-read
+  commit clear;
+- gain memory: three ordered data writes followed by one RMW that clears bits
+  10:0, replaces the index, sets bit 19, and preserves bits 31:20;
+- front-end initialization: one typed high-byte base-index RMW.
+
+PBUS, baseband CFR/RX-table, RX-gain and channel TX-gain bindings all borrow
+`&mut RadioRegisters`. The former TX-gain C ABI with five raw input pointers
+is gone: Rust explicitly concatenates the six seed words and eight packed
+output words by checked slice indexing before publishing each of 32 entries.
+No active publisher for this aperture contains a raw address or volatile
+pointer.
 
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent

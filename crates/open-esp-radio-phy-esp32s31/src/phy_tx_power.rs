@@ -9,7 +9,7 @@
 //! executor.
 
 use crate::{
-    phy_i2c::PhyI2cAddress,
+    phy_i2c::{analog_registers, PhyI2cAddress},
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
         RfpllFrequencyRequest, RfpllFrequencyTransition,
@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-const TX_CAP_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
+const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const CHANNEL_CODES: [u16; 3] = [1, 6, 11];
 const POWER_CONTROL_BASE_ATTENUATION: i16 = 52;
 const POWER_CONTROL_MAX_ITERATIONS: u8 = 10;
@@ -35,6 +35,15 @@ const fn clamp_i16(value: i16, low: i16, high: i16) -> i16 {
         high
     } else {
         value
+    }
+}
+
+const fn average_measured_power(first: i16, second: i16) -> i16 {
+    let average = first.wrapping_add(second).wrapping_add(4) >> 3;
+    if average < 0 {
+        0
+    } else {
+        average
     }
 }
 
@@ -145,7 +154,7 @@ impl PhyPowerControlPointTransition {
         clamp_i16(
             self.request
                 .base_attenuation
-                .wrapping_add(self.serial_error as i8 as i16),
+                .wrapping_add(self.serial_error),
             0,
             100,
         ) as u8
@@ -202,7 +211,7 @@ impl PhyPowerControlPointTransition {
     }
 
     fn finish_measurement(&mut self, second_power: i16) {
-        let measured = self.first_power.wrapping_add(second_power).wrapping_add(4) >> 3;
+        let measured = average_measured_power(self.first_power, second_power);
         let error = clamp_i16(measured.wrapping_sub(self.request.target), -24, 24);
         let requested = self.requested_attenuation();
         self.attenuation = requested;
@@ -219,7 +228,7 @@ impl PhyPowerControlPointTransition {
         if !(-2..=2).contains(&error) {
             serial = serial.wrapping_sub(error >> 2);
         }
-        self.serial_error = serial as i8 as i16;
+        self.serial_error = serial;
         self.previous_error = error;
         self.iteration += 1;
         self.step = PointStep::ConfigureTone;
@@ -739,7 +748,7 @@ impl PhyPowerControlPointMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(true, selector, attenuation);
+                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
                 PhyPowerControlPointCompletion::ToneConfigured {
                     identity,
                     iteration,
@@ -764,7 +773,7 @@ pub struct PhyTxPowerMmioBinding {
 impl PhyTxPowerMmioBinding {
     pub fn new(action: PhyTxPowerAction) -> Result<Self, PhyTxPowerBindingError> {
         match action {
-            PhyTxPowerAction::ConfigureTone { .. }
+            PhyTxPowerAction::ConfigureTone { enabled: true, .. }
             | PhyTxPowerAction::WriteReferenceControl { .. } => Ok(Self { action }),
             _ => Err(PhyTxPowerBindingError::NotDirectMmio),
         }
@@ -779,17 +788,13 @@ impl PhyTxPowerMmioBinding {
             PhyTxPowerAction::ConfigureTone {
                 selector,
                 attenuation,
-                enabled,
+                enabled: true,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(
-                    enabled,
-                    selector,
-                    attenuation,
-                );
+                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
                 PhyTxPowerCompletion::ToneConfigured {
                     selector,
                     attenuation,
-                    enabled,
+                    enabled: true,
                 }
             }
             PhyTxPowerAction::WriteReferenceControl { value } => {
@@ -1018,6 +1023,34 @@ mod tests {
         assert_eq!(tx_cap_value(cap, 1), 0xc1);
         assert_eq!(tx_cap_value(cap, 6), 0xc3);
         assert_eq!(tx_cap_value(cap, 11), 0xc5);
+    }
+
+    #[test]
+    fn point_power_average_matches_rom_zero_floor() {
+        assert_eq!(average_measured_power(-20, -20), 0);
+        assert_eq!(average_measured_power(20, 24), 6);
+    }
+
+    #[test]
+    fn point_search_keeps_the_rom_i16_serial_error_width() {
+        let request = PhyPowerControlPointRequest {
+            identity: 1,
+            target: 0,
+            tone_selector: 0x80,
+            base_attenuation: 100,
+            initial_serial_error: 130,
+            power_offset: 0,
+            reference_codes: [0, 100],
+            clear_tone_after_ready: false,
+        };
+        let transition = PhyPowerControlPointTransition::new(request);
+        assert!(matches!(
+            transition.action(),
+            PhyPowerControlPointAction::ConfigureTone {
+                attenuation: 100,
+                ..
+            }
+        ));
     }
 
     #[test]

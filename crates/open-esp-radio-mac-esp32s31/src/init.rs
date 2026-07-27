@@ -29,6 +29,7 @@ const WIFI_CLOCKS: u32 = modem_syscon::clk_conf1::CLK_WIFIBB_22M_EN.mask()
     | modem_syscon::clk_conf1::CLK_WIFIMAC_EN.mask()
     | modem_syscon::clk_conf1::CLK_WIFI_APB_EN.mask();
 const COEX_CLOCK: u32 = modem_lpcon::clk_conf::CLK_COEX_EN.mask();
+const WIFI_MAC_RESET: u32 = modem_syscon::modem_rst_conf::RST_WIFIMAC.mask();
 const HP_MODEM_CLOCK_CONFIGURATION: u32 = hp_sys_clkrst::modem_conf::MODEM_APB_CLK_EN.mask()
     | hp_sys_clkrst::modem_conf::MODEM_CLK_EN.mask()
     | hp_sys_clkrst::modem_conf::MODEM_CLK_SOURCE_SEL.mask()
@@ -166,12 +167,21 @@ pub fn initialize_promiscuous_receive<M: Mmio>(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
 ) -> Result<MacColdStartOutcome, MacColdStartError> {
-    // The PHY owner has already pulsed and released both Wi-Fi reset lines.
-    // Open the remaining Wi-Fi-MAC and coexistence gates without resetting the
-    // freshly calibrated baseband.
+    // Match the vendor lifecycle's `wifi_clock_enable()` followed by
+    // `wifi_reset_mac()`. The earlier PHY-owner reset can occur while the MAC
+    // functional clock is still gated, so it is not sufficient to establish
+    // a cold MAC register state after a warm SoC reset. Reset only WIFIMAC
+    // here; the calibrated Wi-Fi baseband remains live.
     modify(mmio, modem_syscon::CLK_CONF1, WIFI_CLOCKS, WIFI_CLOCKS);
     modify(mmio, modem_lpcon::CLK_CONF, COEX_CLOCK, COEX_CLOCK);
     mmio.write32(hp_sys_clkrst::MODEM_CONF, HP_MODEM_CLOCK_CONFIGURATION);
+    modify(
+        mmio,
+        modem_syscon::MODEM_RST_CONF,
+        WIFI_MAC_RESET,
+        WIFI_MAC_RESET,
+    );
+    modify(mmio, modem_syscon::MODEM_RST_CONF, WIFI_MAC_RESET, 0);
 
     modify(
         mmio,

@@ -26,11 +26,13 @@ The PHY port is still experimental. Its state machines and source-only link
 gate are usable, while the temporary register leaf module is progressively
 being moved down into HAL/PAC.
 
-Cold source-only PHY initialization, open promiscuous RX, and a passive scan
-across channels 1 through 13 have passed on ESP32-S31 hardware without vendor
-radio initialization. Generic Probe Request construction is host-tested;
-management TX, association, and encrypted data traffic remain unqualified on
-hardware in the live crates.
+Cold source-only PHY initialization, open promiscuous RX, active/passive scan,
+open authentication, WPA2 association, and the four-way handshake through an
+acknowledged hardware-CCMP Message 4 have passed on ESP32-S31 without vendor
+radio initialization. The protected TX run used the recovered QoS/CCMP
+layout, PN 3, owned STA pairwise slot 4, and direct raw-q0 DMA. Protected RX,
+GTK installation, controlled-port data, and ordinary network traffic remain
+to be qualified in the live crates.
 
 The ESP32-S31 HAL binds the integration layer's singleton peripheral token to
 `Radio<P, Owned>`. Its finite `power_up` transition reproduces the

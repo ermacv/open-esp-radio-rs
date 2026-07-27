@@ -13,12 +13,13 @@
 //! external completion. A missed lock remains ordinary outcome data; the
 //! non-terminating ROM search condition becomes a typed failure.
 
-use crate::phy_i2c::PhyI2cAddress;
+use crate::phy_i2c::{analog_registers, PhyI2cAddress};
 
 const RFPLL_BLOCK: u8 = 0x62;
 const SDM_BLOCK: u8 = 0x63;
 const LOCK_ATTEMPTS: u8 = 100;
 const CAP_SEARCH_LIMIT: u8 = 10;
+const WIFI_CHANNEL_MAX: u16 = 14;
 
 const fn address(block: u8, register: u8) -> PhyI2cAddress {
     PhyI2cAddress::new_internal(block, register)
@@ -98,10 +99,24 @@ pub enum RfpllFrequencyFailure {
         accepted_samples: u8,
         offset: u8,
     },
+    FrequencyReadyDeadlineExceeded {
+        samples: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyAction {
+    StartChannelSwitch {
+        frequency_index: u8,
+        crystal_selector: u8,
+    },
+    ClearChannelSwitch,
+    ReadChannelReady {
+        samples: u32,
+    },
+    ConfigureNrx {
+        frequency_mhz: u16,
+    },
     WriteMasked {
         address: PhyI2cAddress,
         high_bit: u8,
@@ -127,6 +142,18 @@ pub enum RfpllFrequencyAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyCompletion {
+    ChannelSwitchStarted {
+        frequency_index: u8,
+        crystal_selector: u8,
+    },
+    ChannelSwitchCleared,
+    ChannelReadyObserved {
+        value: u32,
+    },
+    ChannelReadyTimedOut,
+    NrxConfigured {
+        frequency_mhz: u16,
+    },
     MaskedWrite {
         address: PhyI2cAddress,
         high_bit: u8,
@@ -214,6 +241,12 @@ impl CapWriteContinuation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RfpllFrequencyStep {
+    ChannelStart,
+    ChannelStartDelay,
+    ChannelClear,
+    ChannelSettleDelay,
+    ChannelReady { samples: u32 },
+    ChannelNrx,
     InitialWrite(u8),
     SdmWrite(u8),
     RestartWrite(u8),
@@ -240,15 +273,35 @@ pub struct RfpllFrequencyTransition {
 }
 
 impl RfpllFrequencyTransition {
+    const fn channel_frequency(channel: u16) -> u16 {
+        if channel == 14 {
+            2_484
+        } else {
+            2_407_u16.wrapping_add(channel.wrapping_mul(5))
+        }
+    }
+
+    const fn programmed_frequency(request: RfpllFrequencyRequest) -> u16 {
+        if request.frequency_code <= WIFI_CHANNEL_MAX {
+            Self::channel_frequency(request.frequency_code)
+        } else {
+            request.frequency_code
+        }
+    }
+
     pub const fn new(request: RfpllFrequencyRequest) -> Self {
         Self {
             request,
             sdm: calculate_rfpll_sdm(
-                request.frequency_code,
+                Self::programmed_frequency(request),
                 request.crystal_selector,
                 request.offset,
             ),
-            step: RfpllFrequencyStep::InitialWrite(0),
+            step: if request.frequency_code <= WIFI_CHANNEL_MAX {
+                RfpllFrequencyStep::ChannelStart
+            } else {
+                RfpllFrequencyStep::InitialWrite(0)
+            },
         }
     }
 
@@ -288,9 +341,9 @@ impl RfpllFrequencyTransition {
                 value: bytes[1],
             },
             4 => RfpllFrequencyAction::WriteMasked {
-                address: address(SDM_BLOCK, 6),
-                high_bit: 2,
-                low_bit: 0,
+                address: analog_registers::RFPLL_SDM_LOW.address,
+                high_bit: analog_registers::RFPLL_SDM_LOW.high_bit,
+                low_bit: analog_registers::RFPLL_SDM_LOW.low_bit,
                 value: bytes[0],
             },
             _ => RfpllFrequencyAction::WriteMasked {
@@ -319,6 +372,19 @@ impl RfpllFrequencyTransition {
 
     pub const fn action(self) -> RfpllFrequencyAction {
         match self.step {
+            RfpllFrequencyStep::ChannelStart => RfpllFrequencyAction::StartChannelSwitch {
+                frequency_index: Self::programmed_frequency(self.request).wrapping_sub(2_400) as u8,
+                crystal_selector: self.request.crystal_selector,
+            },
+            RfpllFrequencyStep::ChannelStartDelay => RfpllFrequencyAction::DelayMicros(1),
+            RfpllFrequencyStep::ChannelClear => RfpllFrequencyAction::ClearChannelSwitch,
+            RfpllFrequencyStep::ChannelSettleDelay => RfpllFrequencyAction::DelayMicros(10),
+            RfpllFrequencyStep::ChannelReady { samples } => {
+                RfpllFrequencyAction::ReadChannelReady { samples }
+            }
+            RfpllFrequencyStep::ChannelNrx => RfpllFrequencyAction::ConfigureNrx {
+                frequency_mhz: Self::programmed_frequency(self.request),
+            },
             RfpllFrequencyStep::InitialWrite(index) => Self::initial_write(index),
             RfpllFrequencyStep::SdmWrite(index) => self.sdm_write(index),
             RfpllFrequencyStep::RestartWrite(index) => Self::restart_write(index),
@@ -343,13 +409,13 @@ impl RfpllFrequencyTransition {
                 value: 1,
             },
             RfpllFrequencyStep::CapWriteLow(continuation) => RfpllFrequencyAction::WriteByte {
-                address: address(RFPLL_BLOCK, 1),
+                address: analog_registers::RFPLL_CAPACITOR_LOW,
                 value: continuation.programmed_value() as u8,
             },
             RfpllFrequencyStep::CapWriteHigh(continuation) => RfpllFrequencyAction::WriteMasked {
-                address: address(RFPLL_BLOCK, 2),
-                high_bit: 6,
-                low_bit: 6,
+                address: analog_registers::RFPLL_CAPACITOR_HIGH.address,
+                high_bit: analog_registers::RFPLL_CAPACITOR_HIGH.high_bit,
+                low_bit: analog_registers::RFPLL_CAPACITOR_HIGH.low_bit,
                 value: (continuation.programmed_value() >> 8) as u8,
             },
             RfpllFrequencyStep::CapDelay(_) => RfpllFrequencyAction::DelayMicros(5),
@@ -413,6 +479,66 @@ impl RfpllFrequencyTransition {
     ) -> Result<(), RfpllFrequencyTransitionError> {
         let action = self.action();
         self.step = match (self.step, completion) {
+            (
+                RfpllFrequencyStep::ChannelStart,
+                RfpllFrequencyCompletion::ChannelSwitchStarted {
+                    frequency_index,
+                    crystal_selector,
+                },
+            ) if frequency_index
+                == Self::programmed_frequency(self.request).wrapping_sub(2_400) as u8
+                && crystal_selector == self.request.crystal_selector =>
+            {
+                RfpllFrequencyStep::ChannelStartDelay
+            }
+            (
+                RfpllFrequencyStep::ChannelStartDelay,
+                RfpllFrequencyCompletion::DelayElapsed(1),
+            ) => RfpllFrequencyStep::ChannelClear,
+            (
+                RfpllFrequencyStep::ChannelClear,
+                RfpllFrequencyCompletion::ChannelSwitchCleared,
+            ) => RfpllFrequencyStep::ChannelSettleDelay,
+            (
+                RfpllFrequencyStep::ChannelSettleDelay,
+                RfpllFrequencyCompletion::DelayElapsed(10),
+            ) => RfpllFrequencyStep::ChannelReady { samples: 0 },
+            (
+                RfpllFrequencyStep::ChannelReady { samples },
+                RfpllFrequencyCompletion::ChannelReadyObserved { value },
+            ) => {
+                if value
+                    & open_esp_radio_hal_esp32s31::radio_registers::
+                        phy_frequency_channel_oracle::frequency_parameter_1_status::
+                        FREQUENCY_READY
+                        .mask()
+                    != 0
+                {
+                    RfpllFrequencyStep::ChannelNrx
+                } else {
+                    RfpllFrequencyStep::ChannelReady {
+                        samples: samples.wrapping_add(1),
+                    }
+                }
+            }
+            (
+                RfpllFrequencyStep::ChannelReady { samples },
+                RfpllFrequencyCompletion::ChannelReadyTimedOut,
+            ) => RfpllFrequencyStep::Failed(
+                RfpllFrequencyFailure::FrequencyReadyDeadlineExceeded { samples },
+            ),
+            (
+                RfpllFrequencyStep::ChannelNrx,
+                RfpllFrequencyCompletion::NrxConfigured { frequency_mhz },
+            ) if frequency_mhz == Self::programmed_frequency(self.request) => {
+                RfpllFrequencyStep::Complete(RfpllFrequencyOutcome {
+                    sdm: self.sdm,
+                    lock_observed: true,
+                    initial_cap: 0,
+                    final_cap: 0,
+                    accepted_cap_samples: 0,
+                })
+            }
             (RfpllFrequencyStep::InitialWrite(index), _)
                 if Self::matches_write(action, completion) =>
             {
@@ -619,7 +745,11 @@ impl RfpllFrequencyI2cBinding {
             RfpllFrequencyAction::ReadByte { address } => {
                 crate::phy_cold::PhyColdI2cRequest::read_byte(address)
             }
-            RfpllFrequencyAction::DelayMicros(_)
+            RfpllFrequencyAction::StartChannelSwitch { .. }
+            | RfpllFrequencyAction::ClearChannelSwitch
+            | RfpllFrequencyAction::ReadChannelReady { .. }
+            | RfpllFrequencyAction::ConfigureNrx { .. }
+            | RfpllFrequencyAction::DelayMicros(_)
             | RfpllFrequencyAction::Complete(_)
             | RfpllFrequencyAction::Failed(_) => {
                 return Err(RfpllFrequencyBindingError::UnsupportedAction);
@@ -745,15 +875,89 @@ impl RfpllFrequencyTimerBinding {
     }
 }
 
+/// Non-cloneable owner of one finite fast-channel MMIO edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RfpllFrequencyMmioBinding {
+    action: RfpllFrequencyAction,
+}
+
+impl RfpllFrequencyMmioBinding {
+    pub fn new(action: RfpllFrequencyAction) -> Result<Self, RfpllFrequencyBindingError> {
+        match action {
+            RfpllFrequencyAction::StartChannelSwitch { .. }
+            | RfpllFrequencyAction::ClearChannelSwitch
+            | RfpllFrequencyAction::ReadChannelReady { .. }
+            | RfpllFrequencyAction::ConfigureNrx { .. } => Ok(Self { action }),
+            _ => Err(RfpllFrequencyBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn action(&self) -> RfpllFrequencyAction {
+        self.action
+    }
+
+    /// Execute exactly one MMIO edge from the ROM fast-channel path.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold the unique radio-register owner and must not run
+    /// another PHY frequency transition until the returned completion has
+    /// been consumed.
+    #[cfg(target_arch = "riscv32")]
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> RfpllFrequencyCompletion {
+        match self.action {
+            RfpllFrequencyAction::StartChannelSwitch {
+                frequency_index,
+                crystal_selector,
+            } => {
+                open_esp_radio_hal_esp32s31::phy_frequency::start_channel_switch(
+                    registers,
+                    frequency_index,
+                );
+                RfpllFrequencyCompletion::ChannelSwitchStarted {
+                    frequency_index,
+                    crystal_selector,
+                }
+            }
+            RfpllFrequencyAction::ClearChannelSwitch => {
+                open_esp_radio_hal_esp32s31::phy_frequency::clear_channel_switch(registers);
+                RfpllFrequencyCompletion::ChannelSwitchCleared
+            }
+            RfpllFrequencyAction::ReadChannelReady { .. } => {
+                RfpllFrequencyCompletion::ChannelReadyObserved {
+                    value: open_esp_radio_hal_esp32s31::phy_frequency::sample_frequency_ready(
+                        registers,
+                    ),
+                }
+            }
+            RfpllFrequencyAction::ConfigureNrx { frequency_mhz } => {
+                open_esp_radio_hal_esp32s31::phy_frequency::configure_nrx_frequency(
+                    registers,
+                    frequency_mhz,
+                );
+                RfpllFrequencyCompletion::NrxConfigured { frequency_mhz }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Exhaustive lowering for every non-terminal RFPLL frequency action.
 #[derive(Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyExternalBinding {
+    Mmio(RfpllFrequencyMmioBinding),
     I2c(RfpllFrequencyI2cBinding),
     Timer(RfpllFrequencyTimerBinding),
 }
 
 impl RfpllFrequencyExternalBinding {
     pub fn lower(action: RfpllFrequencyAction) -> Result<Self, RfpllFrequencyBindingError> {
+        if let Ok(binding) = RfpllFrequencyMmioBinding::new(action) {
+            return Ok(Self::Mmio(binding));
+        }
         if let Ok(binding) = RfpllFrequencyI2cBinding::new(action) {
             return Ok(Self::I2c(binding));
         }
@@ -975,7 +1179,74 @@ mod tests {
     }
 
     #[test]
-    fn external_lowering_covers_rfpll_i2c_and_timer_actions() {
+    fn wifi_channel_uses_the_rom_fast_switch_without_rfpll_i2c() {
+        let mut transition = RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+            crystal_selector: 0,
+            frequency_code: 1,
+            offset: 0,
+        });
+        assert_eq!(
+            transition.action(),
+            RfpllFrequencyAction::StartChannelSwitch {
+                frequency_index: 12,
+                crystal_selector: 0,
+            }
+        );
+        transition
+            .advance(RfpllFrequencyCompletion::ChannelSwitchStarted {
+                frequency_index: 12,
+                crystal_selector: 0,
+            })
+            .unwrap();
+        assert_eq!(transition.action(), RfpllFrequencyAction::DelayMicros(1));
+        transition
+            .advance(RfpllFrequencyCompletion::DelayElapsed(1))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            RfpllFrequencyAction::ClearChannelSwitch
+        );
+        transition
+            .advance(RfpllFrequencyCompletion::ChannelSwitchCleared)
+            .unwrap();
+        assert_eq!(transition.action(), RfpllFrequencyAction::DelayMicros(10));
+        transition
+            .advance(RfpllFrequencyCompletion::DelayElapsed(10))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            RfpllFrequencyAction::ReadChannelReady { samples: 0 }
+        );
+        transition
+            .advance(RfpllFrequencyCompletion::ChannelReadyObserved { value: 1 << 8 })
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            RfpllFrequencyAction::ConfigureNrx {
+                frequency_mhz: 2_412,
+            }
+        );
+        transition
+            .advance(RfpllFrequencyCompletion::NrxConfigured {
+                frequency_mhz: 2_412,
+            })
+            .unwrap();
+        let RfpllFrequencyAction::Complete(outcome) = transition.action() else {
+            panic!("expected fast-channel completion");
+        };
+        assert!(outcome.lock_observed);
+        assert_eq!(outcome.accepted_cap_samples, 0);
+    }
+
+    #[test]
+    fn external_lowering_covers_rfpll_mmio_i2c_and_timer_actions() {
+        assert!(matches!(
+            RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::StartChannelSwitch {
+                frequency_index: 12,
+                crystal_selector: 0,
+            }),
+            Ok(RfpllFrequencyExternalBinding::Mmio(_))
+        ));
         let register = address(RFPLL_BLOCK, 7);
         assert!(matches!(
             RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::ReadMasked {

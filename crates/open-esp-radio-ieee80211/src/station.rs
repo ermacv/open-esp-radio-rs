@@ -5,6 +5,8 @@
 //! decides when to submit it to hardware, arm a deadline, or retry.
 
 use crate::{
+    ccmp::CCMP_HEADER_LEN,
+    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
 };
@@ -31,6 +33,7 @@ pub enum StationFrameError {
     NoSupportedRates,
     TooManySupportedRates,
     SequenceNumberOutOfRange,
+    UserPriorityOutOfRange,
     OutputTooSmall { required: usize },
 }
 
@@ -233,6 +236,144 @@ pub struct AssociationResponse {
     pub association_id: u16,
     pub ht_capability: bool,
     pub wmm: bool,
+}
+
+/// One unprotected 802.11 data MPDU sent by a station through its AP.
+///
+/// This is the frame shape used for EAPOL before CCMP keys are installed.
+/// The caller owns the Ethernet payload and the output DMA buffer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaDataFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub destination: [u8; 6],
+    pub sequence_number: u16,
+    pub ether_type: u16,
+    pub payload: &'a [u8],
+}
+
+impl StaDataFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        let plan = plan_data_encapsulation(
+            DataInterfaceRole::Station,
+            self.bssid,
+            self.source,
+            ethernet,
+            7,
+            false,
+            false,
+        )
+        .expect("priority seven is a valid recovered queue class");
+        let header_len = usize::from(plan.header_len);
+        let required = header_len
+            .checked_add(plan.llc_snap.len())
+            .and_then(|length| length.checked_add(self.payload.len()))
+            .ok_or(StationFrameError::OutputTooSmall {
+                required: usize::MAX,
+            })?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame.fill(0);
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let llc_end = header_len + plan.llc_snap.len();
+        frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
+        frame[llc_end..required].copy_from_slice(self.payload);
+        Ok(required)
+    }
+}
+
+/// One protected data MPDU prepared for S31 hardware CCMP encryption.
+///
+/// The CCMP header carries the packet number owned by the installed hardware
+/// key token. The payload remains plaintext in DMA memory; the MAC encrypts it
+/// and writes the eight-byte CCMP MIC into caller-reserved trailer space.
+///
+/// `peer_qos` is the association result. It selects the same legacy/QoS header
+/// boundary as the recovered `net80211_encap::plan_data_encapsulation` path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaProtectedDataFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub destination: [u8; 6],
+    pub sequence_number: u16,
+    pub user_priority: u8,
+    pub peer_qos: bool,
+    pub ccmp_header: [u8; CCMP_HEADER_LEN],
+    pub ether_type: u16,
+    pub payload: &'a [u8],
+}
+
+impl StaProtectedDataFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        if self.user_priority > 7 {
+            return Err(StationFrameError::UserPriorityOutOfRange);
+        }
+        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::Station,
+            self.bssid,
+            self.source,
+            ethernet,
+            self.user_priority,
+            self.peer_qos,
+            false,
+        )
+        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        // Exact `net80211_tx::encapsulate_ordinary` mutation after successful
+        // CCMP key selection.
+        plan.header[1] |= 0x40;
+        let header_len = usize::from(plan.header_len);
+        let required = header_len
+            .checked_add(CCMP_HEADER_LEN)
+            .and_then(|length| length.checked_add(plan.llc_snap.len()))
+            .and_then(|length| length.checked_add(self.payload.len()))
+            .ok_or(StationFrameError::OutputTooSmall {
+                required: usize::MAX,
+            })?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+
+        let frame = &mut output[..required];
+        frame.fill(0);
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let ccmp_end = header_len + CCMP_HEADER_LEN;
+        frame[header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
+        let llc_end = ccmp_end + plan.llc_snap.len();
+        frame[ccmp_end..llc_end].copy_from_slice(&plan.llc_snap);
+        frame[llc_end..required].copy_from_slice(self.payload);
+        Ok(required)
+    }
+}
+
+const fn ethernet_header(
+    destination: [u8; 6],
+    source: [u8; 6],
+    ether_type: u16,
+) -> [u8; ETHERNET_HEADER_LEN] {
+    [
+        destination[0],
+        destination[1],
+        destination[2],
+        destination[3],
+        destination[4],
+        destination[5],
+        source[0],
+        source[1],
+        source[2],
+        source[3],
+        source[4],
+        source[5],
+        (ether_type >> 8) as u8,
+        ether_type as u8,
+    ]
 }
 
 pub fn parse_association_response(
@@ -539,6 +680,63 @@ mod tests {
                 0,
             ]
         );
+    }
+
+    #[test]
+    fn sta_data_frame_encodes_to_ds_llc_snap() {
+        let mut output = [0; 64];
+        let len = StaDataFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: 0x123,
+            ether_type: 0x888e,
+            payload: &[1, 2, 3],
+        }
+        .encode(&mut output)
+        .unwrap();
+        assert_eq!(len, 35);
+        assert_eq!(&output[..2], &[0x08, 0x01]);
+        assert_eq!(&output[4..10], &[0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+        assert_eq!(&output[10..16], &[2, 3, 4, 5, 6, 7]);
+        assert_eq!(&output[16..22], &[0x20, 0x21, 0x22, 0x23, 0x24, 0x25]);
+        assert_eq!(&output[24..32], &[0xaa, 0xaa, 3, 0, 0, 0, 0x88, 0x8e]);
+        assert_eq!(&output[32..len], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn protected_data_frame_selects_the_recovered_legacy_or_qos_layout() {
+        let mut output = [0; 64];
+        let frame = StaProtectedDataFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: 0x123,
+            user_priority: 7,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ether_type: 0x888e,
+            payload: &[1, 2, 3],
+        };
+        let len = frame.encode(&mut output).unwrap();
+        assert_eq!(len, 45);
+        assert_eq!(&output[..2], &[0x88, 0x41]);
+        assert_eq!(&output[24..26], &[7, 0]);
+        assert_eq!(&output[26..34], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        assert_eq!(&output[34..42], &[0xaa, 0xaa, 3, 0, 0, 0, 0x88, 0x8e]);
+        assert_eq!(&output[42..len], &[1, 2, 3]);
+
+        let len = StaProtectedDataFrame {
+            peer_qos: false,
+            ..frame
+        }
+        .encode(&mut output)
+        .unwrap();
+        assert_eq!(len, 43);
+        assert_eq!(&output[..2], &[0x08, 0x41]);
+        assert_eq!(&output[24..32], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        assert_eq!(&output[32..40], &[0xaa, 0xaa, 3, 0, 0, 0, 0x88, 0x8e]);
+        assert_eq!(&output[40..len], &[1, 2, 3]);
     }
 
     #[test]

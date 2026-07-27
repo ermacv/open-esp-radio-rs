@@ -158,6 +158,18 @@ impl<P> Radio<P, state::Powered> {
         &self.peripheral
     }
 
+    /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
+    ///
+    /// Espressif's `enable_phy_with_wifi_rx` lifecycle wrapper performs this
+    /// operation after `register_chipv7_phy` or `phy_wakeup_init`.  Keeping it
+    /// on the powered owner makes that final lifecycle edge explicit and
+    /// prevents application code from writing `WIFI_BB_CFG` without owning the
+    /// radio peripheral.
+    #[cfg(target_arch = "riscv32")]
+    pub fn enable_wifi_rx(&mut self) {
+        phy_frequency::set_wifi_enabled(&mut self.registers, true);
+    }
+
     /// Internal register capability used by source-owned target bindings.
     ///
     /// The returned borrow cannot outlive the unique powered radio owner.

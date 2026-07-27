@@ -6,6 +6,7 @@ members = [
     "crates/open-esp-radio-mac-esp32s31",
     "crates/open-esp-radio-pac-esp32s31",
     "crates/open-esp-radio-phy-esp32s31",
+    "crates/open-esp-radio-wpa2",
 ]
 resolver = "2"
 

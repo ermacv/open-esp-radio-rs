@@ -13,7 +13,7 @@
 
 use crate::{
     phy_dc_iq::{PhyDcIqDelayPhase, PhyDcIqEnablePhase, PhyDcIqReadinessSnapshot},
-    phy_i2c::PhyI2cAddress,
+    phy_i2c::{analog_registers, PhyI2cAddress},
     phy_pbus::PhyPbusForceTest,
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
@@ -1820,7 +1820,7 @@ enum InitStep {
     Failed(PhyRxIqInitFailure),
 }
 
-const RXIQ_TX_CAP_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
+const RXIQ_TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
 const fn root_rx_on(index: u8, pbus_rx_path_value: u8) -> PhyPbusForceTest {
     match index {

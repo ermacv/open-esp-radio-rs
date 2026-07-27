@@ -1409,11 +1409,13 @@ pub mod phy_frequency_channel_oracle {
         pub const HARDWARE_FREQUENCY_DISABLE: Field32 = Field32::new(31, 1);
     }
 
-    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,HIL_OPEN_RFPLL_FAST_CHANNEL];
     /// CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init writes
-    /// the full constant 0x19800249; no constituent electrical fields are public.
+    /// the full constant 0x19800249. The rev0 HIL reads the same value before and after channel
+    /// switches, proving that the physical word is readable even though no constituent
+    /// electrical fields are public.
     pub const FREQUENCY_PARAMETER_0_OPAQUE: Register32 =
-        Register32::described(0x20100024, RegisterAccess::WriteOnly, None);
+        Register32::described(0x20100024, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`FREQUENCY_PARAMETER_0_OPAQUE`].
     /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];

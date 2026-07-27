@@ -1,4 +1,4 @@
-//! RX descriptor metadata decoding and raw management-frame extraction.
+//! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
 use crate::descriptor::{
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
@@ -17,6 +17,8 @@ pub const FIXED_PREFIX_SIZE: usize = 0x38;
 pub const DYNAMIC_TAIL_SIZE: usize = 0x08;
 pub const PUBLIC_HEADER_SIZE: usize = 0x40;
 pub const FCS_SIZE: usize = 4;
+pub const CCMP_HEADER_SIZE: usize = 8;
+pub const CCMP_MIC_SIZE: usize = 8;
 pub const PREFIX_RXEND_STATE_OFFSET: usize = 0x08;
 pub const TAIL_STATE_OFFSET: usize = 0x04;
 pub const TAIL_INTERNAL_OFFSET: usize = 0x05;
@@ -49,7 +51,7 @@ pub struct RxIngressConfig {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RxManagementFrame {
+pub struct RxMpduFrame {
     pub length: usize,
     pub tail_offset: usize,
     pub signal_length: u16,
@@ -58,6 +60,29 @@ pub struct RxManagementFrame {
     pub rx_state: u8,
     pub internal_state: u8,
     pub dump_length_matches: bool,
+}
+
+pub type RxManagementFrame = RxMpduFrame;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxDataFrame {
+    pub mpdu: RxMpduFrame,
+    pub payload_offset: usize,
+}
+
+/// Hardware-verified CCMP data MPDU before 802.11-to-Ethernet decapsulation.
+///
+/// The S31 MAC decrypts the payload in place and reports MIC failure through
+/// RX metadata. It deliberately leaves the eight-byte CCMP header and
+/// eight-byte MIC in the DMA view. These offsets reproduce the finite
+/// `ccmp_decap` pointer/length adjustment from the pinned net80211 oracle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxCcmpDataFrame {
+    pub mpdu: RxMpduFrame,
+    pub ccmp_header_offset: usize,
+    pub payload_offset: usize,
+    pub payload_length: usize,
+    pub mic_offset: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,6 +170,27 @@ pub fn publish_cold_ring<M: Mmio>(
     }
     mmio.fence();
     Ok(())
+}
+
+/// Opens the RX walker after a cold ring base has already been published.
+///
+/// The vendor cold path keeps these operations separate:
+/// `wDev_AppendRxBlocks` publishes the first descriptor base, while the later
+/// `chip_enable` path calls `hal_mac_rx_enable`. Keeping this as a distinct
+/// operation preserves that ordering and gives the base register time to
+/// settle while the caller completes channel/MAC setup.
+pub fn enable_receive<M: Mmio>(mmio: &mut M) -> Result<(), RxRingError> {
+    let control = mmio.read32(RX_CONTROL);
+    if control & RX_ENABLE != 0 {
+        return Err(RxRingError::Busy);
+    }
+    mmio.write32(RX_CONTROL, control | RX_ENABLE);
+    mmio.fence();
+    if mmio.read32(RX_CONTROL) & RX_ENABLE == 0 {
+        Err(RxRingError::Busy)
+    } else {
+        Ok(())
+    }
 }
 
 /// Stop the RX walker and confirm that the peripheral released its enable
@@ -249,13 +295,11 @@ fn copy_frame(
     copied == length
 }
 
-/// Validates one completed chain, strips the four-byte FCS and copies one
-/// unfragmented, unprotected management MPDU into caller-owned storage.
-pub fn extract_management(
+fn extract_mpdu(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
     output: &mut [u8],
-) -> Result<RxManagementFrame, RxError> {
+) -> Result<RxMpduFrame, RxError> {
     if segments.is_empty()
         || config.ring_entry_limit == 0
         || segments.len() > config.ring_entry_limit
@@ -317,7 +361,7 @@ pub fn extract_management(
     if config.flags & INGRESS_STRICT_DUMP != 0 && !dump_matches {
         return Err(RxError::Metadata);
     }
-    if signal_length < MLME_HEADER_SIZE + FCS_SIZE {
+    if signal_length < 2 + FCS_SIZE {
         return Err(RxError::Bounds);
     }
 
@@ -339,6 +383,29 @@ pub fn extract_management(
         return Err(RxError::Bounds);
     }
 
+    Ok(RxMpduFrame {
+        length: frame_length,
+        tail_offset,
+        signal_length: signal_length as u16,
+        dump_length: dump_length as u16,
+        rxend_state,
+        rx_state,
+        internal_state: segments[0].buffer[tail_offset + TAIL_INTERNAL_OFFSET],
+        dump_length_matches: dump_matches,
+    })
+}
+
+/// Validates one completed chain, strips the four-byte FCS and copies one
+/// unfragmented, unprotected management MPDU into caller-owned storage.
+pub fn extract_management(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxManagementFrame, RxError> {
+    let frame = extract_mpdu(segments, config, output)?;
+    if frame.length < MLME_HEADER_SIZE {
+        return Err(RxError::Bounds);
+    }
     if output[0] & 0x0f != 0 {
         return Err(RxError::Ignored);
     }
@@ -349,19 +416,121 @@ pub fn extract_management(
     if matches!(
         subtype,
         SUBTYPE_AUTH | SUBTYPE_ASSOC_RESPONSE | SUBTYPE_REASSOC_RESPONSE
-    ) && frame_length < MLME_HEADER_SIZE + MLME_AUTH_BODY_SIZE
+    ) && frame.length < MLME_HEADER_SIZE + MLME_AUTH_BODY_SIZE
     {
         return Err(RxError::Bounds);
     }
+    Ok(frame)
+}
 
-    Ok(RxManagementFrame {
-        length: frame_length,
-        tail_offset,
-        signal_length: signal_length as u16,
-        dump_length: dump_length as u16,
-        rxend_state,
-        rx_state,
-        internal_state: segments[0].buffer[tail_offset + TAIL_INTERNAL_OFFSET],
-        dump_length_matches: dump_matches,
+/// Extracts one unfragmented, unprotected 802.11 data MPDU and reports the
+/// LLC/SNAP payload offset.
+///
+/// The header length accounts for address 4, QoS control and HT control. The
+/// WPA2 four-way handshake starts before pairwise keys exist, so EAPOL M1 must
+/// arrive as an unprotected data frame; protected traffic is rejected here.
+pub fn extract_data(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxDataFrame, RxError> {
+    let frame = extract_mpdu(segments, config, output)?;
+    if frame.length < MLME_HEADER_SIZE {
+        return Err(RxError::Bounds);
+    }
+    let frame_control = u16::from_le_bytes([output[0], output[1]]);
+    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
+        return Err(RxError::Ignored);
+    }
+    if frame_control & (1 << 10 | 1 << 14) != 0 || output[22] & 0x0f != 0 {
+        return Err(RxError::Unsupported);
+    }
+
+    let to_ds = frame_control & (1 << 8) != 0;
+    let from_ds = frame_control & (1 << 9) != 0;
+    let qos = frame_control & 0x0080 != 0;
+    let ordered = frame_control & (1 << 15) != 0;
+    let mut payload_offset = if to_ds && from_ds {
+        MLME_HEADER_SIZE + 6
+    } else {
+        MLME_HEADER_SIZE
+    };
+    if qos {
+        payload_offset += 2;
+        if ordered {
+            payload_offset += 4;
+        }
+    }
+    if frame.length < payload_offset {
+        return Err(RxError::Bounds);
+    }
+    Ok(RxDataFrame {
+        mpdu: frame,
+        payload_offset,
+    })
+}
+
+/// Extracts one unfragmented CCMP data MPDU after hardware MIC verification.
+///
+/// Unlike [`extract_data`], this entry requires the Protected bit. A returned
+/// frame therefore has both a successful RX crypto status and a valid CCMP
+/// ExtIV/header/trailer shape. The payload bytes between `payload_offset` and
+/// `mic_offset` are the hardware-decrypted LLC/SNAP payload.
+pub fn extract_ccmp_data(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxCcmpDataFrame, RxError> {
+    let frame = extract_mpdu(segments, config, output)?;
+    if frame.length < MLME_HEADER_SIZE {
+        return Err(RxError::Bounds);
+    }
+    let frame_control = u16::from_le_bytes([output[0], output[1]]);
+    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
+        return Err(RxError::Ignored);
+    }
+    if frame_control & (1 << 10) != 0 || frame_control & (1 << 14) == 0 || output[22] & 0x0f != 0 {
+        return Err(RxError::Unsupported);
+    }
+
+    let to_ds = frame_control & (1 << 8) != 0;
+    let from_ds = frame_control & (1 << 9) != 0;
+    let qos = frame_control & 0x0080 != 0;
+    let ordered = frame_control & (1 << 15) != 0;
+    let mut ccmp_header_offset = if to_ds && from_ds {
+        MLME_HEADER_SIZE + 6
+    } else {
+        MLME_HEADER_SIZE
+    };
+    if qos {
+        ccmp_header_offset += 2;
+        if ordered {
+            ccmp_header_offset += 4;
+        }
+    }
+    let payload_offset = ccmp_header_offset
+        .checked_add(CCMP_HEADER_SIZE)
+        .ok_or(RxError::Bounds)?;
+    let mic_offset = frame
+        .length
+        .checked_sub(CCMP_MIC_SIZE)
+        .ok_or(RxError::Bounds)?;
+    if payload_offset > mic_offset {
+        return Err(RxError::Bounds);
+    }
+    // `ccmp_decap` rejects a protected frame whose CCMP ExtIV bit is clear.
+    if output
+        .get(ccmp_header_offset + 3)
+        .is_none_or(|value| value & 0x20 == 0)
+    {
+        return Err(RxError::Unsupported);
+    }
+
+    Ok(RxCcmpDataFrame {
+        mpdu: frame,
+        ccmp_header_offset,
+        payload_offset,
+        payload_length: mic_offset - payload_offset,
+        mic_offset,
     })
 }

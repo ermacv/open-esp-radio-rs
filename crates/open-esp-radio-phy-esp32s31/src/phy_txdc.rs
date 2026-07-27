@@ -750,7 +750,21 @@ impl PhyTxDcMmioBinding {
                 selector,
                 step,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(enabled, selector, step);
+                if enabled {
+                    // Rev0 ROM `phy_txdc_cal+0x56` calls the original
+                    // `phy_start_tx_tone_step`, not the archive `_new`
+                    // replacement. The original leaf deliberately leaves DAC
+                    // scale and TX-gain compensation disabled while the
+                    // comparator search is active.
+                    crate::radio_hal::configure_phy_power_control_tone(selector, step);
+                } else {
+                    // Preserve the selector/path write performed by
+                    // `phy_start_tx_tone_step(0, ...)`, then restore the stop
+                    // controls and DAC scale. The surrounding state machine
+                    // has already cleared the comparator measurement.
+                    crate::radio_hal::configure_phy_calibration_tone_wide(false, selector, step);
+                    crate::radio_hal::stop_phy_power_detector_tone();
+                }
                 PhyTxDcCompletion::ToneConfigured {
                     enabled,
                     selector,

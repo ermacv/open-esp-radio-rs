@@ -16,7 +16,7 @@
 //! its finite deadline.  No transition method spins, sleeps or self-wakes.
 
 use crate::{
-    phy_i2c::PhyI2cAddress,
+    phy_i2c::{analog_registers, PhyI2cAddress},
     phy_temperature::{
         PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureFailure,
         PhyTemperatureOutcome, PhyTemperatureTransition,
@@ -32,7 +32,7 @@ pub const PHY_FREQUENCY_READY_MASK: u32 =
         frequency_parameter_1_status::FREQUENCY_READY
         .mask();
 
-const TX_CAP_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
+const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
 // Pinned `phy_tx_gain.o` `.rodata` slices at offsets 0x6c, 0x90 and 0xb4.
 // Their semantic units are not public. The recovered Rust translation below

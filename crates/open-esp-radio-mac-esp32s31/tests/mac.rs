@@ -1,28 +1,31 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_mac_esp32s31::{
+    crypto::{CryptoKeyError, install_sta_group_ccmp, install_sta_pairwise_ccmp},
     descriptor::{
-        descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
-        tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
+        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
+        dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
     },
     init::initialize_promiscuous_receive,
-    irq::{handle_mac_irq, IrqDisposition, IrqState},
+    irq::{IrqDisposition, IrqState, handle_mac_irq},
     registers::{
-        Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
-        MAC_INT_TX_COMPLETE, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR_HIGH,
+        MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS, MAC_INT_TX_COMPLETE,
+        Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR_HIGH,
         TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
         TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
-        TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE,
+        TX_Q_ENABLE_VALID, TX_Q0_CONTROL, TX_STATE,
     },
     rx::{
-        build_cold_ring, disable_receive, extract_management, publish_cold_ring, rearm_descriptor,
-        RxError, RxIngressConfig, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
+        INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RxError, RxIngressConfig, RxRingError,
+        RxSegment, build_cold_ring, disable_receive, enable_receive, extract_ccmp_data,
+        extract_data, extract_management, publish_cold_ring, rearm_descriptor,
     },
-    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
+    tx::{LegacyTxConfig, TxError, TxSlot, TxSlotState, legacy_q0_image},
 };
 use open_esp_radio_pac_esp32s31::{
-    mac::{self, init as mac_init},
     Register32,
+    mac::{self, init as mac_init},
+    power::modem_syscon,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,6 +102,7 @@ fn descriptor_words_preserve_the_recovered_geometry() {
 fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     let mut mmio = MockMmio::default();
     mmio.set(mac_init::HANDSHAKE, 1);
+    mmio.set(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000);
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
     let access_point = [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee];
@@ -129,6 +133,18 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
+    assert_eq!(
+        mmio.words.get(&modem_syscon::MODEM_RST_CONF),
+        Some(&0xa5a5_0000)
+    );
+    let reset_mask = modem_syscon::modem_rst_conf::RST_WIFIMAC.mask();
+    assert!(mmio.operations().windows(4).any(|operations| operations
+        == [
+            Operation::Read(modem_syscon::MODEM_RST_CONF),
+            Operation::Write(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000 | reset_mask),
+            Operation::Read(modem_syscon::MODEM_RST_CONF),
+            Operation::Write(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000),
+        ]));
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
 }
 
@@ -188,6 +204,128 @@ fn receive_disable_confirms_the_ring_ownership_edge() {
             Operation::Fence,
             Operation::Read(RX_CONTROL),
         ]
+    );
+}
+
+#[test]
+fn receive_enable_is_a_separate_confirmed_hardware_edge() {
+    let mut mmio = MockMmio::default();
+    mmio.set(RX_CONTROL, 0x1234);
+    enable_receive(&mut mmio).unwrap();
+    assert_eq!(mmio.words.get(&RX_CONTROL), Some(&(RX_ENABLE | 0x1234)));
+    assert_eq!(
+        mmio.operations(),
+        &[
+            Operation::Read(RX_CONTROL),
+            Operation::Write(RX_CONTROL, RX_ENABLE | 0x1234),
+            Operation::Fence,
+            Operation::Read(RX_CONTROL),
+        ]
+    );
+
+    let mut already_enabled = MockMmio::default();
+    already_enabled.set(RX_CONTROL, RX_ENABLE | 0x1234);
+    assert_eq!(enable_receive(&mut already_enabled), Err(RxRingError::Busy));
+    assert_eq!(already_enabled.operations(), &[Operation::Read(RX_CONTROL)]);
+}
+
+#[test]
+fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
+    let mut mmio = MockMmio::default();
+    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
+    let peer = [0xdc, 0x15, 0xc8, 0x54, 0xbc, 0x1e];
+    let temporal_key = core::array::from_fn(|index| index as u8);
+
+    let mut slot = install_sta_pairwise_ccmp(&mut mmio, peer, &temporal_key).unwrap();
+    assert_eq!(slot.hardware_index(), 4);
+    assert_eq!(slot.peer(), &peer);
+    assert_eq!(
+        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
+        Some(&(1 << 4))
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(4, 0).unwrap()),
+        Some(&0x54c8_15dc)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(4, 1).unwrap()),
+        Some(&0x086c_1ebc)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(4, 2).unwrap()),
+        Some(&0x0302_0100)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(4, 5).unwrap()),
+        Some(&0x0f0e_0d0c)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(4, 6).unwrap()),
+        Some(&0)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::CRYPTO_INTERFACE_CONTROL[0]),
+        Some(&0x0003_0103)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::CRYPTO_POLICY_CONTROL),
+        Some(&0xffc0_003f)
+    );
+    assert_eq!(slot.next_tx_ccmp_header(), [3, 0, 0, 0x20, 0, 0, 0, 0]);
+    assert_eq!(slot.next_tx_ccmp_header(), [6, 0, 0, 0x20, 0, 0, 0, 0]);
+
+    slot.clear(&mut mmio);
+    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
+    for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
+        assert_eq!(
+            mmio.words
+                .get(&mac::crypto_key_entry_word(4, word).unwrap()),
+            Some(&0)
+        );
+    }
+
+    mmio.set(mac::CRYPTO_KEY_VALID_BITMAP, 1 << 4);
+    assert_eq!(
+        install_sta_pairwise_ccmp(&mut mmio, peer, &temporal_key).err(),
+        Some(CryptoKeyError::Occupied)
+    );
+}
+
+#[test]
+fn sta_group_ccmp_install_matches_the_migration_slot_and_control_word() {
+    let mut mmio = MockMmio::default();
+    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
+    let temporal_key = core::array::from_fn(|index| 0xf0 | index as u8);
+
+    let slot = install_sta_group_ccmp(&mut mmio, 1, &temporal_key).unwrap();
+    assert_eq!(slot.hardware_index(), 1);
+    assert_eq!(slot.key_id(), 1);
+    assert_eq!(
+        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
+        Some(&(1 << 1))
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(1, 0).unwrap()),
+        Some(&u32::MAX)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(1, 1).unwrap()),
+        Some(&0x48cc_ffff)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(1, 2).unwrap()),
+        Some(&0xf3f2_f1f0)
+    );
+    assert_eq!(
+        mmio.words.get(&mac::crypto_key_entry_word(1, 5).unwrap()),
+        Some(&0xfffe_fdfc)
+    );
+
+    slot.clear(&mut mmio);
+    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
+    assert_eq!(
+        install_sta_group_ccmp(&mut mmio, 4, &temporal_key).err(),
+        Some(CryptoKeyError::InvalidGroupKeyId)
     );
 }
 
@@ -259,6 +397,147 @@ fn management_rx_rejects_failed_hardware_status() {
 }
 
 #[test]
+fn data_rx_reports_qos_llc_payload_offset() {
+    const SIGNAL_LENGTH: usize = 26 + 8 + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+    let mut storage = [0_u8; 128];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    storage[FRAME_OFFSET] = 0x88;
+    storage[FRAME_OFFSET + 1] = 0x02;
+    storage[FRAME_OFFSET + 22] = 0;
+    storage[FRAME_OFFSET + 26..FRAME_OFFSET + 34]
+        .copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e]);
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    let mut output = [0_u8; 64];
+    let frame = extract_data(
+        &[segment],
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+        },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(frame.mpdu.length, SIGNAL_LENGTH - 4);
+    assert_eq!(frame.payload_offset, 26);
+    assert_eq!(
+        &output[frame.payload_offset..frame.payload_offset + 8],
+        &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e]
+    );
+}
+
+#[test]
+fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
+    const HEADER_LENGTH: usize = 26;
+    const LLC_LENGTH: usize = 8;
+    const PAYLOAD_LENGTH: usize = 4;
+    const MPDU_LENGTH: usize = HEADER_LENGTH + 8 + LLC_LENGTH + PAYLOAD_LENGTH + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+    let mut storage = [0_u8; 128];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    storage[FRAME_OFFSET] = 0x88;
+    storage[FRAME_OFFSET + 1] = 0x42;
+    storage[FRAME_OFFSET + 22] = 0;
+    storage[FRAME_OFFSET + HEADER_LENGTH..FRAME_OFFSET + HEADER_LENGTH + 8]
+        .copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+    storage[FRAME_OFFSET + HEADER_LENGTH + 8..FRAME_OFFSET + HEADER_LENGTH + 16]
+        .copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+    storage[FRAME_OFFSET + HEADER_LENGTH + 16..FRAME_OFFSET + HEADER_LENGTH + 20]
+        .copy_from_slice(&[1, 2, 3, 4]);
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    let mut output = [0_u8; 80];
+    let frame = extract_ccmp_data(
+        &[segment],
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+        },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(frame.mpdu.length, MPDU_LENGTH);
+    assert_eq!(frame.ccmp_header_offset, HEADER_LENGTH);
+    assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
+    assert_eq!(frame.payload_length, LLC_LENGTH + PAYLOAD_LENGTH);
+    assert_eq!(frame.mic_offset, MPDU_LENGTH - 8);
+    assert_eq!(
+        &output[frame.payload_offset..frame.payload_offset + LLC_LENGTH],
+        &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]
+    );
+}
+
+#[test]
+fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
+    const SIGNAL_LENGTH: usize = 26 + 8 + 8 + 8 + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+    let mut storage = [0_u8; 128];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    storage[FRAME_OFFSET] = 0x88;
+    storage[FRAME_OFFSET + 1] = 0x42;
+    let config = RxIngressConfig {
+        ring_entry_limit: 1,
+        csi_config: 0,
+        flags: 0,
+    };
+    let mut output = [0_u8; 80];
+    {
+        let segment = RxSegment {
+            descriptor_address: 0x2f00_4000,
+            descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+            buffer: &storage,
+            next_descriptor_address: 0,
+        };
+        assert_eq!(
+            extract_ccmp_data(&[segment], config, &mut output),
+            Err(RxError::Unsupported)
+        );
+    }
+
+    storage[FRAME_OFFSET + 26 + 3] = 0x20;
+    storage[TAIL_OFFSET + 4] = 0xf5;
+    let failed = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    assert_eq!(
+        extract_ccmp_data(&[failed], config, &mut output),
+        Err(RxError::MicFailure)
+    );
+}
+
+#[test]
 fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let mut mmio = MockMmio::default();
     mmio.set(MAC_INT_ENABLE, u32::MAX);
@@ -275,9 +554,10 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let event = state.try_take().unwrap();
     assert_eq!(event.mac_pending, MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
-    assert!(mmio
-        .operations()
-        .contains(&Operation::Write(MAC_INT_CLEAR, snapshot.status)));
+    assert!(
+        mmio.operations()
+            .contains(&Operation::Write(MAC_INT_CLEAR, snapshot.status))
+    );
 }
 
 #[test]
@@ -320,4 +600,21 @@ fn legacy_q0_image_reproduces_the_recovered_management_profile() {
     assert_eq!(image.power, 0x0808_0008);
     assert_eq!(image.length_control, 0x0040_0004);
     assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 100);
+}
+
+#[test]
+fn management_profile_derives_plcp1_from_mpdu_plus_fcs() {
+    let config = LegacyTxConfig::management_1m_from_mpdu_length(30).unwrap();
+    assert_eq!(config.signal, 0x22);
+    assert!(LegacyTxConfig::management_1m_from_mpdu_length(0x0ffc).is_none());
+}
+
+#[test]
+fn protected_legacy_profile_publishes_sta_pairwise_slot_in_plcp1() {
+    let mut config = LegacyTxConfig::management_1m(0x99);
+    config.no_ack = false;
+    config.hardware_key_selector = 4;
+    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+    assert_eq!(image.plcp1, 0x0008_0099);
+    assert_eq!(image.length_control, 0x0040_0004);
 }

@@ -817,6 +817,41 @@ pub(crate) unsafe fn configure_phy_calibration_tone(enabled: bool, selector: u8,
     configure_phy_calibration_tone_wide(enabled, selector as u16, step);
 }
 
+/// Program the enabled path of rev0 ROM `phy_start_tx_tone_step`.
+///
+/// Unlike the archive's `_new` replacement below, the ROM leaf first disables
+/// the DAC scale and TX-gain compensation, and leaves both disabled while the
+/// power-control loop measures the tone.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn configure_phy_power_control_tone(selector: u16, step: u8) {
+    clear_register_bits(PHY_TONE_STOP_CONTROL_ADDRESS, 0x0000_0003);
+    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x00ff_0000, 0);
+    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x0000_ff00, 0);
+
+    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
+    let compensation_aux = PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS as *mut u32;
+    compensation.write_volatile(0);
+    compensation_aux.write_volatile(0);
+
+    let selectors = PHY_TONE_SELECTOR_CONTROL_ADDRESS as *mut u32;
+    selectors.write_volatile(with_phy_tone_path0_selector(
+        selectors.read_volatile(),
+        i32::from(selector),
+    ));
+    selectors.write_volatile(with_phy_tone_path1_selector(selectors.read_volatile(), 0));
+
+    let path0 = PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32;
+    path0.write_volatile(with_phy_tone_path(
+        path0.read_volatile(),
+        1,
+        i32::from(selector),
+        i32::from(step),
+    ));
+
+    let path1 = PHY_TONE_PATH1_CONTROL_ADDRESS as *mut u32;
+    path1.write_volatile(with_phy_tone_path(path1.read_volatile(), 0, 0, 0));
+}
+
 /// Wide-selector form used by TX-DC calibration, whose evidenced selector is
 /// 600 and therefore cannot be represented by the older `u8` child actions.
 #[cfg(target_arch = "riscv32")]

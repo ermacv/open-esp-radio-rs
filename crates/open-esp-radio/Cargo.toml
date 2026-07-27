@@ -21,6 +21,7 @@ open-esp-radio-ieee80211 = { path = "../open-esp-radio-ieee80211" }
 open-esp-radio-mac-esp32s31 = { path = "../open-esp-radio-mac-esp32s31", optional = true }
 open-esp-radio-pac-esp32s31 = { path = "../open-esp-radio-pac-esp32s31", optional = true }
 open-esp-radio-phy-esp32s31 = { path = "../open-esp-radio-phy-esp32s31", optional = true }
+open-esp-radio-wpa2 = { path = "../open-esp-radio-wpa2" }
 
 [lints]
 workspace = true

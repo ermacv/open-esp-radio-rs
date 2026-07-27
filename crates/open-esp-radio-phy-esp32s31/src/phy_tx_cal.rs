@@ -8,7 +8,8 @@
 use crate::{
     phy_dc_iq::phy_linear_to_db,
     phy_i2c::{
-        MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, PhyI2cAddress,
+        analog_registers, MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition,
+        PhyI2cAddress,
     },
     phy_pbus::PhyPbusForceTest,
     phy_pwdet::sar_signal_reference,
@@ -805,7 +806,7 @@ impl PhyPowerAttenuationTransition {
     }
 }
 
-const TX_CAP_I2C_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
+const TX_CAP_I2C_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const TX_CAP_CHANNELS: [u16; 3] = [1, 6, 11];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -868,9 +869,15 @@ enum TxCapSearchStep {
 
 const fn tx_cap_field(bank: u8) -> (u8, u8) {
     if bank == 0 {
-        (3, 0)
+        (
+            analog_registers::TX_CAPACITOR_LOW.high_bit,
+            analog_registers::TX_CAPACITOR_LOW.low_bit,
+        )
     } else {
-        (7, 4)
+        (
+            analog_registers::TX_CAPACITOR_HIGH.high_bit,
+            analog_registers::TX_CAPACITOR_HIGH.low_bit,
+        )
     }
 }
 
@@ -1199,7 +1206,13 @@ impl PhyTxCapTransition {
                 match transition.action() {
                     RfpllFrequencyAction::Complete(_) => {
                         self.step = TxCapStep::SetLow(
-                            MaskedI2cWriteTransition::new(TX_CAP_I2C_ADDRESS, 3, 0, 7).unwrap(),
+                            MaskedI2cWriteTransition::new(
+                                TX_CAP_I2C_ADDRESS,
+                                analog_registers::TX_CAPACITOR_LOW.high_bit,
+                                analog_registers::TX_CAPACITOR_LOW.low_bit,
+                                7,
+                            )
+                            .unwrap(),
                         );
                     }
                     RfpllFrequencyAction::Failed(failure) => {
@@ -1214,7 +1227,13 @@ impl PhyTxCapTransition {
                     .map_err(|_| PhyTxCapTransitionError::WrongCompletion)?;
                 self.step = if transition.action() == MaskedI2cWriteAction::Complete {
                     TxCapStep::SetHigh(
-                        MaskedI2cWriteTransition::new(TX_CAP_I2C_ADDRESS, 7, 4, 13).unwrap(),
+                        MaskedI2cWriteTransition::new(
+                            TX_CAP_I2C_ADDRESS,
+                            analog_registers::TX_CAPACITOR_HIGH.high_bit,
+                            analog_registers::TX_CAPACITOR_HIGH.low_bit,
+                            13,
+                        )
+                        .unwrap(),
                     )
                 } else {
                     TxCapStep::SetLow(transition)
@@ -1363,7 +1382,7 @@ impl PhyPowerAttenuationMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(true, selector, attenuation);
+                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
                 PhyPowerAttenuationCompletion::ToneConfigured {
                     iteration,
                     selector,
@@ -1571,11 +1590,11 @@ impl PhyTxCapSearchMmioBinding {
                 attenuation,
                 enabled,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(
-                    enabled,
-                    selector,
-                    attenuation,
-                );
+                if enabled {
+                    crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
+                } else {
+                    crate::radio_hal::stop_phy_power_detector_tone();
+                }
                 PhyTxCapSearchCompletion::ToneConfigured {
                     selector,
                     attenuation,

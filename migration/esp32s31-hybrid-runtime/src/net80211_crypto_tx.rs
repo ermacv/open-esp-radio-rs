@@ -2,6 +2,7 @@
 //! insertion.
 
 use core::{ffi::c_void, ptr};
+use open_esp_radio_ieee80211::ccmp;
 
 const NET80211_CRYPTO_ENCAP_CALLBACK_SLOT: usize = 0x44 / core::mem::size_of::<usize>();
 const ESF_STORAGE_OFFSET: usize = 0x04;
@@ -82,16 +83,15 @@ unsafe fn insert_ccmp_header(key: *mut u8, buffer: *mut u8, key_id_bits: u8) -> 
     }
     let data_slot = storage.add(BUFFER_DATA_OFFSET).cast::<*mut u8>();
     let data = data_slot.read();
-    let new_data = (data as usize).checked_sub(crate::net80211_crypto::CCMP_HEADER_LEN)? as *mut u8;
+    let new_data = (data as usize).checked_sub(ccmp::CCMP_HEADER_LEN)? as *mut u8;
     let length_slot = buffer.add(ESF_LENGTH_OFFSET).cast::<u16>();
     let length = length_slot.read();
-    let new_length = length.checked_add(crate::net80211_crypto::CCMP_HEADER_LEN as u16)?;
+    let new_length = length.checked_add(ccmp::CCMP_HEADER_LEN as u16)?;
 
     let low_slot = key.add(KEY_TX_PN_LOW_OFFSET).cast::<u32>();
     let high_slot = key.add(KEY_TX_PN_HIGH_OFFSET).cast::<u32>();
-    let (low, high) =
-        crate::net80211_crypto::advance_vendor_tx_pn(low_slot.read(), high_slot.read());
-    let header = crate::net80211_crypto::ccmp_header(low, high, key_id_bits);
+    let (low, high) = ccmp::advance_vendor_tx_pn(low_slot.read(), high_slot.read());
+    let header = ccmp::ccmp_header(low, high, key_id_bits);
 
     data_slot.write(new_data);
     length_slot.write(new_length);
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn wifi_strict_ieee80211_crypto_encap(
         return ptr::null_mut();
     };
     let key_id_bits = if multicast {
-        crate::net80211_crypto::multicast_key_id_bits(hardware_index)
+        ccmp::multicast_key_id_bits(hardware_index)
     } else {
         0
     };

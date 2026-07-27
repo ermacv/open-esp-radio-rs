@@ -887,7 +887,11 @@ impl PhyPwdetMmioBinding {
                 PhyPwdetCompletion::CalibrationModeConfigured
             }
             PhyPwdetAction::ConfigureTone => {
-                crate::radio_hal::configure_phy_calibration_tone(true, 0x80, 0x50);
+                // Rev0 ROM `phy_pwdet_ref_code+0x1c` calls the original
+                // `phy_start_tx_tone_step(1, 0x80, 0x50, 0, 0, 0)`.
+                // Its measurement invariant requires DAC scale and TX-gain
+                // compensation to remain disabled until `StopTone`.
+                crate::radio_hal::configure_phy_power_control_tone(0x80, 0x50);
                 PhyPwdetCompletion::ToneConfigured
             }
             PhyPwdetAction::WriteReferenceControl { value } => {

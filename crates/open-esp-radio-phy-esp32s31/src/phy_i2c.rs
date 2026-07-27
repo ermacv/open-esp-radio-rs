@@ -88,6 +88,68 @@ impl PhyI2cAddress {
     }
 }
 
+/// Named analog PHY-I2C registers and fields recovered far enough to become
+/// candidates for a future SVD register cluster.
+///
+/// These are not memory-mapped CPU addresses. `block` selects the internal
+/// analog PHY-I2C peripheral and `register` selects its byte register. Names
+/// describe only behavior proved by the rev0 ROM/blob call graph and HIL;
+/// they deliberately avoid unevidenced electrical terminology.
+pub mod analog_registers {
+    use super::PhyI2cAddress;
+
+    /// One byte field within an internal analog PHY-I2C register.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct Field {
+        pub address: PhyI2cAddress,
+        pub high_bit: u8,
+        pub low_bit: u8,
+    }
+
+    impl Field {
+        const fn new(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
+            Self {
+                address,
+                high_bit,
+                low_bit,
+            }
+        }
+    }
+
+    /// Block 0x61, register 9.
+    ///
+    /// `phy_xtal_duty_cal` reads this byte as the cold crystal-duty seed.
+    /// The former TX oracle wrote `0x22`, matching the live vendor seed.
+    pub const XTAL_DUTY_SEED: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x09);
+
+    /// Block 0x61, register 10.
+    ///
+    /// The crystal-duty search writes each candidate here and restores the
+    /// chosen candidate after power measurement.
+    pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x0a);
+
+    /// Block 0x62, register 1: low eight bits of the RFPLL capacitor code.
+    pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x01);
+
+    /// Block 0x62, register 2, bit 6: high bit of the nine-bit RFPLL
+    /// capacitor code. Other bits in this byte have separate RFPLL roles.
+    pub const RFPLL_CAPACITOR_HIGH: Field =
+        Field::new(PhyI2cAddress::new_internal(0x62, 0x02), 6, 6);
+
+    /// Block 0x63, register 6, bits 2:0: low SDM frequency-programming bits.
+    /// Bits 7:3 are preserved by the ROM writer and participate in the
+    /// frequency-command-memory image.
+    pub const RFPLL_SDM_LOW: Field = Field::new(PhyI2cAddress::new_internal(0x63, 0x06), 2, 0);
+
+    /// Block 0x6b, register 2: two TX capacitor banks.
+    ///
+    /// TX-cap calibration searches bits 3:0 and 7:4 independently. Channel
+    /// programming later publishes the selected packed byte.
+    pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 0x02);
+    pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
+    pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
     Busy,

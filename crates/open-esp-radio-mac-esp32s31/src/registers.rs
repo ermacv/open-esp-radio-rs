@@ -45,8 +45,9 @@ pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;
 pub const MAC_INT_RX_SUCCESS: u32 = 0x0000_4000;
 pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
 
-pub const RX_ENABLE: u32 = 0x8000_0000;
-pub const RX_RELOAD: u32 = 0x0000_0001;
+pub const RX_ENABLE: u32 = open_esp_radio_pac_esp32s31::mac::rx_control::WALKER_ENABLE.mask();
+pub const RX_RELOAD: u32 =
+    open_esp_radio_pac_esp32s31::mac::rx_control::APPEND_DESCRIPTOR_RELOAD.mask();
 pub const RX_DESCRIPTOR_HIGH_MASK: u32 = 0xfff0_0000;
 pub const RX_DESCRIPTOR_LOW_MASK: u32 = 0x000f_ffff;
 pub const RX_DESCRIPTOR_HIGH_WINDOW: u32 = 0x2f00_0000;

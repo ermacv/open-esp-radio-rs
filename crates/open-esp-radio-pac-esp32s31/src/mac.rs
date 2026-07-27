@@ -5,19 +5,84 @@
 //! whose field names are not yet proven. Numeric names are intentional there:
 //! they localize MMIO without inventing hardware semantics.
 
-use crate::Register32;
+use crate::{Register32, RegisterAccess};
 
 pub const INT_ENABLE: Register32 = Register32::new(0x2010_4c40);
 pub const INT_RAW: Register32 = Register32::new(0x2010_4c44);
 pub const INT_STATUS: Register32 = Register32::new(0x2010_4c48);
 pub const INT_CLEAR: Register32 = Register32::new(0x2010_4c4c);
 
-pub const RX_CONTROL: Register32 = Register32::new(0x2010_4080);
-pub const RX_DESCRIPTOR_BASE: Register32 = Register32::new(0x2010_4084);
-pub const RX_NEXT_DESCRIPTOR: Register32 = Register32::new(0x2010_4088);
-pub const RX_LAST_DESCRIPTOR: Register32 = Register32::new(0x2010_408c);
+/// RX descriptor-walker control.
+///
+/// SOURCE[BLOB_LIBPP_WDEV_APPEND_RX_BLOCKS,BLOB_LIBHAL_MAC_RX_ENABLE];
+/// bit 31 is the start/stop gate. Bit 0 is a self-clearing reload doorbell for
+/// appending descriptors to a live list; it is not used to publish the first
+/// cold list.
+pub const RX_CONTROL: Register32 =
+    Register32::described(0x2010_4080, RegisterAccess::ReadWrite, None);
+pub mod rx_control {
+    use crate::Field32;
+
+    /// Doorbell used after linking a new chain to a non-empty live RX list.
+    pub const APPEND_DESCRIPTOR_RELOAD: Field32 = Field32::new(0, 1);
+    /// Opens or stops the RX descriptor walker.
+    pub const WALKER_ENABLE: Field32 = Field32::new(31, 1);
+}
+
+/// First RX descriptor address, expressed in the selected high-address window.
+///
+/// The cold `wDev_AppendRxBlocks` path writes this before the later RX-enable
+/// edge. A live-list append normally uses [`rx_control::APPEND_DESCRIPTOR_RELOAD`].
+pub const RX_DESCRIPTOR_BASE: Register32 =
+    Register32::described(0x2010_4084, RegisterAccess::ReadWrite, None);
+/// Current/next descriptor selected by the RX walker; zero denotes no current
+/// descriptor at the observed terminal frontier.
+pub const RX_NEXT_DESCRIPTOR: Register32 =
+    Register32::described(0x2010_4088, RegisterAccess::ReadOnly, None);
+/// Last descriptor accepted by the RX walker.
+pub const RX_LAST_DESCRIPTOR: Register32 =
+    Register32::described(0x2010_408c, RegisterAccess::ReadOnly, None);
 pub const RX_CSI_CONFIG: Register32 = Register32::new(0x2010_4098);
-pub const RX_LAST_DESCRIPTOR_HIGH: Register32 = Register32::new(0x2010_4c70);
+/// High address window shared by RX descriptor pointer registers.
+///
+/// The open driver programs `0x2f00_0000` for internal SRAM descriptors; the
+/// pointer registers carry the low 20 address bits.
+pub const RX_LAST_DESCRIPTOR_HIGH: Register32 =
+    Register32::described(0x2010_4c70, RegisterAccess::ReadWrite, None);
+
+/// Per-interface hardware crypto controls for STA, AP and NAN.
+///
+/// SOURCE[BLOB_LIBPP_HAL_CRYPTO_ENABLE]; the interface number selects one
+/// adjacent word. Higher layers still own the algorithm-specific value.
+pub const CRYPTO_INTERFACE_CONTROL: [Register32; 3] = [
+    Register32::described(0x2010_4800, RegisterAccess::ReadWrite, None),
+    Register32::described(0x2010_4804, RegisterAccess::ReadWrite, None),
+    Register32::described(0x2010_4808, RegisterAccess::ReadWrite, None),
+];
+/// Shared hardware crypto policy mask updated by `hal_crypto_enable`.
+pub const CRYPTO_POLICY_CONTROL: Register32 =
+    Register32::described(0x2010_4810, RegisterAccess::ReadWrite, None);
+/// One validity bit per hardware key-table entry.
+pub const CRYPTO_KEY_VALID_BITMAP: Register32 =
+    Register32::described(0x2010_4814, RegisterAccess::ReadWrite, None);
+
+pub const CRYPTO_KEY_ENTRY_COUNT: u8 = 25;
+pub const CRYPTO_KEY_ENTRY_WORDS: u8 = 10;
+
+/// Resolves one word in the 25-entry, 40-byte hardware key table.
+///
+/// The returned register may contain peer address, key metadata or key bytes;
+/// interpretation belongs to a cipher-specific MAC transaction.
+pub const fn crypto_key_entry_word(index: u8, word: u8) -> Option<Register32> {
+    if index >= CRYPTO_KEY_ENTRY_COUNT || word >= CRYPTO_KEY_ENTRY_WORDS {
+        return None;
+    }
+    Some(Register32::described(
+        0x2010_5800 + index as usize * 40 + word as usize * 4,
+        RegisterAccess::ReadWrite,
+        None,
+    ))
+}
 
 pub const TX_Q0_CONTROL: Register32 = Register32::new(0x2010_4d70);
 pub const TX_Q0_CONFIG: Register32 = Register32::new(0x2010_4d6c);
@@ -78,6 +143,131 @@ pub const TX_Q_LENGTH_CONTROL: [Register32; 4] = [
     Register32::new(0x2010_5418),
     Register32::new(0x2010_539c),
 ];
+
+/// Approximate identities for STA-start/TX registers exercised by the HIL.
+///
+/// SOURCE[HIL_VENDOR_STA_START_DIFF,HIL_OPEN_TX]; values and access widths
+/// are hardware-proven on rev0. Names describe observed software function,
+/// not undocumented electrical implementation. This module is intentionally
+/// suitable as a staging area for later SVD names.
+pub mod sta_tx_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    pub const STATION_ADDRESS_LOW: Register32 =
+        Register32::described(0x2010_4000, RegisterAccess::ReadWrite, None);
+    pub const STATION_ADDRESS_HIGH_CONTROL: Register32 =
+        Register32::described(0x2010_4004, RegisterAccess::ReadWrite, None);
+    pub mod station_address_high_control {
+        use crate::Field32;
+        pub const ADDRESS_HIGH: Field32 = Field32::new(0, 16);
+        /// Vendor STA start asserts this bit together with the interface MAC.
+        pub const ADDRESS_VALID_OR_ENABLE: Field32 = Field32::new(31, 1);
+    }
+
+    /// Two vendor STA-start policy images consumed before the TX queue VALID
+    /// edge. Their constituent bit meanings remain unknown.
+    pub const TX_INTERFACE_POLICY_0: Register32 =
+        Register32::described(0x2010_4038, RegisterAccess::ReadWrite, None);
+    pub const TX_INTERFACE_POLICY_1: Register32 =
+        Register32::described(0x2010_403c, RegisterAccess::ReadWrite, None);
+    pub const TX_SCHEDULER_PARAMETER: Register32 =
+        Register32::described(0x2010_42f4, RegisterAccess::ReadWrite, None);
+    pub const TX_COMMON_STATE_CLEAR: Register32 =
+        Register32::described(0x2010_448c, RegisterAccess::ReadWrite, None);
+
+    pub const TX_COMMON_CONTROL: Register32 =
+        Register32::described(0x2010_4c30, RegisterAccess::ReadWrite, None);
+    pub mod tx_common_control {
+        use crate::Field32;
+        /// Required by the vendor STA-start image before EDCA queue publish.
+        pub const STA_TX_ENABLE: Field32 = Field32::new(4, 1);
+    }
+    pub const TX_COMMON_TIMING_0: Register32 =
+        Register32::described(0x2010_4c54, RegisterAccess::ReadWrite, None);
+    pub const TX_COMMON_TIMING_1: Register32 =
+        Register32::described(0x2010_4c58, RegisterAccess::ReadWrite, None);
+
+    /// Four packed seven-bit path policies observed around STA TX start.
+    /// Working vendor authentication uses `0x7f3f3f7f`; open bring-up
+    /// previously left the low path at `0x3f`.
+    pub const TX_RX_PATH_POLICY_PACKED: Register32 =
+        Register32::described(0x2010_4830, RegisterAccess::ReadWrite, None);
+    pub mod tx_rx_path_policy_packed {
+        use crate::Field32;
+        pub const PATH_0_POLICY: Field32 = Field32::new(0, 7);
+        pub const PATH_1_POLICY: Field32 = Field32::new(8, 7);
+        pub const PATH_2_POLICY: Field32 = Field32::new(16, 7);
+        pub const PATH_3_POLICY: Field32 = Field32::new(24, 7);
+    }
+
+    /// Packed per-rate PHY gain-table indices captured after calibration.
+    ///
+    /// The bytes are gain-memory selectors, not dBm values. The working
+    /// vendor profile caps the input table at 20 dBm in quarter-dBm units,
+    /// then calibration turns that profile into these hardware indices.
+    pub const TX_POWER_COMMAND: [Register32; 14] = [
+        Register32::new(0x2010_4408),
+        Register32::new(0x2010_440c),
+        Register32::new(0x2010_4410),
+        Register32::new(0x2010_4414),
+        Register32::new(0x2010_4418),
+        Register32::new(0x2010_441c),
+        Register32::new(0x2010_4420),
+        Register32::new(0x2010_4424),
+        Register32::new(0x2010_4428),
+        Register32::new(0x2010_442c),
+        Register32::new(0x2010_4430),
+        Register32::new(0x2010_4434),
+        Register32::new(0x2010_4438),
+        Register32::new(0x2010_443c),
+    ];
+    /// Auxiliary enable/policy associated with the packed power commands.
+    ///
+    /// The working STA authentication path reads `0x0104_0000`; replaying it
+    /// together with the vendor command words did not by itself recover ACK.
+    pub const TX_POWER_AUX_CONTROL: Register32 =
+        Register32::described(0x2010_4448, RegisterAccess::ReadWrite, None);
+    /// Scheduler configuration observed as `0x0400_0000` in vendor STA mode.
+    pub const TX_SCHEDULER_ORACLE_0: Register32 =
+        Register32::described(0x2010_4dd4, RegisterAccess::ReadWrite, None);
+    /// Scheduler state/configuration word; its low bits vary while STA runs.
+    pub const TX_SCHEDULER_ORACLE_1: Register32 =
+        Register32::described(0x2010_4dd8, RegisterAccess::ReadWrite, None);
+    /// Scheduler policy/limit word observed as `0x0000_0071` in both paths.
+    ///
+    /// This is not the vendor-only bit-26 word (that is at `0x4dd4`).
+    pub const TX_SCHEDULER_POLICY_OR_LIMIT: Register32 =
+        Register32::described(0x2010_4ddc, RegisterAccess::ReadWrite, None);
+
+    /// Legacy TX-vector fields observed during open-authentication comparison.
+    pub const LEGACY_VECTOR_DURATION: Register32 =
+        Register32::described(0x2010_54dc, RegisterAccess::ReadWrite, None);
+    pub const LEGACY_VECTOR_AUX: Register32 =
+        Register32::described(0x2010_54e4, RegisterAccess::ReadWrite, None);
+
+    /// Local TSF/EDCA scheduler domain initialized after generic `hal_init`.
+    pub const LOCAL_TSF_LOAD_LOW: Register32 =
+        Register32::described(0x2010_d818, RegisterAccess::ReadWrite, None);
+    pub const LOCAL_TSF_LOAD_HIGH: Register32 =
+        Register32::described(0x2010_d81c, RegisterAccess::ReadWrite, None);
+    pub const LOCAL_TSF_CONTROL: Register32 =
+        Register32::described(0x2010_d814, RegisterAccess::ReadWrite, None);
+    pub mod local_tsf_control {
+        use crate::Field32;
+        pub const LOCAL_DOMAIN_ENABLE: Field32 = Field32::new(4, 1);
+    }
+
+    pub const EDCA_SCHEDULER_CONTROL: Register32 =
+        Register32::described(0x2010_d858, RegisterAccess::ReadWrite, None);
+    pub mod edca_scheduler_control {
+        use crate::Field32;
+        /// Vendor STA-start leaves both high scheduler gates asserted.
+        pub const ENABLE_HIGH_27: Field32 = Field32::new(27, 1);
+        pub const ENABLE_HIGH_31: Field32 = Field32::new(31, 1);
+        /// Four-bit mode selected as one by the working STA-start image.
+        pub const MODE: Field32 = Field32::new(19, 4);
+    }
+}
 
 pub const TX_STATE: Register32 = Register32::new(0x2010_4cb4);
 pub const TX_COMPLETE_CLEAR: Register32 = Register32::new(0x2010_4cb8);

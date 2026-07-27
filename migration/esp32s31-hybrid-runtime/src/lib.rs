@@ -54,7 +54,6 @@ mod net80211_align;
 #[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
 mod net80211_align_tx;
 mod net80211_classify;
-mod net80211_crypto;
 #[cfg(all(target_arch = "riscv32", feature = "strict-no-wait"))]
 mod net80211_crypto_tx;
 mod net80211_descriptor;

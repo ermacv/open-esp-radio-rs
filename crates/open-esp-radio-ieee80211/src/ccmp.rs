@@ -1,12 +1,13 @@
 //! Stateless CCMP transmit-header policy recovered from ESP32-S31 net80211.
 //!
-//! Key ownership, ESF pointers, and descriptor validation remain in the
-//! target-specific adapter. This module contains only the finite arithmetic
-//! used by the pinned `ieee80211_crypto_encap` and `ccmp_encap` leaves.
+//! Key ownership, DMA buffers, and hardware publication stay in the
+//! target-specific MAC crate. This module is the live source of truth for the
+//! finite arithmetic formerly retained in
+//! `migration/esp32s31-hybrid-runtime/src/net80211_crypto.rs`.
 
-pub(crate) const CCMP_HEADER_LEN: usize = 8;
+pub const CCMP_HEADER_LEN: usize = 8;
 
-pub(crate) const fn multicast_key_id_bits(hardware_index: u8) -> u8 {
+pub const fn multicast_key_id_bits(hardware_index: u8) -> u8 {
     let logical = if hardware_index <= 1 {
         hardware_index.wrapping_add(1)
     } else {
@@ -15,13 +16,13 @@ pub(crate) const fn multicast_key_id_bits(hardware_index: u8) -> u8 {
     (logical << 6) & 0xc0
 }
 
-pub(crate) const fn advance_vendor_tx_pn(low: u32, high: u32) -> (u32, u32) {
+pub const fn advance_vendor_tx_pn(low: u32, high: u32) -> (u32, u32) {
     let next_low = low.wrapping_add(3);
     let carry = (next_low < low) as u32;
     (next_low, high.wrapping_add(carry))
 }
 
-pub(crate) const fn ccmp_header(low: u32, high: u32, key_id_bits: u8) -> [u8; CCMP_HEADER_LEN] {
+pub const fn ccmp_header(low: u32, high: u32, key_id_bits: u8) -> [u8; CCMP_HEADER_LEN] {
     [
         low as u8,
         (low >> 8) as u8,

@@ -129,7 +129,7 @@ pub struct XtalDutySearchTransition {
 }
 
 impl XtalDutySearchTransition {
-    const DUTY_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x0a);
+    const DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_CANDIDATE;
 
     pub const fn new() -> Self {
         Self {
@@ -998,7 +998,7 @@ pub struct XtalDutyPassTransition {
 
 impl XtalDutyPassTransition {
     const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 7);
-    const DUTY_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x0a);
+    const DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_CANDIDATE;
 
     pub const fn new(
         frequency_code: u16,
@@ -1181,7 +1181,7 @@ pub struct XtalDutyCalibrationTransition {
 }
 
 impl XtalDutyCalibrationTransition {
-    const INITIAL_DUTY_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 9);
+    const INITIAL_DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_SEED;
     const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 7);
 
     pub const fn new(parameter: XtalDutyCalibrationParameters) -> Self {

@@ -14,6 +14,7 @@ The complete pre-cleanup archive remains recoverable from Git commit
 | --- | --- | --- |
 | Cold PHY, PHY-I2C, PBUS, RFPLL, RX DCO/saturation, DC/IQ, frequency, temperature, signal-power, PWDET, XTAL duty, channel transition | `crates/open-esp-radio-phy-esp32s31` | Source-only cold start and channel transitions passed HIL without vendor radio initialization |
 | Passive-scan records, beacon/probe-response parsing, BSS de-duplication and selection | `crates/open-esp-radio-ieee80211/src/scan.rs` (compatibly re-exported as `mac::scan`) | Open RX passive scan passed across 2.4 GHz channels 1–13 |
+| CCMP TX packet-number arithmetic and header encoding | `crates/open-esp-radio-ieee80211/src/ccmp.rs` | Host vectors match the recovered policy; protected WPA2 Message 4 passed twice on hardware with PN 3 and STA pairwise slot 4 |
 
 Those implementations now have one source of truth in the live crates. Code
 remaining here may still name the former `crate::phy_*` or `crate::scan`
@@ -28,7 +29,7 @@ the duplicates.
 | RX and data path above the live descriptor layer | `rx.rs`, `rx_proto.rs`, `rx_ampdu*.rs`, `data_rx.rs`, `data_tx.rs` | live MAC plus a future network-facing crate |
 | 802.11 framing and state | `net80211_*.rs`, `beacon.rs`, `he.rs`, `rate_*.rs` | `open-esp-radio-ieee80211`; Probe Request construction and scan parsing are already live |
 | STA and AP control | `sta_link.rs`, `ap_power_save.rs`, beacon/TBTT and channel state modules | future STA/AP crates over the live MAC |
-| WPA2, EAPOL, CCMP and integrity | `wpa2*.rs`, `net80211_crypto*.rs`, `crypto.rs`, `michael.rs`, `eap.rs` | future security crate with owned keys and buffers |
+| WPA2, EAPOL, remaining CCMP ownership/adapters and integrity | `wpa2*.rs`, `net80211_crypto_tx.rs`, `crypto.rs`, `michael.rs`, `eap.rs` | live WPA2/IEEE80211/MAC crates with owned keys and buffers; pure CCMP PN/header policy is already live |
 | Async/runtime experiments | `runtime.rs`, `task.rs`, `timer.rs`, `event*.rs`, `queue.rs`, `command.rs` | reuse only finite source-owned state machines that fit the live radio owner |
 | Vendor compatibility glue | `adapter.rs`, `osi.rs`, `direct_api.rs`, `static_*.rs`, `handoff.rs` | normally delete; port only finite logic whose hardware invariant is independently established |
 

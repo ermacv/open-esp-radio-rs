@@ -10,11 +10,13 @@ use crate::{
         TX_Q_ENABLE_VALID, TX_Q_LENGTH_CONTROL, TX_Q_PLCP1, TX_Q_POWER, TX_Q_PPDU_CONTROL,
         TX_Q_PROTECTION, TX_Q_PTI, TX_STATE,
     },
+    tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word},
 };
 
 const EXT_ALT_SELECT: u32 = 0x0010_0000;
 const Q0_DESCRIPTOR_ADDRESS_MASK: u32 = 0x000f_ffff;
 const Q0_LEGACY_PLCP0_BASE: u32 = 0x0160_0000;
+const LEGACY_FCS_LENGTH: u16 = 4;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
 ///
@@ -74,10 +76,10 @@ pub enum TxError {
 
 /// Inputs for one finite non-HE q0 attempt.
 ///
-/// `rate` is the recovered S31 legacy-rate index `0..=15`. `signal` is the
-/// low 12-bit legacy PLCP input; for a raw management MPDU this is the low
-/// 12 bits of its first little-endian word. Power values are indices in the
-/// PHY gain table, not dBm.
+/// `rate` is the recovered S31 legacy-rate index `0..=15`. For the direct raw
+/// q0 management path, `signal` is the transmitted `MPDU + FCS` byte length
+/// written to `TX_Q_PLCP1`; it is not a vendor descriptor snapshot. Power
+/// values are indices in the PHY gain table, not dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyTxConfig {
     pub rate: u8,
@@ -93,6 +95,9 @@ pub struct LegacyTxConfig {
     pub pti: u8,
     pub pti_count: u16,
     pub no_ack: bool,
+    /// Low byte of the recovered descriptor control word. Zero is plaintext;
+    /// protected STA pairwise traffic uses its owned hardware key slot.
+    pub hardware_key_selector: u8,
 }
 
 impl LegacyTxConfig {
@@ -112,7 +117,24 @@ impl LegacyTxConfig {
             pti: 1,
             pti_count: 0,
             no_ack: true,
+            hardware_key_selector: 0,
         }
+    }
+
+    /// Builds the direct q0 profile from the owned MPDU length.
+    ///
+    /// Hardware appends the four-byte FCS. For example, a 30-byte open
+    /// authentication MPDU requires PLCP1 `0x22`. The S31 HIL proved that
+    /// replaying the vendor-context value `0x00b6` instead produces TX status
+    /// four and no authentication response.
+    pub const fn management_1m_from_mpdu_length(mpdu_length: u16) -> Option<Self> {
+        let Some(signal) = mpdu_length.checked_add(LEGACY_FCS_LENGTH) else {
+            return None;
+        };
+        if signal > 0x0fff {
+            return None;
+        }
+        Some(Self::management_1m(signal))
     }
 
     const fn valid(self) -> bool {
@@ -151,11 +173,21 @@ pub const fn legacy_q0_image(
             } else {
                 Q0_LEGACY_PLCP0_BASE
             },
-        plcp1: ((config.rate as u32) << 12) | config.signal as u32,
+        plcp1: basic_non_he_plcp1_word(
+            config.rate,
+            0,
+            config.hardware_key_selector,
+            0,
+            config.signal as u32,
+        ),
         power: config.data_power as u32
             | ((config.rts_power_low as u32) << 16)
             | ((config.rts_power_high as u32) << 24),
-        length_control: (1 << 22) | ((config.rts_rate as u32) << 6) | 0x04,
+        length_control: basic_length_control_word(
+            config.rts_rate,
+            1,
+            config.hardware_key_selector as u32,
+        ),
     })
 }
 

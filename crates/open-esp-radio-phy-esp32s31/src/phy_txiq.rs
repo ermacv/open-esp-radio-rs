@@ -13,7 +13,8 @@
 
 use crate::{
     phy_i2c::{
-        MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, PhyI2cAddress,
+        analog_registers, MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition,
+        PhyI2cAddress,
     },
     phy_pbus::PhyPbusForceTest,
     phy_pwdet::sar_signal_reference,
@@ -38,7 +39,7 @@ use crate::{
 pub const PHY_TXIQ_CONTROL_ADDRESS: usize = 0x2010_0c0c;
 pub const PHY_TXIQ_TONE_CONTROL_ADDRESS: usize = 0x2010_041c;
 pub const PHY_TXIQ_TONE_SELECTOR_ADDRESS: usize = 0x2010_0428;
-const TX_CAP_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 2);
+const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
 const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x14);
 const INTERNAL_D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x11);

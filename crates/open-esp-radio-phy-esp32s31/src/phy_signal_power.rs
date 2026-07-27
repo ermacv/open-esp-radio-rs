@@ -20,13 +20,13 @@ pub struct PhySignalPowerRequest {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhySignalPowerAccumulatorSnapshot {
-    /// Signed word at `0x2010_0454`.
+    /// PAC `SIGNAL_POWER_SUM_I`.
     pub sum_i: i32,
-    /// Signed word at `0x2010_0458`.
+    /// PAC `SIGNAL_POWER_DIFFERENCE_I`.
     pub difference_i: i32,
-    /// Signed word at `0x2010_045c`.
+    /// PAC `SIGNAL_POWER_DIFFERENCE_Q`.
     pub difference_q: i32,
-    /// Signed word at `0x2010_0460`.
+    /// PAC `SIGNAL_POWER_SUM_Q`.
     pub sum_q: i32,
 }
 

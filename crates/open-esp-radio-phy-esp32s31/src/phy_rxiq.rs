@@ -2157,10 +2157,13 @@ impl PhyRxIqEstimatorMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxIqEstimatorCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxIqEstimatorCompletion {
         match self.action {
             PhyRxIqEstimatorAction::Configure(request) => {
-                crate::radio_hal::configure_phy_dc_iq_estimator(request.control);
+                crate::phy_dc_iq::configure_target(registers, request.control);
                 PhyRxIqEstimatorCompletion::Configured(request)
             }
             PhyRxIqEstimatorAction::SetEnable {
@@ -2168,7 +2171,7 @@ impl PhyRxIqEstimatorMmioBinding {
                 phase,
                 enabled,
             } => {
-                crate::radio_hal::set_phy_dc_iq_estimator_enable(phase, enabled);
+                crate::phy_dc_iq::set_enable_target(registers, phase, enabled);
                 PhyRxIqEstimatorCompletion::EnableSet {
                     request,
                     phase,
@@ -2178,19 +2181,28 @@ impl PhyRxIqEstimatorMmioBinding {
             PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } => {
                 PhyRxIqEstimatorCompletion::ReadinessObserved {
                     request,
-                    snapshot: crate::radio_hal::sample_phy_dc_iq_readiness(),
+                    snapshot: crate::phy_dc_iq::sample_readiness_target(registers),
                 }
             }
             PhyRxIqEstimatorAction::ReadTotalPower(request) => {
                 PhyRxIqEstimatorCompletion::TotalPowerRead {
                     request,
-                    value: crate::radio_hal::read_phy_rxiq_total_power(),
+                    value: open_esp_radio_hal_esp32s31::phy_iq_estimator::read_total_power(
+                        registers,
+                    ),
                 }
             }
             PhyRxIqEstimatorAction::ReadMismatch(request) => {
+                let snapshot =
+                    open_esp_radio_hal_esp32s31::phy_iq_estimator::read_rxiq_mismatch(registers);
                 PhyRxIqEstimatorCompletion::MismatchRead {
                     request,
-                    snapshot: crate::radio_hal::read_phy_rxiq_mismatch_accumulators(),
+                    snapshot: PhyRxIqMismatchSnapshot {
+                        sum_i: snapshot.sum_i,
+                        difference_i: snapshot.difference_i,
+                        difference_q: snapshot.difference_q,
+                        sum_q: snapshot.sum_q,
+                    },
                 }
             }
             _ => unreachable!(),

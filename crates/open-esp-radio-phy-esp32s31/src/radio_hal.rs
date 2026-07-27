@@ -55,17 +55,6 @@ const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_IQ_EST_CONFIG_ADDRESS: usize = 0x2010_044c;
-const PHY_IQ_EST_CONTROL_ADDRESS: usize = 0x2010_0450;
-const PHY_SIGNAL_POWER_SUM_I_ADDRESS: usize = 0x2010_0454;
-const PHY_SIGNAL_POWER_DIFFERENCE_I_ADDRESS: usize = 0x2010_0458;
-const PHY_SIGNAL_POWER_DIFFERENCE_Q_ADDRESS: usize = 0x2010_045c;
-const PHY_SIGNAL_POWER_SUM_Q_ADDRESS: usize = 0x2010_0460;
-const PHY_IQ_EST_I_ACCUMULATOR_ADDRESS: usize = 0x2010_0464;
-const PHY_IQ_EST_Q_ACCUMULATOR_ADDRESS: usize = 0x2010_0468;
-const PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS: usize = 0x2010_046c;
-const PHY_IQ_EST_READY_ADDRESS: usize = 0x2010_047c;
-const PHY_IQ_EST_ACTIVITY_ADDRESS: usize = 0x2010_08d0;
 const PHY_SDM_CYCLE_COUNTER_ADDRESS: usize = 0x2010_d800;
 const PHY_I2C_CLOCK_SELECTION_0_ADDRESS: usize = 0x2010_f824;
 const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
@@ -95,11 +84,6 @@ const PHY_REGISTER_I2C_MASTER_BUSY_BIT: u32 = 1 << 25;
 const PHY_REGISTER_I2C_MASTER_RESET_BIT: u32 = 1 << 26;
 const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
 const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
-const PHY_IQ_EST_CONTROL_FIELD_MASK: u32 = 0x0001_fffc;
-const PHY_IQ_EST_START_BIT: u32 = 1 << 0;
-const PHY_IQ_EST_MEASUREMENT_BIT: u32 = 1 << 1;
-const PHY_IQ_EST_READY_BIT: u32 = 1 << 16;
-const PHY_IQ_EST_ACTIVITY_MASK: u32 = 0x0030_0000;
 
 const fn with_phy_register_force_txrx(value: u32, enabled: bool, phase: u8) -> u32 {
     let forced = match (enabled, phase) {
@@ -566,27 +550,6 @@ const fn with_phy_tx_gain_compensation_byte2(value: u32) -> u32 {
 
 const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
     value & 0x00ff_ffff
-}
-
-const fn with_phy_iq_est_config(value: u32) -> u32 {
-    (value & !(0x3 << 26)) | (1 << 26)
-}
-
-const fn with_phy_iq_est_mode(value: u32) -> u32 {
-    (value & !(0x3 << 19)) | (1 << 20)
-}
-
-const fn with_phy_iq_est_control(value: u32, control: u16) -> u32 {
-    (value & !PHY_IQ_EST_CONTROL_FIELD_MASK)
-        | ((control as u32).wrapping_shl(2) & PHY_IQ_EST_CONTROL_FIELD_MASK)
-}
-
-const fn with_phy_iq_est_enable(value: u32, bit: u32, enabled: bool) -> u32 {
-    if enabled {
-        value | bit
-    } else {
-        value & !bit
-    }
 }
 
 const fn with_phy_i2c_clock_selection_high(value: u32, selection: u32) -> u32 {
@@ -1328,111 +1291,6 @@ pub(crate) unsafe fn restore_phy_rx_dco_control_field(saved_field: u32) {
     ));
 }
 
-/// Apply the finite register prefix of rev0 ROM `phy_iq_est_enable`.
-///
-/// Reference: `esp32s31_rev0_rom.elf` at `0x2f82_89d4`. The ROM function
-/// performs these three fresh-read transforms before setting either enable
-/// bit. Its write to `phy_param_rom + 0x1ac` is intentionally absent: the
-/// corresponding diagnostic counter is owned by `PhyDcIqEstimateTransition`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_dc_iq_estimator(control_field: u16) {
-    let config = PHY_IQ_EST_CONFIG_ADDRESS as *mut u32;
-    config.write_volatile(with_phy_iq_est_config(config.read_volatile()));
-
-    let control = PHY_IQ_EST_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_iq_est_mode(control.read_volatile()));
-    control.write_volatile(with_phy_iq_est_control(
-        control.read_volatile(),
-        control_field,
-    ));
-}
-
-/// Set or clear exactly one DC/IQ estimator enable bit.
-///
-/// The caller owns ordering and the asynchronous one-microsecond intervals.
-/// This leaf is one finite read/modify/write with no wait or hidden state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_dc_iq_estimator_enable(
-    phase: crate::phy_dc_iq::PhyDcIqEnablePhase,
-    enabled: bool,
-) {
-    let bit = match phase {
-        crate::phy_dc_iq::PhyDcIqEnablePhase::Start => PHY_IQ_EST_START_BIT,
-        crate::phy_dc_iq::PhyDcIqEnablePhase::Measurement => PHY_IQ_EST_MEASUREMENT_BIT,
-    };
-    let control = PHY_IQ_EST_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_iq_est_enable(
-        control.read_volatile(),
-        bit,
-        enabled,
-    ));
-}
-
-/// Sample the estimator-ready and diagnostic-activity fields exactly once.
-///
-/// A false result is only an observation; this leaf never loops, delays, or
-/// requests another sample.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn sample_phy_dc_iq_readiness() -> crate::phy_dc_iq::PhyDcIqReadinessSnapshot {
-    crate::phy_dc_iq::PhyDcIqReadinessSnapshot {
-        ready: (PHY_IQ_EST_READY_ADDRESS as *const u32).read_volatile() & PHY_IQ_EST_READY_BIT != 0,
-        activity: (PHY_IQ_EST_ACTIVITY_ADDRESS as *const u32).read_volatile()
-            & PHY_IQ_EST_ACTIVITY_MASK
-            != 0,
-    }
-}
-
-/// Read the three signed DC/IQ accumulator words exactly once each.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_dc_iq_accumulators() -> crate::phy_dc_iq::PhyDcIqAccumulatorSnapshot {
-    crate::phy_dc_iq::PhyDcIqAccumulatorSnapshot {
-        i: (PHY_IQ_EST_I_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
-        q: (PHY_IQ_EST_Q_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
-        power: (PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS as *const i32).read_volatile(),
-    }
-}
-
-/// Read the single signed total-power word consumed by
-/// `phy_set_rx_gain_cal_iq`.
-///
-/// The parent owns estimator lifetime and shifts the result by seven. This
-/// leaf is one volatile read and has no wait or mutable software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_rxiq_total_power() -> i32 {
-    (PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS as *const i32).read_volatile()
-}
-
-/// Read the four signed IQ words consumed by ROM `phy_rxiq_get_mis`.
-///
-/// Register order is the instruction order at `0x2f82_7aa8`. The arithmetic
-/// and estimator lifetime are Rust-owned by `PhyRxIqEstimatorTransition`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_rxiq_mismatch_accumulators(
-) -> crate::phy_rxiq::PhyRxIqMismatchSnapshot {
-    crate::phy_rxiq::PhyRxIqMismatchSnapshot {
-        sum_i: (PHY_SIGNAL_POWER_SUM_I_ADDRESS as *const i32).read_volatile(),
-        difference_i: (PHY_SIGNAL_POWER_DIFFERENCE_I_ADDRESS as *const i32).read_volatile(),
-        difference_q: (PHY_SIGNAL_POWER_DIFFERENCE_Q_ADDRESS as *const i32).read_volatile(),
-        sum_q: (PHY_SIGNAL_POWER_SUM_Q_ADDRESS as *const i32).read_volatile(),
-    }
-}
-
-/// Read the four signed accumulator words consumed by `phy_get_rx_sig_pwr`.
-///
-/// Reference: complete rev0 ROM body at `0x2f82_9ea2`, offsets
-/// `0x2c..0x4a`. Arithmetic remains in the Rust transition; this leaf is four
-/// ordered volatile reads with no loop, wait, callback, or software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_signal_power_accumulators(
-) -> crate::phy_signal_power::PhySignalPowerAccumulatorSnapshot {
-    crate::phy_signal_power::PhySignalPowerAccumulatorSnapshot {
-        sum_i: (PHY_SIGNAL_POWER_SUM_I_ADDRESS as *const i32).read_volatile(),
-        difference_i: (PHY_SIGNAL_POWER_DIFFERENCE_I_ADDRESS as *const i32).read_volatile(),
-        difference_q: (PHY_SIGNAL_POWER_DIFFERENCE_Q_ADDRESS as *const i32).read_volatile(),
-        sum_q: (PHY_SIGNAL_POWER_SUM_Q_ADDRESS as *const i32).read_volatile(),
-    }
-}
-
 /// Apply the complete rev0 ROM `phy_i2c_clk_sel` register transform.
 ///
 /// The pinned body at `0x2f82_9f1c`, size `0x68`, updates the high field and
@@ -1689,8 +1547,7 @@ mod tests {
         with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_fe_txrx_reset,
         with_phy_front_end_adc_update, with_phy_front_end_update_first,
         with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
-        with_phy_i2c_clock_selection_low, with_phy_iq_est_config, with_phy_iq_est_control,
-        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_force_test, with_phy_rx_clock,
+        with_phy_i2c_clock_selection_low, with_phy_pbus_force_test, with_phy_rx_clock,
         with_phy_rxiq_calibration_mode, with_phy_rxiq_gain, with_phy_rxiq_phase,
         with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin, with_phy_tone_path,
         with_phy_tone_path0_selector, with_phy_tone_path1_selector, with_phy_tx_clock,
@@ -1702,8 +1559,7 @@ mod tests {
         without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_fe_txrx_reset,
         without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
         without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
-        without_tx_queue_valid, PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT,
-        WIFI_MAC_ACTIVE_REGDMA_LINK,
+        without_tx_queue_valid, WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
 
     #[test]
@@ -1899,21 +1755,6 @@ mod tests {
         assert_eq!(with_phy_rxiq_root_correction_begin(u32::MAX), 0xbfff_ffff);
         assert_eq!(with_phy_rxiq_root_aux_begin(0), 0x0000_2000);
         assert_eq!(with_phy_rxiq_root_aux_begin(u32::MAX), 0xffff_bfff);
-    }
-
-    #[test]
-    fn phy_dc_iq_estimator_masks_match_the_complete_rom_prefix() {
-        assert_eq!(with_phy_iq_est_config(0), 0x0400_0000);
-        assert_eq!(with_phy_iq_est_config(u32::MAX), 0xf7ff_ffff);
-        assert_eq!(with_phy_iq_est_mode(0), 0x0010_0000);
-        assert_eq!(with_phy_iq_est_mode(u32::MAX), 0xfff7_ffff);
-        assert_eq!(with_phy_iq_est_control(0, 0x0fa0), 0x0000_3e80);
-        assert_eq!(with_phy_iq_est_control(u32::MAX, 0x0fa0), 0xfffe_3e83);
-        assert_eq!(with_phy_iq_est_enable(0, PHY_IQ_EST_START_BIT, true), 1);
-        assert_eq!(
-            with_phy_iq_est_enable(u32::MAX, PHY_IQ_EST_MEASUREMENT_BIT, false),
-            0xffff_fffd
-        );
     }
 
     #[test]

@@ -2002,7 +2002,7 @@ impl PhyColdMmioBinding {
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(PhyRxDcoAction::DcIq(
                     PhyDcIqAction::Configure(request),
                 ))),
-            )) => crate::radio_hal::configure_phy_dc_iq_estimator(request.control),
+            )) => crate::phy_dc_iq::configure_target(registers, request.control),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(PhyRxDcoAction::DcIq(
                     PhyDcIqAction::SetEnable { phase, enabled, .. },
@@ -2012,7 +2012,7 @@ impl PhyColdMmioBinding {
                 XtalDutyPassAction::Search(XtalDutySearchAction::SignalPower(
                     PhySignalPowerAction::SetEstimatorEnable { phase, enabled, .. },
                 )),
-            )) => crate::radio_hal::set_phy_dc_iq_estimator_enable(phase, enabled),
+            )) => crate::phy_dc_iq::set_enable_target(registers, phase, enabled),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Search(XtalDutySearchAction::SignalPower(
                     PhySignalPowerAction::ConfigureClock { clock, enabled, .. },
@@ -2029,7 +2029,7 @@ impl PhyColdMmioBinding {
                 XtalDutyPassAction::Search(XtalDutySearchAction::SignalPower(
                     PhySignalPowerAction::ConfigureEstimator { control, .. },
                 )),
-            )) => crate::radio_hal::configure_phy_dc_iq_estimator(control),
+            )) => crate::phy_dc_iq::configure_target(registers, control),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigureCalibrationTone {
                     enabled,
@@ -2956,28 +2956,34 @@ impl PhyColdObservationBinding {
                 })
             }
             PhyColdObservationRequest::ObserveDcIqReadiness { request, .. } => {
-                let snapshot = crate::radio_hal::sample_phy_dc_iq_readiness();
+                let snapshot = crate::phy_dc_iq::sample_readiness_target(registers);
                 self.into_completion(PhyColdObservationResult::DcIqReadiness { request, snapshot })
             }
             PhyColdObservationRequest::ReadDcIqAccumulators(request) => {
-                let snapshot = crate::radio_hal::read_phy_dc_iq_accumulators();
+                let snapshot = crate::phy_dc_iq::read_accumulators_target(registers);
                 self.into_completion(PhyColdObservationResult::DcIqAccumulators {
                     request,
                     snapshot,
                 })
             }
             PhyColdObservationRequest::ObserveSignalPowerReadiness { request, .. } => {
-                let snapshot = crate::radio_hal::sample_phy_dc_iq_readiness();
+                let snapshot = crate::phy_dc_iq::sample_readiness_target(registers);
                 self.into_completion(PhyColdObservationResult::SignalPowerReadiness {
                     request,
                     snapshot,
                 })
             }
             PhyColdObservationRequest::ReadSignalPowerAccumulators(request) => {
-                let snapshot = crate::radio_hal::read_phy_signal_power_accumulators();
+                let snapshot =
+                    open_esp_radio_hal_esp32s31::phy_iq_estimator::read_signal_power(registers);
                 self.into_completion(PhyColdObservationResult::SignalPowerAccumulators {
                     request,
-                    snapshot,
+                    snapshot: crate::phy_signal_power::PhySignalPowerAccumulatorSnapshot {
+                        sum_i: snapshot.sum_i,
+                        difference_i: snapshot.difference_i,
+                        difference_q: snapshot.difference_q,
+                        sum_q: snapshot.sum_q,
+                    },
                 })
             }
         }

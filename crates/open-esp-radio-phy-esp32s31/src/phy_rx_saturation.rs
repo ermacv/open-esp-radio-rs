@@ -1,7 +1,7 @@
 //! Event-driven replacement for `phy_check_rx_sat`.
 //!
 //! The pinned archive body performs eleven PBus commands, calls
-//! `ets_delay_us(5)`, then reads `0x2010_08d0[21:20]` exactly 100 times.
+//! `ets_delay_us(5)`, then reads the PAC activity field exactly 100 times.
 //! No dedicated completion interrupt is evidenced in the available S31
 //! PAC/SVD or ROM symbols. Rust therefore retains the required polling as 100
 //! separately completed one-shot samples. The executor may yield or arm an
@@ -12,7 +12,9 @@ use crate::phy_pbus::PhyPbusForceTest;
 
 pub const PHY_RX_SATURATION_DELAY_MICROS: u32 = 5;
 pub const PHY_RX_SATURATION_SAMPLE_COUNT: u8 = 100;
-pub const PHY_RX_SATURATION_STATUS_ADDRESS: usize = 0x2010_08d0;
+pub const PHY_RX_SATURATION_STATUS_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS
+        .address();
 pub const PHY_RX_SATURATION_STATUS_MASK: u32 = 0x0030_0000;
 
 const PHY_RX_SATURATION_PBUS_COUNT: u8 = 11;
@@ -250,11 +252,16 @@ impl PhyRxSaturationSampleBinding {
 
     /// Perform one volatile sample and consume the issued identity.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxSaturationCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxSaturationCompletion {
         PhyRxSaturationCompletion::StatusSampled {
             address: self.address,
             sample_index: self.sample_index,
-            register_value: (self.address as *const u32).read_volatile(),
+            register_value: open_esp_radio_hal_esp32s31::phy_iq_estimator::read_activity_status(
+                registers,
+            ),
         }
     }
 }

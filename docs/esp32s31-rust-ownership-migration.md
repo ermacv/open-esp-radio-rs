@@ -3139,3 +3139,31 @@ including the `0x0808..0x081c`, baseband `0x7400..0x7cd0`, and auxiliary
 `0x20701068` leaves. Shared IQ, TX-gain compensation, and front-end identities
 remain valid transitional raw consumers until every operation on those
 physical words moves together.
+
+## Owned IQ estimator and RX-saturation activity
+
+SVD v1.0 and the generated PAC now own the complete DC/IQ estimator slice:
+configuration, control, signal-power results, DC/power accumulators, ready
+status, and the activity word shared by `phy_iq_est_enable` and
+`phy_check_rx_sat`. Complete rev0 ROM bodies and complete pinned
+`libphy.a[phy_rx_cal.o]::phy_check_rx_sat` provide the addresses, masks,
+signed consumers, branch meaning and access counts.
+
+The new safe `phy_iq_estimator` HAL requires `&mut RadioRegisters` for every
+setup, enable and sample edge. DC/IQ, RXIQ, signal-power and cold-PHY
+bindings pass their existing unique borrow through to it. The RX-saturation
+sample token also receives the borrow and reads the same PAC activity
+identity; it can no longer manufacture a volatile pointer from its diagnostic
+address.
+
+Exact access order is now part of the host model. Complete
+`phy_rxiq_get_mis` reads sum-I, sum-Q, difference-Q, difference-I, while
+complete `phy_get_rx_sig_pwr` reads sum-I, sum-Q, difference-I, difference-Q.
+The former raw wrapper's semantic struct field order did not match either
+hardware sequence. Separate safe HAL methods now preserve both instruction
+orders and return the same correctly associated Rust fields.
+
+The raw estimator constants, mask helpers, volatile leaves and their
+duplicate tests were deleted from `radio_hal.rs`. The source audit rejects
+their names and the localized `0x044c..0x047c` plus `0x08d0` addresses from
+the live PHY crate.

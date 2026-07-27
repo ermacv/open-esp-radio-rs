@@ -33,9 +33,9 @@ pub struct PhyDcIqAccumulatorSnapshot {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyDcIqReadinessSnapshot {
-    /// Bit 16 of `0x2010_047c`.
+    /// PAC `ESTIMATOR_READY_STATUS.READY`.
     pub ready: bool,
-    /// Whether bits 21:20 of `0x2010_08d0` are nonzero.
+    /// Whether PAC `ESTIMATOR_ACTIVITY_STATUS.ACTIVITY_UNKNOWN` is nonzero.
     pub activity: bool,
 }
 
@@ -67,6 +67,56 @@ pub enum PhyDcIqFailure {
 pub enum PhyDcIqEnablePhase {
     Start,
     Measurement,
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn configure_target(
+    registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    control: u16,
+) {
+    open_esp_radio_hal_esp32s31::phy_iq_estimator::configure(registers, control);
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn set_enable_target(
+    registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    phase: PhyDcIqEnablePhase,
+    enabled: bool,
+) {
+    match phase {
+        PhyDcIqEnablePhase::Start => {
+            open_esp_radio_hal_esp32s31::phy_iq_estimator::set_start_enabled(registers, enabled);
+        }
+        PhyDcIqEnablePhase::Measurement => {
+            open_esp_radio_hal_esp32s31::phy_iq_estimator::set_measurement_enabled(
+                registers, enabled,
+            );
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn sample_readiness_target(
+    registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+) -> PhyDcIqReadinessSnapshot {
+    let snapshot = open_esp_radio_hal_esp32s31::phy_iq_estimator::sample_readiness(registers);
+    PhyDcIqReadinessSnapshot {
+        ready: snapshot.ready,
+        activity: snapshot.activity,
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn read_accumulators_target(
+    registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+) -> PhyDcIqAccumulatorSnapshot {
+    let snapshot =
+        open_esp_radio_hal_esp32s31::phy_iq_estimator::read_dc_iq_accumulators(registers);
+    PhyDcIqAccumulatorSnapshot {
+        i: snapshot.i,
+        q: snapshot.q,
+        power: snapshot.power,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -407,10 +457,13 @@ impl PhyDcIqMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyDcIqCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyDcIqCompletion {
         match self.action {
             PhyDcIqAction::Configure(request) => {
-                crate::radio_hal::configure_phy_dc_iq_estimator(request.control);
+                configure_target(registers, request.control);
                 PhyDcIqCompletion::Configured(request)
             }
             PhyDcIqAction::SetEnable {
@@ -418,7 +471,7 @@ impl PhyDcIqMmioBinding {
                 phase,
                 enabled,
             } => {
-                crate::radio_hal::set_phy_dc_iq_estimator_enable(phase, enabled);
+                set_enable_target(registers, phase, enabled);
                 PhyDcIqCompletion::EnableSet {
                     request,
                     phase,
@@ -428,12 +481,12 @@ impl PhyDcIqMmioBinding {
             PhyDcIqAction::AwaitReadinessEdge { request, .. } => {
                 PhyDcIqCompletion::ReadinessObserved {
                     request,
-                    snapshot: crate::radio_hal::sample_phy_dc_iq_readiness(),
+                    snapshot: sample_readiness_target(registers),
                 }
             }
             PhyDcIqAction::ReadAccumulators(request) => PhyDcIqCompletion::AccumulatorsRead {
                 request,
-                snapshot: crate::radio_hal::read_phy_dc_iq_accumulators(),
+                snapshot: read_accumulators_target(registers),
             },
             _ => unreachable!(),
         }

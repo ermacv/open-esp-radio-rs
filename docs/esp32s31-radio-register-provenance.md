@@ -327,6 +327,40 @@ support the conservative naming policy, not cross-chip field names:
 instruction-proven roles are named, and unresolved electrical meanings remain
 `UNKNOWN`.
 
+## IQ estimator and shared activity PAC
+
+SVD v1.0 adds the eleven-register `PHY_IQ_ESTIMATOR_ORACLE` block. It owns
+the DC/IQ configuration and control words, four signal-power results, three
+DC/power accumulators, readiness status, and the activity word shared with
+RX-saturation sampling.
+
+The register and field sources are complete pinned artifacts:
+
+- rev0 ROM ELF SHA-256
+  `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+  including complete `phy_iq_est_enable` (`0x2f8289d4`, size `0xb4`),
+  `phy_iq_est_disable` (`0x2f828a88`, size `0x2c`), `phy_dc_iq_est`
+  (`0x2f828ab4`, size `0x84`), `phy_rxiq_get_mis` (`0x2f828b84`, size
+  `0x13e`), `phy_set_rx_gain_cal_iq` (`0x2f82964c`, size `0x20c`), and
+  `phy_get_rx_sig_pwr` (`0x2f829ea2`, size `0x76`);
+- pinned `libphy.a` SHA-256
+  `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+  including complete `phy_rx_cal.o::phy_check_rx_sat`, size `0x76`.
+
+The safe `phy_iq_estimator` HAL retains the three setup reads, independent
+start/measurement enable edges, and all signed result reads. The two
+four-word consumers deliberately have different methods because their
+complete ROM bodies have different physical read orders:
+`phy_rxiq_get_mis` reads sum-I, sum-Q, difference-Q, difference-I, whereas
+`phy_get_rx_sig_pwr` reads sum-I, sum-Q, difference-I, difference-Q. The old
+raw struct-construction order did not preserve either sequence even though
+the resulting field association was correct for stable registers.
+
+The activity register has one PAC identity for both uses. Estimator
+readiness samples and every one-shot `phy_check_rx_sat` sample now require
+the caller's unique `&mut RadioRegisters` capability. The transition still
+owns the bounded 100-sample policy; the HAL performs exactly one finite read.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

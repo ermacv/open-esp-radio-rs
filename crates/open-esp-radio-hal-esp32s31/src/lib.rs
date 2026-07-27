@@ -13,6 +13,7 @@ pub mod phy_agc;
 pub mod phy_baseband;
 pub mod phy_frequency;
 pub mod phy_i2c;
+pub mod phy_iq_estimator;
 pub mod phy_memory;
 pub mod phy_power_detector;
 pub mod power;

@@ -3450,6 +3450,150 @@ pub mod phy_power_detector_aux_oracle {
     }
 }
 
+/// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
+/// CONFIDENCE[instruction-exact-semantics-partial]. DC/IQ estimator configuration, signed
+/// result and activity registers recovered from complete S31 rev0 ROM bodies and the complete
+/// pinned phy_check_rx_sat blob leaf. Unknown electrical roles remain explicit.
+pub mod phy_iq_estimator_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address. SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. DC/IQ estimator configuration, signed
+    /// result and activity registers recovered from complete S31 rev0 ROM bodies and the
+    /// complete pinned phy_check_rx_sat blob leaf. Unknown electrical roles remain explicit.
+    pub const BASE: usize = 0x20100000;
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown].
+    /// Complete phy_iq_est_enable replaces bits 27:26 with encoding one before each
+    /// measurement.
+    pub const ESTIMATOR_CONFIG: Register32 =
+        Register32::described(0x2010044c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`ESTIMATOR_CONFIG`]. SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_iq_est_enable replaces
+    /// bits 27:26 with encoding one before each measurement.
+    pub mod estimator_config {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Two-bit field set to encoding one by phy_iq_est_enable.
+        pub const CONFIG_MODE_UNKNOWN: Field32 = Field32::new(26, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-partial].
+    /// Complete phy_iq_est_enable publishes the caller control word and starts both measurement
+    /// phases; complete phy_iq_est_disable clears them in reverse order around a
+    /// one-microsecond delay.
+    pub const ESTIMATOR_CONTROL: Register32 =
+        Register32::described(0x20100450, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`ESTIMATOR_CONTROL`]. SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_iq_est_enable publishes
+    /// the caller control word and starts both measurement phases; complete phy_iq_est_disable
+    /// clears them in reverse order around a one-microsecond delay.
+    pub mod estimator_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_iq_est_enable
+        /// publishes the caller control word and starts both measurement phases; complete
+        /// phy_iq_est_disable clears them in reverse order around a one-microsecond delay.
+        pub const START_ENABLE: Field32 = Field32::new(0, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_iq_est_enable
+        /// publishes the caller control word and starts both measurement phases; complete
+        /// phy_iq_est_disable clears them in reverse order around a one-microsecond delay.
+        pub const MEASUREMENT_ENABLE: Field32 = Field32::new(1, 1);
+        /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Fifteen-bit caller value shifted left by two.
+        pub const CONTROL_WINDOW_UNKNOWN: Field32 = Field32::new(2, 15);
+        /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_iq_est_enable replaces the field with encoding two.
+        pub const MODE_UNKNOWN: Field32 = Field32::new(19, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-consumers]. Signed result consumed by
+    /// complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.
+    pub const SIGNAL_POWER_SUM_I: Register32 =
+        Register32::described(0x20100454, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-consumers]. Signed result consumed by
+    /// complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.
+    pub const SIGNAL_POWER_DIFFERENCE_I: Register32 =
+        Register32::described(0x20100458, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-consumers]. Signed result consumed by
+    /// complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.
+    pub const SIGNAL_POWER_DIFFERENCE_Q: Register32 =
+        Register32::described(0x2010045c, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-consumers]. Signed result consumed by
+    /// complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.
+    pub const SIGNAL_POWER_SUM_Q: Register32 =
+        Register32::described(0x20100460, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-symbol]. First signed accumulator read
+    /// by complete phy_dc_iq_est.
+    pub const DC_I_ACCUMULATOR: Register32 =
+        Register32::described(0x20100464, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-symbol]. Second signed accumulator read
+    /// by complete phy_dc_iq_est.
+    pub const DC_Q_ACCUMULATOR: Register32 =
+        Register32::described(0x20100468, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-signed-result-from-consumers]. Signed power accumulator
+    /// consumed by complete phy_dc_iq_est, phy_rxiq_get_mis and phy_set_rx_gain_cal_iq.
+    pub const POWER_ACCUMULATOR: Register32 =
+        Register32::described(0x2010046c, RegisterAccess::ReadOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-control-flow]. Complete phy_iq_est_enable
+    /// tests bit 16 before leaving its readiness loop.
+    pub const ESTIMATOR_READY_STATUS: Register32 =
+        Register32::described(0x2010047c, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`ESTIMATOR_READY_STATUS`]. SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-control-flow]. Complete phy_iq_est_enable
+    /// tests bit 16 before leaving its readiness loop.
+    pub mod estimator_ready_status {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR];
+        /// CONFIDENCE[instruction-exact-semantics-from-control-flow]. Complete
+        /// phy_iq_est_enable tests bit 16 before leaving its readiness loop.
+        pub const READY: Field32 = Field32::new(16, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_iq_est_enable counts
+    /// nonzero bits 21:20 while waiting; complete phy_check_rx_sat samples the same field
+    /// exactly 100 times.
+    pub const ESTIMATOR_ACTIVITY_STATUS: Register32 =
+        Register32::described(0x201008d0, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`ESTIMATOR_ACTIVITY_STATUS`].
+    /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_iq_est_enable counts
+    /// nonzero bits 21:20 while waiting; complete phy_check_rx_sat samples the same field
+    /// exactly 100 times.
+    pub mod estimator_activity_status {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Nonzero is treated as IQ-estimator
+        /// activity and as an RX-saturation sample.
+        pub const ACTIVITY_UNKNOWN: Field32 = Field32::new(20, 2);
+    }
+}
+
 ///
 /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers recovered
@@ -3523,7 +3667,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 193] = [
+pub const ALL: [Register32; 204] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -3713,6 +3857,17 @@ pub const ALL: [Register32; 193] = [
     phy_baseband_config_oracle::BASEBAND_INIT_7CA8,
     phy_baseband_config_oracle::BASEBAND_INIT_7CD0,
     phy_power_detector_aux_oracle::AUX_MODE_CONTROL,
+    phy_iq_estimator_oracle::ESTIMATOR_CONFIG,
+    phy_iq_estimator_oracle::ESTIMATOR_CONTROL,
+    phy_iq_estimator_oracle::SIGNAL_POWER_SUM_I,
+    phy_iq_estimator_oracle::SIGNAL_POWER_DIFFERENCE_I,
+    phy_iq_estimator_oracle::SIGNAL_POWER_DIFFERENCE_Q,
+    phy_iq_estimator_oracle::SIGNAL_POWER_SUM_Q,
+    phy_iq_estimator_oracle::DC_I_ACCUMULATOR,
+    phy_iq_estimator_oracle::DC_Q_ACCUMULATOR,
+    phy_iq_estimator_oracle::POWER_ACCUMULATOR,
+    phy_iq_estimator_oracle::ESTIMATOR_READY_STATUS,
+    phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS,
     phy_clock_oracle::FE_CLOCK_GATE_OPAQUE,
     phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,

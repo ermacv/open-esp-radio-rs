@@ -361,6 +361,38 @@ readiness samples and every one-shot `phy_check_rx_sat` sample now require
 the caller's unique `&mut RadioRegisters` capability. The transition still
 owns the bounded 100-sample policy; the HAL performs exactly one finite read.
 
+## Temperature-sensor PAC
+
+SVD v1.1 adds the two-register `PHY_TEMPERATURE_SENSOR_ORACLE` aperture and
+the independently addressed `PHY_TEMPERATURE_SYSTEM_ORACLE` control word.
+The shared `SENSOR_CODE_POWER` identity is deliberately one register: its
+low byte is the unsigned sensor code, while bit 22 is the power field.
+
+The instruction sources are the same pinned artifacts used by the live cold
+initializer:
+
+- `libphy.a` SHA-256
+  `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+  including complete `phy_tsens.o::phy_tsens_read_init`, size `0x36`, and
+  its complete `phy_set_tsens_power`, size `0x1c`;
+- rev0 ROM ELF SHA-256
+  `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+  including complete `phy_set_tsens_power_` (`0x2f825dc8`, size `0x1c`),
+  `phy_tsens_code_read` (`0x2f825ee0`, size `0x0c`), and
+  `phy_tsens_temp_read_local` (`0x2f825f1e`, size `0x5e`).
+
+The safe `phy_temperature::initialize` HAL method retains all five separate
+fresh-read updates: sensor-control bit 0, system-control bit 30,
+sensor-control bit 23, sensor-control bit 9, then power bit 22. The field
+names for the three read-control bits and the system bit remain `UNKNOWN`
+because the bodies prove masks and order, not their electrical roles.
+
+Temperature sampling is now a semantic, address-free PHY action. Its
+non-cloneable binding requires `&mut RadioRegisters`, and the HAL extracts
+the PAC `CODE` field from exactly one read. The former raw addresses, mask,
+volatile wrappers, and duplicated power-field test are removed. The
+source-only audit rejects their return.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

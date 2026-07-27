@@ -14,9 +14,6 @@
 
 use crate::phy_i2c::PhyI2cAddress;
 
-pub const PHY_TEMPERATURE_CODE_ADDRESS: usize = 0x2081_8000;
-pub const PHY_TEMPERATURE_CODE_MASK: u32 = 0xff;
-
 const SENSOR_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x69, 0);
 
 #[derive(Clone, Copy)]
@@ -80,10 +77,7 @@ pub enum PhyTemperatureAction {
         high_bit: u8,
         low_bit: u8,
     },
-    SampleCode {
-        address: usize,
-        mask: u32,
-    },
+    SampleCode,
     WriteMasked {
         address: PhyI2cAddress,
         high_bit: u8,
@@ -103,8 +97,7 @@ pub enum PhyTemperatureCompletion {
         value: u8,
     },
     CodeSampled {
-        address: usize,
-        value: u32,
+        value: u8,
     },
     MaskedWrite {
         address: PhyI2cAddress,
@@ -200,10 +193,7 @@ impl PhyTemperatureTransition {
                 high_bit: 6,
                 low_bit: 0,
             },
-            PhyTemperatureStep::SampleCode { .. } => PhyTemperatureAction::SampleCode {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-                mask: PHY_TEMPERATURE_CODE_MASK,
-            },
+            PhyTemperatureStep::SampleCode { .. } => PhyTemperatureAction::SampleCode,
             PhyTemperatureStep::WriteDac { outcome } => PhyTemperatureAction::WriteMasked {
                 address: SENSOR_ADDRESS,
                 high_bit: 3,
@@ -234,16 +224,10 @@ impl PhyTemperatureTransition {
             },
             (
                 PhyTemperatureStep::SampleCode { sensor_index },
-                PhyTemperatureCompletion::CodeSampled {
-                    address: PHY_TEMPERATURE_CODE_ADDRESS,
-                    value,
-                },
+                PhyTemperatureCompletion::CodeSampled { value },
             ) => {
                 let current = attribute(sensor_index);
-                let temperature = temperature_from_code(
-                    (value & PHY_TEMPERATURE_CODE_MASK) as u8,
-                    current.calibration,
-                );
+                let temperature = temperature_from_code(value, current.calibration);
                 let next_dac = selected_dac(temperature, current);
                 let outcome = PhyTemperatureOutcome {
                     temperature,
@@ -414,31 +398,24 @@ impl PhyTemperatureI2cBinding {
 /// Non-cloneable token for the single MMIO temperature-code sample.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyTemperatureSampleBinding {
-    address: usize,
+    _private: (),
 }
 
 impl PhyTemperatureSampleBinding {
     pub fn new(action: PhyTemperatureAction) -> Result<Self, PhyTemperatureBindingError> {
         match action {
-            PhyTemperatureAction::SampleCode {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-                mask: PHY_TEMPERATURE_CODE_MASK,
-            } => Ok(Self {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-            }),
+            PhyTemperatureAction::SampleCode => Ok(Self { _private: () }),
             _ => Err(PhyTemperatureBindingError::UnsupportedAction),
         }
     }
 
-    pub const fn address(&self) -> usize {
-        self.address
-    }
-
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTemperatureCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTemperatureCompletion {
         PhyTemperatureCompletion::CodeSampled {
-            address: self.address,
-            value: (self.address as *const u32).read_volatile(),
+            value: open_esp_radio_hal_esp32s31::phy_temperature::read_code(registers),
         }
     }
 }
@@ -501,14 +478,7 @@ mod binding_tests {
 
     #[test]
     fn code_sample_binding_rejects_terminal_and_i2c_actions() {
-        let sample = PhyTemperatureAction::SampleCode {
-            address: PHY_TEMPERATURE_CODE_ADDRESS,
-            mask: PHY_TEMPERATURE_CODE_MASK,
-        };
-        assert_eq!(
-            PhyTemperatureSampleBinding::new(sample).unwrap().address(),
-            PHY_TEMPERATURE_CODE_ADDRESS
-        );
+        assert!(PhyTemperatureSampleBinding::new(PhyTemperatureAction::SampleCode).is_ok());
         assert_eq!(
             PhyTemperatureSampleBinding::new(PhyTemperatureTransition::new().action()),
             Err(PhyTemperatureBindingError::UnsupportedAction)
@@ -522,10 +492,7 @@ mod binding_tests {
             Ok(PhyTemperatureExternalBinding::I2c(_))
         ));
         assert!(matches!(
-            PhyTemperatureExternalBinding::lower(PhyTemperatureAction::SampleCode {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-                mask: PHY_TEMPERATURE_CODE_MASK,
-            }),
+            PhyTemperatureExternalBinding::lower(PhyTemperatureAction::SampleCode),
             Ok(PhyTemperatureExternalBinding::Sample(_))
         ));
     }
@@ -536,8 +503,7 @@ mod tests {
     use super::{
         temperature_from_code, PhyTemperatureAction, PhyTemperatureCompletion,
         PhyTemperatureFailure, PhyTemperatureOutcome, PhyTemperatureTransition,
-        PhyTemperatureTransitionError, PHY_TEMPERATURE_CODE_ADDRESS, PHY_TEMPERATURE_CODE_MASK,
-        SENSOR_ADDRESS,
+        PhyTemperatureTransitionError, SENSOR_ADDRESS,
     };
 
     fn complete_dac_read(transition: &mut PhyTemperatureTransition, dac: u8) {
@@ -556,13 +522,7 @@ mod tests {
         for dac in [5, 7, 15, 11, 10] {
             let mut transition = PhyTemperatureTransition::new();
             complete_dac_read(&mut transition, dac);
-            assert_eq!(
-                transition.action(),
-                PhyTemperatureAction::SampleCode {
-                    address: PHY_TEMPERATURE_CODE_ADDRESS,
-                    mask: PHY_TEMPERATURE_CODE_MASK,
-                }
-            );
+            assert_eq!(transition.action(), PhyTemperatureAction::SampleCode);
         }
     }
 
@@ -572,10 +532,7 @@ mod tests {
         let mut transition = PhyTemperatureTransition::new();
         complete_dac_read(&mut transition, 5);
         transition
-            .advance(PhyTemperatureCompletion::CodeSampled {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-                value: 128,
-            })
+            .advance(PhyTemperatureCompletion::CodeSampled { value: 128 })
             .unwrap();
         assert_eq!(
             transition.action(),
@@ -592,10 +549,7 @@ mod tests {
         let mut transition = PhyTemperatureTransition::new();
         complete_dac_read(&mut transition, 15);
         transition
-            .advance(PhyTemperatureCompletion::CodeSampled {
-                address: PHY_TEMPERATURE_CODE_ADDRESS,
-                value: 255,
-            })
+            .advance(PhyTemperatureCompletion::CodeSampled { value: 255 })
             .unwrap();
         assert_eq!(
             transition.action(),
@@ -644,12 +598,14 @@ mod tests {
     }
 
     #[test]
-    fn sample_completion_is_bound_to_the_exact_mmio_address() {
+    fn sample_step_rejects_a_non_sample_completion() {
         let mut transition = PhyTemperatureTransition::new();
         complete_dac_read(&mut transition, 5);
         assert_eq!(
-            transition.advance(PhyTemperatureCompletion::CodeSampled {
-                address: PHY_TEMPERATURE_CODE_ADDRESS + 4,
+            transition.advance(PhyTemperatureCompletion::MaskedRead {
+                address: SENSOR_ADDRESS,
+                high_bit: 6,
+                low_bit: 0,
                 value: 128,
             }),
             Err(PhyTemperatureTransitionError::WrongCompletion)

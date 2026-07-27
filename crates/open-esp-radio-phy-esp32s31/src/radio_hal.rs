@@ -70,9 +70,6 @@ const PHY_FE_CONTROL_0894_ADDRESS: usize = 0x2010_0894;
 const PHY_FE_CONTROL_0C08_ADDRESS: usize = 0x2010_0c08;
 const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
 const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
-const PHY_TEMPERATURE_SENSOR_POWER_ADDRESS: usize = 0x2081_8000;
-const PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS: usize = 0x2081_8018;
-const PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS: usize = 0x2071_0030;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
 const PHY_REGISTER_FORCE_TXRX_ADDRESS: usize = 0x2010_0890;
@@ -973,16 +970,6 @@ pub(crate) unsafe fn read_phy_pbus_rx_dco_value() -> u16 {
     phy_pbus_rx_dco_read_value((PHY_PBUS_RX_DCO_READ_ADDRESS as *const u32).read_volatile())
 }
 
-/// Sample the temperature-sensor code exactly once.
-///
-/// Readiness and PHY-I2C range selection belong to the caller-driven
-/// temperature transition. This leaf has no loop, delay, or hidden state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_temperature_code() -> u32 {
-    (crate::phy_temperature::PHY_TEMPERATURE_CODE_ADDRESS as *const u32).read_volatile()
-        & crate::phy_temperature::PHY_TEMPERATURE_CODE_MASK
-}
-
 /// Sample the free-running counter used by the ROM SDM-stability deadline.
 ///
 /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f82_3e76` samples
@@ -1405,25 +1392,6 @@ pub(crate) unsafe fn configure_phy_front_end_update() {
     adc.write_volatile(with_phy_front_end_adc_update(adc.read_volatile()));
 }
 
-/// Apply complete vendor `phy_tsens_read_init` and its ROM tail leaf.
-///
-/// The pinned 0x36-byte archive body ignores both ABI arguments, performs
-/// four MMIO writes, forces power argument one, and tail-calls the complete
-/// 0x1c-byte ROM `phy_set_tsens_power_` body. Rust therefore needs no
-/// `phy_param[0x16]` input.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_temperature_sensor_read() {
-    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0000_0001);
-    set_register_bits(PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS, 0x4000_0000);
-    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0080_0000);
-    set_register_bits(PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS, 0x0000_0200);
-    replace_register_field(
-        PHY_TEMPERATURE_SENSOR_POWER_ADDRESS,
-        0x0040_0000,
-        0x0040_0000,
-    );
-}
-
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn arm_phy_power_detector_tone() {
@@ -1810,18 +1778,6 @@ mod tests {
         assert_eq!(first, 0x8300_4000);
         assert_eq!(second, 0x8700_4000);
         assert_eq!(with_phy_front_end_adc_update(0xa5a5_0100), 0xa5a5_0103);
-    }
-
-    #[test]
-    fn phy_temperature_sensor_power_forces_the_instruction_proven_constant() {
-        assert_eq!(
-            with_register_field(0, 0x0040_0000, 0x0040_0000),
-            0x0040_0000
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x0040_0000, 0x0040_0000),
-            u32::MAX
-        );
     }
 
     #[test]

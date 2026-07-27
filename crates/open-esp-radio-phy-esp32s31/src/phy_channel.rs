@@ -1209,11 +1209,8 @@ mod tests {
                 low_bit,
                 value: 15,
             },
-            PhyTemperatureAction::SampleCode { address, .. } => {
-                PhyTemperatureCompletion::CodeSampled {
-                    address,
-                    value: 128,
-                }
+            PhyTemperatureAction::SampleCode => {
+                PhyTemperatureCompletion::CodeSampled { value: 128 }
             }
             PhyTemperatureAction::WriteMasked {
                 address,

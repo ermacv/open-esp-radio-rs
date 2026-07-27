@@ -1929,7 +1929,7 @@ impl PhyColdMmioBinding {
                 crate::radio_hal::configure_phy_front_end_registers(registers)
             }
             PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                crate::radio_hal::configure_phy_temperature_sensor_read()
+                open_esp_radio_hal_esp32s31::phy_temperature::initialize(registers)
             }
             PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
                 open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(registers)

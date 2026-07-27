@@ -3167,3 +3167,26 @@ The raw estimator constants, mask helpers, volatile leaves and their
 duplicate tests were deleted from `radio_hal.rs`. The source audit rejects
 their names and the localized `0x044c..0x047c` plus `0x08d0` addresses from
 the live PHY crate.
+
+## Owned temperature-sensor MMIO
+
+SVD v1.1 and the generated PAC now own all three physical words used by
+temperature initialization and sampling. Complete pinned
+`libphy.a[phy_tsens.o]::phy_tsens_read_init` and `phy_set_tsens_power`,
+together with complete rev0 ROM `phy_set_tsens_power_`,
+`phy_tsens_code_read`, and `phy_tsens_temp_read_local`, prove the addresses,
+fields, operation order, and low-byte result. Their exact artifact hashes,
+symbol addresses, and sizes are recorded in the register-provenance ledger.
+
+The safe `phy_temperature` HAL preserves the five independent initialization
+reads and writes, then exposes one finite code sample. The shared code/power
+word has one PAC identity with disjoint fields rather than competing raw
+aliases. Unknown control-bit roles stay explicitly `UNKNOWN`.
+
+`PhyTemperatureAction::SampleCode` no longer carries a numeric MMIO address
+or mask. Its non-cloneable target binding consumes the semantic action and
+requires the caller's `&mut RadioRegisters` borrow before it can produce
+`CodeSampled { value: u8 }`. Cold initialization uses that same borrow for
+sensor setup. The old raw constants, no-owner volatile methods, and duplicate
+mask test are deleted; the source audit rejects all three physical addresses
+and the removed wrapper names.

@@ -82,7 +82,9 @@ The corresponding HAL is split by hardware ownership:
 Every public operation documents both its S31 register-layout source and the
 complete ROM/blob body used for operation order. The cold PHY binding accepts
 `&mut RadioRegisters` borrowed from `Radio<P, Powered>` and uses these HAL
-methods for the newly recovered regions.
+methods for the newly recovered regions. Reusable RFPLL, RXIQ/TXIQ, DCO,
+gain, temperature, saturation, power and power-detector target bindings use
+the same borrow; no raw-owner PHY-I2C or PBus force-test leaf remains.
 
 ## Cross-chip comparison
 

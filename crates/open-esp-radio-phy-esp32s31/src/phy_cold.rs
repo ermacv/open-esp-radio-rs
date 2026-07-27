@@ -1150,15 +1150,15 @@ impl PhyColdI2cTransaction {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), PhyColdI2cError> {
+    pub fn start_target(&mut self, registers: &mut RadioRegisters) -> Result<(), PhyColdI2cError> {
         match self.action() {
             PhyColdI2cAction::StartRead { address } => {
-                unsafe { crate::phy_i2c::try_start_read_unowned(address) }
+                crate::phy_i2c::try_start_read(registers, address)
                     .map_err(|PhyI2cError::Busy| PhyColdI2cError::BusyAtStart)?;
                 self.read_started()
             }
             PhyColdI2cAction::StartWrite { address, value } => {
-                unsafe { crate::phy_i2c::try_start_write_unowned(address, value) }
+                crate::phy_i2c::try_start_write(registers, address, value)
                     .map_err(|PhyI2cError::Busy| PhyColdI2cError::BusyAtStart)?;
                 self.write_started()
             }
@@ -1169,12 +1169,17 @@ impl PhyColdI2cTransaction {
 
     /// Consume exactly one independently delivered target completion edge.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(&mut self) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
+    pub fn observe_target_edge(
+        &mut self,
+        registers: &RadioRegisters,
+    ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
         match self.action() {
-            PhyColdI2cAction::AwaitReadCompletionEdge { address } => self
-                .observe_read_result(unsafe { crate::phy_i2c::try_finish_read_unowned(address) }),
-            PhyColdI2cAction::AwaitWriteCompletionEdge { address } => self
-                .observe_write_result(unsafe { crate::phy_i2c::try_finish_write_unowned(address) }),
+            PhyColdI2cAction::AwaitReadCompletionEdge { address } => {
+                self.observe_read_result(crate::phy_i2c::try_finish_read(registers, address))
+            }
+            PhyColdI2cAction::AwaitWriteCompletionEdge { address } => {
+                self.observe_write_result(crate::phy_i2c::try_finish_write(registers, address))
+            }
             PhyColdI2cAction::Complete(_) => Err(PhyColdI2cError::AlreadyComplete),
             _ => Err(PhyColdI2cError::WrongEdge),
         }
@@ -1249,20 +1254,7 @@ impl PhyColdI2cBinding {
 
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(&mut self, registers: &mut RadioRegisters) -> Result<(), PhyColdI2cError> {
-        match self.transaction.action() {
-            PhyColdI2cAction::StartRead { address } => {
-                crate::phy_i2c::try_start_read(registers, address)
-                    .map_err(|PhyI2cError::Busy| PhyColdI2cError::BusyAtStart)?;
-                self.transaction.read_started()
-            }
-            PhyColdI2cAction::StartWrite { address, value } => {
-                crate::phy_i2c::try_start_write(registers, address, value)
-                    .map_err(|PhyI2cError::Busy| PhyColdI2cError::BusyAtStart)?;
-                self.transaction.write_started()
-            }
-            PhyColdI2cAction::Complete(_) => Err(PhyColdI2cError::AlreadyComplete),
-            _ => Err(PhyColdI2cError::WrongEdge),
-        }
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1270,16 +1262,7 @@ impl PhyColdI2cBinding {
         &mut self,
         registers: &RadioRegisters,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
-        match self.transaction.action() {
-            PhyColdI2cAction::AwaitReadCompletionEdge { address } => self
-                .transaction
-                .observe_read_result(crate::phy_i2c::try_finish_read(registers, address)),
-            PhyColdI2cAction::AwaitWriteCompletionEdge { address } => self
-                .transaction
-                .observe_write_result(crate::phy_i2c::try_finish_write(registers, address)),
-            PhyColdI2cAction::Complete(_) => Err(PhyColdI2cError::AlreadyComplete),
-            _ => Err(PhyColdI2cError::WrongEdge),
-        }
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {

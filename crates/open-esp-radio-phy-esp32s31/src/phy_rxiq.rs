@@ -2493,15 +2493,19 @@ impl PhyRxIqAdjustedTxI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target()
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge()
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(
@@ -2627,20 +2631,22 @@ impl PhyRxIqGainPbusBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(
+    pub fn start_target(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
-        self.hardware.start_target()
+        self.hardware.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
     > {
-        self.hardware.observe_target_edge()
+        self.hardware.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyRxIqGainCompletion, PhyRxIqExternalBindingError> {
@@ -2698,15 +2704,19 @@ impl PhyRxIqGainI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target()
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge()
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyRxIqGainCompletion, PhyRxIqExternalBindingError> {
@@ -2804,20 +2814,22 @@ impl PhyRxIqInitPbusBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(
+    pub fn start_target(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
-        self.hardware.start_target()
+        self.hardware.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
     > {
-        self.hardware.observe_target_edge()
+        self.hardware.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyRxIqInitCompletion, PhyRxIqExternalBindingError> {
@@ -2869,15 +2881,19 @@ impl PhyRxIqInitI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target()
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge()
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyRxIqInitCompletion, PhyRxIqExternalBindingError> {

@@ -362,100 +362,6 @@ pub fn try_finish_write(
         .map_err(|_| PhyI2cError::Busy)
 }
 
-/// Transitional raw-owner variant for target bindings that have not yet
-/// accepted `&mut RadioRegisters`.
-///
-/// Register addresses still come only from the generated PAC. Basis and
-/// transaction order are identical to [`try_start_read`].
-///
-/// # Safety
-///
-/// The caller must prove exclusive ownership of the PHY-I2C host until the
-/// matching raw finish operation completes. New cold-init code must use the
-/// capability-borrowing method instead.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_start_read_unowned(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
-    let host_config = phy_i2c_master::HOST_CONFIG.address() as *mut u32;
-    unsafe {
-        host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
-    }
-
-    let command = command_register_address(address.host()) as *mut u32;
-    if command_is_busy(unsafe { command.read_volatile() }) {
-        return Err(PhyI2cError::Busy);
-    }
-    unsafe {
-        (phy_i2c_master::READ_MASK.address() as *mut u32)
-            .write_volatile(!u32::from(address.read_mask()));
-        command.write_volatile(encode_read(address));
-    }
-    Ok(())
-}
-
-/// Transitional raw-owner completion observation for
-/// [`try_start_read_unowned`].
-///
-/// # Safety
-///
-/// `address` must identify that in-flight transaction under the same
-/// exclusive external owner.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_finish_read_unowned(address: PhyI2cAddress) -> Result<u8, PhyI2cError> {
-    let command =
-        unsafe { (command_register_address(address.host()) as *const u32).read_volatile() };
-    if command_is_busy(command) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(read_result(command))
-    }
-}
-
-/// Transitional raw-owner variant for target bindings that have not yet
-/// accepted `&mut RadioRegisters`.
-///
-/// Register addresses still come only from the generated PAC. Basis and
-/// transaction order are identical to [`try_start_write`].
-///
-/// # Safety
-///
-/// The caller must prove exclusive ownership until
-/// [`try_finish_write_unowned`] completes.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_start_write_unowned(
-    address: PhyI2cAddress,
-    value: u8,
-) -> Result<(), PhyI2cError> {
-    let host_config = phy_i2c_master::HOST_CONFIG.address() as *mut u32;
-    unsafe {
-        host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
-    }
-
-    let command = command_register_address(address.host()) as *mut u32;
-    if command_is_busy(unsafe { command.read_volatile() }) {
-        return Err(PhyI2cError::Busy);
-    }
-    unsafe { command.write_volatile(encode_write(address, value)) };
-    Ok(())
-}
-
-/// Transitional raw-owner completion observation for
-/// [`try_start_write_unowned`].
-///
-/// # Safety
-///
-/// `address` must identify that in-flight transaction under the same
-/// exclusive external owner.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_finish_write_unowned(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
-    let command =
-        unsafe { (command_register_address(address.host()) as *const u32).read_volatile() };
-    if command_is_busy(command) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(())
-    }
-}
-
 #[cfg(target_arch = "riscv32")]
 const fn hal_host(host: u8) -> hal_phy_i2c::PhyI2cHost {
     if host == 0 {
@@ -1074,15 +980,19 @@ impl MaskedI2cWriteBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target()
+    pub fn start_target(
+        &mut self,
+        registers: &mut RadioRegisters,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge()
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<MaskedI2cWriteCompletion, MaskedI2cWriteBindingError> {

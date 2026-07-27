@@ -2923,9 +2923,16 @@ Each HAL method names the complete ROM/blob body used for operation order.
 Register and field identities remain independently sourced from the S31 SVD,
 official PMU header, or instruction-exact masks.
 
-Several reusable calibration bindings outside `PhyColdExternalBinding` still
-expose their historical unsafe target methods. Their transitional raw
-PHY-I2C leaves now resolve addresses through the generated PAC and carry an
-explicit exclusive-owner invariant, but do not yet accept the powered-radio
-borrow. They remain ownership migration work; the full cold-init HIL path no
-longer uses those leaves.
+The reusable calibration bindings outside `PhyColdExternalBinding` now use
+the same capability boundary. RFPLL, RXIQ/TXIQ, DCO, gain, temperature,
+saturation, power and power-detector I2C/PBus target methods all require a
+`RadioRegisters` borrow. The transitional `*_unowned` PHY-I2C leaves and raw
+PBus force-test leaves have been deleted, and these target methods are no
+longer `unsafe`. A target-source audit rejects their old method names and
+finds no `unsafe start_target`, `unsafe observe_target_edge`, or
+`unsafe sample_target_once`.
+
+This closes ownership migration for the recovered PHY-I2C and PBus command
+engines. Other calibration MMIO remains separate work: it can move behind the
+same capability only after each register identity and field mask has been
+added to the recovered SVD/PAC.

@@ -288,11 +288,6 @@ const fn phy_channel_cbw_fields(cbw: u8) -> PhyChannelCbwFields {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PhyPbusError {
-    Busy,
-}
-
 /// Publish exactly one entry of the cold TX-CFR table.
 ///
 /// The transition and register encoding live in `phy_bb`; this narrow target
@@ -1797,46 +1792,6 @@ pub(crate) unsafe fn configure_phy_pbus_debug_mode() {
 
     let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
     control.write_volatile(with_phy_pbus_debug_control(control.read_volatile()));
-}
-
-/// Publish one PBus force-test command after one fail-fast readiness sample.
-///
-/// The ROM leaf publishes the same encoded command and then busy-waits on bit
-/// 31 at `0x2010_0890`. Rust rejects an already busy owner before publication
-/// and leaves all post-command observation to
-/// [`try_finish_phy_pbus_force_test`].
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_start_phy_pbus_force_test(
-    transaction: crate::phy_pbus::PhyPbusForceTest,
-) -> Result<(), PhyPbusError> {
-    if phy_pbus_is_busy((PHY_PBUS_STATUS_ADDRESS as *const u32).read_volatile()) {
-        return Err(PhyPbusError::Busy);
-    }
-
-    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_pbus_force_test(
-        control.read_volatile(),
-        transaction.selector(),
-        transaction.path(),
-        transaction.value(),
-    ));
-    Ok(())
-}
-
-/// Observe one PBus command once after an external readiness/timer edge.
-///
-/// `Busy` is an incomplete or timeout result, never permission to spin or
-/// self-wake. A completed command clears the transaction bit exactly as the
-/// ROM leaf does after its loop.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn try_finish_phy_pbus_force_test() -> Result<(), PhyPbusError> {
-    if phy_pbus_is_busy((PHY_PBUS_STATUS_ADDRESS as *const u32).read_volatile()) {
-        return Err(PhyPbusError::Busy);
-    }
-
-    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(control.read_volatile() & !PHY_PBUS_TRANSACTION_BIT);
-    Ok(())
 }
 
 /// Read the exact PBus field consumed by RX-DCO calibration.

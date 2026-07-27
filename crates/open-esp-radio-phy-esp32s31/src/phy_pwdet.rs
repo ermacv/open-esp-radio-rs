@@ -1016,19 +1016,23 @@ impl PhyPwdetPbusBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), PhyPwdetPbusBindingError> {
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), PhyPwdetPbusBindingError> {
         self.hardware
-            .start_target()
+            .start_target(registers)
             .map_err(map_pbus_hardware_error)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn sample_target_once(
+    pub fn sample_target_once(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<PhyPwdetPbusObservation, PhyPwdetPbusBindingError> {
         match self
             .hardware
-            .observe_target_edge()
+            .observe_target_edge(registers)
             .map_err(map_pbus_hardware_error)?
         {
             crate::phy_pbus::PhyPbusHardwareObservation::StillPending => {

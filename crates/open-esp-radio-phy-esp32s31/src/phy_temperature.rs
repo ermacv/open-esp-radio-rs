@@ -354,15 +354,19 @@ impl PhyTemperatureI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target()
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(registers)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge()
+        self.transaction.observe_target_edge(registers)
     }
 
     pub fn into_completion(self) -> Result<PhyTemperatureCompletion, PhyTemperatureBindingError> {

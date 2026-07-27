@@ -32,6 +32,17 @@ then
     exit 1
 fi
 
+# PHY target bindings may perform I2C/PBus work only through a borrowed
+# RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
+# wrapper API from quietly returning during later calibration work.
+if rg -n \
+    'try_(start|finish)_(read|write)_unowned|try_(start|finish)_phy_pbus_force_test|pub[[:space:]]+unsafe[[:space:]]+fn[[:space:]]+(start_target|observe_target_edge|sample_target_once)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "unowned PHY-I2C/PBus target access returned" >&2
+    exit 1
+fi
+
 RUSTUP_TOOLCHAIN=stable cargo build \
     -p open-esp-radio-phy-esp32s31 \
     --lib \
@@ -57,10 +68,12 @@ llvm-nm --defined-only --format=posix "$artifact" 2>/dev/null |
     sort -u >"$audit_dir/defined"
 comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 
-# These are compiler/core requirements supplied by the final Rust image, not
-# radio ROM or vendor archive ABI. Any other external symbol fails closed.
+# HAL/PAC symbols are source-only workspace dependencies verified again by
+# the dependency-tree gate below. The remaining entries are compiler/core
+# requirements supplied by the final Rust image, not radio ROM or vendor
+# archive ABI. Any other external symbol fails closed.
 if rg -v \
-    '^(_RNv.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
+    '^(_R.*open_esp_radio_(hal|pac)_esp32s31.*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
     "$audit_dir/external"
 then
     echo "unexpected external symbol in source-only radio rlib" >&2

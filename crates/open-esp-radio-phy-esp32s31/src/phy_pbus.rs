@@ -303,7 +303,10 @@ impl PhyPbusHardwareBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn start_target(&mut self) -> Result<(), PhyPbusHardwareBindingError> {
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<(), PhyPbusHardwareBindingError> {
         if self.phase != PhyPbusHardwarePhase::Start {
             return Err(if self.phase == PhyPbusHardwarePhase::Complete {
                 PhyPbusHardwareBindingError::AlreadyComplete
@@ -311,15 +314,25 @@ impl PhyPbusHardwareBinding {
                 PhyPbusHardwareBindingError::WrongEdge
             });
         }
-        crate::radio_hal::try_start_phy_pbus_force_test(self.transaction).map_err(
-            |crate::radio_hal::PhyPbusError::Busy| PhyPbusHardwareBindingError::BusyAtStart,
-        )?;
+        open_esp_radio_hal_esp32s31::pbus::try_start_force_test(
+            registers,
+            self.transaction.selector(),
+            self.transaction.path(),
+            self.transaction.value(),
+        )
+        .map_err(|error| match error {
+            open_esp_radio_hal_esp32s31::pbus::PbusError::Busy => {
+                PhyPbusHardwareBindingError::BusyAtStart
+            }
+            _ => PhyPbusHardwareBindingError::WrongEdge,
+        })?;
         self.started()
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn observe_target_edge(
+    pub fn observe_target_edge(
         &mut self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<PhyPbusHardwareObservation, PhyPbusHardwareBindingError> {
         if self.phase != PhyPbusHardwarePhase::AwaitCompletionEdge {
             return Err(if self.phase == PhyPbusHardwarePhase::Complete {
@@ -328,7 +341,13 @@ impl PhyPbusHardwareBinding {
                 PhyPbusHardwareBindingError::WrongEdge
             });
         }
-        self.observe_completed(crate::radio_hal::try_finish_phy_pbus_force_test().is_ok())
+        match open_esp_radio_hal_esp32s31::pbus::try_finish_force_test(registers) {
+            Ok(()) => self.observe_completed(true),
+            Err(open_esp_radio_hal_esp32s31::pbus::PbusError::Busy) => {
+                self.observe_completed(false)
+            }
+            Err(_) => Err(PhyPbusHardwareBindingError::WrongEdge),
+        }
     }
 
     pub fn into_transaction(self) -> Result<PhyPbusForceTest, PhyPbusHardwareBindingError> {

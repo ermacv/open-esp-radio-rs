@@ -4,12 +4,15 @@
 radio clock, reset, power, PHY-PBus, PHY-I2C and AGC PAC. Run:
 
 ```console
-tools/generate-esp32s31-radio-pac.py
+cargo pac-gen
 ```
 
-The generated file is
-`crates/open-esp-radio-pac-esp32s31/src/power.rs`. The source-only audit runs
-the generator with `--check`, so a direct edit of generated Rust fails CI.
+The generated crate source is
+`crates/open-esp-radio-svd-esp32s31/src/lib.rs`. The source-only audit runs the
+Rust generator with `--check`, so a direct edit of that generated file fails
+CI. `open-esp-radio-pac-esp32s31/src/power.rs` is the shrinking compatibility
+facade for code not yet moved to the generated API; it must not acquire
+official system peripherals already delegated to `esp-hal`.
 
 ## Evidence policy
 
@@ -40,7 +43,7 @@ identities for every entry.
 | `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the SVD, plus local hashed copies in `esp-wifi-sys` |
-| `S31_ESP_PACS_SVD` | `ermacv/esp-pacs` commit `a7575ec28` (upstream `8fddffd1d` plus only evidenced S31 interrupt additions), ESP32-S31 generated SVD |
+| `S31_ESP_PACS_SVD` | `ermacv/esp-pacs` commit `d02f0b719` (upstream `8fddffd1d` plus the S31 platform work and evidenced PMU access corrections), ESP32-S31 generated SVD |
 | `ROM_REV0_PHY_OPEN_FE_BB_CLK` | Complete 0x38-byte rev0 ROM body at `0x2f823ec0` |
 | `ROM_REV0_PHY_FE_REG_INIT` | Complete 0xf6-byte rev0 ROM `phy_fe_reg_init` body at `0x2f827740` |
 | `ROM_REV0_PHY_PBUS` | Complete PBus mode/force bodies and read address/shift jump tables |

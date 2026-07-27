@@ -40,9 +40,11 @@ actually inside the S31 PMU block:
 
 The PMU header labels fields in `IMM_HP_CK_POWER_0` as `WT`, while the
 complete S31 blob body loads the register before masking and storing it. CMSIS
-SVD has no write-trigger access class. This recovered SVD therefore models
-the register `read-write`, records the conflict in its description, and
-preserves the blob's read/modify/write sequence in the HAL.
+SVD has no write-trigger access class. The official PAC fork at
+`d02f0b719` therefore models the register `read-write`, records the conflict
+and blob source in its SVD patch, and lets the platform adapter preserve the
+evidenced read/modify/write sequence. PMU is no longer described by the custom
+radio SVD.
 
 ## PHY PBus and PHY-I2C
 

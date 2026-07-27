@@ -510,8 +510,8 @@ impl BiasRegTransition {
 /// offsets `0x2e..0x4e`; field identities come from the official S31 PMU
 /// description.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_open_i2c_pre_delay(registers: &mut RadioRegisters) {
-    analog_i2c::prepare_open_i2c_pre_delay(registers);
+pub fn configure_open_i2c_pre_delay(platform: &mut impl analog_i2c::PhyPmuControl) {
+    analog_i2c::prepare_open_i2c_pre_delay(platform);
 }
 
 /// Execute the finite common register suffix of `phy_open_i2c_xpd_new`.
@@ -520,8 +520,8 @@ pub fn configure_open_i2c_pre_delay(registers: &mut RadioRegisters) {
 /// complete pinned `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`; PMU field
 /// identities come from the official S31 PMU description.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_open_i2c_power_and_pulse(registers: &mut RadioRegisters) {
-    analog_i2c::complete_open_i2c_power_and_reset(registers);
+pub fn configure_open_i2c_power_and_pulse(platform: &mut impl analog_i2c::PhyPmuControl) {
+    analog_i2c::complete_open_i2c_power_and_reset(platform);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

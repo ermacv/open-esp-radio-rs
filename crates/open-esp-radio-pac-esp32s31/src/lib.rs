@@ -2,7 +2,6 @@
 
 use core::ptr::{read_volatile, write_volatile};
 
-pub mod analog_i2c;
 pub mod clock;
 pub mod mac;
 pub mod pbus;
@@ -286,10 +285,6 @@ mod tests {
 
     #[test]
     fn generated_access_and_reset_metadata_are_preserved() {
-        assert_eq!(
-            power::pmu::IMM_MODEM_ICG.access(),
-            RegisterAccess::WriteOnly
-        );
         assert_eq!(
             power::phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.access(),
             RegisterAccess::ReadWrite

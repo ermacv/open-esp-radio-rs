@@ -19,12 +19,12 @@ impl RadioRegisters {
             .modify(|_, w| w.phy_calibration_clock_unknown().bit(enabled));
     }
 
-    /// Open the recovered front-end and baseband clock gates.
+    /// Open the three undocumented front-end and baseband radio clock gates.
     ///
-    /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK]; the four operations retain the
-    /// complete ROM body's order. Opaque full-register values stay inside the
-    /// PAC, while callers need only the unique mutable radio capability.
-    pub fn open_frontend_baseband_clocks(&mut self) {
+    /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK]; these are the first three
+    /// operations in the complete ROM body. Its fourth PMU operation belongs
+    /// to the official platform PAC and is sequenced by the HAL.
+    pub fn open_frontend_baseband_internal_clocks(&mut self) {
         // SAFETY: 0x1e7 is the instruction-exact full register value written
         // by the cited ROM leaf; the SVD deliberately marks the register
         // write-only because no field semantics have been inferred.
@@ -50,18 +50,6 @@ impl RadioRegisters {
                 .bb_clock_gate_opaque()
                 .write_with_zero(|w| w.bits(u32::MAX));
         }
-
-        // SAFETY: 0x0f fits the recovered four-bit field. The adjacent named
-        // bit is independently present in the S31 PMU description.
-        self.peripherals
-            .pmu
-            .hp_active_hp_ck_power()
-            .modify(|_, w| unsafe {
-                w.rom_open_fe_bb_unknown_low()
-                    .bits(0x0f)
-                    .hp_active_xpd_bb_i2c()
-                    .set_bit()
-            });
     }
 
     /// Close the recovered front-end and baseband clock gates.

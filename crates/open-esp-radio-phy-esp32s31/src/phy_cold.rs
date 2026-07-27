@@ -1886,19 +1886,34 @@ impl PhyColdMmioBinding {
     /// Execute exactly one finite target MMIO transaction and consume its
     /// identity token.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub unsafe fn execute_target<P: open_esp_radio_hal_esp32s31::analog_i2c::PhyPmuControl>(
         self,
-        registers: &mut RadioRegisters,
+        radio: &mut open_esp_radio_hal_esp32s31::Radio<
+            P,
+            open_esp_radio_hal_esp32s31::state::Powered,
+        >,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
         match self.outer_action {
-            PhyRfInitPrefixAction::ConfigureFeBbClock => registers.open_frontend_baseband_clocks(),
+            PhyRfInitPrefixAction::ConfigureFeBbClock => {
+                let (platform, registers) = radio.parts_mut();
+                registers.open_frontend_baseband_internal_clocks();
+                open_esp_radio_hal_esp32s31::analog_i2c::enable_frontend_baseband_power(platform);
+                return self.into_completion();
+            }
+            PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay) => {
+                let (platform, _) = radio.parts_mut();
+                crate::phy_i2c::configure_open_i2c_pre_delay(platform);
+                return self.into_completion();
+            }
+            _ => {}
+        }
+
+        let registers = radio.registers_mut();
+        match self.outer_action {
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
                     registers, enabled,
                 )
-            }
-            PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay) => {
-                crate::phy_i2c::configure_open_i2c_pre_delay(registers)
             }
             PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::ConfigureDebugMode) => {
                 open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers)
@@ -2905,20 +2920,29 @@ impl PhyColdObservationBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target(
+    pub fn execute_target<P: open_esp_radio_hal_esp32s31::analog_i2c::PhyPmuControl>(
         self,
-        registers: &mut RadioRegisters,
+        radio: &mut open_esp_radio_hal_esp32s31::Radio<
+            P,
+            open_esp_radio_hal_esp32s31::state::Powered,
+        >,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
+        if self.request == PhyColdObservationRequest::ConfigureOpenI2cPowerAndPulse {
+            let (platform, registers) = radio.parts_mut();
+            crate::phy_i2c::configure_open_i2c_power_and_pulse(platform);
+            let started_at_cycle =
+                open_esp_radio_hal_esp32s31::phy_prelude::sample_sdm_deadline_counter(registers);
+            return self.into_completion(PhyColdObservationResult::OpenI2cPowerAndPulse {
+                started_at_cycle,
+            });
+        }
+
+        let registers = radio.registers_mut();
         match self.request {
+            // Consumed by the semantic platform branch above before borrowing
+            // only the recovered radio register owner.
             PhyColdObservationRequest::ConfigureOpenI2cPowerAndPulse => {
-                crate::phy_i2c::configure_open_i2c_power_and_pulse(registers);
-                let started_at_cycle =
-                    open_esp_radio_hal_esp32s31::phy_prelude::sample_sdm_deadline_counter(
-                        registers,
-                    );
-                self.into_completion(PhyColdObservationResult::OpenI2cPowerAndPulse {
-                    started_at_cycle,
-                })
+                Err(PhyColdLoweringError::UnexpectedOutcome)
             }
             PhyColdObservationRequest::CheckOpenI2cSdmDeadline {
                 started_at_cycle,

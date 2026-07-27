@@ -1,9 +1,11 @@
-//! Allocation-free passive-scan records and management-frame parsing.
+//! Allocation-free scan records and management-frame parsing.
 //!
 //! This is the maintained source-owned passive-scan frontier. Channel changes,
 //! dwell timers, and RX ownership remain explicit responsibilities of the
 //! radio owner; this module owns only bounded observations and selection. The
-//! earlier hybrid-runtime copy was removed after hardware qualification.
+//! earlier hybrid-runtime copy was removed after hardware qualification. The
+//! implementation is chip-independent and now forms the first maintained
+//! upper-stack extraction from the migration archive.
 
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;

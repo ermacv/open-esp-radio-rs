@@ -11,5 +11,8 @@ pub mod init;
 pub mod irq;
 pub mod registers;
 pub mod rx;
-pub mod scan;
 pub mod tx;
+
+// Preserve the qualified `mac::scan` path while the protocol owner moves to
+// its hardware-independent crate.
+pub use open_esp_radio_ieee80211::scan;

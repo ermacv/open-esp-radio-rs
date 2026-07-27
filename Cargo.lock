@@ -7,6 +7,7 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-hal-esp32s31",
+ "open-esp-radio-ieee80211",
  "open-esp-radio-mac-esp32s31",
  "open-esp-radio-pac-esp32s31",
  "open-esp-radio-phy-esp32s31",
@@ -20,9 +21,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-ieee80211"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-mac-esp32s31"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-ieee80211",
  "open-esp-radio-pac-esp32s31",
 ]
 

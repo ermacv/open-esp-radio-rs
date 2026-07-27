@@ -1,0 +1,12 @@
+[package]
+name = "open-esp-radio-ieee80211"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free IEEE 802.11 protocol types and state machines"
+
+[dependencies]
+
+[lints]
+workspace = true

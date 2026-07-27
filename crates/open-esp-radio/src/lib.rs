@@ -1,5 +1,7 @@
 #![no_std]
 
+pub use open_esp_radio_ieee80211 as ieee80211;
+
 #[cfg(feature = "esp32s31")]
 pub mod esp32s31 {
     pub use open_esp_radio_hal_esp32s31 as hal;

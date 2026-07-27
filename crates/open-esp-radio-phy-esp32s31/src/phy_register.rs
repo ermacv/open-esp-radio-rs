@@ -17,8 +17,10 @@ const PHY_REGISTER_FINAL_I2C_ADDRESS: crate::phy_i2c::PhyI2cAddress =
 pub const fn default_phy_register_init_profile() -> [u8; PHY_REGISTER_INIT_PROFILE_LEN] {
     let mut profile = [0_u8; PHY_REGISTER_INIT_PROFILE_LEN];
     profile[0x00] = 1;
-    profile[0x02] = 0x54;
-    profile[0x03] = 0x54;
+    // The production esp-phy profile applies CONFIG_ESP_PHY_MAX_TX_POWER
+    // (20 dBm, represented in quarter-dBm units) before the per-rate caps.
+    profile[0x02] = 0x50;
+    profile[0x03] = 0x50;
     profile[0x04] = 0x50;
     profile[0x05] = 0x50;
     profile[0x06] = 0x4c;
@@ -1181,7 +1183,7 @@ mod tests {
         assert_eq!(
             &profile[..0x14],
             &[
-                1, 0, 0x54, 0x54, 0x50, 0x50, 0x4c, 0x48, 0x50, 0x50, 0x4c, 0x48, 0x40, 0x3c, 0x3c,
+                1, 0, 0x50, 0x50, 0x50, 0x50, 0x4c, 0x48, 0x50, 0x50, 0x4c, 0x48, 0x40, 0x3c, 0x3c,
                 0x3c, 0x4c, 0x4c, 0x48, 0x44,
             ]
         );

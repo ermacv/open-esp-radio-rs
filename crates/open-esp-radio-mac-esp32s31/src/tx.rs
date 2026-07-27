@@ -255,6 +255,12 @@ impl TxSlot {
             return Err(TxError::QueueActive);
         }
 
+        // Match `lmacSetTxFrame`: timeout is published before the PPDU
+        // formatter touches the queue's PLCP/vector registers.
+        let mut queue_config = mmio.read32(TX_Q_CONFIG[index]);
+        queue_config = (queue_config & 0xffff_f000) | u32::from(config.timeout);
+        mmio.write32(TX_Q_CONFIG[index], queue_config);
+
         mmio.write32(TX_Q_CONTROL[index], image.plcp0);
         mmio.write32(TX_Q_PLCP1[index], image.plcp1);
         let ppdu_control = mmio.read32(TX_Q_PPDU_CONTROL[index]);
@@ -264,19 +270,37 @@ impl TxSlot {
         mmio.write32(TX_Q_LENGTH_CONTROL[index], image.length_control);
         mmio.write32(TX_Q_POWER[index], image.power);
 
+        // `mac_tx_set_pti` publishes the queue priority first, then performs
+        // one read/modify/write edge for each PTI field.
+        queue_config = mmio.read32(TX_Q_CONFIG[index]);
+        queue_config = (queue_config & 0x0fff_ffff) | (u32::from(config.pti) << 28);
+        mmio.write32(TX_Q_CONFIG[index], queue_config);
+
         let mut pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0xffff_0fff) | (u32::from(config.pti) << 12);
+        mmio.write32(TX_Q_PTI[index], pti);
+        pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0xffff_f0ff) | (u32::from(config.pti) << 8);
+        mmio.write32(TX_Q_PTI[index], pti);
+        pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0xffff_ff0f) | (u32::from(config.pti) << 4);
+        mmio.write32(TX_Q_PTI[index], pti);
+        pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0xfff0_ffff) | (u32::from(config.pti) << 16);
+        mmio.write32(TX_Q_PTI[index], pti);
+        pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0x000f_ffff) | (u32::from(config.pti_count) << 20);
         mmio.write32(TX_Q_PTI[index], pti);
 
-        let mut queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0x0fff_ffff) | (u32::from(config.pti) << 28);
-        queue_config = (queue_config & 0xffff_f000) | u32::from(config.timeout);
+        // Match `hal_mac_tx_config_edca`: its three fields are separate MMIO
+        // edges after PPDU/PTI formatting.
+        queue_config = mmio.read32(TX_Q_CONFIG[index]);
         queue_config = (queue_config & 0xf0ff_ffff) | (u32::from(config.aifsn) << 24);
+        mmio.write32(TX_Q_CONFIG[index], queue_config);
+        queue_config = mmio.read32(TX_Q_CONFIG[index]);
         queue_config = (queue_config & 0xffc0_0fff) | (u32::from(config.contention_window) << 12);
+        mmio.write32(TX_Q_CONFIG[index], queue_config);
+        queue_config = mmio.read32(TX_Q_CONFIG[index]);
         queue_config = (queue_config & 0xff3f_ffff) | (u32::from(config.interface) << 22);
         mmio.write32(TX_Q_CONFIG[index], queue_config);
 

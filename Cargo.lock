@@ -22,6 +22,9 @@ dependencies = [
 [[package]]
 name = "open-esp-radio-mac-esp32s31"
 version = "0.1.0"
+dependencies = [
+ "open-esp-radio-pac-esp32s31",
+]
 
 [[package]]
 name = "open-esp-radio-pac-esp32s31"

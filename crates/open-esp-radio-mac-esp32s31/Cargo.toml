@@ -6,5 +6,8 @@ license.workspace = true
 repository.workspace = true
 description = "Allocation-free source-owned ESP32-S31 Wi-Fi MAC primitives"
 
+[dependencies]
+open-esp-radio-pac-esp32s31 = { path = "../open-esp-radio-pac-esp32s31" }
+
 [lints]
 workspace = true

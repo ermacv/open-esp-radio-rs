@@ -190,7 +190,7 @@ impl TxSlot {
     /// static/pinned DMA-visible SRAM until completion is detached.
     pub fn submit_legacy_q0<M: Mmio>(
         self: Pin<&mut Self>,
-        mmio: &M,
+        mmio: &mut M,
         cookie: TxCookie,
         config: LegacyTxConfig,
     ) -> Result<(), TxError> {
@@ -212,11 +212,10 @@ impl TxSlot {
         mmio.write32(TX_COMPLETE_CLEAR, TX_COMPLETE_Q0);
         mmio.write32(TX_Q0_CONTROL, image.plcp0);
         mmio.write32(TX_Q0_PLCP1, image.plcp1);
-        mmio.write32(TX_Q0_PPDU_CONTROL, mmio.read32(TX_Q0_PPDU_CONTROL) & !0x08);
-        mmio.write32(
-            TX_Q0_PROTECTION,
-            mmio.read32(TX_Q0_PROTECTION) & 0x7fff_ffff,
-        );
+        let ppdu_control = mmio.read32(TX_Q0_PPDU_CONTROL);
+        mmio.write32(TX_Q0_PPDU_CONTROL, ppdu_control & !0x08);
+        let protection = mmio.read32(TX_Q0_PROTECTION);
+        mmio.write32(TX_Q0_PROTECTION, protection & 0x7fff_ffff);
         mmio.write32(TX_Q0_LENGTH_CONTROL, image.length_control);
         mmio.write32(TX_Q0_POWER, image.power);
 
@@ -261,7 +260,7 @@ impl TxSlot {
     /// `Completed`; it is not reusable until `detach_completed` closes q0.
     pub fn acknowledge_q0_completion<M: Mmio>(
         &mut self,
-        mmio: &M,
+        mmio: &mut M,
     ) -> Result<Option<TxCompletion>, TxError> {
         if mmio.read32(TX_COMPLETE_STATE) & TX_COMPLETE_Q0 == 0 {
             return Ok(None);
@@ -302,7 +301,11 @@ impl TxSlot {
     /// Makes the completed static slot reusable after disabling q0 and exact
     /// readback. This is normal single-attempt turnover, not a global DMA
     /// release oracle for freeing the backing allocation during teardown.
-    pub fn detach_completed<M: Mmio>(&mut self, mmio: &M, cookie: TxCookie) -> Result<(), TxError> {
+    pub fn detach_completed<M: Mmio>(
+        &mut self,
+        mmio: &mut M,
+        cookie: TxCookie,
+    ) -> Result<(), TxError> {
         if self.state != TxSlotState::Completed || cookie != self.active {
             return Err(TxError::Stale);
         }

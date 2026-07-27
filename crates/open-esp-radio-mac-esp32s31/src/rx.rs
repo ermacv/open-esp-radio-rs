@@ -125,7 +125,7 @@ pub fn build_cold_ring(
 /// Publishes a previously built cold ring using the instruction-confirmed
 /// fence/high-window/base/enable/fence sequence.
 pub fn publish_cold_ring<M: Mmio>(
-    mmio: &M,
+    mmio: &mut M,
     descriptor_dma_base: u32,
     enable_rx: bool,
 ) -> Result<(), RxRingError> {
@@ -153,7 +153,7 @@ pub fn publish_cold_ring<M: Mmio>(
 /// The pinned `hal_mac_rx_disable` body is exactly this bit clear. The fence
 /// and readback turn that raw leaf into an explicit Rust ownership boundary:
 /// callers may mutate the ring only after this function returns `Ok(())`.
-pub fn disable_receive<M: Mmio>(mmio: &M) -> Result<(), RxRingError> {
+pub fn disable_receive<M: Mmio>(mmio: &mut M) -> Result<(), RxRingError> {
     let control = mmio.read32(RX_CONTROL);
     mmio.write32(RX_CONTROL, control & !RX_ENABLE);
     mmio.fence();

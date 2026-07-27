@@ -31,10 +31,20 @@ remain unqualified in the live crates.
 The ESP32-S31 HAL binds the integration layer's singleton peripheral token to
 `Radio<P, Owned>`. Its finite `power_up` transition reproduces the
 source-owned modem reset, PMU publication, clock-source, PHY frontend and
-PHY-I²C prerequisites and verifies nine readable checkpoints. Only the
+PHY-I²C prerequisites and verifies nine readable checkpoints. The eleven
+register identities used by this transition are typed PAC values; the HAL
+contains no raw addresses or volatile pointer access for this path. Only the
 resulting `Radio<P, Powered>` exposes the register capability used by finite
 PHY target bindings. Wi-Fi MAC clocks remain outside this transition and
 belong to the later MAC start state.
+
+The live MAC path also consumes typed PAC registers. Its initialization,
+interrupt, RX, and TX transactions require a mutable borrow of the register
+capability; only the PAC performs peripheral volatile access. The application
+therefore hands the same `RadioRegisters` owner from completed PHY
+initialization into MAC/RX, instead of constructing an independent raw-MMIO
+adapter. DMA descriptors retain their own volatile cells because they are
+owned memory shared with hardware rather than peripheral registers.
 
 The not-yet-ported upper MAC/STA/AP/security workset is retained under
 `migration/esp32s31-hybrid-runtime` as a non-buildable source archive. It is

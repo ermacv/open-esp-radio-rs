@@ -121,7 +121,10 @@ pub const fn event_mask(mac_pending: u32) -> u32 {
 /// Handles exactly one MAC status snapshot and posts only the four recovered
 /// task-side events. The complete status snapshot is acknowledged before the
 /// task can run, including unsupported bits, matching the pinned common ISR.
-pub fn handle_mac_irq<M: Mmio, S: IrqSink>(mmio: &M, sink: &S) -> (IrqDisposition, IrqSnapshot) {
+pub fn handle_mac_irq<M: Mmio, S: IrqSink>(
+    mmio: &mut M,
+    sink: &S,
+) -> (IrqDisposition, IrqSnapshot) {
     let status = mmio.read32(MAC_INT_STATUS);
     let enabled = mmio.read32(MAC_INT_ENABLE);
     let handled = status & HANDLED_MAC_MASK;

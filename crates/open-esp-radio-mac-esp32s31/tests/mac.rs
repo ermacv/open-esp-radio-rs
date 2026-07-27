@@ -1,10 +1,11 @@
-use std::{cell::RefCell, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use open_esp_radio_mac_esp32s31::{
     descriptor::{
         descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
         tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
+    init::initialize_promiscuous_receive,
     irq::{handle_mac_irq, IrqDisposition, IrqState},
     registers::{
         Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
@@ -19,45 +20,47 @@ use open_esp_radio_mac_esp32s31::{
     },
     tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
 };
+use open_esp_radio_pac_esp32s31::{
+    mac::{self, init as mac_init},
+    Register32,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    Read(u32),
-    Write(u32, u32),
+    Read(Register32),
+    Write(Register32, u32),
     Fence,
 }
 
 #[derive(Default)]
 struct MockMmio {
-    words: RefCell<BTreeMap<u32, u32>>,
-    operations: RefCell<Vec<Operation>>,
+    words: BTreeMap<Register32, u32>,
+    operations: Vec<Operation>,
 }
 
 impl MockMmio {
-    fn set(&self, address: u32, value: u32) {
-        self.words.borrow_mut().insert(address, value);
+    fn set(&mut self, register: Register32, value: u32) {
+        self.words.insert(register, value);
     }
 
-    fn operations(&self) -> Vec<Operation> {
-        self.operations.borrow().clone()
+    fn operations(&self) -> &[Operation] {
+        &self.operations
     }
 }
 
 impl Mmio for MockMmio {
-    fn read32(&self, address: u32) -> u32 {
-        self.operations.borrow_mut().push(Operation::Read(address));
-        self.words.borrow().get(&address).copied().unwrap_or(0)
+    fn read32(&mut self, register: Register32) -> u32 {
+        self.operations.push(Operation::Read(register));
+        self.words.get(&register).copied().unwrap_or(0)
     }
 
-    fn write32(&self, address: u32, value: u32) {
-        self.operations
-            .borrow_mut()
-            .push(Operation::Write(address, value));
-        self.words.borrow_mut().insert(address, value);
+    fn write32(&mut self, register: Register32, value: u32) {
+        self.operations.push(Operation::Write(register, value));
+        self.words.insert(register, value);
     }
 
-    fn fence(&self) {
-        self.operations.borrow_mut().push(Operation::Fence);
+    fn fence(&mut self) {
+        self.operations.push(Operation::Fence);
     }
 }
 
@@ -93,6 +96,38 @@ fn descriptor_words_preserve_the_recovered_geometry() {
 }
 
 #[test]
+fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
+    let mut mmio = MockMmio::default();
+    mmio.set(mac_init::HANDSHAKE, 1);
+
+    let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
+    let access_point = [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee];
+    let outcome = initialize_promiscuous_receive(&mut mmio, 4, station, access_point).unwrap();
+
+    assert_eq!(outcome.handshake_samples, 0);
+    assert_eq!(outcome.handshake_value, 3);
+    assert_eq!(
+        mmio.words.get(&mac_init::INTERFACE_ADDRESS_LOW[0]),
+        Some(&0x3322_1102)
+    );
+    assert_eq!(
+        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[0]),
+        Some(&0x0001_5544)
+    );
+    assert_eq!(
+        mmio.words.get(&mac_init::INTERFACE_ADDRESS_LOW[1]),
+        Some(&0xccbb_aa02)
+    );
+    assert_eq!(
+        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[1]),
+        Some(&0x0001_eedd)
+    );
+    assert_eq!(mmio.words.get(&mac_init::CONTROL), Some(&0));
+    assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
+    assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
+}
+
+#[test]
 fn cold_rx_ring_publishes_links_and_hardware_in_order() {
     let descriptors = [Descriptor::new(), Descriptor::new()];
     build_cold_ring(&descriptors, 0x2f00_1000, &[0x2f00_2000, 0x2f00_2800], 1700).unwrap();
@@ -102,14 +137,14 @@ fn cold_rx_ring_publishes_links_and_hardware_in_order() {
     );
     assert_eq!(descriptors[1].next_address(), 0);
 
-    let mmio = MockMmio::default();
+    let mut mmio = MockMmio::default();
     mmio.set(RX_LAST_DESCRIPTOR_HIGH, 0x0005_4321);
     mmio.set(RX_CONTROL, 0x1234);
-    publish_cold_ring(&mmio, 0x2f00_1000, true).unwrap();
+    publish_cold_ring(&mut mmio, 0x2f00_1000, true).unwrap();
 
     assert_eq!(
         mmio.operations(),
-        vec![
+        &[
             Operation::Fence,
             Operation::Read(RX_LAST_DESCRIPTOR_HIGH),
             Operation::Write(RX_LAST_DESCRIPTOR_HIGH, 0x2f05_4321),
@@ -136,13 +171,13 @@ fn completed_rx_descriptor_rearms_only_for_the_expected_storage() {
 
 #[test]
 fn receive_disable_confirms_the_ring_ownership_edge() {
-    let mmio = MockMmio::default();
+    let mut mmio = MockMmio::default();
     mmio.set(RX_CONTROL, RX_ENABLE | 0x1234);
-    disable_receive(&mmio).unwrap();
-    assert_eq!(mmio.words.borrow().get(&RX_CONTROL), Some(&0x1234));
+    disable_receive(&mut mmio).unwrap();
+    assert_eq!(mmio.words.get(&RX_CONTROL), Some(&0x1234));
     assert_eq!(
         mmio.operations(),
-        vec![
+        &[
             Operation::Read(RX_CONTROL),
             Operation::Write(RX_CONTROL, 0x1234),
             Operation::Fence,
@@ -220,14 +255,14 @@ fn management_rx_rejects_failed_hardware_status() {
 
 #[test]
 fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
-    let mmio = MockMmio::default();
+    let mut mmio = MockMmio::default();
     mmio.set(MAC_INT_ENABLE, u32::MAX);
     mmio.set(
         MAC_INT_STATUS,
         MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS | 0x20,
     );
     let state = IrqState::new();
-    let (disposition, snapshot) = handle_mac_irq(&mmio, &state);
+    let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
     assert_eq!(disposition, IrqDisposition::Posted);
     assert_eq!(snapshot.unhandled, 0x20);
@@ -248,7 +283,7 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     assert_eq!(slot.mark_hardware_owned(cookie), Ok(()));
     assert_eq!(slot.mark_hardware_owned(cookie), Err(TxError::Stale));
 
-    let mmio = MockMmio::default();
+    let mut mmio = MockMmio::default();
     mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
     mmio.set(TX_COMPLETE_AUX_A_Q0, 0);
     mmio.set(TX_COMPLETE_AUX_B_Q0, 0);
@@ -258,7 +293,7 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     mmio.set(TX_STATE, 1 << 24);
     mmio.set(TX_COMPLETE_CLEAR, 0x100);
 
-    let completion = slot.acknowledge_q0_completion(&mmio).unwrap().unwrap();
+    let completion = slot.acknowledge_q0_completion(&mut mmio).unwrap().unwrap();
     assert_eq!(completion.cookie, cookie);
     assert_eq!(completion.status, 3);
     assert!(completion.trigger_flow);
@@ -266,7 +301,7 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     assert_eq!(slot.state(), TxSlotState::Completed);
 
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
-    slot.detach_completed(&mmio, cookie).unwrap();
+    slot.detach_completed(&mut mmio, cookie).unwrap();
     assert_eq!(slot.state(), TxSlotState::Free);
 }
 

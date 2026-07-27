@@ -6,6 +6,28 @@ target_triple="riscv32imafc-unknown-none-elf"
 audit_dir="$(mktemp -d)"
 
 cd "$repo_root"
+
+# HAL/MAC may select only PAC-described peripheral registers. Descriptor
+# volatile access is intentionally excluded: those words live in owned DMA
+# memory, not in the peripheral address space.
+if rg -n \
+    '0x(2010|2058|2070|2071|2080|2081)_[[:xdigit:]]{4}' \
+    crates/open-esp-radio-hal-esp32s31/src \
+    crates/open-esp-radio-mac-esp32s31/src
+then
+    echo "raw radio peripheral address escaped the PAC" >&2
+    exit 1
+fi
+
+if rg -n \
+    '(read_volatile|write_volatile|as \*(const|mut))' \
+    crates/open-esp-radio-hal-esp32s31/src \
+    crates/open-esp-radio-mac-esp32s31/src/registers.rs
+then
+    echo "raw MMIO access escaped the PAC" >&2
+    exit 1
+fi
+
 RUSTUP_TOOLCHAIN=stable cargo build \
     -p open-esp-radio-phy-esp32s31 \
     --lib \

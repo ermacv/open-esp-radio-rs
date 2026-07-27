@@ -6,7 +6,7 @@ extern crate std;
 use core::future::Future;
 use core::marker::PhantomData;
 
-pub use open_esp_radio_pac_esp32s31::RadioRegisters;
+pub use open_esp_radio_pac_esp32s31::{RadioRegisters, Register32};
 pub mod power;
 pub use power::{PowerCheckpoint, PowerError, PowerOperation, PowerSequence};
 
@@ -87,11 +87,18 @@ impl<P> Radio<P, state::Owned> {
     /// register backend. A successful read-back is the only safe path into
     /// `Radio<P, Powered>`.
     #[cfg(target_arch = "riscv32")]
-    pub fn power_up(self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        self.power_up_with(&mut power::VolatileRegisterIo)
+    pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        if let Err(error) = power::execute(&mut self.registers) {
+            return Err(PowerUpFailure { radio: self, error });
+        }
+        Ok(Radio {
+            peripheral: self.peripheral,
+            registers: self.registers,
+            state: PhantomData,
+        })
     }
 
-    #[cfg(any(test, target_arch = "riscv32"))]
+    #[cfg(test)]
     fn power_up_with(
         self,
         io: &mut impl power::RegisterIo,
@@ -141,7 +148,9 @@ pub trait AsyncEvent {
 mod tests {
     use std::vec::Vec;
 
-    use super::{power::RegisterIo, state, Radio};
+    use open_esp_radio_pac_esp32s31::power::modem_syscon;
+
+    use super::{power::RegisterIo, state, Radio, Register32};
 
     #[derive(Debug, Eq, PartialEq)]
     struct TestPeripheral(u8);
@@ -151,29 +160,29 @@ mod tests {
 
     #[derive(Default)]
     struct FakeRegisters {
-        values: Vec<(usize, u32)>,
-        writes: Vec<(usize, u32)>,
+        values: Vec<(Register32, u32)>,
+        writes: Vec<(Register32, u32)>,
     }
 
     impl RegisterIo for FakeRegisters {
-        fn read(&mut self, address: usize) -> u32 {
+        fn read(&mut self, register: Register32) -> u32 {
             self.values
                 .iter()
-                .find_map(|(candidate, value)| (*candidate == address).then_some(*value))
+                .find_map(|(candidate, value)| (*candidate == register).then_some(*value))
                 .unwrap_or(0)
         }
 
-        fn write(&mut self, address: usize, value: u32) {
+        fn write(&mut self, register: Register32, value: u32) {
             if let Some(entry) = self
                 .values
                 .iter_mut()
-                .find(|(candidate, _)| *candidate == address)
+                .find(|(candidate, _)| *candidate == register)
             {
                 entry.1 = value;
             } else {
-                self.values.push((address, value));
+                self.values.push((register, value));
             }
-            self.writes.push((address, value));
+            self.writes.push((register, value));
         }
     }
 
@@ -203,15 +212,15 @@ mod tests {
         struct StuckReset;
 
         impl RegisterIo for StuckReset {
-            fn read(&mut self, address: usize) -> u32 {
-                if address == 0x2010_9c10 {
+            fn read(&mut self, register: Register32) -> u32 {
+                if register == modem_syscon::RST_CONF {
                     (1 << 8) | (1 << 9)
                 } else {
                     0
                 }
             }
 
-            fn write(&mut self, _address: usize, _value: u32) {}
+            fn write(&mut self, _register: Register32, _value: u32) {}
         }
 
         // SAFETY: this test token represents no real hardware.

@@ -43,9 +43,14 @@ identities for every entry.
 | `S31_ESP_PACS_SVD` | Local `esp-pacs` commit `f823dd9d`, ESP32-S31 generated SVD |
 | `ROM_REV0_PHY_OPEN_FE_BB_CLK` | Complete 0x38-byte rev0 ROM body at `0x2f823ec0` |
 | `ROM_REV0_PHY_PBUS` | Complete PBus mode/force bodies and read address/shift jump tables |
+| `ROM_REV0_PHY_SET_PBUS_MEM` | Complete 0x180-byte `phy_set_pbus_mem` parent at `0x2f82479e` |
+| `ROM_REV0_PHY_WRITE_PBUS_MEM` | Complete 0x16a-byte `phy_write_pbus_mem` body at `0x2f824634` |
+| `ROM_REV0_PHY_SAVE_PBUS_REG` | Complete 0x32-byte `phy_save_pbus_reg` body at `0x2f824602` |
+| `ROM_REV0_PHY_WRITE_GAIN_MEM` | Complete 0x2a-byte `phy_write_gain_mem` body at `0x2f8274f0` |
 | `ROM_REV0_PHY_CLOCK_FORCE` | Complete force-TX/RX and RX/TX clock-pair bodies |
 | `ROM_REV0_PHY_I2C` | Complete clock-select, master-init/reset and host read/write bodies |
 | `BLOB_LIBPHY_PHY_I2C` | Complete S31 PHY-I2C callbacks and command-RAM initializer |
+| `BLOB_LIBPHY_PHY_SET_TX_CFR_MEM` | Complete 0x76-byte `phy_set_tx_cfr_mem` body from `phy_tx_gain.o` |
 | `BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW` | Complete PMU-based analog-I2C power/reset body |
 | `BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK` | Complete 0x20-byte `libphy.a[phy_init.o]` body |
 | `BLOB_LIBPHY_PHY_BB_INIT` | Complete 0x16a-byte `phy_bb_init` body and relocation graph |

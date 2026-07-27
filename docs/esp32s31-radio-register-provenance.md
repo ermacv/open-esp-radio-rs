@@ -45,6 +45,31 @@ preserves the blob's read/modify/write sequence in the HAL.
 
 ## PHY PBus and PHY-I2C
 
+`PHY_MEMORY` at `0x20100800` now owns the shared table-memory aperture:
+
+- `COMMAND` at `0x44`, with the widest instruction-evidenced ten-bit command
+  in bits 20:11 and the TX-CFR commit pulse in bit 21;
+- three mode-dependent data words at `0x48..0x50`;
+- six packed PBUS group-boundary words at `0x54..0x68`.
+
+Complete rev0 ROM `phy_set_pbus_mem`, `phy_write_pbus_mem`, and
+`phy_save_pbus_reg` prove the full 60-entry sequence and the twelve packed
+`first/last` group pairs. Complete ROM `phy_write_gain_mem` and complete blob
+`phy_set_tx_cfr_mem` prove that the command and data words are shared with
+gain-memory and CFR modes. Their overlapping subfields are therefore modeled
+as one mode-dependent `MEMORY_COMMAND`, not as mutually contradictory aliases.
+
+The public ESP32-S31 `esp-pacs` SVD pinned by this repository does not name
+`0x20100844..0x20100868`. Public cross-chip PBUS memory-power fields are not
+used to invent S31 identities for this internal aperture; complete S31
+instructions remain the primary source.
+
+The `phy_memory` HAL reproduces one optional boundary RMW, one data write and
+one command RMW in ROM order. It captures the six boundary words through the
+same PAC identities. The transition carries only group and entry values and
+must borrow `&mut RadioRegisters`; raw addresses and volatile pointers no
+longer cross the PBUS-memory binding.
+
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent
 complete rev0 ROM bodies establish:

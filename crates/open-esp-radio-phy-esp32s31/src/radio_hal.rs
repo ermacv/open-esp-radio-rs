@@ -1839,47 +1839,6 @@ pub(crate) unsafe fn clear_phy_pbus_work_mode_pulse() {
     pulse.write_volatile(without_phy_pbus_work_mode_pulse(pulse.read_volatile()));
 }
 
-/// Publish one entry of the recovered `phy_write_pbus_mem` sequence.
-///
-/// The optional group-header update is one RMW, followed by one data write
-/// and one address-command RMW. The caller supplies a transition-issued
-/// identity token; this leaf has no loop, readiness check, delay, callback,
-/// allocation, or access to ROM-owned RAM.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn program_phy_pbus_memory_entry(
-    entry: crate::phy_pbus_memory::PhyPbusMemoryEntry,
-) {
-    if let Some(field) = entry.control() {
-        let control = field.address() as *mut u32;
-        control.write_volatile(
-            (control.read_volatile() & !field.mask()) | (field.value() & field.mask()),
-        );
-    }
-
-    (crate::phy_pbus_memory::PHY_PBUS_MEMORY_DATA_ADDRESS as *mut u32).write_volatile(entry.data());
-    let command = crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_ADDRESS as *mut u32;
-    command.write_volatile(
-        (command.read_volatile() & crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_PRESERVE_MASK)
-            | (entry.command_bits() & crate::phy_pbus_memory::PHY_PBUS_MEMORY_COMMAND_MASK),
-    );
-}
-
-/// Capture the six words formerly stored through ROM's global `phy_param`.
-///
-/// This is a fixed six-read snapshot with no readiness loop. Ownership and
-/// commit into `PhyColdState` remain outside the MMIO leaf.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn capture_phy_pbus_memory_registers() -> [u32; 6] {
-    [
-        (0x2010_0854 as *const u32).read_volatile(),
-        (0x2010_0858 as *const u32).read_volatile(),
-        (0x2010_085c as *const u32).read_volatile(),
-        (0x2010_0860 as *const u32).read_volatile(),
-        (0x2010_0864 as *const u32).read_volatile(),
-        (0x2010_0868 as *const u32).read_volatile(),
-    ]
-}
-
 /// Sample the temperature-sensor code exactly once.
 ///
 /// Readiness and PHY-I2C range selection belong to the caller-driven

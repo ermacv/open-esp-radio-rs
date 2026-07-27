@@ -1160,6 +1160,145 @@ pub mod pmu {
     }
 }
 
+///
+/// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+/// CONFIDENCE[instruction-exact-multifunction-aperture]. Shared PHY table-memory command, data
+/// and PBUS group-boundary aperture. The same command/data words have mode-dependent
+/// PBUS-memory, TX-CFR and gain-memory meanings; fields are named only where the complete
+/// bodies prove a common or mode-independent identity.
+pub mod phy_memory {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address.
+    /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-multifunction-aperture]. Shared PHY table-memory command,
+    /// data and PBUS group-boundary aperture. The same command/data words have mode-dependent
+    /// PBUS-memory, TX-CFR and gain-memory meanings; fields are named only where the complete
+    /// bodies prove a common or mode-independent identity.
+    pub const BASE: usize = 0x20100800;
+
+    ///
+    /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. Shared memory command. Bits 20:11 carry
+    /// the widest evidenced PBUS memory command; gain-memory and TX-CFR use narrower subsets.
+    pub const COMMAND: Register32 =
+        Register32::described(0x20100844, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`COMMAND`].
+    /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. Shared memory command. Bits 20:11 carry
+    /// the widest evidenced PBUS memory command; gain-memory and TX-CFR use narrower subsets.
+    pub mod command {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM]; CONFIDENCE[instruction-exact-mode-dependent].
+        /// Ten-bit PBUS memory command; other memory modes use subsets and different encodings.
+        pub const MEMORY_COMMAND: Field32 = Field32::new(11, 10);
+        /// SOURCE[BLOB_LIBPHY_PHY_SET_TX_CFR_MEM];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. TX-CFR entry commit pulse.
+        pub const TX_CFR_COMMIT: Field32 = Field32::new(21, 1);
+    }
+
+    ///
+    /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. First shared table-memory data word;
+    /// PBUS-memory and TX-CFR use only this word.
+    pub const DATA_0: Register32 =
+        Register32::described(0x20100848, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`DATA_0`].
+    /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. First shared table-memory data word;
+    /// PBUS-memory and TX-CFR use only this word.
+    pub mod data_0 {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. First shared table-memory data word;
+        /// PBUS-memory and TX-CFR use only this word.
+        pub const OPAQUE_DATA: Field32 = Field32::new(0, 32);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM]; CONFIDENCE[instruction-exact-mode-dependent].
+    /// Second gain-memory data word.
+    pub const DATA_1: Register32 =
+        Register32::described(0x2010084c, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`DATA_1`]. SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. Second gain-memory data word.
+    pub mod data_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. Second gain-memory data word.
+        pub const OPAQUE_DATA: Field32 = Field32::new(0, 32);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM]; CONFIDENCE[instruction-exact-mode-dependent]. Third
+    /// gain-memory data word.
+    pub const DATA_2: Register32 =
+        Register32::described(0x20100850, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`DATA_2`]. SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM];
+    /// CONFIDENCE[instruction-exact-mode-dependent]. Third gain-memory data word.
+    pub mod data_2 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM];
+        /// CONFIDENCE[instruction-exact-mode-dependent]. Third gain-memory data word.
+        pub const OPAQUE_DATA: Field32 = Field32::new(0, 32);
+    }
+
+    ///
+    /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+    /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+    /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+    /// groups.
+    pub const GROUP_BOUNDARY: [Register32; 6] = [
+        Register32::described(0x20100854, RegisterAccess::ReadWrite, None),
+        Register32::described(0x20100858, RegisterAccess::ReadWrite, None),
+        Register32::described(0x2010085c, RegisterAccess::ReadWrite, None),
+        Register32::described(0x20100860, RegisterAccess::ReadWrite, None),
+        Register32::described(0x20100864, RegisterAccess::ReadWrite, None),
+        Register32::described(0x20100868, RegisterAccess::ReadWrite, None),
+    ];
+
+    /// Recovered fields of [`GROUP_BOUNDARY`].
+    /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+    /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+    /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+    /// groups.
+    pub mod group_boundary {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+        /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+        /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+        /// groups.
+        pub const EVEN_GROUP_FIRST_ENTRY: Field32 = Field32::new(0, 8);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+        /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+        /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+        /// groups.
+        pub const EVEN_GROUP_LAST_ENTRY: Field32 = Field32::new(8, 8);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+        /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+        /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+        /// groups.
+        pub const ODD_GROUP_FIRST_ENTRY: Field32 = Field32::new(16, 8);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+        /// CONFIDENCE[instruction-exact-semantics-from-complete-call-graph]. Packed first/last
+        /// entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve
+        /// groups.
+        pub const ODD_GROUP_LAST_ENTRY: Field32 = Field32::new(24, 8);
+    }
+}
+
 /// SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-mixed-semantics]. PBus command,
 /// mode, status/clock/force and packed result windows recovered from complete rev0 ROM bodies
 /// and their address/shift jump tables.
@@ -1704,7 +1843,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 102] = [
+pub const ALL: [Register32; 112] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -1743,6 +1882,16 @@ pub const ALL: [Register32; 102] = [
     pmu::IMM_MODEM_ICG,
     pmu::RF_PWC,
     pmu::ANA_PERI_PWR_CTRL,
+    phy_memory::COMMAND,
+    phy_memory::DATA_0,
+    phy_memory::DATA_1,
+    phy_memory::DATA_2,
+    phy_memory::GROUP_BOUNDARY[0],
+    phy_memory::GROUP_BOUNDARY[1],
+    phy_memory::GROUP_BOUNDARY[2],
+    phy_memory::GROUP_BOUNDARY[3],
+    phy_memory::GROUP_BOUNDARY[4],
+    phy_memory::GROUP_BOUNDARY[5],
     phy_pbus::COMMAND,
     phy_pbus::MODE,
     phy_pbus::STATUS_CLOCK_FORCE,

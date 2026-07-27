@@ -514,6 +514,78 @@
     </peripheral>
 
     <peripheral>
+      <name>PHY_MEMORY</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+        CONFIDENCE[instruction-exact-multifunction-aperture].
+        Shared PHY table-memory command, data and PBUS group-boundary aperture.
+        The same command/data words have mode-dependent PBUS-memory, TX-CFR and
+        gain-memory meanings; fields are named only where the complete bodies
+        prove a common or mode-independent identity.
+      </description>
+      <baseAddress>0x20100800</baseAddress>
+      <registers>
+        <register>
+          <name>COMMAND</name>
+          <description>
+            SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM];
+            CONFIDENCE[instruction-exact-mode-dependent].
+            Shared memory command. Bits 20:11 carry the widest evidenced PBUS
+            memory command; gain-memory and TX-CFR use narrower subsets.
+          </description>
+          <addressOffset>0x44</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>MEMORY_COMMAND</name>
+              <description>SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM]; CONFIDENCE[instruction-exact-mode-dependent]. Ten-bit PBUS memory command; other memory modes use subsets and different encodings.</description>
+              <bitOffset>11</bitOffset><bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>TX_CFR_COMMIT</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_SET_TX_CFR_MEM]; CONFIDENCE[instruction-exact-semantics-from-symbol]. TX-CFR entry commit pulse.</description>
+              <bitOffset>21</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DATA_0</name>
+          <description>SOURCE[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM]; CONFIDENCE[instruction-exact-mode-dependent]. First shared table-memory data word; PBUS-memory and TX-CFR use only this word.</description>
+          <addressOffset>0x48</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_DATA</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DATA_1</name>
+          <description>SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM]; CONFIDENCE[instruction-exact-mode-dependent]. Second gain-memory data word.</description>
+          <addressOffset>0x4c</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_DATA</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DATA_2</name>
+          <description>SOURCE[ROM_REV0_PHY_WRITE_GAIN_MEM]; CONFIDENCE[instruction-exact-mode-dependent]. Third gain-memory data word.</description>
+          <addressOffset>0x50</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_DATA</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>GROUP_BOUNDARY%s</name>
+          <description>
+            SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
+            CONFIDENCE[instruction-exact-semantics-from-complete-call-graph].
+            Packed first/last entry indices for one even/odd PBUS-memory group
+            pair. Six words describe all twelve groups.
+          </description>
+          <addressOffset>0x54</addressOffset><size>32</size><access>read-write</access>
+          <dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
+          <fields>
+            <field><name>EVEN_GROUP_FIRST_ENTRY</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>EVEN_GROUP_LAST_ENTRY</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>ODD_GROUP_FIRST_ENTRY</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>ODD_GROUP_LAST_ENTRY</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
       <name>PHY_PBUS</name>
       <description>
         SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-mixed-semantics].
@@ -763,9 +835,14 @@
       <source id="S31_PMU_HEADERS">ESP-IDF master commit 102122904ade11fd1ae373848f34ffd7dfb18aeb, components/soc/esp32s31/register/soc/pmu_reg.h; local esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, pmu_reg.h sha256 b1a04a306b9d7ee908e2f7b083d42b7a634f8687b6ee034cfe6f54f385e0d816 and pmu_struct.h sha256 5fc84c7569f9f24e193b0205728a647768c7c289b39d5ce679c50db7d8352e28</source>
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
       <source id="ROM_REV0_PHY_PBUS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pbus_force_mode at 0x2f824102 size 0x90 and phy_pbus_force_test at 0x2f824228 size 0x42, plus phy_pbus_rd address/shift jump tables</source>
+      <source id="ROM_REV0_PHY_SET_PBUS_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_set_pbus_mem at 0x2f82479e size 0x180</source>
+      <source id="ROM_REV0_PHY_WRITE_PBUS_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_pbus_mem at 0x2f824634 size 0x16a</source>
+      <source id="ROM_REV0_PHY_SAVE_PBUS_REG">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_save_pbus_reg at 0x2f824602 size 0x32</source>
+      <source id="ROM_REV0_PHY_WRITE_GAIN_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_gain_mem at 0x2f8274f0 size 0x2a</source>
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
+      <source id="BLOB_LIBPHY_PHY_SET_TX_CFR_MEM">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_cfr_mem body, size 0x76</source>
       <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body</source>
       <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
       <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>

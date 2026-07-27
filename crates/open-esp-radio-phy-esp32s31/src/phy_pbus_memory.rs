@@ -13,20 +13,7 @@
 //! `memcpy` calls and `phy_param` ABI cell are construction artifacts, not
 //! dependencies of the radio algorithm, and are intentionally absent.
 
-pub const PHY_PBUS_MEMORY_DATA_ADDRESS: usize = 0x2010_0848;
-pub const PHY_PBUS_MEMORY_COMMAND_ADDRESS: usize = 0x2010_0844;
-pub const PHY_PBUS_MEMORY_COMMAND_MASK: u32 = 0x001f_f800;
-pub const PHY_PBUS_MEMORY_COMMAND_PRESERVE_MASK: u32 = 0xffe0_07ff;
 pub const PHY_PBUS_MEMORY_ENTRY_COUNT: u8 = 60;
-
-pub const PHY_PBUS_MEMORY_SAVED_ADDRESSES: [usize; 6] = [
-    0x2010_0854,
-    0x2010_0858,
-    0x2010_085c,
-    0x2010_0860,
-    0x2010_0864,
-    0x2010_0868,
-];
 
 const GROUP_COUNT: u8 = 12;
 
@@ -74,23 +61,23 @@ pub struct PhyPbusMemoryParameters {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyPbusMemoryControlField {
-    address: usize,
-    mask: u32,
-    value: u32,
+pub struct PhyPbusMemoryGroupBoundary {
+    group: u8,
+    first_entry: u8,
+    last_entry: u8,
 }
 
-impl PhyPbusMemoryControlField {
-    pub const fn address(self) -> usize {
-        self.address
+impl PhyPbusMemoryGroupBoundary {
+    pub const fn group(self) -> u8 {
+        self.group
     }
 
-    pub const fn mask(self) -> u32 {
-        self.mask
+    pub const fn first_entry(self) -> u8 {
+        self.first_entry
     }
 
-    pub const fn value(self) -> u32 {
-        self.value
+    pub const fn last_entry(self) -> u8 {
+        self.last_entry
     }
 }
 
@@ -98,9 +85,9 @@ impl PhyPbusMemoryControlField {
 pub struct PhyPbusMemoryEntry {
     group: u8,
     index: u8,
-    control: Option<PhyPbusMemoryControlField>,
+    boundary: Option<PhyPbusMemoryGroupBoundary>,
     data: u32,
-    command_bits: u32,
+    memory_command: u16,
 }
 
 impl PhyPbusMemoryEntry {
@@ -112,16 +99,16 @@ impl PhyPbusMemoryEntry {
         self.index
     }
 
-    pub const fn control(self) -> Option<PhyPbusMemoryControlField> {
-        self.control
+    pub const fn boundary(self) -> Option<PhyPbusMemoryGroupBoundary> {
+        self.boundary
     }
 
     pub const fn data(self) -> u32 {
         self.data
     }
 
-    pub const fn command_bits(self) -> u32 {
-        self.command_bits
+    pub const fn memory_command(self) -> u16 {
+        self.memory_command
     }
 }
 
@@ -133,17 +120,14 @@ pub struct PhyPbusMemoryOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusMemoryAction {
     Program(PhyPbusMemoryEntry),
-    Capture { addresses: [usize; 6] },
+    Capture,
     Complete(PhyPbusMemoryOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusMemoryCompletion {
     Programmed(PhyPbusMemoryEntry),
-    Captured {
-        addresses: [usize; 6],
-        values: [u32; 6],
-    },
+    Captured { values: [u32; 6] },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -158,7 +142,7 @@ enum PhyPbusMemoryStep {
         group: u8,
         index: u8,
         header_accumulator: u32,
-        command_accumulator: u32,
+        command_accumulator: u16,
     },
     Capture,
     Complete(PhyPbusMemoryOutcome),
@@ -224,20 +208,13 @@ const fn data_word(parameters: PhyPbusMemoryParameters, group: u8, index: u8) ->
     }
 }
 
-const fn control_field(group: u8, header_accumulator: u32) -> PhyPbusMemoryControlField {
-    let shift = if group & 1 == 0 { 0 } else { 16 };
-    let pair = (group >> 1) as usize;
-    let encoded = ((((header_accumulator
-        .wrapping_add(group_count(group) as u32)
-        .wrapping_sub(1))
-        << 8)
-        | header_accumulator)
-        & 0xffff)
-        << shift;
-    PhyPbusMemoryControlField {
-        address: PHY_PBUS_MEMORY_SAVED_ADDRESSES[pair],
-        mask: 0xffff_u32 << shift,
-        value: encoded,
+const fn group_boundary(group: u8, header_accumulator: u32) -> PhyPbusMemoryGroupBoundary {
+    PhyPbusMemoryGroupBoundary {
+        group,
+        first_entry: header_accumulator as u8,
+        last_entry: header_accumulator
+            .wrapping_add(group_count(group) as u32)
+            .wrapping_sub(1) as u8,
     }
 }
 
@@ -246,18 +223,18 @@ const fn entry(
     group: u8,
     index: u8,
     header_accumulator: u32,
-    command_accumulator: u32,
+    command_accumulator: u16,
 ) -> PhyPbusMemoryEntry {
     PhyPbusMemoryEntry {
         group,
         index,
-        control: if index == 0 {
-            Some(control_field(group, header_accumulator))
+        boundary: if index == 0 {
+            Some(group_boundary(group, header_accumulator))
         } else {
             None
         },
         data: data_word(parameters, group, index),
-        command_bits: command_accumulator & PHY_PBUS_MEMORY_COMMAND_MASK,
+        memory_command: command_accumulator,
     }
 }
 
@@ -280,7 +257,7 @@ impl PhyPbusMemoryTransition {
                 group: 0,
                 index: 0,
                 header_accumulator: 0,
-                command_accumulator: 0x0010_0000,
+                command_accumulator: 0x200,
             },
         }
     }
@@ -299,9 +276,7 @@ impl PhyPbusMemoryTransition {
                 header_accumulator,
                 command_accumulator,
             )),
-            PhyPbusMemoryStep::Capture => PhyPbusMemoryAction::Capture {
-                addresses: PHY_PBUS_MEMORY_SAVED_ADDRESSES,
-            },
+            PhyPbusMemoryStep::Capture => PhyPbusMemoryAction::Capture,
             PhyPbusMemoryStep::Complete(outcome) => PhyPbusMemoryAction::Complete(outcome),
         }
     }
@@ -328,7 +303,7 @@ impl PhyPbusMemoryTransition {
                     command_accumulator,
                 ) =>
             {
-                let next_accumulator = command_accumulator.wrapping_add(0x800);
+                let next_accumulator = command_accumulator.wrapping_add(1);
                 if index + 1 != group_count(group) {
                     PhyPbusMemoryStep::Program {
                         group,
@@ -340,8 +315,9 @@ impl PhyPbusMemoryTransition {
                     // `header_accumulator` is the unshifted PBUS-memory entry
                     // number stored in the six group-boundary registers.
                     // `command_accumulator` is that address plus the 0x200
-                    // command-space base, shifted left by 11. They advance in
-                    // lockstep but are not interchangeable representations.
+                    // command-space base. The HAL owns its recovered bit
+                    // position, so the transition retains only the semantic
+                    // ten-bit command value.
                     PhyPbusMemoryStep::Program {
                         group: group + 1,
                         index: 0,
@@ -353,15 +329,11 @@ impl PhyPbusMemoryTransition {
                     PhyPbusMemoryStep::Capture
                 }
             }
-            (
-                PhyPbusMemoryStep::Capture,
-                PhyPbusMemoryCompletion::Captured {
-                    addresses: PHY_PBUS_MEMORY_SAVED_ADDRESSES,
-                    values,
-                },
-            ) => PhyPbusMemoryStep::Complete(PhyPbusMemoryOutcome {
-                saved_registers: values,
-            }),
+            (PhyPbusMemoryStep::Capture, PhyPbusMemoryCompletion::Captured { values }) => {
+                PhyPbusMemoryStep::Complete(PhyPbusMemoryOutcome {
+                    saved_registers: values,
+                })
+            }
             (PhyPbusMemoryStep::Complete(_), _) => {
                 return Err(PhyPbusMemoryTransitionError::AlreadyComplete);
             }
@@ -374,6 +346,8 @@ impl PhyPbusMemoryTransition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusMemoryBindingError {
     UnsupportedAction,
+    InvalidGroup,
+    InvalidCommand,
 }
 
 /// One finite direct-MMIO edge of the PBus-memory initializer.
@@ -385,9 +359,7 @@ pub struct PhyPbusMemoryMmioBinding {
 impl PhyPbusMemoryMmioBinding {
     pub fn new(action: PhyPbusMemoryAction) -> Result<Self, PhyPbusMemoryBindingError> {
         match action {
-            PhyPbusMemoryAction::Program(_) | PhyPbusMemoryAction::Capture { .. } => {
-                Ok(Self { action })
-            }
+            PhyPbusMemoryAction::Program(_) | PhyPbusMemoryAction::Capture => Ok(Self { action }),
             PhyPbusMemoryAction::Complete(_) => Err(PhyPbusMemoryBindingError::UnsupportedAction),
         }
     }
@@ -397,16 +369,40 @@ impl PhyPbusMemoryMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyPbusMemoryCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> Result<PhyPbusMemoryCompletion, PhyPbusMemoryBindingError> {
         match self.action {
             PhyPbusMemoryAction::Program(entry) => {
-                crate::radio_hal::program_phy_pbus_memory_entry(entry);
-                PhyPbusMemoryCompletion::Programmed(entry)
+                let boundary = entry.boundary().map(|field| {
+                    open_esp_radio_hal_esp32s31::phy_memory::PbusMemoryGroupBoundary {
+                        group: field.group(),
+                        first_entry: field.first_entry(),
+                        last_entry: field.last_entry(),
+                    }
+                });
+                open_esp_radio_hal_esp32s31::phy_memory::program_pbus_memory_entry(
+                    registers,
+                    boundary,
+                    entry.data(),
+                    entry.memory_command(),
+                )
+                .map_err(|error| match error {
+                    open_esp_radio_hal_esp32s31::phy_memory::PhyMemoryError::PbusGroupOutOfRange => {
+                        PhyPbusMemoryBindingError::InvalidGroup
+                    }
+                    open_esp_radio_hal_esp32s31::phy_memory::PhyMemoryError::PbusCommandOutOfRange => {
+                        PhyPbusMemoryBindingError::InvalidCommand
+                    }
+                })?;
+                Ok(PhyPbusMemoryCompletion::Programmed(entry))
             }
-            PhyPbusMemoryAction::Capture { addresses } => PhyPbusMemoryCompletion::Captured {
-                addresses,
-                values: crate::radio_hal::capture_phy_pbus_memory_registers(),
-            },
+            PhyPbusMemoryAction::Capture => Ok(PhyPbusMemoryCompletion::Captured {
+                values: open_esp_radio_hal_esp32s31::phy_memory::capture_pbus_memory_boundaries(
+                    registers,
+                ),
+            }),
             PhyPbusMemoryAction::Complete(_) => unreachable!(),
         }
     }
@@ -424,20 +420,8 @@ mod tests {
     #[test]
     fn exact_sixty_entry_rom_sequence_is_explicit() {
         let expected_counts = [8_u8, 5, 8, 5, 3, 1, 8, 5, 8, 5, 3, 1];
-        let expected_control_values = [
-            0x0000_0700,
-            0x0c08_0000,
-            0x0000_140d,
-            0x1915_0000,
-            0x0000_1c1a,
-            0x1d1d_0000,
-            0x0000_251e,
-            0x2a26_0000,
-            0x0000_322b,
-            0x3733_0000,
-            0x0000_3a38,
-            0x3b3b_0000,
-        ];
+        let expected_first = [0_u8, 8, 13, 21, 26, 29, 30, 38, 43, 51, 56, 59];
+        let expected_last = [7_u8, 12, 20, 25, 28, 29, 37, 42, 50, 55, 58, 59];
         let mut seen_counts = [0_u8; 12];
         let mut seen = 0_u8;
         let mut transition = PhyPbusMemoryTransition::new(PARAMETERS);
@@ -445,12 +429,15 @@ mod tests {
         while let PhyPbusMemoryAction::Program(entry) = transition.action() {
             assert_eq!(entry.index(), seen_counts[entry.group() as usize]);
             if entry.index() == 0 {
+                let control = entry.boundary().unwrap();
+                assert_eq!(control.group(), entry.group());
                 assert_eq!(
-                    entry.control().unwrap().value(),
-                    expected_control_values[entry.group() as usize]
+                    control.first_entry(),
+                    expected_first[entry.group() as usize]
                 );
+                assert_eq!(control.last_entry(), expected_last[entry.group() as usize]);
             } else {
-                assert_eq!(entry.control(), None);
+                assert_eq!(entry.boundary(), None);
             }
             seen_counts[entry.group() as usize] += 1;
             seen += 1;
@@ -461,12 +448,7 @@ mod tests {
 
         assert_eq!(seen, PHY_PBUS_MEMORY_ENTRY_COUNT);
         assert_eq!(seen_counts, expected_counts);
-        assert_eq!(
-            transition.action(),
-            PhyPbusMemoryAction::Capture {
-                addresses: PHY_PBUS_MEMORY_SAVED_ADDRESSES
-            }
-        );
+        assert_eq!(transition.action(), PhyPbusMemoryAction::Capture);
     }
 
     #[test]
@@ -510,18 +492,8 @@ mod tests {
         }
 
         let values = [1, 2, 3, 4, 5, 6];
-        assert_eq!(
-            transition.advance(PhyPbusMemoryCompletion::Captured {
-                addresses: [0; 6],
-                values,
-            }),
-            Err(PhyPbusMemoryTransitionError::WrongCompletion)
-        );
         transition
-            .advance(PhyPbusMemoryCompletion::Captured {
-                addresses: PHY_PBUS_MEMORY_SAVED_ADDRESSES,
-                values,
-            })
+            .advance(PhyPbusMemoryCompletion::Captured { values })
             .unwrap();
         assert_eq!(
             transition.action(),
@@ -566,9 +538,7 @@ mod tests {
             Ok(_)
         ));
         assert!(matches!(
-            PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Capture {
-                addresses: PHY_PBUS_MEMORY_SAVED_ADDRESSES,
-            }),
+            PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Capture),
             Ok(_)
         ));
         assert_eq!(

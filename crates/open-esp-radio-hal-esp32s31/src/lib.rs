@@ -10,6 +10,7 @@ pub use open_esp_radio_pac_esp32s31::{power as radio_registers, RadioRegisters, 
 pub mod analog_i2c;
 pub mod pbus;
 pub mod phy_i2c;
+pub mod phy_memory;
 pub mod power;
 pub use power::{PowerCheckpoint, PowerError, PowerEvidence, PowerOperation, PowerSequence};
 

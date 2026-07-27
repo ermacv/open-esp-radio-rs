@@ -48,13 +48,7 @@ const PHY_CALIBRATION_CLOCK_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
 const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
     | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
-const PHY_AGC_CONTROL_ADDRESS: usize = 0x2010_705c;
-const PHY_AGC_SAT_GAIN_LOW_ADDRESS: usize = 0x2010_7064;
-const PHY_AGC_SAT_GAIN_HIGH_ADDRESS: usize = 0x2010_7114;
-const PHY_AGC_WINDOW_ADDRESS: usize = 0x2010_7104;
-const PHY_RX_CONTROL_ADDRESS: usize = 0x2010_78c8;
-const PHY_FTM_CONTROL_ADDRESS: usize = 0x2010_7d4c;
-const PHY_AGC_SAT_GAIN_VALUE: u32 = 0x0818_212d;
+const PHY_RX_GAIN_LIMIT_ADDRESS: usize = 0x2010_713c;
 const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
 const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
@@ -655,12 +649,6 @@ pub(crate) unsafe fn enable_phy_iq_correction() {
     set_register_bits(PHY_IQ_CORRECTION_AUX_ADDRESS, 0x0000_6000);
 }
 
-/// Complete rev0 ROM `phy_wifi_agc_sat_gain`, size `0x0c`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_wifi_agc_saturation_gain(value: u32) {
-    write_phy_wifi_agc_sat_gain(value);
-}
-
 /// Complete rev0 ROM `phy_bb_wdg_cfg`, size `0x2c`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn configure_phy_baseband_watchdog() {
@@ -794,7 +782,7 @@ pub(crate) unsafe fn configure_phy_registers(
 ) {
     enable_phy_iq_correction();
     configure_phy_agc_registers(parameters.parameter_121, parameters.parameter_120);
-    set_phy_wifi_agc_saturation_gain(0x0008_1825);
+    open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, 0x0008_1825);
     configure_phy_baseband_registers();
     configure_phy_baseband_watchdog();
     configure_phy_tx_pa_on();
@@ -1264,26 +1252,6 @@ const fn without_register_bits(value: u32, bits: u32) -> u32 {
 
 const fn with_register_field(value: u32, mask: u32, field: u32) -> u32 {
     (value & !mask) | (field & mask)
-}
-
-const fn with_phy_agc_control(value: u32) -> u32 {
-    value | 0x0400_0000
-}
-
-const fn with_phy_agc_window(value: u32) -> u32 {
-    (value & !0x1ff) | 0x1c0
-}
-
-const fn with_phy_rx_control_low(value: u32) -> u32 {
-    (value & !0x7f) | 0x17
-}
-
-const fn with_phy_rx_control_high(value: u32) -> u32 {
-    (value & 0xffff_c07f) | 0x0b80
-}
-
-const fn with_phy_ftm_enable(value: u32, enable: u32) -> u32 {
-    (value & !1) | (enable & 1)
 }
 
 const fn with_phy_rx_comp_low(value: u32) -> u32 {
@@ -1921,7 +1889,7 @@ pub(crate) unsafe fn configure_phy_rx_gain_limits(wifi_last_index: u8) {
         u32::from(wifi_last_index & 0x7f) << 8,
     );
     replace_register_field(
-        PHY_AGC_SAT_GAIN_HIGH_ADDRESS + 0x28,
+        PHY_RX_GAIN_LIMIT_ADDRESS,
         0x01fc_0000,
         u32::from(wifi_last_index.min(0x4c)) << 18,
     );
@@ -2650,53 +2618,6 @@ pub(crate) unsafe fn clear_phy_tx_dc_measurement() {
     clear_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0001);
 }
 
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-unsafe fn write_phy_wifi_agc_sat_gain(value: u32) {
-    (PHY_AGC_SAT_GAIN_LOW_ADDRESS as *mut u32).write_volatile(value);
-    (PHY_AGC_SAT_GAIN_HIGH_ADDRESS as *mut u32).write_volatile(value);
-}
-
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-unsafe fn write_phy_ftm_enable(enable: u32) {
-    let control = PHY_FTM_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_ftm_enable(control.read_volatile(), enable));
-}
-
-/// Apply the complete recovered post-initialization PHY register update.
-///
-/// Reference: the complete pinned
-/// `libphy.a[phy_init.o]::phy_reg_update_new` body, size `0x70`, plus the
-/// complete rev0 ROM `phy_wifi_agc_sat_gain` body at `0x2f827db0`, size
-/// `0x0c`, and pinned `libphy.a[phy_reg.o]::phy_set_ftm_en`, size `0x14`.
-/// Every read/modify/write and the two saturation-gain writes retain vendor
-/// order, including the fresh second read of `0x2010_78c8`.
-///
-/// This is a finite MMIO-only transaction: no callback, ROM/vendor call,
-/// allocation, wait, delay, loop, or hidden mutable state remains.
-/// Its two evidenced callers are `register_chipv7_phy` and
-/// caller-task `phy_wakeup_init`; neither is an interrupt handler, so this
-/// cold/wakeup leaf intentionally remains flash-mapped instead of consuming
-/// the interrupt-only SRAM reserve.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-pub unsafe extern "C" fn wifi_strict_phy_reg_update_new() {
-    let agc_control = PHY_AGC_CONTROL_ADDRESS as *mut u32;
-    agc_control.write_volatile(with_phy_agc_control(agc_control.read_volatile()));
-
-    write_phy_wifi_agc_sat_gain(PHY_AGC_SAT_GAIN_VALUE);
-
-    let agc_window = PHY_AGC_WINDOW_ADDRESS as *mut u32;
-    agc_window.write_volatile(with_phy_agc_window(agc_window.read_volatile()));
-
-    let rx_control = PHY_RX_CONTROL_ADDRESS as *mut u32;
-    rx_control.write_volatile(with_phy_rx_control_low(rx_control.read_volatile()));
-    rx_control.write_volatile(with_phy_rx_control_high(rx_control.read_volatile()));
-
-    write_phy_ftm_enable(1);
-}
-
 /// Encode and publish a finite PHY transmit-gain table.
 ///
 /// Reference: pinned
@@ -2763,24 +2684,23 @@ mod tests {
         tx_queue_is_valid, with_bbpll_calibration, with_mac_rx_control_address_policy,
         with_mac_rx_control_policy, with_mac_rx_management_policy, with_mac_rx_mode,
         with_mac_rx_unique_bssid_policy, with_phy_adc_rate_high, with_phy_adc_rate_low,
-        with_phy_agc_control, with_phy_agc_window, with_phy_antenna_control0,
-        with_phy_antenna_control1, with_phy_antenna_control2, with_phy_baseband_watchdog,
-        with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second, with_phy_channel_fbw_third,
-        with_phy_channel_frequency_index, with_phy_channel_frequency_switch,
-        with_phy_channel_nrx_frequency, with_phy_channel_tx_offset, with_phy_fe_txrx_reset,
-        with_phy_frequency_i2c_number_control, with_phy_frequency_memory_address,
-        with_phy_frequency_module_enabled, with_phy_frequency_register_mode,
-        with_phy_front_end_adc_update, with_phy_front_end_update_first,
-        with_phy_front_end_update_second, with_phy_ftm_enable, with_phy_i2c_clock_selection_high,
-        with_phy_i2c_clock_selection_low, with_phy_i2c_master_register_enable,
-        with_phy_i2c_master_register_mode, with_phy_iq_est_config, with_phy_iq_est_control,
-        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_debug_control,
-        with_phy_pbus_debug_mode, with_phy_pbus_force_test, with_phy_pbus_work_control,
-        with_phy_pbus_work_mode, with_phy_pbus_work_mode_pulse,
-        with_phy_pbus_work_mode_pulse_setup, with_phy_power_detector_aux_mode,
-        with_phy_power_detector_high_field, with_phy_power_detector_low_field, with_phy_rx_clock,
-        with_phy_rx_comp_high, with_phy_rx_comp_low, with_phy_rx_control_high,
-        with_phy_rx_control_low, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
+        with_phy_antenna_control0, with_phy_antenna_control1, with_phy_antenna_control2,
+        with_phy_baseband_watchdog, with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second,
+        with_phy_channel_fbw_third, with_phy_channel_frequency_index,
+        with_phy_channel_frequency_switch, with_phy_channel_nrx_frequency,
+        with_phy_channel_tx_offset, with_phy_fe_txrx_reset, with_phy_frequency_i2c_number_control,
+        with_phy_frequency_memory_address, with_phy_frequency_module_enabled,
+        with_phy_frequency_register_mode, with_phy_front_end_adc_update,
+        with_phy_front_end_update_first, with_phy_front_end_update_second,
+        with_phy_i2c_clock_selection_high, with_phy_i2c_clock_selection_low,
+        with_phy_i2c_master_register_enable, with_phy_i2c_master_register_mode,
+        with_phy_iq_est_config, with_phy_iq_est_control, with_phy_iq_est_enable,
+        with_phy_iq_est_mode, with_phy_pbus_debug_control, with_phy_pbus_debug_mode,
+        with_phy_pbus_force_test, with_phy_pbus_work_control, with_phy_pbus_work_mode,
+        with_phy_pbus_work_mode_pulse, with_phy_pbus_work_mode_pulse_setup,
+        with_phy_power_detector_aux_mode, with_phy_power_detector_high_field,
+        with_phy_power_detector_low_field, with_phy_rx_clock, with_phy_rx_comp_high,
+        with_phy_rx_comp_low, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
         with_phy_rxiq_phase, with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin,
         with_phy_tone_path, with_phy_tone_path0_selector, with_phy_tone_path1_selector,
         with_phy_tx_clock, with_phy_tx_gain_compensation_byte1,
@@ -3243,20 +3163,6 @@ mod tests {
             with_register_field(u32::MAX, 0x0000_0007, 0x0000_0004),
             0xffff_fffc
         );
-    }
-
-    #[test]
-    fn phy_post_init_register_masks_match_the_complete_pinned_chain() {
-        assert_eq!(with_phy_agc_control(0), 0x0400_0000);
-        assert_eq!(with_phy_agc_control(u32::MAX), u32::MAX);
-        assert_eq!(with_phy_agc_window(u32::MAX), 0xffff_ffc0);
-        assert_eq!(with_phy_agc_window(0x1234_5600), 0x1234_57c0);
-        assert_eq!(with_phy_rx_control_low(u32::MAX), 0xffff_ff97);
-        assert_eq!(with_phy_rx_control_high(u32::MAX), 0xffff_cbff);
-        assert_eq!(with_phy_rx_control_high(0), 0x0000_0b80);
-        assert_eq!(with_phy_ftm_enable(0xffff_fffe, 1), u32::MAX);
-        assert_eq!(with_phy_ftm_enable(u32::MAX, 0), 0xffff_fffe);
-        assert_eq!(with_phy_ftm_enable(0, 3), 1);
     }
 
     #[test]

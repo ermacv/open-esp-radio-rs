@@ -1813,16 +1813,17 @@ pub mod phy_i2c_command_ram {
     }
 }
 
-/// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC
-/// and 11b-control registers recovered from four complete, finite rev0 ROM bodies. Names
-/// describe their proven operation role, not an unevidenced electrical identity.
+/// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+/// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
+/// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names describe
+/// their proven operation role, not an unevidenced electrical identity.
 pub mod phy_agc_oracle {
     use crate::{Register32, RegisterAccess};
 
-    /// Peripheral base address. SOURCE[ROM_REV0_PHY_AGC];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC and 11b-control
-    /// registers recovered from four complete, finite rev0 ROM bodies. Names describe their
-    /// proven operation role, not an unevidenced electrical identity.
+    /// Peripheral base address. SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
+    /// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names
+    /// describe their proven operation role, not an unevidenced electrical identity.
     pub const BASE: usize = 0x20100000;
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -1882,22 +1883,55 @@ pub mod phy_agc_oracle {
     pub const AGC_UPDATE_7048_OPAQUE: Register32 =
         Register32::described(0x20107048, RegisterAccess::WriteOnly, None);
 
-    /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-    /// phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt replaces the low
-    /// nine bits.
+    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown].
+    /// Complete phy_reg_update_new sets bit 26 before the saturation-gain writes.
+    pub const POST_INIT_AGC_CONTROL: Register32 =
+        Register32::described(0x2010705c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`POST_INIT_AGC_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets bit 26
+    /// before the saturation-gain writes.
+    pub mod post_init_agc_control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets
+        /// bit 26.
+        pub const POST_INIT_SET_UNKNOWN: Field32 = Field32::new(26, 1);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete rev0 ROM
+    /// phy_wifi_agc_sat_gain writes its argument here first.
+    pub const SATURATION_GAIN_LOW: Register32 =
+        Register32::described(0x20107064, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes
+    /// the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field
+    /// with independently evidenced values.
     pub const RX_11B_WINDOW_CONTROL: Register32 =
         Register32::described(0x20107104, RegisterAccess::ReadWrite, None);
 
-    /// Recovered fields of [`RX_11B_WINDOW_CONTROL`]. SOURCE[ROM_REV0_PHY_AGC];
+    /// Recovered fields of [`RX_11B_WINDOW_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes
-    /// the full word; complete phy_rx_11b_opt replaces the low nine bits.
+    /// the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field
+    /// with independently evidenced values.
     pub mod rx_11b_window_control {
         use crate::Field32;
 
-        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-        /// phy_rx_11b_opt writes 0x1c8 into bits 8:0.
-        pub const RX_11B_WINDOW_UNKNOWN: Field32 = Field32::new(0, 9);
+        /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt writes
+        /// 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0.
+        pub const WINDOW_UNKNOWN: Field32 = Field32::new(0, 9);
     }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete rev0 ROM
+    /// phy_wifi_agc_sat_gain writes its argument here second.
+    pub const SATURATION_GAIN_HIGH: Register32 =
+        Register32::described(0x20107114, RegisterAccess::WriteOnly, None);
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
     /// phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two
@@ -1923,6 +1957,44 @@ pub mod phy_agc_oracle {
     /// phy_bb_agc_reg_update writes 0x0001721f.
     pub const AGC_UPDATE_78A4_OPAQUE: Register32 =
         Register32::described(0x201078a4, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown].
+    /// Complete phy_reg_update_new performs two fresh-read field replacements in this order.
+    pub const POST_INIT_RX_CONTROL: Register32 =
+        Register32::described(0x201078c8, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`POST_INIT_RX_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new performs
+    /// two fresh-read field replacements in this order.
+    pub mod post_init_rx_control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. First fresh-read update replaces
+        /// bits 6:0 with 0x17.
+        pub const LOW_UNKNOWN: Field32 = Field32::new(0, 7);
+        /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Second fresh-read update replaces
+        /// bits 13:7 with 0x17.
+        pub const HIGH_UNKNOWN: Field32 = Field32::new(7, 7);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete phy_set_ftm_en replaces
+    /// bit zero with its one-bit argument.
+    pub const FTM_CONTROL: Register32 =
+        Register32::described(0x20107d4c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`FTM_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete phy_set_ftm_en replaces
+    /// bit zero with its one-bit argument.
+    pub mod ftm_control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbols]. One-bit FTM enable argument.
+        pub const ENABLE: Field32 = Field32::new(0, 1);
+    }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
     /// phy_bb_agc_reg_update clears bit 26; complete phy_rx_11b_opt replaces bits 15:12.
@@ -2068,7 +2140,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 129] = [
+pub const ALL: [Register32; 134] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2182,9 +2254,14 @@ pub const ALL: [Register32; 129] = [
     phy_agc_oracle::DISABLE_CONTROL,
     phy_agc_oracle::RX_11B_PATH_CONTROL_0,
     phy_agc_oracle::AGC_UPDATE_7048_OPAQUE,
+    phy_agc_oracle::POST_INIT_AGC_CONTROL,
+    phy_agc_oracle::SATURATION_GAIN_LOW,
     phy_agc_oracle::RX_11B_WINDOW_CONTROL,
+    phy_agc_oracle::SATURATION_GAIN_HIGH,
     phy_agc_oracle::RX_11B_PATH_CONTROL_1,
     phy_agc_oracle::AGC_UPDATE_78A4_OPAQUE,
+    phy_agc_oracle::POST_INIT_RX_CONTROL,
+    phy_agc_oracle::FTM_CONTROL,
     phy_agc_oracle::RX_11B_MODE_CONTROL,
     phy_agc_oracle::AGC_UPDATE_8010_OPAQUE,
     phy_agc_oracle::AGC_UPDATE_8018_OPAQUE,

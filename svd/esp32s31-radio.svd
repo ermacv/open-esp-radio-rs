@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.3</version>
+  <version>0.4</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
     Unknown fields are omitted; OPAQUE and UNKNOWN names describe
@@ -811,10 +811,11 @@
     <peripheral>
       <name>PHY_AGC_ORACLE</name>
       <description>
-        SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown].
-        OPAQUE PHY AGC and 11b-control registers recovered from four complete,
-        finite rev0 ROM bodies. Names describe their proven operation role,
-        not an unevidenced electrical identity.
+        SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+        CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC,
+        post-initialization and 11b-control registers recovered from complete,
+        finite rev0 ROM/blob bodies. Names describe their proven operation
+        role, not an unevidenced electrical identity.
       </description>
       <baseAddress>0x20100000</baseAddress>
       <registers>
@@ -865,16 +866,38 @@
           <addressOffset>0x7048</addressOffset><size>32</size><access>write-only</access>
         </register>
         <register>
+          <name>POST_INIT_AGC_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets bit 26 before the saturation-gain writes.</description>
+          <addressOffset>0x705c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>POST_INIT_SET_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets bit 26.</description>
+              <bitOffset>26</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SATURATION_GAIN_LOW</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here first.</description>
+          <addressOffset>0x7064</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
           <name>RX_11B_WINDOW_CONTROL</name>
-          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt replaces the low nine bits.</description>
+          <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field with independently evidenced values.</description>
           <addressOffset>0x7104</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field>
-              <name>RX_11B_WINDOW_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt writes 0x1c8 into bits 8:0.</description>
+              <name>WINDOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0.</description>
               <bitOffset>0</bitOffset><bitWidth>9</bitWidth>
             </field>
           </fields>
+        </register>
+        <register>
+          <name>SATURATION_GAIN_HIGH</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here second.</description>
+          <addressOffset>0x7114</addressOffset><size>32</size><access>write-only</access>
         </register>
         <register>
           <name>RX_11B_PATH_CONTROL_1</name>
@@ -897,6 +920,35 @@
           <name>AGC_UPDATE_78A4_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x0001721f.</description>
           <addressOffset>0x78a4</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>POST_INIT_RX_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new performs two fresh-read field replacements in this order.</description>
+          <addressOffset>0x78c8</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. First fresh-read update replaces bits 6:0 with 0x17.</description>
+              <bitOffset>0</bitOffset><bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Second fresh-read update replaces bits 13:7 with 0x17.</description>
+              <bitOffset>7</bitOffset><bitWidth>7</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>FTM_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete phy_set_ftm_en replaces bit zero with its one-bit argument.</description>
+          <addressOffset>0x7d4c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>ENABLE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-from-symbols]. One-bit FTM enable argument.</description>
+              <bitOffset>0</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>RX_11B_MODE_CONTROL</name>
@@ -1036,6 +1088,7 @@
       <source id="BLOB_LIBPHY_PHY_SET_TX_CFR_MEM">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_cfr_mem body, size 0x76</source>
       <source id="BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_gain_mem_new body and complete ROM phy_write_gain_mem leaf</source>
       <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body</source>
+      <source id="BLOB_LIBPHY_PHY_REG_UPDATE_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o phy_reg_update_new body, complete phy_reg.o phy_set_ftm_en tail and complete rev0 ROM phy_wifi_agc_sat_gain at 0x2f827db0 size 0x0c</source>
       <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
       <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>
     </openEspRadioProvenance>

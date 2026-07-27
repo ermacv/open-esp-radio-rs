@@ -2982,7 +2982,31 @@ unknown while preserving:
 
 The live baseband state machine, RX-table suffix and channel transition now
 pass their existing unique register borrow into these leaves. Their former
-raw-pointer implementations and hard-coded addresses are gone. The
-blob-derived post-initialization update still accesses one shared physical
-register through the transitional raw layer; moving that separate complete
-sequence behind the same PAC identity is the next ownership stage.
+raw-pointer implementations and hard-coded addresses are gone.
+
+## Typed PHY post-initialization register boundary
+
+The complete blob-derived post-init sequence now uses the same
+`PHY_AGC_ORACLE` PAC and `&mut RadioRegisters` capability. Its primary blob
+source is pinned `libphy.a`, SHA-256
+`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`:
+the complete `phy_reg_update_new` parent and `phy_set_ftm_en` tail. The
+complete rev0 ROM `phy_wifi_agc_sat_gain` leaf at `0x2f827db0`, size `0x0c`,
+proves the two full-word stores.
+
+The generated PAC adds the five post-init register identities at offsets
+`0x705c`, `0x7064`, `0x7114`, `0x78c8` and `0x7d4c`, and reuses the
+instruction-proven nine-bit field on the shared `0x7104` word. Unknown
+electrical meanings remain `UNKNOWN`. The safe HAL method preserves the
+seven vendor writes and their order, including a fresh read before each of
+the two field replacements at `0x78c8`. A second safe method owns the same
+two saturation-gain destinations for the dynamic value used during
+`phy_reg_init`.
+
+`PhyBbMmioBinding::execute_target` and `configure_phy_registers` now pass
+their existing unique register borrow into these operations. The exported
+`wifi_strict_phy_reg_update_new` C ABI, its six raw addresses, and duplicate
+mask helpers are deleted. The source-only audit rejects any reintroduction of
+the five addresses that no longer have another evidenced raw consumer;
+`0x705c` remains temporarily exempt because a distinct recovered
+RF-saturation leaf also touches that physical word.

@@ -526,7 +526,7 @@ impl PhyBbMmioBinding {
                 crate::radio_hal::configure_phy_bb_agc_register_update(registers)
             }
             PhyBbMmioAction::UpdatePostInitRegisters => {
-                crate::radio_hal::wifi_strict_phy_reg_update_new()
+                open_esp_radio_hal_esp32s31::phy_agc::update_post_initialization(registers)
             }
             PhyBbMmioAction::EnableAgc => crate::radio_hal::enable_phy_agc(registers),
             PhyBbMmioAction::SetWifiEnabled { enabled } => {
@@ -548,7 +548,7 @@ impl PhyBbMmioBinding {
             }
             PhyBbMmioAction::EnableIqCorrection => crate::radio_hal::enable_phy_iq_correction(),
             PhyBbMmioAction::SetWifiAgcSaturationGain { value } => {
-                crate::radio_hal::set_phy_wifi_agc_saturation_gain(value)
+                open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, value)
             }
             PhyBbMmioAction::ConfigureBasebandWatchdog => {
                 crate::radio_hal::configure_phy_baseband_watchdog()

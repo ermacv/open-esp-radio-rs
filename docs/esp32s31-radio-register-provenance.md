@@ -89,21 +89,24 @@ output words by checked slice indexing before publishing each of 32 entries.
 No active publisher for this aperture contains a raw address or volatile
 pointer.
 
-`PHY_AGC_ORACLE` localizes the register set shared by four complete rev0 ROM
-bodies:
+`PHY_AGC_ORACLE` localizes the register set shared by complete rev0 ROM bodies
+and one complete pinned blob parent:
 
 - `phy_bb_agc_reg_update` at `0x2f82860e`, size `0xa6`;
 - `phy_disable_agc` at `0x2f827460`, size `0x10`;
 - `phy_enable_agc` at `0x2f827470`, size `0x28`;
 - both branches of `phy_rx_11b_opt` at `0x2f827588`, size `0xc4`.
+- `libphy.a[phy_init.o]::phy_reg_update_new`, including complete
+  `phy_set_ftm_en` and ROM `phy_wifi_agc_sat_gain` leaves.
 
 The internal electrical identities are not public. The SVD therefore records
-the sixteen internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
+the internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
 names. It adds only instruction-proven fields: the disable bit, enable pulse,
 six 11b fields, one cleared bit and one three-bit set field in the baseband
-update. The final three-bit update at `0x20109c18` is represented on the
-already exact S31 `MODEM_SYSCON.WIFI_BB_CFG` register, alongside the unrelated
-PBus settle condition.
+update, plus the post-init AGC, RX and FTM fields. The final three-bit
+baseband update at `0x20109c18` is represented on the already exact S31
+`MODEM_SYSCON.WIFI_BB_CFG` register, alongside the unrelated PBus settle
+condition.
 
 The `phy_agc` HAL preserves the complete ROM access order: fifteen ordered
 baseband-update writes, three fresh-read edges when enabling AGC, one
@@ -114,10 +117,17 @@ initialization and every open channel transition now borrow
 `&mut RadioRegisters` for these operations; their former raw address blocks
 have been removed from the live PHY crate.
 
-The same physical `RX_11B_WINDOW_CONTROL` word at `0x20107104` is also touched
-by the separate blob-derived post-initialization update. That operation
-remains a distinct migration stage: sharing a PAC identity does not merge two
-independently evidenced sequences or assign them one guessed semantic name.
+The complete post-initialization sequence is now behind the same owned
+boundary. `BLOB_LIBPHY_PHY_REG_UPDATE_NEW` records pinned `libphy.a`, SHA-256
+`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+and the complete rev0 saturation-gain leaf. The PAC adds five register
+identities and reuses the instruction-proven nine-bit field on the shared
+`RX_11B_WINDOW_CONTROL` word at `0x20107104`. The HAL preserves all seven
+writes: one AGC RMW, two full-word saturation-gain stores, the shared window
+RMW, two independently read RX-field RMWs, and the FTM-enable RMW. The
+dynamic saturation-gain operation used by `phy_reg_init` is owned by the same
+method. The former raw C ABI, raw pointers and duplicate bit-mask helpers are
+removed; both live callers pass their unique `RadioRegisters` borrow.
 
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent

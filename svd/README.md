@@ -55,6 +55,7 @@ identities for every entry.
 | `BLOB_LIBPHY_PHY_SET_TX_CFR_MEM` | Complete 0x76-byte `phy_set_tx_cfr_mem` body from `phy_tx_gain.o` |
 | `BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW` | Complete `phy_set_tx_gain_mem_new` body from `phy_tx_gain.o` and its complete ROM write leaf |
 | `BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW` | Complete PMU-based analog-I2C power/reset body |
+| `BLOB_LIBPHY_PHY_REG_UPDATE_NEW` | Complete post-initialization register update, FTM tail, and ROM saturation-gain leaf |
 | `BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK` | Complete 0x20-byte `libphy.a[phy_init.o]` body |
 | `BLOB_LIBPHY_PHY_BB_INIT` | Complete 0x16a-byte `phy_bb_init` body and relocation graph |
 

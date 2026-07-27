@@ -1,9 +1,9 @@
 //! Owned ESP32-S31 PHY AGC register leaves.
 //!
-//! Register addresses, masks, values, and access order come from four
-//! complete rev0 ROM bodies. Internal electrical meanings are not public, so
-//! the PAC deliberately retains `UNKNOWN` names instead of borrowing names
-//! from a neighboring chip.
+//! Register addresses, masks, values, and access order come from complete
+//! rev0 ROM and pinned `libphy.a` bodies. Internal electrical meanings are
+//! not public, so the PAC deliberately retains `UNKNOWN` names instead of
+//! borrowing names from a neighboring chip.
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
@@ -46,7 +46,7 @@ impl RegisterIo for RadioRegisters {
 /// Apply complete rev0 ROM `phy_bb_agc_reg_update`.
 ///
 /// The body at `0x2f82_860e`, size `0xa6`, has no call, loop, wait, callback,
-/// or software-global access. This operation preserves all fourteen writes
+/// or software-global access. This operation preserves all fifteen writes
 /// and fresh-read updates in instruction order. OPAQUE full-word values are
 /// intentionally kept as exact ROM constants.
 #[cfg(target_arch = "riscv32")]
@@ -118,6 +118,69 @@ fn set_enabled_with(io: &mut impl RegisterIo, enabled: bool) {
     io.modify(phy_agc_oracle::ENABLE_PULSE_CONTROL, pulse.mask(), 0);
 }
 
+/// Publish one Wi-Fi AGC saturation-gain word to both recovered destinations.
+///
+/// Basis: complete rev0 ROM `phy_wifi_agc_sat_gain` at `0x2f82_7db0`, size
+/// `0x0c`. It performs exactly two stores, with no read, call, branch, wait,
+/// or hidden state.
+#[cfg(target_arch = "riscv32")]
+pub fn set_saturation_gain(registers: &mut RadioRegisters, value: u32) {
+    set_saturation_gain_with(registers, value);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn set_saturation_gain_with(io: &mut impl RegisterIo, value: u32) {
+    io.write(phy_agc_oracle::SATURATION_GAIN_LOW, value);
+    io.write(phy_agc_oracle::SATURATION_GAIN_HIGH, value);
+}
+
+/// Apply complete pinned `phy_reg_update_new` and both of its finite leaves.
+///
+/// The `libphy.a[phy_init.o]` parent sets one AGC bit, calls the complete ROM
+/// saturation-gain leaf, replaces the nine-bit window, performs two
+/// independently read updates on one RX word, then tail-calls complete
+/// `libphy.a[phy_reg.o]::phy_set_ftm_en(1)`. This method retains all seven
+/// writes in that exact order.
+#[cfg(target_arch = "riscv32")]
+pub fn update_post_initialization(registers: &mut RadioRegisters) {
+    update_post_initialization_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn update_post_initialization_with(io: &mut impl RegisterIo) {
+    let agc = phy_agc_oracle::post_init_agc_control::POST_INIT_SET_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::POST_INIT_AGC_CONTROL,
+        agc.mask(),
+        agc.mask(),
+    );
+
+    set_saturation_gain_with(io, 0x0818_212d);
+
+    let window = phy_agc_oracle::rx_11b_window_control::WINDOW_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::RX_11B_WINDOW_CONTROL,
+        window.mask(),
+        field_value(window, 0x1c0),
+    );
+
+    let low = phy_agc_oracle::post_init_rx_control::LOW_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::POST_INIT_RX_CONTROL,
+        low.mask(),
+        field_value(low, 0x17),
+    );
+    let high = phy_agc_oracle::post_init_rx_control::HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::POST_INIT_RX_CONTROL,
+        high.mask(),
+        field_value(high, 0x17),
+    );
+
+    let ftm = phy_agc_oracle::ftm_control::ENABLE;
+    io.modify(phy_agc_oracle::FTM_CONTROL, ftm.mask(), ftm.mask());
+}
+
 /// Apply either complete branch of rev0 ROM `phy_rx_11b_opt`.
 ///
 /// The body at `0x2f82_7588`, size `0xc4`, performs five fresh-read field
@@ -169,7 +232,7 @@ fn configure_rx_11b_optimization_with(io: &mut impl RegisterIo, enabled: bool) {
         field_value(mode, mode_value),
     );
 
-    let window = phy_agc_oracle::rx_11b_window_control::RX_11B_WINDOW_UNKNOWN;
+    let window = phy_agc_oracle::rx_11b_window_control::WINDOW_UNKNOWN;
     io.modify(
         phy_agc_oracle::RX_11B_WINDOW_CONTROL,
         window.mask(),
@@ -182,8 +245,8 @@ mod tests {
     use std::{vec, vec::Vec};
 
     use super::{
-        configure_rx_11b_optimization_with, set_enabled_with, update_baseband_registers_with,
-        RegisterIo,
+        configure_rx_11b_optimization_with, set_enabled_with, set_saturation_gain_with,
+        update_baseband_registers_with, update_post_initialization_with, RegisterIo,
     };
     use open_esp_radio_pac_esp32s31::{
         power::{modem_syscon, phy_agc_oracle},
@@ -281,6 +344,45 @@ mod tests {
         assert_eq!(
             io.writes,
             vec![(phy_agc_oracle::DISABLE_CONTROL, 0x2123_4567)]
+        );
+    }
+
+    #[test]
+    fn saturation_gain_is_two_ordered_full_word_writes() {
+        let mut io = FakeRegisters::default();
+
+        set_saturation_gain_with(&mut io, 0x0008_1825);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::SATURATION_GAIN_LOW, 0x0008_1825),
+                (phy_agc_oracle::SATURATION_GAIN_HIGH, 0x0008_1825),
+            ]
+        );
+    }
+
+    #[test]
+    fn post_initialization_retains_both_fresh_rx_reads() {
+        let mut io = FakeRegisters::default()
+            .with(phy_agc_oracle::POST_INIT_AGC_CONTROL, 0x1000_0001)
+            .with(phy_agc_oracle::RX_11B_WINDOW_CONTROL, u32::MAX)
+            .with(phy_agc_oracle::POST_INIT_RX_CONTROL, u32::MAX)
+            .with(phy_agc_oracle::FTM_CONTROL, 0xffff_fffe);
+
+        update_post_initialization_with(&mut io);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::POST_INIT_AGC_CONTROL, 0x1400_0001),
+                (phy_agc_oracle::SATURATION_GAIN_LOW, 0x0818_212d),
+                (phy_agc_oracle::SATURATION_GAIN_HIGH, 0x0818_212d),
+                (phy_agc_oracle::RX_11B_WINDOW_CONTROL, 0xffff_ffc0),
+                (phy_agc_oracle::POST_INIT_RX_CONTROL, 0xffff_ff97),
+                (phy_agc_oracle::POST_INIT_RX_CONTROL, 0xffff_cb97),
+                (phy_agc_oracle::FTM_CONTROL, u32::MAX),
+            ]
         );
     }
 

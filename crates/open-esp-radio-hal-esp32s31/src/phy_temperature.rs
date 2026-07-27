@@ -10,9 +10,14 @@
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(any(test, target_arch = "riscv32"))]
 use open_esp_radio_pac_esp32s31::{
-    power::{phy_temperature_sensor_oracle as sensor, phy_temperature_system_oracle as system},
-    Field32, Register32,
+    power::phy_temperature_sensor_oracle as sensor, Field32, Register32,
 };
+
+/// Official system-peripheral capability needed by PHY temperature setup.
+pub trait PhyTemperatureSystemControl {
+    /// Enable the LP temperature-sensor peripheral clock.
+    fn enable_temperature_sensor_clock(&mut self);
+}
 
 #[cfg(any(test, target_arch = "riscv32"))]
 trait RegisterIo {
@@ -45,20 +50,17 @@ impl RegisterIo for RadioRegisters {
 /// complete ROM `phy_set_tsens_power_(1)`. Both archive ABI arguments are
 /// ignored and therefore do not cross this safe boundary.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize(registers: &mut RadioRegisters) {
-    initialize_with(registers);
+pub fn initialize(platform: &mut impl PhyTemperatureSystemControl, registers: &mut RadioRegisters) {
+    initialize_with(platform, registers);
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
-fn initialize_with(io: &mut impl RegisterIo) {
+fn initialize_with(platform: &mut impl PhyTemperatureSystemControl, io: &mut impl RegisterIo) {
     io.set(
         sensor::SENSOR_CONTROL,
         sensor::sensor_control::READ_PATH_ENABLE_UNKNOWN,
     );
-    io.set(
-        system::SYSTEM_CONTROL,
-        system::system_control::SENSOR_CLOCK_ENABLE_UNKNOWN,
-    );
+    platform.enable_temperature_sensor_clock();
     io.set(
         sensor::SENSOR_CONTROL,
         sensor::sensor_control::READOUT_ENABLE_UNKNOWN,
@@ -107,6 +109,17 @@ mod tests {
         operations: Vec<Operation>,
     }
 
+    #[derive(Default)]
+    struct FakePlatform {
+        clock_enables: usize,
+    }
+
+    impl PhyTemperatureSystemControl for FakePlatform {
+        fn enable_temperature_sensor_clock(&mut self) {
+            self.clock_enables += 1;
+        }
+    }
+
     impl FakeRegisters {
         fn with(mut self, register: Register32, value: u32) -> Self {
             self.values.push((register, value));
@@ -145,18 +158,15 @@ mod tests {
     #[test]
     fn initialization_preserves_all_five_fresh_reads_and_their_order() {
         let sensor_initial = 0x1000_0400;
-        let system_initial = 0x0100_0003;
         let code_power_initial = 0x0080_00a5;
+        let mut platform = FakePlatform::default();
         let mut io = FakeRegisters::default()
             .with(sensor::SENSOR_CONTROL, sensor_initial)
-            .with(system::SYSTEM_CONTROL, system_initial)
             .with(sensor::SENSOR_CODE_POWER, code_power_initial);
 
-        initialize_with(&mut io);
+        initialize_with(&mut platform, &mut io);
 
         let sensor_first = sensor_initial | sensor::sensor_control::READ_PATH_ENABLE_UNKNOWN.mask();
-        let system_next =
-            system_initial | system::system_control::SENSOR_CLOCK_ENABLE_UNKNOWN.mask();
         let sensor_second = sensor_first | sensor::sensor_control::READOUT_ENABLE_UNKNOWN.mask();
         let sensor_third = sensor_second | sensor::sensor_control::CONVERSION_ENABLE_UNKNOWN.mask();
         let code_power_next = code_power_initial | sensor::sensor_code_power::POWER_ENABLE.mask();
@@ -165,8 +175,6 @@ mod tests {
             [
                 Operation::Read(sensor::SENSOR_CONTROL, sensor_initial),
                 Operation::Write(sensor::SENSOR_CONTROL, sensor_first),
-                Operation::Read(system::SYSTEM_CONTROL, system_initial),
-                Operation::Write(system::SYSTEM_CONTROL, system_next),
                 Operation::Read(sensor::SENSOR_CONTROL, sensor_first),
                 Operation::Write(sensor::SENSOR_CONTROL, sensor_second),
                 Operation::Read(sensor::SENSOR_CONTROL, sensor_second),
@@ -175,6 +183,7 @@ mod tests {
                 Operation::Write(sensor::SENSOR_CODE_POWER, code_power_next),
             ]
         );
+        assert_eq!(platform.clock_enables, 1);
     }
 
     #[test]

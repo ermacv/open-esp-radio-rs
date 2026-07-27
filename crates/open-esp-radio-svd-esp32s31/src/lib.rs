@@ -7449,71 +7449,6 @@ pub mod phy_temperature_sensor_oracle {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Independently addressed system-control word touched by complete phy_tsens_read_init."]
-pub type PhyTemperatureSystemOracle =
-    crate::Periph<phy_temperature_system_oracle::RegisterBlock, 0x2071_0000>;
-impl core::fmt::Debug for PhyTemperatureSystemOracle {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("PhyTemperatureSystemOracle").finish()
-    }
-}
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Independently addressed system-control word touched by complete phy_tsens_read_init."]
-pub mod phy_temperature_system_oracle {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        _reserved0: [u8; 0x30],
-        system_control: SystemControl,
-    }
-    impl RegisterBlock {
-        #[doc = "0x30 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bit 30 between the first and second sensor-control updates."]
-        #[inline(always)]
-        pub const fn system_control(&self) -> &SystemControl {
-            &self.system_control
-        }
-    }
-    #[doc = "SYSTEM_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bit 30 between the first and second sensor-control updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`system_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`system_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@system_control`] module"]
-    #[doc(alias = "SYSTEM_CONTROL")]
-    pub type SystemControl = crate::Reg<system_control::SystemControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bit 30 between the first and second sensor-control updates."]
-    pub mod system_control {
-        #[doc = "Register `SYSTEM_CONTROL` reader"]
-        pub type R = crate::R<SystemControlSpec>;
-        #[doc = "Register `SYSTEM_CONTROL` writer"]
-        pub type W = crate::W<SystemControlSpec>;
-        #[doc = "Field `SENSOR_CLOCK_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 30 is set before the remaining sensor-control updates."]
-        pub type SensorClockEnableUnknownR = crate::BitReader;
-        #[doc = "Field `SENSOR_CLOCK_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 30 is set before the remaining sensor-control updates."]
-        pub type SensorClockEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 30 is set before the remaining sensor-control updates."]
-            #[inline(always)]
-            pub fn sensor_clock_enable_unknown(&self) -> SensorClockEnableUnknownR {
-                SensorClockEnableUnknownR::new(((self.bits >> 30) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 30 is set before the remaining sensor-control updates."]
-            #[inline(always)]
-            pub fn sensor_clock_enable_unknown(
-                &mut self,
-            ) -> SensorClockEnableUnknownW<'_, SystemControlSpec> {
-                SensorClockEnableUnknownW::new(self, 30)
-            }
-        }
-        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bit 30 between the first and second sensor-control updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`system_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`system_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SystemControlSpec;
-        impl crate::RegisterSpec for SystemControlSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`system_control::R`](R) reader structure"]
-        impl crate::Readable for SystemControlSpec {}
-        #[doc = "`write(|w| ..)` method takes [`system_control::W`](W) writer structure"]
-        impl crate::Writable for SystemControlSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
 #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. OPAQUE PHY clock-gate registers recovered from complete no-call ROM/blob leaves."]
 pub type PhyClockOracle = crate::Periph<phy_clock_oracle::RegisterBlock, 0x2010_0000>;
 impl core::fmt::Debug for PhyClockOracle {
@@ -8682,8 +8617,6 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_TEMPERATURE_SENSOR_ORACLE"]
     pub phy_temperature_sensor_oracle: PhyTemperatureSensorOracle,
-    #[doc = "PHY_TEMPERATURE_SYSTEM_ORACLE"]
-    pub phy_temperature_system_oracle: PhyTemperatureSystemOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
     #[doc = "WIFI_MAC_RX_DMA"]
@@ -8721,7 +8654,6 @@ impl Peripherals {
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),
             phy_temperature_sensor_oracle: PhyTemperatureSensorOracle::steal(),
-            phy_temperature_system_oracle: PhyTemperatureSystemOracle::steal(),
             phy_clock_oracle: PhyClockOracle::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }

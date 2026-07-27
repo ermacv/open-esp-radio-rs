@@ -330,6 +330,13 @@ encodings: four for `phy_pwdet_reg_init`/`phy_pwdet_sar2_init`, and two for
 `phy_txcal_debuge_mode_`. The official PAC patch records those same ROM
 sources, while the open PHY crate retains their required operation order.
 
+SVD v2.2 removes `PHY_TEMPERATURE_SYSTEM_ORACLE`. Its sole register is
+exactly official `LP_PERICLKRST.TSENS_CTRL`, and complete pinned
+`libphy.a[phy_tsens.o]::phy_tsens_read_init` identifies bit 30 as the LP
+temperature-sensor clock enable. The platform adapter owns the `LP_PERI`
+singleton; the open HAL retains the five-edge blob order around that official
+PAC operation.
+
 Public Espressif sources do not currently define these S31 internal PHY
 fields. The public
 [ESP32 Open MAC project](https://github.com/esp32-open-mac/esp32-open-mac)

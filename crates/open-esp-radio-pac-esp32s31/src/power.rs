@@ -2533,35 +2533,6 @@ pub mod phy_temperature_sensor_oracle {
     }
 }
 
-/// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
-/// Independently addressed system-control word touched by complete phy_tsens_read_init.
-pub mod phy_temperature_system_oracle {
-    use crate::{Register32, RegisterAccess};
-
-    /// Peripheral base address. SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Independently addressed system-control
-    /// word touched by complete phy_tsens_read_init.
-    pub const BASE: usize = 0x20710000;
-
-    /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bit
-    /// 30 between the first and second sensor-control updates.
-    pub const SYSTEM_CONTROL: Register32 =
-        Register32::described(0x20710030, RegisterAccess::ReadWrite, None);
-
-    /// Recovered fields of [`SYSTEM_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bit
-    /// 30 between the first and second sensor-control updates.
-    pub mod system_control {
-        use crate::Field32;
-
-        /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-        /// CONFIDENCE[instruction-exact-semantics-unknown]. Bit 30 is set before the remaining
-        /// sensor-control updates.
-        pub const SENSOR_CLOCK_ENABLE_UNKNOWN: Field32 = Field32::new(30, 1);
-    }
-}
-
 ///
 /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers recovered
@@ -3000,7 +2971,7 @@ pub mod wifi_mac_rx_dma {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 194] = [
+pub const ALL: [Register32; 193] = [
     phy_memory::COMMAND,
     phy_memory::DATA_0,
     phy_memory::DATA_1,
@@ -3166,7 +3137,6 @@ pub const ALL: [Register32; 194] = [
     phy_cold_deadline_oracle::DEADLINE_COUNTER_UNKNOWN,
     phy_temperature_sensor_oracle::SENSOR_CODE_POWER,
     phy_temperature_sensor_oracle::SENSOR_CONTROL,
-    phy_temperature_system_oracle::SYSTEM_CONTROL,
     phy_clock_oracle::FE_CLOCK_GATE_OPAQUE,
     phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,

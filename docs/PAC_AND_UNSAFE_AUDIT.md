@@ -130,7 +130,7 @@ chip-level peripherals:
 | `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` | removed |
 | `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | removed |
 | `PMU` | `esp32s31::PMU` | `0x2070_4000` | removed |
-| `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | pending |
+| `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | removed |
 | `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | pending |
 
 Those identities must move behind a platform capability borrowed from the

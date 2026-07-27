@@ -6,13 +6,13 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.1</version>
+  <version>2.2</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
-    HP_SYS_CLKRST, MODEM_SYSCON, MODEM_LPCON, PMU and LP_AON_CLKRST are
-    deliberately absent: the active driver owns and accesses them through
-    esp-hal and the official ESP32-S31 PAC. These are independently decoded
+    HP_SYS_CLKRST, MODEM_SYSCON, MODEM_LPCON, PMU, LP_AON_CLKRST and
+    LP_PERICLKRST are deliberately absent: the active driver owns and accesses
+    them through esp-hal and the official ESP32-S31 PAC. These are independently decoded
     MMIO windows, not one monolithic radio peripheral. Covered functions include PHY-PBus,
     PHY-I2C, IQ estimation, RX-DCO, cold deadlines, temperature sensing,
     Wi-Fi MAC RX-DMA and receive BlockAck. Unknown fields are omitted; OPAQUE
@@ -1393,31 +1393,6 @@
             <field><name>READ_PATH_ENABLE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>CONVERSION_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>READOUT_ENABLE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-
-    <peripheral>
-      <name>PHY_TEMPERATURE_SYSTEM_ORACLE</name>
-      <description>
-        SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-        CONFIDENCE[instruction-exact-semantics-unknown].
-        Independently addressed system-control word touched by complete
-        phy_tsens_read_init.
-      </description>
-      <baseAddress>0x20710000</baseAddress>
-      <registers>
-        <register>
-          <name>SYSTEM_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bit 30 between the first and second sensor-control updates.</description>
-          <addressOffset>0x0030</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field>
-              <name>SENSOR_CLOCK_ENABLE_UNKNOWN</name>
-              <description>SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 30 is set before the remaining sensor-control updates.</description>
-              <bitOffset>30</bitOffset><bitWidth>1</bitWidth>
-            </field>
           </fields>
         </register>
       </registers>

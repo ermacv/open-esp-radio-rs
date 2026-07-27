@@ -6,25 +6,19 @@
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(test)]
-use open_esp_radio_pac_esp32s31::{
-    power::{modem_lpcon, phy_cold_deadline_oracle},
-    Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::phy_cold_deadline_oracle, Register32};
+
+/// Platform operation required by the fixed-crystal PHY prelude.
+///
+/// `MODEM_LPCON` is a documented system peripheral, so its ownership and
+/// field decoding remain in the integration layer's official PAC.
+pub trait PhyPreludePlatformControl {
+    fn configure_fixed_xtal_40mhz_tick(&mut self);
+}
 
 #[cfg(test)]
 trait RegisterIo {
     fn read(&mut self, register: Register32) -> u32;
-    fn write(&mut self, register: Register32, value: u32);
-}
-
-#[cfg(test)]
-fn configure_fixed_xtal_40mhz_with(io: &mut impl RegisterIo) {
-    let field = modem_lpcon::tick_conf::MODEM_PWR_TICK_TARGET;
-    let previous = io.read(modem_lpcon::TICK_CONF);
-    io.write(
-        modem_lpcon::TICK_CONF,
-        field.checked_insert(previous, 39).unwrap_or(previous),
-    );
 }
 
 /// Configure the fixed ESP32-S31 40 MHz crystal-derived tick value.
@@ -32,10 +26,9 @@ fn configure_fixed_xtal_40mhz_with(io: &mut impl RegisterIo) {
 /// Complete pinned `libphy.a[phy_init.o]::phy_get_xtal_freq`, size `0x40`,
 /// replaces the six-bit target with `frequency_mhz - 1`. ESP32-S31's public
 /// chip contract fixes the crystal at 40 MHz, so this finite method performs
-/// one fresh PAC read and writes the exact value 39 without hidden RTC state.
-#[cfg(target_arch = "riscv32")]
-pub fn configure_fixed_xtal_40mhz(registers: &mut RadioRegisters) {
-    registers.configure_fixed_xtal_40mhz_tick();
+/// one official-PAC read/modify/write with no hidden RTC state.
+pub fn configure_fixed_xtal_40mhz(platform: &mut impl PhyPreludePlatformControl) {
+    platform.configure_fixed_xtal_40mhz_tick();
 }
 
 #[cfg(test)]
@@ -60,10 +53,20 @@ mod tests {
 
     use super::*;
 
+    #[derive(Default)]
+    struct FakePlatform {
+        calls: usize,
+    }
+
+    impl PhyPreludePlatformControl for FakePlatform {
+        fn configure_fixed_xtal_40mhz_tick(&mut self) {
+            self.calls += 1;
+        }
+    }
+
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
         Read(Register32, u32),
-        Write(Register32, u32),
     }
 
     struct FakeRegisters {
@@ -85,27 +88,13 @@ mod tests {
             self.operations.push(Operation::Read(register, self.value));
             self.value
         }
-
-        fn write(&mut self, register: Register32, value: u32) {
-            self.value = value;
-            self.operations.push(Operation::Write(register, value));
-        }
     }
 
     #[test]
-    fn fixed_xtal_replaces_only_the_public_tick_target() {
-        let initial = 0xa5a5_5aff;
-        let mut io = FakeRegisters::new(initial);
-
-        configure_fixed_xtal_40mhz_with(&mut io);
-
-        assert_eq!(
-            io.operations,
-            [
-                Operation::Read(modem_lpcon::TICK_CONF, initial),
-                Operation::Write(modem_lpcon::TICK_CONF, 0xa5a5_5ae7),
-            ]
-        );
+    fn fixed_xtal_delegates_one_semantic_platform_operation() {
+        let mut platform = FakePlatform::default();
+        configure_fixed_xtal_40mhz(&mut platform);
+        assert_eq!(platform.calls, 1);
     }
 
     #[test]

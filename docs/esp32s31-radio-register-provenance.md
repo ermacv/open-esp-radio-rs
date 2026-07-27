@@ -437,8 +437,9 @@ recovered PAC and now have their live consumers moved behind safe HAL methods:
   by the two force and two release phases;
 - `PHY_I2C_MASTER.HOST_COMMAND_0/1` own the reset command at bit 26 and the
   sampled busy state at bit 25;
-- `MODEM_LPCON.TICK_CONF.MODEM_PWR_TICK_TARGET` owns the six-bit fixed-crystal
-  tick target.
+- official `MODEM_LPCON.TICK_CONF.MODEM_PWR_TICK_TARGET` owns the six-bit
+  fixed-crystal tick target; the open driver exposes only the semantic
+  platform operation.
 
 The new `PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN` identity owns the
 full read-only word at `0x2010_d800`. Complete rev0 ROM

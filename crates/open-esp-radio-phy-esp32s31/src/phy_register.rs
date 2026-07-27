@@ -904,26 +904,36 @@ impl PhyRegisterMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<P>(
+    pub fn execute_target<
+        P: open_esp_radio_hal_esp32s31::phy_prelude::PhyPreludePlatformControl,
+    >(
         self,
         radio: &mut open_esp_radio_hal_esp32s31::Radio<
             P,
             open_esp_radio_hal_esp32s31::state::Powered,
         >,
     ) -> PhyRegisterMmioCompletion {
-        let registers = radio.registers_mut();
         match self.action {
             PhyRegisterMmioAction::PrepareColdStart => {
-                open_esp_radio_hal_esp32s31::phy_frequency::prepare_wifi_control(registers)
+                open_esp_radio_hal_esp32s31::phy_frequency::prepare_wifi_control(
+                    radio.registers_mut(),
+                )
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {
-                open_esp_radio_hal_esp32s31::pbus::configure_force_txrx(registers, enabled, phase)
+                open_esp_radio_hal_esp32s31::pbus::configure_force_txrx(
+                    radio.registers_mut(),
+                    enabled,
+                    phase,
+                )
             }
             PhyRegisterMmioAction::ResetFrequencyModule => {
-                open_esp_radio_hal_esp32s31::phy_frequency::reset_module(registers)
+                open_esp_radio_hal_esp32s31::phy_frequency::reset_module(radio.registers_mut())
             }
             PhyRegisterMmioAction::SetHardwareFrequencyControl { enabled } => {
-                open_esp_radio_hal_esp32s31::phy_frequency::set_hardware_control(registers, enabled)
+                open_esp_radio_hal_esp32s31::phy_frequency::set_hardware_control(
+                    radio.registers_mut(),
+                    enabled,
+                )
             }
             PhyRegisterMmioAction::PulseI2cMasterReset { index } => {
                 let host = if index == 0 {
@@ -931,17 +941,22 @@ impl PhyRegisterMmioBinding {
                 } else {
                     open_esp_radio_hal_esp32s31::phy_i2c::PhyI2cHost::Host1
                 };
-                open_esp_radio_hal_esp32s31::phy_i2c::pulse_master_reset(registers, host)
+                open_esp_radio_hal_esp32s31::phy_i2c::pulse_master_reset(
+                    radio.registers_mut(),
+                    host,
+                )
             }
             PhyRegisterMmioAction::ConfigureXtal40Mhz => {
-                open_esp_radio_hal_esp32s31::phy_prelude::configure_fixed_xtal_40mhz(registers)
+                let (platform, _) = radio.parts_mut();
+                open_esp_radio_hal_esp32s31::phy_prelude::configure_fixed_xtal_40mhz(platform)
             }
             PhyRegisterMmioAction::SetCalibrationClock { enabled } => {
-                crate::radio_hal::set_phy_register_calibration_clock(registers, enabled)
+                crate::radio_hal::set_phy_register_calibration_clock(radio.registers_mut(), enabled)
             }
             PhyRegisterMmioAction::SetBbpllCalibration { enabled } => {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
-                    registers, enabled,
+                    radio.registers_mut(),
+                    enabled,
                 )
             }
         }

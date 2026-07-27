@@ -114,8 +114,8 @@ Within those windows the recovered SVD currently covers:
 
 - Wi-Fi MAC and its integrated RX DMA/BlockAck register windows;
 - PHY baseband, AGC, PBus, PHY-I2C and PHY table memories;
-- `MODEM_SYSCON`, `MODEM_LPCON` and `PMU` clock/reset/power prerequisites
-  still awaiting the same split;
+- `MODEM_SYSCON` and `PMU` clock/reset/power prerequisites still awaiting
+  the same split;
 - PHY temperature sensor and its system clock/control register.
 
 This is not the desired final ownership boundary. The ESP32-S31 PAC used by
@@ -125,7 +125,7 @@ chip-level peripherals:
 | Recovered identity | Official PAC identity | Base | Migration |
 | --- | --- | --- | --- |
 | `MODEM_SYSCON` | `esp32s31::MODEM_SYSCON` | `0x2010_9c00` | pending |
-| `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` | pending |
+| `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` | removed |
 | `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` | pending |
 | `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` | removed |
 | `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | pending |

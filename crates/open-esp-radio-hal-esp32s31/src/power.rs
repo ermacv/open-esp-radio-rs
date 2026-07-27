@@ -5,7 +5,7 @@
 //! Wi-Fi MAC clocks are intentionally excluded: they belong to the later MAC
 //! start transition.
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 use open_esp_radio_pac_esp32s31::{
     power::{hp_sys_clkrst, modem_lpcon, modem_syscon, pmu},
@@ -260,7 +260,7 @@ pub enum PowerCheckpoint {
 }
 
 #[derive(Clone, Copy)]
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 struct Verification {
     checkpoint: PowerCheckpoint,
     register: Register32,
@@ -268,7 +268,7 @@ struct Verification {
     expected: u32,
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 const VERIFICATIONS: [Verification; 9] = [
     Verification {
         checkpoint: PowerCheckpoint::ResetReleased,
@@ -346,24 +346,13 @@ pub struct PowerError {
     pub observed: u32,
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 pub(crate) trait RegisterIo {
     fn read(&mut self, register: Register32) -> u32;
     fn write(&mut self, register: Register32, value: u32);
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
-impl RegisterIo for RadioRegisters {
-    fn read(&mut self, register: Register32) -> u32 {
-        self.read32(register)
-    }
-
-    fn write(&mut self, register: Register32, value: u32) {
-        self.write32(register, value);
-    }
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 pub(crate) fn execute(io: &mut impl RegisterIo) -> Result<(), PowerError> {
     for operation in PowerSequence::new() {
         match operation {
@@ -392,6 +381,118 @@ pub(crate) fn execute(io: &mut impl RegisterIo) -> Result<(), PowerError> {
         }
     }
     Ok(())
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn execute_owned(registers: &mut RadioRegisters) -> Result<(), PowerError> {
+    // Keep the operation order here: it is a lifecycle property recovered
+    // from the pinned S31 clock oracle, not a property of the register layout.
+    registers.set_wifi_baseband_and_mac_reset(true);
+    registers.set_wifi_baseband_and_mac_reset(false);
+    registers.select_hp_active_modem_icg();
+    registers.apply_modem_icg_selection();
+    registers.apply_sleep_icg_selection();
+    registers.enable_modem_register_bus_clock();
+    registers.configure_hp_active_modem_clock_map();
+    registers.configure_shared_modem_clock_map();
+    registers.configure_modem_source_clocks();
+    registers.set_wifi_baseband_reset(true);
+    registers.set_wifi_baseband_reset(false);
+    registers.enable_phy_calibration_clocks();
+    registers.select_phy_i2c_160mhz_source();
+    registers.enable_phy_i2c_master_clock();
+
+    let images = registers.power_clock_images();
+    verify_image(
+        PowerCheckpoint::ResetReleased,
+        modem_syscon::MODEM_RST_CONF,
+        WIFI_BB_AND_MAC_RESET,
+        0,
+        images.modem_reset,
+    )?;
+    verify_image(
+        PowerCheckpoint::HpActiveIcg,
+        pmu::HP_ACTIVE_ICG_MODEM,
+        3 << 30,
+        HP_ACTIVE_MODEM_ICG_CODE,
+        images.hp_active_icg,
+    )?;
+    verify_image(
+        PowerCheckpoint::ModemBusClock,
+        hp_sys_clkrst::MODEM_CTRL0,
+        MODEM_BUS_CLOCK,
+        MODEM_BUS_CLOCK,
+        images.modem_bus_clock,
+    )?;
+    verify_image(
+        PowerCheckpoint::HpActiveClockMap,
+        modem_syscon::CLK_CONF_POWER_ST,
+        HP_ACTIVE_MODEM_CLOCK_MAP,
+        HP_ACTIVE_MODEM_CLOCK_MAP,
+        images.hp_active_clock_map,
+    )?;
+    verify_image(
+        PowerCheckpoint::SharedClockMap,
+        modem_lpcon::CLK_CONF_POWER_ST,
+        HP_MODEM_SHARED_CLOCK_MAP,
+        HP_MODEM_SHARED_CLOCK_MAP,
+        images.shared_clock_map,
+    )?;
+    verify_image(
+        PowerCheckpoint::ModemClockSource,
+        hp_sys_clkrst::MODEM_CONF,
+        hp_sys_clkrst::modem_conf::MODEM_APB_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_RST_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_CLK_SOURCE_SEL.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_PLL_CLK_EN.mask()
+            | hp_sys_clkrst::modem_conf::MODEM_XTAL_CLK_EN.mask(),
+        HP_MODEM_PLL_CONFIGURATION,
+        images.modem_clock_source,
+    )?;
+    verify_image(
+        PowerCheckpoint::PhyClocks,
+        modem_syscon::CLK_CONF1,
+        PHY_AND_CALIBRATION_CLOCKS,
+        PHY_AND_CALIBRATION_CLOCKS,
+        images.phy_clocks,
+    )?;
+    verify_image(
+        PowerCheckpoint::I2cSource,
+        modem_syscon::CLK_CONF,
+        I2C_MASTER_SELECT_160M,
+        I2C_MASTER_SELECT_160M,
+        images.i2c_source,
+    )?;
+    verify_image(
+        PowerCheckpoint::I2cClock,
+        modem_lpcon::CLK_CONF,
+        I2C_MASTER_CLOCK,
+        I2C_MASTER_CLOCK,
+        images.i2c_clock,
+    )
+}
+
+#[cfg(target_arch = "riscv32")]
+fn verify_image(
+    checkpoint: PowerCheckpoint,
+    register: Register32,
+    mask: u32,
+    expected: u32,
+    image: u32,
+) -> Result<(), PowerError> {
+    let observed = image & mask;
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(PowerError {
+            checkpoint,
+            address: register.address(),
+            mask,
+            expected,
+            observed,
+        })
+    }
 }
 
 #[cfg(test)]

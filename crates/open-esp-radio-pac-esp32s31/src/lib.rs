@@ -2,13 +2,20 @@
 
 use core::ptr::{read_volatile, write_volatile};
 
+pub mod analog_i2c;
+pub mod clock;
 pub mod mac;
+pub mod pbus;
+pub mod phy;
+pub mod phy_i2c;
 pub mod power;
+pub use open_esp_radio_svd_esp32s31 as svd;
 
 /// Access policy recovered for one MMIO register.
 ///
-/// The generated radio PAC takes this value from
-/// `svd/esp32s31-radio.svd`. Handwritten legacy MAC entries default to
+/// The compatibility facade takes this value from
+/// `svd/esp32s31-radio.svd`. New peripheral code should use the generated
+/// [`svd`] register API directly. Handwritten legacy MAC entries default to
 /// [`ReadWrite`](RegisterAccess::ReadWrite) until their access policy is
 /// recovered.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -143,10 +150,11 @@ impl Field32 {
 
 /// Unique logical owner of the ESP32-S31 radio register regions.
 ///
-/// Named [`Register32`] values localize addresses in this crate. Higher layers
-/// retain semantic sequencing, but volatile pointer access stays here.
+/// The generated [`svd::Peripherals`] singleton is kept private so downstream
+/// code cannot split the radio into independently stolen register blocks.
+/// Higher layers retain semantic sequencing and borrow this owner mutably.
 pub struct RadioRegisters {
-    _private: (),
+    peripherals: svd::Peripherals,
 }
 
 impl RadioRegisters {
@@ -156,8 +164,12 @@ impl RadioRegisters {
     ///
     /// No other live owner may mutate the radio through raw pointers, ROM,
     /// vendor code, or another `RadioRegisters` value.
-    pub const unsafe fn steal() -> Self {
-        Self { _private: () }
+    pub unsafe fn steal() -> Self {
+        Self {
+            // SAFETY: the caller establishes the same unique ownership
+            // invariant required by `svd2rust::Peripherals::steal`.
+            peripherals: unsafe { svd::Peripherals::steal() },
+        }
     }
 
     pub const fn contains(address: usize) -> bool {

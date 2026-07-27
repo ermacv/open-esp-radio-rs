@@ -379,7 +379,7 @@ pub fn try_start_read(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub fn try_finish_read(
-    registers: &RadioRegisters,
+    registers: &mut RadioRegisters,
     address: PhyI2cAddress,
 ) -> Result<u8, PhyI2cError> {
     hal_phy_i2c::try_finish_read(registers, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
@@ -417,7 +417,7 @@ pub fn try_start_write(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub fn try_finish_write(
-    registers: &RadioRegisters,
+    registers: &mut RadioRegisters,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
     hal_phy_i2c::try_finish_write(registers, hal_host(address.host()))
@@ -1052,7 +1052,7 @@ impl MaskedI2cWriteBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &RadioRegisters,
+        registers: &mut RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
         self.transaction.observe_target_edge(registers)
     }

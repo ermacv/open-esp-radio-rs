@@ -1171,7 +1171,7 @@ impl PhyColdI2cTransaction {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &RadioRegisters,
+        registers: &mut RadioRegisters,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
         match self.action() {
             PhyColdI2cAction::AwaitReadCompletionEdge { address } => {
@@ -1260,7 +1260,7 @@ impl PhyColdI2cBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &RadioRegisters,
+        registers: &mut RadioRegisters,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
         self.transaction.observe_target_edge(registers)
     }

@@ -5,30 +5,19 @@
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 use open_esp_radio_pac_esp32s31::{
     power::{modem_lpcon, phy_cold_deadline_oracle},
     Register32,
 };
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 trait RegisterIo {
     fn read(&mut self, register: Register32) -> u32;
     fn write(&mut self, register: Register32, value: u32);
 }
 
-#[cfg(target_arch = "riscv32")]
-impl RegisterIo for RadioRegisters {
-    fn read(&mut self, register: Register32) -> u32 {
-        self.read32(register)
-    }
-
-    fn write(&mut self, register: Register32, value: u32) {
-        self.write32(register, value);
-    }
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 fn configure_fixed_xtal_40mhz_with(io: &mut impl RegisterIo) {
     let field = modem_lpcon::tick_conf::MODEM_PWR_TICK_TARGET;
     let previous = io.read(modem_lpcon::TICK_CONF);
@@ -46,10 +35,10 @@ fn configure_fixed_xtal_40mhz_with(io: &mut impl RegisterIo) {
 /// one fresh PAC read and writes the exact value 39 without hidden RTC state.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_fixed_xtal_40mhz(registers: &mut RadioRegisters) {
-    configure_fixed_xtal_40mhz_with(registers);
+    registers.configure_fixed_xtal_40mhz_tick();
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 fn sample_sdm_deadline_counter_with(io: &mut impl RegisterIo) -> u32 {
     io.read(phy_cold_deadline_oracle::DEADLINE_COUNTER_UNKNOWN)
 }
@@ -62,7 +51,7 @@ fn sample_sdm_deadline_counter_with(io: &mut impl RegisterIo) -> u32 {
 /// read; deadline arithmetic and retry ownership stay in the transition.
 #[cfg(target_arch = "riscv32")]
 pub fn sample_sdm_deadline_counter(registers: &mut RadioRegisters) -> u32 {
-    sample_sdm_deadline_counter_with(registers)
+    registers.sample_sdm_deadline_counter()
 }
 
 #[cfg(test)]

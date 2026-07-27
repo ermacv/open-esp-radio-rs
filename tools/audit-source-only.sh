@@ -7,9 +7,10 @@ audit_dir="$(mktemp -d)"
 
 cd "$repo_root"
 
-# The SVD is the editable clock/power register source. Fail closed if the
-# checked-in PAC was edited directly or generation is no longer reproducible.
-tools/generate-esp32s31-radio-pac.py --check
+# The SVD is the editable clock/power/register source. Fail closed if the
+# checked-in svd2rust PAC was edited directly or generation is no longer
+# reproducible with the pinned Rust generator dependency.
+cargo pac-gen --check
 
 # HAL/MAC may select only PAC-described peripheral registers. Descriptor
 # volatile access is intentionally excluded: those words live in owned DMA
@@ -29,6 +30,30 @@ if rg -n \
     crates/open-esp-radio-mac-esp32s31/src/registers.rs
 then
     echo "raw MMIO access escaped the PAC" >&2
+    exit 1
+fi
+
+# The generated register singleton is owned only by the compatibility PAC.
+# HAL/MAC/PHY receive the safe `RadioRegisters` capability and must not split
+# it into independently stolen svd2rust peripheral blocks.
+if rg -n \
+    '(open_esp_radio_svd|::svd::|svd::Peripherals|RadioRegisters::steal)' \
+    crates/open-esp-radio-mac-esp32s31/src \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "generated PAC ownership escaped RadioRegisters" >&2
+    exit 1
+fi
+
+# These two central buses have completed their target migration. Their HAL
+# modules may sequence semantic operations but must not regress to the
+# Register32 compatibility facade.
+if rg -n \
+    '(Register32|Field32|read32|write32|modify32|power::(phy_i2c|phy_pbus))' \
+    crates/open-esp-radio-hal-esp32s31/src/phy_i2c.rs \
+    crates/open-esp-radio-hal-esp32s31/src/pbus.rs
+then
+    echo "PHY-I2C/PBus compatibility MMIO returned to the HAL" >&2
     exit 1
 fi
 
@@ -121,7 +146,7 @@ dependency_tree="$(
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-(phy|hal|pac)-esp32s31) v'
+    rg -v '^(open-esp-radio-(phy|hal|pac|svd)-esp32s31|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1

@@ -808,14 +808,43 @@
       <registers>
         <register>
           <name>COMMAND</name>
-          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-from-symbols]. phy_pbus_force_test command word; phy_pbus_force_mode also uses bit 0 as the debug/work selector.</description>
+          <description>
+            SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO]; CONFIDENCE[instruction-exact-semantics-from-complete-bodies].
+            phy_pbus_force_test command word; phy_pbus_force_mode also uses bit
+            0 as the debug/work selector. The complete force-test body at
+            0x2f824228 composes selector, test value and path first, then masks
+            the combined image with 0x0001fffc. It does not independently
+            narrow the signed halfword values supplied by
+            phy_pbus_rx_dco_cal at 0x2f828f44, so their retained high bits can
+            contribute to the physical PATH field.
+          </description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>DEBUG_MODE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>TRANSACTION_START</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>SELECTOR</name><bitOffset>2</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TEST_VALUE</name><bitOffset>6</bitOffset><bitWidth>9</bitWidth></field>
-            <field><name>PATH</name><bitOffset>15</bitOffset><bitWidth>2</bitWidth></field>
+            <field>
+              <name>TEST_VALUE</name>
+              <description>
+                SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO];
+                CONFIDENCE[instruction-exact-physical-field].
+                Physical nine-bit value field. The ROM publication expression
+                accepts a wider signed halfword before the combined command
+                mask; use the PAC ROM encoder when reproducing that behavior.
+              </description>
+              <bitOffset>6</bitOffset><bitWidth>9</bitWidth>
+            </field>
+            <field>
+              <name>PATH</name>
+              <description>
+                SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO];
+                CONFIDENCE[instruction-exact-physical-field].
+                Physical two-bit path field. High retained bits of a wide
+                test-value argument are ORed into this field by the complete
+                ROM command encoder.
+              </description>
+              <bitOffset>15</bitOffset><bitWidth>2</bitWidth>
+            </field>
           </fields>
         </register>
         <register>

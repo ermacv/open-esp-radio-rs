@@ -52,6 +52,14 @@ initialization into MAC/RX, instead of constructing an independent raw-MMIO
 adapter. DMA descriptors retain their own volatile cells because they are
 owned memory shared with hardware rather than peripheral registers.
 
+The low-level PAC is generated from `svd/esp32s31-radio.svd` by a portable
+Rust `xtask` using pinned `svd2rust 0.37.1`; run `cargo pac-gen` to regenerate
+it or `cargo pac-gen --check` to verify it. Python and shell code generation
+are not used. The existing `Register32`/`Field32` surface is a temporary
+compatibility facade while HAL and MAC move to the native generated register
+API. The current unsafe/MMIO inventory and non-radio clock/power dependencies
+are recorded in [`PAC_AND_UNSAFE_AUDIT.md`](docs/PAC_AND_UNSAFE_AUDIT.md).
+
 The former upper MAC/STA/AP/security migration archive has been retired.
 Source-owned logic now lives in the buildable IEEE 802.11, MAC, WPA2, PAC and
 integration crates above; vendor ABI glue and superseded duplicates were

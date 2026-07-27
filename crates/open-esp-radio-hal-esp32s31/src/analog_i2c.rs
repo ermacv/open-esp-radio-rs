@@ -8,19 +8,19 @@
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 use open_esp_radio_pac_esp32s31::{power::pmu, Register32};
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 const RF_CIRCUIT_POWER: u32 = pmu::rf_pwc::XPD_RF_CIRCUIT.mask();
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 const TIE_HIGH_BB_I2C_POWER: u32 = pmu::imm_hp_ck_power_0::TIE_HIGH_XPD_BB_I2C.mask();
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 const ANALOG_I2C_POWER: u32 = pmu::ana_peri_pwr_ctrl::XPD_PERIF_I2C.mask();
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 const ANALOG_I2C_RESET_RELEASE: u32 = pmu::ana_peri_pwr_ctrl::RSTB_PERIF_I2C.mask();
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 trait RegisterIo {
     fn read(&mut self, register: Register32) -> u32;
     fn write(&mut self, register: Register32, value: u32);
@@ -28,17 +28,6 @@ trait RegisterIo {
     fn modify(&mut self, register: Register32, clear_mask: u32, set_bits: u32) {
         let previous = self.read(register);
         self.write(register, (previous & !clear_mask) | (set_bits & clear_mask));
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl RegisterIo for RadioRegisters {
-    fn read(&mut self, register: Register32) -> u32 {
-        self.read32(register)
-    }
-
-    fn write(&mut self, register: Register32, value: u32) {
-        self.write32(register, value);
     }
 }
 
@@ -56,10 +45,11 @@ impl RegisterIo for RadioRegisters {
 /// machine.
 #[cfg(target_arch = "riscv32")]
 pub fn prepare_open_i2c_pre_delay(registers: &mut RadioRegisters) {
-    prepare_open_i2c_pre_delay_with(registers);
+    registers.set_rf_circuit_power(false);
+    registers.set_bb_i2c_power_tie(false);
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 fn prepare_open_i2c_pre_delay_with(io: &mut impl RegisterIo) {
     io.modify(pmu::RF_PWC, RF_CIRCUIT_POWER, 0);
     io.modify(pmu::IMM_HP_CK_POWER_0, TIE_HIGH_BB_I2C_POWER, 0);
@@ -79,10 +69,20 @@ fn prepare_open_i2c_pre_delay_with(io: &mut impl RegisterIo) {
 /// `pmu_reg.h`; operation ordering comes only from the blob body.
 #[cfg(target_arch = "riscv32")]
 pub fn complete_open_i2c_power_and_reset(registers: &mut RadioRegisters) {
-    complete_open_i2c_power_and_reset_with(registers);
+    registers.set_rf_circuit_power(true);
+    registers.set_bb_i2c_power_tie(true);
+
+    if !registers.analog_i2c_is_powered() {
+        registers.set_analog_i2c_power(true);
+        registers.set_analog_i2c_reset_released(false);
+        registers.set_analog_i2c_reset_released(true);
+    }
+    if !registers.analog_i2c_reset_is_released() {
+        registers.set_analog_i2c_reset_released(true);
+    }
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(test)]
 fn complete_open_i2c_power_and_reset_with(io: &mut impl RegisterIo) {
     io.modify(pmu::RF_PWC, RF_CIRCUIT_POWER, RF_CIRCUIT_POWER);
     io.modify(

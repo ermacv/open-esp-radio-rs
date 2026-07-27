@@ -1,9 +1,7 @@
 //! Owned access to the recovered ESP32-S31 PHY PBus registers.
 
-#[cfg(any(test, target_arch = "riscv32"))]
-use open_esp_radio_pac_esp32s31::power::phy_pbus;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_pac_esp32s31::{power::modem_syscon, Field32, RadioRegisters, Register32};
+use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 /// A PBus command could not be published or completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -14,20 +12,21 @@ pub enum PbusError {
     SelectorOutOfRange,
     /// The caller supplied a path outside the recovered two-bit field.
     PathOutOfRange,
-    /// The caller supplied a test value outside the recovered nine-bit field.
-    ValueOutOfRange,
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
-fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
-    let field = phy_pbus::status_clock_force::FORCE_TXRX_MODE_UNKNOWN;
-    let encoding = match (enabled, phase) {
+fn force_txrx_mode(enabled: bool, phase: u8) -> u8 {
+    match (enabled, phase) {
         (true, 0) => 8,
         (true, _) => 10,
         (false, 0) => 2,
         (false, _) => 0,
-    };
-    field.checked_value(encoding).unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
+    u32::from(force_txrx_mode(enabled, phase)) << 8
 }
 
 /// Apply one finite force-TX/RX phase around its caller-owned delay edge.
@@ -38,17 +37,7 @@ fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
 /// replacement; the Rust transition owns phase order and both timers.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_force_txrx(registers: &mut RadioRegisters, enabled: bool, phase: u8) {
-    let field = phy_pbus::status_clock_force::FORCE_TXRX_MODE_UNKNOWN;
-    registers.modify32(
-        phy_pbus::STATUS_CLOCK_FORCE,
-        field.mask(),
-        force_txrx_mode_bits(enabled, phase),
-    );
-}
-
-#[cfg(target_arch = "riscv32")]
-fn field_value(field: Field32, value: u32) -> Result<u32, PbusError> {
-    field.checked_value(value).ok_or(PbusError::ValueOutOfRange)
+    debug_assert!(registers.set_pbus_force_txrx_mode(force_txrx_mode(enabled, phase)));
 }
 
 /// Enter the PBus debug mode used before force-test transactions.
@@ -58,11 +47,8 @@ fn field_value(field: Field32, value: u32) -> Result<u32, PbusError> {
 /// `COMMAND.DEBUG_MODE_ENABLE`, with one fresh read before each write.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_debug_mode(registers: &mut RadioRegisters) {
-    let work_mode = phy_pbus::mode::WORK_MODE_ENABLE.mask();
-    registers.modify32(phy_pbus::MODE, work_mode, 0);
-
-    let debug_mode = phy_pbus::command::DEBUG_MODE_ENABLE.mask();
-    registers.modify32(phy_pbus::COMMAND, debug_mode, debug_mode);
+    registers.set_pbus_work_mode(false);
+    registers.set_pbus_debug_mode(true);
 }
 
 /// Enter PBus work mode and sample the optional settle-pulse condition once.
@@ -74,20 +60,19 @@ pub fn configure_debug_mode(registers: &mut RadioRegisters) {
 /// caller's async transition.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_work_mode(registers: &mut RadioRegisters) -> bool {
-    let debug_mode = phy_pbus::command::DEBUG_MODE_ENABLE.mask();
-    registers.modify32(phy_pbus::COMMAND, debug_mode, 0);
-
-    let work_mode = phy_pbus::mode::WORK_MODE_ENABLE.mask();
-    registers.modify32(phy_pbus::MODE, work_mode, work_mode);
-
-    modem_syscon::wifi_bb_cfg::WIFI_ENABLE.extract(registers.read32(modem_syscon::WIFI_BB_CFG)) != 0
+    registers.set_pbus_debug_mode(false);
+    registers.set_pbus_work_mode(true);
+    registers.wifi_baseband_is_enabled()
 }
 
 /// Publish one PBus force-test command after one fail-fast busy sample.
 ///
 /// Basis: complete rev0 ROM `phy_pbus_force_test` at `0x2f824228`, size
-/// `0x42`. The field encoding and final transaction bit are exact. Rust adds
-/// only the pre-publication busy rejection so ownership never overwrites an
+/// `0x42`. The combined argument mask and final transaction bit are exact.
+/// In particular, ROM accepts signed RX-DCO halfword images and retains their
+/// low eleven bits while composing the command; it does not reject values
+/// above the separately visible nine-bit PBus result window. Rust adds only
+/// the pre-publication busy rejection so ownership never overwrites an
 /// in-flight command.
 #[cfg(target_arch = "riscv32")]
 pub fn try_start_force_test(
@@ -96,30 +81,16 @@ pub fn try_start_force_test(
     path: u8,
     test_value: u16,
 ) -> Result<(), PbusError> {
-    if phy_pbus::status_clock_force::BUSY.extract(registers.read32(phy_pbus::STATUS_CLOCK_FORCE))
-        != 0
-    {
+    if registers.pbus_is_busy() {
         return Err(PbusError::Busy);
     }
-    if u32::from(selector) > phy_pbus::command::SELECTOR.max_value() {
+    if selector > 0x0f {
         return Err(PbusError::SelectorOutOfRange);
     }
-    if u32::from(path) > phy_pbus::command::PATH.max_value() {
+    if path > 3 {
         return Err(PbusError::PathOutOfRange);
     }
-    if u32::from(test_value) > phy_pbus::command::TEST_VALUE.max_value() {
-        return Err(PbusError::ValueOutOfRange);
-    }
-
-    let command_mask = phy_pbus::command::TRANSACTION_START.mask()
-        | phy_pbus::command::SELECTOR.mask()
-        | phy_pbus::command::TEST_VALUE.mask()
-        | phy_pbus::command::PATH.mask();
-    let command = phy_pbus::command::TRANSACTION_START.mask()
-        | field_value(phy_pbus::command::SELECTOR, u32::from(selector))?
-        | field_value(phy_pbus::command::PATH, u32::from(path))?
-        | field_value(phy_pbus::command::TEST_VALUE, u32::from(test_value))?;
-    registers.modify32(phy_pbus::COMMAND, command_mask, command);
+    debug_assert!(registers.publish_pbus_force_test(selector, path, test_value));
     Ok(())
 }
 
@@ -131,13 +102,10 @@ pub fn try_start_force_test(
 /// Rust async owner controls retries and timeout.
 #[cfg(target_arch = "riscv32")]
 pub fn try_finish_force_test(registers: &mut RadioRegisters) -> Result<(), PbusError> {
-    if phy_pbus::status_clock_force::BUSY.extract(registers.read32(phy_pbus::STATUS_CLOCK_FORCE))
-        != 0
-    {
+    if registers.pbus_is_busy() {
         return Err(PbusError::Busy);
     }
-    let transaction = phy_pbus::command::TRANSACTION_START.mask();
-    registers.modify32(phy_pbus::COMMAND, transaction, 0);
+    registers.clear_pbus_transaction();
     Ok(())
 }
 
@@ -148,55 +116,8 @@ pub fn try_finish_force_test(registers: &mut RadioRegisters) -> Result<(), PbusE
 /// for selector 1's low RX-DCO consumer, their analog meanings remain
 /// intentionally unknown.
 #[cfg(target_arch = "riscv32")]
-pub fn read_result(registers: &RadioRegisters, selector: u8, path: u8) -> Option<u16> {
-    let (register, field): (Register32, Field32) = match selector {
-        0 if path == 1 => (
-            phy_pbus::READ_RESULT_4,
-            phy_pbus::read_result_4::RESULT_WINDOW_2_UNKNOWN,
-        ),
-        0 => (
-            phy_pbus::READ_RESULT_4,
-            phy_pbus::read_result_4::RESULT_WINDOW_1_UNKNOWN,
-        ),
-        1 if path == 1 => (
-            phy_pbus::READ_RESULT_0,
-            phy_pbus::read_result_0::RESULT_WINDOW_1_UNKNOWN,
-        ),
-        1 => (
-            phy_pbus::READ_RESULT_0,
-            phy_pbus::read_result_0::RESULT_WINDOW_0_RX_DCO,
-        ),
-        2 if path == 1 => (
-            phy_pbus::READ_RESULT_1,
-            phy_pbus::read_result_1::RESULT_WINDOW_0_UNKNOWN,
-        ),
-        2 => (
-            phy_pbus::READ_RESULT_2,
-            phy_pbus::read_result_2::RESULT_WINDOW_2_UNKNOWN,
-        ),
-        3 if path == 1 => (
-            phy_pbus::READ_RESULT_2,
-            phy_pbus::read_result_2::RESULT_WINDOW_1_UNKNOWN,
-        ),
-        3 => (
-            phy_pbus::READ_RESULT_2,
-            phy_pbus::read_result_2::RESULT_WINDOW_0_UNKNOWN,
-        ),
-        4 if path == 1 => (
-            phy_pbus::READ_RESULT_3,
-            phy_pbus::read_result_3::RESULT_WINDOW_0_UNKNOWN,
-        ),
-        4 => (
-            phy_pbus::READ_RESULT_4,
-            phy_pbus::read_result_4::RESULT_WINDOW_2_UNKNOWN,
-        ),
-        5 => (
-            phy_pbus::READ_RESULT_4,
-            phy_pbus::read_result_4::RESULT_WINDOW_0_UNKNOWN,
-        ),
-        _ => return None,
-    };
-    Some(field.extract(registers.read32(register)) as u16)
+pub fn read_result(registers: &mut RadioRegisters, selector: u8, path: u8) -> Option<u16> {
+    registers.read_pbus_result(selector, path)
 }
 
 /// Enable or disable both recovered RX clock bits as one indivisible pair.
@@ -206,11 +127,7 @@ pub fn read_result(registers: &RadioRegisters, selector: u8, path: u8) -> Option
 /// PAC and HAL retain pair-level semantics.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rx_clock(registers: &mut RadioRegisters, enabled: bool) {
-    let low = phy_pbus::status_clock_force::RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN;
-    let high = phy_pbus::status_clock_force::RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN;
-    let mask = low.mask() | high.mask();
-    let value = if enabled { mask } else { 0 };
-    registers.modify32(phy_pbus::STATUS_CLOCK_FORCE, mask, value);
+    registers.set_pbus_rx_clock_pair(enabled);
 }
 
 /// Enable or disable both recovered TX clock bits as one indivisible pair.
@@ -220,9 +137,7 @@ pub fn configure_rx_clock(registers: &mut RadioRegisters, enabled: bool) {
 /// PAC and HAL retain pair-level semantics.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_tx_clock(registers: &mut RadioRegisters, enabled: bool) {
-    let field = phy_pbus::status_clock_force::TX_CLOCK_ENABLE_PAIR;
-    let value = if enabled { field.mask() } else { 0 };
-    registers.modify32(phy_pbus::STATUS_CLOCK_FORCE, field.mask(), value);
+    registers.set_pbus_tx_clock_pair(enabled);
 }
 
 #[cfg(test)]

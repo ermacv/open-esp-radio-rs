@@ -1,0 +1,2 @@
+[alias]
+pac-gen = "run --quiet -p open-esp-radio-pac-gen --"

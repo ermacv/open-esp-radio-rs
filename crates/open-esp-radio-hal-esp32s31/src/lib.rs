@@ -80,7 +80,7 @@ impl<P> Radio<P, state::Owned> {
     /// The token must uniquely represent the ESP32-S31 Wi-Fi/radio peripheral,
     /// and ROM/vendor code must not own or mutate that peripheral until this
     /// value is released.
-    pub const unsafe fn claim(peripheral: P) -> Self {
+    pub unsafe fn claim(peripheral: P) -> Self {
         Self {
             peripheral,
             registers: unsafe { RadioRegisters::steal() },
@@ -126,7 +126,7 @@ impl<P> Radio<P, state::Owned> {
     /// `Radio<P, Powered>`.
     #[cfg(target_arch = "riscv32")]
     pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute(&mut self.registers) {
+        if let Err(error) = power::execute_owned(&mut self.registers) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {

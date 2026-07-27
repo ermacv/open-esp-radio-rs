@@ -1011,7 +1011,7 @@ impl PhyChipChannelI2cBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &open_esp_radio_hal_esp32s31::RadioRegisters,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
         self.transaction.observe_target_edge(registers)
     }

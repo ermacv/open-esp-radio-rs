@@ -3115,3 +3115,27 @@ The source audit now rejects raw `0x001c..0x003c`, `0x0874`, `0x4400`,
 wrapper names. This leaves one PAC identity for each physical register,
 including the documented mode-dependent collision of frequency-memory
 address bit ten and module-reset bit 18.
+
+## Owned baseband initialization and power-detector MMIO
+
+SVD v0.9 and the generated PAC now own the complete raw register slice used
+by `phy_reg_init`, `phy_bb_reg_init`, `phy_tx_paon_set`,
+`phy_bb_wdg_cfg`, `phy_noise_floor_auto_set`, `phy_i2c_txrate_init`,
+`phy_bb_txpwr_track`, and the PWDET/TX-DC power-detector leaves. The primary
+evidence is the complete S31 rev0 ROM and pinned `libphy.a`, whose exact
+hashes, symbol addresses and sizes are recorded in the SVD source ledger.
+
+The two new safe HAL modules preserve the original fresh-read order rather
+than merging adjacent updates. Unknown electrical roles remain explicit in
+PAC field names. `configure_phy_registers`, cold RF init, baseband actions,
+RX-gain initialization, PWDET, TX calibration and TX-DC/PWDET bindings all
+borrow the unique `RadioRegisters` owner. PWDET ready and SAR-result sampling
+now require that borrow as well; the old no-argument target readers are gone.
+
+The duplicate raw wrappers, address constants, mask transforms and their
+second unit-test copy were deleted from `radio_hal.rs`. The source-only audit
+now rejects their names and all exclusively migrated physical addresses,
+including the `0x0808..0x081c`, baseband `0x7400..0x7cd0`, and auxiliary
+`0x20701068` leaves. Shared IQ, TX-gain compensation, and front-end identities
+remain valid transitional raw consumers until every operation on those
+physical words moves together.

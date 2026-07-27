@@ -2626,6 +2626,830 @@ pub mod phy_agc_oracle {
     }
 }
 
+/// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_POWER_DETECTOR,
+/// ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+/// CONFIDENCE[instruction-exact-semantics-partial]. PHY/baseband configuration registers
+/// recovered from complete rev0 ROM bodies and complete pinned libphy leaves. Operation-derived
+/// fields keep UNKNOWN where neither public documentation nor an independent symbol establishes
+/// the electrical meaning.
+pub mod phy_baseband_config_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address.
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_POWER_DETECTOR,
+    /// ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. PHY/baseband configuration registers
+    /// recovered from complete rev0 ROM bodies and complete pinned libphy leaves.
+    /// Operation-derived fields keep UNKNOWN where neither public documentation nor an
+    /// independent symbol establishes the electrical meaning.
+    pub const BASE: usize = 0x20100000;
+
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+    /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+    pub const TX_GAIN_COMPENSATION: Register32 =
+        Register32::described(0x20100410, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_GAIN_COMPENSATION`]. SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+    /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+    pub mod tx_gain_compensation {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+        pub const COMPENSATION_BYTE_0_UNKNOWN: Field32 = Field32::new(0, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+        pub const COMPENSATION_BYTE_1_UNKNOWN: Field32 = Field32::new(8, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+        pub const COMPENSATION_BYTE_2_UNKNOWN: Field32 = Field32::new(16, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.
+        pub const COMPENSATION_BYTE_3_UNKNOWN: Field32 = Field32::new(24, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
+    /// correction-mode word.
+    pub const IQ_CORRECTION_CONTROL: Register32 =
+        Register32::described(0x20100438, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`IQ_CORRECTION_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
+    /// correction-mode word.
+    pub mod iq_correction_control {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
+        /// correction-mode word.
+        pub const RX_IQ_GAIN_COEFFICIENT: Field32 = Field32::new(16, 6);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
+        /// correction-mode word.
+        pub const RX_IQ_PHASE_COEFFICIENT: Field32 = Field32::new(22, 7);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
+        /// correction-mode word.
+        pub const RX_IQ_CORRECTION_MODE: Field32 = Field32::new(29, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger, calibration
+    /// and background-control word.
+    pub const POWER_DETECTOR_CONTROL: Register32 =
+        Register32::described(0x20100808, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`POWER_DETECTOR_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger, calibration
+    /// and background-control word.
+    pub mod power_detector_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger,
+        /// calibration and background-control word.
+        pub const SAR_TRIGGER: Field32 = Field32::new(0, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger,
+        /// calibration and background-control word.
+        pub const ENABLE_CLEAR_UNKNOWN: Field32 = Field32::new(1, 3);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger,
+        /// calibration and background-control word.
+        pub const CALIBRATION_FIELD_UNKNOWN: Field32 = Field32::new(4, 8);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger,
+        /// calibration and background-control word.
+        pub const BACKGROUND_CONTROL_ENABLE_UNKNOWN: Field32 = Field32::new(16, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger,
+        /// calibration and background-control word.
+        pub const INITIALIZATION_MODE_UNKNOWN: Field32 = Field32::new(20, 3);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and
+    /// three-bit ready status.
+    pub const POWER_DETECTOR_SAR_CONTROL_STATUS: Register32 =
+        Register32::described(0x2010080c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`POWER_DETECTOR_SAR_CONTROL_STATUS`].
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and
+    /// three-bit ready status.
+    pub mod power_detector_sar_control_status {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and
+        /// three-bit ready status.
+        pub const SAR_CONFIG_CLEAR_UNKNOWN: Field32 = Field32::new(9, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and
+        /// three-bit ready status.
+        pub const SAR_MODE_UNKNOWN: Field32 = Field32::new(12, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and
+        /// three-bit ready status.
+        pub const SAR_READY: Field32 = Field32::new(14, 3);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-unknown].
+    /// Complete phy_pwdet_reg_init writes 0x0f0f0fff.
+    pub const POWER_DETECTOR_TABLE_0_OPAQUE: Register32 =
+        Register32::described(0x20100810, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete initialization writes
+    /// 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.
+    pub const POWER_DETECTOR_TABLE_1: Register32 =
+        Register32::described(0x20100814, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`POWER_DETECTOR_TABLE_1`].
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete initialization writes
+    /// 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.
+    pub mod power_detector_table_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete initialization writes
+        /// 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.
+        pub const TX_DC_TEMPORARY_LOW_UNKNOWN: Field32 = Field32::new(0, 8);
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete initialization writes
+        /// 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.
+        pub const INITIALIZATION_HIGH_UNKNOWN: Field32 = Field32::new(8, 16);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET reference word;
+    /// initialization writes 0xaaaa and later paths publish 0, 0x5555 or 0xaaaa.
+    pub const POWER_DETECTOR_REFERENCE: Register32 =
+        Register32::described(0x20100818, RegisterAccess::WriteOnly, None);
+
+    /// Recovered fields of [`POWER_DETECTOR_REFERENCE`]. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET reference word;
+    /// initialization writes 0xaaaa and later paths publish 0, 0x5555 or 0xaaaa.
+    pub mod power_detector_reference {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET reference word;
+        /// initialization writes 0xaaaa and later paths publish 0, 0x5555 or 0xaaaa.
+        pub const REFERENCE_CODE: Field32 = Field32::new(0, 16);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. phy_get_tone_sar_dout_ consumes the
+    /// upper thirteen-bit sample.
+    pub const POWER_DETECTOR_SAR_RESULT: Register32 =
+        Register32::described(0x2010081c, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`POWER_DETECTOR_SAR_RESULT`]. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. phy_get_tone_sar_dout_ consumes the
+    /// upper thirteen-bit sample.
+    pub mod power_detector_sar_result {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. phy_get_tone_sar_dout_ consumes
+        /// the upper thirteen-bit sample.
+        pub const SAR_SAMPLE: Field32 = Field32::new(17, 13);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared front-end low byte and PA-on
+    /// high byte.
+    pub const TX_PA_CONTROL_0: Register32 =
+        Register32::described(0x2010086c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_PA_CONTROL_0`]. SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared front-end low byte and PA-on
+    /// high byte.
+    pub mod tx_pa_control_0 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared front-end low byte and
+        /// PA-on high byte.
+        pub const FRONT_END_LOW_UNKNOWN: Field32 = Field32::new(0, 8);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared front-end low byte and
+        /// PA-on high byte.
+        pub const PA_ON_HIGH_UNKNOWN: Field32 = Field32::new(8, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tx_paon_set publishes
+    /// 0x0a0e in the high half and 0xc8 in byte one.
+    pub const TX_PA_CONTROL_1: Register32 =
+        Register32::described(0x20100870, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_PA_CONTROL_1`]. SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tx_paon_set publishes
+    /// 0x0a0e in the high half and 0xc8 in byte one.
+    pub mod tx_pa_control_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tx_paon_set
+        /// publishes 0x0a0e in the high half and 0xc8 in byte one.
+        pub const PA_ON_BYTE_1_UNKNOWN: Field32 = Field32::new(8, 8);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tx_paon_set
+        /// publishes 0x0a0e in the high half and 0xc8 in byte one.
+        pub const PA_ON_HIGH_UNKNOWN: Field32 = Field32::new(16, 16);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
+    /// correction-mode word.
+    pub const IQ_CORRECTION_AUX: Register32 =
+        Register32::described(0x20100c0c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`IQ_CORRECTION_AUX`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
+    /// correction-mode word.
+    pub mod iq_correction_aux {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
+        /// correction-mode word.
+        pub const TX_IQ_GAIN_COEFFICIENT: Field32 = Field32::new(0, 6);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
+        /// correction-mode word.
+        pub const TX_IQ_PHASE_COEFFICIENT: Field32 = Field32::new(6, 7);
+        /// Field layout from
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
+        /// correction-mode word.
+        pub const TX_IQ_CORRECTION_MODE: Field32 = Field32::new(13, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_i2c_txrate_init
+    /// replaces both evidenced rate fields before dispatching TX-gain compensation.
+    pub const I2C_TX_RATE_CONTROL: Register32 =
+        Register32::described(0x2010448c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`I2C_TX_RATE_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_i2c_txrate_init
+    /// replaces both evidenced rate fields before dispatching TX-gain compensation.
+    pub mod i2c_tx_rate_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_i2c_txrate_init
+        /// replaces both evidenced rate fields before dispatching TX-gain compensation.
+        pub const TX_RATE_LOW_UNKNOWN: Field32 = Field32::new(0, 2);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_i2c_txrate_init
+        /// replaces both evidenced rate fields before dispatching TX-gain compensation.
+        pub const TX_RATE_HIGH_UNKNOWN: Field32 = Field32::new(18, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets both control bits.
+    pub const NOISE_FLOOR_CONTROL: Register32 =
+        Register32::described(0x20107018, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`NOISE_FLOOR_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets both control bits.
+    pub mod noise_floor_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_noise_floor_auto_set sets both control bits.
+        pub const AUTO_CONTROL_LOW_UNKNOWN: Field32 = Field32::new(23, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_noise_floor_auto_set sets both control bits.
+        pub const AUTO_CONTROL_HIGH_UNKNOWN: Field32 = Field32::new(28, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bits
+    /// 14:13.
+    pub const BASEBAND_INIT_7400: Register32 =
+        Register32::described(0x20107400, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7400`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bits
+    /// 14:13.
+    pub mod baseband_init_7400 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bits
+        /// 14:13.
+        pub const INIT_UNKNOWN: Field32 = Field32::new(13, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 14
+    /// and replaces bits 13:8 with 0x15.
+    pub const BASEBAND_INIT_7428: Register32 =
+        Register32::described(0x20107428, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7428`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 14
+    /// and replaces bits 13:8 with 0x15.
+    pub mod baseband_init_7428 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit
+        /// 14 and replaces bits 13:8 with 0x15.
+        pub const INIT_VALUE_UNKNOWN: Field32 = Field32::new(8, 6);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit
+        /// 14 and replaces bits 13:8 with 0x15.
+        pub const INIT_ENABLE_UNKNOWN: Field32 = Field32::new(14, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bits
+    /// 8:6 through two fresh-read updates.
+    pub const BASEBAND_INIT_743C: Register32 =
+        Register32::described(0x2010743c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_743C`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bits
+    /// 8:6 through two fresh-read updates.
+    pub mod baseband_init_743c {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears
+        /// bits 8:6 through two fresh-read updates.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(6, 3);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes enable plus two initialization fields.
+    pub const TX_POWER_TRACK_CONTROL_0: Register32 =
+        Register32::described(0x20107454, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_POWER_TRACK_CONTROL_0`].
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes enable plus two initialization fields.
+    pub mod tx_power_track_control_0 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes enable plus two initialization fields.
+        pub const TRACK_ENABLE: Field32 = Field32::new(0, 1);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes enable plus two initialization fields.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(1, 4);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes enable plus two initialization fields.
+        pub const INIT_SET_UNKNOWN: Field32 = Field32::new(5, 5);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track clears
+    /// bits 1:0 and publishes three eight-bit tracking values.
+    pub const TX_POWER_TRACK_CONTROL_1: Register32 =
+        Register32::described(0x20107458, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_POWER_TRACK_CONTROL_1`].
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track clears
+    /// bits 1:0 and publishes three eight-bit tracking values.
+    pub mod tx_power_track_control_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// clears bits 1:0 and publishes three eight-bit tracking values.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(0, 2);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// clears bits 1:0 and publishes three eight-bit tracking values.
+        pub const TRACK_VALUE_0_UNKNOWN: Field32 = Field32::new(7, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// clears bits 1:0 and publishes three eight-bit tracking values.
+        pub const TRACK_VALUE_1_UNKNOWN: Field32 = Field32::new(15, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// clears bits 1:0 and publishes three eight-bit tracking values.
+        pub const TRACK_VALUE_2_UNKNOWN: Field32 = Field32::new(23, 8);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes four byte-wide tracking values.
+    pub const TX_POWER_TRACK_CONTROL_2: Register32 =
+        Register32::described(0x2010745c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_POWER_TRACK_CONTROL_2`].
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes four byte-wide tracking values.
+    pub mod tx_power_track_control_2 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes four byte-wide tracking values.
+        pub const TRACK_VALUE_0_UNKNOWN: Field32 = Field32::new(0, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes four byte-wide tracking values.
+        pub const TRACK_VALUE_1_UNKNOWN: Field32 = Field32::new(8, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes four byte-wide tracking values.
+        pub const TRACK_VALUE_2_UNKNOWN: Field32 = Field32::new(16, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes four byte-wide tracking values.
+        pub const TRACK_VALUE_3_UNKNOWN: Field32 = Field32::new(24, 8);
+    }
+
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes two byte-wide tracking values.
+    pub const TX_POWER_TRACK_CONTROL_3: Register32 =
+        Register32::described(0x20107460, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_POWER_TRACK_CONTROL_3`].
+    /// SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+    /// publishes two byte-wide tracking values.
+    pub mod tx_power_track_control_3 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes two byte-wide tracking values.
+        pub const TRACK_VALUE_0_UNKNOWN: Field32 = Field32::new(0, 8);
+        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
+        /// publishes two byte-wide tracking values.
+        pub const TRACK_VALUE_1_UNKNOWN: Field32 = Field32::new(8, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits
+    /// 13:7 with 0x60.
+    pub const BASEBAND_INIT_7808: Register32 =
+        Register32::described(0x20107808, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7808`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits
+    /// 13:7 with 0x60.
+    pub mod baseband_init_7808 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces
+        /// bits 13:7 with 0x60.
+        pub const INIT_VALUE_UNKNOWN: Field32 = Field32::new(7, 7);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25
+    /// then sets bit 24.
+    pub const BASEBAND_INIT_7890: Register32 =
+        Register32::described(0x20107890, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7890`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25
+    /// then sets bit 24.
+    pub mod baseband_init_7890 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
+        /// 25 then sets bit 24.
+        pub const INIT_MODE_UNKNOWN: Field32 = Field32::new(24, 2);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits
+    /// 13:7 with two.
+    pub const BASEBAND_INIT_78DC: Register32 =
+        Register32::described(0x201078dc, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_78DC`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits
+    /// 13:7 with two.
+    pub mod baseband_init_78dc {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces
+        /// bits 13:7 with two.
+        pub const INIT_VALUE_UNKNOWN: Field32 = Field32::new(7, 7);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.
+    pub const BASEBAND_INIT_78E4: Register32 =
+        Register32::described(0x201078e4, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_78E4`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.
+    pub mod baseband_init_78e4 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
+        /// 22.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(22, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 11.
+    pub const BASEBAND_INIT_790C: Register32 =
+        Register32::described(0x2010790c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_790C`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 11.
+    pub mod baseband_init_790c {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
+        /// 11.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(11, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25.
+    pub const BASEBAND_INIT_7980: Register32 =
+        Register32::described(0x20107980, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7980`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25.
+    pub mod baseband_init_7980 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
+        /// 25.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(25, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.
+    pub const BASEBAND_INIT_7A28: Register32 =
+        Register32::described(0x20107a28, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7A28`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.
+    pub mod baseband_init_7a28 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
+        /// 22.
+        pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(22, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init sets bit 9;
+    /// complete phy_tx_paon_set replaces bits 20:11.
+    pub const BASEBAND_TX_PA_CONTROL: Register32 =
+        Register32::described(0x20107c00, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_TX_PA_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init sets bit 9;
+    /// complete phy_tx_paon_set replaces bits 20:11.
+    pub mod baseband_tx_pa_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init sets bit
+        /// 9; complete phy_tx_paon_set replaces bits 20:11.
+        pub const BASEBAND_INIT_ENABLE_UNKNOWN: Field32 = Field32::new(9, 1);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init sets bit
+        /// 9; complete phy_tx_paon_set replaces bits 20:11.
+        pub const PA_ON_FIELD_UNKNOWN: Field32 = Field32::new(11, 10);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init clears bits
+    /// 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.
+    pub const BASEBAND_TX_PA_TIMING: Register32 =
+        Register32::described(0x20107c30, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_TX_PA_TIMING`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init clears bits
+    /// 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.
+    pub mod baseband_tx_pa_timing {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init clears
+        /// bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.
+        pub const PA_ON_TIMING_UNKNOWN: Field32 = Field32::new(0, 10);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init clears
+        /// bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.
+        pub const BASEBAND_INIT_CLEAR_UNKNOWN: Field32 = Field32::new(12, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg publishes
+    /// low configuration 0x00aa and sets bit 30.
+    pub const BASEBAND_WATCHDOG_CONTROL: Register32 =
+        Register32::described(0x20107c3c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_WATCHDOG_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg publishes
+    /// low configuration 0x00aa and sets bit 30.
+    pub mod baseband_watchdog_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg
+        /// publishes low configuration 0x00aa and sets bit 30.
+        pub const WATCHDOG_CONFIG_UNKNOWN: Field32 = Field32::new(0, 16);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg
+        /// publishes low configuration 0x00aa and sets bit 30.
+        pub const WATCHDOG_CONTROL_UNKNOWN: Field32 = Field32::new(30, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets bit
+    /// 31.
+    pub const BASEBAND_WATCHDOG_ENABLE: Register32 =
+        Register32::described(0x20107c40, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_WATCHDOG_ENABLE`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets bit
+    /// 31.
+    pub mod baseband_watchdog_enable {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets
+        /// bit 31.
+        pub const WATCHDOG_ENABLE: Field32 = Field32::new(31, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets bit zero.
+    pub const NOISE_FLOOR_ENABLE_0: Register32 =
+        Register32::described(0x20107c44, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`NOISE_FLOOR_ENABLE_0`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets bit zero.
+    pub mod noise_floor_enable_0 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_noise_floor_auto_set sets bit zero.
+        pub const AUTO_ENABLE_UNKNOWN: Field32 = Field32::new(0, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets bit zero.
+    pub const NOISE_FLOOR_ENABLE_1: Register32 =
+        Register32::described(0x20107c50, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`NOISE_FLOOR_ENABLE_1`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set
+    /// sets bit zero.
+    pub mod noise_floor_enable_1 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete
+        /// phy_noise_floor_auto_set sets bit zero.
+        pub const AUTO_ENABLE_UNKNOWN: Field32 = Field32::new(0, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tx_paon_set writes
+    /// 0x0661a45f.
+    pub const TX_PA_TABLE_OPAQUE: Register32 =
+        Register32::described(0x20107c6c, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 20.
+    pub const BASEBAND_INIT_7CA8: Register32 =
+        Register32::described(0x20107ca8, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7CA8`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 20.
+    pub mod baseband_init_7ca8 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit
+        /// 20.
+        pub const INIT_ENABLE_UNKNOWN: Field32 = Field32::new(20, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init and
+    /// phy_btbb_wifi_bb_cfg2 set the low and high nibbles.
+    pub const BASEBAND_INIT_7CD0: Register32 =
+        Register32::described(0x20107cd0, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`BASEBAND_INIT_7CD0`].
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init and
+    /// phy_btbb_wifi_bb_cfg2 set the low and high nibbles.
+    pub mod baseband_init_7cd0 {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init and
+        /// phy_btbb_wifi_bb_cfg2 set the low and high nibbles.
+        pub const INIT_LOW_UNKNOWN: Field32 = Field32::new(0, 4);
+        /// Field layout from SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init and
+        /// phy_btbb_wifi_bb_cfg2 set the low and high nibbles.
+        pub const INIT_HIGH_UNKNOWN: Field32 = Field32::new(16, 4);
+    }
+}
+
+/// SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol].
+/// Auxiliary PWDET mode register in the independently addressed radio aperture.
+pub mod phy_power_detector_aux_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Auxiliary PWDET mode register in
+    /// the independently addressed radio aperture.
+    pub const BASE: usize = 0x20701000;
+
+    /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
+    /// calibration select modes four and two.
+    pub const AUX_MODE_CONTROL: Register32 =
+        Register32::described(0x20701068, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`AUX_MODE_CONTROL`]. SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
+    /// calibration select modes four and two.
+    pub mod aux_mode_control {
+        use crate::Field32;
+
+        /// Field layout from SOURCE[ROM_REV0_PHY_POWER_DETECTOR];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and
+        /// calibration select modes four and two.
+        pub const MODE_UNKNOWN: Field32 = Field32::new(0, 3);
+    }
+}
+
 ///
 /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers recovered
@@ -2699,7 +3523,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 156] = [
+pub const ALL: [Register32; 193] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2852,6 +3676,43 @@ pub const ALL: [Register32; 156] = [
     phy_agc_oracle::AGC_UPDATE_802C_OPAQUE,
     phy_agc_oracle::AGC_UPDATE_8070_OPAQUE,
     phy_agc_oracle::AGC_UPDATE_8078_CONTROL,
+    phy_baseband_config_oracle::TX_GAIN_COMPENSATION,
+    phy_baseband_config_oracle::IQ_CORRECTION_CONTROL,
+    phy_baseband_config_oracle::POWER_DETECTOR_CONTROL,
+    phy_baseband_config_oracle::POWER_DETECTOR_SAR_CONTROL_STATUS,
+    phy_baseband_config_oracle::POWER_DETECTOR_TABLE_0_OPAQUE,
+    phy_baseband_config_oracle::POWER_DETECTOR_TABLE_1,
+    phy_baseband_config_oracle::POWER_DETECTOR_REFERENCE,
+    phy_baseband_config_oracle::POWER_DETECTOR_SAR_RESULT,
+    phy_baseband_config_oracle::TX_PA_CONTROL_0,
+    phy_baseband_config_oracle::TX_PA_CONTROL_1,
+    phy_baseband_config_oracle::IQ_CORRECTION_AUX,
+    phy_baseband_config_oracle::I2C_TX_RATE_CONTROL,
+    phy_baseband_config_oracle::NOISE_FLOOR_CONTROL,
+    phy_baseband_config_oracle::BASEBAND_INIT_7400,
+    phy_baseband_config_oracle::BASEBAND_INIT_7428,
+    phy_baseband_config_oracle::BASEBAND_INIT_743C,
+    phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_0,
+    phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_1,
+    phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_2,
+    phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_3,
+    phy_baseband_config_oracle::BASEBAND_INIT_7808,
+    phy_baseband_config_oracle::BASEBAND_INIT_7890,
+    phy_baseband_config_oracle::BASEBAND_INIT_78DC,
+    phy_baseband_config_oracle::BASEBAND_INIT_78E4,
+    phy_baseband_config_oracle::BASEBAND_INIT_790C,
+    phy_baseband_config_oracle::BASEBAND_INIT_7980,
+    phy_baseband_config_oracle::BASEBAND_INIT_7A28,
+    phy_baseband_config_oracle::BASEBAND_TX_PA_CONTROL,
+    phy_baseband_config_oracle::BASEBAND_TX_PA_TIMING,
+    phy_baseband_config_oracle::BASEBAND_WATCHDOG_CONTROL,
+    phy_baseband_config_oracle::BASEBAND_WATCHDOG_ENABLE,
+    phy_baseband_config_oracle::NOISE_FLOOR_ENABLE_0,
+    phy_baseband_config_oracle::NOISE_FLOOR_ENABLE_1,
+    phy_baseband_config_oracle::TX_PA_TABLE_OPAQUE,
+    phy_baseband_config_oracle::BASEBAND_INIT_7CA8,
+    phy_baseband_config_oracle::BASEBAND_INIT_7CD0,
+    phy_power_detector_aux_oracle::AUX_MODE_CONTROL,
     phy_clock_oracle::FE_CLOCK_GATE_OPAQUE,
     phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,

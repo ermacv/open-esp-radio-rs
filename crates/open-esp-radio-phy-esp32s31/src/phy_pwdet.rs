@@ -6,19 +6,29 @@
 //! the radio, stores two signed reference codes, and sets one calibrated bit
 //! through the global `phy_param` pointer.
 //!
-//! No completion interrupt for `0x2010_080c[16:14]` is evidenced in the
-//! available S31 PAC/SVD or ROM symbol graph. Rust therefore preserves that
-//! hardware poll. Each [`PhyPwdetReadyBinding`] consumes exactly one issued
-//! identity and performs one volatile read; an outer async executor decides
-//! when to issue another sample and owns the finite deadline. The ROM spin
-//! loop and synchronous microsecond delays are not copied.
+//! No completion interrupt for the recovered three-bit SAR-ready field is
+//! evidenced in the ROM symbol graph or public S31 material. Rust therefore
+//! preserves that hardware poll. Each [`PhyPwdetReadyBinding`] consumes
+//! exactly one issued identity and performs one volatile read; an outer async
+//! executor decides when to issue another sample and owns the finite
+//! deadline. The ROM spin loop and synchronous microsecond delays are not
+//! copied.
 
 use crate::{phy_dc_iq::phy_linear_to_db, phy_pbus::PhyPbusForceTest};
 
-pub const PHY_PWDET_READY_ADDRESS: usize = 0x2010_080c;
-pub const PHY_PWDET_READY_MASK: u32 = 0x0001_c000;
-pub const PHY_PWDET_READY_VALUE: u32 = 0x0001_c000;
-pub const PHY_PWDET_SAR_SAMPLE_ADDRESS: usize = 0x2010_081c;
+pub const PHY_PWDET_READY_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_baseband_config_oracle::
+        POWER_DETECTOR_SAR_CONTROL_STATUS
+        .address();
+pub const PHY_PWDET_READY_MASK: u32 =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_baseband_config_oracle::
+        power_detector_sar_control_status::SAR_READY
+        .mask();
+pub const PHY_PWDET_READY_VALUE: u32 = PHY_PWDET_READY_MASK;
+pub const PHY_PWDET_SAR_SAMPLE_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_baseband_config_oracle::
+        POWER_DETECTOR_SAR_RESULT
+        .address();
 pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 2;
 
 const ENTER_PBUS_COUNT: u8 = 15;
@@ -810,12 +820,17 @@ impl PhyPwdetReadyBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyPwdetCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyPwdetCompletion {
         PhyPwdetCompletion::SarReadySampled {
             measurement_index: self.measurement_index,
             sample_index: self.sample_index,
             address: self.address,
-            register_value: crate::radio_hal::read_phy_power_detector_ready_status(),
+            register_value: open_esp_radio_hal_esp32s31::phy_power_detector::sample_ready(
+                registers,
+            ),
         }
     }
 }
@@ -862,11 +877,13 @@ impl PhyPwdetMmioBinding {
                 PhyPwdetCompletion::TxClockConfigured { enabled }
             }
             PhyPwdetAction::ConfigurePowerDetector => {
-                crate::radio_hal::configure_phy_power_detector_enabled();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_enabled(registers);
                 PhyPwdetCompletion::PowerDetectorConfigured
             }
             PhyPwdetAction::ConfigureCalibrationMode => {
-                crate::radio_hal::configure_phy_power_detector_calibration_mode();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_calibration_mode(
+                    registers,
+                );
                 PhyPwdetCompletion::CalibrationModeConfigured
             }
             PhyPwdetAction::ConfigureTone => {
@@ -874,7 +891,7 @@ impl PhyPwdetMmioBinding {
                 PhyPwdetCompletion::ToneConfigured
             }
             PhyPwdetAction::WriteReferenceControl { value } => {
-                crate::radio_hal::write_phy_power_detector_reference_control(value);
+                open_esp_radio_hal_esp32s31::phy_power_detector::write_reference(registers, value);
                 PhyPwdetCompletion::ReferenceControlWritten { value }
             }
             PhyPwdetAction::ArmTone {
@@ -891,7 +908,7 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
             } => {
-                crate::radio_hal::trigger_phy_power_detector_sar();
+                open_esp_radio_hal_esp32s31::phy_power_detector::trigger_sar(registers);
                 PhyPwdetCompletion::SarTriggered {
                     measurement_index,
                     sample_index,
@@ -915,7 +932,9 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
                 address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
-                register_value: crate::radio_hal::read_phy_power_detector_sar_word(),
+                register_value: open_esp_radio_hal_esp32s31::phy_power_detector::sample_sar(
+                    registers,
+                ),
             },
             PhyPwdetAction::StopTone => {
                 crate::radio_hal::stop_phy_power_detector_tone();

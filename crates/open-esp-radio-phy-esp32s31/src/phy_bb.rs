@@ -536,7 +536,9 @@ impl PhyBbMmioBinding {
                 open_esp_radio_hal_esp32s31::phy_frequency::set_wifi_enabled(registers, enabled)
             }
             PhyBbMmioAction::ConfigureTxPowerTracking { enabled } => {
-                crate::radio_hal::configure_phy_bb_tx_power_tracking(enabled)
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_tx_power_tracking(
+                    registers, enabled,
+                )
             }
             PhyBbMmioAction::ConfigureRfRxSaturation { phase } => {
                 open_esp_radio_hal_esp32s31::phy_agc::configure_rf_rx_saturation(
@@ -544,7 +546,9 @@ impl PhyBbMmioBinding {
                     phase.enabled(),
                 )
             }
-            PhyBbMmioAction::ConfigureI2cTxRate => crate::radio_hal::configure_phy_i2c_tx_rate(),
+            PhyBbMmioAction::ConfigureI2cTxRate => {
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_i2c_tx_rate(registers)
+            }
             PhyBbMmioAction::ProgramGainMemory(entry) => {
                 open_esp_radio_hal_esp32s31::phy_memory::program_gain_memory_entry(
                     registers,
@@ -552,18 +556,20 @@ impl PhyBbMmioBinding {
                     entry.index,
                 )
             }
-            PhyBbMmioAction::EnableIqCorrection => crate::radio_hal::enable_phy_iq_correction(),
+            PhyBbMmioAction::EnableIqCorrection => {
+                open_esp_radio_hal_esp32s31::phy_baseband::enable_iq_correction(registers)
+            }
             PhyBbMmioAction::SetWifiAgcSaturationGain { value } => {
                 open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, value)
             }
             PhyBbMmioAction::ConfigureBasebandWatchdog => {
-                crate::radio_hal::configure_phy_baseband_watchdog()
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_watchdog(registers)
             }
             PhyBbMmioAction::EnableMacBaseband => {
                 open_esp_radio_hal_esp32s31::phy_frequency::enable_mac_baseband(registers)
             }
             PhyBbMmioAction::ConfigureNoiseFloorAuto => {
-                crate::radio_hal::configure_phy_noise_floor_auto()
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_noise_floor_auto(registers)
             }
             PhyBbMmioAction::ConfigureAntenna => {
                 open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers)

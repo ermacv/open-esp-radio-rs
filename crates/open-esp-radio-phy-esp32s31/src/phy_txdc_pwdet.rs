@@ -950,7 +950,7 @@ impl PhyTxDcPwdetMmioBinding {
         match self.action {
             PhyTxDcPwdetAction::CaptureRegisters => {
                 let (power_table_low, power_control_field) =
-                    crate::radio_hal::configure_phy_txdc_pwdet_registers();
+                    open_esp_radio_hal_esp32s31::phy_power_detector::capture_txdc_fields(registers);
                 PhyTxDcPwdetCompletion::RegistersCaptured {
                     power_table_low,
                     power_control_field,
@@ -961,7 +961,7 @@ impl PhyTxDcPwdetMmioBinding {
                 PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
             }
             PhyTxDcPwdetAction::ConfigurePowerDetector => {
-                crate::radio_hal::configure_phy_power_detector_enabled();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_enabled(registers);
                 PhyTxDcPwdetCompletion::PowerDetectorConfigured
             }
             PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
@@ -985,7 +985,7 @@ impl PhyTxDcPwdetMmioBinding {
                 }
             }
             PhyTxDcPwdetAction::ConfigureSarCalibration => {
-                crate::radio_hal::configure_phy_txdc_pwdet_sar();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_txdc_sar(registers);
                 PhyTxDcPwdetCompletion::SarCalibrationConfigured
             }
             PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
@@ -1007,7 +1007,8 @@ impl PhyTxDcPwdetMmioBinding {
                 power_table_low,
                 power_control_field,
             } => {
-                crate::radio_hal::restore_phy_txdc_pwdet_registers(
+                open_esp_radio_hal_esp32s31::phy_power_detector::restore_txdc_fields(
+                    registers,
                     power_table_low,
                     power_control_field,
                 );

@@ -1398,7 +1398,10 @@ impl PhyToneSarMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyToneSarCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyToneSarCompletion {
         match self.action {
             PhyToneSarAction::ArmTone {
                 measurement,
@@ -1414,7 +1417,7 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
             } => {
-                crate::radio_hal::trigger_phy_power_detector_sar();
+                open_esp_radio_hal_esp32s31::phy_power_detector::trigger_sar(registers);
                 PhyToneSarCompletion::SarTriggered {
                     measurement,
                     sample,
@@ -1429,7 +1432,9 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
                 address,
-                register_value: crate::radio_hal::read_phy_power_detector_ready_status(),
+                register_value: open_esp_radio_hal_esp32s31::phy_power_detector::sample_ready(
+                    registers,
+                ),
             },
             PhyToneSarAction::ClearTone {
                 measurement,
@@ -1449,7 +1454,9 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
                 address,
-                register_value: crate::radio_hal::read_phy_power_detector_sar_word(),
+                register_value: open_esp_radio_hal_esp32s31::phy_power_detector::sample_sar(
+                    registers,
+                ),
             },
             _ => unreachable!(),
         }
@@ -1505,11 +1512,13 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
                 PhyTxCalibrationEnvironmentCompletion::TxClockConfigured { enabled }
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePowerDetector => {
-                crate::radio_hal::configure_phy_power_detector_enabled();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_enabled(registers);
                 PhyTxCalibrationEnvironmentCompletion::PowerDetectorConfigured
             }
             PhyTxCalibrationEnvironmentAction::ConfigureCalibrationMode => {
-                crate::radio_hal::configure_phy_power_detector_calibration_mode();
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_calibration_mode(
+                    registers,
+                );
                 PhyTxCalibrationEnvironmentCompletion::CalibrationModeConfigured
             }
             PhyTxCalibrationEnvironmentAction::StopTone => {

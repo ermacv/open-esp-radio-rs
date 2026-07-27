@@ -1923,7 +1923,7 @@ impl PhyColdMmioBinding {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_master_registers(registers)
             }
             PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                crate::radio_hal::configure_phy_power_detector_registers()
+                open_esp_radio_hal_esp32s31::phy_power_detector::initialize_registers(registers)
             }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
                 crate::radio_hal::configure_phy_front_end_registers(registers)
@@ -1932,7 +1932,7 @@ impl PhyColdMmioBinding {
                 crate::radio_hal::configure_phy_temperature_sensor_read()
             }
             PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                crate::radio_hal::configure_phy_tx_power_control_background()
+                open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(registers)
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterCommandMemory { parameter } => {
                 crate::phy_i2c::configure_i2c_master_command_memory(registers, parameter)

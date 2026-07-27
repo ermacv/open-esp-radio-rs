@@ -283,6 +283,50 @@ methods for the newly recovered regions. Reusable RFPLL, RXIQ/TXIQ, DCO,
 gain, temperature, saturation, power and power-detector target bindings use
 the same borrow; no raw-owner PHY-I2C or PBus force-test leaf remains.
 
+## Baseband initialization and power-detector PAC
+
+SVD v0.9 adds the 36-register `PHY_BASEBAND_CONFIG_ORACLE` aperture and the
+independently addressed `PHY_POWER_DETECTOR_AUX_ORACLE` register. This is the
+first complete typed representation of the local MMIO used by
+`phy_reg_init`, its baseband/watchdog/PA/noise leaves, TX-power tracking, and
+the PWDET/TX-DC calibration path.
+
+The address, mask, value and access-order sources are pinned S31 artifacts:
+
+- rev0 ROM ELF SHA-256
+  `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+  including complete `phy_reg_init` (`0x2f823ef8`, size `0x52`),
+  `phy_bb_reg_init` (`0x2f8279c6`, size `0x140`),
+  `phy_tx_paon_set` (`0x2f82764c`, size `0x78`), and the complete PWDET
+  leaves recorded in the SVD source ledger;
+- pinned `libphy.a` SHA-256
+  `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+  including complete `phy_bb_txpwr_track`, `phy_txgain_comp_pacfg_new`, and
+  `phy_txdc_cal_pwdet_init`.
+
+The new safe `phy_baseband` and `phy_power_detector` HAL modules preserve
+each full-word store and each separate fresh-read update. This includes
+apparently redundant operations such as the second `0x7cd0` OR and the
+individual PWDET clears; they are not folded into a guessed equivalent
+transaction. Host register models assert operation counts, order, captured
+field restoration, and final images.
+
+Cold PHY init and the reusable BB/PWDET/TX-DC target bindings now require the
+same `&mut RadioRegisters` capability for configuration and sampling. In
+particular, ready/result reads at the PWDET control/result identities no
+longer manufacture global volatile pointers.
+
+Public Espressif sources do not currently define these S31 internal PHY
+fields. The public
+[ESP32 Open MAC project](https://github.com/esp32-open-mac/esp32-open-mac)
+likewise treats hardware initialization as a remaining blob boundary, while
+the open-driver
+[static-analysis paper](https://arxiv.org/abs/2501.17684) explains why MMIO
+semantics cannot always be inferred from address traces alone. Those sources
+support the conservative naming policy, not cross-chip field names:
+instruction-proven roles are named, and unresolved electrical meanings remain
+`UNKNOWN`.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

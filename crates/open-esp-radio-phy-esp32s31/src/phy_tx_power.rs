@@ -771,7 +771,10 @@ impl PhyTxPowerMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxPowerCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxPowerCompletion {
         match self.action {
             PhyTxPowerAction::ConfigureTone {
                 selector,
@@ -790,7 +793,7 @@ impl PhyTxPowerMmioBinding {
                 }
             }
             PhyTxPowerAction::WriteReferenceControl { value } => {
-                crate::radio_hal::write_phy_power_detector_reference_control(value);
+                open_esp_radio_hal_esp32s31::phy_power_detector::write_reference(registers, value);
                 PhyTxPowerCompletion::ReferenceControlWritten { value }
             }
             _ => unreachable!(),

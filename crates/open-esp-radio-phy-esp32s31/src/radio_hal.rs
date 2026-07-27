@@ -72,11 +72,6 @@ const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
 const PHY_I2C_CLOCK_SELECTION_2_ADDRESS: usize = 0x2010_f82c;
 const PHY_FE_TXRX_RESET_ADDRESS: usize = 0x2010_0440;
 const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
-const PHY_POWER_DETECTOR_CONTROL_ADDRESS: usize = 0x2010_0808;
-const PHY_POWER_DETECTOR_TABLE_0_ADDRESS: usize = 0x2010_0810;
-const PHY_POWER_DETECTOR_TABLE_1_ADDRESS: usize = 0x2010_0814;
-const PHY_POWER_DETECTOR_TABLE_2_ADDRESS: usize = 0x2010_0818;
-const PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS: usize = 0x2070_1068;
 const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
 const PHY_FE_CONTROL_0438_ADDRESS: usize = 0x2010_0438;
 const PHY_FE_CONTROL_0444_ADDRESS: usize = 0x2010_0444;
@@ -89,19 +84,8 @@ const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
 const PHY_TEMPERATURE_SENSOR_POWER_ADDRESS: usize = 0x2081_8000;
 const PHY_TEMPERATURE_SENSOR_CONTROL_ADDRESS: usize = 0x2081_8018;
 const PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS: usize = 0x2071_0030;
-const PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS: usize = 0x2010_080c;
-const PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS: usize = 0x2010_7454;
-const PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS: usize = 0x2010_7458;
-const PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS: usize = 0x2010_745c;
-const PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS: usize = 0x2010_7460;
-const PHY_I2C_TX_RATE_CONTROL_ADDRESS: usize = 0x2010_448c;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
-const PHY_BB_WATCHDOG_CONTROL_ADDRESS: usize = 0x2010_7c3c;
-const PHY_BB_WATCHDOG_ENABLE_ADDRESS: usize = 0x2010_7c40;
-const PHY_NOISE_FLOOR_CONTROL_ADDRESS: usize = 0x2010_7018;
-const PHY_NOISE_FLOOR_ENABLE_0_ADDRESS: usize = 0x2010_7c44;
-const PHY_NOISE_FLOOR_ENABLE_1_ADDRESS: usize = 0x2010_7c50;
 const PHY_REGISTER_FORCE_TXRX_ADDRESS: usize = 0x2010_0890;
 const PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS: usize = 0x2010_f800;
 const PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS: usize = 0x2010_f804;
@@ -244,181 +228,32 @@ pub(crate) fn set_phy_channel_agc(registers: &mut RadioRegisters, enabled: bool)
     open_esp_radio_hal_esp32s31::phy_agc::set_enabled(registers, enabled);
 }
 
-/// Complete pinned `phy_bb_txpwr_track`, size `0xf4`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_bb_tx_power_tracking(enabled: bool) {
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS,
-        0x0000_0001,
-        u32::from(enabled),
-    );
-    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS, 0x0000_001e);
-    set_register_bits(PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS, 0x0000_03e0);
-    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS, 0x0000_0001);
-    clear_register_bits(PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS, 0x0000_0002);
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS,
-        0x0000_ff00,
-        0x0000_7900,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS,
-        0x0000_00ff,
-        0x0000_0083,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
-        0xff00_0000,
-        0x8d00_0000,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
-        0x00ff_0000,
-        0x0096_0000,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
-        0x0000_ff00,
-        0x0000_a000,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS,
-        0x0000_00ff,
-        0x0000_00b1,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
-        0x7f80_0000,
-        0x5f00_0000,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
-        0x007f_8000,
-        0x0069_0000,
-    );
-    replace_register_field(
-        PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS,
-        0x0000_7f80,
-        0x0000_7300,
-    );
-}
-
-/// Complete rev0 ROM `phy_i2c_txrate_init`, size `0x38`.
-///
-/// The ROM tail dispatches through `g_phyFuns+0x30`. The pinned table target
-/// is complete archive leaf `phy_txgain_comp_pacfg_new(1)`, whose four
-/// ordered MMIO writes are reproduced directly below.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_i2c_tx_rate() {
-    replace_register_field(PHY_I2C_TX_RATE_CONTROL_ADDRESS, 0x03fc_0000, 0x0154_0000);
-    replace_register_field(PHY_I2C_TX_RATE_CONTROL_ADDRESS, 0x0000_0003, 0x0000_0002);
-
-    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
-    compensation.write_volatile(without_phy_tx_gain_compensation_low_byte(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(with_phy_tx_gain_compensation_byte1(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(with_phy_tx_gain_compensation_byte2(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(without_phy_tx_gain_compensation_high_byte(
-        compensation.read_volatile(),
-    ));
-}
-
-/// Complete rev0 ROM `phy_iq_corr_enable`, size `0x24`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn enable_phy_iq_correction() {
-    set_register_bits(PHY_IQ_CORRECTION_CONTROL_ADDRESS, 0x6000_0000);
-    set_register_bits(PHY_IQ_CORRECTION_AUX_ADDRESS, 0x0000_6000);
-}
-
-/// Complete rev0 ROM `phy_bb_wdg_cfg`, size `0x2c`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_baseband_watchdog() {
-    let control = PHY_BB_WATCHDOG_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_baseband_watchdog(control.read_volatile()));
-    set_register_bits(PHY_BB_WATCHDOG_ENABLE_ADDRESS, 0x8000_0000);
-}
-
-/// Complete rev0 ROM `phy_noise_floor_auto_set`, size `0x36`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_noise_floor_auto() {
-    set_register_bits(PHY_NOISE_FLOOR_CONTROL_ADDRESS, 0x0080_0000);
-    set_register_bits(PHY_NOISE_FLOOR_CONTROL_ADDRESS, 0x1000_0000);
-    set_register_bits(PHY_NOISE_FLOOR_ENABLE_0_ADDRESS, 1);
-    set_register_bits(PHY_NOISE_FLOOR_ENABLE_1_ADDRESS, 1);
-}
-
-/// Complete rev0 ROM `phy_bb_reg_init`, size `0x140`, including its
-/// `phy_btbb_wifi_bb_cfg2` tail.
-#[cfg(target_arch = "riscv32")]
-unsafe fn configure_phy_baseband_registers(registers: &mut RadioRegisters) {
-    set_register_bits(0x2010_7400, 0x0000_6000);
-    open_esp_radio_hal_esp32s31::phy_frequency::initialize_nrx_baseband(registers);
-    replace_register_field(0x2010_7808, 0x0000_3f80, 0x0000_3000);
-    replace_register_field(0x2010_78dc, 0x0000_3f80, 0x0000_0100);
-    clear_register_bits(0x2010_78e4, 0x0040_0000);
-    clear_register_bits(0x2010_7c30, 0x000f_f000);
-    clear_register_bits(0x2010_790c, 0x0000_0800);
-    set_register_bits(0x2010_7ca8, 0x0010_0000);
-    clear_register_bits(0x2010_7980, 0x0200_0000);
-    clear_register_bits(0x2010_7890, 0x0200_0000);
-    set_register_bits(0x2010_7890, 0x0100_0000);
-    clear_register_bits(0x2010_7a28, 0x0040_0000);
-    set_register_bits(0x2010_7cd0, 0x000f_000f);
-    set_register_bits(0x2010_7c00, 0x0000_0200);
-    open_esp_radio_hal_esp32s31::phy_frequency::set_baseband_init_control(registers);
-    clear_register_bits(0x2010_743c, 0x0000_00c0);
-    clear_register_bits(0x2010_743c, 0x0000_0100);
-    set_register_bits(0x2010_7428, 0x0000_4000);
-    replace_register_field(0x2010_7428, 0x0000_3f00, 0x0000_1500);
-    set_register_bits(0x2010_7cd0, 0x000f_000b);
-}
-
-/// Complete rev0 ROM `phy_tx_paon_set`, size `0x78`.
-#[cfg(target_arch = "riscv32")]
-unsafe fn configure_phy_tx_pa_on() {
-    replace_register_field(0x2010_7c00, 0x001f_f800, 0x0000_a000);
-    replace_register_field(0x2010_086c, 0x0000_ff00, 0x0000_7800);
-    (0x2010_7c6c as *mut u32).write_volatile(0x0661_a45f);
-    replace_register_field(0x2010_7c30, 0x0000_03ff, 0x0000_001e);
-
-    let control = 0x2010_0870 as *mut u32;
-    // ROM `lui a4, 0xa0e0` materializes 0x0a0e_0000 (the immediate is
-    // shifted by twelve), not 0xa0e0_0000.
-    control.write_volatile((control.read_volatile() & 0x0000_ffff) | 0x0a0e_0000);
-    replace_register_field(0x2010_0870, 0x0000_ff00, 0x0000_c800);
-}
-
 /// Complete both branches of rev0 ROM `phy_rx_11b_opt`, size `0xc4`.
 #[cfg(target_arch = "riscv32")]
 fn configure_phy_rx_11b_optimization(registers: &mut RadioRegisters, enabled: bool) {
     open_esp_radio_hal_esp32s31::phy_agc::configure_rx_11b_optimization(registers, enabled);
 }
 
-/// Complete rev0 ROM `phy_reg_init`, size `0x52`, with every direct and tail
-/// child reproduced by finite Rust MMIO.
+/// Complete rev0 ROM `phy_reg_init` at `0x2f82_3ef8`, size `0x52`, with
+/// every direct and tail child reproduced by source-owned safe HAL leaves.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_registers(
+pub(crate) fn configure_phy_registers(
     registers: &mut RadioRegisters,
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
-    enable_phy_iq_correction();
+    open_esp_radio_hal_esp32s31::phy_baseband::enable_iq_correction(registers);
     open_esp_radio_hal_esp32s31::phy_agc::initialize_registers(
         registers,
         parameters.parameter_121,
         parameters.parameter_120,
     );
     open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, 0x0008_1825);
-    configure_phy_baseband_registers(registers);
-    configure_phy_baseband_watchdog();
-    configure_phy_tx_pa_on();
+    open_esp_radio_hal_esp32s31::phy_baseband::initialize_baseband(registers);
+    open_esp_radio_hal_esp32s31::phy_baseband::configure_watchdog(registers);
+    open_esp_radio_hal_esp32s31::phy_baseband::configure_tx_pa_on(registers);
     configure_phy_rx_11b_optimization(registers, true);
-    configure_phy_tx_power_control_background();
-    configure_phy_noise_floor_auto();
+    open_esp_radio_hal_esp32s31::phy_power_detector::configure_background(registers);
+    open_esp_radio_hal_esp32s31::phy_baseband::configure_noise_floor_auto(registers);
     open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers);
     open_esp_radio_hal_esp32s31::phy_frequency::configure_bt_filter(registers);
     open_esp_radio_hal_esp32s31::phy_frequency::enable_mac_baseband(registers);
@@ -432,7 +267,7 @@ pub(crate) unsafe fn configure_phy_registers(
 /// then publishes exactly 79 gain entries and runs the already complete
 /// register-init, AGC-update and AGC-enable suffix.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_table(
+pub(crate) fn configure_phy_rx_table(
     registers: &mut RadioRegisters,
     parameters: crate::phy_bb::PhyRxTableInitParameters,
 ) {
@@ -778,18 +613,6 @@ const fn with_phy_adc_rate_low(value: u32, rate: u32) -> u32 {
     (value & !0x0000_0001) | (rate & 0x0000_0001)
 }
 
-const fn with_phy_power_detector_low_field(value: u32) -> u32 {
-    (value & 0xffff_f00f) | 0x0000_0500
-}
-
-const fn with_phy_power_detector_high_field(value: u32) -> u32 {
-    (value & 0xff8f_ffff) | 0x0020_0000
-}
-
-const fn with_phy_power_detector_aux_mode(value: u32) -> u32 {
-    (value & !0x0000_0007) | 0x0000_0004
-}
-
 const fn with_register_bits(value: u32, bits: u32) -> u32 {
     value | bits
 }
@@ -868,10 +691,6 @@ fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: 
     } else {
         packed_halfword(&image.output_32, index - image.seed.len() * 2)
     }
-}
-
-const fn with_phy_baseband_watchdog(value: u32) -> u32 {
-    (value & 0xbfff_0000) | 0x4000_00aa
 }
 
 /// Read one of the two MAC TSF domains through the hardware latch.
@@ -1663,26 +1482,6 @@ pub(crate) unsafe fn configure_phy_adc_rate(rate: u32) {
     register.write_volatile(with_phy_adc_rate_low(register.read_volatile(), rate));
 }
 
-/// Apply complete rev0 ROM `phy_pwdet_reg_init`.
-///
-/// The pinned body at `0x2f82_634a`, size `0x5c`, performs six finite stores
-/// with no branch, call, loop, delay, or mutable software-state access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_power_detector_registers() {
-    (PHY_POWER_DETECTOR_TABLE_0_ADDRESS as *mut u32).write_volatile(0x0f0f_0fff);
-    (PHY_POWER_DETECTOR_TABLE_1_ADDRESS as *mut u32).write_volatile(0x00ff_0f64);
-
-    let control = PHY_POWER_DETECTOR_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_power_detector_low_field(control.read_volatile()));
-
-    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_aaaa);
-
-    control.write_volatile(with_phy_power_detector_high_field(control.read_volatile()));
-
-    let auxiliary = PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS as *mut u32;
-    auxiliary.write_volatile(with_phy_power_detector_aux_mode(auxiliary.read_volatile()));
-}
-
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
 unsafe fn set_register_bits(address: usize, bits: u32) {
@@ -1767,139 +1566,16 @@ pub(crate) unsafe fn configure_phy_temperature_sensor_read() {
     );
 }
 
-/// Apply complete rev0 ROM `phy_tx_pwctrl_bg_init` including both callees.
-///
-/// The exact chain clears three power-detector bits as separate fresh-read
-/// writes, configures SAR2, republishes the auxiliary mode, and finally sets
-/// the background-control bit. It is finite and owns no software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_tx_power_control_background() {
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0004);
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0002);
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0008);
-    set_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_3000);
-    clear_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_0200);
-    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_016a);
-    replace_register_field(
-        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
-        0x0000_0007,
-        0x0000_0004,
-    );
-    set_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0001_0000);
-}
-
-/// Enable the power-detector/SAR path used by TX calibration.
-///
-/// Reference: complete rev0 ROM `phy_en_pwdet` at `0x2f82_63da`, including
-/// `phy_pwdet_sar2_init`. The auxiliary field is left in mode four here; the
-/// caller performs the later mode-two write from `phy_txcal_debuge_mode_` as
-/// a separately ordered action. This leaf is finite and contains no poll,
-/// delay, callback, allocation, or software-global access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_power_detector_enabled() {
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0004);
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0002);
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0008);
-    set_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_3000);
-    clear_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_0200);
-    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(0x0000_016a);
-    replace_register_field(
-        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
-        0x0000_0007,
-        0x0000_0004,
-    );
-}
-
-/// Select the final auxiliary calibration mode from `phy_txcal_debuge_mode_`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_power_detector_calibration_mode() {
-    replace_register_field(
-        PHY_POWER_DETECTOR_AUX_CONTROL_ADDRESS,
-        0x0000_0007,
-        0x0000_0002,
-    );
-}
-
-/// Capture and apply the finite register prefix of
-/// `phy_txdc_cal_pwdet_init`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_txdc_pwdet_registers() -> (u8, u32) {
-    let table = PHY_POWER_DETECTOR_TABLE_1_ADDRESS as *mut u32;
-    let control = PHY_POWER_DETECTOR_CONTROL_ADDRESS as *mut u32;
-    let table_value = table.read_volatile();
-    let control_value = control.read_volatile();
-    table.write_volatile((table_value & !0xff) | 0xf0);
-    control.write_volatile((control_value & !0x0000_0ff0) | 0x0000_0780);
-    ((table_value & 0xff) as u8, control_value & 0x0000_0ff0)
-}
-
-/// Select the TX-DC PWDET SAR calibration field after the initial PBus setup.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_txdc_pwdet_sar() {
-    replace_register_field(
-        PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS,
-        0x0000_3000,
-        0x0000_1000,
-    );
-}
-
-/// Restore the two captured fields and reproduce the reference's final SAR
-/// enable bits. This is the unconditional cleanup tail.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn restore_phy_txdc_pwdet_registers(
-    power_table_low: u8,
-    power_control_field: u32,
-) {
-    replace_register_field(
-        PHY_POWER_DETECTOR_TABLE_1_ADDRESS,
-        0x0000_00ff,
-        u32::from(power_table_low),
-    );
-    replace_register_field(
-        PHY_POWER_DETECTOR_CONTROL_ADDRESS,
-        0x0000_0ff0,
-        power_control_field,
-    );
-    set_register_bits(PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS, 0x0000_3000);
-}
-
-/// Publish one of the exact `0`, `0x5555`, or `0xaaaa` PWDET reference words.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn write_phy_power_detector_reference_control(value: u16) {
-    (PHY_POWER_DETECTOR_TABLE_2_ADDRESS as *mut u32).write_volatile(u32::from(value));
-}
-
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn arm_phy_power_detector_tone() {
     set_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
 }
 
-/// Publish the two fresh-read SAR trigger writes after the first timer edge.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn trigger_phy_power_detector_sar() {
-    clear_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0001);
-    set_register_bits(PHY_POWER_DETECTOR_CONTROL_ADDRESS, 0x0000_0001);
-}
-
 /// Clear the temporary tone-arm bit selected by former `phy_param[0x1aa]`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn clear_phy_power_detector_tone_arm() {
     clear_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
-}
-
-/// Read one PWDET readiness sample. Repetition and deadline ownership belong
-/// to the Rust transition/executor, never to this leaf.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_power_detector_ready_status() -> u32 {
-    (PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS as *const u32).read_volatile()
-}
-
-/// Read the first PWDET SAR word. The caller extracts the evidenced upper
-/// 13-bit sample and never aliases the four-word ROM stack buffer.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_power_detector_sar_word() -> u32 {
-    (0x2010_081c as *const u32).read_volatile()
 }
 
 /// Stop the calibration tone exactly as `phy_stop_tx_tone(1)`.
@@ -2010,25 +1686,24 @@ mod tests {
         tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address, tx_queue_is_valid,
         with_mac_rx_control_address_policy, with_mac_rx_control_policy,
         with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
-        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_baseband_watchdog,
-        with_phy_fe_txrx_reset, with_phy_front_end_adc_update, with_phy_front_end_update_first,
+        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_fe_txrx_reset,
+        with_phy_front_end_adc_update, with_phy_front_end_update_first,
         with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
         with_phy_i2c_clock_selection_low, with_phy_iq_est_config, with_phy_iq_est_control,
-        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_force_test,
-        with_phy_power_detector_aux_mode, with_phy_power_detector_high_field,
-        with_phy_power_detector_low_field, with_phy_rx_clock, with_phy_rxiq_calibration_mode,
-        with_phy_rxiq_gain, with_phy_rxiq_phase, with_phy_rxiq_root_aux_begin,
-        with_phy_rxiq_root_correction_begin, with_phy_tone_path, with_phy_tone_path0_selector,
-        with_phy_tone_path1_selector, with_phy_tx_clock, with_phy_tx_gain_compensation_byte1,
-        with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
-        with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
-        with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
-        with_register_field, with_restored_phy_rx_dco_control_field, with_tx_cca,
-        with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
-        without_phy_fe_txrx_reset, without_phy_rx_dco_control_field,
-        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
-        without_register_bits, without_tx_queue_enable, without_tx_queue_valid,
-        PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT, WIFI_MAC_ACTIVE_REGDMA_LINK,
+        with_phy_iq_est_enable, with_phy_iq_est_mode, with_phy_pbus_force_test, with_phy_rx_clock,
+        with_phy_rxiq_calibration_mode, with_phy_rxiq_gain, with_phy_rxiq_phase,
+        with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin, with_phy_tone_path,
+        with_phy_tone_path0_selector, with_phy_tone_path1_selector, with_phy_tx_clock,
+        with_phy_tx_gain_compensation_byte1, with_phy_tx_gain_compensation_byte2,
+        with_phy_txiq_calibration_complete, with_phy_txiq_calibration_enabled,
+        with_phy_txiq_first_polarity, with_phy_txiq_gain, with_phy_txiq_phase,
+        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
+        with_restored_phy_rx_dco_control_field, with_tx_cca, with_wifi_mac_regdma_link,
+        without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_fe_txrx_reset,
+        without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
+        without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
+        without_tx_queue_valid, PHY_IQ_EST_MEASUREMENT_BIT, PHY_IQ_EST_START_BIT,
+        WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
 
     #[test]
@@ -2271,15 +1946,6 @@ mod tests {
     }
 
     #[test]
-    fn phy_power_detector_fields_match_complete_rom_body() {
-        assert_eq!(with_phy_power_detector_low_field(0), 0x0000_0500);
-        assert_eq!(with_phy_power_detector_low_field(u32::MAX), 0xffff_f50f);
-        assert_eq!(with_phy_power_detector_high_field(u32::MAX), 0xffaf_ffff);
-        assert_eq!(with_phy_power_detector_aux_mode(u32::MAX), 0xffff_fffc);
-        assert_eq!(with_phy_power_detector_aux_mode(0), 0x0000_0004);
-    }
-
-    #[test]
     fn phy_front_end_register_transforms_preserve_exact_masks() {
         assert_eq!(with_register_bits(0x1234_5678, 0x0010_0000), 0x1234_5678);
         assert_eq!(with_register_bits(0x1234_5678, 0x8000_0000), 0x9234_5678);
@@ -2315,77 +1981,6 @@ mod tests {
             with_register_field(u32::MAX, 0x0040_0000, 0x0040_0000),
             u32::MAX
         );
-    }
-
-    #[test]
-    fn phy_tx_power_background_masks_match_complete_rom_chain() {
-        assert_eq!(without_register_bits(u32::MAX, 0x0000_000e), 0xffff_fff1);
-        assert_eq!(
-            with_register_bits(0, 0x0000_3000 | 0x0001_0000),
-            0x0001_3000
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x0000_0007, 0x0000_0004),
-            0xffff_fffc
-        );
-    }
-
-    #[test]
-    fn phy_bb_tx_power_tracking_fields_match_the_complete_archive_body() {
-        assert_eq!(
-            with_register_field(u32::MAX, 0x0000_ff00, 0x0000_7900),
-            0xffff_79ff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0xff00_0000, 0x8d00_0000),
-            0x8dff_ffff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x00ff_0000, 0x0096_0000),
-            0xff96_ffff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x0000_ff00, 0x0000_a000),
-            0xffff_a0ff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x7f80_0000, 0x5f00_0000),
-            0xdf7f_ffff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x007f_8000, 0x0069_0000),
-            0xffe9_7fff
-        );
-        assert_eq!(
-            with_register_field(u32::MAX, 0x0000_7f80, 0x0000_7300),
-            0xffff_f37f
-        );
-    }
-
-    #[test]
-    fn phy_i2c_tx_rate_removes_the_indirect_callback_with_exact_fields() {
-        assert_eq!(
-            with_register_field(0xa5a5_5a5a, 0x03fc_0000, 0x0154_0000),
-            0xa555_5a5a
-        );
-        assert_eq!(
-            with_register_field(0xa5a5_5a5a, 0x0000_0003, 0x0000_0002),
-            0xa5a5_5a5a
-        );
-        let first = without_phy_tx_gain_compensation_low_byte(0x1234_5678);
-        let second = with_phy_tx_gain_compensation_byte1(first);
-        let third = with_phy_tx_gain_compensation_byte2(second);
-        let fourth = without_phy_tx_gain_compensation_high_byte(third);
-        assert_eq!(
-            (first, second, third, fourth),
-            (0x1234_5600, 0x1234_fa00, 0x12ff_fa00, 0x00ff_fa00)
-        );
-    }
-
-    #[test]
-    fn phy_baseband_watchdog_mask_matches_the_rom_body() {
-        let initial = 0xa5a5_5a5a;
-        assert_eq!(with_phy_baseband_watchdog(initial), 0xe5a5_00aa);
     }
 
     #[test]

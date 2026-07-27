@@ -995,7 +995,7 @@ impl PhyRxGainInitMmioBinding {
                 PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index }
             }
             PhyRxGainInitAction::EnableIqCorrection => {
-                crate::radio_hal::enable_phy_iq_correction();
+                open_esp_radio_hal_esp32s31::phy_baseband::enable_iq_correction(registers);
                 PhyRxGainInitCompletion::IqCorrectionEnabled
             }
             _ => unreachable!(),

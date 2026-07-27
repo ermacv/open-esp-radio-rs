@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.8</version>
+  <version>0.9</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
     Unknown fields are omitted; OPAQUE and UNKNOWN names describe
@@ -1366,6 +1366,320 @@
     </peripheral>
 
     <peripheral>
+      <name>PHY_BASEBAND_CONFIG_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_POWER_DETECTOR,
+        ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
+        CONFIDENCE[instruction-exact-semantics-partial].
+        PHY/baseband configuration registers recovered from complete rev0 ROM
+        bodies and complete pinned libphy leaves. Operation-derived fields keep
+        UNKNOWN where neither public documentation nor an independent symbol
+        establishes the electrical meaning.
+      </description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>TX_GAIN_COMPENSATION</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.</description>
+          <addressOffset>0x0410</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>COMPENSATION_BYTE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>COMPENSATION_BYTE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>COMPENSATION_BYTE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>COMPENSATION_BYTE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>IQ_CORRECTION_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and correction-mode word.</description>
+          <addressOffset>0x0438</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>RX_IQ_GAIN_COEFFICIENT</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>RX_IQ_PHASE_COEFFICIENT</name><bitOffset>22</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>RX_IQ_CORRECTION_MODE</name><bitOffset>29</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared PWDET trigger, calibration and background-control word.</description>
+          <addressOffset>0x0808</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SAR_TRIGGER</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>ENABLE_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>CALIBRATION_FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>BACKGROUND_CONTROL_ENABLE_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>INITIALIZATION_MODE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>3</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_SAR_CONTROL_STATUS</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET]; CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET SAR configuration and three-bit ready status.</description>
+          <addressOffset>0x080c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SAR_CONFIG_CLEAR_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>SAR_MODE_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>SAR_READY</name><bitOffset>14</bitOffset><bitWidth>3</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_TABLE_0_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_pwdet_reg_init writes 0x0f0f0fff.</description>
+          <addressOffset>0x0810</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_TABLE_1</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET]; CONFIDENCE[instruction-exact-semantics-partial]. Complete initialization writes 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.</description>
+          <addressOffset>0x0814</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TX_DC_TEMPORARY_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>INITIALIZATION_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>16</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_REFERENCE</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET reference word; initialization writes 0xaaaa and later paths publish 0, 0x5555 or 0xaaaa.</description>
+          <addressOffset>0x0818</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>REFERENCE_CODE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_SAR_RESULT</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample.</description>
+          <addressOffset>0x081c</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>SAR_SAMPLE</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>TX_PA_CONTROL_0</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared front-end low byte and PA-on high byte.</description>
+          <addressOffset>0x086c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>FRONT_END_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TX_PA_CONTROL_1</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one.</description>
+          <addressOffset>0x0870</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PA_ON_BYTE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>IQ_CORRECTION_AUX</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and correction-mode word.</description>
+          <addressOffset>0x0c0c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TX_IQ_GAIN_COEFFICIENT</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>TX_IQ_PHASE_COEFFICIENT</name><bitOffset>6</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>TX_IQ_CORRECTION_MODE</name><bitOffset>13</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C_TX_RATE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_i2c_txrate_init replaces both evidenced rate fields before dispatching TX-gain compensation.</description>
+          <addressOffset>0x448c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TX_RATE_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>TX_RATE_HIGH_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>NOISE_FLOOR_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set sets both control bits.</description>
+          <addressOffset>0x7018</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>AUTO_CONTROL_LOW_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>AUTO_CONTROL_HIGH_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7400</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bits 14:13.</description>
+          <addressOffset>0x7400</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7428</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.</description>
+          <addressOffset>0x7428</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>INIT_VALUE_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>INIT_ENABLE_UNKNOWN</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_743C</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.</description>
+          <addressOffset>0x743c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>3</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>TX_POWER_TRACK_CONTROL_0</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track publishes enable plus two initialization fields.</description>
+          <addressOffset>0x7454</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TRACK_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>INIT_SET_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TX_POWER_TRACK_CONTROL_1</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track clears bits 1:0 and publishes three eight-bit tracking values.</description>
+          <addressOffset>0x7458</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TX_POWER_TRACK_CONTROL_2</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track publishes four byte-wide tracking values.</description>
+          <addressOffset>0x745c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TX_POWER_TRACK_CONTROL_3</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track publishes two byte-wide tracking values.</description>
+          <addressOffset>0x7460</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7808</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.</description>
+          <addressOffset>0x7808</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7890</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25 then sets bit 24.</description>
+          <addressOffset>0x7890</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_MODE_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_78DC</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits 13:7 with two.</description>
+          <addressOffset>0x78dc</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_78E4</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.</description>
+          <addressOffset>0x78e4</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_790C</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 11.</description>
+          <addressOffset>0x790c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7980</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 25.</description>
+          <addressOffset>0x7980</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7A28</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit 22.</description>
+          <addressOffset>0x7a28</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_TX_PA_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11.</description>
+          <addressOffset>0x7c00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BASEBAND_INIT_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PA_ON_FIELD_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>10</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_TX_PA_TIMING</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-partial]. Complete phy_bb_reg_init clears bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.</description>
+          <addressOffset>0x7c30</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PA_ON_TIMING_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>BASEBAND_INIT_CLEAR_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_WATCHDOG_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg publishes low configuration 0x00aa and sets bit 30.</description>
+          <addressOffset>0x7c3c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>WATCHDOG_CONFIG_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>WATCHDOG_CONTROL_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BASEBAND_WATCHDOG_ENABLE</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets bit 31.</description>
+          <addressOffset>0x7c40</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>WATCHDOG_ENABLE</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>NOISE_FLOOR_ENABLE_0</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set sets bit zero.</description>
+          <addressOffset>0x7c44</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>AUTO_ENABLE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>NOISE_FLOOR_ENABLE_1</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_noise_floor_auto_set sets bit zero.</description>
+          <addressOffset>0x7c50</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>AUTO_ENABLE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>TX_PA_TABLE_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tx_paon_set writes 0x0661a45f.</description>
+          <addressOffset>0x7c6c</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7CA8</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 20.</description>
+          <addressOffset>0x7ca8</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INIT_ENABLE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BASEBAND_INIT_7CD0</name>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init and phy_btbb_wifi_bb_cfg2 set the low and high nibbles.</description>
+          <addressOffset>0x7cd0</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>INIT_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_POWER_DETECTOR_AUX_ORACLE</name>
+      <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Auxiliary PWDET mode register in the independently addressed radio aperture.</description>
+      <baseAddress>0x20701000</baseAddress>
+      <registers>
+        <register>
+          <name>AUX_MODE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact-semantics-from-symbol]. PWDET initialization and calibration select modes four and two.</description>
+          <addressOffset>0x0068</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>MODE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
       <name>PHY_CLOCK_ORACLE</name>
       <description>
         SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
@@ -1434,6 +1748,9 @@
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_bbpll_cal at 0x2f827dbc size 0x1c, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
       <source id="ROM_REV0_PHY_FREQUENCY_CHANNEL">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_freq_module_resetn at 0x2f824abe size 0x1c, phy_freq_chan_en_sw at 0x2f824ada size 0x38, phy_freq_i2c_mem_write at 0x2f824bb6 size 0x3e, phy_freq_reg_init at 0x2f824c46 size 0x60, phy_freq_num_get_data at 0x2f824ca6 size 0x24, phy_freq_i2c_num_addr at 0x2f824cca size 0x6a, phy_en_hw_set_freq at 0x2f824f9e size 0x14, phy_dis_hw_set_freq at 0x2f824fb2 size 0x14, phy_bb_bss_cbw40 and child at 0x2f826052, phy_mac_tx_chan_offset at 0x2f827550 size 0x38, phy_mac_enable_bb at 0x2f827836 size 0x2a, phy_bb_reg_init at 0x2f8279c6 size 0x140, phy_wifi_fbw_sel at 0x2f827e38 size 0x58, phy_bt_filter_reg at 0x2f827e90 size 0x34, phy_nrx_freq_set at 0x2f8280ec size 0x32, phy_wifi_enable_set at 0x2f828220 size 0x18, phy_bb_cbw_chan_cfg at 0x2f828238 size 0x74 and phy_i2c_master_mem_txcap at 0x2f82a832 size 0x24</source>
+      <source id="ROM_REV0_PHY_REGISTER_INITIALIZATION">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_reg_init at 0x2f823ef8 size 0x52, phy_tx_paon_set at 0x2f82764c size 0x78, phy_bb_wdg_cfg at 0x2f827860 size 0x2c, phy_bb_reg_init at 0x2f8279c6 size 0x140, phy_noise_floor_auto_set at 0x2f827d3c size 0x36, phy_iq_corr_enable at 0x2f827d8c size 0x24 and phy_i2c_txrate_init at 0x2f8286d0 size 0x38</source>
+      <source id="ROM_REV0_PHY_POWER_DETECTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pwdet_reg_init at 0x2f82634a size 0x5c, phy_pwdet_sar2_init at 0x2f8263a6 size 0x34, phy_en_pwdet at 0x2f8263da size 0x26, phy_tx_pwctrl_bg_init at 0x2f8267f6 size 0x1e, phy_get_tone_sar_dout_ at 0x2f8266da size 0x40 and phy_txcal_debuge_mode_ at 0x2f8244fe size 0x56</source>
+      <source id="ROM_REV0_PHY_IQ_COEFFICIENTS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_set_reg at 0x2f827c16 size 0x68 and phy_rxiq_set_reg at 0x2f827c7e size 0x54</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
       <source id="BLOB_LIBPHY_REGISTER_CHIPV7_PHY">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o register_chipv7_phy body, size 0x1e6, and relocation graph</source>
       <source id="BLOB_LIBPHY_PHY_RFPLL_CHANNEL">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rfpll.o phy_chip_set_chan body, size 0x10e, and its finite ROM leaf call graph</source>
@@ -1446,6 +1763,8 @@
       <source id="BLOB_LIBPHY_PHY_DC_MEM_CLR">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_dc_mem_clr body, size 0x1c</source>
       <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
       <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>
+      <source id="BLOB_LIBPHY_PHY_BASEBAND_CONFIG">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_bb_txpwr_track size 0xf4 and phy_txgain_comp_pacfg_new size 0x54</source>
+      <source id="BLOB_LIBPHY_PHY_TXDC_PWDET">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_cal.o phy_txdc_cal_pwdet_init size 0x208</source>
     </openEspRadioProvenance>
   </vendorExtensions>
 </device>

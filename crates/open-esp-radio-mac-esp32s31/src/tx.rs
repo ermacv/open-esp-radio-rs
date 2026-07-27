@@ -5,16 +5,40 @@ use core::pin::Pin;
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
     registers::{
-        Mmio, TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0,
-        TX_COMPLETE_AUX_C_Q0, TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0,
-        TX_COMPLETE_STATE, TX_Q0_CONFIG, TX_Q0_CONTROL, TX_Q0_LENGTH_CONTROL, TX_Q0_PLCP1,
-        TX_Q0_POWER, TX_Q0_PPDU_CONTROL, TX_Q0_PROTECTION, TX_Q0_PTI, TX_Q_ENABLE_VALID, TX_STATE,
+        Mmio, TX_COMPLETE_ALTERNATE, TX_COMPLETE_AUX_A, TX_COMPLETE_AUX_B, TX_COMPLETE_AUX_C,
+        TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY, TX_COMPLETE_STATE, TX_Q_CONFIG, TX_Q_CONTROL,
+        TX_Q_ENABLE_VALID, TX_Q_LENGTH_CONTROL, TX_Q_PLCP1, TX_Q_POWER, TX_Q_PPDU_CONTROL,
+        TX_Q_PROTECTION, TX_Q_PTI, TX_STATE,
     },
 };
 
 const EXT_ALT_SELECT: u32 = 0x0010_0000;
 const Q0_DESCRIPTOR_ADDRESS_MASK: u32 = 0x000f_ffff;
 const Q0_LEGACY_PLCP0_BASE: u32 = 0x0160_0000;
+
+/// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
+///
+/// The names follow the standard user-priority mapping: priorities 6/7 use
+/// voice, 4/5 video, 0/3 best effort, and 1/2 background.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LegacyTxQueue {
+    #[default]
+    Voice = 0,
+    Video = 1,
+    BestEffort = 2,
+    Background = 3,
+}
+
+impl LegacyTxQueue {
+    const fn index(self) -> usize {
+        self as usize
+    }
+
+    const fn completion_mask(self) -> u32 {
+        1 << self.index()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxSlotState {
@@ -141,6 +165,7 @@ pub struct TxSlot {
     generation_cursor: u32,
     active: TxCookie,
     descriptor_address: u32,
+    queue: LegacyTxQueue,
 }
 
 impl TxSlot {
@@ -151,6 +176,7 @@ impl TxSlot {
             generation_cursor: 0,
             active: TxCookie(0),
             descriptor_address: 0,
+            queue: LegacyTxQueue::Voice,
         }
     }
 
@@ -185,6 +211,7 @@ impl TxSlot {
         self.generation_cursor = generation;
         self.active = TxCookie(generation);
         self.descriptor_address = descriptor_address;
+        self.queue = LegacyTxQueue::Voice;
         self.descriptor.publish(word0, buffer_address, 0);
         self.state = TxSlotState::Reserved;
         Ok(self.active)
@@ -201,6 +228,17 @@ impl TxSlot {
         cookie: TxCookie,
         config: LegacyTxConfig,
     ) -> Result<(), TxError> {
+        self.submit_legacy(mmio, cookie, LegacyTxQueue::Voice, config)
+    }
+
+    /// Programs and starts one legacy attempt on an ordinary EDCA queue.
+    pub fn submit_legacy<M: Mmio>(
+        self: Pin<&mut Self>,
+        mmio: &mut M,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: LegacyTxConfig,
+    ) -> Result<(), TxError> {
         // SAFETY: the method never moves the pinned slot; it changes only
         // scalar ownership fields and the device-owned descriptor words.
         let slot = unsafe { self.get_unchecked_mut() };
@@ -212,41 +250,43 @@ impl TxSlot {
             return Err(TxError::Invalid);
         }
         let image = legacy_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
-        if mmio.read32(TX_Q0_CONTROL) & TX_Q_ENABLE_VALID != 0 {
+        let index = queue.index();
+        if mmio.read32(TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
             return Err(TxError::QueueActive);
         }
 
-        mmio.write32(TX_COMPLETE_CLEAR, TX_COMPLETE_Q0);
-        mmio.write32(TX_Q0_CONTROL, image.plcp0);
-        mmio.write32(TX_Q0_PLCP1, image.plcp1);
-        let ppdu_control = mmio.read32(TX_Q0_PPDU_CONTROL);
-        mmio.write32(TX_Q0_PPDU_CONTROL, ppdu_control & !0x08);
-        let protection = mmio.read32(TX_Q0_PROTECTION);
-        mmio.write32(TX_Q0_PROTECTION, protection & 0x7fff_ffff);
-        mmio.write32(TX_Q0_LENGTH_CONTROL, image.length_control);
-        mmio.write32(TX_Q0_POWER, image.power);
+        mmio.write32(TX_COMPLETE_CLEAR, queue.completion_mask());
+        mmio.write32(TX_Q_CONTROL[index], image.plcp0);
+        mmio.write32(TX_Q_PLCP1[index], image.plcp1);
+        let ppdu_control = mmio.read32(TX_Q_PPDU_CONTROL[index]);
+        mmio.write32(TX_Q_PPDU_CONTROL[index], ppdu_control & !0x08);
+        let protection = mmio.read32(TX_Q_PROTECTION[index]);
+        mmio.write32(TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
+        mmio.write32(TX_Q_LENGTH_CONTROL[index], image.length_control);
+        mmio.write32(TX_Q_POWER[index], image.power);
 
-        let mut pti = mmio.read32(TX_Q0_PTI);
+        let mut pti = mmio.read32(TX_Q_PTI[index]);
         pti = (pti & 0xffff_0fff) | (u32::from(config.pti) << 12);
         pti = (pti & 0xffff_f0ff) | (u32::from(config.pti) << 8);
         pti = (pti & 0xffff_ff0f) | (u32::from(config.pti) << 4);
         pti = (pti & 0xfff0_ffff) | (u32::from(config.pti) << 16);
         pti = (pti & 0x000f_ffff) | (u32::from(config.pti_count) << 20);
-        mmio.write32(TX_Q0_PTI, pti);
+        mmio.write32(TX_Q_PTI[index], pti);
 
-        let mut queue = mmio.read32(TX_Q0_CONFIG);
-        queue = (queue & 0x0fff_ffff) | (u32::from(config.pti) << 28);
-        queue = (queue & 0xffff_f000) | u32::from(config.timeout);
-        queue = (queue & 0xf0ff_ffff) | (u32::from(config.aifsn) << 24);
-        queue = (queue & 0xffc0_0fff) | (u32::from(config.contention_window) << 12);
-        queue = (queue & 0xff3f_ffff) | (u32::from(config.interface) << 22);
-        mmio.write32(TX_Q0_CONFIG, queue);
+        let mut queue_config = mmio.read32(TX_Q_CONFIG[index]);
+        queue_config = (queue_config & 0x0fff_ffff) | (u32::from(config.pti) << 28);
+        queue_config = (queue_config & 0xffff_f000) | u32::from(config.timeout);
+        queue_config = (queue_config & 0xf0ff_ffff) | (u32::from(config.aifsn) << 24);
+        queue_config = (queue_config & 0xffc0_0fff) | (u32::from(config.contention_window) << 12);
+        queue_config = (queue_config & 0xff3f_ffff) | (u32::from(config.interface) << 22);
+        mmio.write32(TX_Q_CONFIG[index], queue_config);
 
         // Publish the software owner before the final hardware edge. A fast
         // completion can therefore never observe the old Reserved state.
+        slot.queue = queue;
         slot.state = TxSlotState::HardwareOwned;
         mmio.fence();
-        mmio.write32(TX_Q0_CONTROL, image.plcp0 | TX_Q_ENABLE_VALID);
+        mmio.write32(TX_Q_CONTROL[index], image.plcp0 | TX_Q_ENABLE_VALID);
         mmio.fence();
         Ok(())
     }
@@ -269,25 +309,36 @@ impl TxSlot {
         &mut self,
         mmio: &mut M,
     ) -> Result<Option<TxCompletion>, TxError> {
-        if mmio.read32(TX_COMPLETE_STATE) & TX_COMPLETE_Q0 == 0 {
+        self.acknowledge_completion(mmio)
+    }
+
+    /// Decodes and acknowledges the completion for the queue retained by the
+    /// hardware-owned slot.
+    pub fn acknowledge_completion<M: Mmio>(
+        &mut self,
+        mmio: &mut M,
+    ) -> Result<Option<TxCompletion>, TxError> {
+        let index = self.queue.index();
+        let completion_mask = self.queue.completion_mask();
+        if mmio.read32(TX_COMPLETE_STATE) & completion_mask == 0 {
             return Ok(None);
         }
 
-        let aux_a = mmio.read32(TX_COMPLETE_AUX_A_Q0);
-        let aux_b = mmio.read32(TX_COMPLETE_AUX_B_Q0);
-        let aux_c = mmio.read32(TX_COMPLETE_AUX_C_Q0);
+        let aux_a = mmio.read32(TX_COMPLETE_AUX_A[index]);
+        let aux_b = mmio.read32(TX_COMPLETE_AUX_B[index]);
+        let aux_c = mmio.read32(TX_COMPLETE_AUX_C[index]);
         let ext_word0 =
             ((aux_a & 0x000f_0000) << 12) | (aux_b & 0x001f_e000) | (((aux_b >> 25) & 0x7f) << 21);
         let _ext_word1 = ((aux_a >> 20) & 0x03) | ((aux_c >> 5) & 0x1fc);
-        let primary = mmio.read32(TX_COMPLETE_PRIMARY_Q0);
-        let alternate = mmio.read32(TX_COMPLETE_ALTERNATE_Q0);
+        let primary = mmio.read32(TX_COMPLETE_PRIMARY[index]);
+        let alternate = mmio.read32(TX_COMPLETE_ALTERNATE[index]);
         let used_alternate = ext_word0 & EXT_ALT_SELECT != 0;
         let selected = if used_alternate { alternate } else { primary };
         let status = ((selected >> 12) & 0x0f) as u8;
-        let trigger_flow = (mmio.read32(TX_STATE) >> 24) & 1 != 0;
+        let trigger_flow = (mmio.read32(TX_STATE) >> (24 + index)) & 1 != 0;
 
         let clear = mmio.read32(TX_COMPLETE_CLEAR);
-        mmio.write32(TX_COMPLETE_CLEAR, clear | TX_COMPLETE_Q0);
+        mmio.write32(TX_COMPLETE_CLEAR, clear | completion_mask);
         mmio.fence();
 
         if self.state != TxSlotState::HardwareOwned {
@@ -316,10 +367,11 @@ impl TxSlot {
         if self.state != TxSlotState::Completed || cookie != self.active {
             return Err(TxError::Stale);
         }
-        let control = mmio.read32(TX_Q0_CONTROL);
-        mmio.write32(TX_Q0_CONTROL, control & !TX_Q_ENABLE_VALID);
+        let control_register = TX_Q_CONTROL[self.queue.index()];
+        let control = mmio.read32(control_register);
+        mmio.write32(control_register, control & !TX_Q_ENABLE_VALID);
         mmio.fence();
-        if mmio.read32(TX_Q0_CONTROL) & TX_Q_ENABLE_VALID != 0 {
+        if mmio.read32(control_register) & TX_Q_ENABLE_VALID != 0 {
             self.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }

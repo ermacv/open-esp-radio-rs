@@ -28,6 +28,57 @@ pub const TX_Q0_PTI: Register32 = Register32::new(0x2010_54e0);
 pub const TX_Q0_POWER: Register32 = Register32::new(0x2010_5500);
 pub const TX_Q0_LENGTH_CONTROL: Register32 = Register32::new(0x2010_5510);
 
+/// The four ordinary EDCA hardware queues, indexed by the recovered PP queue
+/// number. Queue register banks run downward from q0.
+pub const TX_Q_CONFIG: [Register32; 4] = [
+    TX_Q0_CONFIG,
+    Register32::new(0x2010_4d5c),
+    Register32::new(0x2010_4d4c),
+    Register32::new(0x2010_4d3c),
+];
+pub const TX_Q_CONTROL: [Register32; 4] = [
+    TX_Q0_CONTROL,
+    Register32::new(0x2010_4d60),
+    Register32::new(0x2010_4d50),
+    Register32::new(0x2010_4d40),
+];
+pub const TX_Q_PPDU_CONTROL: [Register32; 4] = [
+    TX_Q0_PPDU_CONTROL,
+    Register32::new(0x2010_4d58),
+    Register32::new(0x2010_4d48),
+    Register32::new(0x2010_4d38),
+];
+pub const TX_Q_PROTECTION: [Register32; 4] = [
+    TX_Q0_PROTECTION,
+    Register32::new(0x2010_4d54),
+    Register32::new(0x2010_4d44),
+    Register32::new(0x2010_4d34),
+];
+pub const TX_Q_PLCP1: [Register32; 4] = [
+    TX_Q0_PLCP1,
+    Register32::new(0x2010_545c),
+    Register32::new(0x2010_53e0),
+    Register32::new(0x2010_5364),
+];
+pub const TX_Q_PTI: [Register32; 4] = [
+    TX_Q0_PTI,
+    Register32::new(0x2010_5464),
+    Register32::new(0x2010_53e8),
+    Register32::new(0x2010_536c),
+];
+pub const TX_Q_POWER: [Register32; 4] = [
+    TX_Q0_POWER,
+    Register32::new(0x2010_5484),
+    Register32::new(0x2010_5408),
+    Register32::new(0x2010_538c),
+];
+pub const TX_Q_LENGTH_CONTROL: [Register32; 4] = [
+    TX_Q0_LENGTH_CONTROL,
+    Register32::new(0x2010_5494),
+    Register32::new(0x2010_5418),
+    Register32::new(0x2010_539c),
+];
+
 pub const TX_STATE: Register32 = Register32::new(0x2010_4cb4);
 pub const TX_COMPLETE_CLEAR: Register32 = Register32::new(0x2010_4cb8);
 pub const TX_COMPLETE_STATE: Register32 = Register32::new(0x2010_4cbc);
@@ -36,6 +87,36 @@ pub const TX_COMPLETE_ALTERNATE_Q0: Register32 = Register32::new(0x2010_5540);
 pub const TX_COMPLETE_AUX_A_Q0: Register32 = Register32::new(0x2010_5534);
 pub const TX_COMPLETE_AUX_B_Q0: Register32 = Register32::new(0x2010_5524);
 pub const TX_COMPLETE_AUX_C_Q0: Register32 = Register32::new(0x2010_554c);
+pub const TX_COMPLETE_PRIMARY: [Register32; 4] = [
+    TX_COMPLETE_PRIMARY_Q0,
+    Register32::new(0x2010_54c0),
+    Register32::new(0x2010_5444),
+    Register32::new(0x2010_53c8),
+];
+pub const TX_COMPLETE_ALTERNATE: [Register32; 4] = [
+    TX_COMPLETE_ALTERNATE_Q0,
+    Register32::new(0x2010_54c4),
+    Register32::new(0x2010_5448),
+    Register32::new(0x2010_53cc),
+];
+pub const TX_COMPLETE_AUX_A: [Register32; 4] = [
+    TX_COMPLETE_AUX_A_Q0,
+    Register32::new(0x2010_54b8),
+    Register32::new(0x2010_543c),
+    Register32::new(0x2010_53c0),
+];
+pub const TX_COMPLETE_AUX_B: [Register32; 4] = [
+    TX_COMPLETE_AUX_B_Q0,
+    Register32::new(0x2010_54a8),
+    Register32::new(0x2010_542c),
+    Register32::new(0x2010_53b0),
+];
+pub const TX_COMPLETE_AUX_C: [Register32; 4] = [
+    TX_COMPLETE_AUX_C_Q0,
+    Register32::new(0x2010_54d0),
+    Register32::new(0x2010_5454),
+    Register32::new(0x2010_53d8),
+];
 
 pub mod init {
     use crate::{mac, Register32};

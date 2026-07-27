@@ -313,4 +313,5 @@ fn legacy_q0_image_reproduces_the_recovered_management_profile() {
     assert_eq!(image.plcp1, 0x0000_0040);
     assert_eq!(image.power, 0x0808_0008);
     assert_eq!(image.length_control, 0x0040_0004);
+    assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 100);
 }

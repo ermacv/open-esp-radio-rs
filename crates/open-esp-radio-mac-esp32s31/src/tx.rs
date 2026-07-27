@@ -64,6 +64,7 @@ pub struct LegacyTxConfig {
     pub rts_power_high: u8,
     pub aifsn: u8,
     pub contention_window: u16,
+    pub timeout: u16,
     pub interface: u8,
     pub pti: u8,
     pub pti_count: u16,
@@ -82,6 +83,7 @@ impl LegacyTxConfig {
             rts_power_high: 8,
             aifsn: 2,
             contention_window: 0,
+            timeout: 100,
             interface: 0,
             pti: 1,
             pti_count: 0,
@@ -95,6 +97,7 @@ impl LegacyTxConfig {
             && self.signal <= 0x0fff
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
+            && self.timeout <= 0x0fff
             && self.interface <= 3
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -229,7 +232,7 @@ impl TxSlot {
 
         let mut queue = mmio.read32(TX_Q0_CONFIG);
         queue = (queue & 0x0fff_ffff) | (u32::from(config.pti) << 28);
-        queue = (queue & 0xffff_f000) | 10;
+        queue = (queue & 0xffff_f000) | u32::from(config.timeout);
         queue = (queue & 0xf0ff_ffff) | (u32::from(config.aifsn) << 24);
         queue = (queue & 0xffc0_0fff) | (u32::from(config.contention_window) << 12);
         queue = (queue & 0xff3f_ffff) | (u32::from(config.interface) << 22);

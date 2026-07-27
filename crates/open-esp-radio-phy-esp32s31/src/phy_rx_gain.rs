@@ -958,7 +958,10 @@ impl PhyRxGainInitMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxGainInitCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxGainInitCompletion {
         match self.action {
             PhyRxGainInitAction::CaptureAndClearDcControl {
                 address,
@@ -983,7 +986,10 @@ impl PhyRxGainInitMmioBinding {
                 }
             }
             PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
-                crate::radio_hal::configure_phy_rx_gain_limits(wifi_last_index);
+                open_esp_radio_hal_esp32s31::phy_agc::configure_rx_gain_limits(
+                    registers,
+                    wifi_last_index,
+                );
                 PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index }
             }
             PhyRxGainInitAction::EnableIqCorrection => {

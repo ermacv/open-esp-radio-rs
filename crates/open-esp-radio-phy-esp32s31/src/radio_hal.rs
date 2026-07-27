@@ -48,7 +48,6 @@ const PHY_CALIBRATION_CLOCK_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
 const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
     | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
-const PHY_RX_GAIN_LIMIT_ADDRESS: usize = 0x2010_713c;
 const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
 const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
@@ -115,8 +114,6 @@ const PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS: usize = 0x2010_7454;
 const PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS: usize = 0x2010_7458;
 const PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS: usize = 0x2010_745c;
 const PHY_TX_POWER_TRACK_CONTROL_3_ADDRESS: usize = 0x2010_7460;
-const PHY_RF_RX_SATURATION_CONFIG_ADDRESS: usize = 0x2010_7068;
-const PHY_RF_RX_SATURATION_CONTROL_ADDRESS: usize = 0x2010_705c;
 const PHY_I2C_TX_RATE_CONTROL_ADDRESS: usize = 0x2010_448c;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
@@ -600,23 +597,6 @@ pub(crate) unsafe fn configure_phy_bb_tx_power_tracking(enabled: bool) {
     );
 }
 
-/// Complete rev0 ROM `phy_rfrx_sat_rst`, size `0x42`.
-///
-/// `enabled=false` is the pre-check call and `enabled=true` is the
-/// post-gain-table call. Both retain the reference's repeated fresh reads.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rf_rx_saturation(enabled: bool) {
-    (PHY_RF_RX_SATURATION_CONFIG_ADDRESS as *mut u32).write_volatile(0x0000_0404);
-    let control = PHY_RF_RX_SATURATION_CONTROL_ADDRESS as *mut u32;
-    if enabled {
-        control.write_volatile(control.read_volatile() | 0xd108_0000);
-        control.write_volatile((control.read_volatile() & 0xfff8_0000) | 0x0000_0800);
-    } else {
-        control.write_volatile(control.read_volatile() & 0x2ef7_ffff);
-        control.write_volatile((control.read_volatile() & 0xfff8_0000) | 0x0000_0400);
-    }
-}
-
 /// Complete rev0 ROM `phy_i2c_txrate_init`, size `0x38`.
 ///
 /// The ROM tail dispatches through `g_phyFuns+0x30`. The pinned table target
@@ -693,38 +673,6 @@ pub(crate) unsafe fn configure_phy_bt_filter() {
     clear_register_bits(PHY_BT_FILTER_CONTROL_ADDRESS, 0x0180_0000);
 }
 
-/// Complete rev0 ROM `phy_agc_reg_init`, size `0xd8`.
-#[cfg(target_arch = "riscv32")]
-unsafe fn configure_phy_agc_registers(parameter_121: u8, parameter_120: u8) {
-    let gain_minus_one = u32::from(parameter_121).wrapping_sub(1);
-    replace_register_field(
-        0x2010_713c,
-        0x01fc_0000,
-        (gain_minus_one << 18) & 0x01fc_0000,
-    );
-    replace_register_field(
-        0x2010_7094,
-        0x0000_01fc,
-        (gain_minus_one << 2) & 0x0000_01fc,
-    );
-    replace_register_field(
-        0x2010_702c,
-        0x0000_7f00,
-        (u32::from(parameter_121) << 8) & 0x0000_7f00,
-    );
-    replace_register_field(0x2010_705c, 0x0007_ffff, 0x0000_0bb8);
-    replace_register_field(0x2010_08bc, 0x0000_0ff0, u32::from(parameter_121) << 4);
-    replace_register_field(
-        0x2010_08bc,
-        0x000f_f000,
-        (u32::from(parameter_120).wrapping_add(0x50) << 12) & 0x000f_f000,
-    );
-    replace_register_field(0x2010_702c, 0xff00_0000, 0x3200_0000);
-    set_register_bits(0x2010_702c, 0x0080_0000);
-    clear_register_bits(0x2010_702c, 0x0080_0000);
-    replace_register_field(0x2010_7128, 0xff00_0000, 0xd200_0000);
-}
-
 /// Complete rev0 ROM `phy_bb_reg_init`, size `0x140`, including its
 /// `phy_btbb_wifi_bb_cfg2` tail.
 #[cfg(target_arch = "riscv32")]
@@ -781,7 +729,11 @@ pub(crate) unsafe fn configure_phy_registers(
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
     enable_phy_iq_correction();
-    configure_phy_agc_registers(parameters.parameter_121, parameters.parameter_120);
+    open_esp_radio_hal_esp32s31::phy_agc::initialize_registers(
+        registers,
+        parameters.parameter_121,
+        parameters.parameter_120,
+    );
     open_esp_radio_hal_esp32s31::phy_agc::set_saturation_gain(registers, 0x0008_1825);
     configure_phy_baseband_registers();
     configure_phy_baseband_watchdog();
@@ -1877,22 +1829,6 @@ pub(crate) unsafe fn read_phy_pbus_field(selector: u8, path: u8) -> u16 {
     let address = phy_pbus_read_address(selector, path);
     let shift = phy_pbus_read_shift(selector, path);
     (((address as *const u32).read_volatile() >> shift) & 0x1ff) as u16
-}
-
-/// Publish the two final RX-gain limits from complete
-/// `phy_set_rx_gain_table`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_gain_limits(wifi_last_index: u8) {
-    replace_register_field(
-        PHY_RX_COMP_LOW_ADDRESS,
-        0x0000_7f00,
-        u32::from(wifi_last_index & 0x7f) << 8,
-    );
-    replace_register_field(
-        PHY_RX_GAIN_LIMIT_ADDRESS,
-        0x01fc_0000,
-        u32::from(wifi_last_index.min(0x4c)) << 18,
-    );
 }
 
 /// Program the complete crystal-duty calibration tone without `g_phyFuns`.
@@ -3195,15 +3131,6 @@ mod tests {
             with_register_field(u32::MAX, 0x0000_7f80, 0x0000_7300),
             0xffff_f37f
         );
-    }
-
-    #[test]
-    fn phy_rf_rx_saturation_masks_match_both_rom_branches() {
-        let initial = 0xa5a5_5a5a_u32;
-        assert_eq!(initial & 0x2ef7_ffff, 0x24a5_5a5a);
-        assert_eq!((initial & 0xfff8_0000) | 0x0000_0400, 0xa5a0_0400);
-        assert_eq!(initial | 0xd108_0000, 0xf5ad_5a5a);
-        assert_eq!((initial & 0xfff8_0000) | 0x0000_0800, 0xa5a0_0800);
     }
 
     #[test]

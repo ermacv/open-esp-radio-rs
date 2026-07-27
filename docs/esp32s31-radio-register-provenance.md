@@ -90,14 +90,18 @@ No active publisher for this aperture contains a raw address or volatile
 pointer.
 
 `PHY_AGC_ORACLE` localizes the register set shared by complete rev0 ROM bodies
-and one complete pinned blob parent:
+and two complete pinned blob parents:
 
 - `phy_bb_agc_reg_update` at `0x2f82860e`, size `0xa6`;
 - `phy_disable_agc` at `0x2f827460`, size `0x10`;
 - `phy_enable_agc` at `0x2f827470`, size `0x28`;
-- both branches of `phy_rx_11b_opt` at `0x2f827588`, size `0xc4`.
+- both branches of `phy_rx_11b_opt` at `0x2f827588`, size `0xc4`;
+- `phy_agc_reg_init` at `0x2f8278d8`, size `0xd8`;
+- both branches of `phy_rfrx_sat_rst` at `0x2f828944`, size `0x42`;
 - `libphy.a[phy_init.o]::phy_reg_update_new`, including complete
-  `phy_set_ftm_en` and ROM `phy_wifi_agc_sat_gain` leaves.
+  `phy_set_ftm_en` and ROM `phy_wifi_agc_sat_gain` leaves;
+- `libphy.a[phy_rx_gain.o]::phy_set_rx_gain_table`, including its final two
+  gain-limit writes.
 
 The internal electrical identities are not public. The SVD therefore records
 the internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
@@ -128,6 +132,24 @@ RMW, two independently read RX-field RMWs, and the FTM-enable RMW. The
 dynamic saturation-gain operation used by `phy_reg_init` is owned by the same
 method. The former raw C ABI, raw pointers and duplicate bit-mask helpers are
 removed; both live callers pass their unique `RadioRegisters` borrow.
+
+The same PAC now owns AGC register initialization, both RF RX saturation
+phases, and the final RX-gain limits. The SVD adds the complete fields used at
+`0x201008bc`, `0x2010702c`, `0x2010705c`, `0x20107094`, `0x20107128` and
+`0x2010713c`, plus the full-word phase configuration at `0x20107068`.
+Discontiguous RF-saturation mask `0xd1080000` is represented by four
+independently instruction-proven `UNKNOWN` fields rather than one invented
+electrical name. Host models preserve the ten AGC-init updates, both
+three-write saturation branches, both final limit writes and their fresh-read
+ordering.
+
+`configure_phy_registers`, `PhyBbMmioBinding`, and
+`PhyRxGainInitMmioBinding` all pass their existing unique register borrow
+into these safe methods. Raw access to `0x705c`, `0x7068`, `0x7094`,
+`0x7128`, `0x713c`, and the parameter word `0x08bc` is now rejected by the
+source-only audit. The multifunction `0x702c` word remains one PAC identity,
+but separate recovered PBus and RX-compensation leaves still use the
+transitional raw layer.
 
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent

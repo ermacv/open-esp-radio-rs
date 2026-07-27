@@ -536,7 +536,10 @@ impl PhyBbMmioBinding {
                 crate::radio_hal::configure_phy_bb_tx_power_tracking(enabled)
             }
             PhyBbMmioAction::ConfigureRfRxSaturation { phase } => {
-                crate::radio_hal::configure_phy_rf_rx_saturation(phase.enabled())
+                open_esp_radio_hal_esp32s31::phy_agc::configure_rf_rx_saturation(
+                    registers,
+                    phase.enabled(),
+                )
             }
             PhyBbMmioAction::ConfigureI2cTxRate => crate::radio_hal::configure_phy_i2c_tx_rate(),
             PhyBbMmioAction::ProgramGainMemory(entry) => {

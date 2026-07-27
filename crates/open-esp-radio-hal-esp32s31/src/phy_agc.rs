@@ -109,13 +109,154 @@ fn set_enabled_with(io: &mut impl RegisterIo, enabled: bool) {
     }
 
     io.modify(phy_agc_oracle::DISABLE_CONTROL, disable.mask(), 0);
-    let pulse = phy_agc_oracle::enable_pulse_control::ENABLE_PULSE_UNKNOWN;
+    let pulse = phy_agc_oracle::agc_shared_control::ENABLE_PULSE_UNKNOWN;
     io.modify(
-        phy_agc_oracle::ENABLE_PULSE_CONTROL,
+        phy_agc_oracle::AGC_SHARED_CONTROL,
         pulse.mask(),
         pulse.mask(),
     );
-    io.modify(phy_agc_oracle::ENABLE_PULSE_CONTROL, pulse.mask(), 0);
+    io.modify(phy_agc_oracle::AGC_SHARED_CONTROL, pulse.mask(), 0);
+}
+
+/// Apply complete rev0 ROM `phy_agc_reg_init`.
+///
+/// The body at `0x2f82_78d8`, size `0xd8`, performs ten independently read
+/// register updates with no call, loop, wait, callback, or software-global
+/// access. Both inputs are the caller-owned parameter bytes at offsets
+/// `0x121` and `0x120`.
+#[cfg(target_arch = "riscv32")]
+pub fn initialize_registers(registers: &mut RadioRegisters, parameter_121: u8, parameter_120: u8) {
+    initialize_registers_with(registers, parameter_121, parameter_120);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn initialize_registers_with(io: &mut impl RegisterIo, parameter_121: u8, parameter_120: u8) {
+    let limit = phy_agc_oracle::rx_gain_limit_control::RX_GAIN_LIMIT_UNKNOWN;
+    let gain_minus_one = u32::from(parameter_121.wrapping_sub(1) & 0x7f);
+    io.modify(
+        phy_agc_oracle::RX_GAIN_LIMIT_CONTROL,
+        limit.mask(),
+        field_value(limit, gain_minus_one),
+    );
+
+    let low_limit = phy_agc_oracle::agc_gain_limit_low::PARAMETER_MINUS_ONE_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_GAIN_LIMIT_LOW,
+        low_limit.mask(),
+        field_value(low_limit, gain_minus_one),
+    );
+
+    let gain_index = phy_agc_oracle::agc_shared_control::RX_GAIN_INDEX_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        gain_index.mask(),
+        field_value(gain_index, u32::from(parameter_121 & 0x7f)),
+    );
+
+    let saturation_low = phy_agc_oracle::agc_saturation_control::LOW_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SATURATION_CONTROL,
+        saturation_low.mask(),
+        field_value(saturation_low, 0x0bb8),
+    );
+
+    let parameter = phy_agc_oracle::agc_parameter_control::PARAMETER_121_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_PARAMETER_CONTROL,
+        parameter.mask(),
+        field_value(parameter, u32::from(parameter_121)),
+    );
+    let parameter_offset = phy_agc_oracle::agc_parameter_control::PARAMETER_120_OFFSET_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_PARAMETER_CONTROL,
+        parameter_offset.mask(),
+        field_value(
+            parameter_offset,
+            u32::from(parameter_120).wrapping_add(0x50) & 0xff,
+        ),
+    );
+
+    let high = phy_agc_oracle::agc_shared_control::INIT_HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        high.mask(),
+        field_value(high, 0x32),
+    );
+    let pulse = phy_agc_oracle::agc_shared_control::ENABLE_PULSE_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        pulse.mask(),
+        pulse.mask(),
+    );
+    io.modify(phy_agc_oracle::AGC_SHARED_CONTROL, pulse.mask(), 0);
+
+    let final_high = phy_agc_oracle::agc_init_high_control::INIT_HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_INIT_HIGH_CONTROL,
+        final_high.mask(),
+        field_value(final_high, 0xd2),
+    );
+}
+
+/// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.
+///
+/// The body at `0x2f82_8944`, size `0x42`, first writes the common full-word
+/// configuration, then performs two fresh-read updates of the shared
+/// saturation control. `enabled=false` is the pre-check phase and
+/// `enabled=true` is the post-gain-table phase.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_rf_rx_saturation(registers: &mut RadioRegisters, enabled: bool) {
+    configure_rf_rx_saturation_with(registers, enabled);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_rf_rx_saturation_with(io: &mut impl RegisterIo, enabled: bool) {
+    io.write(phy_agc_oracle::RF_RX_SATURATION_CONFIG, 0x0000_0404);
+
+    let bit_19 = phy_agc_oracle::agc_saturation_control::RF_RX_SATURATION_BIT_19_UNKNOWN;
+    let bit_24 = phy_agc_oracle::agc_saturation_control::RF_RX_SATURATION_BIT_24_UNKNOWN;
+    let bit_28 = phy_agc_oracle::agc_saturation_control::RF_RX_SATURATION_BIT_28_UNKNOWN;
+    let high = phy_agc_oracle::agc_saturation_control::RF_RX_SATURATION_HIGH_UNKNOWN;
+    let phase_mask = bit_19.mask() | bit_24.mask() | bit_28.mask() | high.mask();
+    io.modify(
+        phy_agc_oracle::AGC_SATURATION_CONTROL,
+        phase_mask,
+        if enabled { phase_mask } else { 0 },
+    );
+
+    let low = phy_agc_oracle::agc_saturation_control::LOW_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SATURATION_CONTROL,
+        low.mask(),
+        field_value(low, if enabled { 0x0800 } else { 0x0400 }),
+    );
+}
+
+/// Publish the two final limits from complete pinned `phy_set_rx_gain_table`.
+///
+/// The `libphy.a[phy_rx_gain.o]` body writes the caller-owned final Wi-Fi
+/// index into bits 14:8 of the shared control and the same index capped at
+/// `0x4c` into bits 24:18 of the limit control. Each update uses a fresh read.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_rx_gain_limits(registers: &mut RadioRegisters, wifi_last_index: u8) {
+    configure_rx_gain_limits_with(registers, wifi_last_index);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_rx_gain_limits_with(io: &mut impl RegisterIo, wifi_last_index: u8) {
+    let index = phy_agc_oracle::agc_shared_control::RX_GAIN_INDEX_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        index.mask(),
+        field_value(index, u32::from(wifi_last_index & 0x7f)),
+    );
+
+    let limit = phy_agc_oracle::rx_gain_limit_control::RX_GAIN_LIMIT_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::RX_GAIN_LIMIT_CONTROL,
+        limit.mask(),
+        field_value(limit, u32::from(wifi_last_index.min(0x4c))),
+    );
 }
 
 /// Publish one Wi-Fi AGC saturation-gain word to both recovered destinations.
@@ -148,9 +289,9 @@ pub fn update_post_initialization(registers: &mut RadioRegisters) {
 
 #[cfg(any(test, target_arch = "riscv32"))]
 fn update_post_initialization_with(io: &mut impl RegisterIo) {
-    let agc = phy_agc_oracle::post_init_agc_control::POST_INIT_SET_UNKNOWN;
+    let agc = phy_agc_oracle::agc_saturation_control::POST_INIT_SET_UNKNOWN;
     io.modify(
-        phy_agc_oracle::POST_INIT_AGC_CONTROL,
+        phy_agc_oracle::AGC_SATURATION_CONTROL,
         agc.mask(),
         agc.mask(),
     );
@@ -245,8 +386,10 @@ mod tests {
     use std::{vec, vec::Vec};
 
     use super::{
-        configure_rx_11b_optimization_with, set_enabled_with, set_saturation_gain_with,
-        update_baseband_registers_with, update_post_initialization_with, RegisterIo,
+        configure_rf_rx_saturation_with, configure_rx_11b_optimization_with,
+        configure_rx_gain_limits_with, initialize_registers_with, set_enabled_with,
+        set_saturation_gain_with, update_baseband_registers_with, update_post_initialization_with,
+        RegisterIo,
     };
     use open_esp_radio_pac_esp32s31::{
         power::{modem_syscon, phy_agc_oracle},
@@ -327,15 +470,15 @@ mod tests {
     fn enable_and_disable_keep_the_three_fresh_read_edges() {
         let mut io = FakeRegisters::default()
             .with(phy_agc_oracle::DISABLE_CONTROL, 0x2123_4567)
-            .with(phy_agc_oracle::ENABLE_PULSE_CONTROL, 0x1000_0042);
+            .with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x1000_0042);
 
         set_enabled_with(&mut io, true);
         assert_eq!(
             io.writes,
             vec![
                 (phy_agc_oracle::DISABLE_CONTROL, 0x0123_4567),
-                (phy_agc_oracle::ENABLE_PULSE_CONTROL, 0x1080_0042),
-                (phy_agc_oracle::ENABLE_PULSE_CONTROL, 0x1000_0042),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1080_0042),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1000_0042),
             ]
         );
 
@@ -344,6 +487,81 @@ mod tests {
         assert_eq!(
             io.writes,
             vec![(phy_agc_oracle::DISABLE_CONTROL, 0x2123_4567)]
+        );
+    }
+
+    #[test]
+    fn register_initialization_preserves_all_ten_rom_updates() {
+        let mut io = FakeRegisters::default()
+            .with(phy_agc_oracle::RX_GAIN_LIMIT_CONTROL, u32::MAX)
+            .with(phy_agc_oracle::AGC_GAIN_LIMIT_LOW, u32::MAX)
+            .with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x0012_55aa)
+            .with(phy_agc_oracle::AGC_SATURATION_CONTROL, 0xa5a5_5a5a)
+            .with(phy_agc_oracle::AGC_PARAMETER_CONTROL, 0xabc0_000f)
+            .with(phy_agc_oracle::AGC_INIT_HIGH_CONTROL, 0x1234_5678);
+
+        initialize_registers_with(&mut io, 0x45, 0x20);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::RX_GAIN_LIMIT_CONTROL, 0xff13_ffff),
+                (phy_agc_oracle::AGC_GAIN_LIMIT_LOW, 0xffff_ff13),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x0012_45aa),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0xa5a0_0bb8),
+                (phy_agc_oracle::AGC_PARAMETER_CONTROL, 0xabc0_045f),
+                (phy_agc_oracle::AGC_PARAMETER_CONTROL, 0xabc7_045f),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3212_45aa),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3292_45aa),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3212_45aa),
+                (phy_agc_oracle::AGC_INIT_HIGH_CONTROL, 0xd234_5678),
+            ]
+        );
+    }
+
+    #[test]
+    fn rf_rx_saturation_retains_both_complete_rom_branches() {
+        let mut io =
+            FakeRegisters::default().with(phy_agc_oracle::AGC_SATURATION_CONTROL, 0xa5a5_5a5a);
+
+        configure_rf_rx_saturation_with(&mut io, true);
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::RF_RX_SATURATION_CONFIG, 0x0000_0404),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0xf5ad_5a5a),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0xf5a8_0800),
+            ]
+        );
+
+        io.writes.clear();
+        io.values.clear();
+        io = io.with(phy_agc_oracle::AGC_SATURATION_CONTROL, 0xa5a5_5a5a);
+        configure_rf_rx_saturation_with(&mut io, false);
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::RF_RX_SATURATION_CONFIG, 0x0000_0404),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0x24a5_5a5a),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0x24a0_0400),
+            ]
+        );
+    }
+
+    #[test]
+    fn final_rx_gain_limits_use_the_owned_index_and_vendor_cap() {
+        let mut io = FakeRegisters::default()
+            .with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x1234_5678)
+            .with(phy_agc_oracle::RX_GAIN_LIMIT_CONTROL, u32::MAX);
+
+        configure_rx_gain_limits_with(&mut io, 0x4e);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1234_4e78),
+                (phy_agc_oracle::RX_GAIN_LIMIT_CONTROL, 0xff33_ffff),
+            ]
         );
     }
 
@@ -365,7 +583,7 @@ mod tests {
     #[test]
     fn post_initialization_retains_both_fresh_rx_reads() {
         let mut io = FakeRegisters::default()
-            .with(phy_agc_oracle::POST_INIT_AGC_CONTROL, 0x1000_0001)
+            .with(phy_agc_oracle::AGC_SATURATION_CONTROL, 0x1000_0001)
             .with(phy_agc_oracle::RX_11B_WINDOW_CONTROL, u32::MAX)
             .with(phy_agc_oracle::POST_INIT_RX_CONTROL, u32::MAX)
             .with(phy_agc_oracle::FTM_CONTROL, 0xffff_fffe);
@@ -375,7 +593,7 @@ mod tests {
         assert_eq!(
             io.writes,
             vec![
-                (phy_agc_oracle::POST_INIT_AGC_CONTROL, 0x1400_0001),
+                (phy_agc_oracle::AGC_SATURATION_CONTROL, 0x1400_0001),
                 (phy_agc_oracle::SATURATION_GAIN_LOW, 0x0818_212d),
                 (phy_agc_oracle::SATURATION_GAIN_HIGH, 0x0818_212d),
                 (phy_agc_oracle::RX_11B_WINDOW_CONTROL, 0xffff_ffc0),

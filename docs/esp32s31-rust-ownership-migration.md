@@ -3006,7 +3006,31 @@ two saturation-gain destinations for the dynamic value used during
 `PhyBbMmioBinding::execute_target` and `configure_phy_registers` now pass
 their existing unique register borrow into these operations. The exported
 `wifi_strict_phy_reg_update_new` C ABI, its six raw addresses, and duplicate
-mask helpers are deleted. The source-only audit rejects any reintroduction of
-the five addresses that no longer have another evidenced raw consumer;
-`0x705c` remains temporarily exempt because a distinct recovered
-RF-saturation leaf also touches that physical word.
+mask helpers are deleted.
+
+## Typed AGC initialization, RF RX saturation, and gain limits
+
+The remaining raw consumer of shared `0x2010705c` is now removed together
+with its complete neighboring operations. Complete rev0 ROM
+`phy_agc_reg_init` at `0x2f8278d8`, size `0xd8`, proves ten fresh-read
+updates. Complete rev0 ROM `phy_rfrx_sat_rst` at `0x2f828944`, size `0x42`,
+proves the common full-word write and both two-update branches. Complete
+pinned `libphy.a[phy_rx_gain.o]::phy_set_rx_gain_table` proves its final two
+limit writes. None of these leaves requires a guessed neighboring-chip
+field name.
+
+The generated `PHY_AGC_ORACLE` PAC now describes the parameter word, shared
+AGC control, shared saturation control, RF-saturation configuration, low
+gain limit, final high-byte initialization, and capped RX-gain limit. The
+discontiguous `0xd1080000` phase mask is deliberately split into its
+instruction-proven unknown subfields. Safe HAL methods retain all ten
+AGC-init writes, all three writes in either saturation phase, and the two
+final limit writes with the reference's fresh-read order.
+
+`configure_phy_registers` and the baseband MMIO binding reuse their existing
+`&mut RadioRegisters`. `PhyRxGainInitMmioBinding::execute_target` now also
+requires that borrow, so its root MMIO actions can no longer execute outside
+the radio owner. The source audit rejects raw `0x08bc`, `0x705c`, `0x7068`,
+`0x7094`, `0x7128`, and `0x713c`. Shared `0x702c` remains represented by one
+PAC register but cannot yet be rejected globally because independently
+recovered PBus-pulse and RX-compensation leaves still use raw MMIO.

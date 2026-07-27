@@ -1813,33 +1813,63 @@ pub mod phy_i2c_command_ram {
     }
 }
 
-/// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+/// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
 /// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names describe
 /// their proven operation role, not an unevidenced electrical identity.
 pub mod phy_agc_oracle {
     use crate::{Register32, RegisterAccess};
 
-    /// Peripheral base address. SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// Peripheral base address.
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
     /// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names
     /// describe their proven operation role, not an unevidenced electrical identity.
     pub const BASE: usize = 0x20100000;
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-    /// phy_enable_agc sets then clears bit 23 with a fresh read before each write.
-    pub const ENABLE_PULSE_CONTROL: Register32 =
-        Register32::described(0x2010702c, RegisterAccess::ReadWrite, None);
+    /// phy_agc_reg_init performs two fresh-read parameter-derived field replacements.
+    pub const AGC_PARAMETER_CONTROL: Register32 =
+        Register32::described(0x201008bc, RegisterAccess::ReadWrite, None);
 
-    /// Recovered fields of [`ENABLE_PULSE_CONTROL`]. SOURCE[ROM_REV0_PHY_AGC];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_enable_agc sets then
-    /// clears bit 23 with a fresh read before each write.
-    pub mod enable_pulse_control {
+    /// Recovered fields of [`AGC_PARAMETER_CONTROL`]. SOURCE[ROM_REV0_PHY_AGC];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init performs two
+    /// fresh-read parameter-derived field replacements.
+    pub mod agc_parameter_control {
         use crate::Field32;
 
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. First
+        /// update writes parameter byte 0x121 into bits 11:4.
+        pub const PARAMETER_121_UNKNOWN: Field32 = Field32::new(4, 8);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Second
+        /// update writes the low eight bits of parameter byte 0x120 plus 0x50 into bits 19:12.
+        pub const PARAMETER_120_OFFSET_UNKNOWN: Field32 = Field32::new(12, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
+    /// phy_agc_reg_init, phy_enable_agc, and the final limit tail of phy_set_rx_gain_table.
+    pub const AGC_SHARED_CONTROL: Register32 =
+        Register32::described(0x2010702c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`AGC_SHARED_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
+    /// phy_agc_reg_init, phy_enable_agc, and the final limit tail of phy_set_rx_gain_table.
+    pub mod agc_shared_control {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Bits 14:8 receive parameter byte
+        /// 0x121 during AGC initialization and the final Wi-Fi RX gain index after table
+        /// publication.
+        pub const RX_GAIN_INDEX_UNKNOWN: Field32 = Field32::new(8, 7);
         /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is
         /// pulsed by complete phy_enable_agc.
         pub const ENABLE_PULSE_UNKNOWN: Field32 = Field32::new(23, 1);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
+        /// phy_agc_reg_init writes 0x32 into bits 31:24 before pulsing bit 23.
+        pub const INIT_HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
     }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -1883,21 +1913,40 @@ pub mod phy_agc_oracle {
     pub const AGC_UPDATE_7048_OPAQUE: Register32 =
         Register32::described(0x20107048, RegisterAccess::WriteOnly, None);
 
-    /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown].
-    /// Complete phy_reg_update_new sets bit 26 before the saturation-gain writes.
-    pub const POST_INIT_AGC_CONTROL: Register32 =
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
+    /// phy_agc_reg_init, both phy_rfrx_sat_rst branches, and phy_reg_update_new.
+    pub const AGC_SATURATION_CONTROL: Register32 =
         Register32::described(0x2010705c, RegisterAccess::ReadWrite, None);
 
-    /// Recovered fields of [`POST_INIT_AGC_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets bit 26
-    /// before the saturation-gain writes.
-    pub mod post_init_agc_control {
+    /// Recovered fields of [`AGC_SATURATION_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
+    /// phy_agc_reg_init, both phy_rfrx_sat_rst branches, and phy_reg_update_new.
+    pub mod agc_saturation_control {
         use crate::Field32;
 
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 18:0
+        /// receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX
+        /// saturation phases.
+        pub const LOW_UNKNOWN: Field32 = Field32::new(0, 19);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. One
+        /// member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst.
+        pub const RF_RX_SATURATION_BIT_19_UNKNOWN: Field32 = Field32::new(19, 1);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. One
+        /// member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst.
+        pub const RF_RX_SATURATION_BIT_24_UNKNOWN: Field32 = Field32::new(24, 1);
         /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
         /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_reg_update_new sets
         /// bit 26.
         pub const POST_INIT_SET_UNKNOWN: Field32 = Field32::new(26, 1);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. One
+        /// member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst.
+        pub const RF_RX_SATURATION_BIT_28_UNKNOWN: Field32 = Field32::new(28, 1);
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits
+        /// 31:30 are the adjacent high pair in the discontiguous 0xd1080000 mask set or cleared
+        /// by phy_rfrx_sat_rst.
+        pub const RF_RX_SATURATION_HIGH_UNKNOWN: Field32 = Field32::new(30, 2);
     }
 
     /// SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
@@ -1905,6 +1954,27 @@ pub mod phy_agc_oracle {
     /// phy_wifi_agc_sat_gain writes its argument here first.
     pub const SATURATION_GAIN_LOW: Register32 =
         Register32::described(0x20107064, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
+    /// phy_rfrx_sat_rst writes the full value 0x00000404 before either branch.
+    pub const RF_RX_SATURATION_CONFIG: Register32 =
+        Register32::described(0x20107068, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
+    /// phy_agc_reg_init replaces one seven-bit parameter-derived field.
+    pub const AGC_GAIN_LIMIT_LOW: Register32 =
+        Register32::described(0x20107094, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`AGC_GAIN_LIMIT_LOW`]. SOURCE[ROM_REV0_PHY_AGC];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init replaces one
+    /// seven-bit parameter-derived field.
+    pub mod agc_gain_limit_low {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 8:2
+        /// receive the low seven bits of parameter byte 0x121 minus one.
+        pub const PARAMETER_MINUS_ONE_UNKNOWN: Field32 = Field32::new(2, 7);
+    }
 
     /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes
@@ -1951,6 +2021,42 @@ pub mod phy_agc_oracle {
         /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
         /// phy_rx_11b_opt replaces bits 15:10.
         pub const RX_11B_HIGH_UNKNOWN: Field32 = Field32::new(10, 6);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
+    /// phy_agc_reg_init replaces the high byte with 0xd2.
+    pub const AGC_INIT_HIGH_CONTROL: Register32 =
+        Register32::described(0x20107128, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`AGC_INIT_HIGH_CONTROL`]. SOURCE[ROM_REV0_PHY_AGC];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init replaces the
+    /// high byte with 0xd2.
+    pub mod agc_init_high_control {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Instruction-exact 0xd2 value in bits 31:24.
+        pub const INIT_HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared seven-bit gain limit written by
+    /// phy_agc_reg_init and the final phy_set_rx_gain_table tail.
+    pub const RX_GAIN_LIMIT_CONTROL: Register32 =
+        Register32::described(0x2010713c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_GAIN_LIMIT_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared seven-bit gain limit written by
+    /// phy_agc_reg_init and the final phy_set_rx_gain_table tail.
+    pub mod rx_gain_limit_control {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Bits 24:18 receive parameter byte
+        /// 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after
+        /// table publication.
+        pub const RX_GAIN_LIMIT_UNKNOWN: Field32 = Field32::new(18, 7);
     }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -2140,7 +2246,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 134] = [
+pub const ALL: [Register32; 139] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2250,15 +2356,20 @@ pub const ALL: [Register32; 134] = [
     phy_i2c_command_ram::COMMAND_MEMORY[42],
     phy_i2c_command_ram::COMMAND_MEMORY[43],
     phy_i2c_command_ram::COMMAND_MEMORY[44],
-    phy_agc_oracle::ENABLE_PULSE_CONTROL,
+    phy_agc_oracle::AGC_PARAMETER_CONTROL,
+    phy_agc_oracle::AGC_SHARED_CONTROL,
     phy_agc_oracle::DISABLE_CONTROL,
     phy_agc_oracle::RX_11B_PATH_CONTROL_0,
     phy_agc_oracle::AGC_UPDATE_7048_OPAQUE,
-    phy_agc_oracle::POST_INIT_AGC_CONTROL,
+    phy_agc_oracle::AGC_SATURATION_CONTROL,
     phy_agc_oracle::SATURATION_GAIN_LOW,
+    phy_agc_oracle::RF_RX_SATURATION_CONFIG,
+    phy_agc_oracle::AGC_GAIN_LIMIT_LOW,
     phy_agc_oracle::RX_11B_WINDOW_CONTROL,
     phy_agc_oracle::SATURATION_GAIN_HIGH,
     phy_agc_oracle::RX_11B_PATH_CONTROL_1,
+    phy_agc_oracle::AGC_INIT_HIGH_CONTROL,
+    phy_agc_oracle::RX_GAIN_LIMIT_CONTROL,
     phy_agc_oracle::AGC_UPDATE_78A4_OPAQUE,
     phy_agc_oracle::POST_INIT_RX_CONTROL,
     phy_agc_oracle::FTM_CONTROL,

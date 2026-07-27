@@ -6,7 +6,7 @@ use crate::descriptor::{
 };
 use crate::registers::{
     Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_DESCRIPTOR_HIGH_WINDOW, RX_DESCRIPTOR_LOW_MASK,
-    RX_ENABLE, RX_LAST_DESCRIPTOR_HIGH,
+    RX_ENABLE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD,
 };
 
 pub const INGRESS_STRICT_RXEND: u32 = 0x01;
@@ -19,6 +19,14 @@ pub const PUBLIC_HEADER_SIZE: usize = 0x40;
 pub const FCS_SIZE: usize = 4;
 pub const CCMP_HEADER_SIZE: usize = 8;
 pub const CCMP_MIC_SIZE: usize = 8;
+/// Guard value restored by the ROM RX recycler at both DMA-buffer bounds.
+///
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `_oracles/esp32s31_rev0_rom.elf`,
+/// `wDev_AppendRxBlocks` at `0x2f838a7e`, complete size `0x132`, writes
+/// `0xdead_beef` at `buffer` and `buffer + descriptor_capacity`.
+/// The trailing word lives immediately after the descriptor-advertised
+/// capacity, so backing storage must reserve four additional bytes.
+pub const RX_BUFFER_SENTINEL: u32 = 0xdead_beef;
 pub const PREFIX_RXEND_STATE_OFFSET: usize = 0x08;
 pub const TAIL_STATE_OFFSET: usize = 0x04;
 pub const TAIL_INTERNAL_OFFSET: usize = 0x05;
@@ -62,6 +70,30 @@ pub struct RxMpduFrame {
     pub dump_length_matches: bool,
 }
 
+/// Geometry decoded from the first completed S31 RX descriptor.
+///
+/// The fields mirror the recovered `wDev_IndicateFrame` boundary retained in
+/// `migration/esp32s31-hybrid-runtime/src/rx_descriptor.rs`: the descriptor
+/// publishes its received byte count independently from the 14-bit on-air
+/// `sig_len`, and the latter includes the four-byte FCS. Keeping both values
+/// visible is necessary for protected RX, where the MAC may consume cipher
+/// trailer bytes before publishing the DMA view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxFirstSegmentLayout {
+    pub received_length: usize,
+    pub tail_offset: usize,
+    pub frame_offset: usize,
+    pub signal_length: usize,
+    pub dump_length: usize,
+    pub expected_frame_length: usize,
+    pub available_frame_bytes: usize,
+    pub frame_shortfall: usize,
+    pub rxend_state: u8,
+    pub rx_state: u8,
+    pub internal_state: u8,
+    pub dump_length_matches: bool,
+}
+
 pub type RxManagementFrame = RxMpduFrame;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,9 +105,16 @@ pub struct RxDataFrame {
 /// Hardware-verified CCMP data MPDU before 802.11-to-Ethernet decapsulation.
 ///
 /// The S31 MAC decrypts the payload in place and reports MIC failure through
-/// RX metadata. It deliberately leaves the eight-byte CCMP header and
-/// eight-byte MIC in the DMA view. These offsets reproduce the finite
-/// `ccmp_decap` pointer/length adjustment from the pinned net80211 oracle.
+/// RX metadata. It leaves the eight-byte CCMP header in the DMA view. The
+/// The eight-byte MIC can be wholly or partially absent from the completed
+/// DMA view. The recovered migration path passed the logical `sig_len - FCS`
+/// to `ccmp_decap`, which removed the complete MIC without reading it.
+/// [`mic_bytes_in_dma`](Self::mic_bytes_in_dma) records the bounded physical
+/// view while [`mic_offset`](Self::mic_offset) remains the logical payload
+/// boundary.
+///
+/// These offsets reproduce the finite `ccmp_decap` pointer/length adjustment
+/// from the pinned net80211 oracle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxCcmpDataFrame {
     pub mpdu: RxMpduFrame,
@@ -83,6 +122,8 @@ pub struct RxCcmpDataFrame {
     pub payload_offset: usize,
     pub payload_length: usize,
     pub mic_offset: usize,
+    pub mic_bytes_in_dma: usize,
+    pub mic_present_in_dma: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +149,377 @@ pub enum RxRingError {
     Overflow,
     Busy,
     Corrupt,
+}
+
+/// One descriptor whose completion ownership has moved from the MAC to Rust.
+///
+/// The value is a snapshot. Taking it through [`RxRingLive::take_completed`]
+/// also records that this descriptor must not be exposed a second time before
+/// its recycle group has been rearmed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxCompletedDescriptor {
+    pub index: usize,
+    pub descriptor_address: u32,
+    pub word0: u32,
+    pub next_descriptor_address: u32,
+}
+
+/// One live append accepted for publication to the RX descriptor walker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxLiveAppend {
+    pub head_index: usize,
+    pub head_address: u32,
+    pub tail_index: usize,
+}
+
+/// Prepared zero-terminated RX ring while the hardware walker is stopped.
+///
+/// This type owns the right to start the descriptor walker. Consuming
+/// [`start`](Self::start) transfers that authority into [`RxRingLive`].
+pub struct RxRingStopped<'a, const COUNT: usize> {
+    descriptors: &'a [Descriptor; COUNT],
+    descriptor_base: u32,
+    buffer_addresses: &'a [u32; COUNT],
+    initial_start: usize,
+    accepted_tail: usize,
+    retained_last_low: u32,
+}
+
+/// Sole software owner of one running S31 RX descriptor frontier.
+///
+/// The owner tracks three distinct states recovered from
+/// `wDev_AppendRxBlocks`: descriptors observed as CPU-owned, the last tail
+/// accepted by hardware, and a future tail whose reload doorbell is still in
+/// flight. No allocator, global `wDevCtrl`, C ABI or vendor callback is needed.
+pub struct RxRingLive<'a, const COUNT: usize> {
+    descriptors: &'a [Descriptor; COUNT],
+    descriptor_base: u32,
+    buffer_addresses: &'a [u32; COUNT],
+    observed_mask: u32,
+    recycle_start: usize,
+    accepted_tail: usize,
+    pending_tail: Option<usize>,
+}
+
+impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
+    /// Stops the walker, prepares all buffers and publishes a rotated cold
+    /// list beginning after the descriptor retained by the previous owner.
+    ///
+    /// `prepare_buffer` must restore any buffer-side DMA contract for `index`;
+    /// for the S31 ROM layout this means the two `0xdead_beef` sentinels. It is
+    /// invoked only while the walker is confirmed stopped.
+    ///
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+    /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR]; the rotated handoff is qualified
+    /// by HIL_OPEN_RX_LIVE_APPEND_2026_07_27.
+    pub fn prepare<M, F>(
+        mmio: &mut M,
+        descriptors: &'a [Descriptor; COUNT],
+        descriptor_base: u32,
+        buffer_addresses: &'a [u32; COUNT],
+        buffer_size: u32,
+        mut prepare_buffer: F,
+    ) -> Result<Self, RxRingError>
+    where
+        M: Mmio,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        validate_live_ring_geometry::<COUNT>()?;
+        let retained_last_low = mmio.read32(RX_LAST_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK;
+        let initial_start =
+            descriptor_index(retained_last_low, descriptor_base, COUNT).map_or(0, |index| {
+                if index + 1 == COUNT {
+                    0
+                } else {
+                    index + 1
+                }
+            });
+
+        if mmio.read32(RX_CONTROL) & RX_ENABLE != 0 {
+            disable_receive(mmio)?;
+        }
+        for index in 0..COUNT {
+            prepare_buffer(index)?;
+        }
+        build_cold_ring(descriptors, descriptor_base, buffer_addresses, buffer_size)?;
+        relink_rotated_ring(
+            descriptors,
+            descriptor_base,
+            buffer_addresses,
+            initial_start,
+        )?;
+        let head = descriptor_address(descriptor_base, initial_start)?;
+        publish_cold_ring(mmio, head, false)?;
+
+        Ok(Self {
+            descriptors,
+            descriptor_base,
+            buffer_addresses,
+            initial_start,
+            accepted_tail: wrap_sub_one::<COUNT>(initial_start),
+            retained_last_low,
+        })
+    }
+
+    pub const fn initial_start(&self) -> usize {
+        self.initial_start
+    }
+
+    pub const fn accepted_tail(&self) -> usize {
+        self.accepted_tail
+    }
+
+    pub const fn retained_last_low(&self) -> u32 {
+        self.retained_last_low
+    }
+
+    /// Opens the walker and consumes the stopped-state authority.
+    ///
+    /// The caller owns any platform-specific settle delay between
+    /// [`prepare`](Self::prepare) and this edge.
+    pub fn start<M: Mmio>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
+        enable_receive(mmio)?;
+        Ok(RxRingLive {
+            descriptors: self.descriptors,
+            descriptor_base: self.descriptor_base,
+            buffer_addresses: self.buffer_addresses,
+            observed_mask: 0,
+            recycle_start: self.initial_start,
+            accepted_tail: self.accepted_tail,
+            pending_tail: None,
+        })
+    }
+}
+
+impl<const COUNT: usize> RxRingLive<'_, COUNT> {
+    /// Takes one newly completed descriptor exactly once for this ring epoch.
+    pub fn take_completed(&mut self, index: usize) -> Option<RxCompletedDescriptor> {
+        if index >= COUNT {
+            return None;
+        }
+        let bit = 1_u32 << index;
+        if self.observed_mask & bit != 0 {
+            return None;
+        }
+        let descriptor = &self.descriptors[index];
+        let word0 = descriptor.word0();
+        if !rx_done(word0) {
+            return None;
+        }
+        self.observed_mask |= bit;
+        Some(RxCompletedDescriptor {
+            index,
+            descriptor_address: descriptor_address(self.descriptor_base, index).ok()?,
+            word0,
+            next_descriptor_address: descriptor.next_address(),
+        })
+    }
+
+    /// Settles a prior append and, when the next half is entirely CPU-owned,
+    /// rearms and appends it without stopping the live walker.
+    ///
+    /// This is the allocation-free Rust ownership form of the recovered
+    /// `wDevCtrl.head/tail` transaction. The future tail is kept private until
+    /// RX_CONTROL bit 0 self-clears. If the walker exhausted the old frontier
+    /// during reload, the exact ROM base-repair rule is applied before the new
+    /// tail becomes accepted.
+    pub fn recycle_completed_half<M, F>(
+        &mut self,
+        mmio: &mut M,
+        mut prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: Mmio,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        if mmio.read32(RX_CONTROL) & RX_RELOAD != 0 {
+            return Ok(None);
+        }
+        self.settle_reload(mmio)?;
+
+        let group_mask = recycle_group_mask::<COUNT>(self.recycle_start);
+        if self.observed_mask & group_mask != group_mask {
+            return Ok(None);
+        }
+
+        let half = COUNT / 2;
+        for step in 0..half {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            if !rx_done(self.descriptors[index].word0()) {
+                return Err(RxRingError::Corrupt);
+            }
+        }
+        for step in 0..half {
+            prepare_buffer(wrap_add::<COUNT>(self.recycle_start, step))?;
+        }
+        for step in 0..half {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            let descriptor = &self.descriptors[index];
+            let next = if step + 1 < half {
+                descriptor_address(self.descriptor_base, wrap_add::<COUNT>(index, 1))?
+            } else {
+                0
+            };
+            descriptor.publish(
+                rx_rearm_word(descriptor.word0()).ok_or(RxRingError::Size)?,
+                self.buffer_addresses[index],
+                next,
+            );
+        }
+
+        let head_index = self.recycle_start;
+        let head_address = descriptor_address(self.descriptor_base, head_index)?;
+        let tail_index = wrap_add::<COUNT>(head_index, half - 1);
+        let accepted_tail = &self.descriptors[self.accepted_tail];
+        if accepted_tail.next_address() != 0 {
+            return Err(RxRingError::Corrupt);
+        }
+        // SAFETY: this type is the sole publication authority. All descriptors
+        // in the appended half were observed complete, rearmed and remain
+        // unreachable until this old-tail link and the following doorbell.
+        unsafe { accepted_tail.publish_next_address(head_address) };
+        mmio.fence();
+        let control = mmio.read32(RX_CONTROL);
+        mmio.write32(RX_CONTROL, control | RX_RELOAD);
+        mmio.fence();
+
+        self.pending_tail = Some(tail_index);
+        self.observed_mask &= !group_mask;
+        self.recycle_start = wrap_add::<COUNT>(self.recycle_start, half);
+        Ok(Some(RxLiveAppend {
+            head_index,
+            head_address,
+            tail_index,
+        }))
+    }
+
+    pub const fn observed_mask(&self) -> u32 {
+        self.observed_mask
+    }
+
+    pub const fn recycle_start(&self) -> usize {
+        self.recycle_start
+    }
+
+    pub const fn accepted_tail(&self) -> usize {
+        self.accepted_tail
+    }
+
+    pub const fn reload_pending(&self) -> bool {
+        self.pending_tail.is_some()
+    }
+
+    fn settle_reload<M: Mmio>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
+        let Some(pending_tail) = self.pending_tail else {
+            return Ok(());
+        };
+        if mmio.read32(RX_NEXT_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK == 0 {
+            let last_low = mmio.read32(RX_LAST_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK;
+            let last_index = descriptor_index(last_low, self.descriptor_base, COUNT)
+                .ok_or(RxRingError::Corrupt)?;
+            if last_index != pending_tail {
+                let repair_head = self.descriptors[last_index].next_address();
+                if repair_head == 0 {
+                    return Err(RxRingError::Corrupt);
+                }
+                mmio.write32(RX_DESCRIPTOR_BASE, repair_head);
+                mmio.fence();
+            }
+        }
+        self.accepted_tail = pending_tail;
+        self.pending_tail = None;
+        Ok(())
+    }
+}
+
+fn validate_live_ring_geometry<const COUNT: usize>() -> Result<(), RxRingError> {
+    if COUNT < 2 || COUNT > 32 || COUNT % 2 != 0 {
+        Err(RxRingError::Count)
+    } else {
+        Ok(())
+    }
+}
+
+fn descriptor_address(descriptor_base: u32, index: usize) -> Result<u32, RxRingError> {
+    let index = u32::try_from(index).map_err(|_| RxRingError::Overflow)?;
+    descriptor_base
+        .checked_add(
+            index
+                .checked_mul(DESCRIPTOR_BYTES)
+                .ok_or(RxRingError::Overflow)?,
+        )
+        .ok_or(RxRingError::Overflow)
+}
+
+fn descriptor_index(low_address: u32, descriptor_base: u32, count: usize) -> Option<usize> {
+    let base_low = descriptor_base & RX_DESCRIPTOR_LOW_MASK;
+    let offset = low_address.checked_sub(base_low)?;
+    if offset % DESCRIPTOR_BYTES != 0 {
+        return None;
+    }
+    let index = usize::try_from(offset / DESCRIPTOR_BYTES).ok()?;
+    (index < count).then_some(index)
+}
+
+fn wrap_add<const COUNT: usize>(index: usize, amount: usize) -> usize {
+    (index + amount) % COUNT
+}
+
+fn wrap_sub_one<const COUNT: usize>(index: usize) -> usize {
+    if index == 0 {
+        COUNT - 1
+    } else {
+        index - 1
+    }
+}
+
+fn recycle_group_mask<const COUNT: usize>(start: usize) -> u32 {
+    let mut mask = 0_u32;
+    for step in 0..COUNT / 2 {
+        mask |= 1_u32 << wrap_add::<COUNT>(start, step);
+    }
+    mask
+}
+
+fn relink_rotated_ring<const COUNT: usize>(
+    descriptors: &[Descriptor; COUNT],
+    descriptor_base: u32,
+    buffer_addresses: &[u32; COUNT],
+    start: usize,
+) -> Result<(), RxRingError> {
+    for step in 0..COUNT {
+        let index = wrap_add::<COUNT>(start, step);
+        let next = if step + 1 < COUNT {
+            descriptor_address(descriptor_base, wrap_add::<COUNT>(index, 1))?
+        } else {
+            0
+        };
+        let word0 = descriptors[index].word0();
+        descriptors[index].publish(word0, buffer_addresses[index], next);
+    }
+    Ok(())
+}
+
+/// Restores the two guard words required by the recovered RX recycle path.
+///
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS] and the preserved Rust transcription
+/// in `migration/esp32s31-hybrid-runtime/src/wdev.rs::
+/// prepare_rx_recycle_chain`.
+///
+/// `buffer` is the complete allocation, including the four-byte trailing
+/// guard. `capacity` is the byte count published in the DMA descriptor.
+pub fn prepare_recycled_buffer(buffer: &mut [u8], capacity: usize) -> Result<(), RxRingError> {
+    if capacity < core::mem::size_of::<u32>()
+        || capacity
+            .checked_add(core::mem::size_of::<u32>())
+            .is_none_or(|required| required > buffer.len())
+    {
+        return Err(RxRingError::Size);
+    }
+    let sentinel = RX_BUFFER_SENTINEL.to_le_bytes();
+    buffer[..sentinel.len()].copy_from_slice(&sentinel);
+    buffer[capacity..capacity + sentinel.len()].copy_from_slice(&sentinel);
+    Ok(())
 }
 
 /// Builds the cold, zero-terminated list used by the recovered S31 RX path.
@@ -295,11 +707,80 @@ fn copy_frame(
     copied == length
 }
 
-fn extract_mpdu(
+/// Decode the first-descriptor RX layout without requiring the complete MPDU
+/// to fit in that descriptor.
+///
+/// This is also the diagnostic boundary for a split hardware unit: callers
+/// can distinguish malformed metadata from a valid first segment whose
+/// remaining bytes are carried by following descriptors.
+pub fn first_segment_layout(
+    segment: &RxSegment<'_>,
+    config: RxIngressConfig,
+) -> Result<RxFirstSegmentLayout, RxError> {
+    if config.flags & !INGRESS_VALID_FLAGS != 0 || !segment_valid(segment) {
+        return Err(RxError::Invalid);
+    }
+
+    let received_length = descriptor_length(segment.descriptor_word0) as usize;
+    let tail_offset = dynamic_tail_offset(&segment.buffer[..received_length], config.csi_config)
+        .ok_or(RxError::Bounds)?;
+    if tail_offset < FIXED_PREFIX_SIZE
+        || tail_offset > received_length
+        || received_length - tail_offset < DYNAMIC_TAIL_SIZE
+    {
+        return Err(RxError::Bounds);
+    }
+
+    let tail_word = read_le32(&segment.buffer[tail_offset..]).ok_or(RxError::Bounds)?;
+    let signal_length = (tail_word & 0x3fff) as usize;
+    let dump_length = ((tail_word & 0x3fff_0000) >> 16) as usize;
+    let rxend_state = segment.buffer[PREFIX_RXEND_STATE_OFFSET];
+    let rx_state = segment.buffer[tail_offset + TAIL_STATE_OFFSET];
+    match rx_state {
+        0xf5 => return Err(RxError::MicFailure),
+        0xc6 => return Err(RxError::Quarantined),
+        0 => {}
+        _ => return Err(RxError::RxFailure),
+    }
+    if config.flags & INGRESS_STRICT_RXEND != 0 && rxend_state != 0 {
+        return Err(RxError::RxFailure);
+    }
+
+    let dump_length_matches = signal_length
+        .checked_add(FCS_SIZE)
+        .is_some_and(|expected| dump_length == expected);
+    if config.flags & INGRESS_STRICT_DUMP != 0 && !dump_length_matches {
+        return Err(RxError::Metadata);
+    }
+    if signal_length < 2 + FCS_SIZE {
+        return Err(RxError::Bounds);
+    }
+
+    let frame_offset = tail_offset + DYNAMIC_TAIL_SIZE;
+    let available_frame_bytes = received_length - frame_offset;
+    let expected_frame_length = signal_length - FCS_SIZE;
+    Ok(RxFirstSegmentLayout {
+        received_length,
+        tail_offset,
+        frame_offset,
+        signal_length,
+        dump_length,
+        expected_frame_length,
+        available_frame_bytes,
+        frame_shortfall: expected_frame_length.saturating_sub(available_frame_bytes),
+        rxend_state,
+        rx_state,
+        internal_state: segment.buffer[tail_offset + TAIL_INTERNAL_OFFSET],
+        dump_length_matches,
+    })
+}
+
+fn extract_mpdu_allowing_consumed_trailer(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
     output: &mut [u8],
-) -> Result<RxMpduFrame, RxError> {
+    maximum_consumable_trailer_length: usize,
+) -> Result<(RxMpduFrame, usize), RxError> {
     if segments.is_empty()
         || config.ring_entry_limit == 0
         || segments.len() > config.ring_entry_limit
@@ -328,71 +809,50 @@ fn extract_mpdu(
         return Err(RxError::Chain);
     }
 
-    let first_length = descriptor_length(segments[0].descriptor_word0) as usize;
-    let tail_offset = dynamic_tail_offset(&segments[0].buffer[..first_length], config.csi_config)
-        .ok_or(RxError::Bounds)?;
-    if tail_offset < FIXED_PREFIX_SIZE
-        || tail_offset > first_length
-        || first_length - tail_offset < DYNAMIC_TAIL_SIZE
-    {
-        return Err(RxError::Bounds);
-    }
-
-    let tail_word = read_le32(&segments[0].buffer[tail_offset..]).ok_or(RxError::Bounds)?;
-    let signal_length = (tail_word & 0x3fff) as usize;
-    let dump_length = ((tail_word & 0x3fff_0000) >> 16) as usize;
-    let rxend_state = segments[0].buffer[PREFIX_RXEND_STATE_OFFSET];
-    let rx_state = segments[0].buffer[tail_offset + TAIL_STATE_OFFSET];
-    match rx_state {
-        0xf5 => return Err(RxError::MicFailure),
-        0xc6 => return Err(RxError::Quarantined),
-        0 => {}
-        _ => return Err(RxError::RxFailure),
-    }
-    if config.flags & INGRESS_STRICT_RXEND != 0 && rxend_state != 0 {
-        return Err(RxError::RxFailure);
-    }
-    // S31 hardware reports the second 14-bit dump field as `sig_len + 4`.
-    // The first field includes the four-byte 802.11 FCS, while the DMA
-    // protocol view may omit those bytes and retain only alignment padding.
-    let dump_matches = signal_length
-        .checked_add(FCS_SIZE)
-        .is_some_and(|expected| dump_length == expected);
-    if config.flags & INGRESS_STRICT_DUMP != 0 && !dump_matches {
-        return Err(RxError::Metadata);
-    }
-    if signal_length < 2 + FCS_SIZE {
-        return Err(RxError::Bounds);
-    }
-
-    let frame_offset = tail_offset + DYNAMIC_TAIL_SIZE;
-    let mut available = first_length - frame_offset;
+    let layout = first_segment_layout(&segments[0], config)?;
+    let mut available = layout.available_frame_bytes;
     for segment in &segments[1..] {
         available = available
             .checked_add(descriptor_length(segment.descriptor_word0) as usize)
             .ok_or(RxError::Bounds)?;
     }
-    let frame_length = signal_length - FCS_SIZE;
-    if frame_length > available {
+    let expected_frame_length = layout.expected_frame_length;
+    let consumed_trailer_length = expected_frame_length.saturating_sub(available);
+    let frame_length = if consumed_trailer_length == 0 {
+        expected_frame_length
+    } else if consumed_trailer_length <= maximum_consumable_trailer_length {
+        available
+    } else {
         return Err(RxError::Bounds);
-    }
+    };
     if frame_length > output.len() {
         return Err(RxError::OutputSmall);
     }
-    if !copy_frame(segments, frame_offset, frame_length, output) {
+    if !copy_frame(segments, layout.frame_offset, frame_length, output) {
         return Err(RxError::Bounds);
     }
 
-    Ok(RxMpduFrame {
-        length: frame_length,
-        tail_offset,
-        signal_length: signal_length as u16,
-        dump_length: dump_length as u16,
-        rxend_state,
-        rx_state,
-        internal_state: segments[0].buffer[tail_offset + TAIL_INTERNAL_OFFSET],
-        dump_length_matches: dump_matches,
-    })
+    Ok((
+        RxMpduFrame {
+            length: frame_length,
+            tail_offset: layout.tail_offset,
+            signal_length: layout.signal_length as u16,
+            dump_length: layout.dump_length as u16,
+            rxend_state: layout.rxend_state,
+            rx_state: layout.rx_state,
+            internal_state: layout.internal_state,
+            dump_length_matches: layout.dump_length_matches,
+        },
+        consumed_trailer_length,
+    ))
+}
+
+fn extract_mpdu(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxMpduFrame, RxError> {
+    extract_mpdu_allowing_consumed_trailer(segments, config, output, 0).map(|(frame, _)| frame)
 }
 
 /// Validates one completed chain, strips the four-byte FCS and copies one
@@ -474,14 +934,21 @@ pub fn extract_data(
 ///
 /// Unlike [`extract_data`], this entry requires the Protected bit. A returned
 /// frame therefore has both a successful RX crypto status and a valid CCMP
-/// ExtIV/header/trailer shape. The payload bytes between `payload_offset` and
+/// ExtIV/header shape. The payload bytes between `payload_offset` and
 /// `mic_offset` are the hardware-decrypted LLC/SNAP payload.
+///
+/// S31 HIL shows that successful hardware verification can publish a DMA view
+/// ending anywhere inside the eight-byte CCMP MIC while `sig_len` still
+/// describes the complete on-air MPDU. This reproduces the migration
+/// `ccmp_decap` invariant: only bytes after the logical payload boundary may
+/// be absent. Unprotected extraction remains strict.
 pub fn extract_ccmp_data(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
     output: &mut [u8],
 ) -> Result<RxCcmpDataFrame, RxError> {
-    let frame = extract_mpdu(segments, config, output)?;
+    let (frame, consumed_trailer_length) =
+        extract_mpdu_allowing_consumed_trailer(segments, config, output, CCMP_MIC_SIZE)?;
     if frame.length < MLME_HEADER_SIZE {
         return Err(RxError::Bounds);
     }
@@ -511,11 +978,21 @@ pub fn extract_ccmp_data(
     let payload_offset = ccmp_header_offset
         .checked_add(CCMP_HEADER_SIZE)
         .ok_or(RxError::Bounds)?;
-    let mic_offset = frame
-        .length
+    let expected_frame_length = usize::from(frame.signal_length)
+        .checked_sub(FCS_SIZE)
+        .ok_or(RxError::Bounds)?;
+    let mic_offset = expected_frame_length
         .checked_sub(CCMP_MIC_SIZE)
         .ok_or(RxError::Bounds)?;
+    let mic_bytes_in_dma = CCMP_MIC_SIZE - consumed_trailer_length;
+    let mic_present_in_dma = mic_bytes_in_dma == CCMP_MIC_SIZE;
     if payload_offset > mic_offset {
+        return Err(RxError::Bounds);
+    }
+    if mic_offset
+        .checked_add(mic_bytes_in_dma)
+        .is_none_or(|physical_end| physical_end > frame.length)
+    {
         return Err(RxError::Bounds);
     }
     // `ccmp_decap` rejects a protected frame whose CCMP ExtIV bit is clear.
@@ -532,5 +1009,7 @@ pub fn extract_ccmp_data(
         payload_offset,
         payload_length: mic_offset - payload_offset,
         mic_offset,
+        mic_bytes_in_dma,
+        mic_present_in_dma,
     })
 }

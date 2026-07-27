@@ -48,6 +48,35 @@ pub struct MacColdStartOutcome {
     pub handshake_value: u32,
 }
 
+/// Switch RX queue zero from the cold/default scan policy to the associated
+/// station-link policy.
+///
+/// This is the source-owned form of migration's
+/// `scan::enable_sta_link_rx_policy`, recovered from the policy-5 branch of
+/// `wifi_set_rx_policy`. It must run after off-channel scanning and before the
+/// station sends Authentication. The mutable MMIO borrow is the complete
+/// ownership boundary; no vendor `g_ic` state or C ABI is required.
+pub fn configure_sta_link_receive_policy<M: Mmio>(mmio: &mut M) {
+    let queue = 0;
+
+    // `ic_set_rx_policy(0, mode=0, control=1, management=1)`.
+    modify(mmio, registers::RX_FILTER[queue], (1 << 10) | (1 << 4), 0);
+    modify(mmio, registers::BSSID_HIGH[queue], 1 << 30, 0);
+    modify(mmio, registers::RX_FILTER[queue], 1 << 6, 0);
+    modify(mmio, registers::BSSID_HIGH[queue], 1 << 31, 1 << 31);
+    modify(
+        mmio,
+        registers::INTERFACE_ADDRESS_HIGH[queue],
+        1 << 16,
+        1 << 16,
+    );
+
+    // `ic_set_rx_policy_ubssid_check(0, 0)` performs two ordered RMWs.
+    modify(mmio, registers::RX_FILTER[queue], 1 << 8, 0);
+    modify(mmio, registers::RX_FILTER[queue], 1 << 1, 0);
+    mmio.fence();
+}
+
 #[inline]
 fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
     let current = mmio.read32(register);

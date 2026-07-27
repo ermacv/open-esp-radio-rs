@@ -1,31 +1,33 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_mac_esp32s31::{
-    crypto::{CryptoKeyError, install_sta_group_ccmp, install_sta_pairwise_ccmp},
+    crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CryptoKeyError},
     descriptor::{
-        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
-        dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
+        descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
+        tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
-    init::initialize_promiscuous_receive,
-    irq::{IrqDisposition, IrqState, handle_mac_irq},
+    init::{configure_sta_link_receive_policy, initialize_promiscuous_receive},
+    irq::{handle_mac_irq, IrqDisposition, IrqState},
     registers::{
-        MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS, MAC_INT_TX_COMPLETE,
-        Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR_HIGH,
+        Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
+        MAC_INT_TX_COMPLETE, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR,
+        RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD, TX_CCA_CONTROL, TX_CCA_FORCE_MASK,
         TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
         TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
-        TX_Q_ENABLE_VALID, TX_Q0_CONTROL, TX_STATE,
+        TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
-        INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RxError, RxIngressConfig, RxRingError,
-        RxSegment, build_cold_ring, disable_receive, enable_receive, extract_ccmp_data,
-        extract_data, extract_management, publish_cold_ring, rearm_descriptor,
+        build_cold_ring, disable_receive, enable_receive, extract_ccmp_data, extract_data,
+        extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
+        rearm_descriptor, RxError, RxIngressConfig, RxRingError, RxRingStopped, RxSegment,
+        INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
-    tx::{LegacyTxConfig, TxError, TxSlot, TxSlotState, legacy_q0_image},
+    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
 };
 use open_esp_radio_pac_esp32s31::{
-    Register32,
     mac::{self, init as mac_init},
     power::modem_syscon,
+    Register32,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,6 +151,33 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
 }
 
 #[test]
+fn sta_link_rx_policy_matches_migration_policy_five() {
+    let mut mmio = MockMmio::default();
+    mmio.set(mac_init::RX_FILTER[0], u32::MAX);
+    mmio.set(mac_init::BSSID_HIGH[0], u32::MAX);
+    mmio.set(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0000_5544);
+
+    configure_sta_link_receive_policy(&mut mmio);
+
+    assert_eq!(
+        mmio.words.get(&mac_init::RX_FILTER[0]),
+        Some(&(u32::MAX & !((1 << 10) | (1 << 8) | (1 << 6) | (1 << 4) | (1 << 1))))
+    );
+    assert_eq!(mmio.words.get(&mac_init::BSSID_HIGH[0]), Some(&0xbfff_ffff));
+    assert_eq!(
+        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[0]),
+        Some(&0x0001_5544)
+    );
+    assert_eq!(
+        mmio.operations()
+            .iter()
+            .filter(|operation| **operation == Operation::Fence)
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn cold_rx_ring_publishes_links_and_hardware_in_order() {
     let descriptors = [Descriptor::new(), Descriptor::new()];
     build_cold_ring(&descriptors, 0x2f00_1000, &[0x2f00_2000, 0x2f00_2800], 1700).unwrap();
@@ -188,6 +217,112 @@ fn completed_rx_descriptor_rearms_only_for_the_expected_storage() {
 
     descriptor.publish(completed, 0x2f00_3000, 0);
     assert!(rearm_descriptor(&descriptor, 0x2f00_3400, 0).is_err());
+}
+
+#[test]
+fn recycled_rx_buffer_restores_both_migration_sentinels() {
+    let mut storage = [0x5a; 20];
+    prepare_recycled_buffer(&mut storage, 16).unwrap();
+    assert_eq!(&storage[..4], &RX_BUFFER_SENTINEL.to_le_bytes());
+    assert_eq!(&storage[4..16], &[0x5a; 12]);
+    assert_eq!(&storage[16..20], &RX_BUFFER_SENTINEL.to_le_bytes());
+    assert_eq!(
+        prepare_recycled_buffer(&mut storage[..16], 16),
+        Err(RxRingError::Size)
+    );
+}
+
+#[test]
+fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut prepared = Vec::new();
+    let mut mmio = MockMmio::default();
+    // The previous walker retained descriptor one, so the Rust owner must
+    // rotate the cold list to begin at descriptor two.
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_CONTROL, RX_ENABLE);
+
+    let stopped = RxRingStopped::prepare(
+        &mut mmio,
+        &descriptors,
+        BASE,
+        &buffers,
+        BUFFER_SIZE,
+        |index| {
+            prepared.push(index);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(prepared, [0, 1, 2, 3]);
+    assert_eq!(stopped.initial_start(), 2);
+    assert_eq!(stopped.accepted_tail(), 1);
+    assert_eq!(descriptors[2].next_address(), BASE + 3 * DESCRIPTOR_BYTES);
+    assert_eq!(descriptors[3].next_address(), BASE);
+    assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
+    assert_eq!(descriptors[1].next_address(), 0);
+    assert_eq!(
+        mmio.words.get(&RX_DESCRIPTOR_BASE),
+        Some(&(BASE + 2 * DESCRIPTOR_BYTES))
+    );
+
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+    descriptors[2].write_word0(completed);
+    descriptors[3].write_word0(completed);
+    assert_eq!(live.take_completed(2).unwrap().index, 2);
+    assert_eq!(live.take_completed(2), None);
+    assert_eq!(live.take_completed(3).unwrap().index, 3);
+
+    let mut recycled = Vec::new();
+    let first = live
+        .recycle_completed_half(&mut mmio, |index| {
+            recycled.push(index);
+            Ok(())
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(recycled, [2, 3]);
+    assert_eq!(first.head_index, 2);
+    assert_eq!(first.tail_index, 3);
+    assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
+    assert_ne!(mmio.words[&RX_CONTROL] & RX_RELOAD, 0);
+    assert!(live.reload_pending());
+    assert_eq!(live.accepted_tail(), 1);
+
+    descriptors[0].write_word0(completed);
+    descriptors[1].write_word0(completed);
+    assert!(live.take_completed(0).is_some());
+    assert!(live.take_completed(1).is_some());
+
+    // Model bit-0 self-clear at a terminal frontier. ROM repairs BASE from the
+    // last accepted descriptor's now-published next link before accepting the
+    // pending tail and appending the following group.
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, 0);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    recycled.clear();
+    let second = live
+        .recycle_completed_half(&mut mmio, |index| {
+            recycled.push(index);
+            Ok(())
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(recycled, [0, 1]);
+    assert_eq!(second.head_index, 0);
+    assert_eq!(second.tail_index, 1);
+    assert_eq!(descriptors[3].next_address(), BASE);
+    assert!(mmio.operations().contains(&Operation::Write(
+        RX_DESCRIPTOR_BASE,
+        BASE + 2 * DESCRIPTOR_BYTES,
+    )));
+    assert_eq!(live.accepted_tail(), 3);
+    assert!(live.reload_pending());
 }
 
 #[test]
@@ -485,10 +620,148 @@ fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
     assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
     assert_eq!(frame.payload_length, LLC_LENGTH + PAYLOAD_LENGTH);
     assert_eq!(frame.mic_offset, MPDU_LENGTH - 8);
+    assert_eq!(frame.mic_bytes_in_dma, 8);
+    assert!(frame.mic_present_in_dma);
     assert_eq!(
         &output[frame.payload_offset..frame.payload_offset + LLC_LENGTH],
         &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]
     );
+}
+
+#[test]
+fn first_segment_layout_exposes_a_consumed_ccmp_mic_shortfall() {
+    const MPDU_LENGTH: usize = 26 + 8 + 8 + 4 + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const DMA_FRAME_LENGTH: usize = MPDU_LENGTH - 8;
+    const RECEIVED: usize = FRAME_OFFSET + DMA_FRAME_LENGTH;
+
+    let mut storage = [0_u8; 128];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    let layout = first_segment_layout(
+        &segment,
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(layout.received_length, RECEIVED);
+    assert_eq!(layout.expected_frame_length, MPDU_LENGTH);
+    assert_eq!(layout.available_frame_bytes, DMA_FRAME_LENGTH);
+    assert_eq!(layout.frame_shortfall, 8);
+}
+
+#[test]
+fn ccmp_data_rx_accepts_a_hardware_consumed_mic() {
+    const HEADER_LENGTH: usize = 26;
+    const LLC_LENGTH: usize = 8;
+    const PAYLOAD_LENGTH: usize = 4;
+    const MPDU_LENGTH: usize = HEADER_LENGTH + 8 + LLC_LENGTH + PAYLOAD_LENGTH + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const DMA_FRAME_LENGTH: usize = MPDU_LENGTH - 8;
+    const RECEIVED: usize = FRAME_OFFSET + DMA_FRAME_LENGTH;
+
+    let mut storage = [0_u8; 128];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    storage[FRAME_OFFSET] = 0x88;
+    storage[FRAME_OFFSET + 1] = 0x42;
+    storage[FRAME_OFFSET + 22] = 0;
+    storage[FRAME_OFFSET + HEADER_LENGTH..FRAME_OFFSET + HEADER_LENGTH + 8]
+        .copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+    storage[FRAME_OFFSET + HEADER_LENGTH + 8..FRAME_OFFSET + HEADER_LENGTH + 16]
+        .copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+    storage[FRAME_OFFSET + HEADER_LENGTH + 16..FRAME_OFFSET + HEADER_LENGTH + 20]
+        .copy_from_slice(&[1, 2, 3, 4]);
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    let mut output = [0_u8; 80];
+    let frame = extract_ccmp_data(
+        &[segment],
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+        },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(frame.mpdu.length, DMA_FRAME_LENGTH);
+    assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
+    assert_eq!(frame.payload_length, LLC_LENGTH + PAYLOAD_LENGTH);
+    assert_eq!(frame.mic_offset, DMA_FRAME_LENGTH);
+    assert_eq!(frame.mic_bytes_in_dma, 0);
+    assert!(!frame.mic_present_in_dma);
+}
+
+#[test]
+fn ccmp_data_rx_accepts_a_dma_view_ending_inside_the_verified_mic() {
+    const HEADER_LENGTH: usize = 24;
+    const LLC_LENGTH: usize = 8;
+    const ARP_AND_PADDING_LENGTH: usize = 46;
+    const MPDU_LENGTH: usize = HEADER_LENGTH + 8 + LLC_LENGTH + ARP_AND_PADDING_LENGTH + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    // The external-LAN ARP HIL frame retained the first two MIC bytes.
+    const DMA_FRAME_LENGTH: usize = MPDU_LENGTH - 6;
+    const RECEIVED: usize = FRAME_OFFSET + DMA_FRAME_LENGTH;
+
+    let mut storage = [0_u8; 192];
+    storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+        &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+    );
+    storage[FRAME_OFFSET] = 0x08;
+    storage[FRAME_OFFSET + 1] = 0x42;
+    storage[FRAME_OFFSET + 22] = 0;
+    storage[FRAME_OFFSET + HEADER_LENGTH..FRAME_OFFSET + HEADER_LENGTH + 8]
+        .copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+    storage[FRAME_OFFSET + HEADER_LENGTH + 8..FRAME_OFFSET + HEADER_LENGTH + 16]
+        .copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_4000,
+        descriptor_word0: 192 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+    let mut output = [0_u8; 128];
+    let frame = extract_ccmp_data(
+        &[segment],
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: 0,
+        },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(frame.mpdu.length, DMA_FRAME_LENGTH);
+    assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
+    assert_eq!(frame.payload_length, LLC_LENGTH + ARP_AND_PADDING_LENGTH);
+    assert_eq!(frame.mic_offset, MPDU_LENGTH - 8);
+    assert_eq!(frame.mic_bytes_in_dma, 2);
+    assert!(!frame.mic_present_in_dma);
 }
 
 #[test]
@@ -554,10 +827,9 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let event = state.try_take().unwrap();
     assert_eq!(event.mac_pending, MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::Write(MAC_INT_CLEAR, snapshot.status))
-    );
+    assert!(mmio
+        .operations()
+        .contains(&Operation::Write(MAC_INT_CLEAR, snapshot.status)));
 }
 
 #[test]
@@ -590,6 +862,63 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
     slot.detach_completed(&mut mmio, cookie).unwrap();
     assert_eq!(slot.state(), TxSlotState::Free);
+}
+
+#[test]
+fn tx_slot_reproduces_the_migration_timeout_abort_order() {
+    let mut slot = TxSlot::new();
+    let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
+    slot.mark_hardware_owned(cookie).unwrap();
+
+    let timeout_mask = 1 << TX_TIMEOUT_SHIFT;
+    let mut mmio = MockMmio::default();
+    mmio.set(TX_STATE, timeout_mask);
+    mmio.set(TX_CCA_CONTROL, 0x1234_5678);
+    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
+
+    assert_eq!(slot.begin_timeout_abort(&mut mmio, cookie), Ok(true));
+    assert_eq!(
+        mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
+        TX_CCA_FORCE_MASK,
+    );
+    slot.finish_timeout_abort(&mut mmio, cookie).unwrap();
+
+    assert_eq!(slot.state(), TxSlotState::Free);
+    assert_eq!(
+        mmio.words.get(&TX_Q0_CONTROL).copied().unwrap() & TX_Q_ENABLE_VALID,
+        0,
+    );
+    assert_eq!(
+        mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
+        0,
+    );
+    assert!(mmio
+        .operations()
+        .contains(&Operation::Write(TX_STATE_CLEAR, timeout_mask)));
+
+    let invalidation = mmio
+        .operations()
+        .iter()
+        .position(|operation| {
+            matches!(operation, Operation::Write(register, value)
+                if *register == TX_Q0_CONTROL && value & (1 << 30) == 0)
+        })
+        .unwrap();
+    let cca_release = mmio
+        .operations()
+        .iter()
+        .position(|operation| {
+            matches!(operation, Operation::Write(register, value)
+                if *register == TX_CCA_CONTROL && value & TX_CCA_FORCE_MASK == 0)
+        })
+        .unwrap();
+    let timeout_clear = mmio
+        .operations()
+        .iter()
+        .position(|operation| *operation == Operation::Write(TX_STATE_CLEAR, timeout_mask))
+        .unwrap();
+    assert!(invalidation < cca_release);
+    assert!(cca_release < timeout_clear);
 }
 
 #[test]

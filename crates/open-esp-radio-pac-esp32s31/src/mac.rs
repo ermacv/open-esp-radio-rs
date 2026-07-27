@@ -14,10 +14,13 @@ pub const INT_CLEAR: Register32 = Register32::new(0x2010_4c4c);
 
 /// RX descriptor-walker control.
 ///
-/// SOURCE[BLOB_LIBPP_WDEV_APPEND_RX_BLOCKS,BLOB_LIBHAL_MAC_RX_ENABLE];
-/// bit 31 is the start/stop gate. Bit 0 is a self-clearing reload doorbell for
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
+/// Bit 31 is the start/stop gate. Bit 0 is a self-clearing reload doorbell for
 /// appending descriptors to a live list; it is not used to publish the first
-/// cold list.
+/// cold list. The HIL sustained more than 7,000 receives and completed
+/// scan/WPA2/DHCP/ICMP while recycling a rotating 32-entry ring through this
+/// doorbell.
 pub const RX_CONTROL: Register32 =
     Register32::described(0x2010_4080, RegisterAccess::ReadWrite, None);
 pub mod rx_control {
@@ -31,20 +34,36 @@ pub mod rx_control {
 
 /// First RX descriptor address, expressed in the selected high-address window.
 ///
-/// The cold `wDev_AppendRxBlocks` path writes this before the later RX-enable
-/// edge. A live-list append normally uses [`rx_control::APPEND_DESCRIPTOR_RELOAD`].
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+/// CONFIDENCE[instruction-exact-and-hil]. The cold `wDev_AppendRxBlocks` path
+/// writes this when the software list is empty. A live-list append normally
+/// links the accepted tail and uses
+/// [`rx_control::APPEND_DESCRIPTOR_RELOAD`].
 pub const RX_DESCRIPTOR_BASE: Register32 =
     Register32::described(0x2010_4084, RegisterAccess::ReadWrite, None);
 /// Current/next descriptor selected by the RX walker; zero denotes no current
 /// descriptor at the observed terminal frontier.
+///
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+/// CONFIDENCE[instruction-exact-and-hil]. ROM reads this after the reload bit
+/// clears and repairs the base only when it is zero and the accepted hardware
+/// tail has not reached the newly published software tail.
 pub const RX_NEXT_DESCRIPTOR: Register32 =
     Register32::described(0x2010_4088, RegisterAccess::ReadOnly, None);
 /// Last descriptor accepted by the RX walker.
+///
+/// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
+/// ROM reconstructs the pointer from this register's low 20 bits and
+/// [`RX_LAST_DESCRIPTOR_HIGH`]'s high 12 bits. The HIL uses the accepted last
+/// descriptor to rotate ownership instead of assuming descriptor zero.
 pub const RX_LAST_DESCRIPTOR: Register32 =
     Register32::described(0x2010_408c, RegisterAccess::ReadOnly, None);
 pub const RX_CSI_CONFIG: Register32 = Register32::new(0x2010_4098);
 /// High address window shared by RX descriptor pointer registers.
 ///
+/// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
 /// The open driver programs `0x2f00_0000` for internal SRAM descriptors; the
 /// pointer registers carry the low 20 address bits.
 pub const RX_LAST_DESCRIPTOR_HIGH: Register32 =
@@ -269,7 +288,24 @@ pub mod sta_tx_oracle {
     }
 }
 
+/// Per-queue collision/timeout state and its write-one-to-clear register.
+///
+/// Recovered `hal_mac_get_txq_state(1)` reads timeout bits 16..19 from
+/// `TX_STATE`; `hal_mac_clr_txq_state(1, queue)` writes the corresponding bit
+/// to `TX_STATE_CLEAR`.
+pub const TX_STATE_CLEAR: Register32 = Register32::new(0x2010_4cb0);
 pub const TX_STATE: Register32 = Register32::new(0x2010_4cb4);
+pub mod tx_state {
+    pub const TIMEOUT_SHIFT: u32 = 16;
+}
+
+/// Global two-bit TX CCA force field used while disabling a timed-out queue.
+pub const TX_CCA_CONTROL: Register32 = Register32::new(0x2010_4c5c);
+pub mod tx_cca_control {
+    use crate::Field32;
+    pub const FORCE: Field32 = Field32::new(30, 2);
+}
+
 pub const TX_COMPLETE_CLEAR: Register32 = Register32::new(0x2010_4cb8);
 pub const TX_COMPLETE_STATE: Register32 = Register32::new(0x2010_4cbc);
 pub const TX_COMPLETE_PRIMARY_Q0: Register32 = Register32::new(0x2010_553c);

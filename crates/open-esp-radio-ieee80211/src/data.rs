@@ -14,9 +14,12 @@ const IEEE80211_DATA: u8 = 0x08;
 const IEEE80211_QOS_DATA: u8 = 0x88;
 const IEEE80211_TO_DS: u8 = 0x01;
 const IEEE80211_FROM_DS: u8 = 0x02;
+const IEEE80211_MORE_FRAGMENTS: u8 = 0x04;
+const IEEE80211_QOS_AMSDU_PRESENT: u8 = 0x80;
 const QOS_NO_ACK_POLICY: u8 = 0x20;
 const CALLBACK_STA_EAPOL: u32 = 1 << 3;
 const CALLBACK_AP_POWER_SAVE: u32 = 1 << 12;
+const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataInterfaceRole {
@@ -32,6 +35,34 @@ pub struct DataEncapPlan {
     pub descriptor_multicast: bool,
     pub queue_class: u8,
     pub packet_type: u8,
+}
+
+/// Bounded 802.11-to-Ethernet transform for one ordinary STA/AP MSDU.
+///
+/// The plan borrows no DMA storage. After [`decapsulate_data`] succeeds, the
+/// caller owns a complete Ethernet frame in its output buffer and may return
+/// the source RX descriptor to the radio. This is the copy-owned counterpart
+/// of the slot/token boundary retained in
+/// `migration/esp32s31-hybrid-runtime/src/data_rx.rs`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DataDecapPlan {
+    pub destination: [u8; 6],
+    pub source: [u8; 6],
+    pub ether_type: u16,
+    pub payload_offset: usize,
+    pub payload_length: usize,
+    pub ethernet_length: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataDecapError {
+    Truncated,
+    NotData,
+    Fragmented,
+    RoleMismatch,
+    AmsduUnsupported,
+    InvalidLlcSnap,
+    OutputTooSmall { required: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -144,6 +175,104 @@ pub const fn plan_data_encapsulation(
     })
 }
 
+/// Validate one ordinary STA/AP data MPDU and locate its Ethernet payload.
+///
+/// `payload_offset` and `payload_length` describe the decrypted LLC/SNAP view
+/// produced by the MAC crate. For protected frames the offset is after the
+/// retained CCMP header; a hardware-consumed MIC is therefore naturally
+/// excluded by `payload_length`.
+pub fn plan_data_decapsulation(
+    role: DataInterfaceRole,
+    mpdu: &[u8],
+    payload_offset: usize,
+    payload_length: usize,
+) -> Result<DataDecapPlan, DataDecapError> {
+    if mpdu.len() < IEEE80211_LEGACY_DATA_HEADER_LEN {
+        return Err(DataDecapError::Truncated);
+    }
+    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
+    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
+        return Err(DataDecapError::NotData);
+    }
+    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
+        return Err(DataDecapError::Fragmented);
+    }
+
+    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
+    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
+    let (destination_offset, source_offset) = match (role, to_ds, from_ds) {
+        (DataInterfaceRole::Station, false, true) => (4, 16),
+        (DataInterfaceRole::AccessPoint, true, false) => (16, 10),
+        _ => return Err(DataDecapError::RoleMismatch),
+    };
+
+    let qos = mpdu[0] & 0x80 != 0;
+    let header_length = if qos {
+        IEEE80211_QOS_DATA_HEADER_LEN
+    } else {
+        IEEE80211_LEGACY_DATA_HEADER_LEN
+    };
+    if mpdu.len() < header_length {
+        return Err(DataDecapError::Truncated);
+    }
+    if qos && mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT != 0 {
+        return Err(DataDecapError::AmsduUnsupported);
+    }
+
+    let payload_end = payload_offset
+        .checked_add(payload_length)
+        .ok_or(DataDecapError::Truncated)?;
+    if payload_offset < header_length
+        || payload_length < LLC_SNAP_HEADER_LEN
+        || payload_end > mpdu.len()
+    {
+        return Err(DataDecapError::Truncated);
+    }
+    let llc = &mpdu[payload_offset..payload_offset + LLC_SNAP_HEADER_LEN];
+    if llc[..RFC1042_LLC_SNAP_PREFIX.len()] != RFC1042_LLC_SNAP_PREFIX {
+        return Err(DataDecapError::InvalidLlcSnap);
+    }
+
+    let mut destination = [0_u8; 6];
+    destination.copy_from_slice(&mpdu[destination_offset..destination_offset + 6]);
+    let mut source = [0_u8; 6];
+    source.copy_from_slice(&mpdu[source_offset..source_offset + 6]);
+    let payload_length = payload_length - LLC_SNAP_HEADER_LEN;
+    let ethernet_length = ETHERNET_HEADER_LEN
+        .checked_add(payload_length)
+        .ok_or(DataDecapError::Truncated)?;
+    Ok(DataDecapPlan {
+        destination,
+        source,
+        ether_type: u16::from_be_bytes([llc[6], llc[7]]),
+        payload_offset: payload_offset + LLC_SNAP_HEADER_LEN,
+        payload_length,
+        ethernet_length,
+    })
+}
+
+/// Copy one validated MSDU into caller-owned Ethernet storage.
+pub fn decapsulate_data(
+    role: DataInterfaceRole,
+    mpdu: &[u8],
+    payload_offset: usize,
+    payload_length: usize,
+    ethernet: &mut [u8],
+) -> Result<DataDecapPlan, DataDecapError> {
+    let plan = plan_data_decapsulation(role, mpdu, payload_offset, payload_length)?;
+    if ethernet.len() < plan.ethernet_length {
+        return Err(DataDecapError::OutputTooSmall {
+            required: plan.ethernet_length,
+        });
+    }
+    ethernet[..6].copy_from_slice(&plan.destination);
+    ethernet[6..12].copy_from_slice(&plan.source);
+    ethernet[12..14].copy_from_slice(&plan.ether_type.to_be_bytes());
+    ethernet[14..plan.ethernet_length]
+        .copy_from_slice(&mpdu[plan.payload_offset..plan.payload_offset + plan.payload_length]);
+    Ok(plan)
+}
+
 const fn copy_six(output: &mut [u8; IEEE80211_QOS_DATA_HEADER_LEN], at: usize, value: [u8; 6]) {
     let mut index = 0;
     while index != value.len() {
@@ -228,6 +357,104 @@ mod tests {
                 sequence_number: 0x0abc,
                 sequence_control: 0xabc0,
             }
+        );
+    }
+
+    #[test]
+    fn station_decapsulation_reverses_from_ds_rfc1042_data() {
+        let ethernet = ethernet(DESTINATION);
+        let plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            BSSID,
+            BSSID,
+            ethernet,
+            0,
+            false,
+            false,
+        )
+        .unwrap();
+        let header_length = usize::from(plan.header_len);
+        let payload = [1, 2, 3, 4];
+        let mut mpdu = [0_u8; 64];
+        mpdu[..header_length].copy_from_slice(&plan.header[..header_length]);
+        mpdu[header_length..header_length + LLC_SNAP_HEADER_LEN].copy_from_slice(&plan.llc_snap);
+        mpdu[header_length + LLC_SNAP_HEADER_LEN
+            ..header_length + LLC_SNAP_HEADER_LEN + payload.len()]
+            .copy_from_slice(&payload);
+        let mpdu_length = header_length + LLC_SNAP_HEADER_LEN + payload.len();
+        let mut output = [0_u8; 64];
+        let decoded = decapsulate_data(
+            DataInterfaceRole::Station,
+            &mpdu[..mpdu_length],
+            header_length,
+            LLC_SNAP_HEADER_LEN + payload.len(),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.destination, DESTINATION);
+        assert_eq!(decoded.source, SOURCE);
+        assert_eq!(decoded.ether_type, 0x0800);
+        assert_eq!(
+            &output[..decoded.ethernet_length],
+            &[&ethernet[..], &payload].concat()
+        );
+    }
+
+    #[test]
+    fn protected_station_decapsulation_accepts_a_separate_ccmp_header() {
+        let payload = [1, 2, 3, 4];
+        let mut mpdu = [0_u8; 64];
+        mpdu[0] = IEEE80211_DATA;
+        mpdu[1] = IEEE80211_FROM_DS | 0x40;
+        mpdu[4..10].copy_from_slice(&DESTINATION);
+        mpdu[10..16].copy_from_slice(&BSSID);
+        mpdu[16..22].copy_from_slice(&SOURCE);
+        let ccmp_offset = IEEE80211_LEGACY_DATA_HEADER_LEN;
+        let llc_offset = ccmp_offset + 8;
+        mpdu[ccmp_offset + 3] = 0x20;
+        mpdu[llc_offset..llc_offset + LLC_SNAP_HEADER_LEN]
+            .copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+        mpdu[llc_offset + LLC_SNAP_HEADER_LEN..llc_offset + LLC_SNAP_HEADER_LEN + payload.len()]
+            .copy_from_slice(&payload);
+        let mpdu_length = llc_offset + LLC_SNAP_HEADER_LEN + payload.len();
+        let mut output = [0_u8; 64];
+        let decoded = decapsulate_data(
+            DataInterfaceRole::Station,
+            &mpdu[..mpdu_length],
+            llc_offset,
+            LLC_SNAP_HEADER_LEN + payload.len(),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.ether_type, 0x0806);
+        assert_eq!(&output[..6], &DESTINATION);
+        assert_eq!(&output[6..12], &SOURCE);
+        assert_eq!(&output[14..decoded.ethernet_length], &payload);
+    }
+
+    #[test]
+    fn decapsulation_rejects_role_mismatch_amsdu_and_non_snap_payload() {
+        let mut mpdu = [0_u8; 40];
+        mpdu[0] = IEEE80211_QOS_DATA;
+        mpdu[1] = IEEE80211_FROM_DS;
+        mpdu[24] = IEEE80211_QOS_AMSDU_PRESENT;
+        mpdu[26..34].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+
+        assert_eq!(
+            plan_data_decapsulation(DataInterfaceRole::AccessPoint, &mpdu, 26, 8),
+            Err(DataDecapError::RoleMismatch)
+        );
+        assert_eq!(
+            plan_data_decapsulation(DataInterfaceRole::Station, &mpdu, 26, 8),
+            Err(DataDecapError::AmsduUnsupported)
+        );
+        mpdu[24] = 0;
+        mpdu[26] = 0;
+        assert_eq!(
+            plan_data_decapsulation(DataInterfaceRole::Station, &mpdu, 26, 8),
+            Err(DataDecapError::InvalidLlcSnap)
         );
     }
 }

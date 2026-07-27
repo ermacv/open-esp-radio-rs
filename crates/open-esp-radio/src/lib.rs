@@ -1,5 +1,6 @@
 #![no_std]
 
+pub use open_esp_radio_embassy_net as embassy_net;
 pub use open_esp_radio_ieee80211 as ieee80211;
 pub use open_esp_radio_wpa2 as wpa2;
 

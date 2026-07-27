@@ -5,10 +5,11 @@ use core::pin::Pin;
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
     registers::{
-        Mmio, TX_COMPLETE_ALTERNATE, TX_COMPLETE_AUX_A, TX_COMPLETE_AUX_B, TX_COMPLETE_AUX_C,
-        TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY, TX_COMPLETE_STATE, TX_Q_CONFIG, TX_Q_CONTROL,
+        Mmio, TX_CCA_CONTROL, TX_CCA_FORCE_DISABLE, TX_CCA_FORCE_MASK, TX_COMPLETE_ALTERNATE,
+        TX_COMPLETE_AUX_A, TX_COMPLETE_AUX_B, TX_COMPLETE_AUX_C, TX_COMPLETE_CLEAR,
+        TX_COMPLETE_PRIMARY, TX_COMPLETE_STATE, TX_Q_CONFIG, TX_Q_CONTROL, TX_Q_ENABLE,
         TX_Q_ENABLE_VALID, TX_Q_LENGTH_CONTROL, TX_Q_PLCP1, TX_Q_POWER, TX_Q_PPDU_CONTROL,
-        TX_Q_PROTECTION, TX_Q_PTI, TX_STATE,
+        TX_Q_PROTECTION, TX_Q_PTI, TX_Q_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word},
 };
@@ -71,6 +72,7 @@ pub enum TxError {
     QueueActive,
     Stale,
     DetachFailed,
+    TimeoutNotPending,
     ResetRequired,
 }
 
@@ -409,6 +411,77 @@ impl TxSlot {
             primary_word: primary,
             alternate_word: alternate,
         }))
+    }
+
+    /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
+    ///
+    /// `migration/lmac.rs::begin_tx_timeout` forces CCA to three before its
+    /// fixed 16-us settling interval. `Ok(false)` means that this queue has no
+    /// timeout edge and leaves all registers untouched.
+    pub fn begin_timeout_abort<M: Mmio>(
+        &mut self,
+        mmio: &mut M,
+        cookie: TxCookie,
+    ) -> Result<bool, TxError> {
+        if self.state != TxSlotState::HardwareOwned || cookie != self.active {
+            return Err(TxError::Stale);
+        }
+        let timeout_mask = self.queue.completion_mask() << TX_TIMEOUT_SHIFT;
+        if mmio.read32(TX_STATE) & timeout_mask == 0 {
+            return Ok(false);
+        }
+
+        let cca = mmio.read32(TX_CCA_CONTROL);
+        mmio.write32(
+            TX_CCA_CONTROL,
+            (cca & !TX_CCA_FORCE_MASK) | TX_CCA_FORCE_DISABLE,
+        );
+        mmio.fence();
+        Ok(true)
+    }
+
+    /// Finishes a timed-out queue abort after at least 16 us of settling.
+    ///
+    /// The caller owns the one timer edge between this method and
+    /// [`begin_timeout_abort`](Self::begin_timeout_abort). The register order
+    /// matches the recovered migration path: invalidate, release forced CCA,
+    /// disable a queue that was still valid, then clear its timeout bit.
+    pub fn finish_timeout_abort<M: Mmio>(
+        &mut self,
+        mmio: &mut M,
+        cookie: TxCookie,
+    ) -> Result<(), TxError> {
+        if self.state != TxSlotState::HardwareOwned || cookie != self.active {
+            return Err(TxError::Stale);
+        }
+        let index = self.queue.index();
+        let timeout_mask = self.queue.completion_mask() << TX_TIMEOUT_SHIFT;
+        if mmio.read32(TX_STATE) & timeout_mask == 0 {
+            return Err(TxError::TimeoutNotPending);
+        }
+
+        let control_register = TX_Q_CONTROL[index];
+        let control = mmio.read32(control_register);
+        let was_valid = control & TX_Q_VALID != 0;
+        mmio.write32(control_register, control & !TX_Q_VALID);
+
+        let cca = mmio.read32(TX_CCA_CONTROL);
+        mmio.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
+        if was_valid {
+            let invalid = mmio.read32(control_register);
+            mmio.write32(control_register, invalid & !TX_Q_ENABLE);
+        }
+        mmio.write32(TX_STATE_CLEAR, timeout_mask);
+        mmio.fence();
+
+        if mmio.read32(control_register) & TX_Q_ENABLE_VALID != 0 {
+            self.state = TxSlotState::ResetRequired;
+            return Err(TxError::DetachFailed);
+        }
+        self.active = TxCookie(0);
+        self.descriptor_address = 0;
+        self.state = TxSlotState::Free;
+        Ok(())
     }
 
     /// Makes the completed static slot reusable after disabling q0 and exact

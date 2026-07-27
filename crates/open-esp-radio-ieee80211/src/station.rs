@@ -6,7 +6,7 @@
 
 use crate::{
     ccmp::CCMP_HEADER_LEN,
-    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
+    data::{plan_data_encapsulation, DataInterfaceRole, ETHERNET_HEADER_LEN},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
 };

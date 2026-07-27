@@ -6,12 +6,12 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>1.4</version>
+  <version>1.5</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus, PHY-I2C, IQ
-    estimator, RX-DCO, cold-deadline and temperature-sensor subset. Unknown
-    fields are omitted; OPAQUE and UNKNOWN names describe instruction-level
-    evidence without assigning an unproven hardware meaning.
+    estimator, RX-DCO, cold-deadline, temperature-sensor and Wi-Fi MAC RX-DMA
+    subset. Unknown fields are omitted; OPAQUE and UNKNOWN names describe
+    instruction-level evidence without assigning an unproven hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
@@ -1975,6 +1975,68 @@
         </register>
       </registers>
     </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_RX_DMA</name>
+      <description>
+        SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+        ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        CONFIDENCE[instruction-exact-and-hil]. Descriptor-walker registers
+        recovered from complete rev0 ROM leaves and qualified with the open
+        driver's rotating 32-entry RX ring.
+      </description>
+      <baseAddress>0x20104000</baseAddress>
+      <registers>
+        <register>
+          <name>RX_CONTROL</name>
+          <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. RX descriptor-walker gate and live-list append doorbell.</description>
+          <addressOffset>0x0080</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>APPEND_DESCRIPTOR_RELOAD</name>
+              <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Write one after publishing old_tail.next to make a prepared live-list append visible. Hardware clears the bit after accepting the append.</description>
+              <bitOffset>0</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>WALKER_ENABLE</name>
+              <description>SOURCE[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker.</description>
+              <bitOffset>31</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_DESCRIPTOR_BASE</name>
+          <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier.</description>
+          <addressOffset>0x0084</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>ADDRESS_LOW</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_NEXT_DESCRIPTOR</name>
+          <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE.</description>
+          <addressOffset>0x0088</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>ADDRESS_LOW</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_LAST_DESCRIPTOR</name>
+          <description>SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the last descriptor accepted by the RX walker.</description>
+          <addressOffset>0x008c</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>ADDRESS_LOW</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_DESCRIPTOR_HIGH_WINDOW</name>
+          <description>SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.</description>
+          <addressOffset>0x0c70</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>ADDRESS_HIGH</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
   </peripherals>
   <vendorExtensions>
     <openEspRadioProvenance>
@@ -2016,6 +2078,10 @@
       <source id="BLOB_LIBPHY_PHY_BASEBAND_CONFIG">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_bb_txpwr_track size 0xf4 and phy_txgain_comp_pacfg_new size 0x54</source>
       <source id="BLOB_LIBPHY_PHY_TXDC_PWDET">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_cal.o phy_txdc_cal_pwdet_init size 0x208</source>
       <source id="BLOB_LIBPHY_PHY_CHECK_RX_SAT">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_cal.o phy_check_rx_sat body, size 0x76, and relocation graph</source>
+      <source id="ROM_REV0_WDEV_APPEND_RX_BLOCKS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels, live old_tail.next publication, RX_CONTROL bit-0 reload, RX_NEXT_DESCRIPTOR terminal test and RX_DESCRIPTOR_BASE repair</source>
+      <source id="ROM_REV0_HAL_MAC_RX_GATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_enable at 0x2f8386c0 size 0x14 and hal_mac_rx_disable at 0x2f8386d4 size 0x12; set and clear RX_CONTROL bit 31</source>
+      <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
+      <source id="HIL_OPEN_RX_LIVE_APPEND_2026_07_27">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs run_connected_network on ESP32-S31 rev0, psram-code-psram-data profile, 2026-07-27; rotating 32-entry ring survived more than 7000 receives and completed open scan, WPA2, DHCP and 5/5 ICMP echo with zero loss</source>
     </openEspRadioProvenance>
   </vendorExtensions>
 </device>

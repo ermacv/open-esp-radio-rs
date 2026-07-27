@@ -4,8 +4,8 @@
 //! `migration/esp32s31-hybrid-runtime/src/wpa2_aes.rs`.
 
 use ::aes::{
+    cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit},
     Aes128,
-    cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray},
 };
 use zeroize::Zeroize;
 

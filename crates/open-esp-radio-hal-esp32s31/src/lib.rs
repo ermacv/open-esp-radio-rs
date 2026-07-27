@@ -162,6 +162,16 @@ impl<P> Radio<P, state::Powered> {
         &self.peripheral
     }
 
+    /// Borrow the platform and recovered-radio capabilities independently.
+    ///
+    /// The two mutable borrows are tied to this unique powered owner and refer
+    /// to disjoint fields, allowing a lifecycle function to coordinate an
+    /// official system PAC operation with internal Wi-Fi MMIO.
+    #[doc(hidden)]
+    pub fn parts_mut(&mut self) -> (&mut P, &mut RadioRegisters) {
+        (&mut self.peripheral, &mut self.registers)
+    }
+
     /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
     ///
     /// Espressif's `enable_phy_with_wifi_rx` lifecycle wrapper performs this

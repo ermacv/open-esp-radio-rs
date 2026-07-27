@@ -6,7 +6,7 @@ use open_esp_radio_mac_esp32s31::{
         descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
         tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
-    init::{configure_sta_link_receive_policy, initialize_promiscuous_receive},
+    init::{configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl},
     irq::{handle_mac_irq, IrqDisposition, IrqState},
     registers::{
         Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
@@ -26,7 +26,6 @@ use open_esp_radio_mac_esp32s31::{
 };
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as mac_init},
-    power::modem_syscon,
     Register32,
 };
 
@@ -69,6 +68,40 @@ impl Mmio for MockMmio {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlatformOperation {
+    EnableWifiMacClocks,
+    EnableCoexistenceClock,
+    ConfigureModemSourceClocks,
+    SetWifiMacReset(bool),
+}
+
+#[derive(Default)]
+struct MockPlatform {
+    operations: Vec<PlatformOperation>,
+}
+
+impl MacClockControl for MockPlatform {
+    fn enable_wifi_mac_clocks(&mut self) {
+        self.operations.push(PlatformOperation::EnableWifiMacClocks);
+    }
+
+    fn enable_coexistence_clock(&mut self) {
+        self.operations
+            .push(PlatformOperation::EnableCoexistenceClock);
+    }
+
+    fn configure_modem_source_clocks(&mut self) {
+        self.operations
+            .push(PlatformOperation::ConfigureModemSourceClocks);
+    }
+
+    fn set_wifi_mac_reset(&mut self, asserted: bool) {
+        self.operations
+            .push(PlatformOperation::SetWifiMacReset(asserted));
+    }
+}
+
 #[test]
 fn descriptor_words_preserve_the_recovered_geometry() {
     assert_eq!(
@@ -102,13 +135,14 @@ fn descriptor_words_preserve_the_recovered_geometry() {
 
 #[test]
 fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
+    let mut platform = MockPlatform::default();
     let mut mmio = MockMmio::default();
     mmio.set(mac_init::HANDSHAKE, 1);
-    mmio.set(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000);
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
     let access_point = [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee];
-    let outcome = initialize_promiscuous_receive(&mut mmio, 4, station, access_point).unwrap();
+    let outcome =
+        initialize_promiscuous_receive(&mut platform, &mut mmio, 4, station, access_point).unwrap();
 
     assert_eq!(outcome.handshake_samples, 0);
     assert_eq!(outcome.handshake_value, 3);
@@ -136,17 +170,15 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
     assert_eq!(
-        mmio.words.get(&modem_syscon::MODEM_RST_CONF),
-        Some(&0xa5a5_0000)
+        platform.operations,
+        [
+            PlatformOperation::EnableWifiMacClocks,
+            PlatformOperation::EnableCoexistenceClock,
+            PlatformOperation::ConfigureModemSourceClocks,
+            PlatformOperation::SetWifiMacReset(true),
+            PlatformOperation::SetWifiMacReset(false),
+        ]
     );
-    let reset_mask = modem_syscon::modem_rst_conf::RST_WIFIMAC.mask();
-    assert!(mmio.operations().windows(4).any(|operations| operations
-        == [
-            Operation::Read(modem_syscon::MODEM_RST_CONF),
-            Operation::Write(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000 | reset_mask),
-            Operation::Read(modem_syscon::MODEM_RST_CONF),
-            Operation::Write(modem_syscon::MODEM_RST_CONF, 0xa5a5_0000),
-        ]));
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
 }
 

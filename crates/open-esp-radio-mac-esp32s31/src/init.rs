@@ -88,6 +88,13 @@ fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
     modify(mmio, registers::R_4110, 0x000c_0000, 0x0008_0000);
     modify(mmio, registers::R_4048, 0x0000_01f8, 0x0000_01e0);
     modify(mmio, registers::R_4C2C, 0x0000_1000, 0x0000_1000);
+    // `hal_init_tb_tx`: keep both trigger-based transmit request modes off.
+    modify(mmio, registers::R_4E04, 0x0000_c000, 0);
+    // `hal_he_set_ersu(0)` and its `hal_he_set_ersu_ack_rate(0)` child.
+    // Although ER-SU is not used by the legacy probe request, these are common
+    // transmit defaults established by the parent before any queue can run.
+    modify(mmio, registers::R_4C7C, 0x0000_0400, 0x0000_0400);
+    mmio.write32(registers::R_4404, 0x8080_8080);
     modify(mmio, registers::R_4C80, 0x0000_0ff8, 0x0000_0be0);
 
     // HE scratch table cleared by the vendor parent.

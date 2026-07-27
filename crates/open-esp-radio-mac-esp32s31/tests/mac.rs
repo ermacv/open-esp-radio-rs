@@ -126,6 +126,9 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
     assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));
+    assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
+    assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
+    assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
 }
 

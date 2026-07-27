@@ -90,7 +90,7 @@ No active publisher for this aperture contains a raw address or volatile
 pointer.
 
 `PHY_AGC_ORACLE` localizes the register set shared by complete rev0 ROM bodies
-and two complete pinned blob parents:
+and complete pinned blob bodies:
 
 - `phy_bb_agc_reg_update` at `0x2f82860e`, size `0xa6`;
 - `phy_disable_agc` at `0x2f827460`, size `0x10`;
@@ -98,10 +98,13 @@ and two complete pinned blob parents:
 - both branches of `phy_rx_11b_opt` at `0x2f827588`, size `0xc4`;
 - `phy_agc_reg_init` at `0x2f8278d8`, size `0xd8`;
 - both branches of `phy_rfrx_sat_rst` at `0x2f828944`, size `0x42`;
+- `phy_pbus_force_mode` at `0x2f824102`, size `0x90`;
+- `phy_ant_init` at `0x2f827df4`, size `0x44`;
 - `libphy.a[phy_init.o]::phy_reg_update_new`, including complete
   `phy_set_ftm_en` and ROM `phy_wifi_agc_sat_gain` leaves;
 - `libphy.a[phy_rx_gain.o]::phy_set_rx_gain_table`, including its final two
-  gain-limit writes.
+  gain-limit writes;
+- `libphy.a[phy_reg.o]::phy_set_rx_comp_new`, size `0x28`.
 
 The internal electrical identities are not public. The SVD therefore records
 the internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
@@ -147,9 +150,26 @@ ordering.
 `PhyRxGainInitMmioBinding` all pass their existing unique register borrow
 into these safe methods. Raw access to `0x705c`, `0x7068`, `0x7094`,
 `0x7128`, `0x713c`, and the parameter word `0x08bc` is now rejected by the
-source-only audit. The multifunction `0x702c` word remains one PAC identity,
-but separate recovered PBus and RX-compensation leaves still use the
-transitional raw layer.
+source-only audit.
+
+The multifunction `0x702c` word is now fully behind that same PAC identity.
+Complete `phy_set_rx_comp_new` proves the low-byte replacement there and the
+high-byte replacement at `0x70a0`. Complete `phy_pbus_force_mode` proves its
+high-byte replacement and set/delayed-clear pulse, plus the debug/work-mode
+updates at `0x0884`, `0x088c`, and `MODEM_SYSCON.WIFI_BB_CFG`. Complete
+`phy_ant_init` proves three fresh-read updates at `0x711c`, the independent
+antenna field of shared `0x7030`, and `0x7120`. Unknown electrical meanings
+remain explicitly `UNKNOWN`; independent consumers do not create duplicate
+register identities.
+
+The safe HAL preserves the two RX-compensation writes, the PBus tail's
+high-byte/set/clear sequence, and all three antenna writes. Delay ownership
+remains in the caller state machine. TX-DC, TX-DC/PWDET, PWDET, TX calibration
+environment, RXIQ initialization, RX-gain DC, TXIQ, and RX-saturation MMIO
+bindings now require the same unique `RadioRegisters` borrow. Their former
+raw wrappers and duplicate mask helpers are removed. The source-only audit
+now rejects raw `0x0884`, `0x088c`, `0x702c`, `0x7030`, `0x70a0`, `0x711c`,
+and `0x7120` in addition to the earlier AGC addresses.
 
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent

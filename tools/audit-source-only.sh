@@ -43,12 +43,10 @@ then
     exit 1
 fi
 
-# Complete AGC-update, 11b, and post-init leaves are PAC/HAL-owned. These
-# addresses have no remaining live raw consumer; shared 0x702c/0x7030 words
-# are excluded because separately evidenced transitional leaves still use
-# them.
+# Complete PBus mode, AGC, antenna, RX-compensation, 11b and post-init leaves
+# are PAC/HAL-owned. These addresses have no remaining live raw consumer.
 if rg -n \
-    '0x2010_(08bc|7044|7048|705c|7064|7068|7094|7104|7114|7124|7128|713c|78a4|78c8|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078)' \
+    '0x2010_(0884|088c|08bc|702c|7030|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|78a4|78c8|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078)' \
     crates/open-esp-radio-phy-esp32s31/src
 then
     echo "raw PHY AGC/11b address escaped the PAC/HAL boundary" >&2

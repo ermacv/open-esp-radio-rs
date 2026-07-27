@@ -98,18 +98,18 @@ pub fn set_enabled(registers: &mut RadioRegisters, enabled: bool) {
 
 #[cfg(any(test, target_arch = "riscv32"))]
 fn set_enabled_with(io: &mut impl RegisterIo, enabled: bool) {
-    let disable = phy_agc_oracle::disable_control::DISABLE_UNKNOWN;
+    let disable = phy_agc_oracle::agc_antenna_control::AGC_DISABLE_UNKNOWN;
     if !enabled {
         io.modify(
-            phy_agc_oracle::DISABLE_CONTROL,
+            phy_agc_oracle::AGC_ANTENNA_CONTROL,
             disable.mask(),
             disable.mask(),
         );
         return;
     }
 
-    io.modify(phy_agc_oracle::DISABLE_CONTROL, disable.mask(), 0);
-    let pulse = phy_agc_oracle::agc_shared_control::ENABLE_PULSE_UNKNOWN;
+    io.modify(phy_agc_oracle::AGC_ANTENNA_CONTROL, disable.mask(), 0);
+    let pulse = phy_agc_oracle::agc_shared_control::PULSE_UNKNOWN;
     io.modify(
         phy_agc_oracle::AGC_SHARED_CONTROL,
         pulse.mask(),
@@ -176,13 +176,13 @@ fn initialize_registers_with(io: &mut impl RegisterIo, parameter_121: u8, parame
         ),
     );
 
-    let high = phy_agc_oracle::agc_shared_control::INIT_HIGH_UNKNOWN;
+    let high = phy_agc_oracle::agc_shared_control::CONTROL_HIGH_UNKNOWN;
     io.modify(
         phy_agc_oracle::AGC_SHARED_CONTROL,
         high.mask(),
         field_value(high, 0x32),
     );
-    let pulse = phy_agc_oracle::agc_shared_control::ENABLE_PULSE_UNKNOWN;
+    let pulse = phy_agc_oracle::agc_shared_control::PULSE_UNKNOWN;
     io.modify(
         phy_agc_oracle::AGC_SHARED_CONTROL,
         pulse.mask(),
@@ -195,6 +195,108 @@ fn initialize_registers_with(io: &mut impl RegisterIo, parameter_121: u8, parame
         phy_agc_oracle::AGC_INIT_HIGH_CONTROL,
         final_high.mask(),
         field_value(final_high, 0xd2),
+    );
+}
+
+/// Apply complete pinned `phy_set_rx_comp_new`.
+///
+/// The 0x28-byte `libphy.a[phy_reg.o]` body performs exactly two fresh-read
+/// field replacements, in low-then-high order, with no call, loop, wait,
+/// callback, or software-global access.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_rx_compensation(registers: &mut RadioRegisters) {
+    configure_rx_compensation_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_rx_compensation_with(io: &mut impl RegisterIo) {
+    let low = phy_agc_oracle::agc_shared_control::RX_COMPENSATION_LOW_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        low.mask(),
+        field_value(low, 0xed),
+    );
+
+    let high = phy_agc_oracle::rx_compensation_high_control::RX_COMPENSATION_HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::RX_COMPENSATION_HIGH_CONTROL,
+        high.mask(),
+        field_value(high, 0xed),
+    );
+}
+
+/// Apply the two MMIO updates after the 1 us edge in `phy_pbus_force_mode`.
+///
+/// Complete rev0 ROM first replaces the shared high byte with `0x32`, then
+/// sets the shared pulse bit using another fresh read. Delay ownership stays
+/// in the caller's async state machine.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_pbus_work_mode_pulse(registers: &mut RadioRegisters) {
+    configure_pbus_work_mode_pulse_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_pbus_work_mode_pulse_with(io: &mut impl RegisterIo) {
+    let high = phy_agc_oracle::agc_shared_control::CONTROL_HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        high.mask(),
+        field_value(high, 0x32),
+    );
+
+    let pulse = phy_agc_oracle::agc_shared_control::PULSE_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_SHARED_CONTROL,
+        pulse.mask(),
+        pulse.mask(),
+    );
+}
+
+/// Clear the shared pulse bit after the 2 us `phy_pbus_force_mode` edge.
+#[cfg(target_arch = "riscv32")]
+pub fn clear_pbus_work_mode_pulse(registers: &mut RadioRegisters) {
+    clear_pbus_work_mode_pulse_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn clear_pbus_work_mode_pulse_with(io: &mut impl RegisterIo) {
+    let pulse = phy_agc_oracle::agc_shared_control::PULSE_UNKNOWN;
+    io.modify(phy_agc_oracle::AGC_SHARED_CONTROL, pulse.mask(), 0);
+}
+
+/// Apply complete rev0 ROM `phy_ant_init`.
+///
+/// The body at `0x2f82_7df4`, size `0x44`, performs three fresh-read updates.
+/// The shared middle register retains one PAC identity with the independent
+/// AGC-disable field; unrelated bits are preserved.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_antenna(registers: &mut RadioRegisters) {
+    configure_antenna_with(registers);
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn configure_antenna_with(io: &mut impl RegisterIo) {
+    let low = phy_agc_oracle::antenna_control_0::LOW_CLEAR_UNKNOWN;
+    let bit_12 = phy_agc_oracle::antenna_control_0::BIT_12_CLEAR_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::ANTENNA_CONTROL_0,
+        low.mask() | bit_12.mask(),
+        0,
+    );
+
+    let middle = phy_agc_oracle::agc_antenna_control::ANTENNA_INIT_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::AGC_ANTENNA_CONTROL,
+        middle.mask(),
+        field_value(middle, 0x34),
+    );
+
+    let low = phy_agc_oracle::antenna_control_2::LOW_UNKNOWN;
+    let high = phy_agc_oracle::antenna_control_2::HIGH_UNKNOWN;
+    io.modify(
+        phy_agc_oracle::ANTENNA_CONTROL_2,
+        low.mask() | high.mask(),
+        field_value(low, 0x1e) | field_value(high, 0x1e),
     );
 }
 
@@ -386,7 +488,9 @@ mod tests {
     use std::{vec, vec::Vec};
 
     use super::{
-        configure_rf_rx_saturation_with, configure_rx_11b_optimization_with,
+        clear_pbus_work_mode_pulse_with, configure_antenna_with,
+        configure_pbus_work_mode_pulse_with, configure_rf_rx_saturation_with,
+        configure_rx_11b_optimization_with, configure_rx_compensation_with,
         configure_rx_gain_limits_with, initialize_registers_with, set_enabled_with,
         set_saturation_gain_with, update_baseband_registers_with, update_post_initialization_with,
         RegisterIo,
@@ -469,14 +573,14 @@ mod tests {
     #[test]
     fn enable_and_disable_keep_the_three_fresh_read_edges() {
         let mut io = FakeRegisters::default()
-            .with(phy_agc_oracle::DISABLE_CONTROL, 0x2123_4567)
+            .with(phy_agc_oracle::AGC_ANTENNA_CONTROL, 0x2123_4567)
             .with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x1000_0042);
 
         set_enabled_with(&mut io, true);
         assert_eq!(
             io.writes,
             vec![
-                (phy_agc_oracle::DISABLE_CONTROL, 0x0123_4567),
+                (phy_agc_oracle::AGC_ANTENNA_CONTROL, 0x0123_4567),
                 (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1080_0042),
                 (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1000_0042),
             ]
@@ -486,7 +590,7 @@ mod tests {
         set_enabled_with(&mut io, false);
         assert_eq!(
             io.writes,
-            vec![(phy_agc_oracle::DISABLE_CONTROL, 0x2123_4567)]
+            vec![(phy_agc_oracle::AGC_ANTENNA_CONTROL, 0x2123_4567)]
         );
     }
 
@@ -515,6 +619,59 @@ mod tests {
                 (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3292_45aa),
                 (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3212_45aa),
                 (phy_agc_oracle::AGC_INIT_HIGH_CONTROL, 0xd234_5678),
+            ]
+        );
+    }
+
+    #[test]
+    fn rx_compensation_retains_both_fresh_blob_updates() {
+        let mut io = FakeRegisters::default()
+            .with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x1234_5678)
+            .with(phy_agc_oracle::RX_COMPENSATION_HIGH_CONTROL, 0x1234_5678);
+
+        configure_rx_compensation_with(&mut io);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x1234_56ed),
+                (phy_agc_oracle::RX_COMPENSATION_HIGH_CONTROL, 0xed34_5678),
+            ]
+        );
+    }
+
+    #[test]
+    fn pbus_delayed_tail_retains_setup_set_and_clear_reads() {
+        let mut io = FakeRegisters::default().with(phy_agc_oracle::AGC_SHARED_CONTROL, 0x0012_55aa);
+
+        configure_pbus_work_mode_pulse_with(&mut io);
+        clear_pbus_work_mode_pulse_with(&mut io);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3212_55aa),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3292_55aa),
+                (phy_agc_oracle::AGC_SHARED_CONTROL, 0x3212_55aa),
+            ]
+        );
+    }
+
+    #[test]
+    fn antenna_initialization_preserves_the_three_rom_updates() {
+        let mut io = FakeRegisters::default()
+            .with(phy_agc_oracle::ANTENNA_CONTROL_0, 0xa5a5_5a5a)
+            .with(phy_agc_oracle::AGC_ANTENNA_CONTROL, 0xa5a5_5a5a)
+            .with(phy_agc_oracle::ANTENNA_CONTROL_2, 0xa5a5_5a5a);
+
+        configure_antenna_with(&mut io);
+
+        assert_eq!(
+            io.writes,
+            vec![
+                (phy_agc_oracle::ANTENNA_CONTROL_0, 0xa5a5_4800),
+                (phy_agc_oracle::AGC_ANTENNA_CONTROL, 0xa5a5_a25a),
+                (phy_agc_oracle::ANTENNA_CONTROL_2, 0x1ea5_1e5a),
             ]
         );
     }

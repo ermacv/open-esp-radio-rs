@@ -732,14 +732,17 @@ impl PhyTxDcMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxDcCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxDcCompletion {
         match self.action {
             PhyTxDcAction::ConfigurePbusDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyTxDcCompletion::PbusDebugModeConfigured
             }
             PhyTxDcAction::ConfigureTxClock => {
-                crate::radio_hal::configure_phy_tx_clock(true);
+                open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, true);
                 PhyTxDcCompletion::TxClockConfigured
             }
             PhyTxDcAction::ConfigureTone {
@@ -779,14 +782,14 @@ impl PhyTxDcMmioBinding {
                 PhyTxDcCompletion::MeasurementCleared
             }
             PhyTxDcAction::ConfigurePbusWorkMode => PhyTxDcCompletion::PbusWorkModeConfigured {
-                settle_required: crate::radio_hal::configure_phy_pbus_work_mode(),
+                settle_required: open_esp_radio_hal_esp32s31::pbus::configure_work_mode(registers),
             },
             PhyTxDcAction::ConfigurePbusWorkModePulse => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers);
                 PhyTxDcCompletion::PbusWorkModePulseConfigured
             }
             PhyTxDcAction::ClearPbusWorkModePulse => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers);
                 PhyTxDcCompletion::PbusWorkModePulseCleared
             }
             _ => unreachable!(),

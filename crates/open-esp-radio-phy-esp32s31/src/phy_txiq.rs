@@ -1636,14 +1636,17 @@ impl PhyTxIqMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxIqCalibrationCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxIqCalibrationCompletion {
         match self.action {
             PhyTxIqCalibrationAction::ConfigureCorrection { begin } => {
                 crate::radio_hal::configure_phy_txiq_correction(begin);
                 PhyTxIqCalibrationCompletion::CorrectionConfigured { begin }
             }
             PhyTxIqCalibrationAction::ConfigurePbusDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyTxIqCalibrationCompletion::PbusDebugModeConfigured
             }
             PhyTxIqCalibrationAction::CaptureToneControl { address } => {

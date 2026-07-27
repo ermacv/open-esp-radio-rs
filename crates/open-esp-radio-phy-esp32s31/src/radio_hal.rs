@@ -37,9 +37,7 @@ const WIFI_MAC_REGDMA_LINK_MASK: u32 = 0x001e_0000;
 const WIFI_MAC_ACTIVE_REGDMA_LINK: u32 = 4;
 const MAC_INTERFACE_COUNT: u32 = 4;
 const MAC_RX_POLICY_QUEUE_COUNT: u32 = 3;
-const PHY_RX_COMP_LOW_ADDRESS: usize = 0x2010_702c;
 const PHY_DC_MEMORY_CONTROL_ADDRESS: usize = 0x2010_703c;
-const PHY_RX_COMP_HIGH_ADDRESS: usize = 0x2010_70a0;
 const PHY_DC_MEMORY_CLEAR_BIT: u32 = 1 << 20;
 const PHY_BBPLL_CAL_CONTROL_ADDRESS: usize = 0x2010_f818;
 const PHY_FE_BB_ENABLE_MASK: u32 =
@@ -48,8 +46,6 @@ const PHY_CALIBRATION_CLOCK_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
 const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
     | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
-const PHY_PBUS_CONTROL_ADDRESS: usize = 0x2010_0884;
-const PHY_PBUS_MODE_ADDRESS: usize = 0x2010_088c;
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
 const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_0894;
 const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
@@ -73,8 +69,6 @@ const PHY_IQ_EST_Q_ACCUMULATOR_ADDRESS: usize = 0x2010_0468;
 const PHY_IQ_EST_POWER_ACCUMULATOR_ADDRESS: usize = 0x2010_046c;
 const PHY_IQ_EST_READY_ADDRESS: usize = 0x2010_047c;
 const PHY_IQ_EST_ACTIVITY_ADDRESS: usize = 0x2010_08d0;
-const PHY_PBUS_SETTLE_CONDITION_ADDRESS: usize = 0x2010_9c18;
-const PHY_PBUS_WORK_MODE_PULSE_ADDRESS: usize = 0x2010_702c;
 const PHY_SDM_CYCLE_COUNTER_ADDRESS: usize = 0x2010_d800;
 const PHY_I2C_CLOCK_SELECTION_0_ADDRESS: usize = 0x2010_f824;
 const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
@@ -123,9 +117,6 @@ const PHY_BT_FILTER_CONTROL_ADDRESS: usize = 0x2010_0874;
 const PHY_NOISE_FLOOR_CONTROL_ADDRESS: usize = 0x2010_7018;
 const PHY_NOISE_FLOOR_ENABLE_0_ADDRESS: usize = 0x2010_7c44;
 const PHY_NOISE_FLOOR_ENABLE_1_ADDRESS: usize = 0x2010_7c50;
-const PHY_ANTENNA_CONTROL_0_ADDRESS: usize = 0x2010_711c;
-const PHY_ANTENNA_CONTROL_1_ADDRESS: usize = 0x2010_7030;
-const PHY_ANTENNA_CONTROL_2_ADDRESS: usize = 0x2010_7120;
 const PHY_CHANNEL_TX_OFFSET_ADDRESS: usize = 0x2010_4400;
 const PHY_CHANNEL_BSS_CBW_DIG_ADDRESS: usize = 0x2010_9c18;
 const PHY_CHANNEL_FBW_ADDRESS: usize = 0x2010_0874;
@@ -139,11 +130,8 @@ const PHY_REGISTER_XTAL_CONTROL_ADDRESS: usize = 0x2010_f028;
 const PHY_REGISTER_FORCE_TXRX_RETAIN_MASK: u32 = 0xffff_f0ff;
 const PHY_REGISTER_I2C_MASTER_BUSY_BIT: u32 = 1 << 25;
 const PHY_REGISTER_I2C_MASTER_RESET_BIT: u32 = 1 << 26;
-const PHY_PBUS_FORCE_MODE_BIT: u32 = 1 << 26;
 const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
 const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
-const PHY_PBUS_SETTLE_CONDITION_BIT: u32 = 1 << 1;
-const PHY_PBUS_WORK_MODE_PULSE_BIT: u32 = 1 << 23;
 const PHY_IQ_EST_CONTROL_FIELD_MASK: u32 = 0x0001_fffc;
 const PHY_IQ_EST_START_BIT: u32 = 1 << 0;
 const PHY_IQ_EST_MEASUREMENT_BIT: u32 = 1 << 1;
@@ -422,7 +410,8 @@ pub(crate) fn enable_phy_agc(registers: &mut RadioRegisters) {
 
 /// Select the exact AGC state used by `phy_chip_set_chan`.
 ///
-/// Complete ROM `phy_disable_agc` only sets bit 29 of `0x2010_7030`.
+/// Complete ROM `phy_disable_agc` only sets the PAC's recovered AGC-disable
+/// field in the shared AGC/antenna control word.
 /// Re-enabling uses the already recovered three-write `phy_enable_agc`
 /// sequence. Both branches are finite and touch no software state.
 #[cfg(target_arch = "riscv32")]
@@ -654,17 +643,6 @@ pub(crate) unsafe fn configure_phy_noise_floor_auto() {
     set_register_bits(PHY_NOISE_FLOOR_ENABLE_1_ADDRESS, 1);
 }
 
-/// Complete rev0 ROM `phy_ant_init`, size `0x44`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_antenna() {
-    let control0 = PHY_ANTENNA_CONTROL_0_ADDRESS as *mut u32;
-    control0.write_volatile(with_phy_antenna_control0(control0.read_volatile()));
-    let control1 = PHY_ANTENNA_CONTROL_1_ADDRESS as *mut u32;
-    control1.write_volatile(with_phy_antenna_control1(control1.read_volatile()));
-    let control2 = PHY_ANTENNA_CONTROL_2_ADDRESS as *mut u32;
-    control2.write_volatile(with_phy_antenna_control2(control2.read_volatile()));
-}
-
 /// Complete rev0 ROM `phy_bt_filter_reg`, size `0x34`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn configure_phy_bt_filter() {
@@ -741,7 +719,7 @@ pub(crate) unsafe fn configure_phy_registers(
     configure_phy_rx_11b_optimization(registers, true);
     configure_phy_tx_power_control_background();
     configure_phy_noise_floor_auto();
-    configure_phy_antenna();
+    open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers);
     configure_phy_bt_filter();
     enable_phy_mac_baseband();
 }
@@ -897,22 +875,6 @@ const fn with_bbpll_calibration(value: u32, enable: u32) -> u32 {
     } else {
         value | 0x08
     }
-}
-
-const fn with_phy_pbus_debug_mode(value: u32) -> u32 {
-    value & !PHY_PBUS_FORCE_MODE_BIT
-}
-
-const fn with_phy_pbus_debug_control(value: u32) -> u32 {
-    value | 1
-}
-
-const fn with_phy_pbus_work_mode(value: u32) -> u32 {
-    value | PHY_PBUS_FORCE_MODE_BIT
-}
-
-const fn with_phy_pbus_work_control(value: u32) -> u32 {
-    value & !1
 }
 
 const fn with_phy_pbus_force_test(value: u32, selector: u8, path: u8, test_value: u16) -> u32 {
@@ -1101,18 +1063,6 @@ const fn with_phy_iq_est_enable(value: u32, bit: u32, enabled: bool) -> u32 {
     }
 }
 
-const fn with_phy_pbus_work_mode_pulse_setup(value: u32) -> u32 {
-    (value & 0x00ff_ffff) | 0x3200_0000
-}
-
-const fn with_phy_pbus_work_mode_pulse(value: u32) -> u32 {
-    value | PHY_PBUS_WORK_MODE_PULSE_BIT
-}
-
-const fn without_phy_pbus_work_mode_pulse(value: u32) -> u32 {
-    value & !PHY_PBUS_WORK_MODE_PULSE_BIT
-}
-
 const fn with_phy_i2c_clock_selection_high(value: u32, selection: u32) -> u32 {
     (value & !0x0000_07c0) | ((selection << 4) & 0x0000_07c0)
 }
@@ -1206,14 +1156,6 @@ const fn with_register_field(value: u32, mask: u32, field: u32) -> u32 {
     (value & !mask) | (field & mask)
 }
 
-const fn with_phy_rx_comp_low(value: u32) -> u32 {
-    (value & 0xffff_ff00) | 0xed
-}
-
-const fn with_phy_rx_comp_high(value: u32) -> u32 {
-    (value & 0x00ff_ffff) | 0xed00_0000
-}
-
 const fn tx_baseband_gain_index(gain: u16) -> usize {
     match gain {
         0x0080 => 1,
@@ -1272,18 +1214,6 @@ fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: 
 
 const fn with_phy_baseband_watchdog(value: u32) -> u32 {
     (value & 0xbfff_0000) | 0x4000_00aa
-}
-
-const fn with_phy_antenna_control0(value: u32) -> u32 {
-    value & 0xffff_e800
-}
-
-const fn with_phy_antenna_control1(value: u32) -> u32 {
-    (value & 0xfffc_07ff) | 0x0001_a000
-}
-
-const fn with_phy_antenna_control2(value: u32) -> u32 {
-    (value & 0x00ff_00ff) | 0x1e00_1e00
 }
 
 /// Read one of the two MAC TSF domains through the hardware latch.
@@ -1545,25 +1475,6 @@ pub(crate) unsafe fn restart_mac_without_power_save() {
     ));
 }
 
-/// Program the two recovered PHY RX compensation fields.
-///
-/// Reference: pinned `libphy.a[phy_reg.o]::phy_set_rx_comp_new`, size `0x28`.
-/// The complete body replaces bits 7:0 of `0x2010_702c` and bits 31:24 of
-/// `0x2010_70a0` with `0xed`, in that order. The field meaning is not yet
-/// known; this function intentionally documents only the evidenced register
-/// transaction. It contains no call, loop, wait, allocation, or data-symbol
-/// access.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_phy_set_rx_comp_new() {
-    let low = PHY_RX_COMP_LOW_ADDRESS as *mut u32;
-    low.write_volatile(with_phy_rx_comp_low(low.read_volatile()));
-
-    let high = PHY_RX_COMP_HIGH_ADDRESS as *mut u32;
-    high.write_volatile(with_phy_rx_comp_high(high.read_volatile()));
-}
-
 /// Pulse the recovered PHY DC-memory clear control bit.
 ///
 /// Reference: pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`.
@@ -1656,20 +1567,6 @@ pub(crate) fn set_phy_bbpll_calibration(registers: &mut RadioRegisters, enabled:
     }
 }
 
-/// Enter the exact debug-mode prefix of rev0 ROM `phy_pbus_clear_reg`.
-///
-/// The complete `phy_pbus_debugmode -> phy_pbus_force_mode(1)` path clears
-/// bit 26 at `0x2010_088c`, then sets bit zero at `0x2010_0884`. It contains
-/// no delay or readiness loop.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_pbus_debug_mode() {
-    let mode = PHY_PBUS_MODE_ADDRESS as *mut u32;
-    mode.write_volatile(with_phy_pbus_debug_mode(mode.read_volatile()));
-
-    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_pbus_debug_control(control.read_volatile()));
-}
-
 /// Read the exact PBus field consumed by RX-DCO calibration.
 ///
 /// The rev0 ROM chain
@@ -1681,38 +1578,6 @@ pub(crate) unsafe fn configure_phy_pbus_debug_mode() {
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn read_phy_pbus_rx_dco_value() -> u16 {
     phy_pbus_rx_dco_read_value((PHY_PBUS_RX_DCO_READ_ADDRESS as *const u32).read_volatile())
-}
-
-/// Enter PBus work mode and return the one sampled settle-condition bit.
-///
-/// The returned boolean selects the ROM's optional 1 us / pulse / 2 us tail;
-/// this leaf itself never delays or samples twice.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_pbus_work_mode() -> bool {
-    let control = PHY_PBUS_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_pbus_work_control(control.read_volatile()));
-
-    let mode = PHY_PBUS_MODE_ADDRESS as *mut u32;
-    mode.write_volatile(with_phy_pbus_work_mode(mode.read_volatile()));
-
-    (PHY_PBUS_SETTLE_CONDITION_ADDRESS as *const u32).read_volatile()
-        & PHY_PBUS_SETTLE_CONDITION_BIT
-        != 0
-}
-
-/// Apply the finite work-mode pulse setup after the async 1 us timer edge.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_pbus_work_mode_pulse() {
-    let pulse = PHY_PBUS_WORK_MODE_PULSE_ADDRESS as *mut u32;
-    pulse.write_volatile(with_phy_pbus_work_mode_pulse_setup(pulse.read_volatile()));
-    pulse.write_volatile(with_phy_pbus_work_mode_pulse(pulse.read_volatile()));
-}
-
-/// Clear the work-mode pulse bit after the async 2 us timer edge.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn clear_phy_pbus_work_mode_pulse() {
-    let pulse = PHY_PBUS_WORK_MODE_PULSE_ADDRESS as *mut u32;
-    pulse.write_volatile(without_phy_pbus_work_mode_pulse(pulse.read_volatile()));
 }
 
 /// Sample the temperature-sensor code exactly once.
@@ -2620,7 +2485,6 @@ mod tests {
         tx_queue_is_valid, with_bbpll_calibration, with_mac_rx_control_address_policy,
         with_mac_rx_control_policy, with_mac_rx_management_policy, with_mac_rx_mode,
         with_mac_rx_unique_bssid_policy, with_phy_adc_rate_high, with_phy_adc_rate_low,
-        with_phy_antenna_control0, with_phy_antenna_control1, with_phy_antenna_control2,
         with_phy_baseband_watchdog, with_phy_channel_bss_cbw_digital, with_phy_channel_fbw_second,
         with_phy_channel_fbw_third, with_phy_channel_frequency_index,
         with_phy_channel_frequency_switch, with_phy_channel_nrx_frequency,
@@ -2631,22 +2495,18 @@ mod tests {
         with_phy_i2c_clock_selection_high, with_phy_i2c_clock_selection_low,
         with_phy_i2c_master_register_enable, with_phy_i2c_master_register_mode,
         with_phy_iq_est_config, with_phy_iq_est_control, with_phy_iq_est_enable,
-        with_phy_iq_est_mode, with_phy_pbus_debug_control, with_phy_pbus_debug_mode,
-        with_phy_pbus_force_test, with_phy_pbus_work_control, with_phy_pbus_work_mode,
-        with_phy_pbus_work_mode_pulse, with_phy_pbus_work_mode_pulse_setup,
-        with_phy_power_detector_aux_mode, with_phy_power_detector_high_field,
-        with_phy_power_detector_low_field, with_phy_rx_clock, with_phy_rx_comp_high,
-        with_phy_rx_comp_low, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
-        with_phy_rxiq_phase, with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin,
-        with_phy_tone_path, with_phy_tone_path0_selector, with_phy_tone_path1_selector,
-        with_phy_tx_clock, with_phy_tx_gain_compensation_byte1,
-        with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
-        with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
-        with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
-        with_register_field, with_restored_phy_rx_dco_control_field, with_tx_cca,
-        with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
-        without_phy_channel_fbw_first, without_phy_fe_txrx_reset,
-        without_phy_frequency_reset_fields, without_phy_pbus_work_mode_pulse,
+        with_phy_iq_est_mode, with_phy_pbus_force_test, with_phy_power_detector_aux_mode,
+        with_phy_power_detector_high_field, with_phy_power_detector_low_field, with_phy_rx_clock,
+        with_phy_rxiq_calibration_mode, with_phy_rxiq_gain, with_phy_rxiq_phase,
+        with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin, with_phy_tone_path,
+        with_phy_tone_path0_selector, with_phy_tone_path1_selector, with_phy_tx_clock,
+        with_phy_tx_gain_compensation_byte1, with_phy_tx_gain_compensation_byte2,
+        with_phy_txiq_calibration_complete, with_phy_txiq_calibration_enabled,
+        with_phy_txiq_first_polarity, with_phy_txiq_gain, with_phy_txiq_phase,
+        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
+        with_restored_phy_rx_dco_control_field, with_tx_cca, with_wifi_mac_regdma_link,
+        without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_channel_fbw_first,
+        without_phy_fe_txrx_reset, without_phy_frequency_reset_fields,
         without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
         without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
         without_tx_queue_valid, PhyChannelCbwFields, PHY_IQ_EST_MEASUREMENT_BIT,
@@ -2816,14 +2676,6 @@ mod tests {
     }
 
     #[test]
-    fn phy_rx_comp_fields_match_the_pinned_leaf() {
-        assert_eq!(with_phy_rx_comp_low(0x1234_5678), 0x1234_56ed);
-        assert_eq!(with_phy_rx_comp_low(u32::MAX), 0xffff_ffed);
-        assert_eq!(with_phy_rx_comp_high(0x1234_5678), 0xed34_5678);
-        assert_eq!(with_phy_rx_comp_high(u32::MAX), 0xedff_ffff);
-    }
-
-    #[test]
     fn phy_fe_bb_clock_mask_matches_the_pinned_leaf() {
         assert_eq!(without_fe_bb_clock_enable(u32::MAX), 0xffff_fffc);
         assert_eq!(without_fe_bb_clock_enable(0x1234_567b), 0x1234_5678);
@@ -2839,11 +2691,6 @@ mod tests {
 
     #[test]
     fn phy_pbus_masks_and_command_encoding_match_complete_rom_leaves() {
-        assert_eq!(with_phy_pbus_debug_mode(u32::MAX), 0xfbff_ffff);
-        assert_eq!(with_phy_pbus_debug_control(0), 1);
-        assert_eq!(with_phy_pbus_work_control(u32::MAX), 0xffff_fffe);
-        assert_eq!(with_phy_pbus_work_mode(0), 0x0400_0000);
-
         assert_eq!(with_phy_pbus_force_test(0, 4, 1, 0), 0x0000_8012);
         assert_eq!(with_phy_pbus_force_test(u32::MAX, 3, 2, 0x100), 0xffff_400f);
         assert!(!phy_pbus_is_busy(0x7fff_ffff));
@@ -2865,9 +2712,6 @@ mod tests {
         assert_eq!(phy_pbus_read_shift(2, 0), 18);
         assert_eq!(phy_pbus_read_shift(2, 1), 0);
 
-        assert_eq!(with_phy_pbus_work_mode_pulse_setup(u32::MAX), 0x32ff_ffff);
-        assert_eq!(with_phy_pbus_work_mode_pulse(0), 0x0080_0000);
-        assert_eq!(without_phy_pbus_work_mode_pulse(u32::MAX), 0xff7f_ffff);
         assert_eq!(without_phy_rx_dco_control_field(0x12ff_5678), 0x123f_5678);
         assert_eq!(
             with_restored_phy_rx_dco_control_field(0xffff_ffff, 0x0040_0000),
@@ -3154,12 +2998,9 @@ mod tests {
     }
 
     #[test]
-    fn phy_reg_init_small_leaf_masks_match_the_rom_bodies() {
+    fn phy_baseband_watchdog_mask_matches_the_rom_body() {
         let initial = 0xa5a5_5a5a;
         assert_eq!(with_phy_baseband_watchdog(initial), 0xe5a5_00aa);
-        assert_eq!(with_phy_antenna_control0(initial), 0xa5a5_4800);
-        assert_eq!(with_phy_antenna_control1(initial), 0xa5a5_a25a);
-        assert_eq!(with_phy_antenna_control2(initial), 0x1ea5_1e5a);
     }
 
     #[test]

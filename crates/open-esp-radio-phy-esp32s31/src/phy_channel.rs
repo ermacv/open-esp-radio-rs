@@ -854,7 +854,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
             PhyChipChannelAction::ConfigureRxCompensation { pass } => {
-                crate::radio_hal::wifi_strict_phy_set_rx_comp_new();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_rx_compensation(registers);
                 PhyChipChannelCompletion::RxCompensationConfigured { pass }
             }
             PhyChipChannelAction::PublishTxGain(image) => {

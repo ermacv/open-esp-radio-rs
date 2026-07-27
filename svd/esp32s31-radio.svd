@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.5</version>
+  <version>0.6</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
     Unknown fields are omitted; OPAQUE and UNKNOWN names describe
@@ -811,10 +811,12 @@
     <peripheral>
       <name>PHY_AGC_ORACLE</name>
       <description>
-        SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+        SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
         CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC,
-        post-initialization and 11b-control registers recovered from complete,
-        finite rev0 ROM/blob bodies. Names describe their proven operation
+        PBus-pulse, antenna, RX-compensation, post-initialization and
+        11b-control registers recovered from complete, finite rev0 ROM/blob
+        bodies. One physical register has one identity even when independent
+        bodies prove different fields. Names describe their proven operation
         role, not an unevidenced electrical identity.
       </description>
       <baseAddress>0x20100000</baseAddress>
@@ -838,33 +840,43 @@
         </register>
         <register>
           <name>AGC_SHARED_CONTROL</name>
-          <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, and the final limit tail of phy_set_rx_gain_table.</description>
+          <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.</description>
           <addressOffset>0x702c</addressOffset><size>32</size><access>read-write</access>
           <fields>
+            <field>
+              <name>RX_COMPENSATION_LOW_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0.</description>
+              <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+            </field>
             <field>
               <name>RX_GAIN_INDEX_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication.</description>
               <bitOffset>8</bitOffset><bitWidth>7</bitWidth>
             </field>
             <field>
-              <name>ENABLE_PULSE_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is pulsed by complete phy_enable_agc.</description>
+              <name>PULSE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode.</description>
               <bitOffset>23</bitOffset><bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_HIGH_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init writes 0x32 into bits 31:24 before pulsing bit 23.</description>
+              <name>CONTROL_HIGH_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23.</description>
               <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>DISABLE_CONTROL</name>
-          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_disable_agc sets bit 29; complete phy_enable_agc clears it.</description>
+          <name>AGC_ANTENNA_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated independently by complete AGC enable/disable and antenna initialization bodies.</description>
           <addressOffset>0x7030</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field>
-              <name>DISABLE_UNKNOWN</name>
+              <name>ANTENNA_INIT_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x34 into bits 17:11.</description>
+              <bitOffset>11</bitOffset><bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>AGC_DISABLE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Instruction-exact AGC disable/enable gate.</description>
               <bitOffset>29</bitOffset><bitWidth>1</bitWidth>
             </field>
@@ -952,6 +964,18 @@
           </fields>
         </register>
         <register>
+          <name>RX_COMPENSATION_HIGH_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new performs its second fresh-read update here.</description>
+          <addressOffset>0x70a0</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>RX_COMPENSATION_HIGH_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes 0xed into bits 31:24.</description>
+              <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
           <name>RX_11B_WINDOW_CONTROL</name>
           <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field with independently evidenced values.</description>
           <addressOffset>0x7104</addressOffset><size>32</size><access>read-write</access>
@@ -967,6 +991,40 @@
           <name>SATURATION_GAIN_HIGH</name>
           <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-from-symbols]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here second.</description>
           <addressOffset>0x7114</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>ANTENNA_CONTROL_0</name>
+          <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups.</description>
+          <addressOffset>0x711c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_CLEAR_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init clears bits 10:0.</description>
+              <bitOffset>0</bitOffset><bitWidth>11</bitWidth>
+            </field>
+            <field>
+              <name>BIT_12_CLEAR_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init independently clears bit 12.</description>
+              <bitOffset>12</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ANTENNA_CONTROL_2</name>
+          <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Third fresh-read update of complete phy_ant_init writes the same value into two separated bytes.</description>
+          <addressOffset>0x7120</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x1e into bits 15:8.</description>
+              <bitOffset>8</bitOffset><bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x1e into bits 31:24.</description>
+              <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>RX_11B_PATH_CONTROL_1</name>
@@ -1175,6 +1233,7 @@
       <source id="ROM_REV0_PHY_SAVE_PBUS_REG">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_save_pbus_reg at 0x2f824602 size 0x32</source>
       <source id="ROM_REV0_PHY_WRITE_GAIN_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_gain_mem at 0x2f8274f0 size 0x2a</source>
       <source id="ROM_REV0_PHY_AGC">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_disable_agc at 0x2f827460 size 0x10, phy_enable_agc at 0x2f827470 size 0x28, phy_rx_11b_opt at 0x2f827588 size 0xc4, phy_agc_reg_init at 0x2f8278d8 size 0xd8, phy_bb_agc_reg_update at 0x2f82860e size 0xa6 and phy_rfrx_sat_rst at 0x2f828944 size 0x42</source>
+      <source id="ROM_REV0_PHY_ANT_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_ant_init at 0x2f827df4 size 0x44</source>
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
@@ -1183,6 +1242,7 @@
       <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body</source>
       <source id="BLOB_LIBPHY_PHY_REG_UPDATE_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o phy_reg_update_new body, complete phy_reg.o phy_set_ftm_en tail and complete rev0 ROM phy_wifi_agc_sat_gain at 0x2f827db0 size 0x0c</source>
       <source id="BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_gain.o phy_set_rx_gain_table body, including the final two register limit writes at offsets 0x1fe through 0x246</source>
+      <source id="BLOB_LIBPHY_PHY_SET_RX_COMP_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_set_rx_comp_new body, size 0x28</source>
       <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
       <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>
     </openEspRadioProvenance>

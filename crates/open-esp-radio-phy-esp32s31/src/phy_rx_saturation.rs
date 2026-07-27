@@ -280,14 +280,17 @@ impl PhyRxSaturationMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxSaturationCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxSaturationCompletion {
         match self.action {
             PhyRxSaturationAction::ConfigureDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyRxSaturationCompletion::DebugModeConfigured
             }
             PhyRxSaturationAction::ConfigureWorkMode => {
-                let _ = crate::radio_hal::configure_phy_pbus_work_mode();
+                let _ = open_esp_radio_hal_esp32s31::pbus::configure_work_mode(registers);
                 PhyRxSaturationCompletion::WorkModeConfigured
             }
             _ => unreachable!(),

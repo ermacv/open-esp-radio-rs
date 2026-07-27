@@ -1904,10 +1904,10 @@ impl PhyColdMmioBinding {
                 open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers)
             }
             PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::ConfigureWorkModePulse) => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse()
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers)
             }
             PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::ClearWorkModePulse) => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse()
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers)
             }
             PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection } => {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_clock_selection(
@@ -2037,10 +2037,10 @@ impl PhyColdMmioBinding {
             )) => open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, enabled),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigurePbusWorkModePulse),
-            )) => crate::radio_hal::configure_phy_pbus_work_mode_pulse(),
+            )) => open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ClearPbusWorkModePulse),
-            )) => crate::radio_hal::clear_phy_pbus_work_mode_pulse(),
+            )) => open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers),
             _ => return Err(PhyColdLoweringError::UnsupportedAction),
         }
         self.into_completion()

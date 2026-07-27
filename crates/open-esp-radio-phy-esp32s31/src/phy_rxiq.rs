@@ -2409,14 +2409,17 @@ impl PhyRxIqInitMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxIqInitCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxIqInitCompletion {
         match self.action {
             PhyRxIqInitAction::ConfigureRootStatus => {
                 crate::radio_hal::configure_phy_rxiq_root_status();
                 PhyRxIqInitCompletion::RootStatusConfigured
             }
             PhyRxIqInitAction::ConfigurePbusDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyRxIqInitCompletion::PbusDebugModeConfigured
             }
             PhyRxIqInitAction::ConfigureCorrection { begin } => {
@@ -2425,15 +2428,17 @@ impl PhyRxIqInitMmioBinding {
             }
             PhyRxIqInitAction::ConfigurePbusWorkMode => {
                 PhyRxIqInitCompletion::PbusWorkModeConfigured {
-                    settle_required: crate::radio_hal::configure_phy_pbus_work_mode(),
+                    settle_required: open_esp_radio_hal_esp32s31::pbus::configure_work_mode(
+                        registers,
+                    ),
                 }
             }
             PhyRxIqInitAction::ConfigurePbusWorkModePulse => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers);
                 PhyRxIqInitCompletion::PbusWorkModePulseConfigured
             }
             PhyRxIqInitAction::ClearPbusWorkModePulse => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers);
                 PhyRxIqInitCompletion::PbusWorkModePulseCleared
             }
             _ => unreachable!(),

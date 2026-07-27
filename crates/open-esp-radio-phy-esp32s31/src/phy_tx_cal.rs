@@ -1491,14 +1491,17 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxCalibrationEnvironmentCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxCalibrationEnvironmentCompletion {
         match self.action {
             PhyTxCalibrationEnvironmentAction::ConfigurePbusDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyTxCalibrationEnvironmentCompletion::PbusDebugModeConfigured
             }
             PhyTxCalibrationEnvironmentAction::ConfigureTxClock { enabled } => {
-                crate::radio_hal::configure_phy_tx_clock(enabled);
+                open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, enabled);
                 PhyTxCalibrationEnvironmentCompletion::TxClockConfigured { enabled }
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePowerDetector => {
@@ -1515,15 +1518,17 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePbusWorkMode => {
                 PhyTxCalibrationEnvironmentCompletion::PbusWorkModeConfigured {
-                    settle_required: crate::radio_hal::configure_phy_pbus_work_mode(),
+                    settle_required: open_esp_radio_hal_esp32s31::pbus::configure_work_mode(
+                        registers,
+                    ),
                 }
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePbusWorkModePulse => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers);
                 PhyTxCalibrationEnvironmentCompletion::PbusWorkModePulseConfigured
             }
             PhyTxCalibrationEnvironmentAction::ClearPbusWorkModePulse => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers);
                 PhyTxCalibrationEnvironmentCompletion::PbusWorkModePulseCleared
             }
             _ => unreachable!(),

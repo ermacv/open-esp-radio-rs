@@ -1813,18 +1813,23 @@ pub mod phy_i2c_command_ram {
     }
 }
 
-/// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
-/// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
-/// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names describe
-/// their proven operation role, not an unevidenced electrical identity.
+///
+/// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+/// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, PBus-pulse, antenna,
+/// RX-compensation, post-initialization and 11b-control registers recovered from complete,
+/// finite rev0 ROM/blob bodies. One physical register has one identity even when independent
+/// bodies prove different fields. Names describe their proven operation role, not an
+/// unevidenced electrical identity.
 pub mod phy_agc_oracle {
     use crate::{Register32, RegisterAccess};
 
     /// Peripheral base address.
-    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, post-initialization and
-    /// 11b-control registers recovered from complete, finite rev0 ROM/blob bodies. Names
-    /// describe their proven operation role, not an unevidenced electrical identity.
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_ANT_INIT,BLOB_LIBPHY_PHY_REG_UPDATE_NEW,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY AGC, PBus-pulse, antenna,
+    /// RX-compensation, post-initialization and 11b-control registers recovered from complete,
+    /// finite rev0 ROM/blob bodies. One physical register has one identity even when
+    /// independent bodies prove different fields. Names describe their proven operation role,
+    /// not an unevidenced electrical identity.
     pub const BASE: usize = 0x20100000;
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -1846,46 +1851,60 @@ pub mod phy_agc_oracle {
         pub const PARAMETER_120_OFFSET_UNKNOWN: Field32 = Field32::new(12, 8);
     }
 
-    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    ///
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
-    /// phy_agc_reg_init, phy_enable_agc, and the final limit tail of phy_set_rx_gain_table.
+    /// phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the
+    /// final limit tail of phy_set_rx_gain_table.
     pub const AGC_SHARED_CONTROL: Register32 =
         Register32::described(0x2010702c, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`AGC_SHARED_CONTROL`].
-    /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated by complete
-    /// phy_agc_reg_init, phy_enable_agc, and the final limit tail of phy_set_rx_gain_table.
+    /// phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the
+    /// final limit tail of phy_set_rx_gain_table.
     pub mod agc_shared_control {
         use crate::Field32;
 
+        /// SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes
+        /// 0xed into bits 7:0.
+        pub const RX_COMPENSATION_LOW_UNKNOWN: Field32 = Field32::new(0, 8);
         /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE];
         /// CONFIDENCE[instruction-exact-semantics-unknown]. Bits 14:8 receive parameter byte
         /// 0x121 during AGC initialization and the final Wi-Fi RX gain index after table
         /// publication.
         pub const RX_GAIN_INDEX_UNKNOWN: Field32 = Field32::new(8, 7);
-        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is
-        /// pulsed by complete phy_enable_agc.
-        pub const ENABLE_PULSE_UNKNOWN: Field32 = Field32::new(23, 1);
-        /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-        /// phy_agc_reg_init writes 0x32 into bits 31:24 before pulsing bit 23.
-        pub const INIT_HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
+        /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is pulsed by complete
+        /// phy_enable_agc and by the delayed tail of phy_pbus_force_mode.
+        pub const PULSE_UNKNOWN: Field32 = Field32::new(23, 1);
+        /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init and the
+        /// delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23.
+        pub const CONTROL_HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
     }
 
-    /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
-    /// phy_disable_agc sets bit 29; complete phy_enable_agc clears it.
-    pub const DISABLE_CONTROL: Register32 =
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated independently by
+    /// complete AGC enable/disable and antenna initialization bodies.
+    pub const AGC_ANTENNA_CONTROL: Register32 =
         Register32::described(0x20107030, RegisterAccess::ReadWrite, None);
 
-    /// Recovered fields of [`DISABLE_CONTROL`]. SOURCE[ROM_REV0_PHY_AGC];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_disable_agc sets bit 29;
-    /// complete phy_enable_agc clears it.
-    pub mod disable_control {
+    /// Recovered fields of [`AGC_ANTENNA_CONTROL`].
+    /// SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Shared word updated independently by
+    /// complete AGC enable/disable and antenna initialization bodies.
+    pub mod agc_antenna_control {
         use crate::Field32;
 
+        /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_ant_init writes 0x34 into bits 17:11.
+        pub const ANTENNA_INIT_UNKNOWN: Field32 = Field32::new(11, 7);
         /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown].
         /// Instruction-exact AGC disable/enable gate.
-        pub const DISABLE_UNKNOWN: Field32 = Field32::new(29, 1);
+        pub const AGC_DISABLE_UNKNOWN: Field32 = Field32::new(29, 1);
     }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
@@ -1976,6 +1995,25 @@ pub mod phy_agc_oracle {
         pub const PARAMETER_MINUS_ONE_UNKNOWN: Field32 = Field32::new(2, 7);
     }
 
+    /// SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new performs
+    /// its second fresh-read update here.
+    pub const RX_COMPENSATION_HIGH_CONTROL: Register32 =
+        Register32::described(0x201070a0, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_COMPENSATION_HIGH_CONTROL`].
+    /// SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new performs
+    /// its second fresh-read update here.
+    pub mod rx_compensation_high_control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes
+        /// 0xed into bits 31:24.
+        pub const RX_COMPENSATION_HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
+    }
+
     /// SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW];
     /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes
     /// the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field
@@ -2002,6 +2040,46 @@ pub mod phy_agc_oracle {
     /// phy_wifi_agc_sat_gain writes its argument here second.
     pub const SATURATION_GAIN_HIGH: Register32 =
         Register32::described(0x20107114, RegisterAccess::WriteOnly, None);
+
+    /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. First
+    /// fresh-read update of complete phy_ant_init clears two independently evidenced field
+    /// groups.
+    pub const ANTENNA_CONTROL_0: Register32 =
+        Register32::described(0x2010711c, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`ANTENNA_CONTROL_0`]. SOURCE[ROM_REV0_PHY_ANT_INIT];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. First fresh-read update of complete
+    /// phy_ant_init clears two independently evidenced field groups.
+    pub mod antenna_control_0 {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_ant_init clears bits 10:0.
+        pub const LOW_CLEAR_UNKNOWN: Field32 = Field32::new(0, 11);
+        /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_ant_init independently clears bit 12.
+        pub const BIT_12_CLEAR_UNKNOWN: Field32 = Field32::new(12, 1);
+    }
+
+    /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Third
+    /// fresh-read update of complete phy_ant_init writes the same value into two separated
+    /// bytes.
+    pub const ANTENNA_CONTROL_2: Register32 =
+        Register32::described(0x20107120, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`ANTENNA_CONTROL_2`]. SOURCE[ROM_REV0_PHY_ANT_INIT];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Third fresh-read update of complete
+    /// phy_ant_init writes the same value into two separated bytes.
+    pub mod antenna_control_2 {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_ant_init writes 0x1e into bits 15:8.
+        pub const LOW_UNKNOWN: Field32 = Field32::new(8, 8);
+        /// SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown].
+        /// Complete phy_ant_init writes 0x1e into bits 31:24.
+        pub const HIGH_UNKNOWN: Field32 = Field32::new(24, 8);
+    }
 
     /// SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete
     /// phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two
@@ -2246,7 +2324,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 139] = [
+pub const ALL: [Register32; 142] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -2358,15 +2436,18 @@ pub const ALL: [Register32; 139] = [
     phy_i2c_command_ram::COMMAND_MEMORY[44],
     phy_agc_oracle::AGC_PARAMETER_CONTROL,
     phy_agc_oracle::AGC_SHARED_CONTROL,
-    phy_agc_oracle::DISABLE_CONTROL,
+    phy_agc_oracle::AGC_ANTENNA_CONTROL,
     phy_agc_oracle::RX_11B_PATH_CONTROL_0,
     phy_agc_oracle::AGC_UPDATE_7048_OPAQUE,
     phy_agc_oracle::AGC_SATURATION_CONTROL,
     phy_agc_oracle::SATURATION_GAIN_LOW,
     phy_agc_oracle::RF_RX_SATURATION_CONFIG,
     phy_agc_oracle::AGC_GAIN_LIMIT_LOW,
+    phy_agc_oracle::RX_COMPENSATION_HIGH_CONTROL,
     phy_agc_oracle::RX_11B_WINDOW_CONTROL,
     phy_agc_oracle::SATURATION_GAIN_HIGH,
+    phy_agc_oracle::ANTENNA_CONTROL_0,
+    phy_agc_oracle::ANTENNA_CONTROL_2,
     phy_agc_oracle::RX_11B_PATH_CONTROL_1,
     phy_agc_oracle::AGC_INIT_HIGH_CONTROL,
     phy_agc_oracle::RX_GAIN_LIMIT_CONTROL,

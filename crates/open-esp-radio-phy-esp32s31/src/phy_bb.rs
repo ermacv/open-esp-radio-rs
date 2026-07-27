@@ -560,7 +560,9 @@ impl PhyBbMmioBinding {
             PhyBbMmioAction::ConfigureNoiseFloorAuto => {
                 crate::radio_hal::configure_phy_noise_floor_auto()
             }
-            PhyBbMmioAction::ConfigureAntenna => crate::radio_hal::configure_phy_antenna(),
+            PhyBbMmioAction::ConfigureAntenna => {
+                open_esp_radio_hal_esp32s31::phy_agc::configure_antenna(registers)
+            }
             PhyBbMmioAction::ConfigureBtFilter => crate::radio_hal::configure_phy_bt_filter(),
             PhyBbMmioAction::ConfigurePhyRegisters { parameters } => {
                 crate::radio_hal::configure_phy_registers(registers, parameters)

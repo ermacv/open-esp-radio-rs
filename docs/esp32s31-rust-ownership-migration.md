@@ -3031,6 +3031,34 @@ final limit writes with the reference's fresh-read order.
 `&mut RadioRegisters`. `PhyRxGainInitMmioBinding::execute_target` now also
 requires that borrow, so its root MMIO actions can no longer execute outside
 the radio owner. The source audit rejects raw `0x08bc`, `0x705c`, `0x7068`,
-`0x7094`, `0x7128`, and `0x713c`. Shared `0x702c` remains represented by one
-PAC register but cannot yet be rejected globally because independently
-recovered PBus-pulse and RX-compensation leaves still use raw MMIO.
+`0x7094`, `0x7128`, and `0x713c`.
+
+## Shared AGC, PBus pulse, RX compensation, and antenna ownership
+
+The remaining active users of shared `0x2010_702c` are now represented by one
+PAC register rather than overlapping raw aliases. Complete rev0 ROM
+`phy_pbus_force_mode` at `0x2f824102`, size `0x90`, proves the high-byte
+replacement and the set/delayed-clear pulse. Complete pinned
+`libphy.a[phy_reg.o]::phy_set_rx_comp_new`, size `0x28`, proves the independent
+low-byte replacement and the companion high-byte replacement at
+`0x2010_70a0`. The existing RX-gain field remains the same physical identity.
+
+Complete rev0 ROM `phy_ant_init` at `0x2f827df4`, size `0x44`, also closes the
+three raw antenna updates. Its middle field shares `0x2010_7030` with the
+independently proven AGC-disable bit; the SVD records both fields on one
+register. The other updates are localized at `0x2010_711c` and
+`0x2010_7120`. Field names retain `UNKNOWN` because these bodies prove masks,
+values, and order but not electrical semantics.
+
+Safe HAL leaves preserve the two RX-compensation writes, the PBus tail's
+high-byte/set/clear sequence around caller-owned delays, and all three antenna
+writes. The PBus debug/work-mode pair uses the existing typed `PHY_PBUS`
+registers. TX-DC, TX-DC/PWDET, PWDET, TX calibration environment, RXIQ
+initialization, RX-gain DC, TXIQ, and RX-saturation MMIO bindings all receive
+`&mut RadioRegisters`, so those actions cannot cross the radio capability
+boundary.
+
+The raw C ABI, raw antenna/PBus wrappers, and duplicate mask helpers are
+deleted. The target source audit rejects `0x0884`, `0x088c`, `0x702c`,
+`0x7030`, `0x70a0`, `0x711c`, and `0x7120`, closing this shared-register
+migration without assigning guessed neighboring-chip names.

@@ -505,7 +505,7 @@ impl PhyRxGainPublishMmioBinding {
     ) -> PhyRxGainPublishCompletion {
         match self.action {
             PhyRxGainPublishAction::ConfigurePbusDebugMode { bank } => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyRxGainPublishCompletion::PbusDebugModeConfigured { bank }
             }
             PhyRxGainPublishAction::ConfigureClock {
@@ -534,15 +534,17 @@ impl PhyRxGainPublishMmioBinding {
             PhyRxGainPublishAction::ConfigurePbusWorkMode { bank } => {
                 PhyRxGainPublishCompletion::PbusWorkModeConfigured {
                     bank,
-                    settle_required: crate::radio_hal::configure_phy_pbus_work_mode(),
+                    settle_required: open_esp_radio_hal_esp32s31::pbus::configure_work_mode(
+                        registers,
+                    ),
                 }
             }
             PhyRxGainPublishAction::ConfigurePbusWorkModePulse { bank } => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers);
                 PhyRxGainPublishCompletion::PbusWorkModePulseConfigured { bank }
             }
             PhyRxGainPublishAction::ClearPbusWorkModePulse { bank } => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers);
                 PhyRxGainPublishCompletion::PbusWorkModePulseCleared { bank }
             }
             _ => unreachable!(),

@@ -943,7 +943,10 @@ impl PhyTxDcPwdetMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxDcPwdetCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxDcPwdetCompletion {
         match self.action {
             PhyTxDcPwdetAction::CaptureRegisters => {
                 let (power_table_low, power_control_field) =
@@ -954,7 +957,7 @@ impl PhyTxDcPwdetMmioBinding {
                 }
             }
             PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
-                crate::radio_hal::configure_phy_tx_clock(enabled);
+                open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, enabled);
                 PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
             }
             PhyTxDcPwdetAction::ConfigurePowerDetector => {
@@ -962,7 +965,7 @@ impl PhyTxDcPwdetMmioBinding {
                 PhyTxDcPwdetCompletion::PowerDetectorConfigured
             }
             PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
-                crate::radio_hal::configure_phy_pbus_debug_mode();
+                open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyTxDcPwdetCompletion::PbusDebugModeConfigured
             }
             PhyTxDcPwdetAction::ConfigureTone {
@@ -987,15 +990,17 @@ impl PhyTxDcPwdetMmioBinding {
             }
             PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
                 PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
-                    settle_required: crate::radio_hal::configure_phy_pbus_work_mode(),
+                    settle_required: open_esp_radio_hal_esp32s31::pbus::configure_work_mode(
+                        registers,
+                    ),
                 }
             }
             PhyTxDcPwdetAction::ConfigurePbusWorkModePulse => {
-                crate::radio_hal::configure_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::configure_pbus_work_mode_pulse(registers);
                 PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured
             }
             PhyTxDcPwdetAction::ClearPbusWorkModePulse => {
-                crate::radio_hal::clear_phy_pbus_work_mode_pulse();
+                open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers);
                 PhyTxDcPwdetCompletion::PbusWorkModePulseCleared
             }
             PhyTxDcPwdetAction::RestoreRegisters {

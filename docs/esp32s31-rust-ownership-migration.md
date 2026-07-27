@@ -2902,3 +2902,30 @@ authentication, HT20/WMM association, WPA2 M1-M4, DHCP, gateway ping, DNS and
 HTTP 200. It returned 18/18 TX and 16/16 RX owners, recorded zero allocation,
 reallocation, or free calls, zero other-core stalls, no ESF rejection, and no
 `ppTask` entry.
+
+## Typed PHY-PBus and PHY-I2C capability boundary
+
+The recovered S31 SVD now generates typed identities for the PHY-PBus,
+PHY-I2C host/master registers, all 45 command-RAM words, and the PMU analog
+I2C power/reset registers. The active `PhyColdExternalBinding` target methods
+take `&mut RadioRegisters`; the application obtains that borrow only from
+`Radio<P, Powered>`.
+
+This removes raw addresses from the cold path for:
+
+- PMU RF and peripheral-I2C power/reset;
+- PBus debug/work mode, force-test publication/completion, RX-DCO packed
+  reads, and RX/TX clock pairs;
+- PHY-I2C host reads/writes, clock selection, master registration, and
+  command-RAM initialization.
+
+Each HAL method names the complete ROM/blob body used for operation order.
+Register and field identities remain independently sourced from the S31 SVD,
+official PMU header, or instruction-exact masks.
+
+Several reusable calibration bindings outside `PhyColdExternalBinding` still
+expose their historical unsafe target methods. Their transitional raw
+PHY-I2C leaves now resolve addresses through the generated PAC and carry an
+explicit exclusive-owner invariant, but do not yet accept the powered-radio
+borrow. They remain ownership migration work; the full cold-init HIL path no
+longer uses those leaves.

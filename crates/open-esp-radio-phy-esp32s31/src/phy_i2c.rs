@@ -28,14 +28,10 @@ use crate::phy_xtal_duty::{
     XtalDutyCalibrationAction, XtalDutyCalibrationCompletion, XtalDutyCalibrationOutcome,
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
 };
+use open_esp_radio_hal_esp32s31::radio_registers::phy_i2c_master;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_hal_esp32s31::{analog_i2c, phy_i2c as hal_phy_i2c, RadioRegisters};
 
-const PHY_I2C_HOST_CONFIG_ADDRESS: usize = 0x2010_f820;
-const PHY_I2C_READ_MASK_ADDRESS: usize = 0x2010_f81c;
-const PHY_I2C_COMMAND_BASE_ADDRESS: usize = 0x2010_f800;
-const PHY_I2C_MASTER_COMMAND_MEMORY_ADDRESS: usize = 0x2010_fc00;
-const MODEM_LPCON_CLK_CONF_ADDRESS: usize = 0x2070_4184;
-const MODEM_LPCON_I2C_MST_CLK_CONF_ADDRESS: usize = 0x2070_40f0;
-const MODEM_LPCON_I2C_MST_DATE_ADDRESS: usize = 0x2070_4208;
 const PHY_I2C_BUSY: u32 = 1 << 25;
 // ESP32-S31 ROM `phy_chip_i2c_readReg` publishes `0x0400_0000` and
 // `phy_chip_i2c_writeReg` publishes `0x0500_0000`. These command bits differ
@@ -98,7 +94,11 @@ pub enum PhyI2cError {
 }
 
 const fn command_register_address(host: u8) -> usize {
-    PHY_I2C_COMMAND_BASE_ADDRESS + (host as usize * 4)
+    if host == 0 {
+        phy_i2c_master::HOST_COMMAND_0.address()
+    } else {
+        phy_i2c_master::HOST_COMMAND_1.address()
+    }
 }
 
 const fn with_phy_i2c_host_config(value: u32) -> u32 {
@@ -247,27 +247,38 @@ fn master_command_from_snapshot(index: usize, parameter: PhyRfInitParameterSnaps
 
 /// Program the complete PHY-I2C command RAM from Rust-owned cold state.
 ///
-/// Safety: the caller must exclusively own the cold PHY and command memory
-/// for the duration of the finite 45-store transaction.
+/// The mutable PAC capability is borrowed from `Radio<P, Powered>`, making
+/// exclusive ownership explicit for the complete finite 45-store
+/// transaction.
+///
+/// Basis: complete
+/// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`; destinations come from
+/// the SVD-generated 45-element command-RAM array.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn configure_i2c_master_command_memory(parameter: PhyRfInitParameterSnapshot) {
+pub fn configure_i2c_master_command_memory(
+    registers: &mut RadioRegisters,
+    parameter: PhyRfInitParameterSnapshot,
+) {
     let dynamic_values = master_dynamic_values_from_snapshot(parameter);
     let mut index = 0;
     let mut dynamic_cursor = 0;
     while index != PHY_I2C_MASTER_COMMAND_COUNT {
         let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
         let value = if dynamic_cursor != PHY_I2C_MASTER_DYNAMIC_INDICES.len()
-            && *PHY_I2C_MASTER_DYNAMIC_INDICES.get_unchecked(dynamic_cursor) == index
+            && PHY_I2C_MASTER_DYNAMIC_INDICES[dynamic_cursor] == index
         {
-            let value = *dynamic_values.get_unchecked(dynamic_cursor);
+            let value = dynamic_values[dynamic_cursor];
             dynamic_cursor += 1;
             value
         } else {
             fixed_value
         };
-        let destination = (PHY_I2C_MASTER_COMMAND_MEMORY_ADDRESS
-            + index * core::mem::size_of::<u32>()) as *mut u32;
-        destination.write_volatile(encode_master_command(block, register, value));
+        hal_phy_i2c::write_command_memory(
+            registers,
+            index,
+            encode_master_command(block, register, value),
+        )
+        .unwrap_or_else(|_| unreachable!("bounded command-memory index"));
         index += 1;
     }
 }
@@ -278,21 +289,21 @@ pub unsafe fn configure_i2c_master_command_memory(parameter: PhyRfInitParameterS
 /// before publishing the command. This is a deliberate fail-fast ownership
 /// check, not a claim that the ROM performed the same pre-command check.
 ///
-/// Safety: the caller must exclusively own the radio PHY-I2C host and keep
-/// that ownership until [`try_finish_read`] succeeds.
+/// The caller must keep borrowing the same powered radio until
+/// [`try_finish_read`] succeeds.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn try_start_read(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
-    let host_config = PHY_I2C_HOST_CONFIG_ADDRESS as *mut u32;
-    host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
-
-    let command = command_register_address(address.host()) as *mut u32;
-    if command_is_busy(command.read_volatile()) {
-        return Err(PhyI2cError::Busy);
-    }
-
-    (PHY_I2C_READ_MASK_ADDRESS as *mut u32).write_volatile(!(address.read_mask() as u32));
-    command.write_volatile(encode_read(address));
-    Ok(())
+pub fn try_start_read(
+    registers: &mut RadioRegisters,
+    address: PhyI2cAddress,
+) -> Result<(), PhyI2cError> {
+    hal_phy_i2c::try_start_read(
+        registers,
+        hal_host(address.host()),
+        address.block(),
+        address.register(),
+        address.read_mask(),
+    )
+    .map_err(|_| PhyI2cError::Busy)
 }
 
 /// Observe one previously published PHY-I2C read exactly once.
@@ -302,35 +313,36 @@ pub unsafe fn try_start_read(address: PhyI2cAddress) -> Result<(), PhyI2cError> 
 /// must not be converted into a self-waking retry loop. This function never
 /// loops, delays, or schedules itself.
 ///
-/// Safety: `address` must name the in-flight command started by
-/// [`try_start_read`] under the same exclusive radio ownership.
+/// `address` must name the in-flight command started by [`try_start_read`]
+/// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn try_finish_read(address: PhyI2cAddress) -> Result<u8, PhyI2cError> {
-    let command = (command_register_address(address.host()) as *const u32).read_volatile();
-    if command_is_busy(command) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(read_result(command))
-    }
+pub fn try_finish_read(
+    registers: &RadioRegisters,
+    address: PhyI2cAddress,
+) -> Result<u8, PhyI2cError> {
+    hal_phy_i2c::try_finish_read(registers, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Publish one complete-register PHY-I2C write after observing the
 /// pre-command busy state once. It never waits or loops on that state and
 /// leaves post-command completion to [`try_finish_write`].
 ///
-/// Safety: the caller must exclusively own the radio PHY-I2C host and keep
-/// that ownership until [`try_finish_write`] succeeds.
+/// The caller must keep borrowing the same powered radio until
+/// [`try_finish_write`] succeeds.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn try_start_write(address: PhyI2cAddress, value: u8) -> Result<(), PhyI2cError> {
-    let host_config = PHY_I2C_HOST_CONFIG_ADDRESS as *mut u32;
-    host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
-
-    let command = command_register_address(address.host()) as *mut u32;
-    if command_is_busy(command.read_volatile()) {
-        return Err(PhyI2cError::Busy);
-    }
-    command.write_volatile(encode_write(address, value));
-    Ok(())
+pub fn try_start_write(
+    registers: &mut RadioRegisters,
+    address: PhyI2cAddress,
+    value: u8,
+) -> Result<(), PhyI2cError> {
+    hal_phy_i2c::try_start_write(
+        registers,
+        hal_host(address.host()),
+        address.block(),
+        address.register(),
+        value,
+    )
+    .map_err(|_| PhyI2cError::Busy)
 }
 
 /// Observe one previously published PHY-I2C write exactly once.
@@ -339,15 +351,117 @@ pub unsafe fn try_start_write(address: PhyI2cAddress, value: u8) -> Result<(), P
 /// or timer completion edge. `Busy` is an incomplete/timeout result and must
 /// not be converted into a self-waking retry loop.
 ///
-/// Safety: `address` must name the in-flight command started by
-/// [`try_start_write`] under the same exclusive radio ownership.
+/// `address` must name the in-flight command started by [`try_start_write`]
+/// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn try_finish_write(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
-    let command = (command_register_address(address.host()) as *const u32).read_volatile();
+pub fn try_finish_write(
+    registers: &RadioRegisters,
+    address: PhyI2cAddress,
+) -> Result<(), PhyI2cError> {
+    hal_phy_i2c::try_finish_write(registers, hal_host(address.host()))
+        .map_err(|_| PhyI2cError::Busy)
+}
+
+/// Transitional raw-owner variant for target bindings that have not yet
+/// accepted `&mut RadioRegisters`.
+///
+/// Register addresses still come only from the generated PAC. Basis and
+/// transaction order are identical to [`try_start_read`].
+///
+/// # Safety
+///
+/// The caller must prove exclusive ownership of the PHY-I2C host until the
+/// matching raw finish operation completes. New cold-init code must use the
+/// capability-borrowing method instead.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_start_read_unowned(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
+    let host_config = phy_i2c_master::HOST_CONFIG.address() as *mut u32;
+    unsafe {
+        host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
+    }
+
+    let command = command_register_address(address.host()) as *mut u32;
+    if command_is_busy(unsafe { command.read_volatile() }) {
+        return Err(PhyI2cError::Busy);
+    }
+    unsafe {
+        (phy_i2c_master::READ_MASK.address() as *mut u32)
+            .write_volatile(!u32::from(address.read_mask()));
+        command.write_volatile(encode_read(address));
+    }
+    Ok(())
+}
+
+/// Transitional raw-owner completion observation for
+/// [`try_start_read_unowned`].
+///
+/// # Safety
+///
+/// `address` must identify that in-flight transaction under the same
+/// exclusive external owner.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_finish_read_unowned(address: PhyI2cAddress) -> Result<u8, PhyI2cError> {
+    let command =
+        unsafe { (command_register_address(address.host()) as *const u32).read_volatile() };
+    if command_is_busy(command) {
+        Err(PhyI2cError::Busy)
+    } else {
+        Ok(read_result(command))
+    }
+}
+
+/// Transitional raw-owner variant for target bindings that have not yet
+/// accepted `&mut RadioRegisters`.
+///
+/// Register addresses still come only from the generated PAC. Basis and
+/// transaction order are identical to [`try_start_write`].
+///
+/// # Safety
+///
+/// The caller must prove exclusive ownership until
+/// [`try_finish_write_unowned`] completes.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_start_write_unowned(
+    address: PhyI2cAddress,
+    value: u8,
+) -> Result<(), PhyI2cError> {
+    let host_config = phy_i2c_master::HOST_CONFIG.address() as *mut u32;
+    unsafe {
+        host_config.write_volatile(with_phy_i2c_host_config(host_config.read_volatile()));
+    }
+
+    let command = command_register_address(address.host()) as *mut u32;
+    if command_is_busy(unsafe { command.read_volatile() }) {
+        return Err(PhyI2cError::Busy);
+    }
+    unsafe { command.write_volatile(encode_write(address, value)) };
+    Ok(())
+}
+
+/// Transitional raw-owner completion observation for
+/// [`try_start_write_unowned`].
+///
+/// # Safety
+///
+/// `address` must identify that in-flight transaction under the same
+/// exclusive external owner.
+#[cfg(target_arch = "riscv32")]
+pub(crate) unsafe fn try_finish_write_unowned(address: PhyI2cAddress) -> Result<(), PhyI2cError> {
+    let command =
+        unsafe { (command_register_address(address.host()) as *const u32).read_volatile() };
     if command_is_busy(command) {
         Err(PhyI2cError::Busy)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+const fn hal_host(host: u8) -> hal_phy_i2c::PhyI2cHost {
+    if host == 0 {
+        hal_phy_i2c::PhyI2cHost::Host0
+    } else {
+        hal_phy_i2c::PhyI2cHost::Host1
     }
 }
 
@@ -423,46 +537,23 @@ impl BiasRegTransition {
 /// Execute the finite register prefix which precedes the vendor
 /// `ets_delay_us(100)` call in `phy_open_i2c_xpd_new(true)`.
 ///
-/// This leaf deliberately stops before the delay. Unknown register-field
-/// meanings are not inferred: it reproduces the complete pinned
-/// `libphy.a[phy_reg.o]` load/mask/store sequence at offsets `0x2e..0x4e`.
-///
-/// Safety: the caller must exclusively own cold PHY initialization and the
-/// MODEM_LPCON register block.
+/// This leaf deliberately stops before the delay and delegates to the
+/// PMU-named HAL. Basis: complete pinned `libphy.a[phy_reg.o]` sequence at
+/// offsets `0x2e..0x4e`; field identities come from the official S31 PMU
+/// description.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn configure_open_i2c_pre_delay() {
-    let clock = MODEM_LPCON_CLK_CONF_ADDRESS as *mut u32;
-    clock.write_volatile(clock.read_volatile() & 0x0000_ffff);
-
-    let i2c_clock = MODEM_LPCON_I2C_MST_CLK_CONF_ADDRESS as *mut u32;
-    i2c_clock.write_volatile(i2c_clock.read_volatile() & 0xefff_ffff);
+pub fn configure_open_i2c_pre_delay(registers: &mut RadioRegisters) {
+    analog_i2c::prepare_open_i2c_pre_delay(registers);
 }
 
 /// Execute the finite common register suffix of `phy_open_i2c_xpd_new`.
 ///
-/// The bit-31 clear/set edge is preserved when bit 30 was initially clear;
-/// reducing the sequence to one final OR would lose an instruction-evidenced
-/// hardware transition. This function never delays, waits, loops or calls.
-///
-/// Safety: the caller must exclusively own cold PHY initialization and the
-/// MODEM_LPCON register block.
+/// The conditional PMU reset edge is preserved by the owned HAL. Basis:
+/// complete pinned `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`; PMU field
+/// identities come from the official S31 PMU description.
 #[cfg(target_arch = "riscv32")]
-pub unsafe fn configure_open_i2c_power_and_pulse() {
-    let clock = MODEM_LPCON_CLK_CONF_ADDRESS as *mut u32;
-    clock.write_volatile(clock.read_volatile() | 0xffff_0000);
-
-    let i2c_clock = MODEM_LPCON_I2C_MST_CLK_CONF_ADDRESS as *mut u32;
-    i2c_clock.write_volatile(i2c_clock.read_volatile() | 0x1000_0000);
-
-    let control = MODEM_LPCON_I2C_MST_DATE_ADDRESS as *mut u32;
-    if control.read_volatile() & (1 << 30) == 0 {
-        control.write_volatile(control.read_volatile() | (1 << 30));
-        control.write_volatile(control.read_volatile() & !(1 << 31));
-        control.write_volatile(control.read_volatile() | (1 << 31));
-    }
-    if control.read_volatile() & (1 << 31) == 0 {
-        control.write_volatile(control.read_volatile() | (1 << 31));
-    }
+pub fn configure_open_i2c_power_and_pulse(registers: &mut RadioRegisters) {
+    analog_i2c::complete_open_i2c_power_and_reset(registers);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

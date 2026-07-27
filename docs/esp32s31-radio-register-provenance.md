@@ -71,6 +71,19 @@ all 45 command-memory entries. Command layout is instruction-exact:
 block/register/data occupy bytes 0/1/2, followed by write, busy and
 start/reset bits 24/25/26.
 
+The corresponding HAL is split by hardware ownership:
+
+- `analog_i2c` owns PMU power/reset sequencing;
+- `pbus` owns command publication, completion sampling, packed reads and the
+  RX/TX clock pairs;
+- `phy_i2c` owns host commands, the six-write clock-selection transform,
+  master setup and bounded command RAM.
+
+Every public operation documents both its S31 register-layout source and the
+complete ROM/blob body used for operation order. The cold PHY binding accepts
+`&mut RadioRegisters` borrowed from `Radio<P, Powered>` and uses these HAL
+methods for the newly recovered regions.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

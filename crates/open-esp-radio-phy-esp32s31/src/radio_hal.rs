@@ -53,7 +53,6 @@ const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_SDM_CYCLE_COUNTER_ADDRESS: usize = 0x2010_d800;
 const PHY_I2C_CLOCK_SELECTION_0_ADDRESS: usize = 0x2010_f824;
 const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
 const PHY_I2C_CLOCK_SELECTION_2_ADDRESS: usize = 0x2010_f82c;
@@ -70,29 +69,8 @@ const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
 const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
-const PHY_REGISTER_FORCE_TXRX_ADDRESS: usize = 0x2010_0890;
-const PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS: usize = 0x2010_f800;
-const PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS: usize = 0x2010_f804;
-const PHY_REGISTER_XTAL_CONTROL_ADDRESS: usize = 0x2010_f028;
-const PHY_REGISTER_FORCE_TXRX_RETAIN_MASK: u32 = 0xffff_f0ff;
-const PHY_REGISTER_I2C_MASTER_BUSY_BIT: u32 = 1 << 25;
-const PHY_REGISTER_I2C_MASTER_RESET_BIT: u32 = 1 << 26;
 const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
 const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
-
-const fn with_phy_register_force_txrx(value: u32, enabled: bool, phase: u8) -> u32 {
-    let forced = match (enabled, phase) {
-        (true, 0) => 0x0000_0800,
-        (true, _) => 0x0000_0a00,
-        (false, 0) => 0x0000_0200,
-        (false, _) => 0,
-    };
-    (value & PHY_REGISTER_FORCE_TXRX_RETAIN_MASK) | forced
-}
-
-const fn with_phy_register_xtal_frequency(value: u32, frequency_mhz: u8) -> u32 {
-    (value & !0x3f) | (frequency_mhz.wrapping_sub(1) & 0x3f) as u32
-}
 
 /// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
 #[cfg(target_arch = "riscv32")]
@@ -101,59 +79,6 @@ pub(crate) unsafe fn enable_phy_baseband_initialization() {
         phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
         PHY_CALIBRATION_CLOCK_MASK,
     );
-}
-
-/// Apply one of the two finite register writes surrounding each one
-/// microsecond edge in complete ROM `phy_force_txrx_off`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_register_force_txrx(
-    registers: &mut RadioRegisters,
-    enabled: bool,
-    phase: u8,
-) {
-    // SAFETY: the identity-bound action restricts the address and field
-    // encoding to the recovered finite parent operation.
-    unsafe {
-        let previous = registers.read(PHY_REGISTER_FORCE_TXRX_ADDRESS);
-        registers.write(
-            PHY_REGISTER_FORCE_TXRX_ADDRESS,
-            with_phy_register_force_txrx(previous, enabled, phase),
-        );
-    }
-}
-
-/// Observe one PHY-I2C master reset status register.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn sample_phy_i2c_master_reset(registers: &mut RadioRegisters, index: u8) -> u32 {
-    let address = if index == 0 {
-        PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS
-    } else {
-        PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS
-    };
-    // SAFETY: lowering validates `index` and binds the exact status address.
-    unsafe { registers.read(address) }
-}
-
-/// Issue one reset command. Completion is sampled asynchronously by the
-/// caller; this leaf never waits for the busy bit to clear.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn pulse_phy_i2c_master_reset(registers: &mut RadioRegisters, index: u8) {
-    let address = if index == 0 {
-        PHY_REGISTER_I2C_MASTER_STATUS_0_ADDRESS
-    } else {
-        PHY_REGISTER_I2C_MASTER_STATUS_1_ADDRESS
-    };
-    // SAFETY: lowering validates `index`; the recovered parent writes exactly
-    // the documented reset command.
-    unsafe {
-        registers.write(address, PHY_REGISTER_I2C_MASTER_RESET_BIT);
-    }
-}
-
-/// Whether the exact busy bit sampled by complete ROM
-/// `phy_i2c_master_reset` remains set.
-pub(crate) const fn phy_i2c_master_reset_busy(value: u32) -> bool {
-    value & PHY_REGISTER_I2C_MASTER_BUSY_BIT != 0
 }
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
@@ -168,20 +93,6 @@ pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters,
             0
         },
     );
-}
-
-/// Program the S31's fixed 40 MHz crystal field without consulting hidden
-/// RTC or ROM state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_register_xtal_frequency(registers: &mut RadioRegisters) {
-    // SAFETY: ESP32-S31 uses the recovered fixed 40 MHz crystal field.
-    unsafe {
-        let previous = registers.read(PHY_REGISTER_XTAL_CONTROL_ADDRESS);
-        registers.write(
-            PHY_REGISTER_XTAL_CONTROL_ADDRESS,
-            with_phy_register_xtal_frequency(previous, 40),
-        );
-    }
 }
 
 /// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
@@ -889,17 +800,6 @@ pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
 
     let active_clock_power = pmu::HP_ACTIVE_HP_CK_POWER.address() as *mut u32;
     active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
-}
-
-/// Sample the free-running counter used by the ROM SDM-stability deadline.
-///
-/// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f82_3e76` samples
-/// `0x2010_d800` before and after each independently completed PHY-I2C read.
-/// This leaf performs exactly one volatile read; deadline ownership and
-/// wraparound arithmetic stay in the Rust cold-init state machine.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_sdm_cycle_counter() -> u32 {
-    (PHY_SDM_CYCLE_COUNTER_ADDRESS as *const u32).read_volatile()
 }
 
 /// Select the two recovered TX-clock enable bits.

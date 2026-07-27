@@ -2907,14 +2907,17 @@ impl PhyColdObservationBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut RadioRegisters,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
         match self.request {
             PhyColdObservationRequest::ConfigureOpenI2cPowerAndPulse => {
                 crate::phy_i2c::configure_open_i2c_power_and_pulse(registers);
-                let started_at_cycle = crate::radio_hal::read_phy_sdm_cycle_counter();
+                let started_at_cycle =
+                    open_esp_radio_hal_esp32s31::phy_prelude::sample_sdm_deadline_counter(
+                        registers,
+                    );
                 self.into_completion(PhyColdObservationResult::OpenI2cPowerAndPulse {
                     started_at_cycle,
                 })
@@ -2923,7 +2926,10 @@ impl PhyColdObservationBinding {
                 started_at_cycle,
                 maximum_cycles,
             } => {
-                let current_cycle = crate::radio_hal::read_phy_sdm_cycle_counter();
+                let current_cycle =
+                    open_esp_radio_hal_esp32s31::phy_prelude::sample_sdm_deadline_counter(
+                        registers,
+                    );
                 self.into_completion(PhyColdObservationResult::OpenI2cSdmDeadline {
                     expired: phy_sdm_deadline_expired(
                         started_at_cycle,

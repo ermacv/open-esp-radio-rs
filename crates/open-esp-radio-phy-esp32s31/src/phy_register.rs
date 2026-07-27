@@ -8,8 +8,6 @@
 
 pub const PHY_REGISTER_INIT_PROFILE_LEN: usize = 0x80;
 pub const PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT: u16 = 1_000;
-pub const PHY_REGISTER_I2C_STATUS_0_ADDRESS: usize = 0x2010_f800;
-pub const PHY_REGISTER_I2C_STATUS_1_ADDRESS: usize = 0x2010_f804;
 
 const PHY_REGISTER_FINAL_I2C_ADDRESS: crate::phy_i2c::PhyI2cAddress =
     crate::phy_i2c::PhyI2cAddress::new_internal(0x63, 0);
@@ -74,8 +72,6 @@ pub enum PhyRegisterAction {
     },
     SampleI2cMasterReset {
         index: u8,
-        address: usize,
-        busy_mask: u32,
         sample: u16,
     },
     Rf(crate::phy_i2c::PhyRfInitPrefixAction),
@@ -95,9 +91,8 @@ pub enum PhyRegisterCompletion {
     },
     I2cMasterResetSampled {
         index: u8,
-        address: usize,
         sample: u16,
-        value: u32,
+        busy: bool,
     },
     Rf(crate::phy_i2c::PhyRfInitPrefixCompletion),
     Baseband(crate::phy_bb::PhyBbInitCompletion),
@@ -243,14 +238,6 @@ impl PhyRegisterTransition {
         }
     }
 
-    fn reset_address(index: u8) -> usize {
-        if index == 0 {
-            PHY_REGISTER_I2C_STATUS_0_ADDRESS
-        } else {
-            PHY_REGISTER_I2C_STATUS_1_ADDRESS
-        }
-    }
-
     fn begin_cleanup(&mut self, failure: PhyRegisterFailure) {
         self.phase = Some(Phase::Cleanup {
             step: TailStep::CalibrationClockOff,
@@ -363,20 +350,10 @@ impl PhyRegisterTransition {
                     },
                     PreludeStep::I2cInitialSample { index }
                     | PreludeStep::I2cResetSample { index, sample: 0 } => {
-                        PhyRegisterAction::SampleI2cMasterReset {
-                            index,
-                            address: Self::reset_address(index),
-                            busy_mask: 1 << 25,
-                            sample: 0,
-                        }
+                        PhyRegisterAction::SampleI2cMasterReset { index, sample: 0 }
                     }
                     PreludeStep::I2cResetSample { index, sample } => {
-                        PhyRegisterAction::SampleI2cMasterReset {
-                            index,
-                            address: Self::reset_address(index),
-                            busy_mask: 1 << 25,
-                            sample,
-                        }
+                        PhyRegisterAction::SampleI2cMasterReset { index, sample }
                     }
                     PreludeStep::I2cResetPulse { index } => {
                         PhyRegisterAction::Mmio(PhyRegisterMmioAction::PulseI2cMasterReset {
@@ -601,12 +578,11 @@ impl PhyRegisterTransition {
                 Phase::Prelude(PreludeStep::I2cInitialSample { index }),
                 PhyRegisterCompletion::I2cMasterResetSampled {
                     index: completed_index,
-                    address,
                     sample: 0,
-                    value,
+                    busy,
                 },
-            ) if completed_index == index && address == Self::reset_address(index) => {
-                if crate::radio_hal::phy_i2c_master_reset_busy(value) {
+            ) if completed_index == index => {
+                if busy {
                     Phase::Prelude(PreludeStep::I2cResetPulse { index })
                 } else if index == 0 {
                     Phase::Prelude(PreludeStep::I2cInitialSample { index: 1 })
@@ -637,15 +613,11 @@ impl PhyRegisterTransition {
                 Phase::Prelude(PreludeStep::I2cResetSample { index, sample }),
                 PhyRegisterCompletion::I2cMasterResetSampled {
                     index: completed_index,
-                    address,
                     sample: completed_sample,
-                    value,
+                    busy,
                 },
-            ) if completed_index == index
-                && completed_sample == sample
-                && address == Self::reset_address(index) =>
-            {
-                if !crate::radio_hal::phy_i2c_master_reset_busy(value) {
+            ) if completed_index == index && completed_sample == sample => {
+                if !busy {
                     if index == 0 {
                         Phase::Prelude(PreludeStep::I2cInitialSample { index: 1 })
                     } else {
@@ -943,7 +915,7 @@ impl PhyRegisterMmioBinding {
                 open_esp_radio_hal_esp32s31::phy_frequency::prepare_wifi_control(registers)
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {
-                crate::radio_hal::configure_phy_register_force_txrx(registers, enabled, phase)
+                open_esp_radio_hal_esp32s31::pbus::configure_force_txrx(registers, enabled, phase)
             }
             PhyRegisterMmioAction::ResetFrequencyModule => {
                 open_esp_radio_hal_esp32s31::phy_frequency::reset_module(registers)
@@ -952,10 +924,15 @@ impl PhyRegisterMmioBinding {
                 open_esp_radio_hal_esp32s31::phy_frequency::set_hardware_control(registers, enabled)
             }
             PhyRegisterMmioAction::PulseI2cMasterReset { index } => {
-                crate::radio_hal::pulse_phy_i2c_master_reset(registers, index)
+                let host = if index == 0 {
+                    open_esp_radio_hal_esp32s31::phy_i2c::PhyI2cHost::Host0
+                } else {
+                    open_esp_radio_hal_esp32s31::phy_i2c::PhyI2cHost::Host1
+                };
+                open_esp_radio_hal_esp32s31::phy_i2c::pulse_master_reset(registers, host)
             }
             PhyRegisterMmioAction::ConfigureXtal40Mhz => {
-                crate::radio_hal::configure_phy_register_xtal_frequency(registers)
+                open_esp_radio_hal_esp32s31::phy_prelude::configure_fixed_xtal_40mhz(registers)
             }
             PhyRegisterMmioAction::SetCalibrationClock { enabled } => {
                 crate::radio_hal::set_phy_register_calibration_clock(registers, enabled)
@@ -975,24 +952,14 @@ impl PhyRegisterMmioBinding {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRegisterResetSampleBinding {
     index: u8,
-    address: usize,
     sample: u16,
 }
 
 impl PhyRegisterResetSampleBinding {
     pub fn new(action: PhyRegisterAction) -> Option<Self> {
         match action {
-            PhyRegisterAction::SampleI2cMasterReset {
-                index,
-                address,
-                busy_mask,
-                sample,
-            } if address == PhyRegisterTransition::reset_address(index) && busy_mask == 1 << 25 => {
-                Some(Self {
-                    index,
-                    address,
-                    sample,
-                })
+            PhyRegisterAction::SampleI2cMasterReset { index, sample } if index <= 1 => {
+                Some(Self { index, sample })
             }
             _ => None,
         }
@@ -1006,11 +973,18 @@ impl PhyRegisterResetSampleBinding {
             open_esp_radio_hal_esp32s31::state::Powered,
         >,
     ) -> PhyRegisterCompletion {
+        let host = if self.index == 0 {
+            open_esp_radio_hal_esp32s31::phy_i2c::PhyI2cHost::Host0
+        } else {
+            open_esp_radio_hal_esp32s31::phy_i2c::PhyI2cHost::Host1
+        };
         PhyRegisterCompletion::I2cMasterResetSampled {
             index: self.index,
-            address: self.address,
             sample: self.sample,
-            value: crate::radio_hal::sample_phy_i2c_master_reset(radio.registers_mut(), self.index),
+            busy: open_esp_radio_hal_esp32s31::phy_i2c::sample_master_reset_busy(
+                radio.registers_mut(),
+                host,
+            ),
         }
     }
 }
@@ -1181,7 +1155,6 @@ mod tests {
         PhyRegisterFinalI2cBinding, PhyRegisterLocalStep, PhyRegisterMmioAction,
         PhyRegisterMmioCompletion, PhyRegisterOutcome, PhyRegisterResetSampleBinding,
         PhyRegisterTimerBinding, PhyRegisterTransition, PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT,
-        PHY_REGISTER_I2C_STATUS_0_ADDRESS,
     };
 
     fn complete_mmio(transition: &mut PhyRegisterTransition, action: PhyRegisterMmioAction) {
@@ -1325,8 +1298,6 @@ mod tests {
             action,
             PhyRegisterLocalStep::External(PhyRegisterAction::SampleI2cMasterReset {
                 index: 0,
-                address: PHY_REGISTER_I2C_STATUS_0_ADDRESS,
-                busy_mask: 1 << 25,
                 sample: 0,
             })
         );
@@ -1347,9 +1318,8 @@ mod tests {
         transition
             .advance_external(PhyRegisterCompletion::I2cMasterResetSampled {
                 index: 0,
-                address: PHY_REGISTER_I2C_STATUS_0_ADDRESS,
                 sample: PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT - 1,
-                value: 1 << 25,
+                busy: true,
             })
             .unwrap();
         assert_eq!(

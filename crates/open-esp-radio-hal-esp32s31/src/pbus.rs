@@ -1,10 +1,9 @@
 //! Owned access to the recovered ESP32-S31 PHY PBus registers.
 
+#[cfg(any(test, target_arch = "riscv32"))]
+use open_esp_radio_pac_esp32s31::power::phy_pbus;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_pac_esp32s31::{
-    power::{modem_syscon, phy_pbus},
-    Field32, RadioRegisters, Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::modem_syscon, Field32, RadioRegisters, Register32};
 
 /// A PBus command could not be published or completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,6 +16,34 @@ pub enum PbusError {
     PathOutOfRange,
     /// The caller supplied a test value outside the recovered nine-bit field.
     ValueOutOfRange,
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
+    let field = phy_pbus::status_clock_force::FORCE_TXRX_MODE_UNKNOWN;
+    let encoding = match (enabled, phase) {
+        (true, 0) => 8,
+        (true, _) => 10,
+        (false, 0) => 2,
+        (false, _) => 0,
+    };
+    field.checked_value(encoding).unwrap_or(0)
+}
+
+/// Apply one finite force-TX/RX phase around its caller-owned delay edge.
+///
+/// Basis: complete rev0 ROM `phy_force_txrx_off` at `0x2f827bb0`, size
+/// `0x66`. The parent performs two fresh-read replacements of bits 11:8 with
+/// a one-microsecond delay after each. This method owns exactly one
+/// replacement; the Rust transition owns phase order and both timers.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_force_txrx(registers: &mut RadioRegisters, enabled: bool, phase: u8) {
+    let field = phy_pbus::status_clock_force::FORCE_TXRX_MODE_UNKNOWN;
+    registers.modify32(
+        phy_pbus::STATUS_CLOCK_FORCE,
+        field.mask(),
+        force_txrx_mode_bits(enabled, phase),
+    );
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -194,4 +221,17 @@ pub fn configure_tx_clock(registers: &mut RadioRegisters, enabled: bool) {
     let field = phy_pbus::status_clock_force::TX_CLOCK_ENABLE_PAIR;
     let value = if enabled { field.mask() } else { 0 };
     registers.modify32(phy_pbus::STATUS_CLOCK_FORCE, field.mask(), value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::force_txrx_mode_bits;
+
+    #[test]
+    fn force_txrx_phases_match_all_four_complete_rom_encodings() {
+        assert_eq!(force_txrx_mode_bits(true, 0), 0x0000_0800);
+        assert_eq!(force_txrx_mode_bits(true, 1), 0x0000_0a00);
+        assert_eq!(force_txrx_mode_bits(false, 0), 0x0000_0200);
+        assert_eq!(force_txrx_mode_bits(false, 1), 0);
+    }
 }

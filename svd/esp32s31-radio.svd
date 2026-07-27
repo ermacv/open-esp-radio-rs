@@ -6,12 +6,12 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>1.2</version>
+  <version>1.3</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus, PHY-I2C, IQ
-    estimator, RX-DCO and temperature-sensor subset. Unknown fields are
-    omitted; OPAQUE and UNKNOWN names describe instruction-level evidence
-    without assigning an unproven hardware meaning.
+    estimator, RX-DCO, cold-deadline and temperature-sensor subset. Unknown
+    fields are omitted; OPAQUE and UNKNOWN names describe instruction-level
+    evidence without assigning an unproven hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
@@ -340,9 +340,15 @@
         </register>
         <register>
           <name>TICK_CONF</name>
-          <description>SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem power tick target.</description>
+          <description>SOURCE[S31_MODEM_LPCON_STRUCT,BLOB_LIBPHY_PHY_GET_XTAL_FREQ]; CONFIDENCE[exact-s31-layout-and-transform]. Modem power tick target; complete phy_get_xtal_freq proves the frequency-minus-one transform.</description>
           <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>MODEM_PWR_TICK_TARGET</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field></fields>
+          <fields>
+            <field>
+              <name>MODEM_PWR_TICK_TARGET</name>
+              <description>SOURCE[S31_MODEM_LPCON_STRUCT,BLOB_LIBPHY_PHY_GET_XTAL_FREQ]; CONFIDENCE[exact-s31-layout-and-transform]. Six-bit target programmed as frequency_mhz - 1.</description>
+              <bitOffset>0</bitOffset><bitWidth>6</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>MEM_CONF</name>
@@ -1806,6 +1812,32 @@
     </peripheral>
 
     <peripheral>
+      <name>PHY_COLD_DEADLINE_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+        CONFIDENCE[instruction-exact-semantics-unknown].
+        Free-running word sampled by the complete rev0 ROM SDM-stability
+        deadline. The instruction body proves its address and unsigned
+        wraparound consumer, but not its hardware clock source.
+      </description>
+      <baseAddress>0x2010d800</baseAddress>
+      <registers>
+        <register>
+          <name>DEADLINE_COUNTER_UNKNOWN</name>
+          <description>SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Full-width wrapping deadline value.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
       <name>PHY_TEMPERATURE_SENSOR_ORACLE</name>
       <description>
         SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
@@ -1943,7 +1975,9 @@
       <source id="ROM_REV0_PHY_POWER_DETECTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pwdet_reg_init at 0x2f82634a size 0x5c, phy_pwdet_sar2_init at 0x2f8263a6 size 0x34, phy_en_pwdet at 0x2f8263da size 0x26, phy_tx_pwctrl_bg_init at 0x2f8267f6 size 0x1e, phy_get_tone_sar_dout_ at 0x2f8266da size 0x40 and phy_txcal_debuge_mode_ at 0x2f8244fe size 0x56</source>
       <source id="ROM_REV0_PHY_IQ_COEFFICIENTS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_set_reg at 0x2f827c16 size 0x68 and phy_rxiq_set_reg at 0x2f827c7e size 0x54</source>
       <source id="ROM_REV0_PHY_IQ_ESTIMATOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_iq_est_enable at 0x2f8289d4 size 0xb4, phy_iq_est_disable at 0x2f828a88 size 0x2c, phy_dc_iq_est at 0x2f828ab4 size 0x84, phy_rxiq_get_mis at 0x2f828b84 size 0x13e, phy_set_rx_gain_cal_iq at 0x2f82964c size 0x20c and phy_get_rx_sig_pwr at 0x2f829ea2 size 0x76</source>
+      <source id="ROM_REV0_PHY_WAIT_I2C_SDM_STABLE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_wait_i2c_sdm_stable at 0x2f823e76 size 0x4a</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
+      <source id="BLOB_LIBPHY_PHY_GET_XTAL_FREQ">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o phy_get_xtal_freq body, size 0x40</source>
       <source id="BLOB_LIBPHY_REGISTER_CHIPV7_PHY">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o register_chipv7_phy body, size 0x1e6, and relocation graph</source>
       <source id="BLOB_LIBPHY_PHY_RFPLL_CHANNEL">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rfpll.o phy_chip_set_chan body, size 0x10e, and its finite ROM leaf call graph</source>
       <source id="BLOB_LIBPHY_PHY_SET_TX_CFR_MEM">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_cfr_mem body, size 0x76</source>

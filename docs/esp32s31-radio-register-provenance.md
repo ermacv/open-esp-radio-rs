@@ -425,6 +425,52 @@ also removed: all three live calibration consumers now use the existing safe
 PAC-backed PBus result reader. The source-only audit rejects the old helper
 names and any new raw `0x2010_0434` literal in the live PHY crate.
 
+## Cold-PHY prelude and deadline PAC
+
+SVD v1.3 completes the register ownership boundary around the early
+`register_chipv7_phy` prelude. Three identities were already present in the
+recovered PAC and now have their live consumers moved behind safe HAL methods:
+
+- `PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_UNKNOWN` owns bits 11:8 used
+  by the two force and two release phases;
+- `PHY_I2C_MASTER.HOST_COMMAND_0/1` own the reset command at bit 26 and the
+  sampled busy state at bit 25;
+- `MODEM_LPCON.TICK_CONF.MODEM_PWR_TICK_TARGET` owns the six-bit fixed-crystal
+  tick target.
+
+The new `PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN` identity owns the
+full read-only word at `0x2010_d800`. Complete rev0 ROM
+`phy_wait_i2c_sdm_stable` (`0x2f82_3e76`, size `0x4a`) proves its physical
+address, full-width reads, and wrapping unsigned deadline use. The ROM artifact
+SHA-256 is
+`a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`.
+The counter's clock source is not proved, so the PAC deliberately does not
+assign one.
+
+The other finite operations are grounded by complete pinned bodies:
+
+- rev0 ROM `phy_force_txrx_off` at `0x2f82_7bb0`, size `0x66`, proves the
+  ordered field encodings `8`, `10`, `2`, and `0` with a fresh read before
+  every write;
+- rev0 ROM `phy_i2c_master_reset` at `0x2f82_60d0`, size `0x74`, proves both
+  host addresses, reset command, and busy bit;
+- pinned `libphy.a` SHA-256
+  `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+  complete `phy_init.o::phy_get_xtal_freq`, size `0x40`, proves the
+  `frequency_mhz - 1` field transform. The public S31 contract fixes this
+  input at 40 MHz, so the HAL writes 39 without consulting hidden RTC state.
+
+The safe HAL performs only one finite edge per call. Delay order, reset
+retries, and the inclusive 9,999-cycle deadline remain explicit state-machine
+state. Reset sampling crosses the boundary as `busy: bool`; neither a physical
+address, a mask, nor a raw register word appears in the PHY action/completion
+protocol. The old raw wrappers and constants are deleted, and the source-only
+audit rejects their names plus raw `0x2010_d800`, `0x2010_f028`,
+`0x2010_f800`, and `0x2010_f804` literals in the live PHY crate. The shared
+`0x2010_0890` word still has separately evidenced RXIQ status consumers on the
+remaining raw frontier, so the audit rejects the deleted force wrapper rather
+than falsely banning that physical identity.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

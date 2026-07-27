@@ -3323,7 +3323,10 @@ mod tests {
     #[test]
     fn command_words_match_complete_rom_leaf_encoding() {
         let address = PhyI2cAddress::new(0x6b, 0x14).unwrap();
-        assert_eq!(command_register_address(address.host()), 0x2010_f804);
+        assert_eq!(
+            command_register_address(address.host()),
+            super::phy_i2c_master::HOST_COMMAND_1.address()
+        );
         assert_eq!(encode_read(address), 0x0400_146b);
         assert_eq!(encode_write(address, 0xa5), 0x05a5_146b);
         assert!(!command_is_busy(0x05a5_146b));

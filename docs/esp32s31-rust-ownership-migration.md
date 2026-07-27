@@ -3212,3 +3212,33 @@ and the second raw PBus result-address table were removed from `radio_hal.rs`.
 PBus reads now share the already qualified PAC/HAL implementation. The
 source-only audit rejects the deleted wrapper names and any raw
 `0x2010_0434` address returning to the live PHY crate.
+
+## Owned cold-PHY prelude MMIO
+
+SVD v1.3 and the generated PAC now close four more ownership gaps in the
+top-level `register_chipv7_phy` prelude: the shared force-TX/RX field, both
+PHY-I2C master reset hosts, the fixed 40 MHz tick field, and the SDM-stability
+deadline counter. Complete rev0 ROM `phy_force_txrx_off`,
+`phy_i2c_master_reset`, and `phy_wait_i2c_sdm_stable`, together with complete
+pinned `libphy.a[phy_init.o]::phy_get_xtal_freq`, prove the finite operations.
+Exact hashes, ROM addresses, and symbol sizes are recorded in the register
+provenance ledger.
+
+The safe `pbus`, `phy_i2c`, and `phy_prelude` HAL methods each perform one
+fresh register operation. The Rust parent still owns both one-microsecond
+force/release delays, the bounded 1,000-sample reset policy, and the wrapping
+9,999-cycle SDM deadline. No HAL leaf spins or hides forward progress.
+
+`PhyRegisterAction::SampleI2cMasterReset` now carries only the host index and
+sample identity. Its completion returns `busy: bool`; the address, bit mask,
+and raw status word no longer cross into calibration policy. The observation
+binding for the deadline is safe because its only hardware access now requires
+the caller's unique `&mut RadioRegisters` capability and a read-only generated
+PAC identity.
+
+The old raw prelude/deadline constants, volatile methods, bit transforms, and
+duplicate tests were deleted from `radio_hal.rs`. The source-only audit rejects
+the removed wrapper names and the four exclusively localized physical
+addresses. The force-TX/RX word is shared with independently evidenced RXIQ
+status accesses that remain on the raw frontier; the deleted force-wrapper
+name prevents that particular duplicate path from returning.

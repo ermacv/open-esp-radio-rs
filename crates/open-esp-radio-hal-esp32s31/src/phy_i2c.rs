@@ -1,6 +1,5 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
-#[cfg(any(test, target_arch = "riscv32"))]
 use open_esp_radio_pac_esp32s31::power::phy_i2c_master;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::{power::phy_i2c_command_ram, RadioRegisters, Register32};
@@ -29,7 +28,7 @@ fn host_register(host: PhyI2cHost) -> Register32 {
 
 #[cfg(target_arch = "riscv32")]
 fn command_is_busy(command: u32) -> bool {
-    phy_i2c_master::host_command_0::BUSY.extract(command) != 0
+    master_reset_busy(command)
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -43,6 +42,34 @@ fn encode_command(block: u8, register: u8, value: u8, write: bool) -> u32 {
             0
         }
         | phy_i2c_master::host_command_0::START_OR_RESET.mask()
+}
+
+/// Test the exact busy bit shared by both PHY-I2C master hosts.
+///
+/// Complete rev0 ROM `phy_i2c_master_reset` at `0x2f8260d0`, size `0x74`,
+/// samples bit 25 of both host words. Keeping this transform in the safe HAL
+/// lets the outer state machine carry only a semantic `busy` observation.
+pub fn master_reset_busy(command: u32) -> bool {
+    phy_i2c_master::host_command_0::BUSY.extract(command) != 0
+}
+
+/// Publish one full-word PHY-I2C master reset command.
+///
+/// The complete ROM parent writes only bit 26 to a busy host and then polls
+/// bit 25. This finite method publishes that one edge; retry and timeout
+/// ownership remain in the Rust transition.
+#[cfg(target_arch = "riscv32")]
+pub fn pulse_master_reset(registers: &mut RadioRegisters, host: PhyI2cHost) {
+    registers.write32(
+        host_register(host),
+        phy_i2c_master::host_command_0::START_OR_RESET.mask(),
+    );
+}
+
+/// Sample one PHY-I2C master reset busy edge without retrying.
+#[cfg(target_arch = "riscv32")]
+pub fn sample_master_reset_busy(registers: &RadioRegisters, host: PhyI2cHost) -> bool {
+    master_reset_busy(registers.read32(host_register(host)))
 }
 
 /// Publish one PHY-I2C read after a single fail-fast busy observation.
@@ -226,11 +253,18 @@ pub fn write_command_memory(
 
 #[cfg(test)]
 mod tests {
-    use super::bbpll_calibration_bits;
+    use super::{bbpll_calibration_bits, master_reset_busy};
 
     #[test]
     fn bbpll_calibration_retains_both_complete_rom_encodings() {
         assert_eq!(bbpll_calibration_bits(false), 0x04);
         assert_eq!(bbpll_calibration_bits(true), 0x08);
+    }
+
+    #[test]
+    fn master_reset_busy_uses_only_the_pac_busy_field() {
+        assert!(!master_reset_busy(0xfdff_ffff));
+        assert!(master_reset_busy(0x0200_0000));
+        assert!(master_reset_busy(u32::MAX));
     }
 }

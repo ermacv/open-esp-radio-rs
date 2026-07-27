@@ -12,7 +12,9 @@ Current layers:
 - Rust-owned cold-PHY and baseband state machines;
 - finite MMIO/I²C/PBus bindings;
 - explicit async timer/readiness actions;
-- the temporary register-level HAL in `radio_hal.rs`.
+- a generated recovered-register PAC and safe ownership HAL;
+- a shrinking temporary raw frontier in `radio_hal.rs` for identities that
+  have not yet been qualified into the PAC.
 
 ## Verified cold-init chain
 

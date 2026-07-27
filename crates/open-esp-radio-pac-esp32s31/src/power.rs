@@ -694,17 +694,22 @@ pub mod modem_lpcon {
         pub const RST_DCMEM: Field32 = Field32::new(4, 1);
     }
 
-    /// SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout]. Modem power tick target.
+    /// SOURCE[S31_MODEM_LPCON_STRUCT,BLOB_LIBPHY_PHY_GET_XTAL_FREQ];
+    /// CONFIDENCE[exact-s31-layout-and-transform]. Modem power tick target; complete
+    /// phy_get_xtal_freq proves the frequency-minus-one transform.
     pub const TICK_CONF: Register32 =
         Register32::described(0x2010f028, RegisterAccess::ReadWrite, None);
 
-    /// Recovered fields of [`TICK_CONF`]. SOURCE[S31_MODEM_LPCON_STRUCT];
-    /// CONFIDENCE[exact-s31-layout]. Modem power tick target.
+    /// Recovered fields of [`TICK_CONF`].
+    /// SOURCE[S31_MODEM_LPCON_STRUCT,BLOB_LIBPHY_PHY_GET_XTAL_FREQ];
+    /// CONFIDENCE[exact-s31-layout-and-transform]. Modem power tick target; complete
+    /// phy_get_xtal_freq proves the frequency-minus-one transform.
     pub mod tick_conf {
         use crate::Field32;
 
-        /// Field layout from SOURCE[S31_MODEM_LPCON_STRUCT]; CONFIDENCE[exact-s31-layout].
-        /// Modem power tick target.
+        /// SOURCE[S31_MODEM_LPCON_STRUCT,BLOB_LIBPHY_PHY_GET_XTAL_FREQ];
+        /// CONFIDENCE[exact-s31-layout-and-transform]. Six-bit target programmed as
+        /// frequency_mhz - 1.
         pub const MODEM_PWR_TICK_TARGET: Field32 = Field32::new(0, 6);
     }
 
@@ -3625,6 +3630,38 @@ pub mod phy_rx_dco_oracle {
     }
 }
 
+/// SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact-semantics-unknown].
+/// Free-running word sampled by the complete rev0 ROM SDM-stability deadline. The instruction
+/// body proves its address and unsigned wraparound consumer, but not its hardware clock source.
+pub mod phy_cold_deadline_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address. SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Free-running word sampled by the
+    /// complete rev0 ROM SDM-stability deadline. The instruction body proves its address and
+    /// unsigned wraparound consumer, but not its hardware clock source.
+    pub const BASE: usize = 0x2010d800;
+
+    /// SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_wait_i2c_sdm_stable
+    /// samples this full word before and after each independently completed PHY-I2C read.
+    pub const DEADLINE_COUNTER_UNKNOWN: Register32 =
+        Register32::described(0x2010d800, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`DEADLINE_COUNTER_UNKNOWN`].
+    /// SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_wait_i2c_sdm_stable
+    /// samples this full word before and after each independently completed PHY-I2C read.
+    pub mod deadline_counter_unknown {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+        /// CONFIDENCE[instruction-exact-semantics-from-control-flow]. Full-width wrapping
+        /// deadline value.
+        pub const VALUE: Field32 = Field32::new(0, 32);
+    }
+}
+
 /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
 /// CONFIDENCE[instruction-exact-semantics-partial]. Temperature-sensor code, power and
 /// read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies.
@@ -3790,7 +3827,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 208] = [
+pub const ALL: [Register32; 209] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -3992,6 +4029,7 @@ pub const ALL: [Register32; 208] = [
     phy_iq_estimator_oracle::ESTIMATOR_READY_STATUS,
     phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS,
     phy_rx_dco_oracle::CONTROL,
+    phy_cold_deadline_oracle::DEADLINE_COUNTER_UNKNOWN,
     phy_temperature_sensor_oracle::SENSOR_CODE_POWER,
     phy_temperature_sensor_oracle::SENSOR_CONTROL,
     phy_temperature_system_oracle::SYSTEM_CONTROL,

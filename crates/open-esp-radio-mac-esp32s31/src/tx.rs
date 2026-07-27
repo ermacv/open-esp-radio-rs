@@ -255,7 +255,6 @@ impl TxSlot {
             return Err(TxError::QueueActive);
         }
 
-        mmio.write32(TX_COMPLETE_CLEAR, queue.completion_mask());
         mmio.write32(TX_Q_CONTROL[index], image.plcp0);
         mmio.write32(TX_Q_PLCP1[index], image.plcp1);
         let ppdu_control = mmio.read32(TX_Q_PPDU_CONTROL[index]);

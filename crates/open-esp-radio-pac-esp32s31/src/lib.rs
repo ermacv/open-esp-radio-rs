@@ -180,7 +180,6 @@ impl RadioRegisters {
         matches!(
             address,
             0x2010_0000..=0x2010_ffff
-                | 0x2058_0000..=0x2058_ffff
                 | 0x2070_0000..=0x2071_ffff
                 | 0x2080_0000..=0x2081_ffff
         )
@@ -276,17 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn hp_modem_region_is_part_of_the_radio_capability() {
-        assert!(RadioRegisters::contains(
-            power::hp_sys_clkrst::MODEM_CTRL0.address()
-        ));
-        assert!(RadioRegisters::contains(
-            power::hp_sys_clkrst::MODEM_CONF.address()
-        ));
-        assert!(!RadioRegisters::contains(0x2057_ffff));
-    }
-
-    #[test]
     fn fields_reject_values_that_do_not_fit() {
         let field = Field32::new(8, 4);
         assert_eq!(field.mask(), 0x0000_0f00);
@@ -302,7 +290,6 @@ mod tests {
             power::pmu::IMM_MODEM_ICG.access(),
             RegisterAccess::WriteOnly
         );
-        assert_eq!(power::hp_sys_clkrst::MODEM_CONF.reset_value(), Some(0x25));
         assert_eq!(
             power::phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.access(),
             RegisterAccess::ReadWrite

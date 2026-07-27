@@ -4264,192 +4264,6 @@ pub mod modem_lpcon {
         }
     }
 }
-#[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. ESP32-S31 high-performance clock/reset fields used by the modem sequence."]
-pub type HpSysClkrst = crate::Periph<hp_sys_clkrst::RegisterBlock, 0x2058_7000>;
-impl core::fmt::Debug for HpSysClkrst {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("HpSysClkrst").finish()
-    }
-}
-#[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. ESP32-S31 high-performance clock/reset fields used by the modem sequence."]
-pub mod hp_sys_clkrst {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        _reserved0: [u8; 0x40],
-        modem_ctrl0: ModemCtrl0,
-        _reserved1: [u8; 0x019c],
-        modem_conf: ModemConf,
-    }
-    impl RegisterBlock {
-        #[doc = "0x40 - SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem register-bus clock enable."]
-        #[inline(always)]
-        pub const fn modem_ctrl0(&self) -> &ModemCtrl0 {
-            &self.modem_ctrl0
-        }
-        #[doc = "0x1e0 - SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem APB, reset and source-clock configuration."]
-        #[inline(always)]
-        pub const fn modem_conf(&self) -> &ModemConf {
-            &self.modem_conf
-        }
-    }
-    #[doc = "MODEM_CTRL0 (rw) register accessor: SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem register-bus clock enable.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_ctrl0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_ctrl0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_ctrl0`] module"]
-    #[doc(alias = "MODEM_CTRL0")]
-    pub type ModemCtrl0 = crate::Reg<modem_ctrl0::ModemCtrl0Spec>;
-    #[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem register-bus clock enable."]
-    pub mod modem_ctrl0 {
-        #[doc = "Register `MODEM_CTRL0` reader"]
-        pub type R = crate::R<ModemCtrl0Spec>;
-        #[doc = "Register `MODEM_CTRL0` writer"]
-        pub type W = crate::W<ModemCtrl0Spec>;
-        #[doc = "Field `REG_MODEM_CLK_EN` reader - "]
-        pub type RegModemClkEnR = crate::BitReader;
-        #[doc = "Field `REG_MODEM_CLK_EN` writer - "]
-        pub type RegModemClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn reg_modem_clk_en(&self) -> RegModemClkEnR {
-                RegModemClkEnR::new((self.bits & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn reg_modem_clk_en(&mut self) -> RegModemClkEnW<'_, ModemCtrl0Spec> {
-                RegModemClkEnW::new(self, 0)
-            }
-        }
-        #[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem register-bus clock enable.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_ctrl0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_ctrl0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ModemCtrl0Spec;
-        impl crate::RegisterSpec for ModemCtrl0Spec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`modem_ctrl0::R`](R) reader structure"]
-        impl crate::Readable for ModemCtrl0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`modem_ctrl0::W`](W) writer structure"]
-        impl crate::Writable for ModemCtrl0Spec {
-            type Safety = crate::Unsafe;
-        }
-        #[doc = "`reset()` method sets MODEM_CTRL0 to value 0x01"]
-        impl crate::Resettable for ModemCtrl0Spec {
-            const RESET_VALUE: u32 = 0x01;
-        }
-    }
-    #[doc = "MODEM_CONF (rw) register accessor: SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem APB, reset and source-clock configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_conf`] module"]
-    #[doc(alias = "MODEM_CONF")]
-    pub type ModemConf = crate::Reg<modem_conf::ModemConfSpec>;
-    #[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem APB, reset and source-clock configuration."]
-    pub mod modem_conf {
-        #[doc = "Register `MODEM_CONF` reader"]
-        pub type R = crate::R<ModemConfSpec>;
-        #[doc = "Register `MODEM_CONF` writer"]
-        pub type W = crate::W<ModemConfSpec>;
-        #[doc = "Field `MODEM_APB_CLK_EN` reader - "]
-        pub type ModemApbClkEnR = crate::BitReader;
-        #[doc = "Field `MODEM_APB_CLK_EN` writer - "]
-        pub type ModemApbClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_RST_EN` reader - "]
-        pub type ModemRstEnR = crate::BitReader;
-        #[doc = "Field `MODEM_RST_EN` writer - "]
-        pub type ModemRstEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_CLK_EN` reader - "]
-        pub type ModemClkEnR = crate::BitReader;
-        #[doc = "Field `MODEM_CLK_EN` writer - "]
-        pub type ModemClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_CLK_SOURCE_SEL` reader - "]
-        pub type ModemClkSourceSelR = crate::BitReader;
-        #[doc = "Field `MODEM_CLK_SOURCE_SEL` writer - "]
-        pub type ModemClkSourceSelW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_PLL_CLK_EN` reader - "]
-        pub type ModemPllClkEnR = crate::BitReader;
-        #[doc = "Field `MODEM_PLL_CLK_EN` writer - "]
-        pub type ModemPllClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_XTAL_CLK_EN` reader - "]
-        pub type ModemXtalClkEnR = crate::BitReader;
-        #[doc = "Field `MODEM_XTAL_CLK_EN` writer - "]
-        pub type ModemXtalClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn modem_apb_clk_en(&self) -> ModemApbClkEnR {
-                ModemApbClkEnR::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bit 1"]
-            #[inline(always)]
-            pub fn modem_rst_en(&self) -> ModemRstEnR {
-                ModemRstEnR::new(((self.bits >> 1) & 1) != 0)
-            }
-            #[doc = "Bit 2"]
-            #[inline(always)]
-            pub fn modem_clk_en(&self) -> ModemClkEnR {
-                ModemClkEnR::new(((self.bits >> 2) & 1) != 0)
-            }
-            #[doc = "Bit 3"]
-            #[inline(always)]
-            pub fn modem_clk_source_sel(&self) -> ModemClkSourceSelR {
-                ModemClkSourceSelR::new(((self.bits >> 3) & 1) != 0)
-            }
-            #[doc = "Bit 4"]
-            #[inline(always)]
-            pub fn modem_pll_clk_en(&self) -> ModemPllClkEnR {
-                ModemPllClkEnR::new(((self.bits >> 4) & 1) != 0)
-            }
-            #[doc = "Bit 5"]
-            #[inline(always)]
-            pub fn modem_xtal_clk_en(&self) -> ModemXtalClkEnR {
-                ModemXtalClkEnR::new(((self.bits >> 5) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn modem_apb_clk_en(&mut self) -> ModemApbClkEnW<'_, ModemConfSpec> {
-                ModemApbClkEnW::new(self, 0)
-            }
-            #[doc = "Bit 1"]
-            #[inline(always)]
-            pub fn modem_rst_en(&mut self) -> ModemRstEnW<'_, ModemConfSpec> {
-                ModemRstEnW::new(self, 1)
-            }
-            #[doc = "Bit 2"]
-            #[inline(always)]
-            pub fn modem_clk_en(&mut self) -> ModemClkEnW<'_, ModemConfSpec> {
-                ModemClkEnW::new(self, 2)
-            }
-            #[doc = "Bit 3"]
-            #[inline(always)]
-            pub fn modem_clk_source_sel(&mut self) -> ModemClkSourceSelW<'_, ModemConfSpec> {
-                ModemClkSourceSelW::new(self, 3)
-            }
-            #[doc = "Bit 4"]
-            #[inline(always)]
-            pub fn modem_pll_clk_en(&mut self) -> ModemPllClkEnW<'_, ModemConfSpec> {
-                ModemPllClkEnW::new(self, 4)
-            }
-            #[doc = "Bit 5"]
-            #[inline(always)]
-            pub fn modem_xtal_clk_en(&mut self) -> ModemXtalClkEnW<'_, ModemConfSpec> {
-                ModemXtalClkEnW::new(self, 5)
-            }
-        }
-        #[doc = "SOURCE\\[S31_ESP_PACS_SVD\\]; CONFIDENCE\\[exact-s31-svd\\]. Modem APB, reset and source-clock configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ModemConfSpec;
-        impl crate::RegisterSpec for ModemConfSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`modem_conf::R`](R) reader structure"]
-        impl crate::Readable for ModemConfSpec {}
-        #[doc = "`write(|w| ..)` method takes [`modem_conf::W`](W) writer structure"]
-        impl crate::Writable for ModemConfSpec {
-            type Safety = crate::Unsafe;
-        }
-        #[doc = "`reset()` method sets MODEM_CONF to value 0x25"]
-        impl crate::Resettable for ModemConfSpec {
-            const RESET_VALUE: u32 = 0x25;
-        }
-    }
-}
 #[doc = "SOURCE\\[S31_ESP_PACS_SVD,S31_PMU_HEADERS,ROM_REV0_PHY_OPEN_FE_BB_CLK\\]; CONFIDENCE\\[mixed-per-field\\]. S31 PMU modem ICG triggers and the active-state clock/power word touched by the rev0 ROM."]
 pub type Pmu = crate::Periph<pmu::RegisterBlock, 0x2070_4000>;
 impl core::fmt::Debug for Pmu {
@@ -12919,8 +12733,6 @@ pub struct Peripherals {
     pub modem_syscon: ModemSyscon,
     #[doc = "MODEM_LPCON"]
     pub modem_lpcon: ModemLpcon,
-    #[doc = "HP_SYS_CLKRST"]
-    pub hp_sys_clkrst: HpSysClkrst,
     #[doc = "PMU"]
     pub pmu: Pmu,
     #[doc = "PHY_MEMORY"]
@@ -12977,7 +12789,6 @@ impl Peripherals {
         Peripherals {
             modem_syscon: ModemSyscon::steal(),
             modem_lpcon: ModemLpcon::steal(),
-            hp_sys_clkrst: HpSysClkrst::steal(),
             pmu: Pmu::steal(),
             phy_memory: PhyMemory::steal(),
             phy_frequency_channel_oracle: PhyFrequencyChannelOracle::steal(),

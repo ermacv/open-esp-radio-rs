@@ -20,10 +20,7 @@ pub mod phy_prelude;
 pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
-pub use power::{
-    PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError, PowerEvidence,
-    PowerOperation, PowerSequence,
-};
+pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
@@ -115,24 +112,8 @@ impl<P> Radio<P, state::Owned> {
             state: PhantomData,
         }
     }
-
-    #[cfg(test)]
-    fn power_up_with(
-        self,
-        io: &mut impl power::RegisterIo,
-    ) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute(io) {
-            return Err(PowerUpFailure { radio: self, error });
-        }
-        Ok(Radio {
-            peripheral: self.peripheral,
-            registers: self.registers,
-            state: PhantomData,
-        })
-    }
 }
 
-#[cfg(target_arch = "riscv32")]
 impl<P: PowerClockControl> Radio<P, state::Owned> {
     /// Execute the finite modem/PHY clock and reset prerequisites.
     ///
@@ -210,43 +191,43 @@ pub trait AsyncEvent {
 
 #[cfg(test)]
 mod tests {
-    use std::vec::Vec;
-
-    use open_esp_radio_pac_esp32s31::power::modem_syscon;
-
-    use super::{power::RegisterIo, state, Radio, Register32};
+    use super::{state, PowerClockControl, PowerClockImages, Radio};
 
     #[derive(Debug, Eq, PartialEq)]
-    struct TestPeripheral(u8);
+    struct TestPeripheral {
+        id: u8,
+        ready: bool,
+    }
 
     fn require_owned(_: &Radio<TestPeripheral, state::Owned>) {}
     fn require_powered(_: &Radio<TestPeripheral, state::Powered>) {}
 
-    #[derive(Default)]
-    struct FakeRegisters {
-        values: Vec<(Register32, u32)>,
-        writes: Vec<(Register32, u32)>,
-    }
+    impl PowerClockControl for TestPeripheral {
+        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
+        fn select_hp_active_modem_icg(&mut self) {}
+        fn apply_modem_icg_selection(&mut self) {}
+        fn apply_sleep_icg_selection(&mut self) {}
+        fn enable_modem_register_bus_clock(&mut self) {}
+        fn configure_hp_active_modem_clock_map(&mut self) {}
+        fn configure_shared_modem_clock_map(&mut self) {}
+        fn configure_modem_source_clocks(&mut self) {}
+        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
+        fn enable_phy_calibration_clocks(&mut self) {}
+        fn select_phy_i2c_160mhz_source(&mut self) {}
+        fn enable_phy_i2c_master_clock(&mut self) {}
 
-    impl RegisterIo for FakeRegisters {
-        fn read(&mut self, register: Register32) -> u32 {
-            self.values
-                .iter()
-                .find_map(|(candidate, value)| (*candidate == register).then_some(*value))
-                .unwrap_or(0)
-        }
-
-        fn write(&mut self, register: Register32, value: u32) {
-            if let Some(entry) = self
-                .values
-                .iter_mut()
-                .find(|(candidate, _)| *candidate == register)
-            {
-                entry.1 = value;
-            } else {
-                self.values.push((register, value));
+        fn power_clock_images(&self) -> PowerClockImages {
+            PowerClockImages {
+                reset_released: self.ready,
+                hp_active_icg_selected: self.ready,
+                modem_bus_clock_enabled: self.ready,
+                hp_active_clock_map_configured: self.ready,
+                shared_clock_map_configured: self.ready,
+                modem_source_clocks_configured: self.ready,
+                phy_calibration_clocks_enabled: self.ready,
+                phy_i2c_160mhz_selected: self.ready,
+                phy_i2c_master_clock_enabled: self.ready,
             }
-            self.writes.push((register, value));
         }
     }
 
@@ -254,61 +235,58 @@ mod tests {
     fn peripheral_token_follows_the_type_state_owner() {
         // SAFETY: this test token represents no real hardware and no MMIO is
         // accessed.
-        let owned = unsafe { Radio::claim(TestPeripheral(7)) };
+        let owned = unsafe { Radio::claim(TestPeripheral { id: 7, ready: true }) };
         require_owned(&owned);
 
         let powered = owned
-            .power_up_with(&mut FakeRegisters::default())
+            .power_up()
             .unwrap_or_else(|_| panic!("fake prerequisite sequence failed"));
         require_powered(&powered);
-        assert_eq!(powered.peripheral(), &TestPeripheral(7));
+        assert_eq!(powered.peripheral(), &TestPeripheral { id: 7, ready: true });
     }
 
     #[test]
     fn external_initialization_bridge_preserves_the_unique_owner() {
         // SAFETY: this test token represents no real hardware and no MMIO is
         // accessed.
-        let owned = unsafe { Radio::claim(TestPeripheral(8)) };
+        let owned = unsafe { Radio::claim(TestPeripheral { id: 8, ready: true }) };
         require_owned(&owned);
 
         // SAFETY: this host-only type-state test models a completed external
         // initializer and performs no register access.
         let powered = unsafe { owned.assume_powered_after_external_initialization() };
         require_powered(&powered);
-        assert_eq!(powered.peripheral(), &TestPeripheral(8));
+        assert_eq!(powered.peripheral(), &TestPeripheral { id: 8, ready: true });
     }
 
     #[test]
     fn unpowered_owner_can_release_the_original_token() {
         // SAFETY: this test token represents no real hardware.
-        let owned = unsafe { Radio::claim(TestPeripheral(9)) };
-        assert_eq!(owned.release(), TestPeripheral(9));
+        let owned = unsafe { Radio::claim(TestPeripheral { id: 9, ready: true }) };
+        assert_eq!(owned.release(), TestPeripheral { id: 9, ready: true });
     }
 
     #[test]
     fn failed_power_transition_returns_the_unique_owned_radio() {
-        struct StuckReset;
-
-        impl RegisterIo for StuckReset {
-            fn read(&mut self, register: Register32) -> u32 {
-                if register == modem_syscon::MODEM_RST_CONF {
-                    (1 << 8) | (1 << 9)
-                } else {
-                    0
-                }
-            }
-
-            fn write(&mut self, _register: Register32, _value: u32) {}
-        }
-
         // SAFETY: this test token represents no real hardware.
-        let owned = unsafe { Radio::claim(TestPeripheral(11)) };
-        let failure = match owned.power_up_with(&mut StuckReset) {
+        let owned = unsafe {
+            Radio::claim(TestPeripheral {
+                id: 11,
+                ready: false,
+            })
+        };
+        let failure = match owned.power_up() {
             Ok(_) => panic!("stuck reset unexpectedly powered the radio"),
             Err(failure) => failure,
         };
         let recovered = failure.into_radio();
         require_owned(&recovered);
-        assert_eq!(recovered.release(), TestPeripheral(11));
+        assert_eq!(
+            recovered.release(),
+            TestPeripheral {
+                id: 11,
+                ready: false
+            }
+        );
     }
 }

@@ -36,9 +36,9 @@ The ownership/native-access transition passed the isolated power-only HIL on
   `OPEN_RADIO_POWER_HIL result=PASS stage=powered`;
 - USB hard reset immediately followed capture; flash was not modified.
 
-This result exercises the RISC-V `Radio::power_up` implementation described
-below. That implementation uses the generated PAC owner and does not execute
-the host compatibility `PowerSequence`.
+This result exercises the `Radio::power_up` implementation described below.
+Target and host tests now execute the same semantic `PowerClockControl`
+sequence; only the integration implementation touches the official PAC.
 
 The same revision subsequently cold-booted the flash-backed full PHY/MAC HIL
 after PHY-I²C and PBus were moved to the generated PAC. The first run exposed
@@ -85,49 +85,53 @@ mutable borrow of that owner. The first migrated target paths are:
 
 Their sequencing remains in the HAL, while register field access and the small
 `svd2rust` unsafe blocks for bounded multi-bit writes stay in the PAC. The old
-`PowerSequence` and fake `RegisterIo` path are now host-test compatibility
-only; the RISC-V `power_up` implementation does not execute them.
+raw-address `PowerSequence` and its fake `RegisterIo` path have been removed;
+host tests record and verify the same semantic capability calls as the target.
 
 ## Peripheral scope
 
 The word "radio" is not one peripheral ownership block. The recovered SVD
-currently touches four independently decoded chip-level windows:
+currently touches three independently decoded chip-level windows:
 
 - `0x2010_0000..0x201f_ffff`: modem/radio core, including PHY and Wi-Fi MAC;
-- `0x2050_0000..0x205f_ffff`: HP-system dependencies such as clock/reset;
 - `0x2070_0000..0x207f_ffff`: LP-system and PMU dependencies;
 - `0x2080_0000..0x208f_ffff`: LP analog/peripheral dependencies such as
   temperature sensing.
 
-The latter three are dependencies of the radio driver, not parts of the Wi-Fi
+The latter two are dependencies of the radio driver, not parts of the Wi-Fi
 MAC/PHY register fabric. Their source is the pinned ESP32-S31 `reg_base.h`;
 the `0x201x_xxxx` identities additionally come from modem structures and
 complete ROM/blob MMIO instructions. The PAC exposes this distinction through
 `Esp32s31MmioWindow`, while one top-level `RadioRegisters` owner still
 serializes cross-window initialization sequences.
 
+The separately decoded HP-system window at
+`0x2050_0000..0x205f_ffff` is still documented by `Esp32s31MmioWindow`, but
+the custom SVD generator now rejects it. `HP_SYS_CLKRST` ownership and field
+access are delegated entirely to the official `esp-hal` PAC.
+
 Within those windows the recovered SVD currently covers:
 
 - Wi-Fi MAC and its integrated RX DMA/BlockAck register windows;
 - PHY baseband, AGC, PBus, PHY-I2C and PHY table memories;
-- `MODEM_SYSCON`, `MODEM_LPCON`, `HP_SYS_CLKRST` and `PMU` clock/reset/power
-  prerequisites;
+- `MODEM_SYSCON`, `MODEM_LPCON` and `PMU` clock/reset/power prerequisites
+  still awaiting the same split;
 - PHY temperature sensor and its system clock/control register.
 
 This is not the desired final ownership boundary. The ESP32-S31 PAC used by
 the `esp32s31-async-platform` HAL branch already describes these complete
 chip-level peripherals:
 
-| Recovered SVD identity | Official PAC identity | Base |
-| --- | --- | --- |
-| `MODEM_SYSCON` | `esp32s31::MODEM_SYSCON` | `0x2010_9c00` |
-| `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` |
-| `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` |
-| `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` |
-| `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` |
-| `PMU` | `esp32s31::PMU` | `0x2070_4000` |
-| `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` |
-| `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` |
+| Recovered identity | Official PAC identity | Base | Migration |
+| --- | --- | --- | --- |
+| `MODEM_SYSCON` | `esp32s31::MODEM_SYSCON` | `0x2010_9c00` | pending |
+| `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` | pending |
+| `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` | pending |
+| `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` | removed |
+| `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | pending |
+| `PMU` | `esp32s31::PMU` | `0x2070_4000` | pending |
+| `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | pending |
+| `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | pending |
 
 Those identities must move behind a platform capability borrowed from the
 official `esp-hal`/PAC owner. They must then be removed from the recovered SVD;

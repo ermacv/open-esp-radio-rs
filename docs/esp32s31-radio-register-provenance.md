@@ -7,15 +7,16 @@ raw constants:
 2. Which bit field exists on ESP32-S31?
 3. Which initialization order and value has actually been exercised?
 
-The SVD answers the first two. HAL operations carry the third in comments and
-through `PowerOperation::evidence()`.
+The SVD answers the first two for recovered radio blocks. HAL semantic
+operations carry the third in comments; documented system blocks are decoded
+only by the official PAC in the integration adapter.
 
 ## Clock and power chain
 
 | Stage | Registers | Layout evidence | Operation evidence |
 |---|---|---|---|
 | HP-active modem ICG selection | `PMU.HP_ACTIVE_ICG_MODEM`, `IMM_MODEM_ICG`, `IMM_SLEEP_SYSCLK` | S31 SVD and PMU headers | pinned S31 `esp-hal` clock initialization |
-| Modem bus and source | `HP_SYS_CLKRST.MODEM_CTRL0`, `MODEM_CONF` | S31 SVD | pinned S31 `esp-hal` clock initialization |
+| Modem bus and source | `HP_SYS_CLKRST.MODEM_CTRL0`, `MODEM_CONF` | official S31 PAC/SVD | pinned S31 `esp-hal` clock initialization |
 | Domain power-state maps | `MODEM_SYSCON.CLK_CONF_POWER_ST`, `MODEM_LPCON.CLK_CONF_POWER_ST` | exact S31 structures and LL accessors | pinned S31 `esp-hal` values `0x64646400` and `0x66660000`, now composed from named fields |
 | Wi-Fi BB reset and PHY gates | `MODEM_RST_CONF`, `CLK_CONF1`, `CLK_CONF`, LPCON `CLK_CONF` | exact S31 structures | pinned S31 `esp-hal` PHY/radio clock sequence |
 | Frontend/baseband gate leaf | three `PHY_CLOCK_ORACLE` registers and `PMU.HP_ACTIVE_HP_CK_POWER` | mixed S31 PMU plus opaque instruction evidence | complete rev0 ROM `phy_open_fe_bb_clk` and blob `phy_close_fe_bb_clk` bodies |

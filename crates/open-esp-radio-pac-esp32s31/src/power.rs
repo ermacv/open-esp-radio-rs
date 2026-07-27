@@ -876,60 +876,6 @@ pub mod modem_lpcon {
     }
 }
 
-/// SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. ESP32-S31 high-performance clock/reset
-/// fields used by the modem sequence.
-pub mod hp_sys_clkrst {
-    use crate::{Register32, RegisterAccess};
-
-    /// Peripheral base address. SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. ESP32-S31
-    /// high-performance clock/reset fields used by the modem sequence.
-    pub const BASE: usize = 0x20587000;
-
-    /// SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem register-bus clock enable.
-    pub const MODEM_CTRL0: Register32 =
-        Register32::described(0x20587040, RegisterAccess::ReadWrite, Some(0x00000001));
-
-    /// Recovered fields of [`MODEM_CTRL0`]. SOURCE[S31_ESP_PACS_SVD];
-    /// CONFIDENCE[exact-s31-svd]. Modem register-bus clock enable.
-    pub mod modem_ctrl0 {
-        use crate::Field32;
-
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem
-        /// register-bus clock enable.
-        pub const REG_MODEM_CLK_EN: Field32 = Field32::new(0, 1);
-    }
-
-    /// SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB, reset and source-clock
-    /// configuration.
-    pub const MODEM_CONF: Register32 =
-        Register32::described(0x205871e0, RegisterAccess::ReadWrite, Some(0x00000025));
-
-    /// Recovered fields of [`MODEM_CONF`]. SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd].
-    /// Modem APB, reset and source-clock configuration.
-    pub mod modem_conf {
-        use crate::Field32;
-
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_APB_CLK_EN: Field32 = Field32::new(0, 1);
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_RST_EN: Field32 = Field32::new(1, 1);
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_CLK_EN: Field32 = Field32::new(2, 1);
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_CLK_SOURCE_SEL: Field32 = Field32::new(3, 1);
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_PLL_CLK_EN: Field32 = Field32::new(4, 1);
-        /// Field layout from SOURCE[S31_ESP_PACS_SVD]; CONFIDENCE[exact-s31-svd]. Modem APB,
-        /// reset and source-clock configuration.
-        pub const MODEM_XTAL_CLK_EN: Field32 = Field32::new(5, 1);
-    }
-}
-
 /// SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,ROM_REV0_PHY_OPEN_FE_BB_CLK];
 /// CONFIDENCE[mixed-per-field]. S31 PMU modem ICG triggers and the active-state clock/power
 /// word touched by the rev0 ROM.
@@ -4212,7 +4158,7 @@ pub mod wifi_mac_rx_dma {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 233] = [
+pub const ALL: [Register32; 231] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -4242,8 +4188,6 @@ pub const ALL: [Register32; 233] = [
     modem_lpcon::APB_MEM_SEL,
     modem_lpcon::MODEM_INTR_WAKEUP_CONF,
     modem_lpcon::MEM_CONF2,
-    hp_sys_clkrst::MODEM_CTRL0,
-    hp_sys_clkrst::MODEM_CONF,
     pmu::HP_ACTIVE_ICG_MODEM,
     pmu::HP_ACTIVE_HP_CK_POWER,
     pmu::IMM_HP_CK_POWER_0,

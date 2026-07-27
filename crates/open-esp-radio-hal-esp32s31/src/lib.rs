@@ -20,7 +20,10 @@ pub mod phy_prelude;
 pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
-pub use power::{PowerCheckpoint, PowerError, PowerEvidence, PowerOperation, PowerSequence};
+pub use power::{
+    PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError, PowerEvidence,
+    PowerOperation, PowerSequence,
+};
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
@@ -113,20 +116,12 @@ impl<P> Radio<P, state::Owned> {
         }
     }
 
-    /// Execute the finite modem/PHY clock and reset prerequisites.
-    ///
-    /// Register fields come from the pinned ESP32-S31 modem/PMU headers and
-    /// SVD. The exact operation order and field values reproduce the pinned
-    /// S31 `esp-hal` clock path at commit `6899213e`; the ROM-only frontend
-    /// gates are a later owned PHY transition and are not folded into this
-    /// type-state change.
-    ///
-    /// The method is target-only because host tests use a private fake
-    /// register backend. A successful read-back is the only safe path into
-    /// `Radio<P, Powered>`.
-    #[cfg(target_arch = "riscv32")]
-    pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute_owned(&mut self.registers) {
+    #[cfg(test)]
+    fn power_up_with(
+        self,
+        io: &mut impl power::RegisterIo,
+    ) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        if let Err(error) = power::execute(io) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {
@@ -135,13 +130,22 @@ impl<P> Radio<P, state::Owned> {
             state: PhantomData,
         })
     }
+}
 
-    #[cfg(test)]
-    fn power_up_with(
-        self,
-        io: &mut impl power::RegisterIo,
-    ) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute(io) {
+#[cfg(target_arch = "riscv32")]
+impl<P: PowerClockControl> Radio<P, state::Owned> {
+    /// Execute the finite modem/PHY clock and reset prerequisites.
+    ///
+    /// Register fields come from the official ESP32-S31 PAC. The exact
+    /// operation order and field values reproduce the pinned S31 `esp-hal`
+    /// clock path at commit `6899213e`; the ROM-only frontend gates are a
+    /// later owned PHY transition and are not folded into this type-state
+    /// change.
+    ///
+    /// `P` owns the official platform capability. A successful read-back is
+    /// the only safe path into `Radio<P, Powered>`.
+    pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        if let Err(error) = power::execute_owned(&mut self.peripheral) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {

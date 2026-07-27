@@ -5,12 +5,49 @@
 //! Wi-Fi MAC clocks are intentionally excluded: they belong to the later MAC
 //! start transition.
 
-#[cfg(target_arch = "riscv32")]
-use open_esp_radio_pac_esp32s31::RadioRegisters;
 use open_esp_radio_pac_esp32s31::{
     power::{hp_sys_clkrst, modem_lpcon, modem_syscon, pmu},
     Field32, Register32,
 };
+
+/// Official chip-platform capability needed by the open radio power sequence.
+///
+/// The open driver owns the order of operations, while the integration layer
+/// owns the chip PAC handles and implements each operation with that PAC. This
+/// keeps documented system peripherals out of the recovered radio PAC and
+/// makes the required ownership transfer explicit in the `Radio<P>` token.
+pub trait PowerClockControl {
+    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool);
+    fn select_hp_active_modem_icg(&mut self);
+    fn apply_modem_icg_selection(&mut self);
+    fn apply_sleep_icg_selection(&mut self);
+    fn enable_modem_register_bus_clock(&mut self);
+    fn configure_hp_active_modem_clock_map(&mut self);
+    fn configure_shared_modem_clock_map(&mut self);
+    fn configure_modem_source_clocks(&mut self);
+    fn set_wifi_baseband_reset(&mut self, asserted: bool);
+    fn enable_phy_calibration_clocks(&mut self);
+    fn select_phy_i2c_160mhz_source(&mut self);
+    fn enable_phy_i2c_master_clock(&mut self);
+    fn power_clock_images(&self) -> PowerClockImages;
+}
+
+/// Official PAC register images captured after the cold clock/reset sequence.
+///
+/// Images, rather than register handles, cross the platform boundary so the
+/// open driver cannot retain or duplicate the system-peripheral capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerClockImages {
+    pub modem_reset: u32,
+    pub hp_active_icg: u32,
+    pub modem_bus_clock: u32,
+    pub hp_active_clock_map: u32,
+    pub shared_clock_map: u32,
+    pub modem_clock_source: u32,
+    pub phy_clocks: u32,
+    pub i2c_source: u32,
+    pub i2c_clock: u32,
+}
 
 const fn field_value(field: Field32, value: u32) -> u32 {
     match field.checked_value(value) {
@@ -384,25 +421,25 @@ pub(crate) fn execute(io: &mut impl RegisterIo) -> Result<(), PowerError> {
 }
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn execute_owned(registers: &mut RadioRegisters) -> Result<(), PowerError> {
+pub(crate) fn execute_owned(platform: &mut impl PowerClockControl) -> Result<(), PowerError> {
     // Keep the operation order here: it is a lifecycle property recovered
     // from the pinned S31 clock oracle, not a property of the register layout.
-    registers.set_wifi_baseband_and_mac_reset(true);
-    registers.set_wifi_baseband_and_mac_reset(false);
-    registers.select_hp_active_modem_icg();
-    registers.apply_modem_icg_selection();
-    registers.apply_sleep_icg_selection();
-    registers.enable_modem_register_bus_clock();
-    registers.configure_hp_active_modem_clock_map();
-    registers.configure_shared_modem_clock_map();
-    registers.configure_modem_source_clocks();
-    registers.set_wifi_baseband_reset(true);
-    registers.set_wifi_baseband_reset(false);
-    registers.enable_phy_calibration_clocks();
-    registers.select_phy_i2c_160mhz_source();
-    registers.enable_phy_i2c_master_clock();
+    platform.set_wifi_baseband_and_mac_reset(true);
+    platform.set_wifi_baseband_and_mac_reset(false);
+    platform.select_hp_active_modem_icg();
+    platform.apply_modem_icg_selection();
+    platform.apply_sleep_icg_selection();
+    platform.enable_modem_register_bus_clock();
+    platform.configure_hp_active_modem_clock_map();
+    platform.configure_shared_modem_clock_map();
+    platform.configure_modem_source_clocks();
+    platform.set_wifi_baseband_reset(true);
+    platform.set_wifi_baseband_reset(false);
+    platform.enable_phy_calibration_clocks();
+    platform.select_phy_i2c_160mhz_source();
+    platform.enable_phy_i2c_master_clock();
 
-    let images = registers.power_clock_images();
+    let images = platform.power_clock_images();
     verify_image(
         PowerCheckpoint::ResetReleased,
         modem_syscon::MODEM_RST_CONF,

@@ -19,6 +19,7 @@ through `PowerOperation::evidence()`.
 | Domain power-state maps | `MODEM_SYSCON.CLK_CONF_POWER_ST`, `MODEM_LPCON.CLK_CONF_POWER_ST` | exact S31 structures and LL accessors | pinned S31 `esp-hal` values `0x64646400` and `0x66660000`, now composed from named fields |
 | Wi-Fi BB reset and PHY gates | `MODEM_RST_CONF`, `CLK_CONF1`, `CLK_CONF`, LPCON `CLK_CONF` | exact S31 structures | pinned S31 `esp-hal` PHY/radio clock sequence |
 | Frontend/baseband gate leaf | three `PHY_CLOCK_ORACLE` registers and `PMU.HP_ACTIVE_HP_CK_POWER` | mixed S31 PMU plus opaque instruction evidence | complete rev0 ROM `phy_open_fe_bb_clk` and blob `phy_close_fe_bb_clk` bodies |
+| Analog PHY-I2C power/reset | `PMU.RF_PWC`, `IMM_HP_CK_POWER_0`, `ANA_PERI_PWR_CTRL` | official S31 PMU header and S31 SVD | complete `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new` body |
 
 The former constant named `MODEM_LPCON_CLOCK_CONF_ADDRESS` at `0x2070401c`
 was incorrect: that address is
@@ -26,6 +27,49 @@ was incorrect: that address is
 `HP_ACTIVE_XPD_BB_I2C` field. The same ROM operation also sets bits 3:0; their
 individual meanings remain unknown and are represented as
 `ROM_OPEN_FE_BB_UNKNOWN_LOW`.
+
+The three addresses previously labeled as MODEM_LPCON in the PHY port are
+actually inside the S31 PMU block:
+
+| Address | Recovered identity | Qualified fields |
+|---|---|---|
+| `0x207040f0` | `PMU.IMM_HP_CK_POWER_0` | all twelve S31 header fields; the open-I2C path uses `TIE_HIGH_XPD_BB_I2C` |
+| `0x20704184` | `PMU.RF_PWC` | `XPD_RF_CIRCUIT[31:16]` |
+| `0x20704208` | `PMU.ANA_PERI_PWR_CTRL` | `XPD_PERIF_I2C`, `RSTB_PERIF_I2C` |
+
+The PMU header labels fields in `IMM_HP_CK_POWER_0` as `WT`, while the
+complete S31 blob body loads the register before masking and storing it. CMSIS
+SVD has no write-trigger access class. This recovered SVD therefore models
+the register `read-write`, records the conflict in its description, and
+preserves the blob's read/modify/write sequence in the HAL.
+
+## PHY PBus and PHY-I2C
+
+`PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
+multifunction register rather than conflicting guessed aliases. Independent
+complete rev0 ROM bodies establish:
+
+- bits 11:8: the four-bit value replaced by `phy_force_txrx_off`;
+- bits 15:14: the pair controlled by `phy_set_rxclk_en`;
+- bits 17:16: the pair controlled by `phy_set_txclk_en`;
+- bit 31: the busy status sampled by `phy_pbus_force_test`.
+
+The pair-level functions do not distinguish the two constituent clocks, so
+the SVD deliberately calls them `RX_CLOCK_ENABLE_PAIR` and
+`TX_CLOCK_ENABLE_PAIR`. The four force encodings are exact, but their
+electrical meaning is still unknown and remains
+`FORCE_TXRX_MODE_UNKNOWN`.
+
+The complete `phy_pbus_rd` address and shift tables expose five packed result
+words at `0x20100894..0x201008a4`. Each visible nine-bit window is represented
+without assigning an analog meaning. Only selector 1's low window has a
+qualified consumer identity: the RX-DCO calibration path.
+
+The PHY-I2C PAC records both host command words, the master control fields,
+read-mask callback, opaque 14-bit host map, three clock-selection words, and
+all 45 command-memory entries. Command layout is instruction-exact:
+block/register/data occupy bytes 0/1/2, followed by write, busy and
+start/reset bits 24/25/26.
 
 ## Cross-chip comparison
 
@@ -38,6 +82,8 @@ S31 PAC field.
 Primary public comparison sources:
 
 - Espressif ESP-IDF
+  [ESP32-S31 PMU register header](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/register/soc/pmu_reg.h);
+- Espressif ESP-IDF
   [ESP32-C5 MODEM_SYSCON](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32c5/include/modem/modem_syscon_reg.h)
   and
   [MODEM_LPCON](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32c5/include/modem/modem_lpcon_reg.h);
@@ -48,14 +94,14 @@ Primary public comparison sources:
 - the public
   [esp-rs ESP32-S31 PAC/SVD package](https://github.com/esp-rs/esp-pacs/tree/main/esp32s31).
 
-## Deferred conflicts
+## Remaining uncertainties
 
-`0x20100890` is still used under multiple recovered semantic names in the PHY
-port (PBus status, clock control and force-TX/RX related paths). No public S31
-register description or complete instruction comparison yet separates those
-interpretations. It is therefore excluded from this SVD pass rather than
-being assigned a convenient name.
+The individual identities inside the RX/TX two-bit clock pairs, the electrical
+meaning of the four force-TX/RX encodings, the PBus packed result windows, and
+the two clock-selection subfields remain unknown. They are included with
+`UNKNOWN` names because their locations and complete operations are useful
+and instruction-exact.
 
-The remaining raw PHY MMIO constants follow the same migration rule: move an
-address into the SVD only when its register identity is stable; add named
-fields only when S31-local layout or instruction-level masks support them.
+Other raw PHY MMIO constants still follow the same migration rule: move an
+address into the SVD only when its identity is stable; add named fields only
+when S31-local layout or instruction-level masks support them.

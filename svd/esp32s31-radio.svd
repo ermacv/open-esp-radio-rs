@@ -6,11 +6,11 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.1</version>
+  <version>0.2</version>
   <description>
-    Recovered ESP32-S31 radio clock, reset and power subset. Unknown fields are
-    omitted; OPAQUE names describe instruction-level evidence without assigning
-    an unproven hardware meaning.
+    Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
+    Unknown fields are omitted; OPAQUE and UNKNOWN names describe
+    instruction-level evidence without assigning an unproven hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
@@ -160,8 +160,15 @@
         </register>
         <register>
           <name>WIFI_BB_CFG</name>
-          <description>SOURCE[S31_MODEM_SYSCON_STRUCT]; CONFIDENCE[register-exact-fields-unknown]. OPAQUE Wi-Fi baseband configuration word.</description>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS]; CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only the ROM-tested PBus condition bit is presently recovered.</description>
           <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>PBUS_WORK_MODE_SETTLE_PULSE_REQUIRED</name>
+              <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown]. phy_pbus_force_mode samples bit 1 and, when set, performs the evidenced delayed pulse tail; the underlying electrical condition is unknown.</description>
+              <bitOffset>1</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>FE_CFG</name>
@@ -453,6 +460,25 @@
           </fields>
         </register>
         <register>
+          <name>IMM_HP_CK_POWER_0</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW]; CONFIDENCE[exact-s31-layout-and-instruction-use]. Immediate HP clock/power tie controls. The vendor header marks fields WT, while the complete blob body reads and modifies this register; it is modeled read-write to preserve that evidenced operation.</description>
+          <addressOffset>0xf0</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>TIE_LOW_GLOBAL_XTALX2_ICG</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_GLOBAL_XTAL_ICG</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_I2C_RETENTION</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_XPD_BB_I2C</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_XPD_XTALX2</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_LOW_XPD_XTAL</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_GLOBAL_XTALX2_ICG</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_GLOBAL_XTAL_ICG</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_I2C_RETENTION</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_XPD_BB_I2C</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_XPD_XTALX2</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIE_HIGH_XPD_XTAL</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
           <name>IMM_SLEEP_SYSCLK</name>
           <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS]; CONFIDENCE[exact-s31-layout]. Immediate system-clock update triggers.</description>
           <addressOffset>0xf8</addressOffset><size>32</size><access>write-only</access>
@@ -468,6 +494,224 @@
           <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS]; CONFIDENCE[exact-s31-layout]. Immediate modem ICG update trigger.</description>
           <addressOffset>0x104</addressOffset><size>32</size><access>write-only</access>
           <fields><field><name>UPDATE_DIG_ICG_MODEM_EN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RF_PWC</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW]; CONFIDENCE[exact-s31-layout-and-instruction-use]. RF circuit power control used by the complete analog-I2C power-up body.</description>
+          <addressOffset>0x184</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields><field><name>XPD_RF_CIRCUIT</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>ANA_PERI_PWR_CTRL</name>
+          <description>SOURCE[S31_ESP_PACS_SVD,S31_PMU_HEADERS,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW]; CONFIDENCE[exact-s31-layout-and-instruction-use]. Analog peripheral I2C power and active-low reset controls.</description>
+          <addressOffset>0x208</addressOffset><size>32</size><access>read-write</access><resetValue>0x40000000</resetValue>
+          <fields>
+            <field><name>XPD_PERIF_I2C</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RSTB_PERIF_I2C</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_PBUS</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-mixed-semantics].
+        PBus command, mode, status/clock/force and packed result windows recovered
+        from complete rev0 ROM bodies and their address/shift jump tables.
+      </description>
+      <baseAddress>0x20100880</baseAddress>
+      <registers>
+        <register>
+          <name>COMMAND</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-from-symbols]. phy_pbus_force_test command word; phy_pbus_force_mode also uses bit 0 as the debug/work selector.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>DEBUG_MODE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TRANSACTION_START</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>SELECTOR</name><bitOffset>2</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TEST_VALUE</name><bitOffset>6</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>PATH</name><bitOffset>15</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODE</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-from-symbols]. PBus debug/work mode selector used by complete phy_pbus_force_mode.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>WORK_MODE_ENABLE</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>STATUS_CLOCK_FORCE</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-multifunction]. One physical multifunction word independently used for TX/RX forcing, RX/TX clock pairs and PBus busy status.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>FORCE_TXRX_MODE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-semantics-unknown]. phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown.</description>
+              <bitOffset>8</bitOffset><bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>RX_CLOCK_ENABLE_PAIR</name>
+              <description>SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-pair-semantics]. phy_set_rxclk_en writes both bits as a pair; individual clock identities are unknown.</description>
+              <bitOffset>14</bitOffset><bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>TX_CLOCK_ENABLE_PAIR</name>
+              <description>SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-pair-semantics]. phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown.</description>
+              <bitOffset>16</bitOffset><bitWidth>2</bitWidth>
+            </field>
+            <field><name>BUSY</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>READ_RESULT_0</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-packed-windows]. Selector 1 reads window 0 for non-path-1 operations, including the RX-DCO path, and window 1 for path 1.</description>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>RESULT_WINDOW_0_RX_DCO</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>RESULT_WINDOW_1_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>9</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>READ_RESULT_1</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-packed-windows]. Selector 2 path 1 reads window 0; other bits are not presently evidenced.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>RESULT_WINDOW_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>READ_RESULT_2</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-packed-windows]. Selector 3 reads windows 0/1; selector 2 non-path-1 reads window 2.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>RESULT_WINDOW_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>RESULT_WINDOW_1_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>RESULT_WINDOW_2_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>9</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>READ_RESULT_3</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-packed-windows]. Selector 4 path 1 reads window 0; other bits are not presently evidenced.</description>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>RESULT_WINDOW_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>READ_RESULT_4</name>
+          <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-packed-windows]. Selector 5 reads window 0, selector 0 non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window 2.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>RESULT_WINDOW_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>RESULT_WINDOW_1_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>RESULT_WINDOW_2_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>9</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_I2C_MASTER</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_I2C,BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-mixed-semantics].
+        PHY analog-register host commands, master setup and clock-selection words
+        recovered from complete ROM leaves and S31 libphy callbacks.
+      </description>
+      <baseAddress>0x2010f800</baseAddress>
+      <registers>
+        <register>
+          <name>HOST_COMMAND_0</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout]. Host-0 PHY-I2C command and completion word.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA_OR_RESULT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>HOST_COMMAND_1</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout]. Host-1 PHY-I2C command and completion word.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA_OR_RESULT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MASTER_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-mixed-semantics]. PHY-I2C master registration and BBPLL calibration controls.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BBPLL_CAL_MODE_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>REGISTER_ENABLE</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>REGISTER_MODE</name><bitOffset>9</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>READ_MASK</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-from-callback]. Per-block read-mask word selected by the S31 libphy callback.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>BLOCK_READ_MASK</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>HOST_CONFIG</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. S31 host-selection callback replaces bits 17:4 with 0x3fa0; the internal subfield meanings are unknown.</description>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>HOST_MAP_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>14</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CLOCK_SELECTION_0</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLOCK_SELECTION_1</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLOCK_SELECTION_2</name>
+          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_I2C_COMMAND_RAM</name>
+      <description>
+        SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout].
+        Forty-five-entry command RAM populated by phy_i2c_master_cmd_mem_init.
+      </description>
+      <baseAddress>0x2010fc00</baseAddress>
+      <registers>
+        <register>
+          <dim>45</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-44</dimIndex>
+          <name>COMMAND_MEMORY%s</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout]. One PHY-I2C master command-memory entry.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
         </register>
       </registers>
     </peripheral>
@@ -516,8 +760,13 @@
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
       <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
-      <source id="S31_PMU_HEADERS">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/soc/pmu_reg.h and pmu_struct.h</source>
+      <source id="S31_PMU_HEADERS">ESP-IDF master commit 102122904ade11fd1ae373848f34ffd7dfb18aeb, components/soc/esp32s31/register/soc/pmu_reg.h; local esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, pmu_reg.h sha256 b1a04a306b9d7ee908e2f7b083d42b7a634f8687b6ee034cfe6f54f385e0d816 and pmu_struct.h sha256 5fc84c7569f9f24e193b0205728a647768c7c289b39d5ce679c50db7d8352e28</source>
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
+      <source id="ROM_REV0_PHY_PBUS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pbus_force_mode at 0x2f824102 size 0x90 and phy_pbus_force_test at 0x2f824228 size 0x42, plus phy_pbus_rd address/shift jump tables</source>
+      <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
+      <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
+      <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>
+      <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body</source>
       <source id="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK">_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body</source>
       <source id="BLOB_LIBPHY_PHY_BB_INIT">_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph</source>
     </openEspRadioProvenance>

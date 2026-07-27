@@ -206,9 +206,11 @@ pub fn read_result(registers: &RadioRegisters, selector: u8, path: u8) -> Option
 /// PAC and HAL retain pair-level semantics.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rx_clock(registers: &mut RadioRegisters, enabled: bool) {
-    let field = phy_pbus::status_clock_force::RX_CLOCK_ENABLE_PAIR;
-    let value = if enabled { field.mask() } else { 0 };
-    registers.modify32(phy_pbus::STATUS_CLOCK_FORCE, field.mask(), value);
+    let low = phy_pbus::status_clock_force::RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN;
+    let high = phy_pbus::status_clock_force::RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN;
+    let mask = low.mask() | high.mask();
+    let value = if enabled { mask } else { 0 };
+    registers.modify32(phy_pbus::STATUS_CLOCK_FORCE, mask, value);
 }
 
 /// Enable or disable both recovered TX clock bits as one indivisible pair.

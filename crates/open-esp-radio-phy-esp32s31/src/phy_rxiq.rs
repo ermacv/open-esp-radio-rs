@@ -2421,13 +2421,13 @@ impl PhyRxIqInitMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyRxIqInitCompletion {
         match self.action {
             PhyRxIqInitAction::ConfigureRootStatus => {
-                crate::radio_hal::configure_phy_rxiq_root_status();
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_rxiq_root_status(registers);
                 PhyRxIqInitCompletion::RootStatusConfigured
             }
             PhyRxIqInitAction::ConfigurePbusDebugMode => {
@@ -2435,7 +2435,9 @@ impl PhyRxIqInitMmioBinding {
                 PhyRxIqInitCompletion::PbusDebugModeConfigured
             }
             PhyRxIqInitAction::ConfigureCorrection { begin } => {
-                crate::radio_hal::configure_phy_rxiq_root_correction(begin);
+                open_esp_radio_hal_esp32s31::phy_baseband::configure_rxiq_root_correction(
+                    registers, begin,
+                );
                 PhyRxIqInitCompletion::CorrectionConfigured { begin }
             }
             PhyRxIqInitAction::ConfigurePbusWorkMode => {

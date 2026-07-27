@@ -499,7 +499,7 @@ impl PhyRxGainPublishMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyRxGainPublishCompletion {
@@ -514,8 +514,12 @@ impl PhyRxGainPublishMmioBinding {
                 enabled,
             } => {
                 match clock {
-                    PhyRxGainClock::Rx => crate::radio_hal::configure_phy_rx_clock(enabled),
-                    PhyRxGainClock::Tx => crate::radio_hal::configure_phy_tx_clock(enabled),
+                    PhyRxGainClock::Rx => {
+                        open_esp_radio_hal_esp32s31::pbus::configure_rx_clock(registers, enabled)
+                    }
+                    PhyRxGainClock::Tx => {
+                        open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, enabled)
+                    }
                 }
                 PhyRxGainPublishCompletion::ClockConfigured {
                     bank,

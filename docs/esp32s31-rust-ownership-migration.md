@@ -3242,3 +3242,31 @@ the removed wrapper names and the four exclusively localized physical
 addresses. The force-TX/RX word is shared with independently evidenced RXIQ
 status accesses that remain on the raw frontier; the deleted force-wrapper
 name prevents that particular duplicate path from returning.
+
+## Owned shared PHY status/clock and RXIQ root MMIO
+
+SVD v1.4 and the generated PAC close the remaining raw frontier on physical
+word `0x2010_0890`. Complete rev0 ROM clock leaves prove the RX bits 15:14 and
+TX bits 17:16 as pair writes. Complete pinned
+`libphy.a[phy_rx_gain.o]::phy_rxiq_cal_init`, size `0x198`, independently
+proves two root-entry writes to RX bits 14 and 15 and the final clear of bit
+15. The PAC therefore exposes two disjoint multifunction RX fields instead of
+inventing overlapping clock and status register aliases.
+
+The same blob parent proves four distinct fresh-read writes in the RXIQ
+correction prefix and four more in the successful suffix. The old raw prefix
+collapsed each register's low/high-bit changes into one RMW, which produced
+the same final value but skipped two observable intermediate hardware states.
+The new safe `phy_baseband` HAL uses one field operation per blob edge. Its
+host register model asserts all ten root-status and correction writes, not
+only their final images. The older complete-ROM initialization path still
+writes each complete two-bit correction mode in one RMW because that is the
+order proved for that separate leaf.
+
+RX-gain publication, TXIQ loopback, RXIQ initialization and crystal-duty
+calibration now pass their existing unique `&mut RadioRegisters` borrow into
+the safe PBus and baseband HAL methods. Their target MMIO bindings no longer
+need an `unsafe` contract for clock or RXIQ-root access. The old raw address,
+bit transforms, wrappers and duplicate tests are deleted from
+`radio_hal.rs`; the source-only audit rejects their names and any raw
+`0x2010_0890` literal returning to the live PHY crate.

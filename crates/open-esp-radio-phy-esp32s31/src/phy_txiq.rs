@@ -1756,14 +1756,17 @@ impl PhyTxIqLoopbackMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxIqLoopbackCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxIqLoopbackCompletion {
         match self.action {
             PhyTxIqLoopbackAction::ConfigureTxClock { enabled } => {
-                crate::radio_hal::configure_phy_tx_clock(enabled);
+                open_esp_radio_hal_esp32s31::pbus::configure_tx_clock(registers, enabled);
                 PhyTxIqLoopbackCompletion::TxClockConfigured { enabled }
             }
             PhyTxIqLoopbackAction::ConfigureRxClock { enabled } => {
-                crate::radio_hal::configure_phy_rx_clock(enabled);
+                open_esp_radio_hal_esp32s31::pbus::configure_rx_clock(registers, enabled);
                 PhyTxIqLoopbackCompletion::RxClockConfigured { enabled }
             }
             _ => unreachable!(),

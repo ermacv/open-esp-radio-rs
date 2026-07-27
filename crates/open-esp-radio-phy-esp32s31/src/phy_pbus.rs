@@ -2,8 +2,8 @@
 //!
 //! The rev0 ROM `phy_pbus_clear_reg` body contains twelve calls to
 //! `phy_pbus_force_test`. Every call publishes one transaction and then
-//! busy-waits on the sign bit of `0x2010_0890`. The final work-mode path can
-//! also execute synchronous one- and two-microsecond delays. This module
+//! busy-waits on `PHY_PBUS.STATUS_CLOCK_FORCE.BUSY`. The final work-mode path
+//! can also execute synchronous one- and two-microsecond delays. This module
 //! retains the exact command order while making all readiness and timer edges
 //! explicit.
 

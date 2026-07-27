@@ -1760,10 +1760,17 @@ pub mod phy_pbus {
         /// phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the
         /// individual bit meanings remain unknown.
         pub const FORCE_TXRX_MODE_UNKNOWN: Field32 = Field32::new(8, 4);
-        /// SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-pair-semantics].
-        /// phy_set_rxclk_en writes both bits as a pair; individual clock identities are
-        /// unknown.
-        pub const RX_CLOCK_ENABLE_PAIR: Field32 = Field32::new(14, 2);
+        /// SOURCE[ROM_REV0_PHY_CLOCK_FORCE,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-multifunction]. phy_set_rxclk_en writes this bit with
+        /// its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at
+        /// root entry. The shared electrical identity remains unknown.
+        pub const RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN: Field32 = Field32::new(14, 1);
+        /// SOURCE[ROM_REV0_PHY_CLOCK_FORCE,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-multifunction]. phy_set_rxclk_en writes this bit with
+        /// its neighbor as a pair; complete phy_rxiq_cal_init independently sets it at root
+        /// entry and clears it during the successful cleanup suffix. The shared electrical
+        /// identity remains unknown.
+        pub const RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN: Field32 = Field32::new(15, 1);
         /// SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-pair-semantics].
         /// phy_set_txclk_en writes both bits as a pair; individual clock identities are
         /// unknown.
@@ -2679,34 +2686,39 @@ pub mod phy_baseband_config_oracle {
         pub const COMPENSATION_BYTE_3_UNKNOWN: Field32 = Field32::new(24, 8);
     }
 
-    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    ///
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
     /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
     /// correction-mode word.
     pub const IQ_CORRECTION_CONTROL: Register32 =
         Register32::described(0x20100438, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`IQ_CORRECTION_CONTROL`].
-    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
     /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
     /// correction-mode word.
     pub mod iq_correction_control {
         use crate::Field32;
 
         /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
         /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
         /// correction-mode word.
         pub const RX_IQ_GAIN_COEFFICIENT: Field32 = Field32::new(16, 6);
         /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
         /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
         /// correction-mode word.
         pub const RX_IQ_PHASE_COEFFICIENT: Field32 = Field32::new(22, 7);
-        /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
-        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared RX-IQ coefficient and
-        /// correction-mode word.
-        pub const RX_IQ_CORRECTION_MODE: Field32 = Field32::new(29, 2);
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol-and-control-flow]. Low bit of the
+        /// correction-mode field updated through a distinct fresh-read edge by the RXIQ parent.
+        pub const RX_IQ_CORRECTION_MODE_LOW: Field32 = Field32::new(29, 1);
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol-and-control-flow]. High bit of
+        /// the correction-mode field updated through a distinct fresh-read edge by the RXIQ
+        /// parent.
+        pub const RX_IQ_CORRECTION_MODE_HIGH: Field32 = Field32::new(30, 1);
     }
 
     /// SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET];
@@ -2879,34 +2891,40 @@ pub mod phy_baseband_config_oracle {
         pub const PA_ON_HIGH_UNKNOWN: Field32 = Field32::new(16, 16);
     }
 
-    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    ///
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
     /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
     /// correction-mode word.
     pub const IQ_CORRECTION_AUX: Register32 =
         Register32::described(0x20100c0c, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`IQ_CORRECTION_AUX`].
-    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+    /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
     /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
     /// correction-mode word.
     pub mod iq_correction_aux {
         use crate::Field32;
 
         /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
         /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
         /// correction-mode word.
         pub const TX_IQ_GAIN_COEFFICIENT: Field32 = Field32::new(0, 6);
         /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
         /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
         /// correction-mode word.
         pub const TX_IQ_PHASE_COEFFICIENT: Field32 = Field32::new(6, 7);
-        /// Field layout from
-        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS];
-        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Shared TX-IQ coefficient and
-        /// correction-mode word.
-        pub const TX_IQ_CORRECTION_MODE: Field32 = Field32::new(13, 2);
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol-and-control-flow]. Low bit of the
+        /// auxiliary correction-mode field updated through a distinct fresh-read edge by the
+        /// RXIQ parent.
+        pub const TX_IQ_CORRECTION_MODE_LOW: Field32 = Field32::new(13, 1);
+        /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT];
+        /// CONFIDENCE[instruction-exact-semantics-from-symbol-and-control-flow]. High bit of
+        /// the auxiliary correction-mode field updated through a distinct fresh-read edge by
+        /// the RXIQ parent.
+        pub const TX_IQ_CORRECTION_MODE_HIGH: Field32 = Field32::new(14, 1);
     }
 
     /// SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION];

@@ -43,8 +43,6 @@ const PHY_CALIBRATION_CLOCK_MASK: u32 =
     phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
 const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
     | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
-const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
-const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
 const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
 const PHY_TONE_PATH1_CONTROL_ADDRESS: usize = 0x2010_0420;
 const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
@@ -302,14 +300,6 @@ const fn phy_pbus_is_busy(value: u32) -> bool {
     value & PHY_PBUS_BUSY_BIT != 0
 }
 
-const fn with_phy_tx_clock(value: u32, enabled: bool) -> u32 {
-    (value & !0x0003_0000) | if enabled { 0x0003_0000 } else { 0 }
-}
-
-const fn with_phy_rx_clock(value: u32, enabled: bool) -> u32 {
-    (value & !0x0000_c000) | if enabled { 0x0000_c000 } else { 0 }
-}
-
 const fn with_phy_tone_path(value: u32, enable: i32, selector: i32, step: i32) -> u32 {
     let encoded = (enable as u32).wrapping_shl(18)
         | ((selector >> 2) as u32)
@@ -368,14 +358,6 @@ const fn with_phy_rxiq_phase(value: u32, coefficient: i8) -> u32 {
 
 const fn with_phy_rxiq_calibration_mode(value: u32) -> u32 {
     (value & !0x4000_0000) | 0x2000_0000
-}
-
-const fn with_phy_rxiq_root_correction_begin(value: u32) -> u32 {
-    (value & !0x4000_0000) | 0x2000_0000
-}
-
-const fn with_phy_rxiq_root_aux_begin(value: u32) -> u32 {
-    (value & !0x0000_4000) | 0x0000_2000
 }
 
 const fn without_phy_tx_gain_compensation_low_byte(value: u32) -> u32 {
@@ -802,30 +784,6 @@ pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
     active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
 }
 
-/// Select the two recovered TX-clock enable bits.
-///
-/// Reference: complete rev0 ROM `phy_set_txclk_en` at `0x2f82_7cd2`, size
-/// `0x24`. It performs one read/modify/write of bits 17:16 at
-/// `0x2010_0890`. There is no call, loop, wait, allocation, callback, or
-/// ROM-owned data access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_tx_clock(enabled: bool) {
-    let control = PHY_CLOCK_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_tx_clock(control.read_volatile(), enabled));
-}
-
-/// Select the two recovered RX-clock enable bits.
-///
-/// Reference: complete rev0 ROM `phy_set_rxclk_en` at `0x2f82_7cf6`, size
-/// `0x20`. It performs one read/modify/write of bits 15:14 at
-/// `0x2010_0890`. There is no call, loop, wait, allocation, callback, or
-/// ROM-owned data access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_clock(enabled: bool) {
-    let control = PHY_CLOCK_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_rx_clock(control.read_volatile(), enabled));
-}
-
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
@@ -999,36 +957,6 @@ pub(crate) unsafe fn configure_phy_rxiq_coefficient(
 pub(crate) unsafe fn configure_phy_rxiq_calibration_mode() {
     let control = PHY_IQ_CORRECTION_CONTROL_ADDRESS as *mut u32;
     control.write_volatile(with_phy_rxiq_calibration_mode(control.read_volatile()));
-}
-
-/// Preserve the two fresh-read status publications at RXIQ root entry.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rxiq_root_status() {
-    let status = PHY_PBUS_STATUS_ADDRESS as *mut u32;
-    status.write_volatile(status.read_volatile() | 0x0000_4000);
-    status.write_volatile(status.read_volatile() | 0x0000_8000);
-}
-
-/// Enter or leave the correction mode owned by archive `phy_rxiq_cal_init`.
-///
-/// The finish branch retains all four original fresh-read writes, including
-/// clearing status bit 15 only after correction fields are restored.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rxiq_root_correction(begin: bool) {
-    let correction = PHY_IQ_CORRECTION_CONTROL_ADDRESS as *mut u32;
-    let auxiliary = PHY_IQ_CORRECTION_AUX_ADDRESS as *mut u32;
-    if begin {
-        correction.write_volatile(with_phy_rxiq_root_correction_begin(
-            correction.read_volatile(),
-        ));
-        auxiliary.write_volatile(with_phy_rxiq_root_aux_begin(auxiliary.read_volatile()));
-    } else {
-        correction.write_volatile(correction.read_volatile() | 0x4000_0000);
-        auxiliary.write_volatile(auxiliary.read_volatile() | 0x0000_4000);
-        correction.write_volatile(correction.read_volatile() & 0xdfff_ffff);
-        let status = PHY_PBUS_STATUS_ADDRESS as *mut u32;
-        status.write_volatile(status.read_volatile() & 0xffff_7fff);
-    }
 }
 
 /// Apply the complete rev0 ROM `phy_i2c_clk_sel` register transform.
@@ -1267,18 +1195,17 @@ mod tests {
         with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_fe_txrx_reset,
         with_phy_front_end_adc_update, with_phy_front_end_update_first,
         with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
-        with_phy_i2c_clock_selection_low, with_phy_pbus_force_test, with_phy_rx_clock,
-        with_phy_rxiq_calibration_mode, with_phy_rxiq_gain, with_phy_rxiq_phase,
-        with_phy_rxiq_root_aux_begin, with_phy_rxiq_root_correction_begin, with_phy_tone_path,
-        with_phy_tone_path0_selector, with_phy_tone_path1_selector, with_phy_tx_clock,
-        with_phy_tx_gain_compensation_byte1, with_phy_tx_gain_compensation_byte2,
-        with_phy_txiq_calibration_complete, with_phy_txiq_calibration_enabled,
-        with_phy_txiq_first_polarity, with_phy_txiq_gain, with_phy_txiq_phase,
-        with_phy_txiq_second_polarity, with_register_bits, with_register_field, with_tx_cca,
-        with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
-        without_phy_fe_txrx_reset, without_phy_tx_gain_compensation_high_byte,
-        without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
-        without_tx_queue_valid, WIFI_MAC_ACTIVE_REGDMA_LINK,
+        with_phy_i2c_clock_selection_low, with_phy_pbus_force_test, with_phy_rxiq_calibration_mode,
+        with_phy_rxiq_gain, with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
+        with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
+        with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
+        with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
+        with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
+        with_register_field, with_tx_cca, with_wifi_mac_regdma_link, without_fe_bb_clock_enable,
+        without_mac_tx_retention, without_phy_fe_txrx_reset,
+        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
+        without_register_bits, without_tx_queue_enable, without_tx_queue_valid,
+        WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
 
     #[test]
@@ -1382,19 +1309,6 @@ mod tests {
     }
 
     #[test]
-    fn phy_tx_and_rx_clock_masks_match_both_rom_branches() {
-        assert_eq!(with_phy_tx_clock(0, true), 0x0003_0000);
-        assert_eq!(with_phy_tx_clock(u32::MAX, false), 0xfffc_ffff);
-        assert_eq!(with_phy_tx_clock(0x1234_5678, true), 0x1237_5678);
-        assert_eq!(with_phy_tx_clock(0x1234_5678, false), 0x1234_5678);
-
-        assert_eq!(with_phy_rx_clock(0, true), 0x0000_c000);
-        assert_eq!(with_phy_rx_clock(u32::MAX, false), 0xffff_3fff);
-        assert_eq!(with_phy_rx_clock(0x1234_5678, true), 0x1234_d678);
-        assert_eq!(with_phy_rx_clock(0x1234_5678, false), 0x1234_1678);
-    }
-
-    #[test]
     fn phy_calibration_tone_matches_both_evidenced_call_images() {
         assert_eq!(with_phy_tone_path0_selector(u32::MAX, 0x80), 0xffff_fffc);
         assert_eq!(with_phy_tone_path1_selector(u32::MAX, 0), 0xffff_fff3);
@@ -1444,10 +1358,6 @@ mod tests {
         assert_eq!(with_phy_rxiq_phase(u32::MAX, -63), 0xf07f_ffff);
         assert_eq!(with_phy_rxiq_calibration_mode(0), 0x2000_0000);
         assert_eq!(with_phy_rxiq_calibration_mode(u32::MAX), 0xbfff_ffff);
-        assert_eq!(with_phy_rxiq_root_correction_begin(0), 0x2000_0000);
-        assert_eq!(with_phy_rxiq_root_correction_begin(u32::MAX), 0xbfff_ffff);
-        assert_eq!(with_phy_rxiq_root_aux_begin(0), 0x0000_2000);
-        assert_eq!(with_phy_rxiq_root_aux_begin(u32::MAX), 0xffff_bfff);
     }
 
     #[test]

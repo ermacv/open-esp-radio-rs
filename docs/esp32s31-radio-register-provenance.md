@@ -251,11 +251,12 @@ complete rev0 ROM bodies establish:
 - bits 17:16: the pair controlled by `phy_set_txclk_en`;
 - bit 31: the busy status sampled by `phy_pbus_force_test`.
 
-The pair-level functions do not distinguish the two constituent clocks, so
-the SVD deliberately calls them `RX_CLOCK_ENABLE_PAIR` and
-`TX_CLOCK_ENABLE_PAIR`. The four force encodings are exact, but their
-electrical meaning is still unknown and remains
-`FORCE_TXRX_MODE_UNKNOWN`.
+The pair-level functions do not distinguish the two constituent clocks. The
+SVD therefore keeps the TX pair as `TX_CLOCK_ENABLE_PAIR`. RX bits 14 and 15
+also have independent RXIQ-root consumers, so they are represented as two
+non-overlapping multifunction fields whose names retain both the clock and
+unknown-status roles. The four force encodings are exact, but their electrical
+meaning is still unknown and remains `FORCE_TXRX_MODE_UNKNOWN`.
 
 The complete `phy_pbus_rd` address and shift tables expose five packed result
 words at `0x20100894..0x201008a4`. Each visible nine-bit window is represented
@@ -466,10 +467,47 @@ state. Reset sampling crosses the boundary as `busy: bool`; neither a physical
 address, a mask, nor a raw register word appears in the PHY action/completion
 protocol. The old raw wrappers and constants are deleted, and the source-only
 audit rejects their names plus raw `0x2010_d800`, `0x2010_f028`,
-`0x2010_f800`, and `0x2010_f804` literals in the live PHY crate. The shared
-`0x2010_0890` word still has separately evidenced RXIQ status consumers on the
-remaining raw frontier, so the audit rejects the deleted force wrapper rather
-than falsely banning that physical identity.
+`0x2010_f800`, and `0x2010_f804` literals in the live PHY crate. At this
+revision the shared `0x2010_0890` word still had separately evidenced RXIQ
+status consumers on the remaining raw frontier; SVD v1.4 below closes that
+frontier.
+
+SVD v1.4 localizes the final live consumers of the shared
+`PHY_PBUS.STATUS_CLOCK_FORCE` word. The primary new source is pinned
+`libphy.a` SHA-256
+`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+complete `phy_rx_gain.o::phy_rxiq_cal_init`, size `0x198`. Its root entry
+independently sets bit 14 and then bit 15 with a fresh read before each write.
+Its successful cleanup independently clears bit 15. Together with complete
+rev0 ROM `phy_set_rxclk_en`, this proves that the two physical bits have both
+a pair-clock consumer and distinct RXIQ-root consumers. The electrical status
+meaning remains unknown, so the PAC does not invent a narrower semantic name.
+
+The same blob body proves the exact correction prefix and suffix on
+`PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL` and
+`IQ_CORRECTION_AUX`. Prefix order is:
+
+1. set control bit 29;
+2. set auxiliary bit 13;
+3. clear control bit 30;
+4. clear auxiliary bit 14.
+
+The successful suffix sets control bit 30, sets auxiliary bit 14, clears
+control bit 29, and finally clears the shared status/clock bit 15. Every step
+uses a new hardware read. The previous raw Rust prefix combined the two
+control updates and the two auxiliary updates, producing only two RMW edges.
+The safe HAL now preserves all four prefix and all four suffix edges; a fake
+register test records the two root-status writes plus those eight correction
+writes in exact order.
+
+Because CMSIS-SVD fields cannot overlap, the former two-bit RX and TX
+correction fields are represented as disjoint low/high single-bit fields.
+The complete ROM initialization leaf still writes each pair in one RMW,
+whereas the RXIQ parent deliberately uses separate RMW calls. All clock,
+root-status and correction target bindings now require the same unique
+`&mut RadioRegisters` capability. The raw wrappers are removed, and the
+source-only audit now rejects both their names and raw `0x2010_0890` from the
+live PHY crate.
 
 ## Cross-chip comparison
 

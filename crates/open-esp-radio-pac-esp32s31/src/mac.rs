@@ -125,6 +125,7 @@ pub mod init {
     pub const CONTROL: Register32 = Register32::new(0x2010_4cac);
     pub const RX_SNIFFER_CONTROL: Register32 = RX_FILTER[3];
 
+    pub const R_4C00: Register32 = Register32::new(0x2010_4c00);
     pub const R_4020: Register32 = Register32::new(0x2010_4020);
     pub const R_4028: Register32 = Register32::new(0x2010_4028);
     pub const R_4048: Register32 = Register32::new(0x2010_4048);

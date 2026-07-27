@@ -306,6 +306,12 @@ pub fn initialize_promiscuous_receive<M: Mmio>(
 
     initialize_antenna_and_coex(mmio);
 
+    // `hal_enable_mac` starts the shared MAC timebase by clearing the four
+    // disable bits before it publishes the interrupt mask. The register can
+    // already read as zero after reset, but the ordered write is still the
+    // hardware start edge consumed by the EDCA scheduler.
+    modify(mmio, registers::R_4C00, 0x0000_00f0, 0);
+
     // Common receive configuration at the tail of `hal_init`. This exact
     // vendor cold-start mask is also a hardware RX gate on S31. Publishing it
     // does not route the peripheral interrupt to a CPU; the platform interrupt

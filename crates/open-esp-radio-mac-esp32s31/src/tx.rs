@@ -200,10 +200,10 @@ impl TxSlot {
         {
             return Err(TxError::Invalid);
         }
-        // The direct owner has no ESF-private prefix, so its populated storage
-        // length and on-air MPDU length are identical. Allocation capacity is
-        // validated above but is not part of the TX storage word.
-        let word0 = tx_owned_word(frame_length, frame_length).ok_or(TxError::Invalid)?;
+        // The low field retains allocation capacity while the high field
+        // publishes the populated transfer length. They remain distinct even
+        // for a direct buffer without an ESF-private prefix.
+        let word0 = tx_owned_word(buffer_capacity, frame_length).ok_or(TxError::Invalid)?;
         let generation = self
             .generation_cursor
             .checked_add(1)

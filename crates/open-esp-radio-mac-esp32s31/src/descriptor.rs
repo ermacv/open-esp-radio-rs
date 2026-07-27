@@ -133,18 +133,19 @@ pub const fn rx_rearm_word(word0: u32) -> Option<u32> {
 
 /// Fresh single-node TX storage word: bits31/30 set, bit29 clear.
 ///
-/// `storage_length` is the populated source-storage length encoded in the low
-/// 14 bits, not the allocation capacity used by RX descriptors. For a direct
-/// buffer with no private prefix it equals `frame_length`.
-pub const fn tx_owned_word(storage_length: u32, frame_length: u32) -> Option<u32> {
-    if storage_length == 0
-        || storage_length > SIZE_MASK
-        || frame_length == 0
-        || frame_length > storage_length
-        || frame_length > SIZE_MASK
+/// `capacity` is the complete DMA-visible allocation encoded in the low 14
+/// bits. `transfer_length` is the populated source range encoded in the high
+/// length field. A live vendor q0 observation confirms that TX retains the
+/// same capacity/used-length distinction as RX.
+pub const fn tx_owned_word(capacity: u32, transfer_length: u32) -> Option<u32> {
+    if capacity == 0
+        || capacity > SIZE_MASK
+        || transfer_length == 0
+        || transfer_length > capacity
+        || transfer_length > SIZE_MASK
     {
         None
     } else {
-        Some(storage_length | (frame_length << LENGTH_SHIFT) | BIT_30 | BIT_31)
+        Some(capacity | (transfer_length << LENGTH_SHIFT) | BIT_30 | BIT_31)
     }
 }

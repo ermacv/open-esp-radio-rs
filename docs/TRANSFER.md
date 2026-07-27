@@ -5,14 +5,13 @@ Transferred from the experimental `esp-wifi-sys` worktree:
 - the complete source-only ESP32-S31 PHY frontier and its 237 host tests;
 - the async cold-PHY executor and identity-bound hardware actions;
 - all project audit and ownership-migration documents;
-- the remaining unported Rust async runtime/MAC/WPA workset under
-  `migration/esp32s31-hybrid-runtime`.
+- the Rust-owned async runtime/MAC/WPA workset that was subsequently extracted
+  into the live crates.
 
-The migration directory has no Cargo manifest because it still records
-historical blob interposition and is intentionally incomplete after qualified
-modules move out. It is a porting inventory, not a linkable driver. Qualified
-PHY and passive-scan duplicates have been deleted; Git history preserves the
-pre-cleanup workset.
+The temporary migration directory was removed after extraction. Maintained
+destinations and intentionally deleted vendor/ROM compatibility layers are
+listed in [`MIGRATION_COMPLETION.md`](MIGRATION_COMPLETION.md). Git history
+preserves the pre-cleanup workset.
 
 The old blob map/state/strict analyzer sources were removed after the library
 analysis phase ended. Their generated reports remain under `docs/`, and Git

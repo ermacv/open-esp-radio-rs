@@ -6,11 +6,11 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>1.5</version>
+  <version>1.6</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus, PHY-I2C, IQ
-    estimator, RX-DCO, cold-deadline, temperature-sensor and Wi-Fi MAC RX-DMA
-    subset. Unknown fields are omitted; OPAQUE and UNKNOWN names describe
+    estimator, RX-DCO, cold-deadline, temperature-sensor, Wi-Fi MAC RX-DMA
+    and receive BlockAck subset. Unknown fields are omitted; OPAQUE and UNKNOWN names describe
     instruction-level evidence without assigning an unproven hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
@@ -2035,6 +2035,122 @@
             <field><name>ADDRESS_HIGH</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field>
           </fields>
         </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_HIGH_Q3</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 3.</description>
+          <addressOffset>0x13b4</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_LOW_Q3</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 3.</description>
+          <addressOffset>0x13b8</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.</description>
+          <addressOffset>0x13bc</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_HIGH_Q2</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 2.</description>
+          <addressOffset>0x1430</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_LOW_Q2</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 2.</description>
+          <addressOffset>0x1434</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.</description>
+          <addressOffset>0x1438</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_HIGH_Q1</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 1.</description>
+          <addressOffset>0x14ac</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_LOW_Q1</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 1.</description>
+          <addressOffset>0x14b0</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.</description>
+          <addressOffset>0x14b4</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_HIGH_Q0</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 0.</description>
+          <addressOffset>0x1528</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_BITMAP_LOW_Q0</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 0.</description>
+          <addressOffset>0x152c</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register>
+          <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0.</description>
+          <addressOffset>0x1530</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>STARTING_SEQUENCE</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field>
+            <field><name>CONTROL</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_AGREEMENT_UPDATE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.</description>
+          <addressOffset>0x0298</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>COMMIT</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>READBACK_LATCH</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered receive BlockAck entries.</description>
+          <addressOffset>0x0ea4</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>INDEX</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>TID</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>WRITE</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>VALID</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_PEER_TAIL_AND_POLICY</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and reorder-window size.</description>
+          <addressOffset>0x0ea8</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>INTERFACE</name><bitOffset>16</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>WINDOW</name><bitOffset>18</bitOffset><bitWidth>7</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_PEER_HEAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Peer MAC bytes 0..3 in little-endian order.</description>
+          <addressOffset>0x0eac</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_START_SEQUENCE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.</description>
+          <addressOffset>0x0eb0</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_BITMAP_LOW</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Low receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <addressOffset>0x0eb4</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register>
+          <name>RX_BLOCK_ACK_BITMAP_HIGH</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. High receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <addressOffset>0x0eb8</addressOffset><size>32</size><access>read-write</access>
+        </register>
       </registers>
     </peripheral>
   </peripherals>
@@ -2081,6 +2197,8 @@
       <source id="ROM_REV0_WDEV_APPEND_RX_BLOCKS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels, live old_tail.next publication, RX_CONTROL bit-0 reload, RX_NEXT_DESCRIPTOR terminal test and RX_DESCRIPTOR_BASE repair</source>
       <source id="ROM_REV0_HAL_MAC_RX_GATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_enable at 0x2f8386c0 size 0x14 and hal_mac_rx_disable at 0x2f8386d4 size 0x12; set and clear RX_CONTROL bit 31</source>
       <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
+      <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="HIL_OPEN_RX_LIVE_APPEND_2026_07_27">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs run_connected_network on ESP32-S31 rev0, psram-code-psram-data profile, 2026-07-27; rotating 32-entry ring survived more than 7000 receives and completed open scan, WPA2, DHCP and 5/5 ICMP echo with zero loss</source>
     </openEspRadioProvenance>
   </vendorExtensions>

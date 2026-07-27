@@ -52,13 +52,12 @@ initialization into MAC/RX, instead of constructing an independent raw-MMIO
 adapter. DMA descriptors retain their own volatile cells because they are
 owned memory shared with hardware rather than peripheral registers.
 
-The not-yet-ported upper MAC/STA/AP/security workset is retained under
-`migration/esp32s31-hybrid-runtime` as a non-buildable source archive. It is
-not a Cargo crate or an application dependency. Qualified PHY and passive-scan
-copies have been removed from the archive; their only maintained
-implementations are the live crates above. The archive's
-[`PORTING_MAP.md`](migration/esp32s31-hybrid-runtime/PORTING_MAP.md) records
-what remains and the criteria for moving each piece.
+The former upper MAC/STA/AP/security migration archive has been retired.
+Source-owned logic now lives in the buildable IEEE 802.11, MAC, WPA2, PAC and
+integration crates above; vendor ABI glue and superseded duplicates were
+deleted. [`MIGRATION_COMPLETION.md`](docs/MIGRATION_COMPLETION.md) records the
+destination and deletion decision for each workset. Git history preserves the
+exact pre-cleanup archive.
 
 Hardware integration belongs in a separate application workspace. The
 `esp32s31_rust` HIL project may depend on this repository for the open driver

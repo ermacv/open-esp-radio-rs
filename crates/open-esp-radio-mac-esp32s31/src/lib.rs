@@ -6,14 +6,25 @@
 //! executor, or `esp-hal` dependency. Target code supplies volatile MMIO and
 //! owns the interrupt binding; the state machines here stay host-testable.
 
+#[cfg(test)]
+extern crate std;
+
 pub mod crypto;
 pub mod descriptor;
 pub mod init;
 pub mod irq;
+pub mod rate_control;
+pub mod rate_rx;
+pub mod rate_schedule;
 pub mod registers;
 pub mod rx;
+pub mod rx_ampdu;
+pub mod rx_ampdu_hw;
 pub mod tx;
+pub mod tx_ampdu;
 pub mod tx_plcp;
+pub mod tx_policy;
+pub mod tx_queue;
 
 // Preserve the qualified `mac::scan` path while the protocol owner moves to
 // its hardware-independent crate.

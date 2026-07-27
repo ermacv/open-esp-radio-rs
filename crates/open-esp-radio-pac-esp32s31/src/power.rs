@@ -1409,13 +1409,11 @@ pub mod phy_frequency_channel_oracle {
         pub const HARDWARE_FREQUENCY_DISABLE: Field32 = Field32::new(31, 1);
     }
 
-    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,HIL_OPEN_RFPLL_FAST_CHANNEL];
+    /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
     /// CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete phy_freq_reg_init writes
-    /// the full constant 0x19800249. The rev0 HIL reads the same value before and after channel
-    /// switches, proving that the physical word is readable even though no constituent
-    /// electrical fields are public.
+    /// the full constant 0x19800249; no constituent electrical fields are public.
     pub const FREQUENCY_PARAMETER_0_OPAQUE: Register32 =
-        Register32::described(0x20100024, RegisterAccess::ReadWrite, None);
+        Register32::described(0x20100024, RegisterAccess::WriteOnly, None);
 
     /// Recovered fields of [`FREQUENCY_PARAMETER_0_OPAQUE`].
     /// SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL];
@@ -3846,8 +3844,373 @@ pub mod phy_clock_oracle {
         Register32::described(0x20107c80, RegisterAccess::WriteOnly, None);
 }
 
+/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+/// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+/// CONFIDENCE[instruction-exact-and-hil]. Descriptor-walker registers recovered from complete
+/// rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring.
+pub mod wifi_mac_rx_dma {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address. SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+    /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Descriptor-walker registers recovered from
+    /// complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring.
+    pub const BASE: usize = 0x20104000;
+
+    ///
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. RX descriptor-walker gate and live-list append
+    /// doorbell.
+    pub const RX_CONTROL: Register32 =
+        Register32::described(0x20104080, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_CONTROL`].
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. RX descriptor-walker gate and live-list append
+    /// doorbell.
+    pub mod rx_control {
+        use crate::Field32;
+
+        /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. Write one after publishing old_tail.next to
+        /// make a prepared live-list append visible. Hardware clears the bit after accepting
+        /// the append.
+        pub const APPEND_DESCRIPTOR_RELOAD: Field32 = Field32::new(0, 1);
+        /// SOURCE[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. Set by hal_mac_rx_enable and cleared by
+        /// hal_mac_rx_disable; gates the RX descriptor walker.
+        pub const WALKER_ENABLE: Field32 = Field32::new(31, 1);
+    }
+
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the first descriptor address in
+    /// the selected high-address window. ROM writes it when publishing a cold or repaired
+    /// frontier.
+    pub const RX_DESCRIPTOR_BASE: Register32 =
+        Register32::described(0x20104084, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_DESCRIPTOR_BASE`].
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the first descriptor address in
+    /// the selected high-address window. ROM writes it when publishing a cold or repaired
+    /// frontier.
+    pub mod rx_descriptor_base {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the first descriptor address
+        /// in the selected high-address window. ROM writes it when publishing a cold or
+        /// repaired frontier.
+        pub const ADDRESS_LOW: Field32 = Field32::new(0, 20);
+    }
+
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the hardware current/next
+    /// descriptor. ROM interprets zero after reload completion as a terminal frontier and may
+    /// repair RX_DESCRIPTOR_BASE.
+    pub const RX_NEXT_DESCRIPTOR: Register32 =
+        Register32::described(0x20104088, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`RX_NEXT_DESCRIPTOR`].
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the hardware current/next
+    /// descriptor. ROM interprets zero after reload completion as a terminal frontier and may
+    /// repair RX_DESCRIPTOR_BASE.
+    pub mod rx_next_descriptor {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the hardware current/next
+        /// descriptor. ROM interprets zero after reload completion as a terminal frontier and
+        /// may repair RX_DESCRIPTOR_BASE.
+        pub const ADDRESS_LOW: Field32 = Field32::new(0, 20);
+    }
+
+    /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the last descriptor accepted by
+    /// the RX walker.
+    pub const RX_LAST_DESCRIPTOR: Register32 =
+        Register32::described(0x2010408c, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`RX_LAST_DESCRIPTOR`].
+    /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the last descriptor accepted by
+    /// the RX walker.
+    pub mod rx_last_descriptor {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. Low 20 bits of the last descriptor accepted
+        /// by the RX walker.
+        pub const ADDRESS_LOW: Field32 = Field32::new(0, 20);
+    }
+
+    /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with the
+    /// low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.
+    pub const RX_DESCRIPTOR_HIGH_WINDOW: Register32 =
+        Register32::described(0x20104c70, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_DESCRIPTOR_HIGH_WINDOW`].
+    /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with the
+    /// low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.
+    pub mod rx_descriptor_high_window {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with
+        /// the low-address RX pointer registers. The open driver programs 0x2f0 for internal
+        /// SRAM.
+        pub const ADDRESS_HIGH: Field32 = Field32::new(20, 12);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed
+    /// hardware queue 3.
+    pub const TX_BLOCK_ACK_BITMAP_HIGH_Q3: Register32 =
+        Register32::described(0x201053b4, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed
+    /// hardware queue 3.
+    pub const TX_BLOCK_ACK_BITMAP_LOW_Q3: Register32 =
+        Register32::described(0x201053b8, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+    /// 15:4 for completed hardware queue 3.
+    pub const TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3: Register32 =
+        Register32::described(0x201053bc, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed
+    /// hardware queue 2.
+    pub const TX_BLOCK_ACK_BITMAP_HIGH_Q2: Register32 =
+        Register32::described(0x20105430, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed
+    /// hardware queue 2.
+    pub const TX_BLOCK_ACK_BITMAP_LOW_Q2: Register32 =
+        Register32::described(0x20105434, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+    /// 15:4 for completed hardware queue 2.
+    pub const TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2: Register32 =
+        Register32::described(0x20105438, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed
+    /// hardware queue 1.
+    pub const TX_BLOCK_ACK_BITMAP_HIGH_Q1: Register32 =
+        Register32::described(0x201054ac, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed
+    /// hardware queue 1.
+    pub const TX_BLOCK_ACK_BITMAP_LOW_Q1: Register32 =
+        Register32::described(0x201054b0, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+    /// 15:4 for completed hardware queue 1.
+    pub const TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1: Register32 =
+        Register32::described(0x201054b4, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed
+    /// hardware queue 0.
+    pub const TX_BLOCK_ACK_BITMAP_HIGH_Q0: Register32 =
+        Register32::described(0x20105528, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed
+    /// hardware queue 0.
+    pub const TX_BLOCK_ACK_BITMAP_LOW_Q0: Register32 =
+        Register32::described(0x2010552c, RegisterAccess::ReadOnly, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+    /// 15:4 for completed hardware queue 0.
+    pub const TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0: Register32 =
+        Register32::described(0x20105530, RegisterAccess::ReadOnly, None);
+
+    /// Recovered fields of [`TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0`].
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+    /// 15:4 for completed hardware queue 0.
+    pub mod tx_block_ack_control_sequence_q0 {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+        /// 15:4 for completed hardware queue 0.
+        pub const STARTING_SEQUENCE: Field32 = Field32::new(4, 12);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits
+        /// 15:4 for completed hardware queue 0.
+        pub const CONTROL: Field32 = Field32::new(16, 4);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the
+    /// complete recovered receive BlockAck programming leaf.
+    pub const RX_BLOCK_ACK_AGREEMENT_UPDATE: Register32 =
+        Register32::described(0x20104298, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_BLOCK_ACK_AGREEMENT_UPDATE`].
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the
+    /// complete recovered receive BlockAck programming leaf.
+    pub mod rx_block_ack_agreement_update {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the
+        /// complete recovered receive BlockAck programming leaf.
+        pub const COMMIT: Field32 = Field32::new(8, 1);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the
+        /// complete recovered receive BlockAck programming leaf.
+        pub const READBACK_LATCH: Field32 = Field32::new(9, 1);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+    /// receive BlockAck entries.
+    pub const RX_BLOCK_ACK_CONTROL: Register32 =
+        Register32::described(0x20104ea4, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_BLOCK_ACK_CONTROL`].
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+    /// receive BlockAck entries.
+    pub mod rx_block_ack_control {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+        /// receive BlockAck entries.
+        pub const ENABLE: Field32 = Field32::new(0, 1);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+        /// receive BlockAck entries.
+        pub const INDEX: Field32 = Field32::new(5, 5);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+        /// receive BlockAck entries.
+        pub const TID: Field32 = Field32::new(12, 4);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+        /// receive BlockAck entries.
+        pub const WRITE: Field32 = Field32::new(30, 1);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered
+        /// receive BlockAck entries.
+        pub const VALID: Field32 = Field32::new(31, 1);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and
+    /// reorder-window size.
+    pub const RX_BLOCK_ACK_PEER_TAIL_AND_POLICY: Register32 =
+        Register32::described(0x20104ea8, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_BLOCK_ACK_PEER_TAIL_AND_POLICY`].
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and
+    /// reorder-window size.
+    pub mod rx_block_ack_peer_tail_and_policy {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and
+        /// reorder-window size.
+        pub const PEER_ADDRESS_TAIL: Field32 = Field32::new(0, 16);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and
+        /// reorder-window size.
+        pub const INTERFACE: Field32 = Field32::new(16, 2);
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and
+        /// reorder-window size.
+        pub const WINDOW: Field32 = Field32::new(18, 7);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Peer MAC bytes 0..3 in little-endian order.
+    pub const RX_BLOCK_ACK_PEER_HEAD: Register32 =
+        Register32::described(0x20104eac, RegisterAccess::ReadWrite, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.
+    pub const RX_BLOCK_ACK_START_SEQUENCE: Register32 =
+        Register32::described(0x20104eb0, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`RX_BLOCK_ACK_START_SEQUENCE`].
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.
+    pub mod rx_block_ack_start_sequence {
+        use crate::Field32;
+
+        /// Field layout from
+        /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+        /// CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.
+        pub const SEQUENCE: Field32 = Field32::new(0, 12);
+    }
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. Low receive/reorder bitmap word, cleared when
+    /// installing or removing an entry.
+    pub const RX_BLOCK_ACK_BITMAP_LOW: Register32 =
+        Register32::described(0x20104eb4, RegisterAccess::ReadWrite, None);
+
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs];
+    /// CONFIDENCE[instruction-exact-not-hil]. High receive/reorder bitmap word, cleared when
+    /// installing or removing an entry.
+    pub const RX_BLOCK_ACK_BITMAP_HIGH: Register32 =
+        Register32::described(0x20104eb8, RegisterAccess::ReadWrite, None);
+}
+
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 209] = [
+pub const ALL: [Register32; 233] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -4057,4 +4420,28 @@ pub const ALL: [Register32; 209] = [
     phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,
     phy_clock_oracle::BB_CLOCK_GATE_OPAQUE,
+    wifi_mac_rx_dma::RX_CONTROL,
+    wifi_mac_rx_dma::RX_DESCRIPTOR_BASE,
+    wifi_mac_rx_dma::RX_NEXT_DESCRIPTOR,
+    wifi_mac_rx_dma::RX_LAST_DESCRIPTOR,
+    wifi_mac_rx_dma::RX_DESCRIPTOR_HIGH_WINDOW,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q3,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q3,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q2,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q2,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q1,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q1,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q0,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q0,
+    wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_AGREEMENT_UPDATE,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_CONTROL,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_PEER_TAIL_AND_POLICY,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_PEER_HEAD,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_START_SEQUENCE,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_BITMAP_LOW,
+    wifi_mac_rx_dma::RX_BLOCK_ACK_BITMAP_HIGH,
 ];

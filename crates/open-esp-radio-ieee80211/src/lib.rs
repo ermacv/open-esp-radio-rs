@@ -6,8 +6,15 @@
 //! MMIO, DMA, interrupt, executor, allocator, ESP32-S31, vendor archive, or
 //! ROM ABI dependency.
 
+pub mod alignment;
+pub mod ap;
+pub mod beacon;
 pub mod ccmp;
+pub mod channel;
+pub mod classification;
 pub mod data;
+pub mod he;
 pub mod management;
 pub mod scan;
 pub mod station;
+pub mod tbtt;

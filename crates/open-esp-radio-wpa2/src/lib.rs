@@ -9,7 +9,12 @@
 //! ownership types as the open STA path reaches those protocol transitions.
 
 pub mod aes;
+pub mod ap;
+pub mod frames;
 pub mod key_data;
+pub mod keys;
+pub mod retry;
+pub mod state;
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -20,6 +25,19 @@ pub const EAPOL_KEY_FIXED_LEN: usize = 95;
 pub const EAPOL_KEY_PACKET_LEN: usize = EAPOL_HEADER_LEN + EAPOL_KEY_FIXED_LEN;
 pub const EAPOL_PACKET_TYPE_KEY: u8 = 3;
 pub const RSN_KEY_DESCRIPTOR_TYPE: u8 = 2;
+pub const DEFAULT_EAPOL_FRAME_CAPACITY: usize = 512;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2Interface {
+    Station,
+    AccessPoint,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EapolCopyError {
+    CapacityExceeded,
+    Invalid(EapolParseError),
+}
 
 const KEY_INFO_DESCRIPTOR_VERSION_MASK: u16 = 0x0007;
 const KEY_INFO_PAIRWISE: u16 = 1 << 3;
@@ -456,6 +474,53 @@ impl<'a> EapolKeyFrame<'a> {
         mac.update(&[0; EAPOL_KEY_MIC_END - EAPOL_KEY_MIC_START]);
         mac.update(&self.bytes[EAPOL_KEY_MIC_END..]);
         mac.verify_truncated_left(self.mic()).is_ok()
+    }
+}
+
+/// Complete validated EAPOL-Key packet with fixed, Rust-owned storage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedEapolFrame<const N: usize = DEFAULT_EAPOL_FRAME_CAPACITY> {
+    interface: Wpa2Interface,
+    peer: [u8; 6],
+    len: usize,
+    bytes: [u8; N],
+}
+
+impl<const N: usize> OwnedEapolFrame<N> {
+    pub fn try_copy(
+        interface: Wpa2Interface,
+        peer: [u8; 6],
+        bytes: &[u8],
+    ) -> Result<Self, EapolCopyError> {
+        EapolKeyFrame::parse(bytes).map_err(EapolCopyError::Invalid)?;
+        if bytes.len() > N {
+            return Err(EapolCopyError::CapacityExceeded);
+        }
+
+        let mut owned = [0; N];
+        owned[..bytes.len()].copy_from_slice(bytes);
+        Ok(Self {
+            interface,
+            peer,
+            len: bytes.len(),
+            bytes: owned,
+        })
+    }
+
+    pub const fn interface(&self) -> Wpa2Interface {
+        self.interface
+    }
+
+    pub const fn peer(&self) -> &[u8; 6] {
+        &self.peer
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    pub fn key_frame(&self) -> EapolKeyFrame<'_> {
+        EapolKeyFrame::parse(self.as_bytes()).expect("owned EAPOL frame was validated on creation")
     }
 }
 

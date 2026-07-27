@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>0.2</version>
+  <version>0.3</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus and PHY-I2C subset.
     Unknown fields are omitted; OPAQUE and UNKNOWN names describe
@@ -160,13 +160,18 @@
         </register>
         <register>
           <name>WIFI_BB_CFG</name>
-          <description>SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS]; CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only the ROM-tested PBus condition bit is presently recovered.</description>
+          <description>SOURCE[S31_MODEM_SYSCON_STRUCT,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_AGC]; CONFIDENCE[mixed-per-field]. Wi-Fi baseband configuration word; only instruction-tested fields are presently recovered.</description>
           <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field>
               <name>PBUS_WORK_MODE_SETTLE_PULSE_REQUIRED</name>
               <description>SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-semantics-unknown]. phy_pbus_force_mode samples bit 1 and, when set, performs the evidenced delayed pulse tail; the underlying electrical condition is unknown.</description>
               <bitOffset>1</bitOffset><bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BB_AGC_UPDATE_ENABLE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets bits 13:11 as its final read/modify/write; the individual hardware meanings remain unknown.</description>
+              <bitOffset>11</bitOffset><bitWidth>3</bitWidth>
             </field>
           </fields>
         </register>
@@ -804,6 +809,163 @@
     </peripheral>
 
     <peripheral>
+      <name>PHY_AGC_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown].
+        OPAQUE PHY AGC and 11b-control registers recovered from four complete,
+        finite rev0 ROM bodies. Names describe their proven operation role,
+        not an unevidenced electrical identity.
+      </description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>ENABLE_PULSE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_enable_agc sets then clears bit 23 with a fresh read before each write.</description>
+          <addressOffset>0x702c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>ENABLE_PULSE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bit 23 is pulsed by complete phy_enable_agc.</description>
+              <bitOffset>23</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DISABLE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_disable_agc sets bit 29; complete phy_enable_agc clears it.</description>
+          <addressOffset>0x7030</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>DISABLE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Instruction-exact AGC disable/enable gate.</description>
+              <bitOffset>29</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_11B_PATH_CONTROL_0</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two six-bit fields.</description>
+          <addressOffset>0x7044</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>RX_11B_LOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 13:8.</description>
+              <bitOffset>8</bitOffset><bitWidth>6</bitWidth>
+            </field>
+            <field>
+              <name>RX_11B_HIGH_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 21:16.</description>
+              <bitOffset>16</bitOffset><bitWidth>6</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>AGC_UPDATE_7048_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0xff7da4f3.</description>
+          <addressOffset>0x7048</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>RX_11B_WINDOW_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt replaces the low nine bits.</description>
+          <addressOffset>0x7104</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>RX_11B_WINDOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt writes 0x1c8 into bits 8:0.</description>
+              <bitOffset>0</bitOffset><bitWidth>9</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_11B_PATH_CONTROL_1</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two fields.</description>
+          <addressOffset>0x7124</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>RX_11B_LOW_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 3:0.</description>
+              <bitOffset>0</bitOffset><bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>RX_11B_HIGH_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 15:10.</description>
+              <bitOffset>10</bitOffset><bitWidth>6</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>AGC_UPDATE_78A4_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x0001721f.</description>
+          <addressOffset>0x78a4</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>RX_11B_MODE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update clears bit 26; complete phy_rx_11b_opt replaces bits 15:12.</description>
+          <addressOffset>0x8004</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>RX_11B_MODE_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 15:12.</description>
+              <bitOffset>12</bitOffset><bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>BB_AGC_UPDATE_CLEAR_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update clears bit 26.</description>
+              <bitOffset>26</bitOffset><bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8010_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x000852a1.</description>
+          <addressOffset>0x8010</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8018_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x00600030.</description>
+          <addressOffset>0x8018</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_801C_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x010000a0.</description>
+          <addressOffset>0x801c</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8020_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x00000180.</description>
+          <addressOffset>0x8020</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8028_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0xc0403020.</description>
+          <addressOffset>0x8028</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_802C_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x01000080.</description>
+          <addressOffset>0x802c</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8070_OPAQUE</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update writes 0x000008c7.</description>
+          <addressOffset>0x8070</addressOffset><size>32</size><access>write-only</access>
+        </register>
+        <register>
+          <name>AGC_UPDATE_8078_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets bits 22:20.</description>
+          <addressOffset>0x8078</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>BB_AGC_UPDATE_SET_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets all three bits.</description>
+              <bitOffset>20</bitOffset><bitWidth>3</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
       <name>PHY_CLOCK_ORACLE</name>
       <description>
         SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
@@ -867,6 +1029,7 @@
       <source id="ROM_REV0_PHY_WRITE_PBUS_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_pbus_mem at 0x2f824634 size 0x16a</source>
       <source id="ROM_REV0_PHY_SAVE_PBUS_REG">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_save_pbus_reg at 0x2f824602 size 0x32</source>
       <source id="ROM_REV0_PHY_WRITE_GAIN_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_gain_mem at 0x2f8274f0 size 0x2a</source>
+      <source id="ROM_REV0_PHY_AGC">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_disable_agc at 0x2f827460 size 0x10, phy_enable_agc at 0x2f827470 size 0x28, phy_rx_11b_opt at 0x2f827588 size 0xc4 and phy_bb_agc_reg_update at 0x2f82860e size 0xa6</source>
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
       <source id="BLOB_LIBPHY_PHY_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init</source>

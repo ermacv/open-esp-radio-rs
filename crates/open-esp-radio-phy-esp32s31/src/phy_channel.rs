@@ -815,7 +815,7 @@ impl PhyChipChannelMmioBinding {
     ) -> PhyChipChannelCompletion {
         match self.action {
             PhyChipChannelAction::SetAgc { enabled } => {
-                crate::radio_hal::set_phy_channel_agc(enabled);
+                crate::radio_hal::set_phy_channel_agc(registers, enabled);
                 PhyChipChannelCompletion::AgcSet { enabled }
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {

@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 pub use open_esp_radio_pac_esp32s31::{power as radio_registers, RadioRegisters, Register32};
 pub mod analog_i2c;
 pub mod pbus;
+pub mod phy_agc;
 pub mod phy_i2c;
 pub mod phy_memory;
 pub mod power;

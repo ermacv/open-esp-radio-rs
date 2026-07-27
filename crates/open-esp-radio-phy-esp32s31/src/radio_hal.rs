@@ -117,8 +117,6 @@ const PHY_TEMPERATURE_SENSOR_SYSTEM_CONTROL_ADDRESS: usize = 0x2071_0030;
 const PHY_POWER_DETECTOR_SAR_CONTROL_ADDRESS: usize = 0x2010_080c;
 const PHY_BASEBAND_MODE_ADDRESS: usize = 0x2010_0028;
 const PHY_WIFI_ENABLE_ADDRESS: usize = 0x2010_9c18;
-const PHY_AGC_ENABLE_CONTROL_ADDRESS: usize = 0x2010_702c;
-const PHY_AGC_ENABLE_AUX_ADDRESS: usize = 0x2010_7030;
 const PHY_TX_POWER_TRACK_CONTROL_0_ADDRESS: usize = 0x2010_7454;
 const PHY_TX_POWER_TRACK_CONTROL_1_ADDRESS: usize = 0x2010_7458;
 const PHY_TX_POWER_TRACK_CONTROL_2_ADDRESS: usize = 0x2010_745c;
@@ -421,30 +419,14 @@ pub(crate) fn configure_phy_register_xtal_frequency(registers: &mut RadioRegiste
 
 /// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_bb_agc_register_update() {
-    (0x2010_8070 as *mut u32).write_volatile(0x0000_08c7);
-    (0x2010_78a4 as *mut u32).write_volatile(0x0001_721f);
-    clear_register_bits(0x2010_8004, 0x0400_0000);
-    (0x2010_8010 as *mut u32).write_volatile(0x0008_52a1);
-    (0x2010_8018 as *mut u32).write_volatile(0x0060_0030);
-    (0x2010_801c as *mut u32).write_volatile(0x0100_00a0);
-    (0x2010_8020 as *mut u32).write_volatile(0x0000_0180);
-    (0x2010_8028 as *mut u32).write_volatile(0xc040_3020);
-    (0x2010_802c as *mut u32).write_volatile(0x0100_0080);
-    set_register_bits(0x2010_8078, 0x0070_0000);
-    (0x2010_7044 as *mut u32).write_volatile(0xfe3f_e1fe);
-    (0x2010_7048 as *mut u32).write_volatile(0xff7d_a4f3);
-    (0x2010_7104 as *mut u32).write_volatile(0x06ac_c7c8);
-    (0x2010_7124 as *mut u32).write_volatile(0xb220_8553);
-    set_register_bits(PHY_WIFI_ENABLE_ADDRESS, 0x0000_3800);
+pub(crate) fn configure_phy_bb_agc_register_update(registers: &mut RadioRegisters) {
+    open_esp_radio_hal_esp32s31::phy_agc::update_baseband_registers(registers);
 }
 
 /// Complete rev0 ROM `phy_enable_agc`, size `0x28`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn enable_phy_agc() {
-    clear_register_bits(PHY_AGC_ENABLE_AUX_ADDRESS, 0x2000_0000);
-    set_register_bits(PHY_AGC_ENABLE_CONTROL_ADDRESS, 0x0080_0000);
-    clear_register_bits(PHY_AGC_ENABLE_CONTROL_ADDRESS, 0x0080_0000);
+pub(crate) fn enable_phy_agc(registers: &mut RadioRegisters) {
+    open_esp_radio_hal_esp32s31::phy_agc::set_enabled(registers, true);
 }
 
 /// Select the exact AGC state used by `phy_chip_set_chan`.
@@ -453,12 +435,8 @@ pub(crate) unsafe fn enable_phy_agc() {
 /// Re-enabling uses the already recovered three-write `phy_enable_agc`
 /// sequence. Both branches are finite and touch no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn set_phy_channel_agc(enabled: bool) {
-    if enabled {
-        enable_phy_agc();
-    } else {
-        set_register_bits(PHY_AGC_ENABLE_AUX_ADDRESS, 0x2000_0000);
-    }
+pub(crate) fn set_phy_channel_agc(registers: &mut RadioRegisters, enabled: bool) {
+    open_esp_radio_hal_esp32s31::phy_agc::set_enabled(registers, enabled);
 }
 
 /// Publish the first half of complete ROM `phy_freq_chan_en_sw`.
@@ -803,34 +781,24 @@ unsafe fn configure_phy_tx_pa_on() {
 
 /// Complete both branches of rev0 ROM `phy_rx_11b_opt`, size `0xc4`.
 #[cfg(target_arch = "riscv32")]
-unsafe fn configure_phy_rx_11b_optimization(enabled: bool) {
-    if enabled {
-        set_register_bits(0x2010_7044, 0x003f_0000);
-        replace_register_field(0x2010_7044, 0x0000_3f00, 0x0000_2100);
-        replace_register_field(0x2010_7124, 0x0000_fc00, 0x0000_8400);
-        replace_register_field(0x2010_7124, 0x0000_000f, 0x0000_0003);
-        replace_register_field(0x2010_8004, 0x0000_f000, 0x0000_9000);
-    } else {
-        replace_register_field(0x2010_7044, 0x003f_0000, 0x003e_0000);
-        replace_register_field(0x2010_7044, 0x0000_3f00, 0x0000_1800);
-        replace_register_field(0x2010_7124, 0x0000_fc00, 0x0000_6000);
-        replace_register_field(0x2010_7124, 0x0000_000f, 0x0000_0004);
-        replace_register_field(0x2010_8004, 0x0000_f000, 0x0000_6000);
-    }
-    replace_register_field(0x2010_7104, 0x0000_01ff, 0x0000_01c8);
+fn configure_phy_rx_11b_optimization(registers: &mut RadioRegisters, enabled: bool) {
+    open_esp_radio_hal_esp32s31::phy_agc::configure_rx_11b_optimization(registers, enabled);
 }
 
 /// Complete rev0 ROM `phy_reg_init`, size `0x52`, with every direct and tail
 /// child reproduced by finite Rust MMIO.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_registers(parameters: crate::phy_bb::PhyRegisterInitParameters) {
+pub(crate) unsafe fn configure_phy_registers(
+    registers: &mut RadioRegisters,
+    parameters: crate::phy_bb::PhyRegisterInitParameters,
+) {
     enable_phy_iq_correction();
     configure_phy_agc_registers(parameters.parameter_121, parameters.parameter_120);
     set_phy_wifi_agc_saturation_gain(0x0008_1825);
     configure_phy_baseband_registers();
     configure_phy_baseband_watchdog();
     configure_phy_tx_pa_on();
-    configure_phy_rx_11b_optimization(true);
+    configure_phy_rx_11b_optimization(registers, true);
     configure_phy_tx_power_control_background();
     configure_phy_noise_floor_auto();
     configure_phy_antenna();
@@ -860,12 +828,15 @@ pub(crate) unsafe fn configure_phy_rx_table(
         );
         index += 1;
     }
-    configure_phy_registers(crate::phy_bb::PhyRegisterInitParameters {
-        parameter_121: parameters.parameter_121,
-        parameter_120: crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT,
-    });
-    configure_phy_bb_agc_register_update();
-    enable_phy_agc();
+    configure_phy_registers(
+        registers,
+        crate::phy_bb::PhyRegisterInitParameters {
+            parameter_121: parameters.parameter_121,
+            parameter_120: crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT,
+        },
+    );
+    configure_phy_bb_agc_register_update(registers);
+    enable_phy_agc(registers);
 }
 
 const fn tsf_latch_mask(interface: u32) -> u32 {

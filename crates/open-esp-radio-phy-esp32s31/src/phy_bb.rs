@@ -523,12 +523,12 @@ impl PhyBbMmioBinding {
                 crate::radio_hal::set_phy_baseband_mode(mode.register_value())
             }
             PhyBbMmioAction::UpdateAgcRegisters => {
-                crate::radio_hal::configure_phy_bb_agc_register_update()
+                crate::radio_hal::configure_phy_bb_agc_register_update(registers)
             }
             PhyBbMmioAction::UpdatePostInitRegisters => {
                 crate::radio_hal::wifi_strict_phy_reg_update_new()
             }
-            PhyBbMmioAction::EnableAgc => crate::radio_hal::enable_phy_agc(),
+            PhyBbMmioAction::EnableAgc => crate::radio_hal::enable_phy_agc(registers),
             PhyBbMmioAction::SetWifiEnabled { enabled } => {
                 crate::radio_hal::set_phy_wifi_enabled(enabled)
             }
@@ -560,7 +560,7 @@ impl PhyBbMmioBinding {
             PhyBbMmioAction::ConfigureAntenna => crate::radio_hal::configure_phy_antenna(),
             PhyBbMmioAction::ConfigureBtFilter => crate::radio_hal::configure_phy_bt_filter(),
             PhyBbMmioAction::ConfigurePhyRegisters { parameters } => {
-                crate::radio_hal::configure_phy_registers(parameters)
+                crate::radio_hal::configure_phy_registers(registers, parameters)
             }
             PhyBbMmioAction::ConfigureRxTable { parameters } => {
                 crate::radio_hal::configure_phy_rx_table(registers, parameters)

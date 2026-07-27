@@ -1,7 +1,7 @@
 # ESP32-S31 radio register source
 
 `esp32s31-radio.svd` is the editable machine-readable source for the recovered
-radio clock, reset, power, PHY-PBus and PHY-I2C PAC. Run:
+radio clock, reset, power, PHY-PBus, PHY-I2C and AGC PAC. Run:
 
 ```console
 tools/generate-esp32s31-radio-pac.py
@@ -48,6 +48,7 @@ identities for every entry.
 | `ROM_REV0_PHY_WRITE_PBUS_MEM` | Complete 0x16a-byte `phy_write_pbus_mem` body at `0x2f824634` |
 | `ROM_REV0_PHY_SAVE_PBUS_REG` | Complete 0x32-byte `phy_save_pbus_reg` body at `0x2f824602` |
 | `ROM_REV0_PHY_WRITE_GAIN_MEM` | Complete 0x2a-byte `phy_write_gain_mem` body at `0x2f8274f0` |
+| `ROM_REV0_PHY_AGC` | Complete rev0 ROM `phy_disable_agc`, `phy_enable_agc`, `phy_rx_11b_opt`, and `phy_bb_agc_reg_update` bodies |
 | `ROM_REV0_PHY_CLOCK_FORCE` | Complete force-TX/RX and RX/TX clock-pair bodies |
 | `ROM_REV0_PHY_I2C` | Complete clock-select, master-init/reset and host read/write bodies |
 | `BLOB_LIBPHY_PHY_I2C` | Complete S31 PHY-I2C callbacks and command-RAM initializer |

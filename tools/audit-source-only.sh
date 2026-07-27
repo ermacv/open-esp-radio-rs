@@ -43,6 +43,17 @@ then
     exit 1
 fi
 
+# Complete AGC-update and 11b ROM leaves are PAC/HAL-owned. These addresses
+# have no remaining live raw consumer; shared 0x702c/0x7030/0x7104 words are
+# excluded because separately evidenced transitional leaves still use them.
+if rg -n \
+    '0x2010_(7044|7048|7124|78a4|8004|8010|8018|801c|8020|8028|802c|8070|8078)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw PHY AGC/11b address escaped the PAC/HAL boundary" >&2
+    exit 1
+fi
+
 RUSTUP_TOOLCHAIN=stable cargo build \
     -p open-esp-radio-phy-esp32s31 \
     --lib \

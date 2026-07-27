@@ -89,6 +89,36 @@ output words by checked slice indexing before publishing each of 32 entries.
 No active publisher for this aperture contains a raw address or volatile
 pointer.
 
+`PHY_AGC_ORACLE` localizes the register set shared by four complete rev0 ROM
+bodies:
+
+- `phy_bb_agc_reg_update` at `0x2f82860e`, size `0xa6`;
+- `phy_disable_agc` at `0x2f827460`, size `0x10`;
+- `phy_enable_agc` at `0x2f827470`, size `0x28`;
+- both branches of `phy_rx_11b_opt` at `0x2f827588`, size `0xc4`.
+
+The internal electrical identities are not public. The SVD therefore records
+the sixteen internal PHY registers with operation-scoped `OPAQUE`/`UNKNOWN`
+names. It adds only instruction-proven fields: the disable bit, enable pulse,
+six 11b fields, one cleared bit and one three-bit set field in the baseband
+update. The final three-bit update at `0x20109c18` is represented on the
+already exact S31 `MODEM_SYSCON.WIFI_BB_CFG` register, alongside the unrelated
+PBus settle condition.
+
+The `phy_agc` HAL preserves the complete ROM access order: fifteen ordered
+baseband-update writes, three fresh-read edges when enabling AGC, one
+fresh-read write when disabling it, and six ordered writes in either 11b
+branch. Host register models cover the exact addresses, values, masks and
+preservation of unrelated bits. Baseband initialization, RX-table
+initialization and every open channel transition now borrow
+`&mut RadioRegisters` for these operations; their former raw address blocks
+have been removed from the live PHY crate.
+
+The same physical `RX_11B_WINDOW_CONTROL` word at `0x20107104` is also touched
+by the separate blob-derived post-initialization update. That operation
+remains a distinct migration stage: sharing a PAC identity does not merge two
+independently evidenced sequences or assign them one guessed semantic name.
+
 `PHY_PBUS.STATUS_CLOCK_FORCE` at `0x20100890` is now confirmed as one physical
 multifunction register rather than conflicting guessed aliases. Independent
 complete rev0 ROM bodies establish:

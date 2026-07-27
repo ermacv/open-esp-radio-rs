@@ -2959,3 +2959,30 @@ the oracle state. The method is `unsafe`; its invariant requires the external
 initializer to have completed all clock/power/reset prerequisites and to stop
 accessing the radio before Rust adopts it. Production open-PHY initialization
 does not use this bridge.
+
+## Typed PHY AGC and 11b register boundary
+
+The next recovered MMIO cluster is generated as `PHY_AGC_ORACLE`. Its primary
+evidence is the complete rev0 ROM ELF, SHA-256
+`a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+not a neighboring-chip register header. Four finite bodies prove the
+addresses, masks, values and access order: `phy_bb_agc_reg_update`,
+`phy_disable_agc`, `phy_enable_agc`, and both branches of
+`phy_rx_11b_opt`.
+
+The new `phy_agc` HAL owns these transactions through
+`&mut RadioRegisters`. It keeps unknown electrical meanings explicitly
+unknown while preserving:
+
+- all fifteen writes in the baseband AGC update;
+- the disable clear followed by the enable set/clear pulse;
+- the single disable write;
+- the five independently read field replacements and final window update in
+  either 11b branch.
+
+The live baseband state machine, RX-table suffix and channel transition now
+pass their existing unique register borrow into these leaves. Their former
+raw-pointer implementations and hard-coded addresses are gone. The
+blob-derived post-initialization update still accesses one shared physical
+register through the transitional raw layer; moving that separate complete
+sequence behind the same PAC identity is the next ownership stage.

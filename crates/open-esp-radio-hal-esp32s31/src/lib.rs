@@ -85,6 +85,26 @@ impl<P> Radio<P, state::Owned> {
         self.peripheral
     }
 
+    /// Adopt radio clocks and resets established by an external PHY oracle.
+    ///
+    /// This is intentionally separate from [`Self::power_up`]: a comparison
+    /// HIL may first run the vendor cold initializer and must not pulse the
+    /// already calibrated radio reset merely to obtain the Rust type state.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have completed the ESP32-S31 modem/PHY clock, power and
+    /// reset prerequisites represented by [`state::Powered`]. No external
+    /// driver may continue accessing the radio after this transition; the
+    /// peripheral token and returned value must remain the unique owner.
+    pub unsafe fn assume_powered_after_external_initialization(self) -> Radio<P, state::Powered> {
+        Radio {
+            peripheral: self.peripheral,
+            registers: self.registers,
+            state: PhantomData,
+        }
+    }
+
     /// Execute the finite modem/PHY clock and reset prerequisites.
     ///
     /// Register fields come from the pinned ESP32-S31 modem/PMU headers and
@@ -208,6 +228,20 @@ mod tests {
             .unwrap_or_else(|_| panic!("fake prerequisite sequence failed"));
         require_powered(&powered);
         assert_eq!(powered.peripheral(), &TestPeripheral(7));
+    }
+
+    #[test]
+    fn external_initialization_bridge_preserves_the_unique_owner() {
+        // SAFETY: this test token represents no real hardware and no MMIO is
+        // accessed.
+        let owned = unsafe { Radio::claim(TestPeripheral(8)) };
+        require_owned(&owned);
+
+        // SAFETY: this host-only type-state test models a completed external
+        // initializer and performs no register access.
+        let powered = unsafe { owned.assume_powered_after_external_initialization() };
+        require_powered(&powered);
+        assert_eq!(powered.peripheral(), &TestPeripheral(8));
     }
 
     #[test]

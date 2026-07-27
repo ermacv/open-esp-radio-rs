@@ -2949,3 +2949,13 @@ so active code no longer reaches this aperture by address.
 Other calibration MMIO remains separate work: it can move behind the same
 capability only after each register identity and field mask has been added to
 the recovered SVD/PAC.
+
+The vendor-comparison HIL has one explicit exception to the normal safe
+`power_up` transition:
+`Radio::assume_powered_after_external_initialization`. It consumes the unique
+`Owned` value and returns `Powered` without touching registers, because
+replaying the normal reset pulse after vendor calibration would invalidate
+the oracle state. The method is `unsafe`; its invariant requires the external
+initializer to have completed all clock/power/reset prerequisites and to stop
+accessing the radio before Rust adopts it. Production open-PHY initialization
+does not use this bridge.

@@ -14,8 +14,11 @@ use crate::phy_dc_iq::{
 pub use crate::phy_dc_iq::{PhyDcIqEstimate, PhyDcIqEstimateRequest};
 use crate::phy_pbus::PhyPbusForceTest;
 
-pub const RX_DCO_CONTROL_ADDRESS: usize = 0x2010_0434;
-pub const RX_DCO_CONTROL_FIELD_MASK: u32 = 0x00c0_0000;
+pub const RX_DCO_CONTROL_ADDRESS: usize =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_rx_dco_oracle::CONTROL.address();
+pub const RX_DCO_CONTROL_FIELD_MASK: u32 =
+    open_esp_radio_hal_esp32s31::radio_registers::phy_rx_dco_oracle::control::CALIBRATION_CONTROL_UNKNOWN
+        .mask();
 
 const MAX_ITERATIONS: u8 = 12;
 const RX_DC_MINIMUM_MAX_ATTEMPTS: u8 = 8;
@@ -728,26 +731,39 @@ impl PhyRxDcoMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxDcoCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxDcoCompletion {
         match self.action {
             PhyRxDcoAction::MaskRxDcoControl {
                 address: RX_DCO_CONTROL_ADDRESS,
                 clear_mask: RX_DCO_CONTROL_FIELD_MASK,
             } => PhyRxDcoCompletion::RxDcoControlMasked {
                 address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: crate::radio_hal::mask_phy_rx_dco_control_field(),
+                saved_field: open_esp_radio_hal_esp32s31::phy_rx_dco::capture_and_clear_control(
+                    registers,
+                ),
             },
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
                 path,
-                value: u32::from(crate::radio_hal::read_phy_pbus_field(selector, path)),
+                value: {
+                    let result =
+                        open_esp_radio_hal_esp32s31::pbus::read_result(registers, selector, path);
+                    debug_assert!(
+                        result.is_some(),
+                        "RX-DCO transition emitted an unrecovered PBus selector"
+                    );
+                    u32::from(result.unwrap_or(0))
+                },
             },
             PhyRxDcoAction::RestoreRxDcoControl {
                 address: RX_DCO_CONTROL_ADDRESS,
                 field_mask: RX_DCO_CONTROL_FIELD_MASK,
                 saved_field,
             } => {
-                crate::radio_hal::restore_phy_rx_dco_control_field(saved_field);
+                open_esp_radio_hal_esp32s31::phy_rx_dco::restore_control(registers, saved_field);
                 PhyRxDcoCompletion::RxDcoControlRestored {
                     address: RX_DCO_CONTROL_ADDRESS,
                     saved_field,

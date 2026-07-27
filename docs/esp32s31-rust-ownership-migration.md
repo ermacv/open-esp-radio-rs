@@ -3190,3 +3190,25 @@ requires the caller's `&mut RadioRegisters` borrow before it can produce
 sensor setup. The old raw constants, no-owner volatile methods, and duplicate
 mask test are deleted; the source audit rejects all three physical addresses
 and the removed wrapper names.
+
+## Owned RX-DCO control MMIO
+
+SVD v1.2 and the generated PAC now own the shared RX-DCO control word at
+`0x2010_0434`, with only its instruction-proved bits 23:22 exposed. Complete
+pinned `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal` and complete rev0 ROM
+`phy_pbus_rx_dco_cal` independently show the same two fresh capture/clear
+reads and the final fresh restore read. Exact hashes, symbol address and sizes
+are recorded in the register-provenance ledger.
+
+The safe `phy_rx_dco` HAL accepts the unique `&mut RadioRegisters` capability,
+returns only the encoded owned field, and restores only that field into the
+latest hardware word. RX-DCO, RX-DC calibration, RX-gain initialization,
+crystal-duty and cold-PHY bindings all converge on this single owner. The
+target entry points that perform only this register operation and safe PBus
+reads no longer need an `unsafe` contract.
+
+The generic raw capture/restore wrapper, the crystal-duty-specific duplicate,
+and the second raw PBus result-address table were removed from `radio_hal.rs`.
+PBus reads now share the already qualified PAC/HAL implementation. The
+source-only audit rejects the deleted wrapper names and any raw
+`0x2010_0434` address returning to the live PHY crate.

@@ -16,6 +16,7 @@ pub mod phy_i2c;
 pub mod phy_iq_estimator;
 pub mod phy_memory;
 pub mod phy_power_detector;
+pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
 pub use power::{PowerCheckpoint, PowerError, PowerEvidence, PowerOperation, PowerSequence};

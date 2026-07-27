@@ -44,9 +44,7 @@ const PHY_CALIBRATION_CLOCK_MASK: u32 =
 const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
     | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
 const PHY_PBUS_STATUS_ADDRESS: usize = 0x2010_0890;
-const PHY_PBUS_RX_DCO_READ_ADDRESS: usize = 0x2010_0894;
 const PHY_CLOCK_CONTROL_ADDRESS: usize = 0x2010_0890;
-const PHY_RX_DCO_CONTROL_ADDRESS: usize = 0x2010_0434;
 const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
 const PHY_TONE_PATH1_CONTROL_ADDRESS: usize = 0x2010_0420;
 const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
@@ -393,76 +391,12 @@ const fn phy_pbus_is_busy(value: u32) -> bool {
     value & PHY_PBUS_BUSY_BIT != 0
 }
 
-const fn phy_pbus_rx_dco_read_value(value: u32) -> u16 {
-    (value & 0x1ff) as u16
-}
-
-const fn phy_pbus_read_address(selector: u8, path: u8) -> usize {
-    match selector {
-        0 => 0x2010_08a4,
-        1 => 0x2010_0894,
-        2 => {
-            if path == 1 {
-                0x2010_0898
-            } else {
-                0x2010_089c
-            }
-        }
-        3 => 0x2010_089c,
-        4 => {
-            if path == 1 {
-                0x2010_08a0
-            } else {
-                0x2010_08a4
-            }
-        }
-        5 => 0x2010_08a4,
-        _ => 0x2010_08a4,
-    }
-}
-
-const fn phy_pbus_read_shift(selector: u8, path: u8) -> u8 {
-    match selector {
-        0 => {
-            if path == 1 {
-                18
-            } else {
-                9
-            }
-        }
-        1 | 3 => {
-            if path == 1 {
-                9
-            } else {
-                0
-            }
-        }
-        2 | 4 => {
-            if path == 1 {
-                0
-            } else {
-                18
-            }
-        }
-        5 => 0,
-        _ => 0,
-    }
-}
-
 const fn with_phy_tx_clock(value: u32, enabled: bool) -> u32 {
     (value & !0x0003_0000) | if enabled { 0x0003_0000 } else { 0 }
 }
 
 const fn with_phy_rx_clock(value: u32, enabled: bool) -> u32 {
     (value & !0x0000_c000) | if enabled { 0x0000_c000 } else { 0 }
-}
-
-const fn without_phy_rx_dco_control_field(value: u32) -> u32 {
-    value & !0x00c0_0000
-}
-
-const fn with_restored_phy_rx_dco_control_field(value: u32, saved_field: u32) -> u32 {
-    without_phy_rx_dco_control_field(value) | (saved_field & 0x00c0_0000)
 }
 
 const fn with_phy_tone_path(value: u32, enable: i32, selector: i32, step: i32) -> u32 {
@@ -957,19 +891,6 @@ pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
     active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
 }
 
-/// Read the exact PBus field consumed by RX-DCO calibration.
-///
-/// The rev0 ROM chain
-/// `phy_pbus_rd(1, 2) -> phy_pbus_rd_addr/phy_pbus_rd_shift` resolves to one
-/// volatile read at `0x2010_0894`, shift zero, masked to nine bits. The jump
-/// tables are present in `esp32s31_rev0_rom.elf` at `0x2f84_d910` and
-/// `0x2f84_d924`. This Rust leaf has no call, branch, loop, wait, allocation,
-/// callback, or non-MMIO state access.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_pbus_rx_dco_value() -> u16 {
-    phy_pbus_rx_dco_read_value((PHY_PBUS_RX_DCO_READ_ADDRESS as *const u32).read_volatile())
-}
-
 /// Sample the free-running counter used by the ROM SDM-stability deadline.
 ///
 /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f82_3e76` samples
@@ -1005,34 +926,6 @@ pub(crate) unsafe fn configure_phy_rx_clock(enabled: bool) {
     control.write_volatile(with_phy_rx_clock(control.read_volatile(), enabled));
 }
 
-/// Capture and clear one recovered PHY register field.
-///
-/// This is intentionally a narrow cold-calibration helper rather than a
-/// general register API. Callers retain the exact address/mask pair in their
-/// non-cloneable action token and restore it before publishing an outcome.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn capture_and_clear_phy_register_field(address: usize, field_mask: u32) -> u32 {
-    debug_assert!(
-        address == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS
-            && field_mask == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
-    );
-    let register = address as *mut u32;
-    let current = register.read_volatile();
-    register.write_volatile(current & !field_mask);
-    current & field_mask
-}
-
-/// Restore a field captured by [`capture_and_clear_phy_register_field`].
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn restore_phy_register_field(address: usize, field_mask: u32, saved_field: u32) {
-    debug_assert!(
-        address == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS
-            && field_mask == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
-    );
-    let register = address as *mut u32;
-    register.write_volatile((register.read_volatile() & !field_mask) | (saved_field & field_mask));
-}
-
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
@@ -1046,19 +939,6 @@ pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(enabled: bool) {
     } else {
         clear_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
     }
-}
-
-/// Read one nine-bit PBus field without invoking ROM.
-///
-/// Complete ROM `phy_pbus_rd` is pure address/shift selection followed by a
-/// single volatile read. The tuple table below is recovered from its two ROM
-/// jump tables at `0x2f84_d910` and `0x2f84_d924`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_pbus_field(selector: u8, path: u8) -> u16 {
-    debug_assert!(selector <= 5, "unrecovered PBus selector");
-    let address = phy_pbus_read_address(selector, path);
-    let shift = phy_pbus_read_shift(selector, path);
-    (((address as *const u32).read_volatile() >> shift) & 0x1ff) as u16
 }
 
 /// Program the complete crystal-duty calibration tone without `g_phyFuns`.
@@ -1249,33 +1129,6 @@ pub(crate) unsafe fn configure_phy_rxiq_root_correction(begin: bool) {
         let status = PHY_PBUS_STATUS_ADDRESS as *mut u32;
         status.write_volatile(status.read_volatile() & 0xffff_7fff);
     }
-}
-
-/// Save and clear bits 23:22 around crystal-duty RX-DCO calibration.
-///
-/// Reference: pinned `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal` offsets
-/// `0x3c..0xfc`. The returned value contains only the two owned field bits;
-/// the leaf performs one finite read/modify/write and owns no software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn mask_phy_rx_dco_control_field() -> u32 {
-    let control = PHY_RX_DCO_CONTROL_ADDRESS as *mut u32;
-    let previous = control.read_volatile();
-    control.write_volatile(without_phy_rx_dco_control_field(previous));
-    previous & 0x00c0_0000
-}
-
-/// Restore the saved bits 23:22 without replacing concurrently unrelated
-/// register fields.
-///
-/// Reference: pinned `phy_xtal_duty_cal` offsets `0x114..0x126`. There is no
-/// loop, wait, allocation, callback, or mutable software state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn restore_phy_rx_dco_control_field(saved_field: u32) {
-    let control = PHY_RX_DCO_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_restored_phy_rx_dco_control_field(
-        control.read_volatile(),
-        saved_field,
-    ));
 }
 
 /// Apply the complete rev0 ROM `phy_i2c_clk_sel` register transform.
@@ -1508,9 +1361,8 @@ mod tests {
         encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
         mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
         mac_rx_management_policy_address, packed_byte, packed_halfword, phy_pbus_is_busy,
-        phy_pbus_read_address, phy_pbus_read_shift, phy_pbus_rx_dco_read_value, tsf_latch_mask,
-        tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address, tx_queue_is_valid,
-        with_mac_rx_control_address_policy, with_mac_rx_control_policy,
+        tsf_latch_mask, tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address,
+        tx_queue_is_valid, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
         with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
         with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_fe_txrx_reset,
         with_phy_front_end_adc_update, with_phy_front_end_update_first,
@@ -1522,10 +1374,9 @@ mod tests {
         with_phy_tx_gain_compensation_byte1, with_phy_tx_gain_compensation_byte2,
         with_phy_txiq_calibration_complete, with_phy_txiq_calibration_enabled,
         with_phy_txiq_first_polarity, with_phy_txiq_gain, with_phy_txiq_phase,
-        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
-        with_restored_phy_rx_dco_control_field, with_tx_cca, with_wifi_mac_regdma_link,
-        without_fe_bb_clock_enable, without_mac_tx_retention, without_phy_fe_txrx_reset,
-        without_phy_rx_dco_control_field, without_phy_tx_gain_compensation_high_byte,
+        with_phy_txiq_second_polarity, with_register_bits, with_register_field, with_tx_cca,
+        with_wifi_mac_regdma_link, without_fe_bb_clock_enable, without_mac_tx_retention,
+        without_phy_fe_txrx_reset, without_phy_tx_gain_compensation_high_byte,
         without_phy_tx_gain_compensation_low_byte, without_register_bits, without_tx_queue_enable,
         without_tx_queue_valid, WIFI_MAC_ACTIVE_REGDMA_LINK,
     };
@@ -1628,32 +1479,6 @@ mod tests {
         assert_eq!(with_phy_pbus_force_test(u32::MAX, 3, 2, 0x100), 0xffff_400f);
         assert!(!phy_pbus_is_busy(0x7fff_ffff));
         assert!(phy_pbus_is_busy(0x8000_0000));
-        assert_eq!(phy_pbus_rx_dco_read_value(0xffff_ffff), 0x01ff);
-        assert_eq!(phy_pbus_rx_dco_read_value(0x1234_0123), 0x0123);
-        assert_eq!(phy_pbus_read_address(0, 0), 0x2010_08a4);
-        assert_eq!(phy_pbus_read_address(1, 2), 0x2010_0894);
-        assert_eq!(phy_pbus_read_address(2, 1), 0x2010_0898);
-        assert_eq!(phy_pbus_read_address(2, 0), 0x2010_089c);
-        assert_eq!(phy_pbus_read_address(3, 0), 0x2010_089c);
-        assert_eq!(phy_pbus_read_address(4, 1), 0x2010_08a0);
-        assert_eq!(phy_pbus_read_address(4, 0), 0x2010_08a4);
-        assert_eq!(phy_pbus_read_address(5, 0), 0x2010_08a4);
-        assert_eq!(phy_pbus_read_shift(0, 0), 9);
-        assert_eq!(phy_pbus_read_shift(0, 1), 18);
-        assert_eq!(phy_pbus_read_shift(1, 2), 0);
-        assert_eq!(phy_pbus_read_shift(1, 1), 9);
-        assert_eq!(phy_pbus_read_shift(2, 0), 18);
-        assert_eq!(phy_pbus_read_shift(2, 1), 0);
-
-        assert_eq!(without_phy_rx_dco_control_field(0x12ff_5678), 0x123f_5678);
-        assert_eq!(
-            with_restored_phy_rx_dco_control_field(0xffff_ffff, 0x0040_0000),
-            0xff7f_ffff
-        );
-        assert_eq!(
-            with_restored_phy_rx_dco_control_field(0x1234_5678, 0xffff_ffff),
-            0x12f4_5678
-        );
     }
 
     #[test]

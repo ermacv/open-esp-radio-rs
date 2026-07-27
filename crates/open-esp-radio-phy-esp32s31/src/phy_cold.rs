@@ -1997,7 +1997,7 @@ impl PhyColdMmioBinding {
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
                     PhyRxDcoAction::RestoreRxDcoControl { saved_field, .. },
                 )),
-            )) => crate::radio_hal::restore_phy_rx_dco_control_field(saved_field),
+            )) => open_esp_radio_hal_esp32s31::phy_rx_dco::restore_control(registers, saved_field),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(PhyRxDcoAction::DcIq(
                     PhyDcIqAction::Configure(request),
@@ -2938,7 +2938,8 @@ impl PhyColdObservationBinding {
                 self.into_completion(PhyColdObservationResult::PbusWorkMode { settle_required })
             }
             PhyColdObservationRequest::MaskRxDcoControl { address, .. } => {
-                let saved_field = crate::radio_hal::mask_phy_rx_dco_control_field();
+                let saved_field =
+                    open_esp_radio_hal_esp32s31::phy_rx_dco::capture_and_clear_control(registers);
                 self.into_completion(PhyColdObservationResult::RxDcoControlMasked {
                     address,
                     saved_field,

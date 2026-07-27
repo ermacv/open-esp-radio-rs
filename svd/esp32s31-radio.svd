@@ -6,12 +6,12 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>1.1</version>
+  <version>1.2</version>
   <description>
     Recovered ESP32-S31 radio clock, reset, power, PHY-PBus, PHY-I2C, IQ
-    estimator and temperature-sensor subset. Unknown fields are omitted;
-    OPAQUE and UNKNOWN names describe instruction-level evidence without
-    assigning an unproven hardware meaning.
+    estimator, RX-DCO and temperature-sensor subset. Unknown fields are
+    omitted; OPAQUE and UNKNOWN names describe instruction-level evidence
+    without assigning an unproven hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
@@ -1774,6 +1774,31 @@
               <name>ACTIVITY_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR,BLOB_LIBPHY_PHY_CHECK_RX_SAT]; CONFIDENCE[instruction-exact-semantics-unknown]. Nonzero is treated as IQ-estimator activity and as an RX-saturation sample.</description>
               <bitOffset>20</bitOffset><bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PHY_RX_DCO_ORACLE</name>
+      <description>
+        SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+        CONFIDENCE[instruction-exact-semantics-unknown].
+        RX-DCO calibration control word recovered from complete pinned S31
+        blob and rev0 ROM calibration bodies.
+      </description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_xtal_duty_cal and RX-DCO calibration bodies save, clear and restore bits 23:22 around measurement.</description>
+          <addressOffset>0x0434</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field>
+              <name>CALIBRATION_CONTROL_UNKNOWN</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field preserved around the complete bounded RX-DCO measurement graph.</description>
+              <bitOffset>22</bitOffset><bitWidth>2</bitWidth>
             </field>
           </fields>
         </register>

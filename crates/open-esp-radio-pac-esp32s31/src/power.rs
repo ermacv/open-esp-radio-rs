@@ -3594,6 +3594,37 @@ pub mod phy_iq_estimator_oracle {
     }
 }
 
+/// SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+/// CONFIDENCE[instruction-exact-semantics-unknown]. RX-DCO calibration control word recovered
+/// from complete pinned S31 blob and rev0 ROM calibration bodies.
+pub mod phy_rx_dco_oracle {
+    use crate::{Register32, RegisterAccess};
+
+    /// Peripheral base address. SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. RX-DCO calibration control word
+    /// recovered from complete pinned S31 blob and rev0 ROM calibration bodies.
+    pub const BASE: usize = 0x20100000;
+
+    /// SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_xtal_duty_cal and RX-DCO
+    /// calibration bodies save, clear and restore bits 23:22 around measurement.
+    pub const CONTROL: Register32 =
+        Register32::described(0x20100434, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`CONTROL`].
+    /// SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_xtal_duty_cal and RX-DCO
+    /// calibration bodies save, clear and restore bits 23:22 around measurement.
+    pub mod control {
+        use crate::Field32;
+
+        /// SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL];
+        /// CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field preserved around the
+        /// complete bounded RX-DCO measurement graph.
+        pub const CALIBRATION_CONTROL_UNKNOWN: Field32 = Field32::new(22, 2);
+    }
+}
+
 /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
 /// CONFIDENCE[instruction-exact-semantics-partial]. Temperature-sensor code, power and
 /// read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies.
@@ -3759,7 +3790,7 @@ pub mod phy_clock_oracle {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 207] = [
+pub const ALL: [Register32; 208] = [
     modem_syscon::TEST_CONF,
     modem_syscon::CLK_CONF,
     modem_syscon::CLK_CONF_FORCE_ON,
@@ -3960,6 +3991,7 @@ pub const ALL: [Register32; 207] = [
     phy_iq_estimator_oracle::POWER_ACCUMULATOR,
     phy_iq_estimator_oracle::ESTIMATOR_READY_STATUS,
     phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS,
+    phy_rx_dco_oracle::CONTROL,
     phy_temperature_sensor_oracle::SENSOR_CODE_POWER,
     phy_temperature_sensor_oracle::SENSOR_CONTROL,
     phy_temperature_system_oracle::SYSTEM_CONTROL,

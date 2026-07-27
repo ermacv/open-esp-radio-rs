@@ -960,7 +960,7 @@ impl PhyRxGainInitMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyRxGainInitCompletion {
@@ -969,8 +969,13 @@ impl PhyRxGainInitMmioBinding {
                 address,
                 field_mask,
             } => {
+                debug_assert_eq!(address, crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS);
+                debug_assert_eq!(
+                    field_mask,
+                    crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
+                );
                 let saved_field =
-                    crate::radio_hal::capture_and_clear_phy_register_field(address, field_mask);
+                    open_esp_radio_hal_esp32s31::phy_rx_dco::capture_and_clear_control(registers);
                 PhyRxGainInitCompletion::DcControlCleared {
                     address,
                     saved_field,
@@ -981,7 +986,12 @@ impl PhyRxGainInitMmioBinding {
                 field_mask,
                 saved_field,
             } => {
-                crate::radio_hal::restore_phy_register_field(address, field_mask, saved_field);
+                debug_assert_eq!(address, crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS);
+                debug_assert_eq!(
+                    field_mask,
+                    crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
+                );
+                open_esp_radio_hal_esp32s31::phy_rx_dco::restore_control(registers, saved_field);
                 PhyRxGainInitCompletion::DcControlRestored {
                     address,
                     saved_field,

@@ -19,8 +19,8 @@ use crate::phy_rx_dco::{
     PhyRxDcMinimumRequest, PhyRxDcMinimumTransition,
 };
 
-pub const PHY_RX_DC_CONTROL_ADDRESS: usize = 0x2010_0434;
-pub const PHY_RX_DC_CONTROL_FIELD_MASK: u32 = 0x00c0_0000;
+pub const PHY_RX_DC_CONTROL_ADDRESS: usize = crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS;
+pub const PHY_RX_DC_CONTROL_FIELD_MASK: u32 = crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcCalibrationStage {
@@ -1886,22 +1886,36 @@ impl PhyRxDcCalibrationMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxDcCalibrationCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxDcCalibrationCompletion {
         match self.action {
             PhyRxDcCalibrationAction::MaskControl {
                 address,
                 clear_mask,
             } => PhyRxDcCalibrationCompletion::ControlMasked {
                 address,
-                saved_field: crate::radio_hal::capture_and_clear_phy_register_field(
-                    address, clear_mask,
-                ),
+                saved_field: {
+                    debug_assert_eq!(address, PHY_RX_DC_CONTROL_ADDRESS);
+                    debug_assert_eq!(clear_mask, PHY_RX_DC_CONTROL_FIELD_MASK);
+                    open_esp_radio_hal_esp32s31::phy_rx_dco::capture_and_clear_control(registers)
+                },
             },
             PhyRxDcCalibrationAction::ReadPbus { selector, path } => {
                 PhyRxDcCalibrationCompletion::PbusRead {
                     selector,
                     path,
-                    value: u32::from(crate::radio_hal::read_phy_pbus_field(selector, path)),
+                    value: {
+                        let result = open_esp_radio_hal_esp32s31::pbus::read_result(
+                            registers, selector, path,
+                        );
+                        debug_assert!(
+                            result.is_some(),
+                            "RX-DC calibration emitted an unrecovered PBus selector"
+                        );
+                        u32::from(result.unwrap_or(0))
+                    },
                 }
             }
             PhyRxDcCalibrationAction::RestoreControl {
@@ -1909,7 +1923,9 @@ impl PhyRxDcCalibrationMmioBinding {
                 field_mask,
                 saved_field,
             } => {
-                crate::radio_hal::restore_phy_register_field(address, field_mask, saved_field);
+                debug_assert_eq!(address, PHY_RX_DC_CONTROL_ADDRESS);
+                debug_assert_eq!(field_mask, PHY_RX_DC_CONTROL_FIELD_MASK);
+                open_esp_radio_hal_esp32s31::phy_rx_dco::restore_control(registers, saved_field);
                 PhyRxDcCalibrationCompletion::ControlRestored {
                     address,
                     saved_field,
@@ -1974,7 +1990,15 @@ impl PhyRxGainDcMmioBinding {
             PhyRxGainDcAction::ReadPbus { selector, path } => PhyRxGainDcCompletion::PbusRead {
                 selector,
                 path,
-                value: u32::from(crate::radio_hal::read_phy_pbus_field(selector, path)),
+                value: {
+                    let result =
+                        open_esp_radio_hal_esp32s31::pbus::read_result(registers, selector, path);
+                    debug_assert!(
+                        result.is_some(),
+                        "RX-gain DC transition emitted an unrecovered PBus selector"
+                    );
+                    u32::from(result.unwrap_or(0))
+                },
             },
             PhyRxGainDcAction::ConfigurePbusWorkMode => {
                 PhyRxGainDcCompletion::PbusWorkModeConfigured {

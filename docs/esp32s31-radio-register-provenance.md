@@ -393,6 +393,38 @@ the PAC `CODE` field from exactly one read. The former raw addresses, mask,
 volatile wrappers, and duplicated power-field test are removed. The
 source-only audit rejects their return.
 
+## RX-DCO control PAC
+
+SVD v1.2 adds the `PHY_RX_DCO_ORACLE.CONTROL` identity at physical address
+`0x2010_0434`. Only bits 23:22 are described. Their electrical role is not
+proved by the available instruction bodies, so the PAC deliberately retains
+the `CALIBRATION_CONTROL_UNKNOWN` name.
+
+Two complete pinned bodies independently prove the same save, clear and
+restore sequence:
+
+- rev0 ROM ELF SHA-256
+  `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
+  `phy_pbus_rx_dco_cal` at `0x2f82_8f44`, size `0x228`;
+- `libphy.a` SHA-256
+  `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`,
+  `phy_rx_cal.o::phy_xtal_duty_cal`, size `0x392`.
+
+Both bodies first read and retain bits 23:22, perform another fresh read before
+clearing them, and use one final fresh read to restore only the saved field.
+The new safe `phy_rx_dco` HAL preserves those separate read/modify/write
+edges. Its capture returns the field in its original bit position, while
+restore masks untrusted high bits and preserves every unrelated current
+register bit.
+
+The RX-DCO, RX-DC calibration, RX-gain initialization, crystal-duty and cold
+initializer bindings now pass the caller's unique `&mut RadioRegisters`
+capability to that one HAL owner. Their repeated raw volatile helpers were
+deleted. The adjacent duplicated raw `phy_pbus_rd` address/shift table was
+also removed: all three live calibration consumers now use the existing safe
+PAC-backed PBus result reader. The source-only audit rejects the old helper
+names and any new raw `0x2010_0434` literal in the live PHY crate.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

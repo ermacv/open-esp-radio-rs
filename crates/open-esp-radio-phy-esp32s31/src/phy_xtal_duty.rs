@@ -1882,13 +1882,13 @@ mod tests {
         assert_eq!(
             transition.action(),
             XtalDutyPrepareAction::MaskRxDcoControl {
-                address: 0x2010_0434,
-                clear_mask: 0x00c0_0000,
+                address: RX_DCO_CONTROL_ADDRESS,
+                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
             }
         );
         transition
             .advance(XtalDutyPrepareCompletion::RxDcoControlMasked {
-                address: 0x2010_0434,
+                address: RX_DCO_CONTROL_ADDRESS,
                 saved_field: 0x0080_0000,
             })
             .unwrap();
@@ -1919,14 +1919,14 @@ mod tests {
         assert_eq!(
             transition.action(),
             XtalDutyPrepareAction::RestoreRxDcoControl {
-                address: 0x2010_0434,
-                field_mask: 0x00c0_0000,
+                address: RX_DCO_CONTROL_ADDRESS,
+                field_mask: RX_DCO_CONTROL_FIELD_MASK,
                 saved_field: 0x0080_0000,
             }
         );
         transition
             .advance(XtalDutyPrepareCompletion::RxDcoControlRestored {
-                address: 0x2010_0434,
+                address: RX_DCO_CONTROL_ADDRESS,
                 saved_field: 0x0080_0000,
             })
             .unwrap();

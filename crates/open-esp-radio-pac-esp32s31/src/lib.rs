@@ -9,6 +9,7 @@ pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
 pub mod power;
+pub mod regions;
 pub use open_esp_radio_svd_esp32s31 as svd;
 
 /// Access policy recovered for one MMIO register.
@@ -173,6 +174,9 @@ impl RadioRegisters {
     }
 
     pub const fn contains(address: usize) -> bool {
+        // Keep the legacy raw compatibility capability narrower than the
+        // chip-level 1-MiB decode windows described in `regions`. Classifying
+        // an address does not prove that the open-radio SVD owns it.
         matches!(
             address,
             0x2010_0000..=0x2010_ffff

@@ -8,6 +8,7 @@ publish = false
 description = "Portable Rust runner for the pinned ESP32-S31 svd2rust generation"
 
 [dependencies]
+svd-parser = "=0.14.9"
 svd2rust = { version = "=0.37.1", default-features = false }
 
 [lints]

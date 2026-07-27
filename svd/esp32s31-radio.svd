@@ -8,10 +8,14 @@
   <series>ESP32-S31</series>
   <version>1.6</version>
   <description>
-    Recovered ESP32-S31 radio clock, reset, power, PHY-PBus, PHY-I2C, IQ
-    estimator, RX-DCO, cold-deadline, temperature-sensor, Wi-Fi MAC RX-DMA
-    and receive BlockAck subset. Unknown fields are omitted; OPAQUE and UNKNOWN names describe
-    instruction-level evidence without assigning an unproven hardware meaning.
+    Recovered ESP32-S31 modem/radio core plus the minimum HP-system,
+    LP-system/PMU and LP-peripheral dependencies required by it. These are
+    independently decoded MMIO windows, not one monolithic radio peripheral.
+    Covered functions include clock, reset, power, PHY-PBus, PHY-I2C, IQ
+    estimation, RX-DCO, cold deadlines, temperature sensing, Wi-Fi MAC RX-DMA
+    and receive BlockAck. Unknown fields are omitted; OPAQUE and UNKNOWN names
+    describe instruction-level evidence without assigning an unproven
+    hardware meaning.
   </description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
@@ -2188,6 +2192,7 @@
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
       <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
+      <source id="S31_REG_BASE">esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/include/esp32s31/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d; names the HP-system 0x205x, LP-system 0x207x and LP-peripheral 0x208x blocks and IEEE802154_REG_BASE in the 0x201x modem/radio window</source>
       <source id="S31_PMU_HEADERS">ESP-IDF master commit 102122904ade11fd1ae373848f34ffd7dfb18aeb, components/soc/esp32s31/register/soc/pmu_reg.h; local esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, pmu_reg.h sha256 b1a04a306b9d7ee908e2f7b083d42b7a634f8687b6ee034cfe6f54f385e0d816 and pmu_struct.h sha256 5fc84c7569f9f24e193b0205728a647768c7c289b39d5ce679c50db7d8352e28</source>
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
       <source id="ROM_REV0_PHY_FE_REG_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_fe_reg_init at 0x2f827740 size 0xf6</source>
@@ -2230,5 +2235,11 @@
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="HIL_OPEN_RX_LIVE_APPEND_2026_07_27">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs run_connected_network on ESP32-S31 rev0, psram-code-psram-data profile, 2026-07-27; rotating 32-entry ring survived more than 7000 receives and completed open scan, WPA2, DHCP and 5/5 ICMP echo with zero loss</source>
     </openEspRadioProvenance>
+    <openEspRadioAddressWindows source="S31_REG_BASE">
+      <window name="MODEM_RADIO_CORE" start="0x20100000" endExclusive="0x20200000"/>
+      <window name="HP_SYSTEM" start="0x20500000" endExclusive="0x20600000"/>
+      <window name="LP_SYSTEM" start="0x20700000" endExclusive="0x20800000"/>
+      <window name="LP_PERIPHERAL" start="0x20800000" endExclusive="0x20900000"/>
+    </openEspRadioAddressWindows>
   </vendorExtensions>
 </device>

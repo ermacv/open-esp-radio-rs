@@ -517,7 +517,7 @@ impl PhyBbMmioBinding {
     ) -> PhyBbMmioCompletion {
         match self.action {
             PhyBbMmioAction::EnableBasebandInitialization => {
-                crate::radio_hal::enable_phy_baseband_initialization()
+                registers.set_phy_calibration_clock(true)
             }
             PhyBbMmioAction::SetBasebandMode { mode } => {
                 open_esp_radio_hal_esp32s31::phy_frequency::set_baseband_mode(

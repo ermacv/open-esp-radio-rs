@@ -14,6 +14,13 @@ source directly through the toolchain's `rustfmt` component so normal
 workspace formatting checks remain valid. The compatibility PAC re-exports
 this crate as `open_esp_radio_pac_esp32s31::svd`.
 
+Before invoking `svd2rust`, the Rust runner parses every peripheral, cluster
+and register span and requires it to fit wholly inside one evidenced
+ESP32-S31 1-MiB MMIO decode window. A peripheral outside those windows, or a
+register crossing a window boundary, makes both generation and `--check`
+fail. This prevents an incorrect base address from becoming safe-looking
+generated Rust.
+
 The SVD has no CPU interrupt table, so selecting `none` avoids coupling this
 radio PAC to a particular RISC-V runtime.
 
@@ -83,13 +90,53 @@ only; the RISC-V `power_up` implementation does not execute them.
 
 ## Peripheral scope
 
-The recovered SVD currently covers:
+The word "radio" is not one peripheral ownership block. The recovered SVD
+currently touches four independently decoded chip-level windows:
+
+- `0x2010_0000..0x201f_ffff`: modem/radio core, including PHY and Wi-Fi MAC;
+- `0x2050_0000..0x205f_ffff`: HP-system dependencies such as clock/reset;
+- `0x2070_0000..0x207f_ffff`: LP-system and PMU dependencies;
+- `0x2080_0000..0x208f_ffff`: LP analog/peripheral dependencies such as
+  temperature sensing.
+
+The latter three are dependencies of the radio driver, not parts of the Wi-Fi
+MAC/PHY register fabric. Their source is the pinned ESP32-S31 `reg_base.h`;
+the `0x201x_xxxx` identities additionally come from modem structures and
+complete ROM/blob MMIO instructions. The PAC exposes this distinction through
+`Esp32s31MmioWindow`, while one top-level `RadioRegisters` owner still
+serializes cross-window initialization sequences.
+
+Within those windows the recovered SVD currently covers:
 
 - Wi-Fi MAC and its integrated RX DMA/BlockAck register windows;
 - PHY baseband, AGC, PBus, PHY-I2C and PHY table memories;
 - `MODEM_SYSCON`, `MODEM_LPCON`, `HP_SYS_CLKRST` and `PMU` clock/reset/power
   prerequisites;
 - PHY temperature sensor and its system clock/control register.
+
+This is not the desired final ownership boundary. The ESP32-S31 PAC used by
+the `esp32s31-async-platform` HAL branch already describes these complete
+chip-level peripherals:
+
+| Recovered SVD identity | Official PAC identity | Base |
+| --- | --- | --- |
+| `MODEM_SYSCON` | `esp32s31::MODEM_SYSCON` | `0x2010_9c00` |
+| `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` |
+| `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` |
+| `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` |
+| `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` |
+| `PMU` | `esp32s31::PMU` | `0x2070_4000` |
+| `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` |
+| `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` |
+
+Those identities must move behind a platform capability borrowed from the
+official `esp-hal`/PAC owner. They must then be removed from the recovered SVD;
+otherwise two Rust singleton types claim the same physical MMIO. The custom
+PAC remains necessary for the undocumented PHY/baseband aggregates, PHY
+command RAM/deadline blocks and Wi-Fi MAC/RX-DMA registers that the official
+PAC does not model. Until this split is complete, the private
+`RadioRegisters` singleton is a migration serialization mechanism, not proof
+of exclusive chip-wide ownership.
 
 There is no raw access to the chip's general AXI-GDMA peripheral in the live
 driver. Wi-Fi descriptors are owned SRAM objects shared with the Wi-Fi MAC
@@ -100,7 +147,7 @@ DMA engine; their volatile words are not peripheral MMIO.
 Not all upper layers are safe yet:
 
 - `open-esp-radio-phy-esp32s31::radio_hal` still contains the main raw-MMIO
-  compatibility leaves and several unused C-ABI-shaped functions;
+  compatibility leaves;
 - PHY `execute_target` methods are marked unsafe where they call those leaves
   or require the caller to uphold hardware sequencing;
 - MAC descriptor, intrusive queue and A-MPDU code uses unsafe pointer access
@@ -109,6 +156,13 @@ Not all upper layers are safe yet:
 - HAL ownership has two explicit unsafe transitions: the initial singleton
   claim and adoption after external/vendor initialization. The initial claim
   binds the integration token to the generated PAC singleton.
+
+The unused C-ABI-shaped MAC leaves were removed after repository-wide and
+integration-repository searches found no consumer. Their source-owned
+replacements live in the MAC crate behind a borrowed `Mmio` capability.
+The FE/BB gate and calibration-clock leaves now use native generated PAC
+access; their full-register `unsafe` writes are confined to the PAC and cite
+the complete ROM/blob sources.
 
 The power, PHY-I²C and PBus vertical slices are complete. PHY-I²C completion
 observations now require `&mut RadioRegisters`; this exclusive borrow is

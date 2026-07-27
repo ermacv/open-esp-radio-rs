@@ -1891,9 +1891,7 @@ impl PhyColdMmioBinding {
         registers: &mut RadioRegisters,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
         match self.outer_action {
-            PhyRfInitPrefixAction::ConfigureFeBbClock => {
-                crate::radio_hal::wifi_strict_phy_open_fe_bb_clk()
-            }
+            PhyRfInitPrefixAction::ConfigureFeBbClock => registers.open_frontend_baseband_clocks(),
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {
                 open_esp_radio_hal_esp32s31::phy_i2c::configure_bbpll_calibration(
                     registers, enabled,

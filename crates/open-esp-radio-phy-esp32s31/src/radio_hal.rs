@@ -4,45 +4,9 @@
 //! documented MMIO. They are temporary runtime-local HAL boundaries until the
 //! register layer moves into the ESP32-S31 radio HAL crate.
 
-use open_esp_radio_hal_esp32s31::radio_registers::{phy_clock_oracle, pmu};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_hal_esp32s31::RadioRegisters;
 
-const TSF_CONTROL_ADDRESS: usize = 0x2010_d814;
-const TSF_LOW_ADDRESS: usize = 0x2010_d820;
-const TSF_HIGH_ADDRESS: usize = 0x2010_d824;
-const RX_DESCRIPTOR_LAST_LOW_ADDRESS: usize = 0x2010_408c;
-const RX_DESCRIPTOR_LAST_HIGH_ADDRESS: usize = 0x2010_4c70;
-const TX_CCA_CONTROL_ADDRESS: usize = 0x2010_4c5c;
-const TX_QUEUE_CONTROL_BASE_ADDRESS: usize = 0x2010_4d70;
-const TX_QUEUE_CONTROL_STRIDE: usize = 0x10;
-const MAC_ADDRESS_LOW_BASE_ADDRESS: usize = 0x2010_405c;
-const MAC_ADDRESS_HIGH_BASE_ADDRESS: usize = 0x2010_4060;
-const MAC_ADDRESS_STRIDE: usize = 8;
-const MAC_RX_ADDRESS_POLICY_BASE_ADDRESS: usize = 0x2010_4004;
-const MAC_RX_ADDRESS_POLICY_STRIDE: usize = 8;
-const MAC_RX_FRAME_POLICY_BASE_ADDRESS: usize = 0x2010_40d8;
-const MAC_RX_MANAGEMENT_POLICY_BASE_ADDRESS: usize = 0x2010_4060;
-const MAC_RX_MANAGEMENT_POLICY_STRIDE: usize = 8;
-const MAC_CONTROL_ADDRESS: usize = 0x2010_4cac;
-const WIFI_MAC_REGDMA_CONTROL_ADDRESS: usize = 0x2010_d83c;
-const MAC_ADDRESS_VALID_BIT: u32 = 1 << 16;
-const MAC_RX_MODE_MASK: u32 = (1 << 10) | (1 << 4);
-const MAC_RX_CONTROL_POLICY_BIT: u32 = 1 << 6;
-const MAC_RX_CONTROL_ADDRESS_BIT: u32 = 1 << 31;
-const MAC_RX_MANAGEMENT_POLICY_BIT: u32 = 1 << 16;
-const MAC_RX_UNIQUE_BSSID_BITS: u32 = (1 << 8) | (1 << 1);
-const MAC_NO_RETENTION_CLEAR_BITS: u32 = 0x00ff_1000;
-const WIFI_MAC_REGDMA_LINK_MASK: u32 = 0x001e_0000;
-const WIFI_MAC_ACTIVE_REGDMA_LINK: u32 = 4;
-const MAC_INTERFACE_COUNT: u32 = 4;
-const MAC_RX_POLICY_QUEUE_COUNT: u32 = 3;
-const PHY_FE_BB_ENABLE_MASK: u32 =
-    phy_clock_oracle::fe_bb_clock_control_opaque::ROM_FE_BB_ENABLE_UNKNOWN.mask();
-const PHY_CALIBRATION_CLOCK_MASK: u32 =
-    phy_clock_oracle::fe_bb_clock_control_opaque::PHY_CALIBRATION_CLOCK_UNKNOWN.mask();
-const ROM_OPEN_FE_BB_PMU_MASK: u32 = pmu::hp_active_hp_ck_power::ROM_OPEN_FE_BB_UNKNOWN_LOW.mask()
-    | pmu::hp_active_hp_ck_power::HP_ACTIVE_XPD_BB_I2C.mask();
 const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
 const PHY_TONE_PATH1_CONTROL_ADDRESS: usize = 0x2010_0420;
 const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
@@ -70,27 +34,10 @@ const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
 const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
 const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
 
-/// Apply the two finite parent MMIO operations at `phy_bb_init+0x0..0x28`.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn enable_phy_baseband_initialization() {
-    set_register_bits(
-        phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
-        PHY_CALIBRATION_CLOCK_MASK,
-    );
-}
-
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters, enabled: bool) {
-    registers.modify32(
-        phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,
-        PHY_CALIBRATION_CLOCK_MASK,
-        if enabled {
-            PHY_CALIBRATION_CLOCK_MASK
-        } else {
-            0
-        },
-    );
+    registers.set_phy_calibration_clock(enabled);
 }
 
 /// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
@@ -178,117 +125,6 @@ pub(crate) fn configure_phy_rx_table(
     );
     configure_phy_bb_agc_register_update(registers);
     enable_phy_agc(registers);
-}
-
-const fn tsf_latch_mask(interface: u32) -> u32 {
-    if interface == 0 {
-        1
-    } else {
-        2
-    }
-}
-
-const fn join_rx_descriptor_address(low_word: u32, high_word: u32) -> usize {
-    ((low_word & 0x000f_ffff) | (high_word & 0xfff0_0000)) as usize
-}
-
-const fn tx_queue_control_address(queue: u8) -> usize {
-    TX_QUEUE_CONTROL_BASE_ADDRESS.wrapping_sub((queue as usize) * TX_QUEUE_CONTROL_STRIDE)
-}
-
-const fn mac_address_registers(interface: u32) -> (usize, usize) {
-    let offset = (interface as usize) * MAC_ADDRESS_STRIDE;
-    (
-        MAC_ADDRESS_LOW_BASE_ADDRESS + offset,
-        MAC_ADDRESS_HIGH_BASE_ADDRESS + offset,
-    )
-}
-
-const fn encode_mac_address(address: [u8; 6]) -> (u32, u32) {
-    (
-        u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
-        u16::from_le_bytes([address[4], address[5]]) as u32 | MAC_ADDRESS_VALID_BIT,
-    )
-}
-
-const fn mac_rx_frame_policy_address(queue: u32) -> usize {
-    MAC_RX_FRAME_POLICY_BASE_ADDRESS + (queue as usize) * core::mem::size_of::<u32>()
-}
-
-const fn mac_rx_address_policy_address(queue: u32) -> usize {
-    MAC_RX_ADDRESS_POLICY_BASE_ADDRESS + (queue as usize) * MAC_RX_ADDRESS_POLICY_STRIDE
-}
-
-const fn mac_rx_management_policy_address(queue: u32) -> usize {
-    MAC_RX_MANAGEMENT_POLICY_BASE_ADDRESS + (queue as usize) * MAC_RX_MANAGEMENT_POLICY_STRIDE
-}
-
-const fn with_mac_rx_mode(value: u32, mode: u32) -> u32 {
-    if mode <= 1 {
-        value & !MAC_RX_MODE_MASK
-    } else {
-        value | MAC_RX_MODE_MASK
-    }
-}
-
-const fn with_mac_rx_control_policy(value: u32, control: u32) -> u32 {
-    if control <= 1 {
-        value & !MAC_RX_CONTROL_POLICY_BIT
-    } else {
-        value | MAC_RX_CONTROL_POLICY_BIT
-    }
-}
-
-const fn with_mac_rx_control_address_policy(value: u32, control: u32) -> u32 {
-    match control {
-        0 => value & !MAC_RX_CONTROL_ADDRESS_BIT,
-        1 => value | MAC_RX_CONTROL_ADDRESS_BIT,
-        _ => value,
-    }
-}
-
-const fn with_mac_rx_management_policy(value: u32, management: u32) -> u32 {
-    if management == 0 {
-        value & !MAC_RX_MANAGEMENT_POLICY_BIT
-    } else {
-        value | MAC_RX_MANAGEMENT_POLICY_BIT
-    }
-}
-
-const fn with_mac_rx_unique_bssid_policy(value: u32, enabled: u32) -> u32 {
-    if enabled == 0 {
-        value & !MAC_RX_UNIQUE_BSSID_BITS
-    } else {
-        value | MAC_RX_UNIQUE_BSSID_BITS
-    }
-}
-
-const fn without_mac_tx_retention(value: u32) -> u32 {
-    value & !MAC_NO_RETENTION_CLEAR_BITS
-}
-
-const fn with_wifi_mac_regdma_link(value: u32, link: u32) -> u32 {
-    (value & !WIFI_MAC_REGDMA_LINK_MASK) | ((link << 17) & WIFI_MAC_REGDMA_LINK_MASK)
-}
-
-const fn with_tx_cca(value: u32, cca: u32) -> u32 {
-    (value & 0x3fff_ffff) | (cca << 30)
-}
-
-const fn tx_queue_is_valid(value: u32) -> u32 {
-    (value >> 30) & 1
-}
-
-const fn without_tx_queue_valid(value: u32) -> u32 {
-    value & 0xbfff_ffff
-}
-
-const fn without_tx_queue_enable(value: u32) -> u32 {
-    value & 0x3fff_ffff
-}
-
-const fn without_fe_bb_clock_enable(value: u32) -> u32 {
-    value & !PHY_FE_BB_ENABLE_MASK
 }
 
 const fn with_phy_pbus_force_test(value: u32, selector: u8, path: u8, test_value: u16) -> u32 {
@@ -480,319 +316,15 @@ fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: 
     }
 }
 
-/// Read one of the two MAC TSF domains through the hardware latch.
-///
-/// Reference: `esp32s31_rev0_rom.elf`, SHA-256
-/// `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
-/// `hal_get_tsf_time` at `0x2f82b9f8`, size `0x3e`.
-///
-/// The meaning of the three registers is inferred from the complete ROM body:
-/// setting control bit zero or one latches the selected domain, the ROM reads
-/// high then low, and clearing the same bit releases the latch. No polling,
-/// delay, call, allocation, or ROM-owned RAM is involved.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_get_tsf_time(interface: u32) -> u64 {
-    let mask = tsf_latch_mask(interface);
-    let control = TSF_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(control.read_volatile() | mask);
-
-    // Preserve the ROM read order while returning the standard RV32 u64 ABI:
-    // low in a0 and high in a1.
-    let high = (TSF_HIGH_ADDRESS as *const u32).read_volatile();
-    let low = (TSF_LOW_ADDRESS as *const u32).read_volatile();
-
-    control.write_volatile(control.read_volatile() & !mask);
-    (u64::from(high) << 32) | u64::from(low)
-}
-
-/// Read the MAC's last completed RX descriptor address.
-///
-/// Reference: `esp32s31_rev0_rom.elf`, SHA-256
-/// `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
-/// `hal_mac_rx_get_last_dscr` at `0x2f8386a2`, size `0x1e`.
-///
-/// The complete ROM body reads the low-address register first, keeps its low
-/// 20 bits, reads the high-address register, keeps its high 12 bits, and joins
-/// the two fields. It has no call, cycle, wait, allocation, or ROM-owned RAM
-/// access. Preserve that read order because the hardware publication contract
-/// beyond the recovered two-register snapshot is not yet known.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_rx_get_last_dscr() -> *mut u8 {
-    let low_word = (RX_DESCRIPTOR_LAST_LOW_ADDRESS as *const u32).read_volatile();
-    let high_word = (RX_DESCRIPTOR_LAST_HIGH_ADDRESS as *const u32).read_volatile();
-    join_rx_descriptor_address(low_word, high_word) as *mut u8
-}
-
-/// Program one of the four recovered MAC-address register pairs.
-///
-/// References: pinned `libpp.a[if_hwctrl.o]::ic_set_mac`, an exact tail call,
-/// and `libpp.a[hal_mac.o]::hal_mac_set_addr`, size `0x48`. The complete leaf
-/// packs the six input bytes little-endian, writes the low four bytes first,
-/// writes the high two bytes, then sets bit 16 in the high register through a
-/// fresh read/modify/write. No C/ROM-owned state, call, loop, wait, delay or
-/// allocation remains. The meaning of high-register bit 16 is inferred only
-/// as address-valid from that transaction.
-///
-/// The archive callers are interface setup paths, not radio interrupt
-/// handlers. This leaf therefore remains flash-mapped so it does not consume
-/// the interrupt-only SRAM reserve.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-pub unsafe extern "C" fn wifi_strict_ic_set_mac(interface: u32, address: *const u8) {
-    if interface >= MAC_INTERFACE_COUNT || address.is_null() {
-        core::arch::asm!("ebreak", options(noreturn));
-    }
-
-    let bytes = [
-        address.read(),
-        address.add(1).read(),
-        address.add(2).read(),
-        address.add(3).read(),
-        address.add(4).read(),
-        address.add(5).read(),
-    ];
-    let (low_word, high_word) = encode_mac_address(bytes);
-    let (low_address, high_address) = mac_address_registers(interface);
-    (low_address as *mut u32).write_volatile(low_word);
-
-    let high = high_address as *mut u32;
-    high.write_volatile(high_word & !MAC_ADDRESS_VALID_BIT);
-    high.write_volatile(high.read_volatile() | MAC_ADDRESS_VALID_BIT);
-}
-
-/// Program the recovered RX frame/control/management policy for one queue.
-///
-/// References: pinned `libpp.a[if_hwctrl.o]::ic_set_rx_policy`, size `0x14`,
-/// and `libpp.a[hal_mac.o]::hal_mac_rx_set_policy`, size `0xd2`.
-/// The wrapper accepts queues 0..=2 and returns one after the finite MMIO
-/// transaction. Register field names describe only the vendor arguments and
-/// exact masks; broader MAC semantics are not assumed.
-///
-/// The evidenced callers configure scan/supplicant state from the radio
-/// executor, not an interrupt. Keep this leaf flash-mapped.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-pub unsafe extern "C" fn wifi_strict_ic_set_rx_policy(
-    queue: u32,
-    mode: u32,
-    control: u32,
-    management: u32,
-) -> u32 {
-    if queue >= MAC_RX_POLICY_QUEUE_COUNT {
-        return 1;
-    }
-
-    let frame_policy = mac_rx_frame_policy_address(queue) as *mut u32;
-    frame_policy.write_volatile(with_mac_rx_mode(frame_policy.read_volatile(), mode));
-
-    let address_policy = mac_rx_address_policy_address(queue) as *mut u32;
-    if queue == 1 {
-        // The pinned body sets bit 30 only for queue one before applying the
-        // shared control-address policy below.
-        address_policy.write_volatile(address_policy.read_volatile() | (1 << 30));
-    } else {
-        address_policy.write_volatile(address_policy.read_volatile() & !(1 << 30));
-    }
-
-    frame_policy.write_volatile(with_mac_rx_control_policy(
-        frame_policy.read_volatile(),
-        control,
-    ));
-    if control <= 1 {
-        address_policy.write_volatile(with_mac_rx_control_address_policy(
-            address_policy.read_volatile(),
-            control,
-        ));
-    }
-
-    let management_policy = mac_rx_management_policy_address(queue) as *mut u32;
-    management_policy.write_volatile(with_mac_rx_management_policy(
-        management_policy.read_volatile(),
-        management,
-    ));
-    1
-}
-
-/// Enable or disable the recovered unique-BSSID checks for one RX queue.
-///
-/// References: pinned
-/// `libpp.a[if_hwctrl.o]::ic_set_rx_policy_ubssid_check`, size `0x1e`, and
-/// `libpp.a[hal_mac.o]::hal_mac_set_rxq_policy`, size `0x2c`. The vendor
-/// wrapper admits queues 0..=3, returns zero outside that range, and otherwise
-/// returns one after two ordered read/modify/write operations.
-///
-/// The evidenced caller is the same non-interrupt policy setup path, so this
-/// leaf is flash-mapped.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-pub unsafe extern "C" fn wifi_strict_ic_set_rx_policy_ubssid_check(
-    queue: u32,
-    enabled: u32,
-) -> u32 {
-    if queue >= MAC_INTERFACE_COUNT {
-        return 0;
-    }
-
-    let policy = mac_rx_frame_policy_address(queue) as *mut u32;
-    if enabled == 0 {
-        policy.write_volatile(policy.read_volatile() & !(1 << 8));
-        policy.write_volatile(policy.read_volatile() & !(1 << 1));
-    } else {
-        policy.write_volatile(policy.read_volatile() | (1 << 8));
-        policy.write_volatile(policy.read_volatile() | (1 << 1));
-    }
-    1
-}
-
-/// Select the two-bit MAC clear-channel-assessment mode.
-///
-/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_tx_set_cca`, size `0x18`.
-/// The complete body replaces bits 31:30 of `0x2010_4c5c` and returns zero.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_tx_set_cca(cca: u32) -> u32 {
-    let control = TX_CCA_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_tx_cca(control.read_volatile(), cca));
-    0
-}
-
-/// Return the recovered TX queue valid bit.
-///
-/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_is_txq_valid`, size `0x14`.
-/// Queue zero starts at `0x2010_4d70`; successive queue registers descend by
-/// 16 bytes. The result is register bit 30 normalized to zero or one.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_is_txq_valid(queue: u8) -> u32 {
-    let control = tx_queue_control_address(queue) as *const u32;
-    tx_queue_is_valid(control.read_volatile())
-}
-
-/// Clear only the recovered TX queue valid bit.
-///
-/// Reference: pinned `libpp.a[hal_mac.o]::hal_mac_set_txq_invalid`, size
-/// `0x1c`. The body is one finite read/modify/write of register bit 30.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_set_txq_invalid(queue: u8) {
-    let control = tx_queue_control_address(queue) as *mut u32;
-    control.write_volatile(without_tx_queue_valid(control.read_volatile()));
-}
-
-/// Clear both recovered TX queue control bits.
-///
-/// Reference: pinned `libpp.a[hal_mac_tx.o]::hal_mac_txq_disable`, size
-/// `0x18`. The body is one finite read/modify/write of bits 31:30.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_txq_disable(queue: u8) {
-    let control = tx_queue_control_address(queue) as *mut u32;
-    control.write_volatile(without_tx_queue_enable(control.read_volatile()));
-}
-
-/// Preserve the ESP32-S31 CSI bandwidth hook's explicit no-op contract.
-///
-/// The complete pinned `libpp.a[hal_mac_ctl.o]::hal_mac_set_csi_cbw` body is
-/// one two-byte `ret`; it ignores its argument and owns no state.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_hal_mac_set_csi_cbw(_cbw: u32) {}
-
-/// Restart the MAC for the strict `WIFI_PS_NONE` profile.
-///
-/// The complete pinned chain is
-/// `libpp.a[if_hwctrl.o]::ic_mac_init` (40 bytes),
-/// `libpp.a[hal_mac.o]::hal_mac_init` (48 bytes), and
-/// `libpp.a[hal_pwr.o]::pwr_hal_select_wifimac_regdma_link` (32 bytes).
-/// With power save disabled, `pm_get_tx_blocks_retention_mask` returns all
-/// ones, so the first read/modify/write clears `0x00ff_1000` at
-/// `0x2010_4cac`. The second selects evidenced REGDMA link four in bits
-/// 20:17 of `0x2010_d83c`.
-///
-/// The vendor tail also writes one to
-/// `g_wifimac_regdma_link_selected`. That byte is a cache for the vendor PM
-/// getters; every strict PM hook is disabled under the read-back-verified
-/// `WIFI_PS_NONE` invariant, so publishing it would retain hidden C state
-/// without a strict consumer.
-///
-/// This finite leaf contains no call, loop, wait, allocation, or non-MMIO
-/// state. The surrounding Rust channel state machine owns serialization.
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-pub(crate) unsafe fn restart_mac_without_power_save() {
-    let mac_control = MAC_CONTROL_ADDRESS as *mut u32;
-    mac_control.write_volatile(without_mac_tx_retention(mac_control.read_volatile()));
-
-    let regdma_control = WIFI_MAC_REGDMA_CONTROL_ADDRESS as *mut u32;
-    regdma_control.write_volatile(with_wifi_mac_regdma_link(
-        regdma_control.read_volatile(),
-        WIFI_MAC_ACTIVE_REGDMA_LINK,
-    ));
-}
-
-/// Close the recovered front-end and baseband clock gates.
-///
-/// Reference: the complete pinned
-/// `libphy.a[phy_init.o]::phy_close_fe_bb_clk` body, size `0x20`. It writes
-/// zero to `0x2010_0400`, clears bits 1:0 of `0x2010_0800`, then writes zero
-/// to `0x2010_7c80`. The field names are retained from the vendor symbol; no
-/// broader register meaning is assumed. There is no call, loop, wait,
-/// allocation, or non-MMIO state access.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-#[link_section = ".rwtext.wifi_strict.radio_hal"]
-pub unsafe extern "C" fn wifi_strict_phy_close_fe_bb_clk() {
-    (phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0);
-
-    let control = phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address() as *mut u32;
-    control.write_volatile(without_fe_bb_clock_enable(control.read_volatile()));
-
-    (phy_clock_oracle::BB_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0);
-}
-
-/// Open the recovered front-end and baseband clock gates.
-///
-/// Reference: complete rev0 ROM `phy_open_fe_bb_clk` body at `0x2f82_3ec0`,
-/// size `0x38`. The four writes retain their exact order and the two
-/// read/modify/write operations use fresh volatile reads. PMU bit 22 is named
-/// by the S31 PMU description; the low four PMU bits and the three PHY gate
-/// registers remain explicitly opaque rather than borrowing neighboring-chip
-/// names.
-///
-/// This cold-init leaf has no call, branch, loop, wait, allocation, callback,
-/// or non-MMIO state access.
-#[cfg(target_arch = "riscv32")]
-#[no_mangle]
-pub unsafe extern "C" fn wifi_strict_phy_open_fe_bb_clk() {
-    (phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(0x1e7);
-
-    let control = phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address() as *mut u32;
-    control.write_volatile(control.read_volatile() | PHY_FE_BB_ENABLE_MASK);
-
-    (phy_clock_oracle::BB_CLOCK_GATE_OPAQUE.address() as *mut u32).write_volatile(u32::MAX);
-
-    let active_clock_power = pmu::HP_ACTIVE_HP_CK_POWER.address() as *mut u32;
-    active_clock_power.write_volatile(active_clock_power.read_volatile() | ROM_OPEN_FE_BB_PMU_MASK);
-}
-
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(enabled: bool) {
+pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(
+    registers: &mut RadioRegisters,
+    enabled: bool,
+) {
     if enabled {
-        set_register_bits(
-            phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE.address(),
-            PHY_CALIBRATION_CLOCK_MASK,
-        );
+        registers.set_phy_calibration_clock(true);
         set_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
     } else {
         clear_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
@@ -1221,119 +753,20 @@ pub(crate) fn publish_phy_tx_gain_memory(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_mac_address, encode_phy_gain_memory_words, join_rx_descriptor_address,
-        mac_address_registers, mac_rx_address_policy_address, mac_rx_frame_policy_address,
-        mac_rx_management_policy_address, packed_byte, packed_halfword, phy_pbus_is_busy,
-        tsf_latch_mask, tx_baseband_gain_index, tx_gain_seed_halfword, tx_queue_control_address,
-        tx_queue_is_valid, with_mac_rx_control_address_policy, with_mac_rx_control_policy,
-        with_mac_rx_management_policy, with_mac_rx_mode, with_mac_rx_unique_bssid_policy,
-        with_phy_adc_rate_high, with_phy_adc_rate_low, with_phy_fe_txrx_reset,
-        with_phy_front_end_adc_update, with_phy_front_end_update_first,
-        with_phy_front_end_update_second, with_phy_i2c_clock_selection_high,
-        with_phy_i2c_clock_selection_low, with_phy_pbus_force_test, with_phy_rxiq_calibration_mode,
-        with_phy_rxiq_gain, with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
+        encode_phy_gain_memory_words, packed_byte, packed_halfword, phy_pbus_is_busy,
+        tx_baseband_gain_index, tx_gain_seed_halfword, with_phy_adc_rate_high,
+        with_phy_adc_rate_low, with_phy_fe_txrx_reset, with_phy_front_end_adc_update,
+        with_phy_front_end_update_first, with_phy_front_end_update_second,
+        with_phy_i2c_clock_selection_high, with_phy_i2c_clock_selection_low,
+        with_phy_pbus_force_test, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
+        with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
         with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
         with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
         with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
         with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
-        with_register_field, with_tx_cca, with_wifi_mac_regdma_link, without_fe_bb_clock_enable,
-        without_mac_tx_retention, without_phy_fe_txrx_reset,
-        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
-        without_register_bits, without_tx_queue_enable, without_tx_queue_valid,
-        WIFI_MAC_ACTIVE_REGDMA_LINK,
+        with_register_field, without_phy_fe_txrx_reset, without_phy_tx_gain_compensation_high_byte,
+        without_phy_tx_gain_compensation_low_byte, without_register_bits,
     };
-
-    #[test]
-    fn selects_the_two_recovered_tsf_latch_bits() {
-        assert_eq!(tsf_latch_mask(0), 1);
-        assert_eq!(tsf_latch_mask(1), 2);
-        assert_eq!(tsf_latch_mask(u32::MAX), 2);
-    }
-
-    #[test]
-    fn joins_only_the_recovered_rx_descriptor_address_fields() {
-        assert_eq!(
-            join_rx_descriptor_address(0xabc5_4321, 0x123f_edcb),
-            0x1235_4321
-        );
-        assert_eq!(join_rx_descriptor_address(u32::MAX, 0), 0x000f_ffff);
-        assert_eq!(join_rx_descriptor_address(0, u32::MAX), 0xfff0_0000);
-    }
-
-    #[test]
-    fn tx_queue_registers_descend_by_the_recovered_stride() {
-        assert_eq!(tx_queue_control_address(0), 0x2010_4d70);
-        assert_eq!(tx_queue_control_address(1), 0x2010_4d60);
-        assert_eq!(tx_queue_control_address(3), 0x2010_4d40);
-    }
-
-    #[test]
-    fn tx_queue_control_fields_match_the_pinned_leaves() {
-        assert_eq!(with_tx_cca(0xffff_ffff, 0), 0x3fff_ffff);
-        assert_eq!(with_tx_cca(0x0123_4567, 1), 0x4123_4567);
-        assert_eq!(with_tx_cca(0x0123_4567, 2), 0x8123_4567);
-        assert_eq!(with_tx_cca(0x0123_4567, 3), 0xc123_4567);
-        assert_eq!(with_tx_cca(0, 7), 0xc000_0000);
-        assert_eq!(tx_queue_is_valid(0x4000_0000), 1);
-        assert_eq!(tx_queue_is_valid(0x8000_0000), 0);
-        assert_eq!(without_tx_queue_valid(u32::MAX), 0xbfff_ffff);
-        assert_eq!(without_tx_queue_enable(u32::MAX), 0x3fff_ffff);
-    }
-
-    #[test]
-    fn mac_address_registers_and_encoding_match_the_pinned_leaf() {
-        assert_eq!(mac_address_registers(0), (0x2010_405c, 0x2010_4060));
-        assert_eq!(mac_address_registers(3), (0x2010_4074, 0x2010_4078));
-        assert_eq!(
-            encode_mac_address([0x02, 0x11, 0x22, 0x33, 0x44, 0x55]),
-            (0x3322_1102, 0x0001_5544)
-        );
-    }
-
-    #[test]
-    fn rx_policy_addresses_and_masks_match_the_pinned_leaf() {
-        assert_eq!(mac_rx_frame_policy_address(0), 0x2010_40d8);
-        assert_eq!(mac_rx_frame_policy_address(3), 0x2010_40e4);
-        assert_eq!(mac_rx_address_policy_address(2), 0x2010_4014);
-        assert_eq!(mac_rx_management_policy_address(2), 0x2010_4070);
-
-        assert_eq!(with_mac_rx_mode(u32::MAX, 0), 0xffff_fbef);
-        assert_eq!(with_mac_rx_mode(0, 2), 0x0000_0410);
-        assert_eq!(with_mac_rx_control_policy(u32::MAX, 1), 0xffff_ffbf);
-        assert_eq!(with_mac_rx_control_policy(0, 2), 0x0000_0040);
-        assert_eq!(with_mac_rx_control_address_policy(u32::MAX, 0), 0x7fff_ffff);
-        assert_eq!(with_mac_rx_control_address_policy(0, 1), 0x8000_0000);
-        assert_eq!(
-            with_mac_rx_control_address_policy(0x1234_5678, 2),
-            0x1234_5678
-        );
-        assert_eq!(with_mac_rx_management_policy(u32::MAX, 0), 0xfffe_ffff);
-        assert_eq!(with_mac_rx_management_policy(0, 1), 0x0001_0000);
-        assert_eq!(with_mac_rx_unique_bssid_policy(u32::MAX, 0), 0xffff_fefd);
-        assert_eq!(with_mac_rx_unique_bssid_policy(0, 1), 0x0000_0102);
-    }
-
-    #[test]
-    fn no_power_save_mac_restart_matches_the_complete_pinned_chain() {
-        assert_eq!(without_mac_tx_retention(u32::MAX), 0xff00_efff);
-        assert_eq!(without_mac_tx_retention(0x12ff_3456), 0x1200_2456);
-
-        assert_eq!(
-            with_wifi_mac_regdma_link(0, WIFI_MAC_ACTIVE_REGDMA_LINK),
-            0x0008_0000
-        );
-        assert_eq!(
-            with_wifi_mac_regdma_link(u32::MAX, WIFI_MAC_ACTIVE_REGDMA_LINK),
-            0xffe9_ffff
-        );
-        assert_eq!(with_wifi_mac_regdma_link(0x1234_5678, 0), 0x1220_5678);
-    }
-
-    #[test]
-    fn phy_fe_bb_clock_mask_matches_the_pinned_leaf() {
-        assert_eq!(without_fe_bb_clock_enable(u32::MAX), 0xffff_fffc);
-        assert_eq!(without_fe_bb_clock_enable(0x1234_567b), 0x1234_5678);
-    }
 
     #[test]
     fn phy_pbus_masks_and_command_encoding_match_complete_rom_leaves() {

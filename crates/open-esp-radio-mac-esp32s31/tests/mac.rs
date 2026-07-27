@@ -280,6 +280,8 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
 fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     let mut slot = TxSlot::new();
     let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
+    assert_eq!(size(slot.descriptor.word0()), 100);
+    assert_eq!(length(slot.descriptor.word0()), 100);
     assert_eq!(slot.state(), TxSlotState::Reserved);
     assert_eq!(slot.mark_hardware_owned(cookie), Ok(()));
     assert_eq!(slot.mark_hardware_owned(cookie), Err(TxError::Stale));

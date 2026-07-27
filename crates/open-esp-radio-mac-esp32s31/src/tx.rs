@@ -170,10 +170,14 @@ impl TxSlot {
         }
         if !descriptor_address_valid(descriptor_address)
             || !dma_range_valid(buffer_address, buffer_capacity)
+            || frame_length > buffer_capacity
         {
             return Err(TxError::Invalid);
         }
-        let word0 = tx_owned_word(buffer_capacity, frame_length).ok_or(TxError::Invalid)?;
+        // The direct owner has no ESF-private prefix, so its populated storage
+        // length and on-air MPDU length are identical. Allocation capacity is
+        // validated above but is not part of the TX storage word.
+        let word0 = tx_owned_word(frame_length, frame_length).ok_or(TxError::Invalid)?;
         let generation = self
             .generation_cursor
             .checked_add(1)

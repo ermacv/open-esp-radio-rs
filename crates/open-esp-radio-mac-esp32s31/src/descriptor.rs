@@ -131,16 +131,20 @@ pub const fn rx_rearm_word(word0: u32) -> Option<u32> {
     }
 }
 
-/// Fresh single-node TX word: bits31/30 set, bit29 clear.
-pub const fn tx_owned_word(capacity: u32, frame_length: u32) -> Option<u32> {
-    if capacity == 0
-        || capacity > SIZE_MASK
+/// Fresh single-node TX storage word: bits31/30 set, bit29 clear.
+///
+/// `storage_length` is the populated source-storage length encoded in the low
+/// 14 bits, not the allocation capacity used by RX descriptors. For a direct
+/// buffer with no private prefix it equals `frame_length`.
+pub const fn tx_owned_word(storage_length: u32, frame_length: u32) -> Option<u32> {
+    if storage_length == 0
+        || storage_length > SIZE_MASK
         || frame_length == 0
-        || frame_length > capacity
+        || frame_length > storage_length
         || frame_length > SIZE_MASK
     {
         None
     } else {
-        Some(capacity | (frame_length << LENGTH_SHIFT) | BIT_30 | BIT_31)
+        Some(storage_length | (frame_length << LENGTH_SHIFT) | BIT_30 | BIT_31)
     }
 }

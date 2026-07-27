@@ -205,6 +205,10 @@ pub fn initialize_promiscuous_receive<M: Mmio>(
     }
     modify(mmio, registers::R_4CA8, 0x0000_00f0, 0x0000_0040);
     modify(mmio, registers::R_4C60, 0x7fff_0000, 0x7fff_0000);
+    // The following instruction in `mac_txrx_init` sets the remaining high
+    // bit in a second read/modify/write. RX happened to operate without it,
+    // but the complete common TX/RX gate is all ones in bits 16..=31.
+    modify(mmio, registers::R_4C60, 0x8000_0000, 0x8000_0000);
     modify(mmio, registers::R_4308, 0x2, 0x2);
     modify(mmio, mac::RX_CONTROL, 1 << 31, 0);
 

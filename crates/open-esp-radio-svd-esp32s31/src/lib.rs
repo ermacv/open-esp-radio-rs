@@ -11133,6 +11133,494 @@ pub mod wifi_mac_he_init_prefix {
         impl crate::Readable for BfSyncStatusUnknownSpec {}
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm."]
+pub type WifiMacTxPowerInit = crate::Periph<wifi_mac_tx_power_init::RegisterBlock, 0x2010_4408>;
+impl core::fmt::Debug for WifiMacTxPowerInit {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxPowerInit").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm."]
+pub mod wifi_mac_tx_power_init {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        immediate_response: [ImmediateResponse; 10],
+        tb_power: [TbPower; 3],
+        tb_ru_power_tail: TbRuPowerTail,
+        tb_ru_power: [TbRuPower; 3],
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x28 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order."]
+        #[inline(always)]
+        pub const fn immediate_response(&self, n: usize) -> &ImmediateResponse {
+            &self.immediate_response[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x28 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order."]
+        #[inline(always)]
+        pub fn immediate_response_iter(&self) -> impl Iterator<Item = &ImmediateResponse> {
+            self.immediate_response.iter()
+        }
+        #[doc = "0x28..0x34 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW."]
+        #[inline(always)]
+        pub const fn tb_power(&self, n: usize) -> &TbPower {
+            &self.tb_power[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x28..0x34 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW."]
+        #[inline(always)]
+        pub fn tb_power_iter(&self) -> impl Iterator<Item = &TbPower> {
+            self.tb_power.iter()
+        }
+        #[doc = "0x34 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-field\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61."]
+        #[inline(always)]
+        pub const fn tb_ru_power_tail(&self) -> &TbRuPowerTail {
+            &self.tb_ru_power_tail
+        }
+        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-fields\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+        #[inline(always)]
+        pub const fn tb_ru_power(&self, n: usize) -> &TbRuPower {
+            &self.tb_ru_power[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-fields\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+        #[inline(always)]
+        pub fn tb_ru_power_iter(&self) -> impl Iterator<Item = &TbRuPower> {
+            self.tb_ru_power.iter()
+        }
+    }
+    #[doc = "IMMEDIATE_RESPONSE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`immediate_response::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`immediate_response::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@immediate_response`] module"]
+    #[doc(alias = "IMMEDIATE_RESPONSE")]
+    pub type ImmediateResponse = crate::Reg<immediate_response::ImmediateResponseSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order."]
+    pub mod immediate_response {
+        #[doc = "Register `IMMEDIATE_RESPONSE%s` reader"]
+        pub type R = crate::R<ImmediateResponseSpec>;
+        #[doc = "Register `IMMEDIATE_RESPONSE%s` writer"]
+        pub type W = crate::W<ImmediateResponseSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `POWER_INDEX` reader - PHY gain-table index selected for the response rate; not dBm."]
+        pub type PowerIndexR = crate::FieldReader;
+        #[doc = "Field `POWER_INDEX` writer - PHY gain-table index selected for the response rate; not dBm."]
+        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` reader - "]
+        pub type MiddlePreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` writer - "]
+        pub type MiddlePreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `RATE_INDEX` reader - "]
+        pub type RateIndexR = crate::FieldReader;
+        #[doc = "Field `RATE_INDEX` writer - "]
+        pub type RateIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `FORMAT_UNKNOWN` reader - Zero for the six legacy response words and two for the four HE response words."]
+        pub type FormatUnknownR = crate::FieldReader;
+        #[doc = "Field `FORMAT_UNKNOWN` writer - Zero for the six legacy response words and two for the four HE response words."]
+        pub type FormatUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:13 - PHY gain-table index selected for the response rate; not dBm."]
+            #[inline(always)]
+            pub fn power_index(&self) -> PowerIndexR {
+                PowerIndexR::new(((self.bits >> 8) & 0x3f) as u8)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&self) -> MiddlePreservedUnknownR {
+                MiddlePreservedUnknownR::new(((self.bits >> 14) & 3) as u8)
+            }
+            #[doc = "Bits 16:21"]
+            #[inline(always)]
+            pub fn rate_index(&self) -> RateIndexR {
+                RateIndexR::new(((self.bits >> 16) & 0x3f) as u8)
+            }
+            #[doc = "Bits 22:23 - Zero for the six legacy response words and two for the four HE response words."]
+            #[inline(always)]
+            pub fn format_unknown(&self) -> FormatUnknownR {
+                FormatUnknownR::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, ImmediateResponseSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 8:13 - PHY gain-table index selected for the response rate; not dBm."]
+            #[inline(always)]
+            pub fn power_index(&mut self) -> PowerIndexW<'_, ImmediateResponseSpec> {
+                PowerIndexW::new(self, 8)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(
+                &mut self,
+            ) -> MiddlePreservedUnknownW<'_, ImmediateResponseSpec> {
+                MiddlePreservedUnknownW::new(self, 14)
+            }
+            #[doc = "Bits 16:21"]
+            #[inline(always)]
+            pub fn rate_index(&mut self) -> RateIndexW<'_, ImmediateResponseSpec> {
+                RateIndexW::new(self, 16)
+            }
+            #[doc = "Bits 22:23 - Zero for the six legacy response words and two for the four HE response words."]
+            #[inline(always)]
+            pub fn format_unknown(&mut self) -> FormatUnknownW<'_, ImmediateResponseSpec> {
+                FormatUnknownW::new(self, 22)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, ImmediateResponseSpec> {
+                HighPreservedUnknownW::new(self, 24)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`immediate_response::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`immediate_response::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ImmediateResponseSpec;
+        impl crate::RegisterSpec for ImmediateResponseSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`immediate_response::R`](R) reader structure"]
+        impl crate::Readable for ImmediateResponseSpec {}
+        #[doc = "`write(|w| ..)` method takes [`immediate_response::W`](W) writer structure"]
+        impl crate::Writable for ImmediateResponseSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TB_POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_power`] module"]
+    #[doc(alias = "TB_POWER")]
+    pub type TbPower = crate::Reg<tb_power::TbPowerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW."]
+    pub mod tb_power {
+        #[doc = "Register `TB_POWER%s` reader"]
+        pub type R = crate::R<TbPowerSpec>;
+        #[doc = "Register `TB_POWER%s` writer"]
+        pub type W = crate::W<TbPowerSpec>;
+        #[doc = "Field `POWER_0` reader - "]
+        pub type Power0R = crate::FieldReader;
+        #[doc = "Field `POWER_0` writer - "]
+        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PRESERVED_0` reader - "]
+        pub type Preserved0R = crate::FieldReader;
+        #[doc = "Field `PRESERVED_0` writer - "]
+        pub type Preserved0W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `POWER_1` reader - "]
+        pub type Power1R = crate::FieldReader;
+        #[doc = "Field `POWER_1` writer - "]
+        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PRESERVED_1` reader - "]
+        pub type Preserved1R = crate::FieldReader;
+        #[doc = "Field `PRESERVED_1` writer - "]
+        pub type Preserved1W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `POWER_2` reader - "]
+        pub type Power2R = crate::FieldReader;
+        #[doc = "Field `POWER_2` writer - "]
+        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PRESERVED_2` reader - "]
+        pub type Preserved2R = crate::FieldReader;
+        #[doc = "Field `PRESERVED_2` writer - "]
+        pub type Preserved2W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `POWER_3` reader - "]
+        pub type Power3R = crate::FieldReader;
+        #[doc = "Field `POWER_3` writer - "]
+        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PRESERVED_3` reader - "]
+        pub type Preserved3R = crate::FieldReader;
+        #[doc = "Field `PRESERVED_3` writer - "]
+        pub type Preserved3W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn power_0(&self) -> Power0R {
+                Power0R::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:7"]
+            #[inline(always)]
+            pub fn preserved_0(&self) -> Preserved0R {
+                Preserved0R::new(((self.bits >> 6) & 3) as u8)
+            }
+            #[doc = "Bits 8:13"]
+            #[inline(always)]
+            pub fn power_1(&self) -> Power1R {
+                Power1R::new(((self.bits >> 8) & 0x3f) as u8)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn preserved_1(&self) -> Preserved1R {
+                Preserved1R::new(((self.bits >> 14) & 3) as u8)
+            }
+            #[doc = "Bits 16:21"]
+            #[inline(always)]
+            pub fn power_2(&self) -> Power2R {
+                Power2R::new(((self.bits >> 16) & 0x3f) as u8)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn preserved_2(&self) -> Preserved2R {
+                Preserved2R::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_3(&self) -> Power3R {
+                Power3R::new(((self.bits >> 24) & 0x3f) as u8)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn preserved_3(&self) -> Preserved3R {
+                Preserved3R::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn power_0(&mut self) -> Power0W<'_, TbPowerSpec> {
+                Power0W::new(self, 0)
+            }
+            #[doc = "Bits 6:7"]
+            #[inline(always)]
+            pub fn preserved_0(&mut self) -> Preserved0W<'_, TbPowerSpec> {
+                Preserved0W::new(self, 6)
+            }
+            #[doc = "Bits 8:13"]
+            #[inline(always)]
+            pub fn power_1(&mut self) -> Power1W<'_, TbPowerSpec> {
+                Power1W::new(self, 8)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn preserved_1(&mut self) -> Preserved1W<'_, TbPowerSpec> {
+                Preserved1W::new(self, 14)
+            }
+            #[doc = "Bits 16:21"]
+            #[inline(always)]
+            pub fn power_2(&mut self) -> Power2W<'_, TbPowerSpec> {
+                Power2W::new(self, 16)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn preserved_2(&mut self) -> Preserved2W<'_, TbPowerSpec> {
+                Preserved2W::new(self, 22)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_3(&mut self) -> Power3W<'_, TbPowerSpec> {
+                Power3W::new(self, 24)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn preserved_3(&mut self) -> Preserved3W<'_, TbPowerSpec> {
+                Preserved3W::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbPowerSpec;
+        impl crate::RegisterSpec for TbPowerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tb_power::R`](R) reader structure"]
+        impl crate::Readable for TbPowerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tb_power::W`](W) writer structure"]
+        impl crate::Writable for TbPowerSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TB_RU_POWER_TAIL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-field\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power_tail`] module"]
+    #[doc(alias = "TB_RU_POWER_TAIL")]
+    pub type TbRuPowerTail = crate::Reg<tb_ru_power_tail::TbRuPowerTailSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-field\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61."]
+    pub mod tb_ru_power_tail {
+        #[doc = "Register `TB_RU_POWER_TAIL` reader"]
+        pub type R = crate::R<TbRuPowerTailSpec>;
+        #[doc = "Register `TB_RU_POWER_TAIL` writer"]
+        pub type W = crate::W<TbRuPowerTailSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        #[doc = "Field `POWER_INDEX` reader - "]
+        pub type PowerIndexR = crate::FieldReader;
+        #[doc = "Field `POWER_INDEX` writer - "]
+        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x00ff_ffff)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_index(&self) -> PowerIndexR {
+                PowerIndexR::new(((self.bits >> 24) & 0x3f) as u8)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, TbRuPowerTailSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_index(&mut self) -> PowerIndexW<'_, TbRuPowerTailSpec> {
+                PowerIndexW::new(self, 24)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, TbRuPowerTailSpec> {
+                HighPreservedUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-field\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbRuPowerTailSpec;
+        impl crate::RegisterSpec for TbRuPowerTailSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tb_ru_power_tail::R`](R) reader structure"]
+        impl crate::Readable for TbRuPowerTailSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tb_ru_power_tail::W`](W) writer structure"]
+        impl crate::Writable for TbRuPowerTailSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TB_RU_POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-fields\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power`] module"]
+    #[doc(alias = "TB_RU_POWER")]
+    pub type TbRuPower = crate::Reg<tb_ru_power::TbRuPowerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-fields\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+    pub mod tb_ru_power {
+        #[doc = "Register `TB_RU_POWER%s` reader"]
+        pub type R = crate::R<TbRuPowerSpec>;
+        #[doc = "Register `TB_RU_POWER%s` writer"]
+        pub type W = crate::W<TbRuPowerSpec>;
+        #[doc = "Field `POWER_0` reader - "]
+        pub type Power0R = crate::FieldReader;
+        #[doc = "Field `POWER_0` writer - "]
+        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `POWER_1` reader - "]
+        pub type Power1R = crate::FieldReader;
+        #[doc = "Field `POWER_1` writer - "]
+        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `POWER_2` reader - "]
+        pub type Power2R = crate::FieldReader;
+        #[doc = "Field `POWER_2` writer - "]
+        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `POWER_3` reader - "]
+        pub type Power3R = crate::FieldReader;
+        #[doc = "Field `POWER_3` writer - "]
+        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `POWER_4` reader - "]
+        pub type Power4R = crate::FieldReader;
+        #[doc = "Field `POWER_4` writer - "]
+        pub type Power4W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn power_0(&self) -> Power0R {
+                Power0R::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:11"]
+            #[inline(always)]
+            pub fn power_1(&self) -> Power1R {
+                Power1R::new(((self.bits >> 6) & 0x3f) as u8)
+            }
+            #[doc = "Bits 12:17"]
+            #[inline(always)]
+            pub fn power_2(&self) -> Power2R {
+                Power2R::new(((self.bits >> 12) & 0x3f) as u8)
+            }
+            #[doc = "Bits 18:23"]
+            #[inline(always)]
+            pub fn power_3(&self) -> Power3R {
+                Power3R::new(((self.bits >> 18) & 0x3f) as u8)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_4(&self) -> Power4R {
+                Power4R::new(((self.bits >> 24) & 0x3f) as u8)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn power_0(&mut self) -> Power0W<'_, TbRuPowerSpec> {
+                Power0W::new(self, 0)
+            }
+            #[doc = "Bits 6:11"]
+            #[inline(always)]
+            pub fn power_1(&mut self) -> Power1W<'_, TbRuPowerSpec> {
+                Power1W::new(self, 6)
+            }
+            #[doc = "Bits 12:17"]
+            #[inline(always)]
+            pub fn power_2(&mut self) -> Power2W<'_, TbRuPowerSpec> {
+                Power2W::new(self, 12)
+            }
+            #[doc = "Bits 18:23"]
+            #[inline(always)]
+            pub fn power_3(&mut self) -> Power3W<'_, TbRuPowerSpec> {
+                Power3W::new(self, 18)
+            }
+            #[doc = "Bits 24:29"]
+            #[inline(always)]
+            pub fn power_4(&mut self) -> Power4W<'_, TbRuPowerSpec> {
+                Power4W::new(self, 24)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, TbRuPowerSpec> {
+                HighPreservedUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact-indexed-fields\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbRuPowerSpec;
+        impl crate::RegisterSpec for TbRuPowerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tb_ru_power::R`](R) reader structure"]
+        impl crate::Readable for TbRuPowerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tb_ru_power::W`](W) writer structure"]
+        impl crate::Writable for TbRuPowerSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields-and-default-values\\]. Complete COEX/PTI tail of hal_init and complete setter leaves. PTI values remain platform-supplied because the coexistence table may be changed at runtime."]
 pub type WifiMacCoexInit = crate::Periph<wifi_mac_coex_init::RegisterBlock, 0x2010_42fc>;
 impl core::fmt::Debug for WifiMacCoexInit {
@@ -15364,6 +15852,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_HE_INIT_PREFIX"]
     pub wifi_mac_he_init_prefix: WifiMacHeInitPrefix,
+    #[doc = "WIFI_MAC_TX_POWER_INIT"]
+    pub wifi_mac_tx_power_init: WifiMacTxPowerInit,
     #[doc = "WIFI_MAC_COEX_INIT"]
     pub wifi_mac_coex_init: WifiMacCoexInit,
     #[doc = "WIFI_MAC_ANTENNA_INIT"]
@@ -15430,6 +15920,7 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_he_init_prefix: WifiMacHeInitPrefix::steal(),
+            wifi_mac_tx_power_init: WifiMacTxPowerInit::steal(),
             wifi_mac_coex_init: WifiMacCoexInit::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
             wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate::steal(),

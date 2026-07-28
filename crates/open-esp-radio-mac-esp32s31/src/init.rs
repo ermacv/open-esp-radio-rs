@@ -15,7 +15,7 @@ pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_hal_tail::{MacColdHalTailHardware, MacSlowClockCalibration};
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
-pub use crate::cold_he::MacColdHeHardware;
+pub use crate::cold_he::{query_tx_power_table, MacColdHeHardware, MacTxPowerSource};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::cold_rx_policy::MacColdRxPolicyHardware;
@@ -25,6 +25,7 @@ pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
 use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
+pub use open_esp_radio_pac_esp32s31::{MacTxPowerPair, MacTxPowerTable};
 
 const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
 
@@ -135,7 +136,11 @@ pub fn initialize_promiscuous_receive<
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSnifferHardware,
-    P: MacClockControl + MacCoexPtiSource + MacDelayEntropy + MacSlowClockCalibrationSource,
+    P: MacClockControl
+        + MacCoexPtiSource
+        + MacDelayEntropy
+        + MacSlowClockCalibrationSource
+        + MacTxPowerSource,
 >(
     platform: &mut P,
     mmio: &mut M,
@@ -169,7 +174,11 @@ pub fn initialize_promiscuous_receive<
     mmio.initialize_rx_buffer_prefix();
 
     mmio.initialize_he_prefix();
-    // The still-platform-dependent TX-power children occur at this boundary.
+    // Complete hal_init_tx_pwr queries all 43 calibrated PHY pairs before its
+    // first MAC table write. The fixed Rust value owns that snapshot; no MAC
+    // code retains a pointer into PHY or vendor global state.
+    let tx_power = query_tx_power_table(platform);
+    mmio.initialize_tx_power(&tx_power);
     initialize_he_after_power(mmio);
 
     // Complete `mac_last_rxbuf_init`, including its three separate enable RMWs.

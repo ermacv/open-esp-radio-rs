@@ -70,6 +70,8 @@ identities for every entry.
 | `BLOB_LIBPP_HAL_INIT_COEX` | Complete `hal_init` COEX tail and all complete RX, default, TB and beamforming PTI setter leaves |
 | `BLOB_LIBCOEX_PTI_TABLE` | Complete `libcoexist.a` PTI getter plus its 48-byte cold-default table; provides the four event values queried by MAC init |
 | `BLOB_LIBPP_HAL_HE_INIT_PREFIX` | Complete `hal_he_init` prefix, beamforming init/report-rate children and trigger-based TX init through the TX-power boundary |
+| `BLOB_LIBPP_HAL_TX_POWER_INIT` | Complete 43-entry MAC power-table parent plus TB, immediate-response and TB-RU register leaves |
+| `ROM_REV0_PHY_GET_MAX_PWR` | Complete rev0 ROM target-power chain that produces each two-byte MAC table entry from live PHY state |
 
 The public ESP-IDF ESP32-C5/C61 register headers are only cross-chip
 validation. They are not accepted as the sole basis for an S31 address or bit.

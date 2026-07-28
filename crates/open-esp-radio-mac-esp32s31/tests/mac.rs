@@ -14,7 +14,8 @@ use open_esp_radio_mac_esp32s31::{
         MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome,
         MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware,
         MacLowRateHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
-        MacSnifferHardware, StaLinkRxPolicyHardware,
+        MacSnifferHardware, MacTxPowerPair, MacTxPowerSource, MacTxPowerTable,
+        StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -49,6 +50,7 @@ enum Operation {
     InitializeHalTail(u32, MacSlowClockCalibration),
     InitializeColdCoex(MacColdCoexPti),
     InitializeHePrefix,
+    InitializeTxPower(MacTxPowerTable),
     Fence,
 }
 
@@ -329,6 +331,10 @@ impl MacColdHeHardware for MockMmio {
     fn initialize_he_prefix(&mut self) {
         self.operations.push(Operation::InitializeHePrefix);
         self.words.insert(mac_init::R_4E04, 0);
+    }
+
+    fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
+        self.operations.push(Operation::InitializeTxPower(*table));
     }
 }
 
@@ -646,6 +652,7 @@ enum PlatformOperation {
     SetWifiMacReset(bool),
     RequestMacDelayRandom,
     RequestSlowClockCalibration,
+    RequestTxPower(u8),
     RequestCoexPti(MacCoexEvent),
 }
 
@@ -688,6 +695,17 @@ impl MacSlowClockCalibrationSource for MockPlatform {
         self.operations
             .push(PlatformOperation::RequestSlowClockCalibration);
         0
+    }
+}
+
+impl MacTxPowerSource for MockPlatform {
+    fn mac_tx_power_pair(&mut self, rate: u8) -> MacTxPowerPair {
+        self.operations
+            .push(PlatformOperation::RequestTxPower(rate));
+        MacTxPowerPair {
+            primary: rate as i8,
+            alternate: -(rate as i8),
+        }
     }
 }
 
@@ -1023,32 +1041,37 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         .iter()
         .any(|operation| matches!(operation, Operation::InitializeColdCoex(_))));
     assert!(mmio.operations().contains(&Operation::InitializeHePrefix));
-    assert_eq!(
-        platform.operations,
-        [
-            PlatformOperation::EnableWifiMacClocks,
-            PlatformOperation::EnableCoexistenceClock,
-            PlatformOperation::ConfigureModemSourceClocks,
-            PlatformOperation::SetWifiMacReset(true),
-            PlatformOperation::SetWifiMacReset(false),
-            PlatformOperation::RequestMacDelayRandom,
-            PlatformOperation::RequestSlowClockCalibration,
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event15),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
-            PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
-        ]
-    );
+    assert!(mmio
+        .operations()
+        .iter()
+        .any(|operation| matches!(operation, Operation::InitializeTxPower(_))));
+    let mut expected_platform = vec![
+        PlatformOperation::EnableWifiMacClocks,
+        PlatformOperation::EnableCoexistenceClock,
+        PlatformOperation::ConfigureModemSourceClocks,
+        PlatformOperation::SetWifiMacReset(true),
+        PlatformOperation::SetWifiMacReset(false),
+        PlatformOperation::RequestMacDelayRandom,
+    ];
+    expected_platform.extend((0..43).map(PlatformOperation::RequestTxPower));
+    expected_platform.extend([
+        PlatformOperation::RequestSlowClockCalibration,
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event15),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
+        PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
+    ]);
+    assert_eq!(platform.operations, expected_platform);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
 }
 

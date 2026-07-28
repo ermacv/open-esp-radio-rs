@@ -23,6 +23,7 @@ mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_sniffer;
 mod mac_tx;
+mod mac_tx_power_init;
 mod mac_txrx_init;
 pub mod pbus;
 pub mod phy;
@@ -33,6 +34,7 @@ pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_interrupt::MacInterruptRegisters;
 pub use mac_tx::{MacLegacyTxProgram, MacTxCompletionRegisters};
+pub use mac_tx_power_init::{MacTxPowerPair, MacTxPowerTable, MAC_TX_POWER_RATE_COUNT};
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
@@ -600,6 +602,31 @@ mod tests {
         assert_eq!(init.parent_control_edges().as_ptr() as usize, 0x2010_4c80);
         assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
         assert_eq!(init.bf_sync_status_unknown().as_ptr() as usize, 0x2010_7128);
+    }
+
+    #[test]
+    fn generated_mac_tx_power_init_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let power = &registers.peripherals.wifi_mac_tx_power_init;
+        for word in 0..10 {
+            assert_eq!(
+                power.immediate_response(word).as_ptr() as usize,
+                0x2010_4408 + word * 4
+            );
+        }
+        for word in 0..3 {
+            assert_eq!(
+                power.tb_power(word).as_ptr() as usize,
+                0x2010_4430 + word * 4
+            );
+            assert_eq!(
+                power.tb_ru_power(word).as_ptr() as usize,
+                0x2010_4440 + word * 4
+            );
+        }
+        assert_eq!(power.tb_ru_power_tail().as_ptr() as usize, 0x2010_443c);
     }
 
     #[test]

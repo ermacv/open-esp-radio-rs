@@ -1018,6 +1018,22 @@ incorrectly preserved bit zero) and performs three omitted report-rate RMWs at
 `0x20104e04` separately. The remaining HE work begins with the PHY-dependent
 TX-power table and is deliberately tracked as the next ownership boundary.
 
+SVD v3.19 closes that power boundary. Complete `hal_init_tx_pwr` queries PHY
+rates 0 through 42 in order, retaining both signed bytes returned for every
+rate. Complete `hal_init_tb_power`, `hal_init_imrsp_power` and
+`hal_init_tb_ru_power` then publish 56 separate RMW edges in
+`0x20104408..0x20104448`. These six-bit values are PHY gain-table indices, not
+dBm; treating them as radiated power would explain misleading power logs.
+
+The old migration did not contain a second table builder. Its `lmac.rs` read
+the already-built 86-byte `s_phy_get_max_pwr` table for legacy and HT frames.
+The complete rev0 ROM producer is now recorded separately: each
+`phy_get_max_pwr` call performs two ordered RMWs at `0x20107428`, derives two
+quarter-unit targets from live PHY calibration and channel state, clamps each
+to 84, then arithmetic-shifts by two. The MAC therefore owns table storage and
+register publication, while a narrow PHY/platform source owns production of
+each calibrated pair.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

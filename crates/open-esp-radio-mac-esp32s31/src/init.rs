@@ -13,6 +13,7 @@ use open_esp_radio_pac_esp32s31::{
 pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
+pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
@@ -140,6 +141,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdCryptoHardware
         + MacColdEnableHardware
         + MacColdHandshakeHardware
+        + MacColdLastRxBufferHardware
         + MacColdRxBufferHardware
         + MacInterfaceAddressHardware
         + MacLowRateHardware
@@ -217,31 +219,8 @@ pub fn initialize_promiscuous_receive<
 
     initialize_he_receive(mmio);
 
-    // `mac_last_rxbuf_init`
-    for (register, value) in registers::LAST_RX_BUFFER.into_iter().zip([
-        0x0002_3006,
-        0x0000_0608,
-        0x0000_ffff,
-        0x0002_3006,
-        0x0000_0808,
-        0x0000_ffff,
-        0x0002_3006,
-        0x0000_8e88,
-        0x0000_ffff,
-        0x0002_301c,
-        0x4400_4300,
-        0xffff_ffff,
-        0x0002_301c,
-        0x4300_4400,
-        0xffff_ffff,
-        0x0002_3011,
-        0x0000_0001,
-        0x0000_00ff,
-    ]) {
-        mmio.write32(register, value);
-    }
-    modify(mmio, registers::R_4120, 0x0000_3f7e, 0x0000_3f7e);
-    modify(mmio, registers::R_4098, 0x0800_0000, 0x0800_0000);
+    // Complete `mac_last_rxbuf_init`, including its three separate enable RMWs.
+    mmio.initialize_last_rx_buffer_table();
 
     // No-power-save timing defaults used by `mac_txrx_init`.
     modify(mmio, registers::R_4C58, 0x001f_fc00, 0x000e_e000);

@@ -9,8 +9,8 @@ use open_esp_radio_mac_esp32s31::{
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
-        MacColdRxBufferHardware, MacColdStartError, MacColdStartOutcome,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
+        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdStartError,
+        MacColdStartOutcome, MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
         StaLinkRxPolicyHardware,
     },
     irq::{
@@ -301,6 +301,41 @@ impl MacColdEnableHardware for MockMmio {
     }
 }
 
+impl MacColdLastRxBufferHardware for MockMmio {
+    fn initialize_last_rx_buffer_table(&mut self) {
+        for (register, value) in mac_init::LAST_RX_BUFFER.into_iter().zip([
+            0x0002_3006,
+            0x0000_0608,
+            0x0000_ffff,
+            0x0002_3006,
+            0x0000_0808,
+            0x0000_ffff,
+            0x0002_3006,
+            0x0000_8e88,
+            0x0000_ffff,
+            0x0002_301c,
+            0x4400_4300,
+            0xffff_ffff,
+            0x0002_301c,
+            0x4300_4400,
+            0xffff_ffff,
+            0x0002_3011,
+            0x0000_0001,
+            0x0000_00ff,
+        ]) {
+            self.write32(register, value);
+        }
+        for (register, mask) in [
+            (mac_init::R_4120, 0x0000_3f00),
+            (mac_init::R_4120, 0x0000_007e),
+            (mac_init::R_4098, 0x0800_0000),
+        ] {
+            let current = self.read32(register);
+            self.write32(register, current | mask);
+        }
+    }
+}
+
 impl MacLowRateHardware for MockMmio {
     fn disable_phy_low_rate(&mut self) {
         for (register, mask) in [
@@ -581,6 +616,41 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
                 Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[1]),
                 Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[1], 0x0001_eedd),
             ]
+    }));
+    let last_rx_values = [
+        0x0002_3006,
+        0x0000_0608,
+        0x0000_ffff,
+        0x0002_3006,
+        0x0000_0808,
+        0x0000_ffff,
+        0x0002_3006,
+        0x0000_8e88,
+        0x0000_ffff,
+        0x0002_301c,
+        0x4400_4300,
+        0xffff_ffff,
+        0x0002_301c,
+        0x4300_4400,
+        0xffff_ffff,
+        0x0002_3011,
+        0x0000_0001,
+        0x0000_00ff,
+    ];
+    assert!(mmio.operations().windows(24).any(|operations| {
+        operations[..18].iter().copied().eq(mac_init::LAST_RX_BUFFER
+            .into_iter()
+            .zip(last_rx_values)
+            .map(|(register, value)| Operation::Write(register, value)))
+            && operations[18..]
+                == [
+                    Operation::Read(mac_init::R_4120),
+                    Operation::Write(mac_init::R_4120, 0x0000_3f00),
+                    Operation::Read(mac_init::R_4120),
+                    Operation::Write(mac_init::R_4120, 0x0000_3f7e),
+                    Operation::Read(mac_init::R_4098),
+                    Operation::Write(mac_init::R_4098, 0x0800_0000),
+                ]
     }));
     assert_eq!(mmio.words.get(&mac_init::CONTROL), Some(&0));
     assert!(mmio.operations().windows(15).any(|operations| {

@@ -888,6 +888,17 @@ one `0x0c00` mask. SVD v3.9 and the generated PAC restore the exact three-edge
 order. MAC init now owns only the low-rate policy decision; it cannot see the
 PHY register identities.
 
+Complete pinned `libpp.a[hal_mac.o]::mac_last_rxbuf_init` (size `0xd2`)
+publishes six three-word table entries at `0x20104124..0x20104170`. It then
+sets `0x20104120` bits `13:8` and `6:1` through two separate fresh-read RMWs,
+followed by a final bit-27 set at the multifunction RX/CSI word
+`0x20104098`.
+
+The former Rust transcription combined the two `0x4120` edges into one
+`0x3f7e` RMW. SVD v3.10 records the six-entry geometry and unresolved fields,
+and the PAC preserves all eighteen stores plus the three distinct enable
+edges.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

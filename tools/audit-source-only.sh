@@ -178,6 +178,16 @@ then
     exit 1
 fi
 
+# Last-RX-buffer table images and their three enable edges are one complete
+# generated-PAC transaction.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/cold_last_rx_buffer.rs
+then
+    echo "raw compatibility MMIO returned to last RX buffer init" >&2
+    exit 1
+fi
+
 # Complete MAC enable is one PAC-owned gate-RMW plus interrupt-mask store.
 if rg -n \
     '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \

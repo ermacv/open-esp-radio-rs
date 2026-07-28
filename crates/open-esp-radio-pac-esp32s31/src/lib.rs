@@ -14,6 +14,7 @@ mod mac_crypto;
 mod mac_enable;
 mod mac_interface_address;
 mod mac_interrupt;
+mod mac_last_rx_buffer;
 mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_sniffer;
@@ -498,6 +499,37 @@ mod tests {
         assert_eq!(
             bb.low_rate_secondary_control().as_ptr() as usize,
             0x2010_807c
+        );
+    }
+
+    #[test]
+    fn generated_last_rx_buffer_table_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let table = &registers.peripherals.wifi_mac_last_rx_buffer;
+        assert_eq!(table.control().as_ptr() as usize, 0x2010_4120);
+        for entry in 0..6 {
+            assert_eq!(
+                table.entry_control(entry).as_ptr() as usize,
+                0x2010_4124 + entry * 4
+            );
+            assert_eq!(
+                table.entry_parameter_a(entry).as_ptr() as usize,
+                0x2010_4140 + entry * 4
+            );
+            assert_eq!(
+                table.entry_parameter_b(entry).as_ptr() as usize,
+                0x2010_415c + entry * 4
+            );
+        }
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_csi_control
+                .control()
+                .as_ptr() as usize,
+            0x2010_4098
         );
     }
 

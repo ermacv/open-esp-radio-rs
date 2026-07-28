@@ -3504,3 +3504,15 @@ needed by MAC initialization; production delegates it to the unique
 Complete paired ROM enable/disable leaves prove three separate fresh-read
 edges. The generated PAC preserves those edges and corrects the earlier
 value-equivalent two-RMW transcription that combined both primary-word bits.
+
+## Semantic last-RX-buffer table
+
+`MacColdLastRxBufferHardware` replaces the eighteen raw table stores and two
+raw control updates formerly embedded in cold MAC init. The generated PAC now
+owns the complete six-entry transaction from `mac_last_rxbuf_init`.
+
+This transfer also corrects edge timing: the table control's high and low
+six-bit enable groups are separate fresh-read RMWs in the blob, followed by a
+third RX/CSI enable RMW. Host tracing asserts the complete 24-operation
+sequence and the source audit prevents the register layout from returning to
+the upper module.

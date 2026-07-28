@@ -10104,6 +10104,332 @@ pub mod wifi_mac_tx_completion {
         impl crate::Readable for AuxCSpec {}
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init."]
+pub type WifiMacRxCsiControl = crate::Periph<wifi_mac_rx_csi_control::RegisterBlock, 0x2010_4098>;
+impl core::fmt::Debug for WifiMacRxCsiControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRxCsiControl").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init."]
+pub mod wifi_mac_rx_csi_control {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 27, u32>;
+        #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
+        pub type LastRxBufferEnableUnknownR = crate::BitReader;
+        #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
+        pub type LastRxBufferEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:26"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x07ff_ffff)
+            }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
+            #[inline(always)]
+            pub fn last_rx_buffer_enable_unknown(&self) -> LastRxBufferEnableUnknownR {
+                LastRxBufferEnableUnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:26"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
+            #[inline(always)]
+            pub fn last_rx_buffer_enable_unknown(
+                &mut self,
+            ) -> LastRxBufferEnableUnknownW<'_, ControlSpec> {
+                LastRxBufferEnableUnknownW::new(self, 27)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, ControlSpec> {
+                HighPreservedUnknownW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Six three-word last-RX-buffer entries and their shared two-edge enable control, recovered from the complete mac_last_rxbuf_init leaf."]
+pub type WifiMacLastRxBuffer = crate::Periph<wifi_mac_last_rx_buffer::RegisterBlock, 0x2010_4120>;
+impl core::fmt::Debug for WifiMacLastRxBuffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacLastRxBuffer").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Six three-word last-RX-buffer entries and their shared two-edge enable control, recovered from the complete mac_last_rxbuf_init leaf."]
+pub mod wifi_mac_last_rx_buffer {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+        entry_control: [EntryControl; 6],
+        _reserved2: [u8; 0x04],
+        entry_parameter_a: [EntryParameterA; 6],
+        _reserved3: [u8; 0x04],
+        entry_parameter_b: [EntryParameterB; 6],
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete leaf sets bits 13:8 first, then sets bits 6:1 through a second fresh-read RMW."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x04..0x1c - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-partial\\]. First full-word image for each of six entries."]
+        #[inline(always)]
+        pub const fn entry_control(&self, n: usize) -> &EntryControl {
+            &self.entry_control[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x1c - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-partial\\]. First full-word image for each of six entries."]
+        #[inline(always)]
+        pub fn entry_control_iter(&self) -> impl Iterator<Item = &EntryControl> {
+            self.entry_control.iter()
+        }
+        #[doc = "0x20..0x38 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Second full-word image for each of six entries."]
+        #[inline(always)]
+        pub const fn entry_parameter_a(&self, n: usize) -> &EntryParameterA {
+            &self.entry_parameter_a[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x20..0x38 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Second full-word image for each of six entries."]
+        #[inline(always)]
+        pub fn entry_parameter_a_iter(&self) -> impl Iterator<Item = &EntryParameterA> {
+            self.entry_parameter_a.iter()
+        }
+        #[doc = "0x3c..0x54 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Third full-word image for each of six entries."]
+        #[inline(always)]
+        pub const fn entry_parameter_b(&self, n: usize) -> &EntryParameterB {
+            &self.entry_parameter_b[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x3c..0x54 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Third full-word image for each of six entries."]
+        #[inline(always)]
+        pub fn entry_parameter_b_iter(&self) -> impl Iterator<Item = &EntryParameterB> {
+            self.entry_parameter_b.iter()
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete leaf sets bits 13:8 first, then sets bits 6:1 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete leaf sets bits 13:8 first, then sets bits 6:1 through a second fresh-read RMW."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `PRESERVED_BIT_0_UNKNOWN` reader - "]
+        pub type PreservedBit0UnknownR = crate::BitReader;
+        #[doc = "Field `PRESERVED_BIT_0_UNKNOWN` writer - "]
+        pub type PreservedBit0UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOW_ENABLE_GROUP_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the second control RMW."]
+        pub type LowEnableGroupUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_ENABLE_GROUP_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the second control RMW."]
+        pub type LowEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PRESERVED_BIT_7_UNKNOWN` reader - "]
+        pub type PreservedBit7UnknownR = crate::BitReader;
+        #[doc = "Field `PRESERVED_BIT_7_UNKNOWN` writer - "]
+        pub type PreservedBit7UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_ENABLE_GROUP_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the first control RMW."]
+        pub type HighEnableGroupUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_ENABLE_GROUP_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the first control RMW."]
+        pub type HighEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn preserved_bit_0_unknown(&self) -> PreservedBit0UnknownR {
+                PreservedBit0UnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:6 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the second control RMW."]
+            #[inline(always)]
+            pub fn low_enable_group_unknown(&self) -> LowEnableGroupUnknownR {
+                LowEnableGroupUnknownR::new(((self.bits >> 1) & 0x3f) as u8)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn preserved_bit_7_unknown(&self) -> PreservedBit7UnknownR {
+                PreservedBit7UnknownR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:13 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the first control RMW."]
+            #[inline(always)]
+            pub fn high_enable_group_unknown(&self) -> HighEnableGroupUnknownR {
+                HighEnableGroupUnknownR::new(((self.bits >> 8) & 0x3f) as u8)
+            }
+            #[doc = "Bits 14:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 14) & 0x0003_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn preserved_bit_0_unknown(&mut self) -> PreservedBit0UnknownW<'_, ControlSpec> {
+                PreservedBit0UnknownW::new(self, 0)
+            }
+            #[doc = "Bits 1:6 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the second control RMW."]
+            #[inline(always)]
+            pub fn low_enable_group_unknown(&mut self) -> LowEnableGroupUnknownW<'_, ControlSpec> {
+                LowEnableGroupUnknownW::new(self, 1)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn preserved_bit_7_unknown(&mut self) -> PreservedBit7UnknownW<'_, ControlSpec> {
+                PreservedBit7UnknownW::new(self, 7)
+            }
+            #[doc = "Bits 8:13 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. All six bits are set by the first control RMW."]
+            #[inline(always)]
+            pub fn high_enable_group_unknown(
+                &mut self,
+            ) -> HighEnableGroupUnknownW<'_, ControlSpec> {
+                HighEnableGroupUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 14:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, ControlSpec> {
+                HighPreservedUnknownW::new(self, 14)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete leaf sets bits 13:8 first, then sets bits 6:1 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENTRY_CONTROL (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-partial\\]. First full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_control`] module"]
+    #[doc(alias = "ENTRY_CONTROL")]
+    pub type EntryControl = crate::Reg<entry_control::EntryControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-partial\\]. First full-word image for each of six entries."]
+    pub mod entry_control {
+        #[doc = "Register `ENTRY_CONTROL%s` writer"]
+        pub type W = crate::W<EntryControlSpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, EntryControlSpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-partial\\]. First full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EntryControlSpec;
+        impl crate::RegisterSpec for EntryControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`entry_control::W`](W) writer structure"]
+        impl crate::Writable for EntryControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENTRY_PARAMETER_A (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Second full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_a::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_parameter_a`] module"]
+    #[doc(alias = "ENTRY_PARAMETER_A")]
+    pub type EntryParameterA = crate::Reg<entry_parameter_a::EntryParameterASpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Second full-word image for each of six entries."]
+    pub mod entry_parameter_a {
+        #[doc = "Register `ENTRY_PARAMETER_A%s` writer"]
+        pub type W = crate::W<EntryParameterASpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, EntryParameterASpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Second full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_a::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EntryParameterASpec;
+        impl crate::RegisterSpec for EntryParameterASpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`entry_parameter_a::W`](W) writer structure"]
+        impl crate::Writable for EntryParameterASpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENTRY_PARAMETER_B (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Third full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_b::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_parameter_b`] module"]
+    #[doc(alias = "ENTRY_PARAMETER_B")]
+    pub type EntryParameterB = crate::Reg<entry_parameter_b::EntryParameterBSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Third full-word image for each of six entries."]
+    pub mod entry_parameter_b {
+        #[doc = "Register `ENTRY_PARAMETER_B%s` writer"]
+        pub type W = crate::W<EntryParameterBSpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, EntryParameterBSpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-values-semantics-unknown\\]. Third full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_b::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EntryParameterBSpec;
+        impl crate::RegisterSpec for EntryParameterBSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`entry_parameter_b::W`](W) writer structure"]
+        impl crate::Writable for EntryParameterBSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Shared MAC enable gate recovered from the complete hal_enable_mac and hal_disable_mac leaves. The four individual disable-bit meanings are not independently known."]
 pub type WifiMacCoreEnable = crate::Periph<wifi_mac_core_enable::RegisterBlock, 0x2010_4c00>;
 impl core::fmt::Debug for WifiMacCoreEnable {
@@ -11615,6 +11941,10 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
+    #[doc = "WIFI_MAC_RX_CSI_CONTROL"]
+    pub wifi_mac_rx_csi_control: WifiMacRxCsiControl,
+    #[doc = "WIFI_MAC_LAST_RX_BUFFER"]
+    pub wifi_mac_last_rx_buffer: WifiMacLastRxBuffer,
     #[doc = "WIFI_MAC_CORE_ENABLE"]
     pub wifi_mac_core_enable: WifiMacCoreEnable,
     #[doc = "WIFI_MAC_INTERRUPT"]
@@ -11664,6 +11994,8 @@ impl Peripherals {
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
+            wifi_mac_rx_csi_control: WifiMacRxCsiControl::steal(),
+            wifi_mac_last_rx_buffer: WifiMacLastRxBuffer::steal(),
             wifi_mac_core_enable: WifiMacCoreEnable::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
             wifi_mac_cold_handshake: WifiMacColdHandshake::steal(),

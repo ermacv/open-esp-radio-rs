@@ -8,6 +8,7 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
+        MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome,
         MacInterfaceAddressHardware, StaLinkRxPolicyHardware,
     },
     irq::{
@@ -231,6 +232,36 @@ impl MacInterfaceAddressHardware for MockMmio {
     }
 }
 
+impl MacColdHandshakeHardware for MockMmio {
+    fn begin_cold_handshake(
+        &mut self,
+        sample_limit: u32,
+    ) -> Result<MacColdStartOutcome, MacColdStartError> {
+        let current = self.read32(mac_init::HANDSHAKE);
+        self.write32(mac_init::HANDSHAKE, current | (1 << 1));
+        let mut samples = 0;
+        let value = loop {
+            let value = self.read32(mac_init::HANDSHAKE);
+            if value & 1 != 0 {
+                break value;
+            }
+            samples += 1;
+            if samples >= sample_limit {
+                return Err(MacColdStartError::HandshakeTimedOut {
+                    samples,
+                    observed: value,
+                });
+            }
+        };
+        self.write32(mac::INT_ENABLE, 0);
+        self.write32(mac::INT_CLEAR, u32::MAX);
+        Ok(MacColdStartOutcome {
+            handshake_samples: samples,
+            handshake_value: value,
+        })
+    }
+}
+
 impl TxHardware for MockMmio {
     fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
         let index = usize::from(queue);
@@ -448,6 +479,16 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(outcome.handshake_samples, 0);
     assert_eq!(outcome.handshake_value, 3);
     assert_eq!(
+        &mmio.operations()[..5],
+        [
+            Operation::Read(mac_init::HANDSHAKE),
+            Operation::Write(mac_init::HANDSHAKE, 3),
+            Operation::Read(mac_init::HANDSHAKE),
+            Operation::Write(mac::INT_ENABLE, 0),
+            Operation::Write(mac::INT_CLEAR, u32::MAX),
+        ]
+    );
+    assert_eq!(
         mmio.words.get(&mac_init::INTERFACE_ADDRESS_LOW[0]),
         Some(&0x3322_1102)
     );
@@ -494,6 +535,31 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         ]
     );
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
+}
+
+#[test]
+fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
+    let mut platform = MockPlatform::default();
+    let mut mmio = MockMmio::default();
+
+    assert_eq!(
+        initialize_promiscuous_receive(&mut platform, &mut mmio, 2, [0; 6], [0; 6]),
+        Err(MacColdStartError::HandshakeTimedOut {
+            samples: 2,
+            observed: 2,
+        })
+    );
+    assert_eq!(
+        mmio.operations(),
+        [
+            Operation::Read(mac_init::HANDSHAKE),
+            Operation::Write(mac_init::HANDSHAKE, 2),
+            Operation::Read(mac_init::HANDSHAKE),
+            Operation::Read(mac_init::HANDSHAKE),
+        ]
+    );
+    assert!(!mmio.words.contains_key(&mac::INT_ENABLE));
+    assert!(!mmio.words.contains_key(&mac::INT_CLEAR));
 }
 
 #[test]

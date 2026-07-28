@@ -3426,3 +3426,18 @@ image, then performs a separate fresh-read RMW setting the receive-policy
 enable bit. This corrects the old value-equivalent two-write transcription
 without inventing any additional bit meaning. A source audit prevents raw
 register access from entering the upper address-publication module.
+
+## Semantic cold MAC handshake
+
+The upper cold initializer no longer receives the handshake or initial
+interrupt-mask registers. `MacColdHandshakeHardware` exposes one bounded
+operation returning `Result<MacColdStartOutcome, MacColdStartError>`, which is
+the Rust ownership/error boundary used after the platform reset.
+
+SVD v3.4 records REQUEST and READY at `0x2010_4de0` from the complete pinned
+`libpp.a[hal_mac.o]::hal_init` prefix. The generated PAC preserves request,
+poll, interrupt-disable and all-events-clear order. Unlike the vendor infinite
+loop, a missing READY edge returns a finite timeout before interrupt state or
+the rest of MAC init is touched. The host trace tests both success and timeout
+paths, and the source audit prevents raw register access from returning to the
+upper handshake module.

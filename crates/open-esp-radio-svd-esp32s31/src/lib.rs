@@ -10059,6 +10059,95 @@ pub mod wifi_mac_interrupt {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Cold MAC initialization request/ready handshake at the complete hal_init prefix."]
+pub type WifiMacColdHandshake = crate::Periph<wifi_mac_cold_handshake::RegisterBlock, 0x2010_4de0>;
+impl core::fmt::Debug for WifiMacColdHandshake {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacColdHandshake").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Cold MAC initialization request/ready handshake at the complete hal_init prefix."]
+pub mod wifi_mac_cold_handshake {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `READY` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
+        pub type ReadyR = crate::BitReader;
+        #[doc = "Field `READY` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
+        pub type ReadyW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `REQUEST` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
+        pub type RequestR = crate::BitReader;
+        #[doc = "Field `REQUEST` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
+        pub type RequestW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN` reader - "]
+        pub type UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN` writer - "]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        impl R {
+            #[doc = "Bit 0 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
+            #[inline(always)]
+            pub fn ready(&self) -> ReadyR {
+                ReadyR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
+            #[inline(always)]
+            pub fn request(&self) -> RequestR {
+                RequestR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bits 2:31"]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 2) & 0x3fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
+            #[inline(always)]
+            pub fn ready(&mut self) -> ReadyW<'_, ControlSpec> {
+                ReadyW::new(self, 0)
+            }
+            #[doc = "Bit 1 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
+            #[inline(always)]
+            pub fn request(&mut self) -> RequestW<'_, ControlSpec> {
+                RequestW::new(self, 1)
+            }
+            #[doc = "Bits 2:31"]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, ControlSpec> {
+                UnknownW::new(self, 2)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
 pub type WifiMacRxDma = crate::Periph<wifi_mac_rx_dma::RegisterBlock, 0x2010_4000>;
 impl core::fmt::Debug for WifiMacRxDma {
@@ -11057,6 +11146,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_INTERRUPT"]
     pub wifi_mac_interrupt: WifiMacInterrupt,
+    #[doc = "WIFI_MAC_COLD_HANDSHAKE"]
+    pub wifi_mac_cold_handshake: WifiMacColdHandshake,
     #[doc = "WIFI_MAC_RX_DMA"]
     pub wifi_mac_rx_dma: WifiMacRxDma,
 }
@@ -11101,6 +11192,7 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
+            wifi_mac_cold_handshake: WifiMacColdHandshake::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }
     }

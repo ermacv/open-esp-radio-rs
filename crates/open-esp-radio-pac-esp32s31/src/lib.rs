@@ -9,6 +9,7 @@ mod frequency;
 mod iq_estimator;
 pub mod mac;
 mod mac_block_ack;
+mod mac_cold_start;
 mod mac_crypto;
 mod mac_interface_address;
 mod mac_interrupt;
@@ -20,6 +21,7 @@ pub mod phy;
 pub mod phy_i2c;
 pub mod power;
 mod table_memory;
+pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_interrupt::MacInterruptRegisters;
 pub use mac_tx::{MacLegacyTxProgram, MacTxCompletionRegisters};
@@ -414,6 +416,21 @@ mod tests {
                 0x2010_4060 + interface * 8
             );
         }
+    }
+
+    #[test]
+    fn generated_cold_handshake_matches_complete_hal_init_prefix() {
+        // SAFETY: this host test inspects a generated register pointer only
+        // and performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_cold_handshake
+                .control()
+                .as_ptr() as usize,
+            0x2010_4de0
+        );
     }
 
     #[test]

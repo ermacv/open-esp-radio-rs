@@ -839,6 +839,13 @@ fresh-read RMW setting bit 16. The earlier Rust cold path folded the last two
 operations into one value-equivalent write; SVD v3.3 and the generated PAC now
 preserve the complete leaf timing exactly.
 
+The cold MAC handshake is a separate generated
+`WIFI_MAC_COLD_HANDSHAKE` block at `0x2010_4de0`. Complete pinned
+`libpp.a[hal_mac.o]::hal_init` offsets `0x00..0x3a` prove the REQUEST-bit RMW,
+READY polling loop, then ordered `INT_ENABLE=0` and
+`INT_CLEAR=0xffffffff` stores. The PAC keeps that successful hardware order
+but replaces the blob's unbounded loop with a caller-bounded sample limit.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

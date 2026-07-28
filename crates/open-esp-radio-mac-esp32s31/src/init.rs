@@ -10,12 +10,11 @@ use open_esp_radio_pac_esp32s31::{
     Register32,
 };
 
+pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
 use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
 
-const MAC_INIT_REQUEST: u32 = 1 << 1;
-const MAC_INIT_READY: u32 = 1;
 const RX_SNIFFER_REJECT_MASK: u32 = 0x0000_038f;
 const RX_SNIFFER_ENABLE: u32 = 0x0002_0000;
 const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
@@ -29,17 +28,6 @@ pub trait MacClockControl {
     fn enable_coexistence_clock(&mut self);
     fn configure_modem_source_clocks(&mut self);
     fn set_wifi_mac_reset(&mut self, asserted: bool);
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MacColdStartError {
-    HandshakeTimedOut { samples: u32, observed: u32 },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacColdStartOutcome {
-    pub handshake_samples: u32,
-    pub handshake_value: u32,
 }
 
 #[inline]
@@ -144,7 +132,10 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 ///
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
-pub fn initialize_promiscuous_receive<M: Mmio + MacInterfaceAddressHardware, P: MacClockControl>(
+pub fn initialize_promiscuous_receive<
+    M: Mmio + MacColdHandshakeHardware + MacInterfaceAddressHardware,
+    P: MacClockControl,
+>(
     platform: &mut P,
     mmio: &mut M,
     handshake_sample_limit: u32,
@@ -162,29 +153,7 @@ pub fn initialize_promiscuous_receive<M: Mmio + MacInterfaceAddressHardware, P: 
     platform.set_wifi_mac_reset(true);
     platform.set_wifi_mac_reset(false);
 
-    modify(
-        mmio,
-        registers::HANDSHAKE,
-        MAC_INIT_REQUEST,
-        MAC_INIT_REQUEST,
-    );
-    let mut handshake_samples = 0;
-    let handshake_value = loop {
-        let value = mmio.read32(registers::HANDSHAKE);
-        if value & MAC_INIT_READY != 0 {
-            break value;
-        }
-        handshake_samples += 1;
-        if handshake_samples >= handshake_sample_limit {
-            return Err(MacColdStartError::HandshakeTimedOut {
-                samples: handshake_samples,
-                observed: value,
-            });
-        }
-    };
-
-    mmio.write32(mac::INT_ENABLE, 0);
-    mmio.write32(mac::INT_CLEAR, u32::MAX);
+    let outcome = mmio.begin_cold_handshake(handshake_sample_limit)?;
 
     // `mac_txrx_init`
     modify(mmio, registers::R_4C8C, 0x9080_b200, 0x9080_b200);
@@ -328,8 +297,5 @@ pub fn initialize_promiscuous_receive<M: Mmio + MacInterfaceAddressHardware, P: 
     modify(mmio, registers::R_40F4, 0x0000_ff00, 0x0000_ff00);
     mmio.fence();
 
-    Ok(MacColdStartOutcome {
-        handshake_samples,
-        handshake_value,
-    })
+    Ok(outcome)
 }

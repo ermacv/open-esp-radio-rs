@@ -9,6 +9,7 @@
 #[cfg(test)]
 extern crate std;
 
+mod cold_handshake;
 pub mod crypto;
 pub mod descriptor;
 pub mod init;

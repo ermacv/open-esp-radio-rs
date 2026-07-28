@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.3</version>
+  <version>3.4</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1755,6 +1755,23 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_COLD_HANDSHAKE</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact]. Cold MAC initialization request/ready handshake at the complete hal_init prefix.</description>
+      <baseAddress>0x20104de0</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-fields]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>READY</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-from-complete-parent]. Polled until asserted after REQUEST.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>REQUEST</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-from-complete-parent]. Set before the READY polling loop.</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>30</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_RX_DMA</name>
       <description>
         SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
@@ -1984,6 +2001,7 @@
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>
+      <source id="BLOB_LIBPP_HAL_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>

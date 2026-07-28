@@ -10,6 +10,7 @@
 
 use crate::{
     phy_i2c::{analog_registers, PhyI2cAddress},
+    phy_param::PHY_PARAM_LEN,
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
         RfpllFrequencyRequest, RfpllFrequencyTransition,
@@ -22,6 +23,133 @@ use crate::{
         PhyTxCalibrationParameters,
     },
 };
+
+/// Number of signed quarter-unit targets consumed by the rev0 rate mapping.
+pub const PHY_TX_TARGET_POWER_COUNT: usize = 18;
+
+/// Calibrated PHY gain-table indices for one MAC rate.
+///
+/// These are signed table indices after division of the PHY quarter-unit
+/// target by four. They are not dBm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyTxTargetPowerPair {
+    pub primary: i8,
+    pub alternate: i8,
+}
+
+impl PhyTxTargetPowerPair {
+    pub const ZERO: Self = Self {
+        primary: 0,
+        alternate: 0,
+    };
+}
+
+/// Rust-owned replacement for the target-power part of `phy_get_max_pwr`.
+///
+/// SOURCE[`ROM_REV0_PHY_GET_MAX_PWR`]: complete rev0 ROM
+/// `phy_get_max_pwr` (0x2f82_49fe), `phy_get_target_pwr` (0x2f82_4976),
+/// `phy_wifi_get_target_power` (0x2f82_70fa), and `phy_rate_to_index`
+/// (0x2f82_491e), recovered from `_oracles/esp32s31_rev0_rom.elf`.
+///
+/// The profile owns the former `phy_param` inputs. It contains no pointer to
+/// the cold state and never reads the vendor `phy_param` pointer cell or
+/// `s_phy_get_max_pwr`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyTxTargetPowerProfile {
+    maximum: i8,
+    target: [i8; PHY_TX_TARGET_POWER_COUNT],
+    regulatory_override: bool,
+}
+
+impl PhyTxTargetPowerProfile {
+    pub(crate) fn from_parameter_image(parameter: &[u8; PHY_PARAM_LEN]) -> Self {
+        let mut target = [0_i8; PHY_TX_TARGET_POWER_COUNT];
+        for (destination, source) in target.iter_mut().zip(&parameter[0x50..0x62]) {
+            *destination = *source as i8;
+        }
+        Self {
+            maximum: parameter[0x06] as i8,
+            target,
+            regulatory_override: parameter[0x64] == 1,
+        }
+    }
+
+    /// Apply the upper-MAC transmit-power limit expressed in quarter-dBm.
+    ///
+    /// This is the source-owned equivalent of the limit installed by
+    /// `esp_wifi_set_max_tx_power`: the PHY init-data ceiling and the runtime
+    /// ceiling are both quarter-dBm values and the smaller one bounds every
+    /// rate before `phy_get_max_pwr` converts it to the integer power code.
+    ///
+    /// SOURCE: `_oracles/esp32s31_rev0_rom.elf::phy_get_target_pwr` clamps the
+    /// signed per-rate target before `phy_get_max_pwr` arithmetic-shifts it by
+    /// two; `_oracles/libpp.a[hal_mac_tx.o]::hal_set_tx_pwr` publishes the
+    /// resulting per-rate byte. The pinned ESP32-S31 vendor HIL confirms that
+    /// a quarter-dBm limit of 20 produces table byte 5 and
+    /// `TX_Q0_POWER=0x0505_0005`.
+    pub fn with_maximum_quarter_dbm(mut self, maximum_quarter_dbm: i8) -> Self {
+        self.maximum = self.maximum.min(maximum_quarter_dbm);
+        self
+    }
+
+    /// Produce the two calibrated indices returned by the ROM root for a rate.
+    ///
+    /// Codes 32..=40 map beyond the recovered 18-byte target array and are
+    /// reserved by the current MAC tables. They fail closed to zero instead of
+    /// indexing outside owned state as the ROM routine can.
+    pub fn pair(&self, rate: u8) -> PhyTxTargetPowerPair {
+        let Some(index) = rate_to_target_index(rate) else {
+            return PhyTxTargetPowerPair::ZERO;
+        };
+
+        // With the cold profile's regulatory flag clear, complete
+        // phy_get_chan_target_power clamps every signed target first to the
+        // selected FCC byte. All four default bytes at ROM 0x2f84_834c are 84.
+        //
+        // The override branch selects country/FCC state not yet owned by the
+        // open driver. Its strongest safe bound is the calibrated maximum.
+        let target = |target_index: usize| {
+            let regulatory_limit = if self.regulatory_override {
+                self.maximum
+            } else {
+                84
+            };
+            self.target[target_index]
+                .min(regulatory_limit)
+                .min(self.maximum)
+        };
+        let primary = target(index);
+        let alternate = if (6..=9).contains(&index) {
+            target(index + 8)
+        } else {
+            primary
+        };
+        PhyTxTargetPowerPair {
+            primary: primary >> 2,
+            alternate: alternate >> 2,
+        }
+    }
+}
+
+/// Exact valid-index portion of ROM `phy_rate_to_index` at 0x2f82_491e.
+const fn rate_to_target_index(rate: u8) -> Option<usize> {
+    let index = match rate {
+        0..=7 => ((rate >> 1) & 1) as usize,
+        8 => 5,
+        9 => 4,
+        10 => 3,
+        11 => 2,
+        12 => 5,
+        13 => 4,
+        14 => 3,
+        15 => 2,
+        16..=23 => ((((rate as i8) >> 1) as u8 & 7) + 6) as usize,
+        24..=31 => (rate - 14) as usize,
+        41 | 42 => 0,
+        _ => return None,
+    };
+    Some(index)
+}
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const CHANNEL_CODES: [u16; 3] = [1, 6, 11];
@@ -968,6 +1096,124 @@ impl PhyTxPowerExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn target_profile(
+        maximum: i8,
+        targets: [i8; PHY_TX_TARGET_POWER_COUNT],
+        regulatory_override: bool,
+    ) -> PhyTxTargetPowerProfile {
+        let mut parameter = [0_u8; PHY_PARAM_LEN];
+        parameter[0x06] = maximum as u8;
+        for (destination, source) in parameter[0x50..0x62].iter_mut().zip(targets) {
+            *destination = source as u8;
+        }
+        parameter[0x64] = regulatory_override as u8;
+        PhyTxTargetPowerProfile::from_parameter_image(&parameter)
+    }
+
+    #[test]
+    fn target_profile_matches_every_recovered_rate_mapping_class() {
+        let profile = target_profile(
+            100,
+            core::array::from_fn(|index| 8 + (index as i8 * 4)),
+            false,
+        );
+        assert_eq!(
+            profile.pair(0),
+            PhyTxTargetPowerPair {
+                primary: 2,
+                alternate: 2,
+            }
+        );
+        assert_eq!(
+            profile.pair(2),
+            PhyTxTargetPowerPair {
+                primary: 3,
+                alternate: 3,
+            }
+        );
+        assert_eq!(
+            profile.pair(8),
+            PhyTxTargetPowerPair {
+                primary: 7,
+                alternate: 7,
+            }
+        );
+        assert_eq!(
+            profile.pair(16),
+            PhyTxTargetPowerPair {
+                primary: 8,
+                alternate: 16,
+            }
+        );
+        assert_eq!(
+            profile.pair(22),
+            PhyTxTargetPowerPair {
+                primary: 11,
+                alternate: 19,
+            }
+        );
+        assert_eq!(
+            profile.pair(24),
+            PhyTxTargetPowerPair {
+                primary: 12,
+                alternate: 12,
+            }
+        );
+        assert_eq!(
+            profile.pair(31),
+            PhyTxTargetPowerPair {
+                primary: 19,
+                alternate: 19,
+            }
+        );
+        assert_eq!(profile.pair(41), profile.pair(0));
+        assert_eq!(profile.pair(42), profile.pair(0));
+        assert_eq!(profile.pair(32), PhyTxTargetPowerPair::ZERO);
+        assert_eq!(profile.pair(40), PhyTxTargetPowerPair::ZERO);
+        assert_eq!(profile.pair(43), PhyTxTargetPowerPair::ZERO);
+    }
+
+    #[test]
+    fn target_profile_applies_default_fcc_and_calibrated_maximum_bounds() {
+        let mut targets = [0_i8; PHY_TX_TARGET_POWER_COUNT];
+        targets[0] = 120;
+        assert_eq!(target_profile(100, targets, false).pair(0).primary, 21);
+        assert_eq!(target_profile(80, targets, false).pair(0).primary, 20);
+        assert_eq!(target_profile(100, targets, true).pair(0).primary, 25);
+        targets[0] = -12;
+        assert_eq!(target_profile(100, targets, false).pair(0).primary, -3);
+    }
+
+    #[test]
+    fn runtime_quarter_dbm_limit_matches_vendor_mac_power_code() {
+        let targets = [80_i8; PHY_TX_TARGET_POWER_COUNT];
+        let profile = target_profile(84, targets, false).with_maximum_quarter_dbm(20);
+        assert_eq!(
+            profile.pair(0),
+            PhyTxTargetPowerPair {
+                primary: 5,
+                alternate: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn cold_state_exports_an_owned_target_profile_snapshot() {
+        let mut parameter = [0_u8; PHY_PARAM_LEN];
+        parameter[0x06] = 80;
+        parameter[0x50] = 44;
+        let state = crate::phy_cold::PhyColdState::from_parameter_image(parameter);
+        let profile = state.tx_target_power_profile();
+        drop(state);
+        assert_eq!(
+            profile.pair(0),
+            PhyTxTargetPowerPair {
+                primary: 11,
+                alternate: 11,
+            }
+        );
+    }
 
     fn tone_sar_completion(action: PhyToneSarAction, value: u16) -> PhyToneSarCompletion {
         match action {

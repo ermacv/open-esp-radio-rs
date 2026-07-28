@@ -203,10 +203,30 @@ impl CcmpKeyHardware for MockMmio {
 }
 
 impl StaLinkRxPolicyHardware for MockMmio {
-    fn apply_sta_link_policy(&mut self) {
+    fn apply_sta_link_policy(&mut self, bssid_address: [u8; 6]) {
         let filter = mac_init::RX_FILTER[0];
+        let bssid_low = mac_init::BSSID_LOW[0];
         let bssid = mac_init::BSSID_HIGH[0];
         let interface = mac_init::INTERFACE_ADDRESS_HIGH[0];
+        let current = self.read32(bssid);
+        self.write32(bssid, current & !(1 << 31));
+        self.write32(
+            bssid_low,
+            u32::from_le_bytes([
+                bssid_address[0],
+                bssid_address[1],
+                bssid_address[2],
+                bssid_address[3],
+            ]),
+        );
+        let current = self.read32(bssid);
+        self.write32(
+            bssid,
+            (current & !0xffff)
+                | u32::from(u16::from_le_bytes([bssid_address[4], bssid_address[5]])),
+        );
+        let current = self.read32(bssid);
+        self.write32(bssid, current | (1 << 31));
         let mut modify = |register: Register32, mask: u32, value: u32| {
             let current = self.read32(register);
             self.write32(register, (current & !mask) | (value & mask));
@@ -216,8 +236,8 @@ impl StaLinkRxPolicyHardware for MockMmio {
         modify(filter, 1 << 6, 0);
         modify(bssid, 1 << 31, 1 << 31);
         modify(interface, 1 << 16, 1 << 16);
-        modify(filter, 1 << 8, 0);
-        modify(filter, 1 << 1, 0);
+        modify(filter, 1 << 8, 1 << 8);
+        modify(filter, 1 << 1, 1 << 1);
         Mmio::fence(self);
     }
 }
@@ -1085,19 +1105,21 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
 }
 
 #[test]
-fn sta_link_rx_policy_matches_migration_policy_five() {
+fn sta_link_rx_policy_matches_live_vendor_policy_six() {
+    let bssid = [0xdc, 0x15, 0xc8, 0x54, 0xbc, 0x1e];
     let mut mmio = MockMmio::default();
     mmio.set(mac_init::RX_FILTER[0], u32::MAX);
     mmio.set(mac_init::BSSID_HIGH[0], u32::MAX);
     mmio.set(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0000_5544);
 
-    configure_sta_link_receive_policy(&mut mmio);
+    configure_sta_link_receive_policy(&mut mmio, bssid);
 
     assert_eq!(
         mmio.words.get(&mac_init::RX_FILTER[0]),
-        Some(&(u32::MAX & !((1 << 10) | (1 << 8) | (1 << 6) | (1 << 4) | (1 << 1))))
+        Some(&(u32::MAX & !((1 << 10) | (1 << 6) | (1 << 4))))
     );
-    assert_eq!(mmio.words.get(&mac_init::BSSID_HIGH[0]), Some(&0xbfff_ffff));
+    assert_eq!(mmio.words.get(&mac_init::BSSID_LOW[0]), Some(&0x54c8_15dc));
+    assert_eq!(mmio.words.get(&mac_init::BSSID_HIGH[0]), Some(&0xbfff_1ebc));
     assert_eq!(
         mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[0]),
         Some(&0x0001_5544)
@@ -1858,11 +1880,11 @@ fn tx_slot_reproduces_the_migration_timeout_abort_order() {
 #[test]
 fn legacy_q0_image_reproduces_the_recovered_management_profile() {
     let image = legacy_q0_image(0x2f00_5000, LegacyTxConfig::management_1m(0x40)).unwrap();
-    assert_eq!(image.plcp0, 0x0060_5000);
+    assert_eq!(image.plcp0, 0x0160_5000);
     assert_eq!(image.plcp1, 0x0000_0040);
     assert_eq!(image.power, 0x0808_0008);
     assert_eq!(image.length_control, 0x0040_0004);
-    assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 100);
+    assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 0x03ff);
 }
 
 #[test]
@@ -1875,9 +1897,20 @@ fn management_profile_derives_plcp1_from_mpdu_plus_fcs() {
 #[test]
 fn protected_legacy_profile_publishes_sta_pairwise_slot_in_plcp1() {
     let mut config = LegacyTxConfig::management_1m(0x99);
-    config.no_ack = false;
     config.hardware_key_selector = 4;
     let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+    assert_eq!(image.plcp0, 0x0160_0100);
     assert_eq!(image.plcp1, 0x0008_0099);
     assert_eq!(image.length_control, 0x0040_0004);
+}
+
+#[test]
+fn legacy_q0_image_derives_the_recovered_format_from_receiver_class() {
+    let mut config = LegacyTxConfig::management_1m(0x22);
+    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+    assert_eq!(image.plcp0, 0x0160_0100);
+
+    config.group_receiver = true;
+    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+    assert_eq!(image.plcp0, 0x0060_0100);
 }

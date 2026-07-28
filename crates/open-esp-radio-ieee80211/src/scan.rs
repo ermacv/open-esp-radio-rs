@@ -20,6 +20,40 @@ pub const WMM_IE_CAPACITY: usize = 26;
 const HE_CAPABILITIES_EXTENSION_ID: u8 = 35;
 const HE_OPERATION_EXTENSION_ID: u8 = 36;
 
+/// Recover the Default PE Duration advertised in an HE Operation IE.
+///
+/// A stored extension IE includes `[element_id, length, extension_id]`
+/// before its payload, so HE Operation Parameters byte zero is byte three.
+/// The field is its low three bits. This layout and its direct use by the
+/// ESP32-S31 MAC are independently confirmed by complete
+/// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr` and
+/// `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_set_default_pe`.
+pub fn he_default_packet_extension_duration(he_operation_ie: &[u8]) -> Option<u8> {
+    if he_operation_ie.len() < 4
+        || he_operation_ie[0] != 255
+        || he_operation_ie[2] != HE_OPERATION_EXTENSION_ID
+    {
+        return None;
+    }
+    Some(he_operation_ie[3] & 0x07)
+}
+
+/// Recover the ER-SU enable argument consumed by the ESP32-S31 MAC.
+///
+/// Complete
+/// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr`
+/// passes complete-IE byte five bit zero to `hal_he_set_ersu`; the latter
+/// clears the hardware's `ERSU_DISABLED` bit when this value is nonzero.
+pub fn he_extended_range_single_user_enabled(he_operation_ie: &[u8]) -> Option<bool> {
+    if he_operation_ie.len() < 6
+        || he_operation_ie[0] != 255
+        || he_operation_ie[2] != HE_OPERATION_EXTENSION_ID
+    {
+        return None;
+    }
+    Some(he_operation_ie[5] & 0x01 != 0)
+}
+
 /// One bounded, owned observation from a beacon or probe response.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScanRecord {
@@ -349,7 +383,40 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use super::{best_matching_ssid, parse_management, ScanObservation, ScanRecord, ScanTable};
+    use super::{
+        best_matching_ssid, he_default_packet_extension_duration,
+        he_extended_range_single_user_enabled, parse_management, ScanObservation, ScanRecord,
+        ScanTable,
+    };
+
+    #[test]
+    fn extracts_default_pe_duration_from_complete_he_operation_ie() {
+        assert_eq!(
+            he_default_packet_extension_duration(&[255, 4, 36, 0b1010_1100, 0, 0]),
+            Some(4)
+        );
+        assert_eq!(
+            he_default_packet_extension_duration(&[255, 4, 35, 4, 0, 0]),
+            None
+        );
+        assert_eq!(he_default_packet_extension_duration(&[255, 1, 36]), None);
+    }
+
+    #[test]
+    fn extracts_ersu_argument_from_complete_he_operation_ie() {
+        assert_eq!(
+            he_extended_range_single_user_enabled(&[255, 4, 36, 0, 0, 1]),
+            Some(true)
+        );
+        assert_eq!(
+            he_extended_range_single_user_enabled(&[255, 4, 36, 0, 0, 0]),
+            Some(false)
+        );
+        assert_eq!(
+            he_extended_range_single_user_enabled(&[255, 2, 36, 0]),
+            None
+        );
+    }
 
     #[test]
     fn parses_beacon_into_owned_bounded_record() {

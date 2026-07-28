@@ -43,3 +43,4 @@ pub use phy_register::{
     PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
     PhyRegisterTransition,
 };
+pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};

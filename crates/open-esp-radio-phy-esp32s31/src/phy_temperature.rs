@@ -10,11 +10,17 @@
 //! Rust exposes the PHY-I2C read, one temperature-code sample, and the
 //! conditional PHY-I2C range write as identity-bound actions. Invalid DAC
 //! codes fail closed instead of reproducing the ROM's out-of-bounds default
-//! table index.
+//! table index. The reset value zero is handled separately: cold-start HIL
+//! observed it before the first baseband temperature pass, and the existing
+//! vendor-oracle handoff primes the same field to the first ROM range (DAC 5)
+//! before entering the open channel graph.
 
 use crate::phy_i2c::PhyI2cAddress;
 
 const SENSOR_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x69, 0);
+const RESET_DAC: u8 = 0;
+const DEFAULT_DAC: u8 = 5;
+const DEFAULT_SENSOR_INDEX: u8 = 0;
 
 #[derive(Clone, Copy)]
 struct TemperatureAttribute {
@@ -116,6 +122,7 @@ pub enum PhyTemperatureTransitionError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyTemperatureStep {
     ReadDac,
+    PrimeDefaultDac,
     SampleCode { sensor_index: u8 },
     WriteDac { outcome: PhyTemperatureOutcome },
     Complete(PhyTemperatureOutcome),
@@ -193,6 +200,12 @@ impl PhyTemperatureTransition {
                 high_bit: 6,
                 low_bit: 0,
             },
+            PhyTemperatureStep::PrimeDefaultDac => PhyTemperatureAction::WriteMasked {
+                address: SENSOR_ADDRESS,
+                high_bit: 3,
+                low_bit: 0,
+                value: DEFAULT_DAC,
+            },
             PhyTemperatureStep::SampleCode { .. } => PhyTemperatureAction::SampleCode,
             PhyTemperatureStep::WriteDac { outcome } => PhyTemperatureAction::WriteMasked {
                 address: SENSOR_ADDRESS,
@@ -218,9 +231,35 @@ impl PhyTemperatureTransition {
                     low_bit: 0,
                     value,
                 },
-            ) => match sensor_index(value & 0x0f) {
-                Some(sensor_index) => PhyTemperatureStep::SampleCode { sensor_index },
-                None => PhyTemperatureStep::Failed(PhyTemperatureFailure::InvalidDac(value & 0x0f)),
+            ) => {
+                let dac = value & 0x0f;
+                if dac == RESET_DAC {
+                    // SOURCE[HIL_OPEN_PHY_COLD_2026_07_28]: rev0 cold start
+                    // reaches the first baseband temperature pass with DAC 0.
+                    // SOURCE[ROM_REV0_PHY_TSENS]: `phy_tsens_dac_to_index(0)`
+                    // returns index 5 for the five-entry table at 0x2f84_d9ec,
+                    // so following the ROM literally would read out of bounds.
+                    // SOURCE[VENDOR_ORACLE_OPEN_TEMPERATURE_POWER]: the
+                    // vendor-to-open handoff already writes DAC 5 before its
+                    // first open temperature sample.
+                    PhyTemperatureStep::PrimeDefaultDac
+                } else {
+                    match sensor_index(dac) {
+                        Some(sensor_index) => PhyTemperatureStep::SampleCode { sensor_index },
+                        None => PhyTemperatureStep::Failed(PhyTemperatureFailure::InvalidDac(dac)),
+                    }
+                }
+            }
+            (
+                PhyTemperatureStep::PrimeDefaultDac,
+                PhyTemperatureCompletion::MaskedWrite {
+                    address: SENSOR_ADDRESS,
+                    high_bit: 3,
+                    low_bit: 0,
+                    value: DEFAULT_DAC,
+                },
+            ) => PhyTemperatureStep::SampleCode {
+                sensor_index: DEFAULT_SENSOR_INDEX,
             },
             (
                 PhyTemperatureStep::SampleCode { sensor_index },
@@ -590,12 +629,36 @@ mod tests {
     }
 
     #[test]
-    fn invalid_rom_default_index_is_a_typed_failure() {
+    fn reset_dac_is_primed_to_the_first_rom_range_before_sampling() {
         let mut transition = PhyTemperatureTransition::new();
         complete_dac_read(&mut transition, 0);
         assert_eq!(
             transition.action(),
-            PhyTemperatureAction::Failed(PhyTemperatureFailure::InvalidDac(0))
+            PhyTemperatureAction::WriteMasked {
+                address: SENSOR_ADDRESS,
+                high_bit: 3,
+                low_bit: 0,
+                value: 5,
+            }
+        );
+        transition
+            .advance(PhyTemperatureCompletion::MaskedWrite {
+                address: SENSOR_ADDRESS,
+                high_bit: 3,
+                low_bit: 0,
+                value: 5,
+            })
+            .unwrap();
+        assert_eq!(transition.action(), PhyTemperatureAction::SampleCode);
+    }
+
+    #[test]
+    fn non_reset_invalid_dac_is_a_typed_failure() {
+        let mut transition = PhyTemperatureTransition::new();
+        complete_dac_read(&mut transition, 1);
+        assert_eq!(
+            transition.action(),
+            PhyTemperatureAction::Failed(PhyTemperatureFailure::InvalidDac(1))
         );
     }
 

@@ -10,6 +10,7 @@ mod iq_estimator;
 pub mod mac;
 mod mac_antenna_init;
 mod mac_block_ack;
+mod mac_channel;
 mod mac_coex_init;
 mod mac_cold_start;
 mod mac_crypto;
@@ -23,6 +24,7 @@ mod mac_last_rx_buffer;
 mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_sniffer;
+mod mac_tsf;
 mod mac_tx;
 mod mac_tx_power_init;
 mod mac_txrx_init;
@@ -422,12 +424,16 @@ mod tests {
             0x2010_40f4
         );
         assert_eq!(
+            registers.peripherals.wifi_mac_control.control().as_ptr() as usize,
+            0x2010_4cac
+        );
+        assert_eq!(
             registers
                 .peripherals
-                .wifi_mac_open_rx_control
-                .cold_promiscuous_image()
+                .wifi_mac_regdma_control
+                .control()
                 .as_ptr() as usize,
-            0x2010_4cac
+            0x2010_d83c
         );
     }
 
@@ -685,6 +691,7 @@ mod tests {
         let registers = unsafe { RadioRegisters::steal() };
         let rtc = &registers.peripherals.wifi_mac_rtc_timer_update;
         assert_eq!(rtc.control().as_ptr() as usize, 0x2010_d830);
+        assert_eq!(rtc.sta_tsf_control().as_ptr() as usize, 0x2010_d858);
         assert_eq!(rtc.slow_clock_calibration().as_ptr() as usize, 0x2010_d878);
         assert_eq!(
             registers
@@ -762,6 +769,7 @@ mod tests {
     #[test]
     fn indexed_mac_registers_are_bounded_and_aligned() {
         for group in [
+            &mac::init::BSSID_LOW[..],
             &mac::init::INTERFACE_ADDRESS_LOW[..],
             &mac::init::INTERFACE_ADDRESS_HIGH,
             &mac::init::RX_FILTER,

@@ -12,9 +12,9 @@ impl RadioRegisters {
         // SAFETY: zero is the complete HIL-qualified cold register image.
         unsafe {
             self.peripherals
-                .wifi_mac_open_rx_control
-                .cold_promiscuous_image()
-                .write_with_zero(|w| w.image_unknown().bits(0));
+                .wifi_mac_control
+                .control()
+                .write_with_zero(|w| w.bits(0));
         }
 
         let filter = &self.peripherals.wifi_mac_rx_filter;

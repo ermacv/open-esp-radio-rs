@@ -3,6 +3,61 @@
 use super::RadioRegisters;
 
 impl RadioRegisters {
+    /// Apply the complete HE Buffer Status Report initialization leaf.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_bsr_init`, size `0x50`. All eight fresh-read RMW edges and
+    /// their order are preserved. This leaf is reached later by the vendor
+    /// STA-node setup, not by `hal_he_init`; omitting that second lifecycle
+    /// phase produced `0x2010_4c7c = 0x1082_3c00` instead of the vendor auth
+    /// image whose BSR portion is `0x0000_81c1`.
+    pub fn initialize_he_buffer_status_report(&mut self) {
+        let init = &self.peripherals.wifi_mac_he_init_suffix;
+        let control = init.ersu_and_vht_control();
+        control.modify(|_, w| w.bsr_enable().set_bit());
+        init.he_default_control()
+            .modify(|_, w| w.bsr_init_enable().set_bit());
+        control.modify(|_, w| w.bsr_init_enable_8().set_bit());
+        control.modify(|_, w| w.bsr_init_enable_7().set_bit());
+        control.modify(|_, w| w.bsr_init_enable_6().set_bit());
+        control.modify(|_, w| w.bsr_init_clear_5().clear_bit());
+        control.modify(|_, w| w.bsr_init_clear_4().clear_bit());
+        control.modify(|_, w| unsafe { w.bsr_aci_high_comparison_method().bits(1) });
+    }
+
+    /// Apply the ER-SU state parsed from the associated BSS's HE Operation.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_set_ersu` and
+    /// `_oracles/libnet80211.a[ieee80211_he.o]`
+    /// `ieee80211_parse_heopr`. A true argument clears `ERSU_DISABLED`;
+    /// false sets it. The false leaf additionally rewrites ACK-rate bytes,
+    /// already initialized by the complete cold HE suffix.
+    pub fn set_he_extended_range_single_user(&mut self, enabled: bool) {
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .ersu_and_vht_control()
+            .modify(|_, w| w.ersu_disabled().bit(!enabled));
+    }
+
+    /// Publish the associated BSS's HE Default PE Duration.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_set_default_pe` and
+    /// `_oracles/libnet80211.a[ieee80211_he.o]`
+    /// `ieee80211_parse_heopr`. The first leaf replaces
+    /// `0x2010_4c80[2:0]`; the second passes HE Operation Parameters byte
+    /// zero bits 2:0. Vendor auth HIL for the target BSS consequently has
+    /// low bits `4`, while the old open path incorrectly left the reset
+    /// value `0`.
+    pub fn set_he_default_packet_extension_duration(&mut self, duration: u8) {
+        debug_assert!(duration < 8);
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .he_default_control()
+            .modify(|_, w| unsafe { w.default_pe_duration().bits(duration & 0x07) });
+    }
+
     /// Apply the complete hardware-visible `hal_he_init` suffix.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]` parent and

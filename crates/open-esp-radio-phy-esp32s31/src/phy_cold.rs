@@ -160,6 +160,14 @@ impl PhyColdState {
         &self.parameter
     }
 
+    /// Snapshot the calibrated target-power state needed by cold MAC init.
+    ///
+    /// The returned value owns every former ROM input, so MAC initialization
+    /// cannot retain a pointer into this unique cold-state owner.
+    pub fn tx_target_power_profile(&self) -> crate::phy_tx_power::PhyTxTargetPowerProfile {
+        crate::phy_tx_power::PhyTxTargetPowerProfile::from_parameter_image(&self.parameter)
+    }
+
     /// Whether the guarded calibration prefix of `phy_bb_init` has already
     /// completed.
     ///

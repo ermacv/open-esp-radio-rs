@@ -303,12 +303,12 @@ pub mod sta_tx_oracle {
     /// together with the vendor command words did not by itself recover ACK.
     pub const TX_POWER_AUX_CONTROL: Register32 =
         Register32::described(0x2010_4448, RegisterAccess::ReadWrite, None);
-    /// Scheduler configuration observed as `0x0400_0000` in vendor STA mode.
-    pub const TX_SCHEDULER_ORACLE_0: Register32 =
-        Register32::described(0x2010_4dd4, RegisterAccess::ReadWrite, None);
-    /// Scheduler state/configuration word; its low bits vary while STA runs.
-    pub const TX_SCHEDULER_ORACLE_1: Register32 =
-        Register32::described(0x2010_4dd8, RegisterAccess::ReadWrite, None);
+    // 0x2010_4dd4 and 0x2010_4dd8 were initially kept here as unnamed
+    // "scheduler" oracle words. Complete `_oracles/libpp.a[hal_coex.o]`
+    // disassembly proves that they are the generated
+    // WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING and BEAMFORMING registers,
+    // respectively. Do not duplicate them under TX names: the SVD/PAC COEX
+    // block is their sole owner.
     /// Scheduler policy/limit word observed as `0x0000_0071` in both paths.
     ///
     /// This is not the vendor-only bit-26 word (that is at `0x4dd4`).
@@ -453,10 +453,17 @@ pub mod init {
         Register32::new(0x2010_40e0),
         Register32::new(0x2010_40e4),
     ];
-    pub const BSSID_HIGH: [Register32; 3] = [
+    pub const BSSID_LOW: [Register32; 4] = [
+        Register32::new(0x2010_4000),
+        Register32::new(0x2010_4008),
+        Register32::new(0x2010_4010),
+        Register32::new(0x2010_4018),
+    ];
+    pub const BSSID_HIGH: [Register32; 4] = [
         Register32::new(0x2010_4004),
         Register32::new(0x2010_400c),
         Register32::new(0x2010_4014),
+        Register32::new(0x2010_401c),
     ];
     pub const RX_QUEUE_DEFAULT: [Register32; 4] = [
         Register32::new(0x2010_40fc),

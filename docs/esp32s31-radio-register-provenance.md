@@ -821,8 +821,13 @@ layout rather than grouped under a synthetic monolithic MAC peripheral:
 `WIFI_MAC_RX_FILTER` at `0x2010_40d8`. Complete
 `libpp.a[hal_mac.o]::{hal_mac_rx_set_policy,hal_mac_set_rxq_policy}` bodies
 prove every address, mask and fresh-read RMW. The complete
-`libnet80211.a::wifi_set_rx_policy` parent identifies the reachable
-associated-STA policy-five arguments.
+`libnet80211.a::wifi_set_rx_policy` parent identifies both relevant jump-table
+leaves. Case five finishes with
+`ic_set_rx_policy_ubssid_check(0, false)`, while case six finishes with
+`ic_set_rx_policy_ubssid_check(0, true)`. A full vendor first-Authentication
+capture on 2026-07-28 read queue-zero filter `0x0001c387`, exactly matching
+case six. The open associated-STA transition therefore follows case six rather
+than migration's earlier policy-five snapshot.
 
 The policy bit meanings are recorded only to their supported confidence:
 address-check and policy-enable follow the recovered branch behavior, while
@@ -830,6 +835,18 @@ the remaining mode/control/management/UBSSID positions retain `UNKNOWN`
 suffixes where the hardware meaning is incomplete. Connected open STA
 scan/authentication/WPA2/DHCP HIL qualifies queue zero; no claim is made that
 all other queue/interface policy combinations have been exercised.
+
+The policy correction alone reproduced the vendor filter word but did not cure
+the open driver's intermittent Authentication failure, so it is not recorded
+as that failure's root cause. A separate 2026-07-28 TX-power A/B localized the
+remaining sensitivity more narrowly: the current open PHY/MAC profile at API
+limit 80 quarter-dBm (ordinary queue power code 20) completed three consecutive
+reset-to-DHCP runs, and a 200-packet host ping had zero loss with 4.613 ms mean
+RTT. At API limit 20 quarter-dBm (queue code 5), repeated runs included complete
+twelve-attempt Authentication failures. The full vendor driver succeeds with
+queue code 5, so this evidence points to a remaining open/vendor power-table,
+gain or calibration-path mismatch; it does not establish a direct code-to-dBm
+interpretation.
 
 Interface-address publication has independent instruction-exact evidence in
 the complete pinned `libpp.a[hal_mac.o]::hal_mac_set_addr` leaf. It proves a
@@ -964,6 +981,20 @@ generated PAC now preserves the complete order. The adjacent
 `hal_mac_rate_autoack_init` symbol was also checked in full: its two-byte body
 is only `ret`, so it has no omitted S31 MMIO effect.
 
+The complete channel-change chain in `libnet80211.a[wl_chm.o]` and
+`libpp.a[if_hwctrl.o,hal_mac.o,hal_pwr.o]` ends in
+`pwr_hal_select_wifimac_regdma_link(4)`. A same-phase vendor/open pre-auth
+comparison confirmed why this tail is not transient noise: vendor read
+`0x2010d83c = 0x080801ff` (link four), while the open path which merely released
+the MAC stop request read `0x080001ff` (link zero) and suffered connection-time
+ACK failures. Restoring link four produced first-attempt Authentication,
+Association, WPA2 and DHCP in the PSRAM/PSRAM profile. A 200-packet ICMP run
+then had zero loss and 4.539 ms average RTT; open counters recorded 211 immediate
+TX successes, three recovered ACK retries, no other failures and no hardware
+timeouts. The obsolete link-preserving/link-zero restart variant was removed.
+SVD v3.22 records this HIL qualification and the instruction-exact STA
+TSF/wakeup fields described below.
+
 The next bounded part of complete `hal_init`, offsets `0xcc..0x12a`, stores
 interrupt mask `0x19a879e0`, repeats the bit-28 set at `0x20104c8c`, and
 replaces the low two bytes at `0x20104098` through two separate RMWs. Complete
@@ -988,6 +1019,21 @@ with the complete setter leaves, this is seventeen distinct RMW edges at
 `0x201042fc` and `0x20104dd4..0x20104ddc`; the former Rust implementation
 combined the ordinary defaults into two edges and omitted all twelve OFDMA
 and beamforming edges.
+
+The complete `_oracles/libpp.a[hal_tsf.o]` leaves identify the shared STA TSF
+control at `0x2010d858`. `hal_enable_sta_tsf` sets bits 31 and 27, then replaces
+bits 22:19 with one; `hal_disable_sta_tsf` clears the same gates and mode.
+`hal_set_sta_tsf_wakeup` controls bit 29 there together with bit 21 at
+`0x2010d830`. Complete `_oracles/libpp.a[hal_pwr.o]`
+`pwr_hal_set_mac_modem_state_wakeup_protect_enable/disable` independently sets
+or clears bit 24 at `0x2010d858`. These meanings are instruction-exact rather
+than names inferred from a register snapshot. A working vendor pre-auth
+snapshot had wakeup protect disabled (`0x2010d858 = 0x88080000`), whereas the
+standalone open initialization left it enabled (`0x89080000`) without owning
+the matching vendor power-management lifecycle. A controlled open HIL run
+which copied only the clear bit still produced q0 status 5 on all three auth
+attempts; this bit is therefore documented hardware state, not a standalone
+TX repair.
 
 The callback at `g_wifi_osi_funcs` offset `0x1a8` is `_coex_pti_get`. Complete
 `libcoexist.a::coex_core_pti_get` copies `coex_pti_tab[event]`; its complete

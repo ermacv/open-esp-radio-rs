@@ -6,12 +6,10 @@ use open_esp_radio_pac_esp32s31::{MacLegacyTxProgram, MacTxCompletionRegisters, 
 
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
-    tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word},
+    tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word},
 };
 
 const EXT_ALT_SELECT: u32 = 0x0010_0000;
-const Q0_DESCRIPTOR_ADDRESS_MASK: u32 = 0x000f_ffff;
-const Q0_LEGACY_PLCP0_BASE: u32 = 0x0160_0000;
 const LEGACY_FCS_LENGTH: u16 = 4;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
@@ -88,6 +86,18 @@ pub struct TxCompletion {
     pub status: u8,
     pub trigger_flow: bool,
     pub used_alternate: bool,
+    /// Raw completion-extension word A.
+    ///
+    /// SOURCE: `_oracles/libpp.a[hal_mac_tx.o]` completion reader and the
+    /// promoted `migration/esp32s31-hybrid-runtime/src/lmac.rs` decoder.
+    /// Bits 19:16 contribute to the reconstructed extension word that selects
+    /// the primary or alternate status record. Retaining the raw word lets HIL
+    /// distinguish a real ACK-timeout result from a selector-decoding error.
+    pub auxiliary_a_word: u32,
+    /// Raw completion-extension word B; see [`Self::auxiliary_a_word`].
+    pub auxiliary_b_word: u32,
+    /// Raw completion-extension word C; see [`Self::auxiliary_a_word`].
+    pub auxiliary_c_word: u32,
     pub primary_word: u32,
     pub alternate_word: u32,
 }
@@ -123,7 +133,17 @@ pub struct LegacyTxConfig {
     pub interface: u8,
     pub pti: u8,
     pub pti_count: u16,
-    pub no_ack: bool,
+    /// Whether address one is a group address.
+    ///
+    /// SOURCE: `_oracles/libpp.a[pp.o]::ppTxProtoProc` copies the low bit of
+    /// address one into descriptor flag `0x0000_0002`.
+    /// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_plcp0` then preserves PLCP0
+    /// format zero when that flag is set. For the bounded plain legacy profile
+    /// represented here, an ordinary individual address follows the recovered
+    /// zero-flags branch and selects format one. This distinction is qualified
+    /// by the vendor authentication capture and by repeated open STA
+    /// authentication/association/WPA2/DHCP runs.
+    pub group_receiver: bool,
     /// Low byte of the recovered descriptor control word. Zero is plaintext;
     /// protected STA pairwise traffic uses its owned hardware key slot.
     pub hardware_key_selector: u8,
@@ -131,6 +151,12 @@ pub struct LegacyTxConfig {
 
 impl LegacyTxConfig {
     /// Conservative 1-Mbit/s management-frame profile used by the first HIL.
+    ///
+    /// The timeout is the exact q0 image observed while the pinned vendor
+    /// driver submitted an open-authentication MPDU on ESP32-S31 rev0:
+    /// `TX_Q0_CONFIG = 0x0200_03ff` (`timeout=0x3ff`, `AIFSN=2`, `CW=0`).
+    /// SOURCE: live `wifi-sta-auth-probe` HIL plus
+    /// `_oracles/libpp.a[hal_mac_tx.o]::hal_mac_tx_config_timeout`.
     pub const fn management_1m(signal: u16) -> Self {
         Self {
             rate: 0,
@@ -141,11 +167,11 @@ impl LegacyTxConfig {
             rts_power_high: 8,
             aifsn: 2,
             contention_window: 0,
-            timeout: 100,
+            timeout: 0x03ff,
             interface: 0,
             pti: 1,
             pti_count: 0,
-            no_ack: true,
+            group_receiver: false,
             hardware_key_selector: 0,
         }
     }
@@ -196,12 +222,17 @@ pub const fn legacy_q0_image(
         return None;
     }
     Some(LegacyQ0Image {
-        plcp0: (descriptor_address & Q0_DESCRIPTOR_ADDRESS_MASK)
-            | if config.no_ack {
-                Q0_LEGACY_PLCP0_BASE & !(1 << 24)
+        // The complete recovered formatter consumes many descriptor states.
+        // This direct profile admits only its two plain legacy roots: zero for
+        // an individual receiver and bit one for a group receiver.
+        plcp0: basic_plcp0_word(
+            descriptor_address as usize,
+            if config.group_receiver {
+                0x0000_0002
             } else {
-                Q0_LEGACY_PLCP0_BASE
+                0
             },
+        ),
         plcp1: basic_non_he_plcp1_word(
             config.rate,
             0,
@@ -388,6 +419,9 @@ impl TxSlot {
             status,
             trigger_flow: registers.trigger_flow,
             used_alternate,
+            auxiliary_a_word: registers.aux_a,
+            auxiliary_b_word: registers.aux_b,
+            auxiliary_c_word: registers.aux_c,
             primary_word: primary,
             alternate_word: alternate,
         }))

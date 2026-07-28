@@ -13,9 +13,9 @@ pub trait MacColdHeHardware {
 /// Calibrated two-byte target-power producer owned by the PHY/platform layer.
 ///
 /// This replaces the direct MAC dependency on ROM `phy_get_max_pwr` and on the
-/// vendor global `s_phy_get_max_pwr`. The current PHY implementation may still
-/// use the pinned ROM routine behind this boundary; the MAC owns the resulting
-/// fixed table and never borrows PHY calibration state.
+/// vendor global `s_phy_get_max_pwr`. The PHY supplies an owned Rust profile;
+/// the MAC owns the resulting fixed table and never borrows PHY calibration
+/// state.
 pub trait MacTxPowerSource {
     fn mac_tx_power_pair(&mut self, rate: u8) -> MacTxPowerPair;
 }
@@ -31,9 +31,10 @@ pub fn query_tx_power_table(source: &mut impl MacTxPowerSource) -> MacTxPowerTab
 /// Preserve the unconditional PHY-query traversal in `dbg_read_tx_power`.
 ///
 /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]` body recorded as
-/// `BLOB_LIBPP_DBG_READ_TX_POWER`. Its results are discarded, but each current
-/// rev0 ROM query performs two observable PHY RMWs, so the calls cannot be
-/// optimized out of an instruction-exact cold-start sequence.
+/// `BLOB_LIBPP_DBG_READ_TX_POWER`. Its results are discarded. The rev0 ROM
+/// implementation also reasserts the same BASEBAND_INIT_7428 fields already
+/// owned by open PHY initialization; those redundant RMWs are not part of this
+/// PHY-data query boundary.
 pub fn run_tx_power_diagnostic_queries(source: &mut impl MacTxPowerSource) {
     for rate in 0..26 {
         if rate != 4 {

@@ -103,6 +103,16 @@ then
     exit 1
 fi
 
+# TX-DC actions now carry booleans rather than a raw address/mask/register
+# image and all access is serialized by the generated PAC owner.
+if rg -n \
+    '0x2010_0418|PHY_TX_DC_READY_(ADDRESS|MASK|VALUE)|unsafe[[:space:]]+fn[[:space:]]+(trigger_phy_tx_dc_measurement|read_phy_tx_dc_(ready|comparator)_status|clear_phy_tx_dc_measurement)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw TX-DC measurement access returned" >&2
+    exit 1
+fi
+
 # Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
 # DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
 # addresses have no remaining live raw consumer.

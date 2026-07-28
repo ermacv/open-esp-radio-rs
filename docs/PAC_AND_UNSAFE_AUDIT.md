@@ -194,5 +194,11 @@ split only around the already owned table-memory operation, preserving the
 complete ROM order. Raw access to the six newly described unique words and
 unsafe versions of all three upper wrappers are rejected by the audit.
 
+SVD v2.7 closes the TX-DC measurement word. Trigger, one-shot ready sampling,
+two independently sampled comparator bits and cleanup are generated-PAC
+operations. PHY actions and completions now exchange only booleans, not the
+physical address, masks or full register images; even the polling binding
+requires the unique mutable register owner.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

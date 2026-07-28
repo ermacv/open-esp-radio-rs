@@ -7,18 +7,14 @@
 //!
 //! Rust owns all five four-halfword results. PBus transactions, two
 //! microsecond timer edges, comparator reads and restoration are explicit
-//! actions. No completion interrupt for `0x2010_0418[22]` is evidenced, so
-//! the readiness poll is retained as one volatile sample per issued binding
-//! under an outer finite async deadline.
+//! actions. No completion interrupt for the PAC measurement-ready bit is
+//! evidenced, so the readiness poll is retained as one owned sample per
+//! issued binding under an outer finite async deadline.
 
 use crate::phy_pbus::PhyPbusForceTest;
 
 pub const PHY_TX_DC_GAIN_COUNT: u8 = 5;
 pub const PHY_TX_DC_ITERATION_COUNT: u8 = 12;
-pub const PHY_TX_DC_READY_ADDRESS: usize = 0x2010_0418;
-pub const PHY_TX_DC_READY_MASK: u32 = 0x0040_0000;
-pub const PHY_TX_DC_READY_VALUE: u32 = 0x0040_0000;
-
 const ENTER_PBUS_COUNT: u8 = 11;
 const EXIT_PBUS_COUNT: u8 = 7;
 const INITIAL_DCO: u16 = 0x100;
@@ -71,14 +67,10 @@ pub enum PhyTxDcAction {
     PollReady {
         gain_index: u8,
         iteration: u8,
-        address: usize,
-        mask: u32,
-        expected: u32,
     },
     ReadComparators {
         gain_index: u8,
         iteration: u8,
-        address: usize,
     },
     ClearMeasurement,
     ConfigurePbusWorkMode,
@@ -110,8 +102,7 @@ pub enum PhyTxDcCompletion {
     ReadySampled {
         gain_index: u8,
         iteration: u8,
-        address: usize,
-        register_value: u32,
+        ready: bool,
     },
     ReadyDeadlineElapsed {
         gain_index: u8,
@@ -120,8 +111,7 @@ pub enum PhyTxDcCompletion {
     ComparatorsRead {
         gain_index: u8,
         iteration: u8,
-        address: usize,
-        register_values: [u32; 2],
+        comparator_high: [bool; 2],
     },
     MeasurementCleared,
     PbusWorkModeConfigured {
@@ -167,9 +157,9 @@ impl Search {
         }
     }
 
-    fn apply_comparators(&mut self, register_values: [u32; 2]) {
-        self.i = adjusted_dco(self.i, self.step, register_values[0] & 0x2000_0000 != 0);
-        self.q = adjusted_dco(self.q, self.step, register_values[1] & 0x1000_0000 != 0);
+    fn apply_comparators(&mut self, comparator_high: [bool; 2]) {
+        self.i = adjusted_dco(self.i, self.step, comparator_high[0]);
+        self.q = adjusted_dco(self.q, self.step, comparator_high[1]);
         self.step = if self.step == 2 {
             1
         } else {
@@ -336,14 +326,10 @@ impl PhyTxDcTransition {
             Step::PollReady(search) => PhyTxDcAction::PollReady {
                 gain_index: search.gain_index,
                 iteration: search.iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
-                mask: PHY_TX_DC_READY_MASK,
-                expected: PHY_TX_DC_READY_VALUE,
             },
             Step::ReadComparators(search) => PhyTxDcAction::ReadComparators {
                 gain_index: search.gain_index,
                 iteration: search.iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
             },
             Step::ForceFinalQ { average, .. } => {
                 PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(3, 1, average[1]))
@@ -510,11 +496,10 @@ impl PhyTxDcTransition {
                 PhyTxDcCompletion::ReadySampled {
                     gain_index,
                     iteration,
-                    address: PHY_TX_DC_READY_ADDRESS,
-                    register_value,
+                    ready,
                 },
             ) if gain_index == search.gain_index && iteration == search.iteration => {
-                if register_value & PHY_TX_DC_READY_MASK == PHY_TX_DC_READY_VALUE {
+                if ready {
                     Step::ReadComparators(search)
                 } else {
                     Step::PollReady(search)
@@ -537,11 +522,10 @@ impl PhyTxDcTransition {
                 PhyTxDcCompletion::ComparatorsRead {
                     gain_index,
                     iteration,
-                    address: PHY_TX_DC_READY_ADDRESS,
-                    register_values,
+                    comparator_high,
                 },
             ) if gain_index == search.gain_index && iteration == search.iteration => {
-                search.apply_comparators(register_values);
+                search.apply_comparators(comparator_high);
                 if search.iteration == PHY_TX_DC_ITERATION_COUNT {
                     let average = search.average();
                     Step::ForceFinalQ { search, average }
@@ -678,7 +662,6 @@ pub enum PhyTxDcBindingError {
 pub struct PhyTxDcReadyBinding {
     gain_index: u8,
     iteration: u8,
-    address: usize,
 }
 
 impl PhyTxDcReadyBinding {
@@ -687,25 +670,23 @@ impl PhyTxDcReadyBinding {
             PhyTxDcAction::PollReady {
                 gain_index,
                 iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
-                mask: PHY_TX_DC_READY_MASK,
-                expected: PHY_TX_DC_READY_VALUE,
             } => Ok(Self {
                 gain_index,
                 iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
             }),
             _ => Err(PhyTxDcBindingError::NotReadyPoll),
         }
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxDcCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxDcCompletion {
         PhyTxDcCompletion::ReadySampled {
             gain_index: self.gain_index,
             iteration: self.iteration,
-            address: self.address,
-            register_value: crate::radio_hal::read_phy_tx_dc_ready_status(),
+            ready: crate::radio_hal::read_phy_tx_dc_ready_status(registers),
         }
     }
 }
@@ -775,7 +756,7 @@ impl PhyTxDcMmioBinding {
                 gain_index,
                 iteration,
             } => {
-                crate::radio_hal::trigger_phy_tx_dc_measurement();
+                crate::radio_hal::trigger_phy_tx_dc_measurement(registers);
                 PhyTxDcCompletion::MeasurementTriggered {
                     gain_index,
                     iteration,
@@ -784,15 +765,13 @@ impl PhyTxDcMmioBinding {
             PhyTxDcAction::ReadComparators {
                 gain_index,
                 iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
             } => PhyTxDcCompletion::ComparatorsRead {
                 gain_index,
                 iteration,
-                address: PHY_TX_DC_READY_ADDRESS,
-                register_values: crate::radio_hal::read_phy_tx_dc_comparator_status(),
+                comparator_high: crate::radio_hal::read_phy_tx_dc_comparator_status(registers),
             },
             PhyTxDcAction::ClearMeasurement => {
-                crate::radio_hal::clear_phy_tx_dc_measurement();
+                crate::radio_hal::clear_phy_tx_dc_measurement(registers);
                 PhyTxDcCompletion::MeasurementCleared
             }
             PhyTxDcAction::ConfigurePbusWorkMode => PhyTxDcCompletion::PbusWorkModeConfigured {
@@ -964,9 +943,6 @@ mod tests {
             PhyTxDcExternalBinding::lower(PhyTxDcAction::PollReady {
                 gain_index: 0,
                 iteration: 0,
-                address: PHY_TX_DC_READY_ADDRESS,
-                mask: PHY_TX_DC_READY_MASK,
-                expected: PHY_TX_DC_READY_VALUE,
             }),
             Ok(PhyTxDcExternalBinding::Ready(_))
         ));
@@ -1003,7 +979,7 @@ mod tests {
         let mut expected_step = [124, 63, 32, 17, 9, 5, 3, 2, 1, 1, 1, 1].into_iter();
         while search.iteration != PHY_TX_DC_ITERATION_COUNT {
             assert_eq!(search.step, expected_step.next().unwrap());
-            search.apply_comparators([0, 0]);
+            search.apply_comparators([false, false]);
         }
         assert_eq!(search.average(), [511, 511]);
     }
@@ -1025,8 +1001,7 @@ mod tests {
             .advance(PhyTxDcCompletion::ReadySampled {
                 gain_index: 2,
                 iteration: 0,
-                address: PHY_TX_DC_READY_ADDRESS,
-                register_value: 0,
+                ready: false,
             })
             .unwrap();
         assert_eq!(transition.action(), action);

@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.6</version>
+  <version>2.7</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -835,6 +835,18 @@
           </fields>
         </register>
         <register>
+          <name>TX_DC_MEASUREMENT_CONTROL_STATUS</name>
+          <description>SOURCE[ROM_REV0_PHY_TXDC_CAL]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0.</description>
+          <addressOffset>0x0418</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>MEASUREMENT_START</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MEASUREMENT_ENABLE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MEASUREMENT_READY</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>Q_COMPARATOR_HIGH</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>I_COMPARATOR_HIGH</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
           <name>RX_GAIN_DC_CONTROL</name>
           <description>
             SOURCE[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC]; CONFIDENCE[instruction-exact-semantics-from-control-flow].
@@ -1600,6 +1612,7 @@
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
       <source id="ROM_REV0_PHY_FE_REG_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_fe_reg_init at 0x2f827740 size 0xf6</source>
       <source id="ROM_REV0_PHY_ADC_RATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_adc_rate_set at 0x2f82a6d2 size 0x4a</source>
+      <source id="ROM_REV0_PHY_TXDC_CAL">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txdc_cal at 0x2f82abbe size 0x1dc</source>
       <source id="ROM_REV0_PHY_PBUS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pbus_force_mode at 0x2f824102 size 0x90 and phy_pbus_force_test at 0x2f824228 size 0x42, plus phy_pbus_rd address/shift jump tables</source>
       <source id="ROM_REV0_PHY_SET_PBUS_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_set_pbus_mem at 0x2f82479e size 0x180</source>
       <source id="ROM_REV0_PHY_WRITE_PBUS_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_pbus_mem at 0x2f824634 size 0x16a</source>

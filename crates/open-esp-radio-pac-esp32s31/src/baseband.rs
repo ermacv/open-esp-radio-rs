@@ -7,6 +7,49 @@
 use super::RadioRegisters;
 
 impl RadioRegisters {
+    /// Trigger one TX-DC comparator measurement using three fresh RMW edges.
+    pub fn trigger_tx_dc_measurement(&mut self) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tx_dc_measurement_control_status();
+        control.modify(|_, w| w.measurement_enable().set_bit());
+        control.modify(|_, w| w.measurement_start().clear_bit());
+        control.modify(|_, w| w.measurement_start().set_bit());
+    }
+
+    /// Sample the TX-DC ready bit exactly once.
+    pub fn tx_dc_measurement_is_ready(&mut self) -> bool {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .tx_dc_measurement_control_status()
+            .read()
+            .measurement_ready()
+            .bit_is_set()
+    }
+
+    /// Preserve the complete ROM's independent I and Q comparator reads.
+    pub fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tx_dc_measurement_control_status();
+        [
+            control.read().i_comparator_high().bit_is_set(),
+            control.read().q_comparator_high().bit_is_set(),
+        ]
+    }
+
+    /// Clear TX-DC enable and start through two fresh RMW edges.
+    pub fn clear_tx_dc_measurement(&mut self) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tx_dc_measurement_control_status();
+        control.modify(|_, w| w.measurement_enable().clear_bit());
+        control.modify(|_, w| w.measurement_start().clear_bit());
+    }
+
     /// Publish the two-register suffix of complete ROM `phy_adc_rate_set`.
     ///
     /// The ROM body at `0x2f82_a6d2`, size `0x4a`, uses two fresh reads to

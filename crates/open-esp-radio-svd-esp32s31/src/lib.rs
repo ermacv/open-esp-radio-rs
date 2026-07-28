@@ -4036,74 +4036,76 @@ pub mod phy_baseband_config_oracle {
         _reserved0: [u8; 0x040c],
         front_end_and_tone_stop_control: FrontEndAndToneStopControl,
         tx_gain_compensation: TxGainCompensation,
-        _reserved2: [u8; 0x10],
+        _reserved2: [u8; 0x04],
+        tx_dc_measurement_control_status: TxDcMeasurementControlStatus,
+        _reserved3: [u8; 0x08],
         rx_gain_dc_control: RxGainDcControl,
-        _reserved3: [u8; 0x10],
+        _reserved4: [u8; 0x10],
         iq_correction_control: IqCorrectionControl,
-        _reserved4: [u8; 0x08],
+        _reserved5: [u8; 0x08],
         front_end_clear_control: FrontEndClearControl,
         adc_rate_and_front_end_control: AdcRateAndFrontEndControl,
-        _reserved6: [u8; 0x03bc],
+        _reserved7: [u8; 0x03bc],
         power_detector_control: PowerDetectorControl,
         power_detector_sar_control_status: PowerDetectorSarControlStatus,
         power_detector_table_0_opaque: PowerDetectorTable0Opaque,
         power_detector_table_1: PowerDetectorTable1,
         power_detector_reference: PowerDetectorReference,
         power_detector_sar_result: PowerDetectorSarResult,
-        _reserved12: [u8; 0x4c],
+        _reserved13: [u8; 0x4c],
         tx_pa_control_0: TxPaControl0,
         tx_pa_control_1: TxPaControl1,
-        _reserved14: [u8; 0x20],
+        _reserved15: [u8; 0x20],
         front_end_init_0894: FrontEndInit0894,
-        _reserved15: [u8; 0x0370],
+        _reserved16: [u8; 0x0370],
         front_end_init_0c08: FrontEndInit0c08,
         iq_correction_aux: IqCorrectionAux,
-        _reserved17: [u8; 0x10],
+        _reserved18: [u8; 0x10],
         front_end_init_0c20: FrontEndInit0c20,
-        _reserved18: [u8; 0x3868],
+        _reserved19: [u8; 0x3868],
         i2c_tx_rate_control: I2cTxRateControl,
-        _reserved19: [u8; 0x2b88],
+        _reserved20: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved20: [u8; 0x03e4],
+        _reserved21: [u8; 0x03e4],
         baseband_init_7400: BasebandInit7400,
-        _reserved21: [u8; 0x24],
+        _reserved22: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved22: [u8; 0x10],
+        _reserved23: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved23: [u8; 0x14],
+        _reserved24: [u8; 0x14],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved27: [u8; 0x03a4],
+        _reserved28: [u8; 0x03a4],
         baseband_init_7808: BasebandInit7808,
-        _reserved28: [u8; 0x84],
+        _reserved29: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved29: [u8; 0x48],
+        _reserved30: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved30: [u8; 0x04],
+        _reserved31: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved31: [u8; 0x24],
+        _reserved32: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved32: [u8; 0x70],
+        _reserved33: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved33: [u8; 0xa4],
+        _reserved34: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved34: [u8; 0x01d4],
+        _reserved35: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved35: [u8; 0x2c],
+        _reserved36: [u8; 0x2c],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved36: [u8; 0x08],
+        _reserved37: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved39: [u8; 0x08],
+        _reserved40: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved40: [u8; 0x18],
+        _reserved41: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved41: [u8; 0x38],
+        _reserved42: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved42: [u8; 0x24],
+        _reserved43: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -4116,6 +4118,11 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn tx_gain_compensation(&self) -> &TxGainCompensation {
             &self.tx_gain_compensation
+        }
+        #[doc = "0x418 - SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0."]
+        #[inline(always)]
+        pub const fn tx_dc_measurement_control_status(&self) -> &TxDcMeasurementControlStatus {
+            &self.tx_dc_measurement_control_status
         }
         #[doc = "0x424 - SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved."]
         #[inline(always)]
@@ -4451,6 +4458,112 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for TxGainCompensationSpec {}
         #[doc = "`write(|w| ..)` method takes [`tx_gain_compensation::W`](W) writer structure"]
         impl crate::Writable for TxGainCompensationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TX_DC_MEASUREMENT_CONTROL_STATUS (rw) register accessor: SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_dc_measurement_control_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_dc_measurement_control_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_dc_measurement_control_status`] module"]
+    #[doc(alias = "TX_DC_MEASUREMENT_CONTROL_STATUS")]
+    pub type TxDcMeasurementControlStatus =
+        crate::Reg<tx_dc_measurement_control_status::TxDcMeasurementControlStatusSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0."]
+    pub mod tx_dc_measurement_control_status {
+        #[doc = "Register `TX_DC_MEASUREMENT_CONTROL_STATUS` reader"]
+        pub type R = crate::R<TxDcMeasurementControlStatusSpec>;
+        #[doc = "Register `TX_DC_MEASUREMENT_CONTROL_STATUS` writer"]
+        pub type W = crate::W<TxDcMeasurementControlStatusSpec>;
+        #[doc = "Field `MEASUREMENT_START` reader - "]
+        pub type MeasurementStartR = crate::BitReader;
+        #[doc = "Field `MEASUREMENT_START` writer - "]
+        pub type MeasurementStartW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MEASUREMENT_ENABLE` reader - "]
+        pub type MeasurementEnableR = crate::BitReader;
+        #[doc = "Field `MEASUREMENT_ENABLE` writer - "]
+        pub type MeasurementEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MEASUREMENT_READY` reader - "]
+        pub type MeasurementReadyR = crate::BitReader;
+        #[doc = "Field `MEASUREMENT_READY` writer - "]
+        pub type MeasurementReadyW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `Q_COMPARATOR_HIGH` reader - "]
+        pub type QComparatorHighR = crate::BitReader;
+        #[doc = "Field `Q_COMPARATOR_HIGH` writer - "]
+        pub type QComparatorHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `I_COMPARATOR_HIGH` reader - "]
+        pub type IComparatorHighR = crate::BitReader;
+        #[doc = "Field `I_COMPARATOR_HIGH` writer - "]
+        pub type IComparatorHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn measurement_start(&self) -> MeasurementStartR {
+                MeasurementStartR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn measurement_enable(&self) -> MeasurementEnableR {
+                MeasurementEnableR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn measurement_ready(&self) -> MeasurementReadyR {
+                MeasurementReadyR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn q_comparator_high(&self) -> QComparatorHighR {
+                QComparatorHighR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn i_comparator_high(&self) -> IComparatorHighR {
+                IComparatorHighR::new(((self.bits >> 29) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn measurement_start(
+                &mut self,
+            ) -> MeasurementStartW<'_, TxDcMeasurementControlStatusSpec> {
+                MeasurementStartW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn measurement_enable(
+                &mut self,
+            ) -> MeasurementEnableW<'_, TxDcMeasurementControlStatusSpec> {
+                MeasurementEnableW::new(self, 1)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn measurement_ready(
+                &mut self,
+            ) -> MeasurementReadyW<'_, TxDcMeasurementControlStatusSpec> {
+                MeasurementReadyW::new(self, 22)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn q_comparator_high(
+                &mut self,
+            ) -> QComparatorHighW<'_, TxDcMeasurementControlStatusSpec> {
+                QComparatorHighW::new(self, 28)
+            }
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn i_comparator_high(
+                &mut self,
+            ) -> IComparatorHighW<'_, TxDcMeasurementControlStatusSpec> {
+                IComparatorHighW::new(self, 29)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_dc_measurement_control_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_dc_measurement_control_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxDcMeasurementControlStatusSpec;
+        impl crate::RegisterSpec for TxDcMeasurementControlStatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_dc_measurement_control_status::R`](R) reader structure"]
+        impl crate::Readable for TxDcMeasurementControlStatusSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tx_dc_measurement_control_status::W`](W) writer structure"]
+        impl crate::Writable for TxDcMeasurementControlStatusSpec {
             type Safety = crate::Unsafe;
         }
     }

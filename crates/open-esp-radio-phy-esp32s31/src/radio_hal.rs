@@ -13,7 +13,6 @@ const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
 const PHY_TONE_SELECTOR_CONTROL_ADDRESS: usize = 0x2010_0428;
 const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
-const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
 const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
@@ -557,30 +556,26 @@ pub(crate) unsafe fn stop_phy_power_detector_tone() {
 /// Trigger one TX-DC comparator measurement using the three fresh-read writes
 /// at rev0 ROM `phy_txdc_cal+0x9c..=0xbe`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn trigger_phy_tx_dc_measurement() {
-    set_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0002);
-    clear_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0001);
-    set_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0001);
+pub(crate) fn trigger_phy_tx_dc_measurement(registers: &mut RadioRegisters) {
+    registers.trigger_tx_dc_measurement();
 }
 
 /// Read one TX-DC readiness sample. Repetition remains an executor decision.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_tx_dc_ready_status() -> u32 {
-    (PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS as *const u32).read_volatile()
+pub(crate) fn read_phy_tx_dc_ready_status(registers: &mut RadioRegisters) -> bool {
+    registers.tx_dc_measurement_is_ready()
 }
 
 /// Preserve the two independent post-ready comparator reads from the ROM.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_tx_dc_comparator_status() -> [u32; 2] {
-    let status = PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS as *const u32;
-    [status.read_volatile(), status.read_volatile()]
+pub(crate) fn read_phy_tx_dc_comparator_status(registers: &mut RadioRegisters) -> [bool; 2] {
+    registers.sample_tx_dc_comparators()
 }
 
 /// Clear the TX-DC measurement controls as two fresh-read writes.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn clear_phy_tx_dc_measurement() {
-    clear_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0002);
-    clear_register_bits(PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS, 0x0000_0001);
+pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut RadioRegisters) {
+    registers.clear_tx_dc_measurement();
 }
 
 /// Encode and publish a finite PHY transmit-gain table.

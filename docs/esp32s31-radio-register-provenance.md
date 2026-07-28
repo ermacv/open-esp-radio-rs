@@ -606,6 +606,23 @@ Shared `0x2010_040c`, `0x2010_0438`, and `0x2010_0c0c` identities remain
 single generated register objects even though later tone/IQ slices still
 have raw consumers awaiting ownership threading.
 
+## TX-DC measurement and comparator control
+
+SVD v2.7 describes `TX_DC_MEASUREMENT_CONTROL_STATUS` from complete rev0 ROM
+`phy_txdc_cal` at `0x2f82_abbe`, size `0x1dc`, in the pinned ROM ELF. The
+instruction stream proves measurement start and enable at bits 0 and 1,
+readiness at bit 22, and the separately sampled Q and I comparator results at
+bits 28 and 29.
+
+The generated PAC preserves the three trigger RMW edges, one read per ready
+poll, two independent comparator reads, and the two cleanup RMW edges.
+Higher-level actions no longer expose a physical address, mask, expected
+register image, or raw comparator words: ready and comparator observations
+cross the ownership boundary as booleans. The ready binding now also borrows
+`&mut RadioRegisters`, removing the last unowned access to this word. The
+source-only audit rejects the raw address, former constants and unsafe wrapper
+signatures.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

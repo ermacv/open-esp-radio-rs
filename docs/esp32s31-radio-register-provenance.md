@@ -704,6 +704,14 @@ read while clearing it, and restores a caller-carried encoded image through
 one generated-field RMW. Pure tests pin the bits-23:22 encode/decode boundary;
 the HAL no longer imports compatibility register or field types.
 
+The `PHY_MEMORY` aperture and shared table base-index field have also moved to
+native generated access. PBUS boundary updates, data-before-command order,
+the two-edge CFR commit pulse, three-word gain publication and six ordered
+boundary captures are now methods on the unique `RadioRegisters` owner.
+`PbusMemoryGroupBoundary` and `PhyMemoryError` are PAC-owned semantic types
+re-exported by HAL, so existing PHY callers keep their source-level API
+without retaining a second mask/shift implementation.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

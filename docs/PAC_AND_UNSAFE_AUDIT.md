@@ -234,5 +234,12 @@ orders for RXIQ mismatch and signal-power sampling; HAL only constructs
 semantic result structures. The audit rejects compatibility register types in
 both estimator and cold-prelude modules.
 
+The shared PBUS/CFR/gain table-memory aperture is native generated PAC too.
+Its public HAL API is unchanged, but boundary packing, ten-bit PBUS command
+validation, write-only data publication, CFR commit pulses and gain commands
+are serialized inside `RadioRegisters`. The instruction-proven ordering is
+visible in one PAC module, and HAL no longer imports field masks or generic
+register descriptors.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

@@ -10,7 +10,9 @@ pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
 pub mod power;
+mod table_memory;
 pub use open_esp_radio_svd_esp32s31 as svd;
+pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 /// Access policy recovered for one MMIO register.
 ///

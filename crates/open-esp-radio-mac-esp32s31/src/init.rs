@@ -15,6 +15,7 @@ pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::interface_address::MacInterfaceAddressHardware;
+pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
 use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
@@ -141,6 +142,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdHandshakeHardware
         + MacColdRxBufferHardware
         + MacInterfaceAddressHardware
+        + MacLowRateHardware
         + MacSnifferHardware,
     P: MacClockControl,
 >(
@@ -254,8 +256,7 @@ pub fn initialize_promiscuous_receive<
     modify(mmio, registers::R_4C1C, 0x0000_0fff, 0x0000_000f);
 
     // `phy_disable_low_rate`, invoked by `hal_mac_disable_low_rate`.
-    modify(mmio, registers::R_8060, 0x0000_0c00, 0);
-    modify(mmio, registers::R_807C, 0x0000_0800, 0);
+    mmio.disable_phy_low_rate();
 
     // `hal_crypto_init`: even unencrypted promiscuous frames traverse the
     // common RX crypto bypass block.

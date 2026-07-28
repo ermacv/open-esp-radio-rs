@@ -187,6 +187,16 @@ then
     exit 1
 fi
 
+# MAC policy may request low-rate disable, but PHY register geometry and all
+# three fresh-read edges belong to the generated PAC.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/low_rate.rs
+then
+    echo "raw PHY low-rate MMIO returned to the MAC layer" >&2
+    exit 1
+fi
+
 # PHY target bindings may perform I2C/PBus work only through a borrowed
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.

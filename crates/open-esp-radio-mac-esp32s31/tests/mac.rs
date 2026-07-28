@@ -10,7 +10,8 @@ use open_esp_radio_mac_esp32s31::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
         MacColdRxBufferHardware, MacColdStartError, MacColdStartOutcome,
-        MacInterfaceAddressHardware, MacSnifferHardware, StaLinkRxPolicyHardware,
+        MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
+        StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -297,6 +298,19 @@ impl MacColdEnableHardware for MockMmio {
         let current = self.read32(mac_init::R_4C00);
         self.write32(mac_init::R_4C00, current & !0x0000_00f0);
         self.write32(mac::INT_ENABLE, event_mask);
+    }
+}
+
+impl MacLowRateHardware for MockMmio {
+    fn disable_phy_low_rate(&mut self) {
+        for (register, mask) in [
+            (mac_init::R_8060, 1 << 10),
+            (mac_init::R_8060, 1 << 11),
+            (mac_init::R_807C, 1 << 11),
+        ] {
+            let current = self.read32(register);
+            self.write32(register, current & !mask);
+        }
     }
 }
 
@@ -624,6 +638,17 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
                 Operation::Write(mac_init::CRYPTO_BYPASS[2], 0),
                 Operation::Write(mac_init::CRYPTO_BYPASS[3], 0),
                 Operation::Write(mac_init::CRYPTO_BYPASS[4], 0),
+            ]
+    }));
+    assert!(mmio.operations().windows(6).any(|operations| {
+        operations
+            == [
+                Operation::Read(mac_init::R_8060),
+                Operation::Write(mac_init::R_8060, 0),
+                Operation::Read(mac_init::R_8060),
+                Operation::Write(mac_init::R_8060, 0),
+                Operation::Read(mac_init::R_807C),
+                Operation::Write(mac_init::R_807C, 0),
             ]
     }));
     assert_eq!(

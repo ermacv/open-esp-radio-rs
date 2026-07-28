@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.8</version>
+  <version>3.9</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -797,6 +797,23 @@
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets all three bits.</description>
               <bitOffset>20</bitOffset><bitWidth>3</bitWidth>
             </field>
+          </fields>
+        </register>
+        <register>
+          <name>LOW_RATE_PRIMARY_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_LOW_RATE]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order.</description>
+          <addressOffset>0x8060</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_RATE_ENABLE_FIRST</name><description>SOURCE[ROM_REV0_PHY_LOW_RATE]; CONFIDENCE[instruction-exact-semantics-from-symbol]. First independently updated low-rate enable bit.</description><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>LOW_RATE_ENABLE_SECOND</name><description>SOURCE[ROM_REV0_PHY_LOW_RATE]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Second independently updated low-rate enable bit.</description><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>LOW_RATE_SECONDARY_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_LOW_RATE]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Third and final fresh-read RMW in both complete low-rate leaves.</description>
+          <addressOffset>0x807c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_RATE_ENABLE</name><description>SOURCE[ROM_REV0_PHY_LOW_RATE]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Set by complete phy_enable_low_rate and cleared by complete phy_disable_low_rate.</description><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
       </registers>
@@ -2018,6 +2035,7 @@
       <source id="ROM_REV0_PHY_SAVE_PBUS_REG">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_save_pbus_reg at 0x2f824602 size 0x32</source>
       <source id="ROM_REV0_PHY_WRITE_GAIN_MEM">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_write_gain_mem at 0x2f8274f0 size 0x2a</source>
       <source id="ROM_REV0_PHY_AGC">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_disable_agc at 0x2f827460 size 0x10, phy_enable_agc at 0x2f827470 size 0x28, phy_rx_11b_opt at 0x2f827588 size 0xc4, phy_agc_reg_init at 0x2f8278d8 size 0xd8, phy_bb_agc_reg_update at 0x2f82860e size 0xa6 and phy_rfrx_sat_rst at 0x2f828944 size 0x42</source>
+      <source id="ROM_REV0_PHY_LOW_RATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_enable_low_rate at 0x2f825210 size 0x20 and phy_disable_low_rate at 0x2f825230 size 0x20. Each performs three fresh-read RMW edges: bits 10 and 11 at 0x20108060 separately, then bit 11 at 0x2010807c.</source>
       <source id="ROM_REV0_PHY_ANT_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_ant_init at 0x2f827df4 size 0x44</source>
       <source id="ROM_REV0_PHY_CLOCK_FORCE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_txrx_off at 0x2f827bb0 size 0x66, phy_set_txclk_en at 0x2f827cd2 size 0x24 and phy_set_rxclk_en at 0x2f827cf6 size 0x20</source>
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_bbpll_cal at 0x2f827dbc size 0x1c, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>

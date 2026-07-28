@@ -2627,10 +2627,13 @@ pub mod phy_agc_oracle {
         _reserved26: [u8; 0x04],
         agc_update_8028_opaque: AgcUpdate8028Opaque,
         agc_update_802c_opaque: AgcUpdate802cOpaque,
-        _reserved28: [u8; 0x40],
+        _reserved28: [u8; 0x30],
+        low_rate_primary_control: LowRatePrimaryControl,
+        _reserved29: [u8; 0x0c],
         agc_update_8070_opaque: AgcUpdate8070Opaque,
-        _reserved29: [u8; 0x04],
+        _reserved30: [u8; 0x04],
         agc_update_8078_control: AgcUpdate8078Control,
+        low_rate_secondary_control: LowRateSecondaryControl,
     }
     impl RegisterBlock {
         #[doc = "0x8bc - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init performs two fresh-read parameter-derived field replacements."]
@@ -2773,6 +2776,11 @@ pub mod phy_agc_oracle {
         pub const fn agc_update_802c_opaque(&self) -> &AgcUpdate802cOpaque {
             &self.agc_update_802c_opaque
         }
+        #[doc = "0x8060 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order."]
+        #[inline(always)]
+        pub const fn low_rate_primary_control(&self) -> &LowRatePrimaryControl {
+            &self.low_rate_primary_control
+        }
         #[doc = "0x8070 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update writes 0x000008c7."]
         #[inline(always)]
         pub const fn agc_update_8070_opaque(&self) -> &AgcUpdate8070Opaque {
@@ -2782,6 +2790,11 @@ pub mod phy_agc_oracle {
         #[inline(always)]
         pub const fn agc_update_8078_control(&self) -> &AgcUpdate8078Control {
             &self.agc_update_8078_control
+        }
+        #[doc = "0x807c - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Third and final fresh-read RMW in both complete low-rate leaves."]
+        #[inline(always)]
+        pub const fn low_rate_secondary_control(&self) -> &LowRateSecondaryControl {
+            &self.low_rate_secondary_control
         }
     }
     #[doc = "AGC_PARAMETER_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init performs two fresh-read parameter-derived field replacements.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_parameter_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_parameter_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_parameter_control`] module"]
@@ -4016,6 +4029,104 @@ pub mod phy_agc_oracle {
         impl crate::Readable for AgcUpdate8078ControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`agc_update_8078_control::W`](W) writer structure"]
         impl crate::Writable for AgcUpdate8078ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "LOW_RATE_PRIMARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_primary_control`] module"]
+    #[doc(alias = "LOW_RATE_PRIMARY_CONTROL")]
+    pub type LowRatePrimaryControl =
+        crate::Reg<low_rate_primary_control::LowRatePrimaryControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order."]
+    pub mod low_rate_primary_control {
+        #[doc = "Register `LOW_RATE_PRIMARY_CONTROL` reader"]
+        pub type R = crate::R<LowRatePrimaryControlSpec>;
+        #[doc = "Register `LOW_RATE_PRIMARY_CONTROL` writer"]
+        pub type W = crate::W<LowRatePrimaryControlSpec>;
+        #[doc = "Field `LOW_RATE_ENABLE_FIRST` reader - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. First independently updated low-rate enable bit."]
+        pub type LowRateEnableFirstR = crate::BitReader;
+        #[doc = "Field `LOW_RATE_ENABLE_FIRST` writer - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. First independently updated low-rate enable bit."]
+        pub type LowRateEnableFirstW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOW_RATE_ENABLE_SECOND` reader - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Second independently updated low-rate enable bit."]
+        pub type LowRateEnableSecondR = crate::BitReader;
+        #[doc = "Field `LOW_RATE_ENABLE_SECOND` writer - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Second independently updated low-rate enable bit."]
+        pub type LowRateEnableSecondW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 10 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. First independently updated low-rate enable bit."]
+            #[inline(always)]
+            pub fn low_rate_enable_first(&self) -> LowRateEnableFirstR {
+                LowRateEnableFirstR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Second independently updated low-rate enable bit."]
+            #[inline(always)]
+            pub fn low_rate_enable_second(&self) -> LowRateEnableSecondR {
+                LowRateEnableSecondR::new(((self.bits >> 11) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 10 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. First independently updated low-rate enable bit."]
+            #[inline(always)]
+            pub fn low_rate_enable_first(
+                &mut self,
+            ) -> LowRateEnableFirstW<'_, LowRatePrimaryControlSpec> {
+                LowRateEnableFirstW::new(self, 10)
+            }
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Second independently updated low-rate enable bit."]
+            #[inline(always)]
+            pub fn low_rate_enable_second(
+                &mut self,
+            ) -> LowRateEnableSecondW<'_, LowRatePrimaryControlSpec> {
+                LowRateEnableSecondW::new(self, 11)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct LowRatePrimaryControlSpec;
+        impl crate::RegisterSpec for LowRatePrimaryControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`low_rate_primary_control::R`](R) reader structure"]
+        impl crate::Readable for LowRatePrimaryControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`low_rate_primary_control::W`](W) writer structure"]
+        impl crate::Writable for LowRatePrimaryControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "LOW_RATE_SECONDARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Third and final fresh-read RMW in both complete low-rate leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_secondary_control`] module"]
+    #[doc(alias = "LOW_RATE_SECONDARY_CONTROL")]
+    pub type LowRateSecondaryControl =
+        crate::Reg<low_rate_secondary_control::LowRateSecondaryControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Third and final fresh-read RMW in both complete low-rate leaves."]
+    pub mod low_rate_secondary_control {
+        #[doc = "Register `LOW_RATE_SECONDARY_CONTROL` reader"]
+        pub type R = crate::R<LowRateSecondaryControlSpec>;
+        #[doc = "Register `LOW_RATE_SECONDARY_CONTROL` writer"]
+        pub type W = crate::W<LowRateSecondaryControlSpec>;
+        #[doc = "Field `LOW_RATE_ENABLE` reader - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete phy_enable_low_rate and cleared by complete phy_disable_low_rate."]
+        pub type LowRateEnableR = crate::BitReader;
+        #[doc = "Field `LOW_RATE_ENABLE` writer - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete phy_enable_low_rate and cleared by complete phy_disable_low_rate."]
+        pub type LowRateEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete phy_enable_low_rate and cleared by complete phy_disable_low_rate."]
+            #[inline(always)]
+            pub fn low_rate_enable(&self) -> LowRateEnableR {
+                LowRateEnableR::new(((self.bits >> 11) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete phy_enable_low_rate and cleared by complete phy_disable_low_rate."]
+            #[inline(always)]
+            pub fn low_rate_enable(&mut self) -> LowRateEnableW<'_, LowRateSecondaryControlSpec> {
+                LowRateEnableW::new(self, 11)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Third and final fresh-read RMW in both complete low-rate leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct LowRateSecondaryControlSpec;
+        impl crate::RegisterSpec for LowRateSecondaryControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`low_rate_secondary_control::R`](R) reader structure"]
+        impl crate::Readable for LowRateSecondaryControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`low_rate_secondary_control::W`](W) writer structure"]
+        impl crate::Writable for LowRateSecondaryControlSpec {
             type Safety = crate::Unsafe;
         }
     }

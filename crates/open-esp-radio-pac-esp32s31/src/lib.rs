@@ -489,6 +489,19 @@ mod tests {
     }
 
     #[test]
+    fn generated_phy_low_rate_registers_match_complete_rom_leaves() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let bb = &registers.peripherals.phy_agc_oracle;
+        assert_eq!(bb.low_rate_primary_control().as_ptr() as usize, 0x2010_8060);
+        assert_eq!(
+            bb.low_rate_secondary_control().as_ptr() as usize,
+            0x2010_807c
+        );
+    }
+
+    #[test]
     fn indexed_mac_registers_are_bounded_and_aligned() {
         for group in [
             &mac::init::INTERFACE_ADDRESS_LOW[..],

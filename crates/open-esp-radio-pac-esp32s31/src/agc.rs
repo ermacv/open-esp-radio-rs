@@ -15,6 +15,30 @@ const fn rx_11b_values(enabled: bool) -> (u8, u8, u8, u8, u8) {
 }
 
 impl RadioRegisters {
+    /// Enable or disable the complete three-edge PHY low-rate path.
+    ///
+    /// SOURCE: complete rev0 ROM `phy_enable_low_rate` at `0x2f82_5210`
+    /// and `phy_disable_low_rate` at `0x2f82_5230`, both size `0x20`.
+    /// The two primary-word bits remain separate RMWs exactly as in ROM.
+    pub fn configure_phy_low_rate(&mut self, enabled: bool) {
+        let agc = &self.peripherals.phy_agc_oracle;
+        if enabled {
+            agc.low_rate_primary_control()
+                .modify(|_, w| w.low_rate_enable_first().set_bit());
+            agc.low_rate_primary_control()
+                .modify(|_, w| w.low_rate_enable_second().set_bit());
+            agc.low_rate_secondary_control()
+                .modify(|_, w| w.low_rate_enable().set_bit());
+        } else {
+            agc.low_rate_primary_control()
+                .modify(|_, w| w.low_rate_enable_first().clear_bit());
+            agc.low_rate_primary_control()
+                .modify(|_, w| w.low_rate_enable_second().clear_bit());
+            agc.low_rate_secondary_control()
+                .modify(|_, w| w.low_rate_enable().clear_bit());
+        }
+    }
+
     /// Apply all fourteen internal MMIO edges of `phy_bb_agc_reg_update`.
     pub fn update_agc_baseband_registers(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;

@@ -878,6 +878,16 @@ gate bits. SVD v3.8 therefore names the group `MAC_DISABLE_GATES_UNKNOWN`
 without guessing the individual gate meanings, and the generated PAC keeps
 the gate edge and interrupt publication adjacent.
 
+Complete rev0 ROM `phy_enable_low_rate` (`0x2f825210`, size `0x20`) and
+`phy_disable_low_rate` (`0x2f825230`, size `0x20`) identify a separate PHY
+baseband block at `0x20108060/0x2010807c`. Each leaf performs three fresh-read
+RMW edges: bit 10 at `8060`, bit 11 at `8060`, then bit 11 at `807c`.
+
+The earlier cold MAC transcription combined the first two disable edges into
+one `0x0c00` mask. SVD v3.9 and the generated PAC restore the exact three-edge
+order. MAC init now owns only the low-rate policy decision; it cannot see the
+PHY register identities.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

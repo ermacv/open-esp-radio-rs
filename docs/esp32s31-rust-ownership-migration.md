@@ -3493,3 +3493,14 @@ This keeps the hardware gate and event policy as one lifecycle edge. CPU
 interrupt routing remains a separate platform capability, and the four
 individual gate meanings remain `UNKNOWN` until stronger S31-local evidence
 is available.
+
+## PHY low-rate ownership
+
+The cold MAC path no longer writes PHY/baseband offsets `0x8060` and `0x807c`
+through generic MMIO. `MacLowRateHardware` exposes only the policy operation
+needed by MAC initialization; production delegates it to the unique
+`RadioRegisters` owner.
+
+Complete paired ROM enable/disable leaves prove three separate fresh-read
+edges. The generated PAC preserves those edges and corrects the earlier
+value-equivalent two-RMW transcription that combined both primary-word bits.

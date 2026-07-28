@@ -74,6 +74,8 @@ identities for every entry.
 | `ROM_REV0_PHY_GET_MAX_PWR` | Complete rev0 ROM target-power chain that produces each two-byte MAC table entry from live PHY state |
 | `BLOB_LIBPP_HAL_HE_INIT_SUFFIX` | Complete post-power `hal_he_init` hardware tail and every reached finite register leaf |
 | `BLOB_LIBPP_DBG_READ_TX_POWER` | Complete unconditional diagnostic traversal; 25 discarded PHY queries still have observable ROM MMIO edges |
+| `BLOB_LIBPP_HAL_SNIFFER_MISC` | Complete mode-dependent promiscuous miscellaneous-packet policy leaf |
+| `OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER` | Working open scan/STA promiscuous boundary used to qualify the two non-vendor cold policy edges |
 
 The public ESP-IDF ESP32-C5/C61 register headers are only cross-chip
 validation. They are not accepted as the sole basis for an S31 address or bit.

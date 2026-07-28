@@ -406,12 +406,10 @@ pub mod init {
 
     pub const HANDSHAKE: Register32 = Register32::new(0x2010_4de0);
     pub const CONTROL: Register32 = Register32::new(0x2010_4cac);
-    pub const RX_SNIFFER_CONTROL: Register32 = RX_FILTER[3];
 
     pub const R_4C00: Register32 = Register32::new(0x2010_4c00);
     pub const R_407C: Register32 = Register32::new(0x2010_407c);
     pub const R_4098: Register32 = mac::RX_CSI_CONFIG;
-    pub const R_40F4: Register32 = Register32::new(0x2010_40f4);
     pub const R_4114: Register32 = Register32::new(0x2010_4114);
     pub const R_4118: Register32 = Register32::new(0x2010_4118);
     pub const R_4120: Register32 = Register32::new(0x2010_4120);

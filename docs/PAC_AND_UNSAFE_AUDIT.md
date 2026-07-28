@@ -175,6 +175,12 @@ trait; the old HE scratch arrays, raw register aliases and generic MMIO loop
 have been removed. Descriptor-memory unsafe remains independent of this
 peripheral migration.
 
+The cold promiscuous receive tail is now native PAC as well. Its complete
+vendor sniffer leaf, two HIL-qualified open-policy edges and final device
+fence execute as one borrowed operation. Consequently the top-level MAC
+cold-init routine no longer imports `Mmio`, `Register32`, numeric aliases or
+field masks; it composes only safe semantic capabilities.
+
 The complete `open-esp-radio-phy-esp32s31` crate is now free of `unsafe`, raw
 volatile access and pointer casts. Its target bindings express sequencing
 through non-cloneable actions and require the unique `RadioRegisters` borrow;

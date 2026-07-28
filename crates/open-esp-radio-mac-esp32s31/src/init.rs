@@ -5,8 +5,6 @@
 //! stops before publishing an RX descriptor base: ownership of the DMA ring
 //! remains with [`crate::rx::publish_cold_ring`].
 
-use open_esp_radio_pac_esp32s31::{mac::init as registers, Register32};
-
 pub use crate::cold_antenna::MacColdAntennaHardware;
 pub use crate::cold_coex::{
     MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdCoexHardware, MacColdCoexPti,
@@ -22,11 +20,11 @@ pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::cold_rx_policy::MacColdRxPolicyHardware;
 pub use crate::cold_txrx::{MacColdTxRxHardware, MacDelaySlot};
+use crate::interface_address::program_cold_receive_addresses;
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
-use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
 pub use open_esp_radio_pac_esp32s31::{MacTxPowerPair, MacTxPowerTable};
 
 const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
@@ -60,12 +58,6 @@ pub trait MacSlowClockCalibrationSource {
     fn mac_slow_clock_calibration(&mut self) -> u32;
 }
 
-#[inline]
-fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
-    let current = mmio.read32(register);
-    mmio.write32(register, (current & !mask) | (value & mask));
-}
-
 /// Establish the reset-state MAC register configuration and accept all RX
 /// frame classes.
 ///
@@ -77,8 +69,7 @@ fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
 pub fn initialize_promiscuous_receive<
-    M: Mmio
-        + MacColdAntennaHardware
+    M: MacColdAntennaHardware
         + MacColdCoexHardware
         + MacColdCryptoHardware
         + MacColdEnableHardware
@@ -175,14 +166,10 @@ pub fn initialize_promiscuous_receive<
     // when the sniffer subsequently disables address filtering.
     program_cold_receive_addresses(mmio, station_address, access_point_address);
 
-    // Promiscuous mode clears the recovered class-reject bits and enables all
-    // miscellaneous packet classes. A target oracle shows that the queue
-    // policy words at 0x40fc/0x4100/0x4108 do not change when promiscuous mode
-    // is enabled; they must retain the defaults installed by `mac_txrx_init`.
-    mmio.write32(registers::CONTROL, 0);
-    mmio.enable_promiscuous_sniffer();
-    modify(mmio, registers::R_40F4, 0x0000_ff00, 0x0000_ff00);
-    mmio.fence();
+    // The ownership-bound PAC transaction keeps the HIL-qualified open
+    // policy, complete vendor sniffer leaf, misc-class update and device fence
+    // together. It deliberately leaves queue 0..2 defaults intact.
+    mmio.configure_open_promiscuous_receive();
 
     Ok(outcome)
 }

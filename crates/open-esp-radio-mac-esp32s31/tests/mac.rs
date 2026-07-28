@@ -52,6 +52,7 @@ enum Operation {
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
+    ConfigureOpenPromiscuousReceive,
     Fence,
 }
 
@@ -275,19 +276,9 @@ impl MacColdHandshakeHardware for MockMmio {
 }
 
 impl MacSnifferHardware for MockMmio {
-    fn enable_promiscuous_sniffer(&mut self) {
-        let control = mac_init::RX_SNIFFER_CONTROL;
-        let mut modify = |mask: u32, value: u32| {
-            let current = self.read32(control);
-            self.write32(control, (current & !mask) | (value & mask));
-        };
-        modify(1 << 17, 1 << 17);
-        modify(1 << 0, 0);
-        modify(1 << 1, 0);
-        modify(1 << 2, 0);
-        modify(1 << 3, 0);
-        modify(1 << 8, 0);
-        modify((1 << 7) | (1 << 9), 0);
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.operations
+            .push(Operation::ConfigureOpenPromiscuousReceive);
     }
 }
 
@@ -866,27 +857,9 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
                     Operation::Write(mac_init::R_4098, 0x0800_0000),
                 ]
     }));
-    assert_eq!(mmio.words.get(&mac_init::CONTROL), Some(&0));
-    assert!(mmio.operations().windows(15).any(|operations| {
-        operations
-            == [
-                Operation::Write(mac_init::CONTROL, 0),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0285),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0284),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0284),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
-                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
-                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0000),
-            ]
-    }));
+    assert!(mmio
+        .operations()
+        .contains(&Operation::ConfigureOpenPromiscuousReceive));
     assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
     assert!(mmio.operations().windows(3).any(|operations| {
         operations
@@ -1080,7 +1053,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
     ]);
     assert_eq!(platform.operations, expected_platform);
-    assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
+    assert_eq!(
+        mmio.operations().last(),
+        Some(&Operation::ConfigureOpenPromiscuousReceive)
+    );
 }
 
 #[test]

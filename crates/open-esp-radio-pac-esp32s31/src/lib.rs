@@ -413,6 +413,22 @@ mod tests {
             registers.peripherals.wifi_mac_rx_filter.policy(3).as_ptr() as usize,
             0x2010_40e4
         );
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_filter
+                .misc_packet_policy()
+                .as_ptr() as usize,
+            0x2010_40f4
+        );
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_open_rx_control
+                .cold_promiscuous_image()
+                .as_ptr() as usize,
+            0x2010_4cac
+        );
     }
 
     #[test]
@@ -763,6 +779,5 @@ mod tests {
     #[test]
     fn mac_init_aliases_share_canonical_register_identities() {
         assert_eq!(mac::init::R_4098, mac::RX_CSI_CONFIG);
-        assert_eq!(mac::init::RX_SNIFFER_CONTROL, mac::init::RX_FILTER[3]);
     }
 }

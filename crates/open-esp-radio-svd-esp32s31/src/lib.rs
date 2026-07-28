@@ -8315,6 +8315,8 @@ pub mod wifi_mac_rx_filter {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         policy: [Policy; 4],
+        _reserved1: [u8; 0x0c],
+        misc_packet_policy: MiscPacketPolicy,
     }
     impl RegisterBlock {
         #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges."]
@@ -8327,6 +8329,11 @@ pub mod wifi_mac_rx_filter {
         #[inline(always)]
         pub fn policy_iter(&self) -> impl Iterator<Item = &Policy> {
             self.policy.iter()
+        }
+        #[doc = "0x1c - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER,BLOB_LIBPP_HAL_SNIFFER_MISC\\]; CONFIDENCE\\[hil-qualified-field-semantics-partial\\]. The open promiscuous RX frontier sets bits 15:8 together after the complete sniffer-enable leaf. The complete vendor misc-packet leaf independently proves this register and related packet-class fields, but the open path deliberately preserves every other bit."]
+        #[inline(always)]
+        pub const fn misc_packet_policy(&self) -> &MiscPacketPolicy {
+            &self.misc_packet_policy
         }
     }
     #[doc = "POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@policy`] module"]
@@ -8577,6 +8584,140 @@ pub mod wifi_mac_rx_filter {
         impl crate::Readable for PolicySpec {}
         #[doc = "`write(|w| ..)` method takes [`policy::W`](W) writer structure"]
         impl crate::Writable for PolicySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "MISC_PACKET_POLICY (rw) register accessor: SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER,BLOB_LIBPP_HAL_SNIFFER_MISC\\]; CONFIDENCE\\[hil-qualified-field-semantics-partial\\]. The open promiscuous RX frontier sets bits 15:8 together after the complete sniffer-enable leaf. The complete vendor misc-packet leaf independently proves this register and related packet-class fields, but the open path deliberately preserves every other bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`misc_packet_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`misc_packet_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@misc_packet_policy`] module"]
+    #[doc(alias = "MISC_PACKET_POLICY")]
+    pub type MiscPacketPolicy = crate::Reg<misc_packet_policy::MiscPacketPolicySpec>;
+    #[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER,BLOB_LIBPP_HAL_SNIFFER_MISC\\]; CONFIDENCE\\[hil-qualified-field-semantics-partial\\]. The open promiscuous RX frontier sets bits 15:8 together after the complete sniffer-enable leaf. The complete vendor misc-packet leaf independently proves this register and related packet-class fields, but the open path deliberately preserves every other bit."]
+    pub mod misc_packet_policy {
+        #[doc = "Register `MISC_PACKET_POLICY` reader"]
+        pub type R = crate::R<MiscPacketPolicySpec>;
+        #[doc = "Register `MISC_PACKET_POLICY` writer"]
+        pub type W = crate::W<MiscPacketPolicySpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` reader - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+        pub type OpenMiscPacketClassesR = crate::FieldReader;
+        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` writer - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+        pub type OpenMiscPacketClassesW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+            #[inline(always)]
+            pub fn open_misc_packet_classes(&self) -> OpenMiscPacketClassesR {
+                OpenMiscPacketClassesR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, MiscPacketPolicySpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+            #[inline(always)]
+            pub fn open_misc_packet_classes(
+                &mut self,
+            ) -> OpenMiscPacketClassesW<'_, MiscPacketPolicySpec> {
+                OpenMiscPacketClassesW::new(self, 8)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, MiscPacketPolicySpec> {
+                HighPreservedUnknownW::new(self, 16)
+            }
+        }
+        #[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER,BLOB_LIBPP_HAL_SNIFFER_MISC\\]; CONFIDENCE\\[hil-qualified-field-semantics-partial\\]. The open promiscuous RX frontier sets bits 15:8 together after the complete sniffer-enable leaf. The complete vendor misc-packet leaf independently proves this register and related packet-class fields, but the open path deliberately preserves every other bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`misc_packet_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`misc_packet_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct MiscPacketPolicySpec;
+        impl crate::RegisterSpec for MiscPacketPolicySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`misc_packet_policy::R`](R) reader structure"]
+        impl crate::Readable for MiscPacketPolicySpec {}
+        #[doc = "`write(|w| ..)` method takes [`misc_packet_policy::W`](W) writer structure"]
+        impl crate::Writable for MiscPacketPolicySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-semantics-partial\\]. MAC control image used by the working open promiscuous receive frontier. Other runtime channel-control uses of this word remain outside this bounded cold operation."]
+pub type WifiMacOpenRxControl = crate::Periph<wifi_mac_open_rx_control::RegisterBlock, 0x2010_4cac>;
+impl core::fmt::Debug for WifiMacOpenRxControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacOpenRxControl").finish()
+    }
+}
+#[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-semantics-partial\\]. MAC control image used by the working open promiscuous receive frontier. Other runtime channel-control uses of this word remain outside this bounded cold operation."]
+pub mod wifi_mac_open_rx_control {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        cold_promiscuous_image: ColdPromiscuousImage,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-full-image-semantics-unknown\\]. The cold open-RX path publishes zero as a full register image before enabling the complete vendor sniffer leaf."]
+        #[inline(always)]
+        pub const fn cold_promiscuous_image(&self) -> &ColdPromiscuousImage {
+            &self.cold_promiscuous_image
+        }
+    }
+    #[doc = "COLD_PROMISCUOUS_IMAGE (rw) register accessor: SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-full-image-semantics-unknown\\]. The cold open-RX path publishes zero as a full register image before enabling the complete vendor sniffer leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`cold_promiscuous_image::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cold_promiscuous_image::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cold_promiscuous_image`] module"]
+    #[doc(alias = "COLD_PROMISCUOUS_IMAGE")]
+    pub type ColdPromiscuousImage = crate::Reg<cold_promiscuous_image::ColdPromiscuousImageSpec>;
+    #[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-full-image-semantics-unknown\\]. The cold open-RX path publishes zero as a full register image before enabling the complete vendor sniffer leaf."]
+    pub mod cold_promiscuous_image {
+        #[doc = "Register `COLD_PROMISCUOUS_IMAGE` reader"]
+        pub type R = crate::R<ColdPromiscuousImageSpec>;
+        #[doc = "Register `COLD_PROMISCUOUS_IMAGE` writer"]
+        pub type W = crate::W<ColdPromiscuousImageSpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` reader - "]
+        pub type ImageUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&self) -> ImageUnknownR {
+                ImageUnknownR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, ColdPromiscuousImageSpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-qualified-full-image-semantics-unknown\\]. The cold open-RX path publishes zero as a full register image before enabling the complete vendor sniffer leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`cold_promiscuous_image::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cold_promiscuous_image::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ColdPromiscuousImageSpec;
+        impl crate::RegisterSpec for ColdPromiscuousImageSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cold_promiscuous_image::R`](R) reader structure"]
+        impl crate::Readable for ColdPromiscuousImageSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cold_promiscuous_image::W`](W) writer structure"]
+        impl crate::Writable for ColdPromiscuousImageSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -17235,6 +17376,8 @@ pub struct Peripherals {
     pub wifi_mac_interface_address: WifiMacInterfaceAddress,
     #[doc = "WIFI_MAC_RX_FILTER"]
     pub wifi_mac_rx_filter: WifiMacRxFilter,
+    #[doc = "WIFI_MAC_OPEN_RX_CONTROL"]
+    pub wifi_mac_open_rx_control: WifiMacOpenRxControl,
     #[doc = "WIFI_MAC_CRYPTO_CONTROL"]
     pub wifi_mac_crypto_control: WifiMacCryptoControl,
     #[doc = "WIFI_MAC_KEY_TABLE"]
@@ -17312,6 +17455,7 @@ impl Peripherals {
             wifi_mac_bssid_policy: WifiMacBssidPolicy::steal(),
             wifi_mac_interface_address: WifiMacInterfaceAddress::steal(),
             wifi_mac_rx_filter: WifiMacRxFilter::steal(),
+            wifi_mac_open_rx_control: WifiMacOpenRxControl::steal(),
             wifi_mac_crypto_control: WifiMacCryptoControl::steal(),
             wifi_mac_key_table: WifiMacKeyTable::steal(),
             wifi_mac_tx_common: WifiMacTxCommon::steal(),

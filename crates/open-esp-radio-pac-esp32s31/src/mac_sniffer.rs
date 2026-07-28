@@ -1,16 +1,26 @@
-//! Generated-PAC ownership for promiscuous-sniffer enable.
+//! Generated-PAC ownership for the open promiscuous receive boundary.
 
-use super::RadioRegisters;
+use super::{device_fence, RadioRegisters};
 
 impl RadioRegisters {
-    /// Enable the MAC promiscuous sniffer using the complete vendor leaf.
+    /// Configure the complete working open promiscuous receive frontier.
     ///
-    /// SOURCE: complete pinned
-    /// `libpp.a[hal_sniffer.o]::hal_sniffer_enable`.
-    pub fn enable_mac_promiscuous_sniffer(&mut self) {
-        let control = self.peripherals.wifi_mac_rx_filter.policy(3);
+    /// SOURCE: `OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER`, complete
+    /// `BLOB_LIBPP_HAL_SNIFFER_ENABLE`, and the register identity independently
+    /// confirmed by `BLOB_LIBPP_HAL_SNIFFER_MISC`.
+    pub fn configure_open_mac_promiscuous_receive(&mut self) {
+        // SAFETY: zero is the complete HIL-qualified cold register image.
+        unsafe {
+            self.peripherals
+                .wifi_mac_open_rx_control
+                .cold_promiscuous_image()
+                .write_with_zero(|w| w.image_unknown().bits(0));
+        }
 
-        // Every line below is a separate fresh-read RMW in the complete leaf.
+        let filter = &self.peripherals.wifi_mac_rx_filter;
+        let control = filter.policy(3);
+        // Every line below is a separate fresh-read RMW in the complete
+        // hal_sniffer_enable leaf.
         control.modify(|_, w| w.sniffer_enable().set_bit());
         control.modify(|_, w| w.low_unknown().clear_bit());
         control.modify(|_, w| w.ubssid_check_low_unknown().clear_bit());
@@ -23,5 +33,12 @@ impl RadioRegisters {
                 .policy_bit_9_unknown()
                 .clear_bit()
         });
+
+        // The open frontier enables all eight HIL-qualified miscellaneous
+        // packet classes while preserving the other mode-dependent fields.
+        filter
+            .misc_packet_policy()
+            .modify(|_, w| unsafe { w.open_misc_packet_classes().bits(0xff) });
+        device_fence();
     }
 }

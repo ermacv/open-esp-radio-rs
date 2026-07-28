@@ -151,12 +151,15 @@ then
     exit 1
 fi
 
-# Promiscuous-sniffer enable is seven ordered generated-PAC RMW edges.
+# The top-level cold init and its promiscuous tail compose semantic
+# capabilities only. The latter contains the open policy image, seven ordered
+# vendor RMWs, the miscellaneous-class RMW and the final device fence.
 if rg -n \
     '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/init.rs \
     crates/open-esp-radio-mac-esp32s31/src/sniffer.rs
 then
-    echo "raw compatibility MMIO returned to MAC sniffer enable" >&2
+    echo "raw compatibility MMIO returned to MAC cold init/sniffer boundary" >&2
     exit 1
 fi
 

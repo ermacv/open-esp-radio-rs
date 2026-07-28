@@ -1049,6 +1049,17 @@ borrow. The former upper MAC implementation combined several RMWs, omitted
 broadcast-RU/UORA and represented the register set as raw numeric aliases; it
 and its now-unused aliases have been removed.
 
+SVD v3.21 moves the final open promiscuous receive boundary out of generic MAC
+MMIO. Complete `hal_sniffer_enable` remains the seven instruction-exact RMWs
+at queue-three policy word `0x201040e4`. The surrounding zero image at
+`0x20104cac` and bits 15:8 update at `0x201040f4` are explicitly attributed to
+the open-driver frontier first recorded in commit `6a2b358` and qualified by
+the connected scan/STA HIL; they are not mislabeled as vendor behavior.
+Complete `hal_sniffer_set_promis_misc_pkt` independently proves the latter
+register but has additional mode-dependent branches that the open path does
+not claim. The PAC now owns the complete store/RMW/fence sequence, leaving the
+upper cold-init function with semantic capability calls only.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.20</version>
+  <version>3.21</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1563,6 +1563,29 @@
             <field><name>POLICY_31_18_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>14</bitWidth></field>
           </fields>
         </register>
+        <register>
+          <name>MISC_PACKET_POLICY</name>
+          <description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER,BLOB_LIBPP_HAL_SNIFFER_MISC]; CONFIDENCE[hil-qualified-field-semantics-partial]. The open promiscuous RX frontier sets bits 15:8 together after the complete sniffer-enable leaf. The complete vendor misc-packet leaf independently proves this register and related packet-class fields, but the open path deliberately preserves every other bit.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>OPEN_MISC_PACKET_CLASSES</name><description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER]; CONFIDENCE[hil-qualified]. Eight class-enable bits set together by the working open scan/STA receive path.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_OPEN_RX_CONTROL</name>
+      <description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER]; CONFIDENCE[hil-qualified-semantics-partial]. MAC control image used by the working open promiscuous receive frontier. Other runtime channel-control uses of this word remain outside this bounded cold operation.</description>
+      <baseAddress>0x20104cac</baseAddress>
+      <registers>
+        <register>
+          <name>COLD_PROMISCUOUS_IMAGE</name>
+          <description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER]; CONFIDENCE[hil-qualified-full-image-semantics-unknown]. The cold open-RX path publishes zero as a full register image before enabling the complete vendor sniffer leaf.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
       </registers>
     </peripheral>
     <peripheral>
@@ -2660,6 +2683,8 @@
       <source id="BLOB_LIBPP_HAL_ENABLE_MAC">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_mac body, size 0x18. It performs one fresh-read RMW clearing bits 7:4 at 0x20104c00, then stores its full event-mask argument at 0x20104c40. Complete hal_disable_mac independently sets the same four gate bits before clearing interrupt state.</source>
       <source id="BLOB_LIBPP_HAL_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores.</source>
       <source id="BLOB_LIBPP_HAL_SNIFFER_ENABLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_enable body. At queue-three word 0x201040e4 it proves seven ordered fresh-read RMWs: set bit 17; clear bits 0, 1, 2, 3 and 8 separately; then clear bits 7 and 9 together.</source>
+      <source id="BLOB_LIBPP_HAL_SNIFFER_MISC">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_set_promis_misc_pkt body, size 0x84. It independently proves the shared 0x201040f4 misc-packet policy register and its mode-dependent fields. The open frontier uses only the separately HIL-qualified bits 15:8 and does not claim the other vendor branches.</source>
+      <source id="OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER">open-esp-radio-rs commit 6a2b358b6dc3458d2f49d80ff14d20aa3d6fabab, crates/open-esp-radio-mac-esp32s31/src/init.rs, first source-owned open promiscuous RX frontier; subsequently qualified by the connected ESP32-S31 rev0 scan/STA run recorded as HIL_OPEN_RX_LIVE_APPEND_2026_07_27. It publishes zero at 0x20104cac, executes complete BLOB_LIBPP_HAL_SNIFFER_ENABLE, sets bits 15:8 at 0x201040f4 through one fresh-read RMW, then issues a device fence.</source>
       <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>
       <source id="BLOB_LIBPP_MAC_LAST_RXBUF_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_last_rxbuf_init body, size 0xd2. It performs eighteen ordered full-word stores for six three-word entries at 0x20104124..0x20104170, then two separate fresh-read RMWs setting 0x3f00 and 0x007e at 0x20104120, followed by one fresh-read RMW setting bit 27 at 0x20104098.</source>
       <source id="BLOB_LIBPP_MAC_TXRX_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct prefix offsets 0x08..0xd0 before its first external call at 0xd2. It proves eighteen fresh-read RMW edges. The following hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls are deliberately outside this source entry.</source>

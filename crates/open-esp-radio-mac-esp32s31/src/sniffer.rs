@@ -1,13 +1,13 @@
-//! Ownership boundary for promiscuous-sniffer enable.
+//! Ownership boundary for the open promiscuous receive frontier.
 
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 pub trait MacSnifferHardware {
-    fn enable_promiscuous_sniffer(&mut self);
+    fn configure_open_promiscuous_receive(&mut self);
 }
 
 impl MacSnifferHardware for RadioRegisters {
-    fn enable_promiscuous_sniffer(&mut self) {
-        self.enable_mac_promiscuous_sniffer();
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.configure_open_mac_promiscuous_receive();
     }
 }

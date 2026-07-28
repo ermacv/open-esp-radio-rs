@@ -15,9 +15,6 @@ const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_I2C_CLOCK_SELECTION_0_ADDRESS: usize = 0x2010_f824;
-const PHY_I2C_CLOCK_SELECTION_1_ADDRESS: usize = 0x2010_f828;
-const PHY_I2C_CLOCK_SELECTION_2_ADDRESS: usize = 0x2010_f82c;
 const PHY_FE_TXRX_RESET_ADDRESS: usize = 0x2010_0440;
 const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
 const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
@@ -222,14 +219,6 @@ const fn with_phy_tx_gain_compensation_byte2(value: u32) -> u32 {
 
 const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
     value & 0x00ff_ffff
-}
-
-const fn with_phy_i2c_clock_selection_high(value: u32, selection: u32) -> u32 {
-    (value & !0x0000_07c0) | ((selection << 4) & 0x0000_07c0)
-}
-
-const fn with_phy_i2c_clock_selection_low(value: u32, selection: u32) -> u32 {
-    (value & !0x0000_003f) | ((selection >> 1) & 0x0000_003f)
 }
 
 const fn without_phy_fe_txrx_reset(value: u32) -> u32 {
@@ -538,32 +527,6 @@ pub(crate) unsafe fn configure_phy_rxiq_calibration_mode() {
     control.write_volatile(with_phy_rxiq_calibration_mode(control.read_volatile()));
 }
 
-/// Apply the complete rev0 ROM `phy_i2c_clk_sel` register transform.
-///
-/// The pinned body at `0x2f82_9f1c`, size `0x68`, updates the high field and
-/// then the low field separately in each of three consecutive registers.
-/// Keeping the six writes preserves the observed intermediate hardware
-/// states; this leaf contains no wait, branch, call, or mutable software
-/// state.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_i2c_clock_selection(selection: u32) {
-    unsafe fn configure_register(address: usize, selection: u32) {
-        let register = address as *mut u32;
-        register.write_volatile(with_phy_i2c_clock_selection_high(
-            register.read_volatile(),
-            selection,
-        ));
-        register.write_volatile(with_phy_i2c_clock_selection_low(
-            register.read_volatile(),
-            selection,
-        ));
-    }
-
-    configure_register(PHY_I2C_CLOCK_SELECTION_0_ADDRESS, selection);
-    configure_register(PHY_I2C_CLOCK_SELECTION_1_ADDRESS, selection);
-    configure_register(PHY_I2C_CLOCK_SELECTION_2_ADDRESS, selection);
-}
-
 /// Apply the complete rev0 ROM `phy_fe_txrx_reset` pulse.
 ///
 /// The pinned body at `0x2f82_788c`, size `0x24`, ignores its argument,
@@ -769,7 +732,6 @@ mod tests {
         tx_baseband_gain_index, tx_gain_seed_halfword, with_phy_adc_rate_high,
         with_phy_adc_rate_low, with_phy_fe_txrx_reset, with_phy_front_end_adc_update,
         with_phy_front_end_update_first, with_phy_front_end_update_second,
-        with_phy_i2c_clock_selection_high, with_phy_i2c_clock_selection_low,
         with_phy_pbus_force_test, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
         with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
         with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
@@ -838,17 +800,6 @@ mod tests {
         assert_eq!(with_phy_rxiq_phase(u32::MAX, -63), 0xf07f_ffff);
         assert_eq!(with_phy_rxiq_calibration_mode(0), 0x2000_0000);
         assert_eq!(with_phy_rxiq_calibration_mode(u32::MAX), 0xbfff_ffff);
-    }
-
-    #[test]
-    fn phy_i2c_clock_selection_matches_all_rom_field_transforms() {
-        assert_eq!(with_phy_i2c_clock_selection_high(0, 8), 0x0000_0080);
-        assert_eq!(
-            with_phy_i2c_clock_selection_low(with_phy_i2c_clock_selection_high(0, 8), 8,),
-            0x0000_0084
-        );
-        assert_eq!(with_phy_i2c_clock_selection_high(u32::MAX, 8), 0xffff_f8bf);
-        assert_eq!(with_phy_i2c_clock_selection_low(u32::MAX, 8), 0xffff_ffc4);
     }
 
     #[test]

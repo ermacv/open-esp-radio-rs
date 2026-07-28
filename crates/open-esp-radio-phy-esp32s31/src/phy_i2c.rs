@@ -28,15 +28,17 @@ use crate::phy_xtal_duty::{
     XtalDutyCalibrationAction, XtalDutyCalibrationCompletion, XtalDutyCalibrationOutcome,
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
 };
-use open_esp_radio_hal_esp32s31::radio_registers::phy_i2c_master;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_hal_esp32s31::{analog_i2c, phy_i2c as hal_phy_i2c, RadioRegisters};
 
+#[cfg(test)]
 const PHY_I2C_BUSY: u32 = 1 << 25;
 // ESP32-S31 ROM `phy_chip_i2c_readReg` publishes `0x0400_0000` and
 // `phy_chip_i2c_writeReg` publishes `0x0500_0000`. These command bits differ
 // from the older ESP PHY-I2C layout by one hexadecimal digit.
+#[cfg(test)]
 const PHY_I2C_READ: u32 = 1 << 26;
+#[cfg(test)]
 const PHY_I2C_WRITE: u32 = 1 << 24 | 1 << 26;
 const PHY_I2C_MASTER_COMMAND_COUNT: usize = 45;
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
@@ -155,30 +157,27 @@ pub enum PhyI2cError {
     Busy,
 }
 
-const fn command_register_address(host: u8) -> usize {
-    if host == 0 {
-        phy_i2c_master::HOST_COMMAND_0.address()
-    } else {
-        phy_i2c_master::HOST_COMMAND_1.address()
-    }
-}
-
+#[cfg(test)]
 const fn with_phy_i2c_host_config(value: u32) -> u32 {
     (value & 0xfffc_000f) | 0x0003_fa00
 }
 
+#[cfg(test)]
 const fn encode_read(address: PhyI2cAddress) -> u32 {
     PHY_I2C_READ | ((address.register as u32) << 8) | address.block as u32
 }
 
+#[cfg(test)]
 const fn encode_write(address: PhyI2cAddress, value: u8) -> u32 {
     PHY_I2C_WRITE | ((value as u32) << 16) | ((address.register as u32) << 8) | address.block as u32
 }
 
+#[cfg(test)]
 const fn command_is_busy(command: u32) -> bool {
     command & PHY_I2C_BUSY != 0
 }
 
+#[cfg(test)]
 const fn read_result(command: u32) -> u8 {
     (command >> 16) as u8
 }
@@ -242,6 +241,7 @@ const PHY_I2C_MASTER_DYNAMIC_INDICES: [usize; 19] = [
     20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
 ];
 
+#[cfg(test)]
 fn master_dynamic_values(parameter: &[u8; PHY_PARAM_LEN]) -> [u8; 19] {
     master_dynamic_values_from_snapshot(PhyRfInitParameterSnapshot::new(
         FilterDcapParameters::from_parameter_image(parameter),
@@ -277,6 +277,7 @@ fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) ->
     ]
 }
 
+#[cfg(test)]
 fn master_command(index: usize, parameter: &[u8; PHY_PARAM_LEN]) -> u32 {
     let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
     let dynamic_values = master_dynamic_values(parameter);
@@ -292,6 +293,7 @@ fn master_command(index: usize, parameter: &[u8; PHY_PARAM_LEN]) -> u32 {
     encode_master_command(block, register, value)
 }
 
+#[cfg(test)]
 fn master_command_from_snapshot(index: usize, parameter: PhyRfInitParameterSnapshot) -> u32 {
     let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
     let dynamic_values = master_dynamic_values_from_snapshot(parameter);
@@ -355,11 +357,11 @@ pub fn configure_i2c_master_command_memory(
 /// [`try_finish_read`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub fn try_start_read(
-    registers: &mut RadioRegisters,
+    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
     hal_phy_i2c::try_start_read(
-        registers,
+        platform,
         hal_host(address.host()),
         address.block(),
         address.register(),
@@ -379,10 +381,10 @@ pub fn try_start_read(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub fn try_finish_read(
-    registers: &mut RadioRegisters,
+    platform: &impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<u8, PhyI2cError> {
-    hal_phy_i2c::try_finish_read(registers, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
+    hal_phy_i2c::try_finish_read(platform, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Publish one complete-register PHY-I2C write after observing the
@@ -393,12 +395,12 @@ pub fn try_finish_read(
 /// [`try_finish_write`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub fn try_start_write(
-    registers: &mut RadioRegisters,
+    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
     value: u8,
 ) -> Result<(), PhyI2cError> {
     hal_phy_i2c::try_start_write(
-        registers,
+        platform,
         hal_host(address.host()),
         address.block(),
         address.register(),
@@ -417,11 +419,10 @@ pub fn try_start_write(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub fn try_finish_write(
-    registers: &mut RadioRegisters,
+    platform: &impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    hal_phy_i2c::try_finish_write(registers, hal_host(address.host()))
-        .map_err(|_| PhyI2cError::Busy)
+    hal_phy_i2c::try_finish_write(platform, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1042,19 +1043,19 @@ impl MaskedI2cWriteBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target(
+    pub fn start_target<P: hal_phy_i2c::PhyI2cMasterControl>(
         &mut self,
-        registers: &mut RadioRegisters,
+        platform: &mut P,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target(registers)
+        self.transaction.start_target(platform)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge(
+    pub fn observe_target_edge<P: hal_phy_i2c::PhyI2cMasterControl>(
         &mut self,
-        registers: &mut RadioRegisters,
+        platform: &P,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge(registers)
+        self.transaction.observe_target_edge(platform)
     }
 
     pub fn into_completion(self) -> Result<MaskedI2cWriteCompletion, MaskedI2cWriteBindingError> {
@@ -2846,14 +2847,13 @@ impl Default for RcCalibrationTransition {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_is_busy, command_register_address, encode_read, encode_write, master_command,
-        master_command_from_snapshot, read_result, with_phy_i2c_host_config, AdcRateAction,
-        AdcRateCompletion, AdcRateTransition, AdcRateTransitionError, BiasRegAction,
-        BiasRegCompletion, BiasRegTransition, BiasRegTransitionError, FilterDcapAction,
-        FilterDcapCompletion, FilterDcapParameters, FilterDcapTransition,
-        FilterDcapTransitionError, I2cBbpllAction, I2cBbpllCompletion, I2cBbpllOutcome,
-        I2cBbpllTransition, I2cBbpllTransitionError, I2cInit1Action, I2cInit1Completion,
-        I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
+        command_is_busy, encode_read, encode_write, master_command, master_command_from_snapshot,
+        read_result, with_phy_i2c_host_config, AdcRateAction, AdcRateCompletion, AdcRateTransition,
+        AdcRateTransitionError, BiasRegAction, BiasRegCompletion, BiasRegTransition,
+        BiasRegTransitionError, FilterDcapAction, FilterDcapCompletion, FilterDcapParameters,
+        FilterDcapTransition, FilterDcapTransitionError, I2cBbpllAction, I2cBbpllCompletion,
+        I2cBbpllOutcome, I2cBbpllTransition, I2cBbpllTransitionError, I2cInit1Action,
+        I2cInit1Completion, I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
         MaskedI2cWriteCompletion, MaskedI2cWriteTransition, MaskedI2cWriteTransitionError,
         OpenI2cXpdAction, OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition,
         OpenI2cXpdTransitionError, PhyI2cAddress, PhyRfInitParameterSnapshot,
@@ -3385,10 +3385,6 @@ mod tests {
     #[test]
     fn command_words_match_complete_rom_leaf_encoding() {
         let address = PhyI2cAddress::new(0x6b, 0x14).unwrap();
-        assert_eq!(
-            command_register_address(address.host()),
-            super::phy_i2c_master::HOST_COMMAND_1.address()
-        );
         assert_eq!(encode_read(address), 0x0400_146b);
         assert_eq!(encode_write(address, 0xa5), 0x05a5_146b);
         assert!(!command_is_busy(0x05a5_146b));

@@ -6,13 +6,13 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.3</version>
+  <version>2.4</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
     HP_SYS_CLKRST, MODEM_SYSCON, MODEM_LPCON, PMU, LP_AON_CLKRST and
-    LP_PERICLKRST and LP_TSENS are deliberately absent: the active driver owns
-    and accesses them through esp-hal and the official ESP32-S31 PAC. These are independently decoded
+    LP_PERICLKRST, LP_TSENS and I2C_ANA_MST are deliberately absent: the active
+    driver owns and accesses them through esp-hal and the official ESP32-S31 PAC. These are independently decoded
     MMIO windows, not one monolithic radio peripheral. Covered functions include PHY-PBus,
     PHY-I2C, IQ estimation, RX-DCO, cold deadlines, temperature sensing,
     Wi-Fi MAC RX-DMA and receive BlockAck. Unknown fields are omitted; OPAQUE
@@ -403,93 +403,6 @@
             <field><name>RESULT_WINDOW_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field>
             <field><name>RESULT_WINDOW_1_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>9</bitWidth></field>
             <field><name>RESULT_WINDOW_2_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>9</bitWidth></field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-
-    <peripheral>
-      <name>PHY_I2C_MASTER</name>
-      <description>
-        SOURCE[ROM_REV0_PHY_I2C,BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-mixed-semantics].
-        PHY analog-register host commands, master setup and clock-selection words
-        recovered from complete ROM leaves and S31 libphy callbacks.
-      </description>
-      <baseAddress>0x2010f800</baseAddress>
-      <registers>
-        <register>
-          <name>HOST_COMMAND_0</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout]. Host-0 PHY-I2C command and completion word.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>DATA_OR_RESULT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>HOST_COMMAND_1</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-command-layout]. Host-1 PHY-I2C command and completion word.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>DATA_OR_RESULT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>MASTER_CONTROL</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-mixed-semantics]. PHY-I2C master registration and BBPLL calibration controls.</description>
-          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>BBPLL_CAL_MODE_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>REGISTER_ENABLE</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>REGISTER_MODE</name><bitOffset>9</bitOffset><bitWidth>2</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>READ_MASK</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-from-callback]. Per-block read-mask word selected by the S31 libphy callback.</description>
-          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BLOCK_READ_MASK</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
-        </register>
-        <register>
-          <name>HOST_CONFIG</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. S31 host-selection callback replaces bits 17:4 with 0x3fa0; the internal subfield meanings are unknown.</description>
-          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>HOST_MAP_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>14</bitWidth></field></fields>
-        </register>
-        <register>
-          <name>CLOCK_SELECTION_0</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
-          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>CLOCK_SELECTION_1</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
-          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>CLOCK_SELECTION_2</name>
-          <description>SOURCE[ROM_REV0_PHY_I2C]; CONFIDENCE[instruction-exact-semantics-unknown]. One of three identically transformed PHY-I2C clock-selection words.</description>
-          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>SELECTION_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>SELECTION_HIGH_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
           </fields>
         </register>
       </registers>

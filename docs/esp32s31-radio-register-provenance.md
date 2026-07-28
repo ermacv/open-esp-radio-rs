@@ -180,15 +180,16 @@ pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`, proves a
 fresh-read set/clear pulse on bit 20 of `0x703c`; the SVD v0.7 adds that field
 without claiming an unevidenced electrical meaning. Complete rev0 ROM
 `phy_bbpll_cal` at `0x2f827dbc`, size `0x1c`, proves the two encodings in bits
-3:2 of shared `PHY_I2C_MASTER.MASTER_CONTROL` at `0xf818`. That register
+3:2 of official `I2C_ANA_MST.ANA_CONF0` at `0xf818`. That register
 already owns the independently proven master-register enable and mode fields,
 so no second alias is introduced.
 
-The `phy_agc` and `phy_i2c` HAL methods preserve the two DC-memory reads and
-the single BBPLL RMW. Cold initialization, register initialization, and
-channel changes all pass their existing `RadioRegisters` borrow. The raw C
-ABIs, address constants, and duplicate mask helpers are deleted; the
-source-only audit rejects raw `0x703c` and `0xf818`.
+The `phy_agc` HAL and platform `PhyI2cMasterControl` methods preserve the two
+DC-memory reads and the single BBPLL RMW. Cold initialization, register
+initialization, and channel changes borrow the platform-owned official
+`I2C_ANA_MST` token for the latter operation. The raw C ABIs, address
+constants, and duplicate mask helpers are deleted; the source-only audit
+rejects raw `0x703c` and `0xf818`.
 
 ## Frequency and channel control
 
@@ -268,9 +269,10 @@ words at `0x20100894..0x201008a4`. Each visible nine-bit window is represented
 without assigning an analog meaning. Only selector 1's low window has a
 qualified consumer identity: the RX-DCO calibration path.
 
-The PHY-I2C PAC records both host command words, the master control fields,
-read-mask callback, opaque 14-bit host map, three clock-selection words, and
-all 45 command-memory entries. Command layout is instruction-exact:
+The official ESP32-S31 PAC records both host command words, the master control
+fields, read-mask callback, opaque 14-bit host map and three clock-selection
+words. The custom radio PAC records the 45 command-memory entries. Command
+layout is instruction-exact:
 block/register/data occupy bytes 0/1/2, followed by write, busy and
 start/reset bits 24/25/26.
 
@@ -279,15 +281,16 @@ The corresponding HAL is split by hardware ownership:
 - `analog_i2c` owns PMU power/reset sequencing;
 - `pbus` owns command publication, completion sampling, packed reads and the
   RX/TX clock pairs;
-- `phy_i2c` owns host commands, the six-write clock-selection transform,
-  master setup and bounded command RAM.
+- platform `PhyI2cMasterControl` owns official `I2C_ANA_MST` host commands,
+  the six-write clock-selection transform and master setup;
+- `phy_i2c` retains only bounded custom PHY-I2C command RAM.
 
 Every public operation documents both its S31 register-layout source and the
-complete ROM/blob body used for operation order. The cold PHY binding accepts
-`&mut RadioRegisters` borrowed from `Radio<P, Powered>` and uses these HAL
-methods for the newly recovered regions. Reusable RFPLL, RXIQ/TXIQ, DCO,
-gain, temperature, saturation, power and power-detector target bindings use
-the same borrow; no raw-owner PHY-I2C or PBus force-test leaf remains.
+complete ROM/blob body used for operation order. The cold PHY binding borrows
+the platform capability for analog-I2C and `&mut RadioRegisters` only for
+custom radio blocks. Reusable RFPLL, RXIQ/TXIQ, DCO, gain, temperature,
+saturation, power and power-detector target bindings use the corresponding
+explicit capability; no raw-owner PHY-I2C or PBus force-test leaf remains.
 
 ## Baseband initialization and power-detector PAC
 
@@ -342,6 +345,17 @@ official `LP_TSENS.CTRL` and `LP_TSENS.CLK_CONF`. The official PAC patch
 records the complete blob/ROM sources for the three read-path edges, sensor
 power and low-byte code sample. Both cold initialization and reusable
 temperature sampling now require the platform-owned `LP_TSENS` singleton.
+
+SVD v2.4 removes `PHY_I2C_MASTER` at `0x2010_f800..0x2010_f82f`. This aperture
+is exactly the official `I2C_ANA_MST` peripheral. The ESP32-S31 PAC patch
+records the pinned rev0 ROM and `libphy.a[phy_i2c.o]` sources for host command
+publication, bit-25 busy sampling, bit-26 start/reset, read-mask programming,
+master mode/enable, BBPLL calibration and the three clock-selection words.
+The platform adapter owns the official singleton and implements only semantic
+operations while preserving each separately observed fresh-read/RMW edge.
+The adjacent undocumented command memory at `0x2010_fc00` remains in the
+custom PAC as `PHY_I2C_COMMAND_RAM`; it is not part of the official
+`I2C_ANA_MST` address block.
 
 Public Espressif sources do not currently define these S31 internal PHY
 fields. The public
@@ -460,8 +474,8 @@ recovered PAC and now have their live consumers moved behind safe HAL methods:
 
 - `PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_UNKNOWN` owns bits 11:8 used
   by the two force and two release phases;
-- `PHY_I2C_MASTER.HOST_COMMAND_0/1` own the reset command at bit 26 and the
-  sampled busy state at bit 25;
+- official `I2C_ANA_MST.I2C0_CTRL/I2C1_CTRL` own the reset command at bit 26
+  and the sampled busy state at bit 25;
 - official `MODEM_LPCON.TICK_CONF.MODEM_PWR_TICK_TARGET` owns the six-bit
   fixed-crystal tick target; the open driver exposes only the semantic
   platform operation.

@@ -113,34 +113,35 @@ access are delegated entirely to the official `esp-hal` PAC.
 Within those windows the recovered SVD currently covers:
 
 - Wi-Fi MAC and its integrated RX DMA/BlockAck register windows;
-- PHY baseband, AGC, PBus, PHY-I2C and PHY table memories;
+- PHY baseband, AGC, PBus, PHY-I2C command RAM and PHY table memories;
 - `MODEM_SYSCON` clock/reset and PHY Wi-Fi/baseband control now use the same
   official-PAC ownership split;
-- PHY temperature sensor and its system clock/control register.
+- chip-level PHY analog-I2C, temperature and system clock/control peripherals
+  are absent and delegated to the official PAC.
 
-This is not the desired final ownership boundary. The ESP32-S31 PAC used by
-the `esp32s31-async-platform` HAL branch already describes these complete
-chip-level peripherals:
+This is the current ownership boundary. The ESP32-S31 PAC used by the
+`esp32s31-async-platform` HAL branch describes these complete chip-level
+peripherals:
 
 | Recovered identity | Official PAC identity | Base | Migration |
 | --- | --- | --- | --- |
 | `MODEM_SYSCON` | `esp32s31::MODEM_SYSCON` | `0x2010_9c00` | removed |
 | `MODEM_LPCON` | `esp32s31::MODEM_LPCON` | `0x2010_f000` | removed |
-| `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` | pending |
+| `PHY_I2C_MASTER` | `esp32s31::I2C_ANA_MST` | `0x2010_f800` | removed |
 | `HP_SYS_CLKRST` | `esp32s31::HP_SYS_CLKRST` | `0x2058_7000` | removed |
 | `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | removed |
 | `PMU` | `esp32s31::PMU` | `0x2070_4000` | removed |
 | `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | removed |
 | `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | removed |
 
-Those identities must move behind a platform capability borrowed from the
-official `esp-hal`/PAC owner. They must then be removed from the recovered SVD;
-otherwise two Rust singleton types claim the same physical MMIO. The custom
-PAC remains necessary for the undocumented PHY/baseband aggregates, PHY
-command RAM/deadline blocks and Wi-Fi MAC/RX-DMA registers that the official
-PAC does not model. Until this split is complete, the private
-`RadioRegisters` singleton is a migration serialization mechanism, not proof
-of exclusive chip-wide ownership.
+Those identities are now behind platform capabilities borrowed from the
+official `esp-hal`/PAC owner and are absent from the recovered SVD, so two
+Rust singleton types no longer claim the same physical MMIO. The custom PAC
+remains necessary for the undocumented PHY/baseband aggregates, PHY command
+RAM/deadline blocks and Wi-Fi MAC/RX-DMA registers that the official PAC does
+not model. The private `RadioRegisters` singleton remains a serialization
+mechanism for those custom radio blocks, not proof of exclusive chip-wide
+ownership.
 
 There is no raw access to the chip's general AXI-GDMA peripheral in the live
 driver. Wi-Fi descriptors are owned SRAM objects shared with the Wi-Fi MAC

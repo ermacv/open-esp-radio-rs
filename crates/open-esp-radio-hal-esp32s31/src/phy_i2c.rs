@@ -1,11 +1,39 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
-#[cfg(test)]
-use open_esp_radio_pac_esp32s31::phy_i2c::phy_i2c_bbpll_calibration_image;
-use open_esp_radio_pac_esp32s31::phy_i2c::phy_i2c_master_busy_in_image;
-pub use open_esp_radio_pac_esp32s31::phy_i2c::PhyI2cHost;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
+
+/// One of the two analog-register command hosts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cHost {
+    Host0,
+    Host1,
+}
+
+/// Official `I2C_ANA_MST` capability needed by the open PHY.
+///
+/// The integration layer owns the chip-level singleton. The recovered radio
+/// PAC deliberately does not duplicate this peripheral.
+pub trait PhyI2cMasterControl {
+    fn configure_phy_i2c_host_map(&mut self);
+    fn pulse_phy_i2c_master_reset(&mut self, host: PhyI2cHost);
+    fn phy_i2c_master_is_busy(&self, host: PhyI2cHost) -> bool;
+    fn publish_phy_i2c_read_mask(&mut self, read_mask: u16);
+    fn publish_phy_i2c_command(
+        &mut self,
+        host: PhyI2cHost,
+        block: u8,
+        register: u8,
+        value: u8,
+        write: bool,
+    );
+    fn sample_phy_i2c_result(&self, host: PhyI2cHost) -> u8;
+    fn set_phy_i2c_clock_selection_high(&mut self, index: usize, value: u8) -> bool;
+    fn set_phy_i2c_clock_selection_low(&mut self, index: usize, value: u8) -> bool;
+    fn set_phy_i2c_register_mode(&mut self, mode: u8) -> bool;
+    fn enable_phy_i2c_register_mode(&mut self);
+    fn set_phy_i2c_bbpll_calibration(&mut self, enabled: bool);
+}
 
 /// A finite PHY-I2C operation could not be published or observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,7 +49,7 @@ pub enum PhyI2cError {
 /// samples bit 25 of both host words. Keeping this transform in the safe HAL
 /// lets the outer state machine carry only a semantic `busy` observation.
 pub fn master_reset_busy(command: u32) -> bool {
-    phy_i2c_master_busy_in_image(command)
+    command & (1 << 25) != 0
 }
 
 /// Publish one full-word PHY-I2C master reset command.
@@ -29,15 +57,13 @@ pub fn master_reset_busy(command: u32) -> bool {
 /// The complete ROM parent writes only bit 26 to a busy host and then polls
 /// bit 25. This finite method publishes that one edge; retry and timeout
 /// ownership remain in the Rust transition.
-#[cfg(target_arch = "riscv32")]
-pub fn pulse_master_reset(registers: &mut RadioRegisters, host: PhyI2cHost) {
-    registers.pulse_phy_i2c_master_reset(host);
+pub fn pulse_master_reset(platform: &mut impl PhyI2cMasterControl, host: PhyI2cHost) {
+    platform.pulse_phy_i2c_master_reset(host);
 }
 
 /// Sample one PHY-I2C master reset busy edge without retrying.
-#[cfg(target_arch = "riscv32")]
-pub fn sample_master_reset_busy(registers: &mut RadioRegisters, host: PhyI2cHost) -> bool {
-    registers.phy_i2c_master_is_busy(host)
+pub fn sample_master_reset_busy(platform: &impl PhyI2cMasterControl, host: PhyI2cHost) -> bool {
+    platform.phy_i2c_master_is_busy(host)
 }
 
 /// Publish one PHY-I2C read after a single fail-fast busy observation.
@@ -46,20 +72,19 @@ pub fn sample_master_reset_busy(registers: &mut RadioRegisters, host: PhyI2cHost
 /// combined with the complete S31 `libphy.a[phy_i2c.o]` host-config and
 /// read-mask callbacks. Rust additionally rejects a busy host before
 /// publication; it never reproduces the ROM polling loop.
-#[cfg(target_arch = "riscv32")]
 pub fn try_start_read(
-    registers: &mut RadioRegisters,
+    platform: &mut impl PhyI2cMasterControl,
     host: PhyI2cHost,
     block: u8,
     register: u8,
     read_mask: u16,
 ) -> Result<(), PhyI2cError> {
-    registers.configure_phy_i2c_host_map();
-    if registers.phy_i2c_master_is_busy(host) {
+    platform.configure_phy_i2c_host_map();
+    if platform.phy_i2c_master_is_busy(host) {
         return Err(PhyI2cError::Busy);
     }
-    registers.publish_phy_i2c_read_mask(read_mask);
-    registers.publish_phy_i2c_command(host, block, register, 0, false);
+    platform.publish_phy_i2c_read_mask(read_mask);
+    platform.publish_phy_i2c_command(host, block, register, 0, false);
     Ok(())
 }
 
@@ -69,15 +94,14 @@ pub fn try_start_read(
 /// `phy_chip_i2c_readReg_org`. A set busy bit returns `Busy` to the external
 /// async owner instead of spinning; otherwise bits 23:16 are the exact byte
 /// result.
-#[cfg(target_arch = "riscv32")]
 pub fn try_finish_read(
-    registers: &mut RadioRegisters,
+    platform: &impl PhyI2cMasterControl,
     host: PhyI2cHost,
 ) -> Result<u8, PhyI2cError> {
-    if registers.phy_i2c_master_is_busy(host) {
+    if platform.phy_i2c_master_is_busy(host) {
         Err(PhyI2cError::Busy)
     } else {
-        Ok(registers.sample_phy_i2c_result(host))
+        Ok(platform.sample_phy_i2c_result(host))
     }
 }
 
@@ -86,19 +110,18 @@ pub fn try_finish_read(
 /// Basis: complete rev0 ROM `phy_chip_i2c_writeReg` at `0x2f82a30e` and the
 /// complete S31 libphy host-config callback. Command bytes and bits 24/26 are
 /// instruction-exact; completion remains externally driven.
-#[cfg(target_arch = "riscv32")]
 pub fn try_start_write(
-    registers: &mut RadioRegisters,
+    platform: &mut impl PhyI2cMasterControl,
     host: PhyI2cHost,
     block: u8,
     register: u8,
     value: u8,
 ) -> Result<(), PhyI2cError> {
-    registers.configure_phy_i2c_host_map();
-    if registers.phy_i2c_master_is_busy(host) {
+    platform.configure_phy_i2c_host_map();
+    if platform.phy_i2c_master_is_busy(host) {
         return Err(PhyI2cError::Busy);
     }
-    registers.publish_phy_i2c_command(host, block, register, value, true);
+    platform.publish_phy_i2c_command(host, block, register, value, true);
     Ok(())
 }
 
@@ -106,12 +129,11 @@ pub fn try_start_write(
 ///
 /// Basis: the busy-test suffix of complete rev0 ROM
 /// `phy_chip_i2c_writeReg`. This method deliberately performs no retry.
-#[cfg(target_arch = "riscv32")]
 pub fn try_finish_write(
-    registers: &mut RadioRegisters,
+    platform: &impl PhyI2cMasterControl,
     host: PhyI2cHost,
 ) -> Result<(), PhyI2cError> {
-    if registers.phy_i2c_master_is_busy(host) {
+    if platform.phy_i2c_master_is_busy(host) {
         Err(PhyI2cError::Busy)
     } else {
         Ok(())
@@ -124,13 +146,12 @@ pub fn try_finish_write(
 /// Each of three registers receives a high-field update followed by a fresh
 /// read and low-field update, preserving all instruction-evidenced
 /// intermediate states.
-#[cfg(target_arch = "riscv32")]
-pub fn configure_clock_selection(registers: &mut RadioRegisters, selection: u32) {
+pub fn configure_clock_selection(platform: &mut impl PhyI2cMasterControl, selection: u32) {
     let high_value = ((selection >> 2) & 0x1f) as u8;
     let low_value = ((selection >> 1) & 0x3f) as u8;
     for index in 0..3 {
-        let high_written = registers.set_phy_i2c_clock_selection_high(index, high_value);
-        let low_written = registers.set_phy_i2c_clock_selection_low(index, low_value);
+        let high_written = platform.set_phy_i2c_clock_selection_high(index, high_value);
+        let low_written = platform.set_phy_i2c_clock_selection_low(index, low_value);
         debug_assert!(high_written && low_written);
     }
 }
@@ -140,15 +161,14 @@ pub fn configure_clock_selection(registers: &mut RadioRegisters, selection: u32)
 /// Basis: complete rev0 ROM `phy_i2cmst_reg_init` at `0x2f8276c4`, size
 /// `0x22`. It writes `MASTER_CONTROL.REGISTER_MODE = 2`, then sets
 /// `REGISTER_ENABLE`, using a fresh read for each update.
-#[cfg(target_arch = "riscv32")]
-pub fn configure_master_registers(registers: &mut RadioRegisters) {
-    debug_assert!(registers.set_phy_i2c_register_mode(2));
-    registers.enable_phy_i2c_register_mode();
+pub fn configure_master_registers(platform: &mut impl PhyI2cMasterControl) {
+    debug_assert!(platform.set_phy_i2c_register_mode(2));
+    platform.enable_phy_i2c_register_mode();
 }
 
 #[cfg(test)]
 fn bbpll_calibration_bits(enabled: bool) -> u32 {
-    phy_i2c_bbpll_calibration_image(enabled)
+    (if enabled { 2 } else { 1 }) << 2
 }
 
 /// Select the complete rev0 ROM `phy_bbpll_cal` mode.
@@ -157,9 +177,8 @@ fn bbpll_calibration_bits(enabled: bool) -> u32 {
 /// replacement of `MASTER_CONTROL` bits 3:2. Zero selects encoded mode one;
 /// every nonzero input selects encoded mode two. The boolean API makes that
 /// two-state contract explicit while preserving all unrelated shared fields.
-#[cfg(target_arch = "riscv32")]
-pub fn configure_bbpll_calibration(registers: &mut RadioRegisters, enabled: bool) {
-    registers.set_phy_i2c_bbpll_calibration(enabled);
+pub fn configure_bbpll_calibration(platform: &mut impl PhyI2cMasterControl, enabled: bool) {
+    platform.set_phy_i2c_bbpll_calibration(enabled);
 }
 
 /// Write one of the 45 recovered PHY-I2C command-RAM words.

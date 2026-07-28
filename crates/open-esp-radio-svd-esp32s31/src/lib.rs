@@ -8026,7 +8026,7 @@ pub mod wifi_mac_bssid_policy {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
 pub type WifiMacInterfaceAddress =
     crate::Periph<wifi_mac_interface_address::RegisterBlock, 0x2010_405c>;
 impl core::fmt::Debug for WifiMacInterfaceAddress {
@@ -8034,7 +8034,7 @@ impl core::fmt::Debug for WifiMacInterfaceAddress {
         f.debug_struct("WifiMacInterfaceAddress").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
 pub mod wifi_mac_interface_address {
     #[repr(C)]
     #[doc = "Register block"]
@@ -8044,7 +8044,7 @@ pub mod wifi_mac_interface_address {
         address_high: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
         #[inline(always)]
         pub const fn address_low(&self, n: usize) -> &AddressLow {
             #[allow(clippy::no_effect)]
@@ -8052,13 +8052,13 @@ pub mod wifi_mac_interface_address {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
         #[inline(always)]
         pub fn address_low_iter(&self) -> impl Iterator<Item = &AddressLow> {
             (0..4)
                 .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
         }
-        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
         #[inline(always)]
         pub const fn address_high(&self, n: usize) -> &AddressHigh {
             #[allow(clippy::no_effect)]
@@ -8072,7 +8072,7 @@ pub mod wifi_mac_interface_address {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
         #[inline(always)]
         pub fn address_high_iter(&self) -> impl Iterator<Item = &AddressHigh> {
             (0..4).map(move |n| unsafe {
@@ -8084,10 +8084,10 @@ pub mod wifi_mac_interface_address {
             })
         }
     }
-    #[doc = "ADDRESS_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_low`] module"]
+    #[doc = "ADDRESS_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_low`] module"]
     #[doc(alias = "ADDRESS_LOW")]
     pub type AddressLow = crate::Reg<address_low::AddressLowSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
     pub mod address_low {
         #[doc = "Register `ADDRESS_LOW%s` reader"]
         pub type R = crate::R<AddressLowSpec>;
@@ -8111,7 +8111,7 @@ pub mod wifi_mac_interface_address {
                 Bytes0_3W::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AddressLowSpec;
         impl crate::RegisterSpec for AddressLowSpec {
             type Ux = u32;
@@ -8123,10 +8123,10 @@ pub mod wifi_mac_interface_address {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ADDRESS_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
+    #[doc = "ADDRESS_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
     #[doc(alias = "ADDRESS_HIGH")]
     pub type AddressHigh = crate::Reg<address_high::AddressHighSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
     pub mod address_high {
         #[doc = "Register `ADDRESS_HIGH%s` reader"]
         pub type R = crate::R<AddressHighSpec>;
@@ -8136,9 +8136,9 @@ pub mod wifi_mac_interface_address {
         pub type Bytes4_5R = crate::FieldReader<u16>;
         #[doc = "Field `BYTES_4_5` writer - "]
         pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
-        #[doc = "Field `RX_POLICY_ENABLE` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        #[doc = "Field `RX_POLICY_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
         pub type RxPolicyEnableR = crate::BitReader;
-        #[doc = "Field `RX_POLICY_ENABLE` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        #[doc = "Field `RX_POLICY_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
         pub type RxPolicyEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `POLICY_HIGH_UNKNOWN` reader - "]
         pub type PolicyHighUnknownR = crate::FieldReader<u16>;
@@ -8150,7 +8150,7 @@ pub mod wifi_mac_interface_address {
             pub fn bytes_4_5(&self) -> Bytes4_5R {
                 Bytes4_5R::new((self.bits & 0xffff) as u16)
             }
-            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
             #[inline(always)]
             pub fn rx_policy_enable(&self) -> RxPolicyEnableR {
                 RxPolicyEnableR::new(((self.bits >> 16) & 1) != 0)
@@ -8167,7 +8167,7 @@ pub mod wifi_mac_interface_address {
             pub fn bytes_4_5(&mut self) -> Bytes4_5W<'_, AddressHighSpec> {
                 Bytes4_5W::new(self, 0)
             }
-            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
             #[inline(always)]
             pub fn rx_policy_enable(&mut self) -> RxPolicyEnableW<'_, AddressHighSpec> {
                 RxPolicyEnableW::new(self, 16)
@@ -8178,7 +8178,7 @@ pub mod wifi_mac_interface_address {
                 PolicyHighUnknownW::new(self, 17)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AddressHighSpec;
         impl crate::RegisterSpec for AddressHighSpec {
             type Ux = u32;

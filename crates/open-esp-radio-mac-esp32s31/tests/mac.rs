@@ -8,7 +8,7 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        StaLinkRxPolicyHardware,
+        MacInterfaceAddressHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -205,6 +205,29 @@ impl StaLinkRxPolicyHardware for MockMmio {
         modify(filter, 1 << 8, 0);
         modify(filter, 1 << 1, 0);
         Mmio::fence(self);
+    }
+}
+
+impl MacInterfaceAddressHardware for MockMmio {
+    fn program_sta_ap_addresses(
+        &mut self,
+        station_address: [u8; 6],
+        access_point_address: [u8; 6],
+    ) {
+        for (interface, address) in [station_address, access_point_address]
+            .into_iter()
+            .enumerate()
+        {
+            let low = mac_init::INTERFACE_ADDRESS_LOW[interface];
+            let high = mac_init::INTERFACE_ADDRESS_HIGH[interface];
+            self.write32(
+                low,
+                u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
+            );
+            self.write32(high, u32::from(address[4]) | (u32::from(address[5]) << 8));
+            let value = self.read32(high);
+            self.write32(high, value | (1 << 16));
+        }
     }
 }
 
@@ -440,6 +463,19 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[1]),
         Some(&0x0001_eedd)
     );
+    assert!(mmio.operations().windows(8).any(|operations| {
+        operations
+            == [
+                Operation::Write(mac_init::INTERFACE_ADDRESS_LOW[0], 0x3322_1102),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0000_5544),
+                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[0]),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0001_5544),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_LOW[1], 0xccbb_aa02),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[1], 0x0000_eedd),
+                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[1]),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[1], 0x0001_eedd),
+            ]
+    }));
     assert_eq!(mmio.words.get(&mac_init::CONTROL), Some(&0));
     assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));

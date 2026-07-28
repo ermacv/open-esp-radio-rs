@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.2</version>
+  <version>3.3</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1502,17 +1502,17 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_INTERFACE_ADDRESS</name>
-      <description>SOURCE[BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-hil-qualified]. Four interface-address pairs consumed by MAC receive filtering.</description>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-hil-qualified]. Four interface-address pairs consumed by MAC receive filtering.</description>
       <baseAddress>0x2010405c</baseAddress>
       <registers>
-        <register><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
         <register>
           <name>ADDRESS_HIGH%s</name>
-          <description>SOURCE[BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-semantics-partial]. Interface MAC bytes 4..5 plus receive-policy enable bit 16.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-semantics-partial]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <fields>
             <field><name>BYTES_4_5</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
-            <field><name>RX_POLICY_ENABLE</name><description>SOURCE[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY]; CONFIDENCE[instruction-exact-mode-dependent]. Set by the reachable associated-STA policy branch.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RX_POLICY_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY]; CONFIDENCE[instruction-exact-mode-dependent]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>POLICY_HIGH_UNKNOWN</name><bitOffset>17</bitOffset><bitWidth>15</bitWidth></field>
           </fields>
         </register>
@@ -1983,6 +1983,7 @@
       <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>

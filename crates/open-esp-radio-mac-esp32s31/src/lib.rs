@@ -12,6 +12,7 @@ extern crate std;
 pub mod crypto;
 pub mod descriptor;
 pub mod init;
+mod interface_address;
 pub mod irq;
 pub mod rate_control;
 pub mod rate_rx;

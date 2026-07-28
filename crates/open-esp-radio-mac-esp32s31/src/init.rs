@@ -10,8 +10,9 @@ use open_esp_radio_pac_esp32s31::{
     Register32,
 };
 
-use crate::registers::Mmio;
+pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
+use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
 
 const MAC_INIT_REQUEST: u32 = 1 << 1;
 const MAC_INIT_READY: u32 = 1;
@@ -45,17 +46,6 @@ pub struct MacColdStartOutcome {
 fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
     let current = mmio.read32(register);
     mmio.write32(register, (current & !mask) | (value & mask));
-}
-
-fn program_interface_address<M: Mmio>(mmio: &mut M, interface: usize, address: [u8; 6]) {
-    mmio.write32(
-        registers::INTERFACE_ADDRESS_LOW[interface],
-        u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
-    );
-    mmio.write32(
-        registers::INTERFACE_ADDRESS_HIGH[interface],
-        u32::from(address[4]) | (u32::from(address[5]) << 8) | (1 << 16),
-    );
 }
 
 /// Direct register portion of `hal_init_bf` and `hal_he_init`.
@@ -154,7 +144,7 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 ///
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
-pub fn initialize_promiscuous_receive<M: Mmio, P: MacClockControl>(
+pub fn initialize_promiscuous_receive<M: Mmio + MacInterfaceAddressHardware, P: MacClockControl>(
     platform: &mut P,
     mmio: &mut M,
     handshake_sample_limit: u32,
@@ -322,8 +312,7 @@ pub fn initialize_promiscuous_receive<M: Mmio, P: MacClockControl>(
     // `wifi_set_rx_policy(0)` publishes both valid interface addresses after
     // `hal_init`; the address-valid bits are part of the S31 RX start gate even
     // when the sniffer subsequently disables address filtering.
-    program_interface_address(mmio, 0, station_address);
-    program_interface_address(mmio, 1, access_point_address);
+    program_cold_receive_addresses(mmio, station_address, access_point_address);
 
     // Promiscuous mode clears the recovered class-reject bits and enables all
     // miscellaneous packet classes. A target oracle shows that the queue

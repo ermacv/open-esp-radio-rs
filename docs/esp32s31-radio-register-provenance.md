@@ -831,6 +831,14 @@ suffixes where the hardware meaning is incomplete. Connected open STA
 scan/authentication/WPA2/DHCP HIL qualifies queue zero; no claim is made that
 all other queue/interface policy combinations have been exercised.
 
+Interface-address publication has independent instruction-exact evidence in
+the complete pinned `libpp.a[hal_mac.o]::hal_mac_set_addr` leaf. It proves a
+four-entry, `0x8`-byte stride and three ordered operations per entry: a full
+low-address store, a full high-address store containing bytes 4..5, then a
+fresh-read RMW setting bit 16. The earlier Rust cold path folded the last two
+operations into one value-equivalent write; SVD v3.3 and the generated PAC now
+preserve the complete leaf timing exactly.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

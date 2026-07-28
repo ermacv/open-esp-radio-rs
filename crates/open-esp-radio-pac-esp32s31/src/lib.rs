@@ -10,6 +10,7 @@ mod iq_estimator;
 pub mod mac;
 mod mac_block_ack;
 mod mac_crypto;
+mod mac_interface_address;
 mod mac_interrupt;
 mod mac_rx_dma;
 mod mac_rx_policy;
@@ -395,6 +396,24 @@ mod tests {
             registers.peripherals.wifi_mac_rx_filter.policy(0).as_ptr() as usize,
             0x2010_40d8
         );
+    }
+
+    #[test]
+    fn generated_interface_address_pairs_match_complete_leaf_stride() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let addresses = &registers.peripherals.wifi_mac_interface_address;
+        for interface in 0..4 {
+            assert_eq!(
+                addresses.address_low(interface).as_ptr() as usize,
+                0x2010_405c + interface * 8
+            );
+            assert_eq!(
+                addresses.address_high(interface).as_ptr() as usize,
+                0x2010_4060 + interface * 8
+            );
+        }
     }
 
     #[test]

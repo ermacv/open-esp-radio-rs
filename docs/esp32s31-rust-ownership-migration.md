@@ -3410,3 +3410,19 @@ interface policy-enable set, then the two ordered UBSSID-check clears,
 followed by the device fence. The existing connected STA HIL qualifies this
 queue-zero path. A source audit prevents generic register access from
 returning to the upper policy module.
+
+## Semantic MAC interface-address publication
+
+Cold init no longer computes or writes the interface-address register images.
+Its `MacInterfaceAddressHardware` bound permits only publication of the STA
+and AP addresses; production implements the capability on the unique
+`RadioRegisters` owner through the generated `WIFI_MAC_INTERFACE_ADDRESS`
+block.
+
+The complete pinned `libpp.a[hal_mac.o]::hal_mac_set_addr` leaf proves the
+four-entry `0x8`-byte geometry and the exact three-operation sequence for each
+interface. The PAC writes bytes 0..3, writes bytes 4..5 as a clean full-word
+image, then performs a separate fresh-read RMW setting the receive-policy
+enable bit. This corrects the old value-equivalent two-write transcription
+without inventing any additional bit meaning. A source audit prevents raw
+register access from entering the upper address-publication module.

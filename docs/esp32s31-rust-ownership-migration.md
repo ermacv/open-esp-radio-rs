@@ -3540,3 +3540,18 @@ The suffix also corrects two earlier value-equivalent collapses: bit 31 and
 bit 30 at `0x20104c1c`, and bits 30:16 then bit 31 at `0x20104c60`, are
 separate fresh-read edges. Host tracing asserts the exact callback and direct
 transactions, and the source audit keeps raw access out of `cold_txrx.rs`.
+
+## Semantic cold RX policy
+
+`MacColdRxPolicyHardware` now owns the complete four-queue policy loop between
+`mac_txrx_init` and `mac_rxbuf_init`. Generated PAC code preserves the four
+direct `hal_init` RMWs for every queue and the five additional
+`hal_mac_rx_set_policy(queue, 0, 0, 0)` RMWs for queues zero through two.
+Queue three is rejected by the leaf only after its four direct edges.
+
+This transfer corrects the earlier 13-RMW upper transcription. The complete
+blob transaction has 31 distinct RMW edges: several value-equivalent filter
+updates had been combined, and queue one's separate late BSSID bit-31 clear
+was absent. Host tracing asserts all 62 read/write operations. The SVD splits
+out the proven filter bit 13 but retains an `UNKNOWN` functional suffix
+because the blob proves its transition, not its electrical meaning.

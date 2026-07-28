@@ -205,6 +205,22 @@ then
     exit 1
 fi
 
+# The 31-edge four-queue cold RX policy transaction is PAC-owned.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/cold_rx_policy.rs
+then
+    echo "raw compatibility MMIO returned to cold RX policy" >&2
+    exit 1
+fi
+if rg -n \
+    '(RX_FILTER|BSSID_HIGH|INTERFACE_ADDRESS_HIGH)' \
+    crates/open-esp-radio-mac-esp32s31/src/init.rs
+then
+    echo "PAC-owned cold RX policy geometry returned to upper init" >&2
+    exit 1
+fi
+
 # Complete MAC enable is one PAC-owned gate-RMW plus interrupt-mask store.
 if rg -n \
     '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \

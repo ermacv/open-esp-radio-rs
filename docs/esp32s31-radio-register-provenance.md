@@ -938,6 +938,19 @@ crate owns the modulo-eleven value as `MacDelaySlot`; the integration supplies
 entropy through a platform trait, so neither raw RNG MMIO nor the vendor C ABI
 crosses into the open driver.
 
+Complete pinned `libpp.a[hal_mac.o]::hal_init`, offsets `0x56..0x90`, applies
+four direct fresh-read RMWs to each queue policy word before calling
+`hal_mac_rx_set_policy(queue, 0, 0, 0)`. The complete leaf adds five more RMWs
+for queues zero through two and rejects queue three. The cold transaction is
+therefore 31 RMW edges, not the 13 combined updates in the former Rust
+transcription.
+
+The comparison also found a missing queue-one edge: after setting BSSID
+policy bit 30, the leaf separately clears bit 31. SVD v3.14 splits the proven
+filter bit 13 from the formerly opaque bits-16:11 group and records the exact
+source without assigning an unproven electrical name. Generated PAC code now
+owns the complete 62-operation read/write trace.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

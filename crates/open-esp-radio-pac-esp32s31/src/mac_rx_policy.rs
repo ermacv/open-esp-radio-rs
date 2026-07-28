@@ -3,6 +3,63 @@
 use super::{device_fence, RadioRegisters};
 
 impl RadioRegisters {
+    /// Apply the complete four-queue cold policy transaction from `hal_init`.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::hal_init`,
+    /// offsets `0x56..0x90`, and complete `hal_mac_rx_set_policy`.
+    /// All 31 fresh-read RMW edges remain separate and in blob order.
+    pub fn initialize_cold_receive_policy(&mut self) {
+        let filters = &self.peripherals.wifi_mac_rx_filter;
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let interfaces = &self.peripherals.wifi_mac_interface_address;
+
+        for queue in 0..4 {
+            let filter = filters.policy(queue);
+
+            filter.modify(|_, w| {
+                w.policy_bit_7_unknown()
+                    .set_bit()
+                    .policy_bit_9_unknown()
+                    .set_bit()
+            });
+            filter.modify(|_, w| w.mode_policy_unknown().clear_bit());
+            filter.modify(|_, w| w.low_unknown().set_bit().policy_bit_2_unknown().set_bit());
+            filter.modify(|_, w| {
+                w.cold_clear_bit_13_unknown()
+                    .clear_bit()
+                    .control_policy_unknown()
+                    .clear_bit()
+            });
+
+            if queue < 3 {
+                let bssid = bssids.bssid_high(queue);
+                filter.modify(|_, w| {
+                    w.mode_policy_unknown()
+                        .clear_bit()
+                        .management_policy_unknown()
+                        .clear_bit()
+                });
+                if queue == 1 {
+                    bssid.modify(|_, w| w.policy_bit_30_unknown().set_bit());
+                } else {
+                    bssid.modify(|_, w| {
+                        w.policy_bit_30_unknown()
+                            .clear_bit()
+                            .address_check_enable()
+                            .clear_bit()
+                    });
+                }
+                filter.modify(|_, w| w.control_policy_unknown().clear_bit());
+                bssid.modify(|_, w| w.address_check_enable().clear_bit());
+                // SAFETY: zero is the complete low-half replacement performed
+                // by the mode-zero cold leaf; high policy bits are preserved.
+                interfaces
+                    .address_high(queue)
+                    .modify(|_, w| unsafe { w.bytes_4_5().bits(0) });
+            }
+        }
+    }
+
     /// Switch receive queue zero from scan policy to associated-STA policy.
     ///
     /// SOURCE: complete pinned `libpp.a::hal_mac_rx_set_policy` and

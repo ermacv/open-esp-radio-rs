@@ -9,8 +9,8 @@ use open_esp_radio_mac_esp32s31::{
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
-        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdStartError,
-        MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
+        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
+        MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
         MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
         StaLinkRxPolicyHardware,
     },
@@ -397,6 +397,42 @@ impl MacColdTxRxHardware for MockMmio {
         modify(mac_init::R_4C60, 1 << 31, 1 << 31);
         modify(mac_init::R_4308, 1 << 1, 1 << 1);
         modify(mac::RX_CONTROL, 1 << 31, 0);
+    }
+}
+
+impl MacColdRxPolicyHardware for MockMmio {
+    fn initialize_cold_receive_policy(&mut self) {
+        fn modify(mmio: &mut MockMmio, register: Register32, mask: u32, value: u32) {
+            let current = mmio.read32(register);
+            mmio.write32(register, (current & !mask) | (value & mask));
+        }
+
+        for queue in 0..4 {
+            let filter = mac_init::RX_FILTER[queue];
+            modify(self, filter, 0x0000_0280, 0x0000_0280);
+            modify(self, filter, 0x0000_0400, 0);
+            modify(self, filter, 0x0000_0005, 0x0000_0005);
+            modify(self, filter, 0x0000_2040, 0);
+
+            if queue < 3 {
+                let bssid = mac_init::BSSID_HIGH[queue];
+                modify(self, filter, 0x0000_0410, 0);
+                modify(
+                    self,
+                    bssid,
+                    if queue == 1 { 0x4000_0000 } else { 0xc000_0000 },
+                    if queue == 1 { 0x4000_0000 } else { 0 },
+                );
+                modify(self, filter, 0x0000_0040, 0);
+                modify(self, bssid, 0x8000_0000, 0);
+                modify(
+                    self,
+                    mac_init::INTERFACE_ADDRESS_HIGH[queue],
+                    0x0000_ffff,
+                    0,
+                );
+            }
+        }
     }
 }
 
@@ -830,6 +866,41 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             },
         )
     }));
+    let mut expected_cold_rx_policy = Vec::new();
+    for queue in 0..4 {
+        let filter = mac_init::RX_FILTER[queue];
+        expected_cold_rx_policy.extend([
+            Operation::Read(filter),
+            Operation::Write(filter, 0x0000_0280),
+            Operation::Read(filter),
+            Operation::Write(filter, 0x0000_0280),
+            Operation::Read(filter),
+            Operation::Write(filter, 0x0000_0285),
+            Operation::Read(filter),
+            Operation::Write(filter, 0x0000_0285),
+        ]);
+        if queue < 3 {
+            let bssid = mac_init::BSSID_HIGH[queue];
+            let bssid_after_first_edge = if queue == 1 { 0x4000_0000 } else { 0 };
+            expected_cold_rx_policy.extend([
+                Operation::Read(filter),
+                Operation::Write(filter, 0x0000_0285),
+                Operation::Read(bssid),
+                Operation::Write(bssid, bssid_after_first_edge),
+                Operation::Read(filter),
+                Operation::Write(filter, 0x0000_0285),
+                Operation::Read(bssid),
+                Operation::Write(bssid, bssid_after_first_edge),
+                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[queue]),
+                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[queue], 0),
+            ]);
+        }
+    }
+    assert_eq!(expected_cold_rx_policy.len(), 62);
+    assert!(mmio
+        .operations()
+        .windows(expected_cold_rx_policy.len())
+        .any(|operations| operations == expected_cold_rx_policy));
     assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));

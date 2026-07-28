@@ -15,6 +15,7 @@ pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
+pub use crate::cold_rx_policy::MacColdRxPolicyHardware;
 pub use crate::cold_txrx::{MacColdTxRxHardware, MacDelaySlot};
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
@@ -153,6 +154,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdHandshakeHardware
         + MacColdLastRxBufferHardware
         + MacColdRxBufferHardware
+        + MacColdRxPolicyHardware
         + MacColdTxRxHardware
         + MacInterfaceAddressHardware
         + MacLowRateHardware
@@ -184,27 +186,8 @@ pub fn initialize_promiscuous_receive<
     mmio.initialize_txrx_callbacks(delay_slot);
     mmio.initialize_txrx_suffix();
 
-    // Reset the four hardware RX queue policy words. The first three have
-    // address/BSSID policy registers; queue three is intentionally policy-only.
-    for queue in 0..registers::RX_FILTER.len() {
-        let policy = registers::RX_FILTER[queue];
-        modify(mmio, policy, 0x0000_26c5, 0x0000_0285);
-        if queue < 3 {
-            modify(mmio, policy, 0x0000_0450, 0);
-            modify(
-                mmio,
-                registers::BSSID_HIGH[queue],
-                0xc000_0000,
-                if queue == 1 { 0x4000_0000 } else { 0 },
-            );
-            modify(
-                mmio,
-                registers::INTERFACE_ADDRESS_HIGH[queue],
-                0x0000_ffff,
-                0,
-            );
-        }
-    }
+    // Complete four-queue direct/leaf transaction from `hal_init`.
+    mmio.initialize_cold_receive_policy();
 
     // `mac_rxbuf_init`, with descriptor publication left to the ring owner.
     mmio.initialize_rx_buffer_prefix();

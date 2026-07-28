@@ -410,12 +410,14 @@ impl PhyTemperatureSampleBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target(
+    pub fn execute_target<
+        P: open_esp_radio_hal_esp32s31::phy_temperature::PhyTemperatureSystemControl,
+    >(
         self,
-        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+        platform: &P,
     ) -> PhyTemperatureCompletion {
         PhyTemperatureCompletion::CodeSampled {
-            value: open_esp_radio_hal_esp32s31::phy_temperature::read_code(registers),
+            value: open_esp_radio_hal_esp32s31::phy_temperature::read_code(platform),
         }
     }
 }

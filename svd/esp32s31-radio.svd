@@ -6,13 +6,13 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.2</version>
+  <version>2.3</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
     HP_SYS_CLKRST, MODEM_SYSCON, MODEM_LPCON, PMU, LP_AON_CLKRST and
-    LP_PERICLKRST are deliberately absent: the active driver owns and accesses
-    them through esp-hal and the official ESP32-S31 PAC. These are independently decoded
+    LP_PERICLKRST and LP_TSENS are deliberately absent: the active driver owns
+    and accesses them through esp-hal and the official ESP32-S31 PAC. These are independently decoded
     MMIO windows, not one monolithic radio peripheral. Covered functions include PHY-PBus,
     PHY-I2C, IQ estimation, RX-DCO, cold deadlines, temperature sensing,
     Wi-Fi MAC RX-DMA and receive BlockAck. Unknown fields are omitted; OPAQUE
@@ -1353,46 +1353,6 @@
               <description>SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Full-width wrapping deadline value.</description>
               <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
             </field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-
-    <peripheral>
-      <name>PHY_TEMPERATURE_SENSOR_ORACLE</name>
-      <description>
-        SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-        CONFIDENCE[instruction-exact-semantics-partial].
-        Temperature-sensor code, power and read-control registers recovered
-        from complete pinned S31 blob and rev0 ROM bodies.
-      </description>
-      <baseAddress>0x20818000</baseAddress>
-      <registers>
-        <register>
-          <name>SENSOR_CODE_POWER</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tsens_read_init sets bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and phy_tsens_temp_read_local consume the low byte as the sensor code.</description>
-          <addressOffset>0x0000</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field>
-              <name>CODE</name>
-              <description>SOURCE[ROM_REV0_PHY_TSENS]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Unsigned temperature code returned by phy_tsens_code_read and consumed by phy_tsens_temp_read_local.</description>
-              <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
-            </field>
-            <field>
-              <name>POWER_ENABLE</name>
-              <description>SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Power argument one is shifted into bit 22 by phy_set_tsens_power.</description>
-              <bitOffset>22</bitOffset><bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>SENSOR_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bits 0, 23 and 9 through three independent fresh-read updates.</description>
-          <addressOffset>0x0018</addressOffset><size>32</size><access>read-write</access>
-          <fields>
-            <field><name>READ_PATH_ENABLE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>CONVERSION_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>READOUT_ENABLE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
       </registers>

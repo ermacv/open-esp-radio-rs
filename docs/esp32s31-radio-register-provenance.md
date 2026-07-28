@@ -337,6 +337,12 @@ temperature-sensor clock enable. The platform adapter owns the `LP_PERI`
 singleton; the open HAL retains the five-edge blob order around that official
 PAC operation.
 
+SVD v2.3 removes `PHY_TEMPERATURE_SENSOR_ORACLE`. Its two registers are
+official `LP_TSENS.CTRL` and `LP_TSENS.CLK_CONF`. The official PAC patch
+records the complete blob/ROM sources for the three read-path edges, sensor
+power and low-byte code sample. Both cold initialization and reusable
+temperature sampling now require the platform-owned `LP_TSENS` singleton.
+
 Public Espressif sources do not currently define these S31 internal PHY
 fields. The public
 [ESP32 Open MAC project](https://github.com/esp32-open-mac/esp32-open-mac)

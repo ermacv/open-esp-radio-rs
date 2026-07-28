@@ -1924,8 +1924,8 @@ impl PhyColdMmioBinding {
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                let (platform, registers) = radio.parts_mut();
-                open_esp_radio_hal_esp32s31::phy_temperature::initialize(platform, registers);
+                let (platform, _) = radio.parts_mut();
+                open_esp_radio_hal_esp32s31::phy_temperature::initialize(platform);
                 return self.into_completion();
             }
             _ => {}

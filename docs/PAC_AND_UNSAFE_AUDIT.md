@@ -131,7 +131,7 @@ chip-level peripherals:
 | `PHY_POWER_DETECTOR_AUX_ORACLE` | `esp32s31::LP_AON_CLKRST` | `0x2070_1000` | removed |
 | `PMU` | `esp32s31::PMU` | `0x2070_4000` | removed |
 | `PHY_TEMPERATURE_SYSTEM_ORACLE` | `esp32s31::LP_PERICLKRST` | `0x2071_0000` | removed |
-| `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | pending |
+| `PHY_TEMPERATURE_SENSOR_ORACLE` | `esp32s31::LP_TSENS` | `0x2081_8000` | removed |
 
 Those identities must move behind a platform capability borrowed from the
 official `esp-hal`/PAC owner. They must then be removed from the recovered SVD;

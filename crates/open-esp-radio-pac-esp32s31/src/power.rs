@@ -2470,69 +2470,6 @@ pub mod phy_cold_deadline_oracle {
     }
 }
 
-/// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-/// CONFIDENCE[instruction-exact-semantics-partial]. Temperature-sensor code, power and
-/// read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies.
-pub mod phy_temperature_sensor_oracle {
-    use crate::{Register32, RegisterAccess};
-
-    /// Peripheral base address. SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-    /// CONFIDENCE[instruction-exact-semantics-partial]. Temperature-sensor code, power and
-    /// read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies.
-    pub const BASE: usize = 0x20818000;
-
-    /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tsens_read_init sets
-    /// bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and
-    /// phy_tsens_temp_read_local consume the low byte as the sensor code.
-    pub const SENSOR_CODE_POWER: Register32 =
-        Register32::described(0x20818000, RegisterAccess::ReadWrite, None);
-
-    /// Recovered fields of [`SENSOR_CODE_POWER`].
-    /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-    /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete phy_tsens_read_init sets
-    /// bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and
-    /// phy_tsens_temp_read_local consume the low byte as the sensor code.
-    pub mod sensor_code_power {
-        use crate::Field32;
-
-        /// SOURCE[ROM_REV0_PHY_TSENS]; CONFIDENCE[instruction-exact-semantics-from-symbol].
-        /// Unsigned temperature code returned by phy_tsens_code_read and consumed by
-        /// phy_tsens_temp_read_local.
-        pub const CODE: Field32 = Field32::new(0, 8);
-        /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS];
-        /// CONFIDENCE[instruction-exact-semantics-from-symbol]. Power argument one is shifted
-        /// into bit 22 by phy_set_tsens_power.
-        pub const POWER_ENABLE: Field32 = Field32::new(22, 1);
-    }
-
-    /// SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bits
-    /// 0, 23 and 9 through three independent fresh-read updates.
-    pub const SENSOR_CONTROL: Register32 =
-        Register32::described(0x20818018, RegisterAccess::ReadWrite, None);
-
-    /// Recovered fields of [`SENSOR_CONTROL`]. SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-    /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets bits
-    /// 0, 23 and 9 through three independent fresh-read updates.
-    pub mod sensor_control {
-        use crate::Field32;
-
-        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets
-        /// bits 0, 23 and 9 through three independent fresh-read updates.
-        pub const READ_PATH_ENABLE_UNKNOWN: Field32 = Field32::new(0, 1);
-        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets
-        /// bits 0, 23 and 9 through three independent fresh-read updates.
-        pub const CONVERSION_ENABLE_UNKNOWN: Field32 = Field32::new(9, 1);
-        /// Field layout from SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT];
-        /// CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_tsens_read_init sets
-        /// bits 0, 23 and 9 through three independent fresh-read updates.
-        pub const READOUT_ENABLE_UNKNOWN: Field32 = Field32::new(23, 1);
-    }
-}
-
 ///
 /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK];
 /// CONFIDENCE[instruction-exact-semantics-unknown]. OPAQUE PHY clock-gate registers recovered
@@ -2971,7 +2908,7 @@ pub mod wifi_mac_rx_dma {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 193] = [
+pub const ALL: [Register32; 191] = [
     phy_memory::COMMAND,
     phy_memory::DATA_0,
     phy_memory::DATA_1,
@@ -3135,8 +3072,6 @@ pub const ALL: [Register32; 193] = [
     phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS,
     phy_rx_dco_oracle::CONTROL,
     phy_cold_deadline_oracle::DEADLINE_COUNTER_UNKNOWN,
-    phy_temperature_sensor_oracle::SENSOR_CODE_POWER,
-    phy_temperature_sensor_oracle::SENSOR_CONTROL,
     phy_clock_oracle::FE_CLOCK_GATE_OPAQUE,
     phy_clock_oracle::TABLE_MEMORY_INDEX_SOURCE,
     phy_clock_oracle::FE_BB_CLOCK_CONTROL_OPAQUE,

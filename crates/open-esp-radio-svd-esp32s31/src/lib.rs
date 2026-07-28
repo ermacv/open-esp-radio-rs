@@ -7293,162 +7293,6 @@ pub mod phy_cold_deadline_oracle {
         impl crate::Readable for DeadlineCounterUnknownSpec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Temperature-sensor code, power and read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies."]
-pub type PhyTemperatureSensorOracle =
-    crate::Periph<phy_temperature_sensor_oracle::RegisterBlock, 0x2081_8000>;
-impl core::fmt::Debug for PhyTemperatureSensorOracle {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("PhyTemperatureSensorOracle").finish()
-    }
-}
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Temperature-sensor code, power and read-control registers recovered from complete pinned S31 blob and rev0 ROM bodies."]
-pub mod phy_temperature_sensor_oracle {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        sensor_code_power: SensorCodePower,
-        _reserved1: [u8; 0x14],
-        sensor_control: SensorControl,
-    }
-    impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_tsens_read_init sets bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and phy_tsens_temp_read_local consume the low byte as the sensor code."]
-        #[inline(always)]
-        pub const fn sensor_code_power(&self) -> &SensorCodePower {
-            &self.sensor_code_power
-        }
-        #[doc = "0x18 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bits 0, 23 and 9 through three independent fresh-read updates."]
-        #[inline(always)]
-        pub const fn sensor_control(&self) -> &SensorControl {
-            &self.sensor_control
-        }
-    }
-    #[doc = "SENSOR_CODE_POWER (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_tsens_read_init sets bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and phy_tsens_temp_read_local consume the low byte as the sensor code.\n\nYou can [`read`](crate::Reg::read) this register and get [`sensor_code_power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sensor_code_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sensor_code_power`] module"]
-    #[doc(alias = "SENSOR_CODE_POWER")]
-    pub type SensorCodePower = crate::Reg<sensor_code_power::SensorCodePowerSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_tsens_read_init sets bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and phy_tsens_temp_read_local consume the low byte as the sensor code."]
-    pub mod sensor_code_power {
-        #[doc = "Register `SENSOR_CODE_POWER` reader"]
-        pub type R = crate::R<SensorCodePowerSpec>;
-        #[doc = "Register `SENSOR_CODE_POWER` writer"]
-        pub type W = crate::W<SensorCodePowerSpec>;
-        #[doc = "Field `CODE` reader - SOURCE\\[ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Unsigned temperature code returned by phy_tsens_code_read and consumed by phy_tsens_temp_read_local."]
-        pub type CodeR = crate::FieldReader;
-        #[doc = "Field `CODE` writer - SOURCE\\[ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Unsigned temperature code returned by phy_tsens_code_read and consumed by phy_tsens_temp_read_local."]
-        pub type CodeW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `POWER_ENABLE` reader - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Power argument one is shifted into bit 22 by phy_set_tsens_power."]
-        pub type PowerEnableR = crate::BitReader;
-        #[doc = "Field `POWER_ENABLE` writer - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Power argument one is shifted into bit 22 by phy_set_tsens_power."]
-        pub type PowerEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bits 0:7 - SOURCE\\[ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Unsigned temperature code returned by phy_tsens_code_read and consumed by phy_tsens_temp_read_local."]
-            #[inline(always)]
-            pub fn code(&self) -> CodeR {
-                CodeR::new((self.bits & 0xff) as u8)
-            }
-            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Power argument one is shifted into bit 22 by phy_set_tsens_power."]
-            #[inline(always)]
-            pub fn power_enable(&self) -> PowerEnableR {
-                PowerEnableR::new(((self.bits >> 22) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:7 - SOURCE\\[ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Unsigned temperature code returned by phy_tsens_code_read and consumed by phy_tsens_temp_read_local."]
-            #[inline(always)]
-            pub fn code(&mut self) -> CodeW<'_, SensorCodePowerSpec> {
-                CodeW::new(self, 0)
-            }
-            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Power argument one is shifted into bit 22 by phy_set_tsens_power."]
-            #[inline(always)]
-            pub fn power_enable(&mut self) -> PowerEnableW<'_, SensorCodePowerSpec> {
-                PowerEnableW::new(self, 22)
-            }
-        }
-        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT,ROM_REV0_PHY_TSENS\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_tsens_read_init sets bit 22 through phy_set_tsens_power; complete phy_tsens_code_read and phy_tsens_temp_read_local consume the low byte as the sensor code.\n\nYou can [`read`](crate::Reg::read) this register and get [`sensor_code_power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sensor_code_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SensorCodePowerSpec;
-        impl crate::RegisterSpec for SensorCodePowerSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`sensor_code_power::R`](R) reader structure"]
-        impl crate::Readable for SensorCodePowerSpec {}
-        #[doc = "`write(|w| ..)` method takes [`sensor_code_power::W`](W) writer structure"]
-        impl crate::Writable for SensorCodePowerSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "SENSOR_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bits 0, 23 and 9 through three independent fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`sensor_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sensor_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sensor_control`] module"]
-    #[doc(alias = "SENSOR_CONTROL")]
-    pub type SensorControl = crate::Reg<sensor_control::SensorControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bits 0, 23 and 9 through three independent fresh-read updates."]
-    pub mod sensor_control {
-        #[doc = "Register `SENSOR_CONTROL` reader"]
-        pub type R = crate::R<SensorControlSpec>;
-        #[doc = "Register `SENSOR_CONTROL` writer"]
-        pub type W = crate::W<SensorControlSpec>;
-        #[doc = "Field `READ_PATH_ENABLE_UNKNOWN` reader - "]
-        pub type ReadPathEnableUnknownR = crate::BitReader;
-        #[doc = "Field `READ_PATH_ENABLE_UNKNOWN` writer - "]
-        pub type ReadPathEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONVERSION_ENABLE_UNKNOWN` reader - "]
-        pub type ConversionEnableUnknownR = crate::BitReader;
-        #[doc = "Field `CONVERSION_ENABLE_UNKNOWN` writer - "]
-        pub type ConversionEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `READOUT_ENABLE_UNKNOWN` reader - "]
-        pub type ReadoutEnableUnknownR = crate::BitReader;
-        #[doc = "Field `READOUT_ENABLE_UNKNOWN` writer - "]
-        pub type ReadoutEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn read_path_enable_unknown(&self) -> ReadPathEnableUnknownR {
-                ReadPathEnableUnknownR::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bit 9"]
-            #[inline(always)]
-            pub fn conversion_enable_unknown(&self) -> ConversionEnableUnknownR {
-                ConversionEnableUnknownR::new(((self.bits >> 9) & 1) != 0)
-            }
-            #[doc = "Bit 23"]
-            #[inline(always)]
-            pub fn readout_enable_unknown(&self) -> ReadoutEnableUnknownR {
-                ReadoutEnableUnknownR::new(((self.bits >> 23) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bit 0"]
-            #[inline(always)]
-            pub fn read_path_enable_unknown(
-                &mut self,
-            ) -> ReadPathEnableUnknownW<'_, SensorControlSpec> {
-                ReadPathEnableUnknownW::new(self, 0)
-            }
-            #[doc = "Bit 9"]
-            #[inline(always)]
-            pub fn conversion_enable_unknown(
-                &mut self,
-            ) -> ConversionEnableUnknownW<'_, SensorControlSpec> {
-                ConversionEnableUnknownW::new(self, 9)
-            }
-            #[doc = "Bit 23"]
-            #[inline(always)]
-            pub fn readout_enable_unknown(
-                &mut self,
-            ) -> ReadoutEnableUnknownW<'_, SensorControlSpec> {
-                ReadoutEnableUnknownW::new(self, 23)
-            }
-        }
-        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_TSENS_READ_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_tsens_read_init sets bits 0, 23 and 9 through three independent fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`sensor_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sensor_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SensorControlSpec;
-        impl crate::RegisterSpec for SensorControlSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`sensor_control::R`](R) reader structure"]
-        impl crate::Readable for SensorControlSpec {}
-        #[doc = "`write(|w| ..)` method takes [`sensor_control::W`](W) writer structure"]
-        impl crate::Writable for SensorControlSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
 #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. OPAQUE PHY clock-gate registers recovered from complete no-call ROM/blob leaves."]
 pub type PhyClockOracle = crate::Periph<phy_clock_oracle::RegisterBlock, 0x2010_0000>;
 impl core::fmt::Debug for PhyClockOracle {
@@ -8615,8 +8459,6 @@ pub struct Peripherals {
     pub phy_rx_dco_oracle: PhyRxDcoOracle,
     #[doc = "PHY_COLD_DEADLINE_ORACLE"]
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
-    #[doc = "PHY_TEMPERATURE_SENSOR_ORACLE"]
-    pub phy_temperature_sensor_oracle: PhyTemperatureSensorOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
     #[doc = "WIFI_MAC_RX_DMA"]
@@ -8653,7 +8495,6 @@ impl Peripherals {
             phy_iq_estimator_oracle: PhyIqEstimatorOracle::steal(),
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),
-            phy_temperature_sensor_oracle: PhyTemperatureSensorOracle::steal(),
             phy_clock_oracle: PhyClockOracle::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }

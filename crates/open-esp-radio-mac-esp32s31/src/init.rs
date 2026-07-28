@@ -15,6 +15,7 @@ pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_hal_tail::{MacColdHalTailHardware, MacSlowClockCalibration};
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
+pub use crate::cold_he::MacColdHeHardware;
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::cold_rx_policy::MacColdRxPolicyHardware;
@@ -67,27 +68,7 @@ fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
 /// The operations below cover the common legacy TX/RX fields plus the receive
 /// parser, multi-BSSID and baseband-hang configuration used by `hal_init`.
 /// Trigger-based HE transmit and debug output remain outside this cold path.
-fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
-    // `hal_init_bf`: establish the common PHY/MAC receive timing fields.
-    modify(mmio, registers::R_4C78, 0x0020_0000, 0);
-    modify(mmio, registers::R_4C78, 0x0080_0000, 0);
-    modify(mmio, registers::R_4C78, 0x0008_0000, 0x0008_0000);
-    modify(mmio, registers::R_4C78, 0x0000_ff00, 0x0000_7100);
-    modify(mmio, registers::R_4C78, 0x0000_00fe, 0x0000_0020);
-    modify(mmio, registers::R_4C78, 0x0007_0000, 0x0005_0000);
-    modify(mmio, registers::R_4C78, 0x0200_0000, 0x0200_0000);
-    modify(mmio, registers::R_4480, 0x8000_0000, 0x8000_0000);
-    modify(mmio, registers::R_447C, 0x00ff_f000, 0x0080_1000);
-    modify(mmio, registers::R_4DE4, 0xfff0_0000, 0x6900_0000);
-    modify(mmio, registers::R_409C, 0x0000_000c, 0x0000_0008);
-
-    // Receive-relevant direct body of `hal_he_init`.
-    modify(mmio, registers::R_4C80, 0xc000_0000, 0);
-    modify(mmio, registers::R_4110, 0x000c_0000, 0x0008_0000);
-    modify(mmio, registers::R_4048, 0x0000_01f8, 0x0000_01e0);
-    modify(mmio, registers::R_4C2C, 0x0000_1000, 0x0000_1000);
-    // `hal_init_tb_tx`: keep both trigger-based transmit request modes off.
-    modify(mmio, registers::R_4E04, 0x0000_c000, 0);
+fn initialize_he_after_power<M: Mmio>(mmio: &mut M) {
     // `hal_he_set_ersu(0)` and its `hal_he_set_ersu_ack_rate(0)` child.
     // Although ER-SU is not used by the legacy probe request, these are common
     // transmit defaults established by the parent before any queue can run.
@@ -145,6 +126,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdCryptoHardware
         + MacColdEnableHardware
         + MacColdHalTailHardware
+        + MacColdHeHardware
         + MacColdHandshakeHardware
         + MacColdLastRxBufferHardware
         + MacColdRxBufferHardware
@@ -186,7 +168,9 @@ pub fn initialize_promiscuous_receive<
     // `mac_rxbuf_init`, with descriptor publication left to the ring owner.
     mmio.initialize_rx_buffer_prefix();
 
-    initialize_he_receive(mmio);
+    mmio.initialize_he_prefix();
+    // The still-platform-dependent TX-power children occur at this boundary.
+    initialize_he_after_power(mmio);
 
     // Complete `mac_last_rxbuf_init`, including its three separate enable RMWs.
     mmio.initialize_last_rx_buffer_table();

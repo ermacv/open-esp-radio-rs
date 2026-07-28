@@ -1003,6 +1003,21 @@ geometry. The MAC queries an explicit `MacCoexPtiSource` in exact blob order;
 the current integration supplies the pinned cold-table values without linking
 the vendor coexistence runtime.
 
+Complete `hal_he_init` has a natural platform boundary at its
+`hal_init_tx_pwr` child. SVD v3.18 records the complete prefix before that
+call: the parent, complete `hal_init_bf`,
+`hal_he_set_bf_report_rate(1, 0x10, 0, 0)`, and `hal_init_tb_tx`. The bounded
+transaction contains twenty-two distinct RMW edges and a final volatile read at
+`0x20107128`.
+
+This full comparison corrected three earlier simplifications. The parent
+clears bit 31 at `0x20104c80`, then clears bits 31:30 through a second RMW.
+`hal_init_bf` replaces all eight low bits at `0x20104c78` (the previous mask
+incorrectly preserved bit zero) and performs three omitted report-rate RMWs at
+`0x20104464`. Finally, `hal_init_tb_tx` clears bits 15 and 14 at
+`0x20104e04` separately. The remaining HE work begins with the PHY-dependent
+TX-power table and is deliberately tracked as the next ownership boundary.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

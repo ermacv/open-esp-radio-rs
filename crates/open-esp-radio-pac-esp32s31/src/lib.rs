@@ -15,6 +15,7 @@ mod mac_cold_start;
 mod mac_crypto;
 mod mac_enable;
 mod mac_hal_init_tail;
+mod mac_he_init;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
@@ -585,6 +586,20 @@ mod tests {
         );
         assert_eq!(coex.beamforming().as_ptr() as usize, 0x2010_4dd8);
         assert_eq!(coex.default_control().as_ptr() as usize, 0x2010_4ddc);
+    }
+
+    #[test]
+    fn generated_mac_he_prefix_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let init = &registers.peripherals.wifi_mac_he_init_prefix;
+        assert_eq!(init.rx_field_control().as_ptr() as usize, 0x2010_4048);
+        assert_eq!(init.bf_report_rate().as_ptr() as usize, 0x2010_4464);
+        assert_eq!(init.bf_timing_control().as_ptr() as usize, 0x2010_4c78);
+        assert_eq!(init.parent_control_edges().as_ptr() as usize, 0x2010_4c80);
+        assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
+        assert_eq!(init.bf_sync_status_unknown().as_ptr() as usize, 0x2010_7128);
     }
 
     #[test]

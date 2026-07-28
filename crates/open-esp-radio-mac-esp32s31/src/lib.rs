@@ -15,6 +15,7 @@ mod cold_crypto;
 mod cold_enable;
 mod cold_hal_tail;
 mod cold_handshake;
+mod cold_he;
 mod cold_last_rx_buffer;
 mod cold_rx_buffer;
 mod cold_rx_policy;

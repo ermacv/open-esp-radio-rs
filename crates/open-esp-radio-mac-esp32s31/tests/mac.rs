@@ -10,11 +10,11 @@ use open_esp_radio_mac_esp32s31::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware, MacColdCoexHardware,
         MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware, MacColdHalTailHardware,
-        MacColdHandshakeHardware, MacColdLastRxBufferHardware, MacColdRxBufferHardware,
-        MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
-        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
-        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware,
-        StaLinkRxPolicyHardware,
+        MacColdHandshakeHardware, MacColdHeHardware, MacColdLastRxBufferHardware,
+        MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome,
+        MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware,
+        MacLowRateHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
+        MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -48,6 +48,7 @@ enum Operation {
     InitializeMacAntenna,
     InitializeHalTail(u32, MacSlowClockCalibration),
     InitializeColdCoex(MacColdCoexPti),
+    InitializeHePrefix,
     Fence,
 }
 
@@ -321,6 +322,13 @@ impl MacColdHalTailHardware for MockMmio {
 impl MacColdCoexHardware for MockMmio {
     fn initialize_cold_coex(&mut self, pti: MacColdCoexPti) {
         self.operations.push(Operation::InitializeColdCoex(pti));
+    }
+}
+
+impl MacColdHeHardware for MockMmio {
+    fn initialize_he_prefix(&mut self) {
+        self.operations.push(Operation::InitializeHePrefix);
+        self.words.insert(mac_init::R_4E04, 0);
     }
 }
 
@@ -1014,6 +1022,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         .operations()
         .iter()
         .any(|operation| matches!(operation, Operation::InitializeColdCoex(_))));
+    assert!(mmio.operations().contains(&Operation::InitializeHePrefix));
     assert_eq!(
         platform.operations,
         [

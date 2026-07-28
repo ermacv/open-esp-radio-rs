@@ -69,6 +69,7 @@ identities for every entry.
 | `BLOB_LIBPP_HAL_INIT_TAIL` | Complete `hal_init` offsets 0xcc..0x12a plus the complete hardware-beacon reload and RTC timer-update leaves; OSI offsets cross-checked against pinned esp-wifi-sys and esp-hal |
 | `BLOB_LIBPP_HAL_INIT_COEX` | Complete `hal_init` COEX tail and all complete RX, default, TB and beamforming PTI setter leaves |
 | `BLOB_LIBCOEX_PTI_TABLE` | Complete `libcoexist.a` PTI getter plus its 48-byte cold-default table; provides the four event values queried by MAC init |
+| `BLOB_LIBPP_HAL_HE_INIT_PREFIX` | Complete `hal_he_init` prefix, beamforming init/report-rate children and trigger-based TX init through the TX-power boundary |
 
 The public ESP-IDF ESP32-C5/C61 register headers are only cross-chip
 validation. They are not accepted as the sole basis for an S31 address or bit.

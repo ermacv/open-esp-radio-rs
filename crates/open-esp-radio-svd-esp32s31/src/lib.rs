@@ -10132,6 +10132,1007 @@ pub mod wifi_mac_tx_completion {
         impl crate::Readable for AuxCSpec {}
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_he_init prefix through hal_init_tb_tx, stopping immediately before hal_init_tx_pwr. Twenty-two separate RMW edges and one final synchronization/status read."]
+pub type WifiMacHeInitPrefix = crate::Periph<wifi_mac_he_init_prefix::RegisterBlock, 0x2010_4048>;
+impl core::fmt::Debug for WifiMacHeInitPrefix {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacHeInitPrefix").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_he_init prefix through hal_init_tb_tx, stopping immediately before hal_init_tx_pwr. Twenty-two separate RMW edges and one final synchronization/status read."]
+pub mod wifi_mac_he_init_prefix {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        rx_field_control: RxFieldControl,
+        _reserved1: [u8; 0x50],
+        bf_mode_control: BfModeControl,
+        _reserved2: [u8; 0x70],
+        he_queue_mode: HeQueueMode,
+        _reserved3: [u8; 0x0350],
+        bf_report_rate: BfReportRate,
+        _reserved4: [u8; 0x14],
+        bf_vector_control: BfVectorControl,
+        bf_enable: BfEnable,
+        _reserved6: [u8; 0x07a8],
+        parent_enable: ParentEnable,
+        _reserved7: [u8; 0x48],
+        bf_timing_control: BfTimingControl,
+        _reserved8: [u8; 0x04],
+        parent_control_edges: ParentControlEdges,
+        _reserved9: [u8; 0x0160],
+        bf_high_image: BfHighImage,
+        _reserved10: [u8; 0x1c],
+        tb_tx_control: TbTxControl,
+        _reserved11: [u8; 0x2320],
+        bf_sync_status_unknown: BfSyncStatusUnknown,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c."]
+        #[inline(always)]
+        pub const fn rx_field_control(&self) -> &RxFieldControl {
+            &self.rx_field_control
+        }
+        #[doc = "0x54 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW."]
+        #[inline(always)]
+        pub const fn bf_mode_control(&self) -> &BfModeControl {
+            &self.bf_mode_control
+        }
+        #[doc = "0xc8 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 19:18 with two."]
+        #[inline(always)]
+        pub const fn he_queue_mode(&self) -> &HeQueueMode {
+            &self.he_queue_mode
+        }
+        #[doc = "0x41c - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs."]
+        #[inline(always)]
+        pub const fn bf_report_rate(&self) -> &BfReportRate {
+            &self.bf_report_rate
+        }
+        #[doc = "0x434 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 23:12 with 0x801."]
+        #[inline(always)]
+        pub const fn bf_vector_control(&self) -> &BfVectorControl {
+            &self.bf_vector_control
+        }
+        #[doc = "0x438 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf sets bit 31."]
+        #[inline(always)]
+        pub const fn bf_enable(&self) -> &BfEnable {
+            &self.bf_enable
+        }
+        #[doc = "0xbe4 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init."]
+        #[inline(always)]
+        pub const fn parent_enable(&self) -> &ParentEnable {
+            &self.parent_enable
+        }
+        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf."]
+        #[inline(always)]
+        pub const fn bf_timing_control(&self) -> &BfTimingControl {
+            &self.bf_timing_control
+        }
+        #[doc = "0xc38 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW."]
+        #[inline(always)]
+        pub const fn parent_control_edges(&self) -> &ParentControlEdges {
+            &self.parent_control_edges
+        }
+        #[doc = "0xd9c - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 31:20 with 0x690."]
+        #[inline(always)]
+        pub const fn bf_high_image(&self) -> &BfHighImage {
+            &self.bf_high_image
+        }
+        #[doc = "0xdbc - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_tb_tx clears bit 15, then bit 14 through a separate fresh-read RMW."]
+        #[inline(always)]
+        pub const fn tb_tx_control(&self) -> &TbTxControl {
+            &self.tb_tx_control
+        }
+        #[doc = "0x30e0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-read-semantics-unknown\\]. Complete hal_init_bf performs one final volatile read whose value is unused before returning."]
+        #[inline(always)]
+        pub const fn bf_sync_status_unknown(&self) -> &BfSyncStatusUnknown {
+            &self.bf_sync_status_unknown
+        }
+    }
+    #[doc = "RX_FIELD_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_field_control`] module"]
+    #[doc(alias = "RX_FIELD_CONTROL")]
+    pub type RxFieldControl = crate::Reg<rx_field_control::RxFieldControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c."]
+    pub mod rx_field_control {
+        #[doc = "Register `RX_FIELD_CONTROL` reader"]
+        pub type R = crate::R<RxFieldControlSpec>;
+        #[doc = "Register `RX_FIELD_CONTROL` writer"]
+        pub type W = crate::W<RxFieldControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `IMAGE_UNKNOWN` reader - "]
+        pub type ImageUnknownR = crate::FieldReader;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 23, u32>;
+        impl R {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 7) as u8)
+            }
+            #[doc = "Bits 3:8"]
+            #[inline(always)]
+            pub fn image_unknown(&self) -> ImageUnknownR {
+                ImageUnknownR::new(((self.bits >> 3) & 0x3f) as u8)
+            }
+            #[doc = "Bits 9:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 9) & 0x007f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, RxFieldControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 3:8"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, RxFieldControlSpec> {
+                ImageUnknownW::new(self, 3)
+            }
+            #[doc = "Bits 9:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, RxFieldControlSpec> {
+                HighPreservedUnknownW::new(self, 9)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxFieldControlSpec;
+        impl crate::RegisterSpec for RxFieldControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_field_control::R`](R) reader structure"]
+        impl crate::Readable for RxFieldControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_field_control::W`](W) writer structure"]
+        impl crate::Writable for RxFieldControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_MODE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_mode_control`] module"]
+    #[doc(alias = "BF_MODE_CONTROL")]
+    pub type BfModeControl = crate::Reg<bf_mode_control::BfModeControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW."]
+    pub mod bf_mode_control {
+        #[doc = "Register `BF_MODE_CONTROL` reader"]
+        pub type R = crate::R<BfModeControlSpec>;
+        #[doc = "Register `BF_MODE_CONTROL` writer"]
+        pub type W = crate::W<BfModeControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `CLEAR_UNKNOWN` reader - "]
+        pub type ClearUnknownR = crate::BitReader;
+        #[doc = "Field `CLEAR_UNKNOWN` writer - "]
+        pub type ClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_UNKNOWN` reader - "]
+        pub type EnableUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_UNKNOWN` writer - "]
+        pub type EnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn clear_unknown(&self) -> ClearUnknownR {
+                ClearUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn enable_unknown(&self) -> EnableUnknownR {
+                EnableUnknownR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 4) & 0x0fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, BfModeControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn clear_unknown(&mut self) -> ClearUnknownW<'_, BfModeControlSpec> {
+                ClearUnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn enable_unknown(&mut self) -> EnableUnknownW<'_, BfModeControlSpec> {
+                EnableUnknownW::new(self, 3)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, BfModeControlSpec> {
+                HighPreservedUnknownW::new(self, 4)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfModeControlSpec;
+        impl crate::RegisterSpec for BfModeControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_mode_control::R`](R) reader structure"]
+        impl crate::Readable for BfModeControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_mode_control::W`](W) writer structure"]
+        impl crate::Writable for BfModeControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_QUEUE_MODE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 19:18 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_queue_mode::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_queue_mode::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_queue_mode`] module"]
+    #[doc(alias = "HE_QUEUE_MODE")]
+    pub type HeQueueMode = crate::Reg<he_queue_mode::HeQueueModeSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 19:18 with two."]
+    pub mod he_queue_mode {
+        #[doc = "Register `HE_QUEUE_MODE` reader"]
+        pub type R = crate::R<HeQueueModeSpec>;
+        #[doc = "Register `HE_QUEUE_MODE` writer"]
+        pub type W = crate::W<HeQueueModeSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32>;
+        #[doc = "Field `MODE_UNKNOWN` reader - "]
+        pub type ModeUnknownR = crate::FieldReader;
+        #[doc = "Field `MODE_UNKNOWN` writer - "]
+        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:17"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x0003_ffff)
+            }
+            #[doc = "Bits 18:19"]
+            #[inline(always)]
+            pub fn mode_unknown(&self) -> ModeUnknownR {
+                ModeUnknownR::new(((self.bits >> 18) & 3) as u8)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:17"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, HeQueueModeSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 18:19"]
+            #[inline(always)]
+            pub fn mode_unknown(&mut self) -> ModeUnknownW<'_, HeQueueModeSpec> {
+                ModeUnknownW::new(self, 18)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, HeQueueModeSpec> {
+                HighPreservedUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 19:18 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_queue_mode::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_queue_mode::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeQueueModeSpec;
+        impl crate::RegisterSpec for HeQueueModeSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_queue_mode::R`](R) reader structure"]
+        impl crate::Readable for HeQueueModeSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_queue_mode::W`](W) writer structure"]
+        impl crate::Writable for HeQueueModeSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_REPORT_RATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_report_rate`] module"]
+    #[doc(alias = "BF_REPORT_RATE")]
+    pub type BfReportRate = crate::Reg<bf_report_rate::BfReportRateSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs."]
+    pub mod bf_report_rate {
+        #[doc = "Register `BF_REPORT_RATE` reader"]
+        pub type R = crate::R<BfReportRateSpec>;
+        #[doc = "Register `BF_REPORT_RATE` writer"]
+        pub type W = crate::W<BfReportRateSpec>;
+        #[doc = "Field `LOW_RATE` reader - "]
+        pub type LowRateR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_RATE` writer - "]
+        pub type LowRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `MIDDLE_RATE` reader - "]
+        pub type MiddleRateR = crate::FieldReader<u16>;
+        #[doc = "Field `MIDDLE_RATE` writer - "]
+        pub type MiddleRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `HIGH_RATE` reader - "]
+        pub type HighRateR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_RATE` writer - "]
+        pub type HighRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` reader - "]
+        pub type TopPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` writer - "]
+        pub type TopPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        impl R {
+            #[doc = "Bits 0:8"]
+            #[inline(always)]
+            pub fn low_rate(&self) -> LowRateR {
+                LowRateR::new((self.bits & 0x01ff) as u16)
+            }
+            #[doc = "Bits 9:17"]
+            #[inline(always)]
+            pub fn middle_rate(&self) -> MiddleRateR {
+                MiddleRateR::new(((self.bits >> 9) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 18:26"]
+            #[inline(always)]
+            pub fn high_rate(&self) -> HighRateR {
+                HighRateR::new(((self.bits >> 18) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 27:31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(&self) -> TopPreservedUnknownR {
+                TopPreservedUnknownR::new(((self.bits >> 27) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:8"]
+            #[inline(always)]
+            pub fn low_rate(&mut self) -> LowRateW<'_, BfReportRateSpec> {
+                LowRateW::new(self, 0)
+            }
+            #[doc = "Bits 9:17"]
+            #[inline(always)]
+            pub fn middle_rate(&mut self) -> MiddleRateW<'_, BfReportRateSpec> {
+                MiddleRateW::new(self, 9)
+            }
+            #[doc = "Bits 18:26"]
+            #[inline(always)]
+            pub fn high_rate(&mut self) -> HighRateW<'_, BfReportRateSpec> {
+                HighRateW::new(self, 18)
+            }
+            #[doc = "Bits 27:31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(&mut self) -> TopPreservedUnknownW<'_, BfReportRateSpec> {
+                TopPreservedUnknownW::new(self, 27)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfReportRateSpec;
+        impl crate::RegisterSpec for BfReportRateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_report_rate::R`](R) reader structure"]
+        impl crate::Readable for BfReportRateSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_report_rate::W`](W) writer structure"]
+        impl crate::Writable for BfReportRateSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_VECTOR_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 23:12 with 0x801.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_vector_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_vector_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_vector_control`] module"]
+    #[doc(alias = "BF_VECTOR_CONTROL")]
+    pub type BfVectorControl = crate::Reg<bf_vector_control::BfVectorControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 23:12 with 0x801."]
+    pub mod bf_vector_control {
+        #[doc = "Register `BF_VECTOR_CONTROL` reader"]
+        pub type R = crate::R<BfVectorControlSpec>;
+        #[doc = "Register `BF_VECTOR_CONTROL` writer"]
+        pub type W = crate::W<BfVectorControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `IMAGE_UNKNOWN` reader - "]
+        pub type ImageUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:23"]
+            #[inline(always)]
+            pub fn image_unknown(&self) -> ImageUnknownR {
+                ImageUnknownR::new(((self.bits >> 12) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, BfVectorControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 12:23"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, BfVectorControlSpec> {
+                ImageUnknownW::new(self, 12)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, BfVectorControlSpec> {
+                HighPreservedUnknownW::new(self, 24)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 23:12 with 0x801.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_vector_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_vector_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfVectorControlSpec;
+        impl crate::RegisterSpec for BfVectorControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_vector_control::R`](R) reader structure"]
+        impl crate::Readable for BfVectorControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_vector_control::W`](W) writer structure"]
+        impl crate::Writable for BfVectorControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_enable`] module"]
+    #[doc(alias = "BF_ENABLE")]
+    pub type BfEnable = crate::Reg<bf_enable::BfEnableSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf sets bit 31."]
+    pub mod bf_enable {
+        #[doc = "Register `BF_ENABLE` reader"]
+        pub type R = crate::R<BfEnableSpec>;
+        #[doc = "Register `BF_ENABLE` writer"]
+        pub type W = crate::W<BfEnableSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
+        #[doc = "Field `ENABLE_UNKNOWN` reader - "]
+        pub type EnableUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_UNKNOWN` writer - "]
+        pub type EnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:30"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x7fff_ffff)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn enable_unknown(&self) -> EnableUnknownR {
+                EnableUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:30"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, BfEnableSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn enable_unknown(&mut self) -> EnableUnknownW<'_, BfEnableSpec> {
+                EnableUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfEnableSpec;
+        impl crate::RegisterSpec for BfEnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_enable::R`](R) reader structure"]
+        impl crate::Readable for BfEnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_enable::W`](W) writer structure"]
+        impl crate::Writable for BfEnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PARENT_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_enable`] module"]
+    #[doc(alias = "PARENT_ENABLE")]
+    pub type ParentEnable = crate::Reg<parent_enable::ParentEnableSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init."]
+    pub mod parent_enable {
+        #[doc = "Register `PARENT_ENABLE` reader"]
+        pub type R = crate::R<ParentEnableSpec>;
+        #[doc = "Register `PARENT_ENABLE` writer"]
+        pub type W = crate::W<ParentEnableSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `ENABLE_UNKNOWN` reader - "]
+        pub type EnableUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_UNKNOWN` writer - "]
+        pub type EnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn enable_unknown(&self) -> EnableUnknownR {
+                EnableUnknownR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bits 13:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 13) & 0x0007_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ParentEnableSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn enable_unknown(&mut self) -> EnableUnknownW<'_, ParentEnableSpec> {
+                EnableUnknownW::new(self, 12)
+            }
+            #[doc = "Bits 13:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, ParentEnableSpec> {
+                HighPreservedUnknownW::new(self, 13)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ParentEnableSpec;
+        impl crate::RegisterSpec for ParentEnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`parent_enable::R`](R) reader structure"]
+        impl crate::Readable for ParentEnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`parent_enable::W`](W) writer structure"]
+        impl crate::Writable for ParentEnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
+    #[doc(alias = "BF_TIMING_CONTROL")]
+    pub type BfTimingControl = crate::Reg<bf_timing_control::BfTimingControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf."]
+    pub mod bf_timing_control {
+        #[doc = "Register `BF_TIMING_CONTROL` reader"]
+        pub type R = crate::R<BfTimingControlSpec>;
+        #[doc = "Register `BF_TIMING_CONTROL` writer"]
+        pub type W = crate::W<BfTimingControlSpec>;
+        #[doc = "Field `LOW_BYTE` reader - "]
+        pub type LowByteR = crate::FieldReader;
+        #[doc = "Field `LOW_BYTE` writer - "]
+        pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BYTE_ONE` reader - "]
+        pub type ByteOneR = crate::FieldReader;
+        #[doc = "Field `BYTE_ONE` writer - "]
+        pub type ByteOneW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `MODE` reader - "]
+        pub type ModeR = crate::FieldReader;
+        #[doc = "Field `MODE` writer - "]
+        pub type ModeW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `ENABLE_19` reader - "]
+        pub type Enable19R = crate::BitReader;
+        #[doc = "Field `ENABLE_19` writer - "]
+        pub type Enable19W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PRESERVED_20` reader - "]
+        pub type Preserved20R = crate::BitReader;
+        #[doc = "Field `PRESERVED_20` writer - "]
+        pub type Preserved20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_21` reader - "]
+        pub type Clear21R = crate::BitReader;
+        #[doc = "Field `CLEAR_21` writer - "]
+        pub type Clear21W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PRESERVED_22` reader - "]
+        pub type Preserved22R = crate::BitReader;
+        #[doc = "Field `PRESERVED_22` writer - "]
+        pub type Preserved22W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_23` reader - "]
+        pub type Clear23R = crate::BitReader;
+        #[doc = "Field `CLEAR_23` writer - "]
+        pub type Clear23W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PRESERVED_24` reader - "]
+        pub type Preserved24R = crate::BitReader;
+        #[doc = "Field `PRESERVED_24` writer - "]
+        pub type Preserved24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_25` reader - "]
+        pub type Enable25R = crate::BitReader;
+        #[doc = "Field `ENABLE_25` writer - "]
+        pub type Enable25W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_byte(&self) -> LowByteR {
+                LowByteR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn byte_one(&self) -> ByteOneR {
+                ByteOneR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:18"]
+            #[inline(always)]
+            pub fn mode(&self) -> ModeR {
+                ModeR::new(((self.bits >> 16) & 7) as u8)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn enable_19(&self) -> Enable19R {
+                Enable19R::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn preserved_20(&self) -> Preserved20R {
+                Preserved20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn clear_21(&self) -> Clear21R {
+                Clear21R::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn preserved_22(&self) -> Preserved22R {
+                Preserved22R::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23"]
+            #[inline(always)]
+            pub fn clear_23(&self) -> Clear23R {
+                Clear23R::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn preserved_24(&self) -> Preserved24R {
+                Preserved24R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn enable_25(&self) -> Enable25R {
+                Enable25R::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bits 26:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 26) & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn low_byte(&mut self) -> LowByteW<'_, BfTimingControlSpec> {
+                LowByteW::new(self, 0)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn byte_one(&mut self) -> ByteOneW<'_, BfTimingControlSpec> {
+                ByteOneW::new(self, 8)
+            }
+            #[doc = "Bits 16:18"]
+            #[inline(always)]
+            pub fn mode(&mut self) -> ModeW<'_, BfTimingControlSpec> {
+                ModeW::new(self, 16)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn enable_19(&mut self) -> Enable19W<'_, BfTimingControlSpec> {
+                Enable19W::new(self, 19)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn preserved_20(&mut self) -> Preserved20W<'_, BfTimingControlSpec> {
+                Preserved20W::new(self, 20)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn clear_21(&mut self) -> Clear21W<'_, BfTimingControlSpec> {
+                Clear21W::new(self, 21)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn preserved_22(&mut self) -> Preserved22W<'_, BfTimingControlSpec> {
+                Preserved22W::new(self, 22)
+            }
+            #[doc = "Bit 23"]
+            #[inline(always)]
+            pub fn clear_23(&mut self) -> Clear23W<'_, BfTimingControlSpec> {
+                Clear23W::new(self, 23)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn preserved_24(&mut self) -> Preserved24W<'_, BfTimingControlSpec> {
+                Preserved24W::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn enable_25(&mut self) -> Enable25W<'_, BfTimingControlSpec> {
+                Enable25W::new(self, 25)
+            }
+            #[doc = "Bits 26:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, BfTimingControlSpec> {
+                HighPreservedUnknownW::new(self, 26)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfTimingControlSpec;
+        impl crate::RegisterSpec for BfTimingControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_timing_control::R`](R) reader structure"]
+        impl crate::Readable for BfTimingControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_timing_control::W`](W) writer structure"]
+        impl crate::Writable for BfTimingControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PARENT_CONTROL_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_control_edges`] module"]
+    #[doc(alias = "PARENT_CONTROL_EDGES")]
+    pub type ParentControlEdges = crate::Reg<parent_control_edges::ParentControlEdgesSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW."]
+    pub mod parent_control_edges {
+        #[doc = "Register `PARENT_CONTROL_EDGES` reader"]
+        pub type R = crate::R<ParentControlEdgesSpec>;
+        #[doc = "Register `PARENT_CONTROL_EDGES` writer"]
+        pub type W = crate::W<ParentControlEdgesSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        #[doc = "Field `CLEAR_30` reader - "]
+        pub type Clear30R = crate::BitReader;
+        #[doc = "Field `CLEAR_30` writer - "]
+        pub type Clear30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_31` reader - "]
+        pub type Clear31R = crate::BitReader;
+        #[doc = "Field `CLEAR_31` writer - "]
+        pub type Clear31W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x3fff_ffff)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn clear_30(&self) -> Clear30R {
+                Clear30R::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn clear_31(&self) -> Clear31R {
+                Clear31R::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, ParentControlEdgesSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn clear_30(&mut self) -> Clear30W<'_, ParentControlEdgesSpec> {
+                Clear30W::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn clear_31(&mut self) -> Clear31W<'_, ParentControlEdgesSpec> {
+                Clear31W::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ParentControlEdgesSpec;
+        impl crate::RegisterSpec for ParentControlEdgesSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`parent_control_edges::R`](R) reader structure"]
+        impl crate::Readable for ParentControlEdgesSpec {}
+        #[doc = "`write(|w| ..)` method takes [`parent_control_edges::W`](W) writer structure"]
+        impl crate::Writable for ParentControlEdgesSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_HIGH_IMAGE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 31:20 with 0x690.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_high_image::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_high_image::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_high_image`] module"]
+    #[doc(alias = "BF_HIGH_IMAGE")]
+    pub type BfHighImage = crate::Reg<bf_high_image::BfHighImageSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 31:20 with 0x690."]
+    pub mod bf_high_image {
+        #[doc = "Register `BF_HIGH_IMAGE` reader"]
+        pub type R = crate::R<BfHighImageSpec>;
+        #[doc = "Register `BF_HIGH_IMAGE` writer"]
+        pub type W = crate::W<BfHighImageSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `IMAGE_UNKNOWN` reader - "]
+        pub type ImageUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn image_unknown(&self) -> ImageUnknownR {
+                ImageUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, BfHighImageSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, BfHighImageSpec> {
+                ImageUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init_bf replaces bits 31:20 with 0x690.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_high_image::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_high_image::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfHighImageSpec;
+        impl crate::RegisterSpec for BfHighImageSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_high_image::R`](R) reader structure"]
+        impl crate::Readable for BfHighImageSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bf_high_image::W`](W) writer structure"]
+        impl crate::Writable for BfHighImageSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TB_TX_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_tb_tx clears bit 15, then bit 14 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_tx_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_tx_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_tx_control`] module"]
+    #[doc(alias = "TB_TX_CONTROL")]
+    pub type TbTxControl = crate::Reg<tb_tx_control::TbTxControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_tb_tx clears bit 15, then bit 14 through a separate fresh-read RMW."]
+    pub mod tb_tx_control {
+        #[doc = "Register `TB_TX_CONTROL` reader"]
+        pub type R = crate::R<TbTxControlSpec>;
+        #[doc = "Register `TB_TX_CONTROL` writer"]
+        pub type W = crate::W<TbTxControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        #[doc = "Field `CLEAR_14` reader - "]
+        pub type Clear14R = crate::BitReader;
+        #[doc = "Field `CLEAR_14` writer - "]
+        pub type Clear14W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_15` reader - "]
+        pub type Clear15R = crate::BitReader;
+        #[doc = "Field `CLEAR_15` writer - "]
+        pub type Clear15W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        impl R {
+            #[doc = "Bits 0:13"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x3fff) as u16)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn clear_14(&self) -> Clear14R {
+                Clear14R::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn clear_15(&self) -> Clear15R {
+                Clear15R::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:13"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, TbTxControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn clear_14(&mut self) -> Clear14W<'_, TbTxControlSpec> {
+                Clear14W::new(self, 14)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn clear_15(&mut self) -> Clear15W<'_, TbTxControlSpec> {
+                Clear15W::new(self, 15)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, TbTxControlSpec> {
+                HighPreservedUnknownW::new(self, 16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_tb_tx clears bit 15, then bit 14 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_tx_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_tx_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbTxControlSpec;
+        impl crate::RegisterSpec for TbTxControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tb_tx_control::R`](R) reader structure"]
+        impl crate::Readable for TbTxControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tb_tx_control::W`](W) writer structure"]
+        impl crate::Writable for TbTxControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BF_SYNC_STATUS_UNKNOWN (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-read-semantics-unknown\\]. Complete hal_init_bf performs one final volatile read whose value is unused before returning.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_sync_status_unknown::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_sync_status_unknown`] module"]
+    #[doc(alias = "BF_SYNC_STATUS_UNKNOWN")]
+    pub type BfSyncStatusUnknown = crate::Reg<bf_sync_status_unknown::BfSyncStatusUnknownSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-read-semantics-unknown\\]. Complete hal_init_bf performs one final volatile read whose value is unused before returning."]
+    pub mod bf_sync_status_unknown {
+        #[doc = "Register `BF_SYNC_STATUS_UNKNOWN` reader"]
+        pub type R = crate::R<BfSyncStatusUnknownSpec>;
+        #[doc = "Field `VALUE_UNKNOWN` reader - "]
+        pub type ValueUnknownR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value_unknown(&self) -> ValueUnknownR {
+                ValueUnknownR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-read-semantics-unknown\\]. Complete hal_init_bf performs one final volatile read whose value is unused before returning.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_sync_status_unknown::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BfSyncStatusUnknownSpec;
+        impl crate::RegisterSpec for BfSyncStatusUnknownSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bf_sync_status_unknown::R`](R) reader structure"]
+        impl crate::Readable for BfSyncStatusUnknownSpec {}
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields-and-default-values\\]. Complete COEX/PTI tail of hal_init and complete setter leaves. PTI values remain platform-supplied because the coexistence table may be changed at runtime."]
 pub type WifiMacCoexInit = crate::Periph<wifi_mac_coex_init::RegisterBlock, 0x2010_42fc>;
 impl core::fmt::Debug for WifiMacCoexInit {
@@ -14361,6 +15362,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
+    #[doc = "WIFI_MAC_HE_INIT_PREFIX"]
+    pub wifi_mac_he_init_prefix: WifiMacHeInitPrefix,
     #[doc = "WIFI_MAC_COEX_INIT"]
     pub wifi_mac_coex_init: WifiMacCoexInit,
     #[doc = "WIFI_MAC_ANTENNA_INIT"]
@@ -14426,6 +15429,7 @@ impl Peripherals {
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
+            wifi_mac_he_init_prefix: WifiMacHeInitPrefix::steal(),
             wifi_mac_coex_init: WifiMacCoexInit::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
             wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate::steal(),

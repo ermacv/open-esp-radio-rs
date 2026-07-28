@@ -741,6 +741,22 @@ boundary captures are now methods on the unique `RadioRegisters` owner.
 re-exported by HAL, so existing PHY callers keep their source-level API
 without retaining a second mask/shift implementation.
 
+## Native MAC BlockAck access
+
+The generated `WIFI_MAC_RX_DMA` peripheral is now the only live register
+access path for the receive-agreement transaction and completed-TX BlockAck
+sampling. Primary evidence remains the complete pinned `libpp.a` BlockAck
+leaves plus the corresponding
+`migration/esp32s31-hybrid-runtime/src/{rx_ampdu_hw,tx_ampdu}.rs`
+transcriptions already cited by the SVD.
+
+The PAC keeps the receive index selection, entry publication, commit pulse,
+readback latch, diagnostic reads and fences as distinct operations. It also
+matches the four descending TX queue banks explicitly, avoiding handwritten
+address arithmetic. The upper MAC modules accept semantic values or decoded
+register images and no longer import the handwritten register facade for
+these leaves.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

@@ -6,10 +6,7 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
-use open_esp_radio_pac_esp32s31::{
-    mac::{TX_BLOCK_ACK_BITMAP_HIGH, TX_BLOCK_ACK_BITMAP_LOW, TX_BLOCK_ACK_CONTROL_SEQUENCE},
-    RadioRegisters,
-};
+use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 pub const BLOCK_ACK_CATEGORY: u8 = 3;
 pub const ADDBA_REQUEST_ACTION: u8 = 0;
@@ -1260,17 +1257,13 @@ pub fn read_ht_block_ack(
     mmio: &RadioRegisters,
     hardware_queue: u8,
 ) -> Result<HtBlockAckRegisters, HtBlockAckReadError> {
-    let queue = usize::from(hardware_queue);
-    if queue >= TX_BLOCK_ACK_CONTROL_SEQUENCE.len() {
-        return Err(HtBlockAckReadError::InvalidHardwareQueue(hardware_queue));
-    }
-    let control_and_sequence = mmio.read32(TX_BLOCK_ACK_CONTROL_SEQUENCE[queue]);
-    let bitmap_low = mmio.read32(TX_BLOCK_ACK_BITMAP_LOW[queue]);
-    let bitmap_high = mmio.read32(TX_BLOCK_ACK_BITMAP_HIGH[queue]);
+    let registers = mmio
+        .read_tx_block_ack_registers(hardware_queue)
+        .ok_or(HtBlockAckReadError::InvalidHardwareQueue(hardware_queue))?;
     Ok(decode_ht_block_ack_registers(
-        control_and_sequence,
-        bitmap_low,
-        bitmap_high,
+        registers.control_and_sequence,
+        registers.bitmap_low,
+        registers.bitmap_high,
     ))
 }
 

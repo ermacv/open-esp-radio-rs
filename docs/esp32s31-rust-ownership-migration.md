@@ -3273,3 +3273,24 @@ need an `unsafe` contract for clock or RXIQ-root access. The old raw address,
 bit transforms, wrappers and duplicate tests are deleted from
 `radio_hal.rs`; the source-only audit rejects their names and any raw
 `0x2010_0890` literal returning to the live PHY crate.
+
+## Native MAC BlockAck PAC operations
+
+The receive-agreement programmer and completed-TX BlockAck sampler now use
+the generated `WIFI_MAC_RX_DMA` peripheral directly. Their SVD identities
+come from the complete pinned `libpp.a` leaves and the preserved
+`migration/esp32s31-hybrid-runtime` transcriptions recorded on each register.
+
+`RadioRegisters::program_rx_block_ack_entry` retains the selected-index RMW,
+six full entry writes, separate commit edges, readback-latch interval, four
+diagnostic reads and both device fences. In particular, it preserves the
+recovered caller's unusual `tid << 14` image instead of silently substituting
+the nominal SVD field value. The clear path retains the same latch, validity,
+bitmap and commit order. The TX sampler matches each of the four descending
+hardware queue banks and reads control/sequence, low bitmap and high bitmap
+in source order.
+
+The live MAC layer now owns only agreement validation and protocol-result
+decoding. Its `rx_ampdu_hw.rs` and `tx_ampdu.rs` modules contain no
+`Register32`, `Field32`, `read32`, `write32` or `modify32` calls; the source
+audit prevents that compatibility boundary from returning.

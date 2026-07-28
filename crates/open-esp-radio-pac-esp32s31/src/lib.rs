@@ -8,6 +8,7 @@ pub mod clock;
 mod frequency;
 mod iq_estimator;
 pub mod mac;
+mod mac_block_ack;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
@@ -15,6 +16,18 @@ pub mod power;
 mod table_memory;
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
+
+#[inline]
+fn device_fence() {
+    #[cfg(target_arch = "riscv32")]
+    // SAFETY: this instruction only orders memory and device accesses.
+    unsafe {
+        core::arch::asm!("fence iorw, iorw")
+    }
+
+    #[cfg(not(target_arch = "riscv32"))]
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
 
 /// Access policy recovered for one MMIO register.
 ///
@@ -228,14 +241,7 @@ impl RadioRegisters {
 
     /// Order device-memory accesses at a descriptor or interrupt boundary.
     pub fn fence(&mut self) {
-        #[cfg(target_arch = "riscv32")]
-        // SAFETY: this instruction only orders memory and device accesses.
-        unsafe {
-            core::arch::asm!("fence iorw, iorw")
-        }
-
-        #[cfg(not(target_arch = "riscv32"))]
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        device_fence();
     }
 
     // Temporary compatibility for PHY leaves that have not yet moved to

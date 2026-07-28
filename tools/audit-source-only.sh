@@ -65,6 +65,18 @@ then
     exit 1
 fi
 
+# RX and TX BlockAck hardware leaves are now direct generated-PAC methods.
+# The MAC protocol modules retain validation and decoding but must not regain
+# compatibility-register identities or generic raw register operations.
+if rg -n \
+    '(Register32|Field32|read32|write32|modify32|mac::rx_block_ack|TX_BLOCK_ACK_(CONTROL_SEQUENCE|BITMAP_(LOW|HIGH)))' \
+    crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs \
+    crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs
+then
+    echo "BlockAck compatibility MMIO returned to the MAC protocol layer" >&2
+    exit 1
+fi
+
 # PHY target bindings may perform I2C/PBus work only through a borrowed
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.

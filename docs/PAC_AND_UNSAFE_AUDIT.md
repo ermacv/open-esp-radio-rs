@@ -254,5 +254,10 @@ remains split only around its existing NRX and official-platform calls. HAL is
 now a sequencing facade with no generic register, field or mask access, and
 the source audit enforces that boundary.
 
+AGC enable/disable, RX compensation, the DC-memory clear pulse and both
+caller-timed PBus work-mode pulse segments have begun the same migration.
+Their generated fields now live behind `RadioRegisters`; delay placement
+remains explicit in the upper transition.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

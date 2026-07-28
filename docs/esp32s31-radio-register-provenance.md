@@ -661,6 +661,12 @@ partial clears inside the two multi-bit initialization fields. The HAL module
 contains only the sequencing split around NRX and official-platform control;
 it no longer imports `Register32`, `Field32`, masks or compatibility MMIO.
 
+The first AGC slice is native as well. Complete ROM enable/disable edges,
+pinned RX-compensation writes, the DC-memory pulse, and the two PBus
+work-mode pulse segments now operate on generated fields. The one- and
+two-microsecond delays remain in the caller state machine; moving MMIO into
+the PAC does not collapse those asynchronous hardware boundaries.
+
 ## Calibration-tone ownership
 
 SVD v2.8 describes the complete tone cluster used by PWDET, TX-power, TX-DC,

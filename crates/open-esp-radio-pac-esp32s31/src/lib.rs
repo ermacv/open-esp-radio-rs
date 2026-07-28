@@ -2,6 +2,7 @@
 
 use core::ptr::{read_volatile, write_volatile};
 
+mod agc;
 mod baseband;
 pub mod clock;
 mod iq_estimator;

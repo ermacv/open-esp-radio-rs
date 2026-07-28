@@ -1034,6 +1034,21 @@ to 84, then arithmetic-shifts by two. The MAC therefore owns table storage and
 register publication, while a narrow PHY/platform source owns production of
 each calibrated pair.
 
+SVD v3.20 closes the remainder of `hal_he_init`. Before the register suffix,
+complete `dbg_read_tx_power` queries rates 0 through 25 while skipping rate 4.
+Its 25 results are discarded for logging, but the rev0 ROM producer still
+causes fifty ordered PHY RMW edges; the open cold path therefore preserves the
+queries through the same narrow source.
+
+The following complete suffix is 163 writes/RMWs plus two guard reads. It
+includes four separate ER-SU ACK-byte updates, the 120-word clear at
+`0x201055f0..0x201057cc`, broadcast-RU and UORA fields, and the deliberately
+repeated multi-BSSID updates in the parent and both children. Those operations
+now execute through generated fields under the unique `RadioRegisters`
+borrow. The former upper MAC implementation combined several RMWs, omitted
+broadcast-RU/UORA and represented the register set as raw numeric aliases; it
+and its now-unused aliases have been removed.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

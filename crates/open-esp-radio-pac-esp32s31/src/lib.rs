@@ -16,6 +16,7 @@ mod mac_crypto;
 mod mac_enable;
 mod mac_hal_init_tail;
 mod mac_he_init;
+mod mac_he_init_suffix;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
@@ -605,6 +606,38 @@ mod tests {
     }
 
     #[test]
+    fn generated_mac_he_suffix_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let init = &registers.peripherals.wifi_mac_he_init_suffix;
+        assert_eq!(init.multi_bssid_control().as_ptr() as usize, 0x2010_4020);
+        assert_eq!(init.broadcast_ru_low().as_ptr() as usize, 0x2010_4038);
+        assert_eq!(init.tx_mode_control().as_ptr() as usize, 0x2010_42b8);
+        assert_eq!(init.common_power_control().as_ptr() as usize, 0x2010_4400);
+        assert_eq!(init.ersu_ack_rate().as_ptr() as usize, 0x2010_4404);
+        assert_eq!(init.ersu_and_vht_control().as_ptr() as usize, 0x2010_4c7c);
+        for physical in 0..8 {
+            assert_eq!(
+                init.queue_control(physical).as_ptr() as usize,
+                0x2010_4cf8 + physical * 0x10
+            );
+        }
+        for physical in 0..4 {
+            assert_eq!(
+                init.protection(physical).as_ptr() as usize,
+                0x2010_4d34 + physical * 0x10
+            );
+        }
+        for word in 0..120 {
+            assert_eq!(
+                init.he_scratch(word).as_ptr() as usize,
+                0x2010_55f0 + word * 4
+            );
+        }
+    }
+
+    #[test]
     fn generated_mac_tx_power_init_matches_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.
@@ -718,8 +751,6 @@ mod tests {
             &mac::init::RX_FILTER,
             &mac::init::BSSID_HIGH,
             &mac::init::RX_QUEUE_DEFAULT,
-            &mac::init::HE_PROTECTION,
-            &mac::init::HE_QUEUE_CONTROL,
             &mac::init::LAST_RX_BUFFER,
             &mac::init::CRYPTO_BYPASS,
         ] {
@@ -727,18 +758,11 @@ mod tests {
                 assert_valid(register);
             }
         }
-
-        for index in 0..mac::init::HE_SCRATCH_COUNT {
-            assert_valid(mac::init::he_scratch(index).unwrap());
-        }
-        assert!(mac::init::he_scratch(mac::init::HE_SCRATCH_COUNT).is_none());
     }
 
     #[test]
     fn mac_init_aliases_share_canonical_register_identities() {
         assert_eq!(mac::init::R_4098, mac::RX_CSI_CONFIG);
         assert_eq!(mac::init::RX_SNIFFER_CONTROL, mac::init::RX_FILTER[3]);
-        assert_eq!(mac::init::HE_PROTECTION[0], mac::TX_Q0_PROTECTION);
-        assert_eq!(mac::init::HE_QUEUE_CONTROL[0], mac::TX_Q0_PPDU_CONTROL);
     }
 }

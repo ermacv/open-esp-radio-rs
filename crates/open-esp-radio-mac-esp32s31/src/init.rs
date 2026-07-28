@@ -15,7 +15,9 @@ pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_hal_tail::{MacColdHalTailHardware, MacSlowClockCalibration};
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
-pub use crate::cold_he::{query_tx_power_table, MacColdHeHardware, MacTxPowerSource};
+pub use crate::cold_he::{
+    query_tx_power_table, run_tx_power_diagnostic_queries, MacColdHeHardware, MacTxPowerSource,
+};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::cold_rx_policy::MacColdRxPolicyHardware;
@@ -62,52 +64,6 @@ pub trait MacSlowClockCalibrationSource {
 fn modify<M: Mmio>(mmio: &mut M, register: Register32, mask: u32, value: u32) {
     let current = mmio.read32(register);
     mmio.write32(register, (current & !mask) | (value & mask));
-}
-
-/// Direct register portion of `hal_init_bf` and `hal_he_init`.
-///
-/// The operations below cover the common legacy TX/RX fields plus the receive
-/// parser, multi-BSSID and baseband-hang configuration used by `hal_init`.
-/// Trigger-based HE transmit and debug output remain outside this cold path.
-fn initialize_he_after_power<M: Mmio>(mmio: &mut M) {
-    // `hal_he_set_ersu(0)` and its `hal_he_set_ersu_ack_rate(0)` child.
-    // Although ER-SU is not used by the legacy probe request, these are common
-    // transmit defaults established by the parent before any queue can run.
-    modify(mmio, registers::R_4C7C, 0x0000_0400, 0x0000_0400);
-    mmio.write32(registers::R_4404, 0x8080_8080);
-    modify(mmio, registers::R_4C80, 0x0000_0ff8, 0x0000_0be0);
-
-    // HE scratch table cleared by the vendor parent.
-    for index in 0..registers::HE_SCRATCH_COUNT {
-        mmio.write32(
-            registers::he_scratch(index).expect("bounded HE scratch index"),
-            0,
-        );
-    }
-
-    for register in registers::HE_PROTECTION {
-        modify(mmio, register, 0xc000_0000, 0);
-    }
-    modify(mmio, registers::R_4C98, 0x0000_0004, 0x0000_0004);
-    modify(mmio, registers::R_4CC0, 0x8000_0000, 0x8000_0000);
-    modify(mmio, registers::R_4C88, 0x0000_0003, 0x0000_0003);
-    modify(mmio, registers::R_42B8, 0xc000_0000, 0x4000_0000);
-    modify(mmio, registers::R_4400, 0x0002_0000, 0x0002_0000);
-    // `hal_set_tx_min_pwr(-11)`: the signed six-bit minimum-power field is
-    // shared by legacy management TX and the later HE transmit paths.
-    modify(mmio, registers::R_4400, 0x0000_03f0, 0x0000_0350);
-    modify(mmio, registers::R_410C, 0x0000_0001, 0);
-    modify(mmio, registers::R_4C7C, 0x0040_0000, 0);
-
-    // `hal_he_clr_multi_bssid` followed by
-    // `hal_he_set_co_hosted_bss(0, 0)`.
-    modify(mmio, registers::R_4020, 0x0002_0100, 0);
-    modify(mmio, registers::R_4020, 0x0001_fe00, 0x0001_fe00);
-    modify(mmio, registers::R_4020, 0x0000_00ff, 0);
-    modify(mmio, registers::R_4028, 0x00ff_0000, 0);
-    for register in registers::HE_QUEUE_CONTROL {
-        modify(mmio, register, 0x0000_0004, 0);
-    }
 }
 
 /// Establish the reset-state MAC register configuration and accept all RX
@@ -179,7 +135,10 @@ pub fn initialize_promiscuous_receive<
     // code retains a pointer into PHY or vendor global state.
     let tx_power = query_tx_power_table(platform);
     mmio.initialize_tx_power(&tx_power);
-    initialize_he_after_power(mmio);
+    // Complete dbg_read_tx_power is not semantically needed for logging, but
+    // its 25 discarded ROM queries have 50 hardware-visible PHY RMW edges.
+    run_tx_power_diagnostic_queries(platform);
+    mmio.initialize_he_suffix();
 
     // Complete `mac_last_rxbuf_init`, including its three separate enable RMWs.
     mmio.initialize_last_rx_buffer_table();

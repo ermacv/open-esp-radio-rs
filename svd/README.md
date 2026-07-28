@@ -72,6 +72,8 @@ identities for every entry.
 | `BLOB_LIBPP_HAL_HE_INIT_PREFIX` | Complete `hal_he_init` prefix, beamforming init/report-rate children and trigger-based TX init through the TX-power boundary |
 | `BLOB_LIBPP_HAL_TX_POWER_INIT` | Complete 43-entry MAC power-table parent plus TB, immediate-response and TB-RU register leaves |
 | `ROM_REV0_PHY_GET_MAX_PWR` | Complete rev0 ROM target-power chain that produces each two-byte MAC table entry from live PHY state |
+| `BLOB_LIBPP_HAL_HE_INIT_SUFFIX` | Complete post-power `hal_he_init` hardware tail and every reached finite register leaf |
+| `BLOB_LIBPP_DBG_READ_TX_POWER` | Complete unconditional diagnostic traversal; 25 discarded PHY queries still have observable ROM MMIO edges |
 
 The public ESP-IDF ESP32-C5/C61 register headers are only cross-chip
 validation. They are not accepted as the sole basis for an S31 address or bit.

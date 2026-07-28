@@ -7,6 +7,7 @@ use open_esp_radio_pac_esp32s31::{
 pub trait MacColdHeHardware {
     fn initialize_he_prefix(&mut self);
     fn initialize_tx_power(&mut self, table: &MacTxPowerTable);
+    fn initialize_he_suffix(&mut self);
 }
 
 /// Calibrated two-byte target-power producer owned by the PHY/platform layer.
@@ -27,6 +28,20 @@ pub fn query_tx_power_table(source: &mut impl MacTxPowerSource) -> MacTxPowerTab
     MacTxPowerTable::new(entries)
 }
 
+/// Preserve the unconditional PHY-query traversal in `dbg_read_tx_power`.
+///
+/// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]` body recorded as
+/// `BLOB_LIBPP_DBG_READ_TX_POWER`. Its results are discarded, but each current
+/// rev0 ROM query performs two observable PHY RMWs, so the calls cannot be
+/// optimized out of an instruction-exact cold-start sequence.
+pub fn run_tx_power_diagnostic_queries(source: &mut impl MacTxPowerSource) {
+    for rate in 0..26 {
+        if rate != 4 {
+            let _ = source.mac_tx_power_pair(rate);
+        }
+    }
+}
+
 impl MacColdHeHardware for RadioRegisters {
     fn initialize_he_prefix(&mut self) {
         self.initialize_mac_he_prefix();
@@ -34,5 +49,9 @@ impl MacColdHeHardware for RadioRegisters {
 
     fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
         self.initialize_mac_tx_power(table);
+    }
+
+    fn initialize_he_suffix(&mut self) {
+        self.initialize_mac_he_suffix();
     }
 }

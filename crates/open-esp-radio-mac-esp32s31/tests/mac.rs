@@ -51,6 +51,7 @@ enum Operation {
     InitializeColdCoex(MacColdCoexPti),
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
+    InitializeHeSuffix,
     Fence,
 }
 
@@ -335,6 +336,10 @@ impl MacColdHeHardware for MockMmio {
 
     fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
         self.operations.push(Operation::InitializeTxPower(*table));
+    }
+
+    fn initialize_he_suffix(&mut self) {
+        self.operations.push(Operation::InitializeHeSuffix);
     }
 }
 
@@ -993,9 +998,6 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         .operations()
         .windows(expected_cold_rx_policy.len())
         .any(|operations| operations == expected_cold_rx_policy));
-    assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));
-    assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
-    assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
     assert!(mmio.operations().windows(8).any(|operations| {
         operations
@@ -1045,6 +1047,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         .operations()
         .iter()
         .any(|operation| matches!(operation, Operation::InitializeTxPower(_))));
+    assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
     let mut expected_platform = vec![
         PlatformOperation::EnableWifiMacClocks,
         PlatformOperation::EnableCoexistenceClock,
@@ -1054,6 +1057,11 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         PlatformOperation::RequestMacDelayRandom,
     ];
     expected_platform.extend((0..43).map(PlatformOperation::RequestTxPower));
+    expected_platform.extend(
+        (0..26)
+            .filter(|rate| *rate != 4)
+            .map(PlatformOperation::RequestTxPower),
+    );
     expected_platform.extend([
         PlatformOperation::RequestSlowClockCalibration,
         PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),

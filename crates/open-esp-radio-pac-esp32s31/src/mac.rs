@@ -409,19 +409,13 @@ pub mod init {
     pub const RX_SNIFFER_CONTROL: Register32 = RX_FILTER[3];
 
     pub const R_4C00: Register32 = Register32::new(0x2010_4c00);
-    pub const R_4020: Register32 = Register32::new(0x2010_4020);
-    pub const R_4028: Register32 = Register32::new(0x2010_4028);
     pub const R_407C: Register32 = Register32::new(0x2010_407c);
     pub const R_4098: Register32 = mac::RX_CSI_CONFIG;
     pub const R_40F4: Register32 = Register32::new(0x2010_40f4);
-    pub const R_410C: Register32 = Register32::new(0x2010_410c);
     pub const R_4114: Register32 = Register32::new(0x2010_4114);
     pub const R_4118: Register32 = Register32::new(0x2010_4118);
     pub const R_4120: Register32 = Register32::new(0x2010_4120);
-    pub const R_42B8: Register32 = Register32::new(0x2010_42b8);
     pub const R_4308: Register32 = Register32::new(0x2010_4308);
-    pub const R_4400: Register32 = Register32::new(0x2010_4400);
-    pub const R_4404: Register32 = Register32::new(0x2010_4404);
     pub const R_444C: Register32 = Register32::new(0x2010_444c);
     pub const R_4450: Register32 = Register32::new(0x2010_4450);
     pub const R_4458: Register32 = Register32::new(0x2010_4458);
@@ -434,14 +428,10 @@ pub mod init {
     pub const R_4C60: Register32 = Register32::new(0x2010_4c60);
     pub const R_4C68: Register32 = Register32::new(0x2010_4c68);
     pub const R_4C6C: Register32 = Register32::new(0x2010_4c6c);
-    pub const R_4C7C: Register32 = Register32::new(0x2010_4c7c);
-    pub const R_4C80: Register32 = Register32::new(0x2010_4c80);
-    pub const R_4C88: Register32 = Register32::new(0x2010_4c88);
     pub const R_4C8C: Register32 = Register32::new(0x2010_4c8c);
     pub const R_4C98: Register32 = Register32::new(0x2010_4c98);
     pub const R_4CA0: Register32 = Register32::new(0x2010_4ca0);
     pub const R_4CA8: Register32 = Register32::new(0x2010_4ca8);
-    pub const R_4CC0: Register32 = Register32::new(0x2010_4cc0);
     pub const R_4E04: Register32 = Register32::new(0x2010_4e04);
     pub const R_8060: Register32 = Register32::new(0x2010_8060);
     pub const R_807C: Register32 = Register32::new(0x2010_807c);
@@ -476,22 +466,6 @@ pub mod init {
         Register32::new(0x2010_4104),
         Register32::new(0x2010_4108),
     ];
-    pub const HE_PROTECTION: [Register32; 4] = [
-        mac::TX_Q0_PROTECTION,
-        Register32::new(0x2010_4d54),
-        Register32::new(0x2010_4d44),
-        Register32::new(0x2010_4d34),
-    ];
-    pub const HE_QUEUE_CONTROL: [Register32; 8] = [
-        mac::TX_Q0_PPDU_CONTROL,
-        Register32::new(0x2010_4d58),
-        Register32::new(0x2010_4d48),
-        Register32::new(0x2010_4d38),
-        Register32::new(0x2010_4d28),
-        Register32::new(0x2010_4d18),
-        Register32::new(0x2010_4d08),
-        Register32::new(0x2010_4cf8),
-    ];
     pub const LAST_RX_BUFFER: [Register32; 18] = [
         Register32::new(0x2010_4124),
         Register32::new(0x2010_4140),
@@ -519,14 +493,4 @@ pub mod init {
         Register32::new(0x2010_480c),
         Register32::new(0x2010_4810),
     ];
-
-    pub const HE_SCRATCH_COUNT: usize = 120;
-
-    pub const fn he_scratch(index: usize) -> Option<Register32> {
-        if index < HE_SCRATCH_COUNT {
-            Some(Register32::new(0x2010_55f0 + index * 4))
-        } else {
-            None
-        }
-    }
 }

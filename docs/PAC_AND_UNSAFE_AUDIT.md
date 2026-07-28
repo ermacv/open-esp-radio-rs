@@ -168,6 +168,13 @@ The FE/BB gate and calibration-clock leaves now use native generated PAC
 access; their full-register `unsafe` writes are confined to the PAC and cite
 the complete ROM/blob sources.
 
+The complete `hal_he_init` prefix, PHY-owned power-table boundary and
+post-power suffix are also ownership-bound generated-PAC transactions. The
+MAC layer retains only the semantic call order and a safe calibrated-pair
+trait; the old HE scratch arrays, raw register aliases and generic MMIO loop
+have been removed. Descriptor-memory unsafe remains independent of this
+peripheral migration.
+
 The complete `open-esp-radio-phy-esp32s31` crate is now free of `unsafe`, raw
 volatile access and pointer casts. Its target bindings express sequencing
 through non-cloneable actions and require the unique `RadioRegisters` borrow;

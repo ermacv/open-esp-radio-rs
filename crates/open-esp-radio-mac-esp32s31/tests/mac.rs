@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_mac_esp32s31::{
-    crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CryptoKeyError},
+    crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CcmpKeyHardware, CryptoKeyError},
     descriptor::{
         descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
         tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
@@ -29,7 +29,7 @@ use open_esp_radio_mac_esp32s31::{
 };
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as mac_init},
-    Register32,
+    MacKeyInstallOutcome, Register32,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,6 +141,46 @@ impl MacInterrupt for MockMmio {
 
     fn acknowledge(&mut self, events: u32) {
         self.write32(MAC_INT_CLEAR, events);
+        Mmio::fence(self);
+    }
+}
+
+impl CcmpKeyHardware for MockMmio {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+        let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
+        let valid_bit = 1_u32 << index;
+        if validity & valid_bit != 0 {
+            return MacKeyInstallOutcome::Occupied;
+        }
+        for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
+            self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
+        }
+        for (word, value) in words.into_iter().enumerate() {
+            self.write32(
+                mac::crypto_key_entry_word(index, word as u8).unwrap(),
+                value,
+            );
+        }
+        self.write32(mac::CRYPTO_KEY_VALID_BITMAP, validity | valid_bit);
+        self.write32(mac::CRYPTO_INTERFACE_CONTROL[0], 0x0003_0103);
+        let policy = self.read32(mac::CRYPTO_POLICY_CONTROL);
+        self.write32(mac::CRYPTO_POLICY_CONTROL, policy & 0xffc0_003f);
+        let control = self.read32(mac::CRYPTO_INTERFACE_CONTROL[0]);
+        self.write32(mac::CRYPTO_INTERFACE_CONTROL[0], control & 0x3fff_ffff);
+        Mmio::fence(self);
+        if self.read32(mac::CRYPTO_KEY_VALID_BITMAP) & valid_bit == 0 {
+            MacKeyInstallOutcome::Rejected
+        } else {
+            MacKeyInstallOutcome::Installed
+        }
+    }
+
+    fn clear_ccmp_entry(&mut self, index: u8) {
+        let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
+        self.write32(mac::CRYPTO_KEY_VALID_BITMAP, validity & !(1_u32 << index));
+        for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
+            self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
+        }
         Mmio::fence(self);
     }
 }

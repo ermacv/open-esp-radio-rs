@@ -3338,3 +3338,28 @@ with source and confidence. This keeps the bit hypotheses reviewable at the
 register source instead of duplicating unexplained numeric addresses in the
 ISR. A source audit rejects `Register32`, `Field32`, generic `Mmio`, and raw
 read/write/modify calls if they return to `irq.rs`.
+
+## Semantic MAC CCMP key ownership
+
+The STA pairwise and group key policy no longer receives generic MAC `Mmio`.
+It composes only the six evidenced peer/control/key words and calls the finite
+`CcmpKeyHardware` install or clear operation. Production implements that
+capability on the unique `RadioRegisters` owner; host tests implement the same
+semantic boundary while retaining their exact operation-trace model.
+
+SVD v3.0 separates the control aperture at `0x2010_4800` from the key-table
+aperture at `0x2010_5800`. The complete pinned
+`_oracles/libpp.a::hal_crypto_clr_key_entry`,
+`hal_crypto_set_key_entry`, `hal_crypto_is_key_valid`, and
+`hal_crypto_enable` bodies prove 25 validity bits, a ten-word/`0x28`-byte
+entry stride, and the reachable STA CCMP enable sequence. The generated PAC
+retains all ten zero stores before six key-image stores, validity publication,
+the complete `0x00030103` interface image, policy mask `0xffc0003f`, final
+interface mask `0x3fffffff`, device fence, and validity confirmation.
+
+The returned pairwise/group slot values remain lifetime authority rather than
+secret storage: key bytes are borrowed only for the bounded transaction, and
+consuming the token performs the generated-PAC invalidate/zero operation.
+`crypto.rs` contains no `Register32`, `Field32`, generic `Mmio`, or raw
+read/write/modify calls; the source-only audit prevents that register boundary
+from returning.

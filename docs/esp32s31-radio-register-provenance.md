@@ -775,6 +775,25 @@ watchdog, RX-success and TX-timeout bit identities recorded in the SVD. The
 upper ISR receives only a semantic snapshot/acknowledge capability and cannot
 name or manufacture an MMIO register.
 
+The hardware CCMP transaction is likewise split into generated
+`WIFI_MAC_CRYPTO_CONTROL` at `0x2010_4800` and `WIFI_MAC_KEY_TABLE` at
+`0x2010_5800`. Its primary source is the complete `hal_crypto.o` recovered
+from pinned `_oracles/libpp.a` SHA-256
+`f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e`:
+`hal_crypto_clr_key_entry` proves 25 validity bits, ten ordered word clears
+and the `0x28`-byte entry stride; `hal_crypto_set_key_entry` proves the
+peer/control/key publication; `hal_crypto_is_key_valid` proves the validity
+readback; and the reachable STA/CCMP branch of `hal_crypto_enable` proves the
+interface and policy sequence.
+
+The SVD deliberately leaves partly decoded control and policy fields named
+`UNKNOWN`. Their exact write images and masks are instruction-exact, but the
+individual electrical meanings are not yet independently identified. The
+existing migration STA scan/WPA/DHCP qualification supports the complete
+transaction but is not treated as independent register-level HIL evidence.
+The upper MAC therefore receives only a semantic install/clear capability;
+all table geometry and generated register access remain inside the PAC.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

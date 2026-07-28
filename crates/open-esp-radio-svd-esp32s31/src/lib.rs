@@ -7914,6 +7914,275 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
+pub type WifiMacCryptoControl = crate::Periph<wifi_mac_crypto_control::RegisterBlock, 0x2010_4800>;
+impl core::fmt::Debug for WifiMacCryptoControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacCryptoControl").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
+pub mod wifi_mac_crypto_control {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        interface_control: [InterfaceControl; 3],
+        _reserved1: [u8; 0x04],
+        policy_control: PolicyControl,
+        key_valid_bitmap: KeyValidBitmap,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x0c - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+        #[inline(always)]
+        pub const fn interface_control(&self, n: usize) -> &InterfaceControl {
+            &self.interface_control[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x0c - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+        #[inline(always)]
+        pub fn interface_control_iter(&self) -> impl Iterator<Item = &InterfaceControl> {
+            self.interface_control.iter()
+        }
+        #[doc = "0x10 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6."]
+        #[inline(always)]
+        pub const fn policy_control(&self) -> &PolicyControl {
+            &self.policy_control
+        }
+        #[doc = "0x14 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. One validity bit per one of the 25 evidenced hardware key entries."]
+        #[inline(always)]
+        pub const fn key_valid_bitmap(&self) -> &KeyValidBitmap {
+            &self.key_valid_bitmap
+        }
+    }
+    #[doc = "INTERFACE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interface_control`] module"]
+    #[doc(alias = "INTERFACE_CONTROL")]
+    pub type InterfaceControl = crate::Reg<interface_control::InterfaceControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+    pub mod interface_control {
+        #[doc = "Register `INTERFACE_CONTROL%s` reader"]
+        pub type R = crate::R<InterfaceControlSpec>;
+        #[doc = "Register `INTERFACE_CONTROL%s` writer"]
+        pub type W = crate::W<InterfaceControlSpec>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+        pub type ControlLowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        #[doc = "Field `MODE_HIGH_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
+        pub type ModeHighUnknownR = crate::FieldReader;
+        #[doc = "Field `MODE_HIGH_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
+        pub type ModeHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:29 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+            #[inline(always)]
+            pub fn control_low_unknown(&self) -> ControlLowUnknownR {
+                ControlLowUnknownR::new(self.bits & 0x3fff_ffff)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
+            #[inline(always)]
+            pub fn mode_high_unknown(&self) -> ModeHighUnknownR {
+                ModeHighUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:29 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+            #[inline(always)]
+            pub fn control_low_unknown(&mut self) -> ControlLowUnknownW<'_, InterfaceControlSpec> {
+                ControlLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
+            #[inline(always)]
+            pub fn mode_high_unknown(&mut self) -> ModeHighUnknownW<'_, InterfaceControlSpec> {
+                ModeHighUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InterfaceControlSpec;
+        impl crate::RegisterSpec for InterfaceControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`interface_control::R`](R) reader structure"]
+        impl crate::Readable for InterfaceControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`interface_control::W`](W) writer structure"]
+        impl crate::Writable for InterfaceControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POLICY_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@policy_control`] module"]
+    #[doc(alias = "POLICY_CONTROL")]
+    pub type PolicyControl = crate::Reg<policy_control::PolicyControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6."]
+    pub mod policy_control {
+        #[doc = "Register `POLICY_CONTROL` reader"]
+        pub type R = crate::R<PolicyControlSpec>;
+        #[doc = "Register `POLICY_CONTROL` writer"]
+        pub type W = crate::W<PolicyControlSpec>;
+        #[doc = "Field `LOW_POLICY_UNKNOWN` reader - "]
+        pub type LowPolicyUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_POLICY_UNKNOWN` writer - "]
+        pub type LowPolicyUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `ORDINARY_ENABLE_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
+        pub type OrdinaryEnableClearUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `ORDINARY_ENABLE_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
+        pub type OrdinaryEnableClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `HIGH_POLICY_UNKNOWN` reader - "]
+        pub type HighPolicyUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_POLICY_UNKNOWN` writer - "]
+        pub type HighPolicyUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn low_policy_unknown(&self) -> LowPolicyUnknownR {
+                LowPolicyUnknownR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:21 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
+            #[inline(always)]
+            pub fn ordinary_enable_clear_unknown(&self) -> OrdinaryEnableClearUnknownR {
+                OrdinaryEnableClearUnknownR::new(((self.bits >> 6) & 0xffff) as u16)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_policy_unknown(&self) -> HighPolicyUnknownR {
+                HighPolicyUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn low_policy_unknown(&mut self) -> LowPolicyUnknownW<'_, PolicyControlSpec> {
+                LowPolicyUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 6:21 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
+            #[inline(always)]
+            pub fn ordinary_enable_clear_unknown(
+                &mut self,
+            ) -> OrdinaryEnableClearUnknownW<'_, PolicyControlSpec> {
+                OrdinaryEnableClearUnknownW::new(self, 6)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_policy_unknown(&mut self) -> HighPolicyUnknownW<'_, PolicyControlSpec> {
+                HighPolicyUnknownW::new(self, 22)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PolicyControlSpec;
+        impl crate::RegisterSpec for PolicyControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`policy_control::R`](R) reader structure"]
+        impl crate::Readable for PolicyControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`policy_control::W`](W) writer structure"]
+        impl crate::Writable for PolicyControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "KEY_VALID_BITMAP (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. One validity bit per one of the 25 evidenced hardware key entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`key_valid_bitmap::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`key_valid_bitmap::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@key_valid_bitmap`] module"]
+    #[doc(alias = "KEY_VALID_BITMAP")]
+    pub type KeyValidBitmap = crate::Reg<key_valid_bitmap::KeyValidBitmapSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. One validity bit per one of the 25 evidenced hardware key entries."]
+    pub mod key_valid_bitmap {
+        #[doc = "Register `KEY_VALID_BITMAP` reader"]
+        pub type R = crate::R<KeyValidBitmapSpec>;
+        #[doc = "Register `KEY_VALID_BITMAP` writer"]
+        pub type W = crate::W<KeyValidBitmapSpec>;
+        #[doc = "Field `VALID_ENTRIES` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+        pub type ValidEntriesR = crate::FieldReader<u32>;
+        #[doc = "Field `VALID_ENTRIES` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+        pub type ValidEntriesW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32>;
+        impl R {
+            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+            #[inline(always)]
+            pub fn valid_entries(&self) -> ValidEntriesR {
+                ValidEntriesR::new(self.bits & 0x01ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+            #[inline(always)]
+            pub fn valid_entries(&mut self) -> ValidEntriesW<'_, KeyValidBitmapSpec> {
+                ValidEntriesW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. One validity bit per one of the 25 evidenced hardware key entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`key_valid_bitmap::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`key_valid_bitmap::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct KeyValidBitmapSpec;
+        impl crate::RegisterSpec for KeyValidBitmapSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`key_valid_bitmap::R`](R) reader structure"]
+        impl crate::Readable for KeyValidBitmapSpec {}
+        #[doc = "`write(|w| ..)` method takes [`key_valid_bitmap::W`](W) writer structure"]
+        impl crate::Writable for KeyValidBitmapSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Twenty-five entries of ten 32-bit words. Complete hal_crypto_clr_key_entry proves the 0x28-byte stride and all ten ordered stores; set/get leaves prove the peer/control/key layout."]
+pub type WifiMacKeyTable = crate::Periph<wifi_mac_key_table::RegisterBlock, 0x2010_5800>;
+impl core::fmt::Debug for WifiMacKeyTable {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacKeyTable").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Twenty-five entries of ten 32-bit words. Complete hal_crypto_clr_key_entry proves the 0x28-byte stride and all ten ordered stores; set/get leaves prove the peer/control/key layout."]
+pub mod wifi_mac_key_table {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        entry_word: [EntryWord; 250],
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x3e8 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction."]
+        #[inline(always)]
+        pub const fn entry_word(&self, n: usize) -> &EntryWord {
+            &self.entry_word[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x3e8 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction."]
+        #[inline(always)]
+        pub fn entry_word_iter(&self) -> impl Iterator<Item = &EntryWord> {
+            self.entry_word.iter()
+        }
+    }
+    #[doc = "ENTRY_WORD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry_word::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_word::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_word`] module"]
+    #[doc(alias = "ENTRY_WORD")]
+    pub type EntryWord = crate::Reg<entry_word::EntryWordSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction."]
+    pub mod entry_word {
+        #[doc = "Register `ENTRY_WORD%s` reader"]
+        pub type R = crate::R<EntryWordSpec>;
+        #[doc = "Register `ENTRY_WORD%s` writer"]
+        pub type W = crate::W<EntryWordSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, EntryWordSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry_word::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_word::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EntryWordSpec;
+        impl crate::RegisterSpec for EntryWordSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`entry_word::R`](R) reader structure"]
+        impl crate::Readable for EntryWordSpec {}
+        #[doc = "`write(|w| ..)` method takes [`entry_word::W`](W) writer structure"]
+        impl crate::Writable for EntryWordSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x2010_4c40>;
 impl core::fmt::Debug for WifiMacInterrupt {
@@ -9044,6 +9313,10 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "WIFI_MAC_CRYPTO_CONTROL"]
+    pub wifi_mac_crypto_control: WifiMacCryptoControl,
+    #[doc = "WIFI_MAC_KEY_TABLE"]
+    pub wifi_mac_key_table: WifiMacKeyTable,
     #[doc = "WIFI_MAC_INTERRUPT"]
     pub wifi_mac_interrupt: WifiMacInterrupt,
     #[doc = "WIFI_MAC_RX_DMA"]
@@ -9080,6 +9353,8 @@ impl Peripherals {
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),
             phy_clock_oracle: PhyClockOracle::steal(),
+            wifi_mac_crypto_control: WifiMacCryptoControl::steal(),
+            wifi_mac_key_table: WifiMacKeyTable::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }

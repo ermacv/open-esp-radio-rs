@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.9</version>
+  <version>3.0</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1483,6 +1483,66 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_CRYPTO_CONTROL</name>
+      <description>
+        SOURCE[BLOB_LIBPP_HAL_CRYPTO];
+        CONFIDENCE[instruction-exact-not-independently-hil].
+        Per-interface hardware-crypto controls, shared policy mask and key
+        validity bitmap recovered from complete libpp hal_crypto leaves.
+      </description>
+      <baseAddress>0x20104800</baseAddress>
+      <registers>
+        <register>
+          <name>INTERFACE_CONTROL%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-multifunction]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
+          <fields>
+            <field><name>CONTROL_LOW_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown.</description><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field>
+            <field><name>MODE_HIGH_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POLICY_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-multifunction]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_POLICY_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>ORDINARY_ENABLE_CLEAR_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Cleared by the reachable STA CCMP enable transaction.</description><bitOffset>6</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>HIGH_POLICY_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>KEY_VALID_BITMAP</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact]. One validity bit per one of the 25 evidenced hardware key entries.</description>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>VALID_ENTRIES</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact]. Bits 24:0 correspond to key-table entries 24:0.</description><bitOffset>0</bitOffset><bitWidth>25</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_KEY_TABLE</name>
+      <description>
+        SOURCE[BLOB_LIBPP_HAL_CRYPTO];
+        CONFIDENCE[instruction-exact-not-independently-hil].
+        Twenty-five entries of ten 32-bit words. Complete
+        hal_crypto_clr_key_entry proves the 0x28-byte stride and all ten
+        ordered stores; set/get leaves prove the peer/control/key layout.
+      </description>
+      <baseAddress>0x20105800</baseAddress>
+      <registers>
+        <register>
+          <name>ENTRY_WORD%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-mode-dependent]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <dim>250</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-249</dimIndex>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_INTERRUPT</name>
       <description>
         SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,
@@ -1755,6 +1815,7 @@
       <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
       <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
       <source id="HIL_OPEN_RX_LIVE_APPEND_2026_07_27">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs run_connected_network on ESP32-S31 rev0, psram-code-psram-data profile, 2026-07-27; rotating 32-entry ring survived more than 7000 receives and completed open scan, WPA2, DHCP and 5/5 ICMP echo with zero loss</source>
     </openEspRadioProvenance>
     <openEspRadioAddressWindows source="S31_REG_BASE">

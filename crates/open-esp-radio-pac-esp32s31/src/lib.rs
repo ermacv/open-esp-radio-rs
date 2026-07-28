@@ -13,6 +13,7 @@ mod mac_block_ack;
 mod mac_cold_start;
 mod mac_crypto;
 mod mac_enable;
+mod mac_hal_init_tail;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
@@ -568,6 +569,33 @@ mod tests {
             );
         }
         assert_eq!(init.bank_control(7).as_ptr() as usize, 0x2010_5510);
+    }
+
+    #[test]
+    fn generated_mac_hal_tail_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let rtc = &registers.peripherals.wifi_mac_rtc_timer_update;
+        assert_eq!(rtc.control().as_ptr() as usize, 0x2010_d830);
+        assert_eq!(rtc.slow_clock_calibration().as_ptr() as usize, 0x2010_d878);
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_csi_control
+                .control()
+                .as_ptr() as usize,
+            0x2010_4098
+        );
+    }
+
+    #[test]
+    fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
+        // SAFETY: the rejected input returns before any generated register is
+        // accessed; the host test therefore performs no volatile MMIO.
+        let mut registers = unsafe { RadioRegisters::steal() };
+        assert!(!registers.initialize_mac_hal_tail(0x19a8_79e0, 0x0004_0000));
+        assert!(!registers.initialize_mac_hal_tail(0, u32::MAX));
     }
 
     #[test]

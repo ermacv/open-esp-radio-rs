@@ -10389,14 +10389,168 @@ pub mod wifi_mac_antenna_init {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
+pub type WifiMacRtcTimerUpdate =
+    crate::Periph<wifi_mac_rtc_timer_update::RegisterBlock, 0x2010_d830>;
+impl core::fmt::Debug for WifiMacRtcTimerUpdate {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRtcTimerUpdate").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
+pub mod wifi_mac_rtc_timer_update {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+        _reserved1: [u8; 0x44],
+        slow_clock_calibration: SlowClockCalibration,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Enabled hal_timer_update_by_rtc sets bit 27 through one fresh-read RMW."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x48 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-osi-layout\\]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get."]
+        #[inline(always)]
+        pub const fn slow_clock_calibration(&self) -> &SlowClockCalibration {
+            &self.slow_clock_calibration
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Enabled hal_timer_update_by_rtc sets bit 27 through one fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Enabled hal_timer_update_by_rtc sets bit 27 through one fresh-read RMW."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 27, u32>;
+        #[doc = "Field `RTC_UPDATE_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Set when the leaf's enable argument is nonzero."]
+        pub type RtcUpdateEnableUnknownR = crate::BitReader;
+        #[doc = "Field `RTC_UPDATE_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Set when the leaf's enable argument is nonzero."]
+        pub type RtcUpdateEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:26"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x07ff_ffff)
+            }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Set when the leaf's enable argument is nonzero."]
+            #[inline(always)]
+            pub fn rtc_update_enable_unknown(&self) -> RtcUpdateEnableUnknownR {
+                RtcUpdateEnableUnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:26"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Set when the leaf's enable argument is nonzero."]
+            #[inline(always)]
+            pub fn rtc_update_enable_unknown(
+                &mut self,
+            ) -> RtcUpdateEnableUnknownW<'_, ControlSpec> {
+                RtcUpdateEnableUnknownW::new(self, 27)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, ControlSpec> {
+                HighPreservedUnknownW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Enabled hal_timer_update_by_rtc sets bit 27 through one fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "SLOW_CLOCK_CALIBRATION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-osi-layout\\]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.\n\nYou can [`read`](crate::Reg::read) this register and get [`slow_clock_calibration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`slow_clock_calibration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@slow_clock_calibration`] module"]
+    #[doc(alias = "SLOW_CLOCK_CALIBRATION")]
+    pub type SlowClockCalibration = crate::Reg<slow_clock_calibration::SlowClockCalibrationSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-osi-layout\\]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get."]
+    pub mod slow_clock_calibration {
+        #[doc = "Register `SLOW_CLOCK_CALIBRATION` reader"]
+        pub type R = crate::R<SlowClockCalibrationSpec>;
+        #[doc = "Register `SLOW_CLOCK_CALIBRATION` writer"]
+        pub type W = crate::W<SlowClockCalibrationSpec>;
+        #[doc = "Field `VALUE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-complete-leaf\\]. Low eighteen bits of the OS-adapter calibration value."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-complete-leaf\\]. Low eighteen bits of the OS-adapter calibration value."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        impl R {
+            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-complete-leaf\\]. Low eighteen bits of the OS-adapter calibration value."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits & 0x0003_ffff)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 18) & 0x3fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-complete-leaf\\]. Low eighteen bits of the OS-adapter calibration value."]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, SlowClockCalibrationSpec> {
+                ValueW::new(self, 0)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, SlowClockCalibrationSpec> {
+                HighPreservedUnknownW::new(self, 18)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-field-from-osi-layout\\]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.\n\nYou can [`read`](crate::Reg::read) this register and get [`slow_clock_calibration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`slow_clock_calibration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SlowClockCalibrationSpec;
+        impl crate::RegisterSpec for SlowClockCalibrationSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`slow_clock_calibration::R`](R) reader structure"]
+        impl crate::Readable for SlowClockCalibrationSpec {}
+        #[doc = "`write(|w| ..)` method takes [`slow_clock_calibration::W`](W) writer structure"]
+        impl crate::Writable for SlowClockCalibrationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init; complete hal_init later repeats the bit-28 set edge."]
 pub type WifiMacTxrxPrefix = crate::Periph<wifi_mac_txrx_prefix::RegisterBlock, 0x2010_40fc>;
 impl core::fmt::Debug for WifiMacTxrxPrefix {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxrxPrefix").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init; complete hal_init later repeats the bit-28 set edge."]
 pub mod wifi_mac_txrx_prefix {
     #[repr(C)]
     #[doc = "Register block"]
@@ -10434,7 +10588,7 @@ pub mod wifi_mac_txrx_prefix {
         pub const fn timing_control(&self) -> &TimingControl {
             &self.timing_control
         }
-        #[doc = "0xb90 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults."]
+        #[doc = "0xb90 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered prefix updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults. Complete hal_init repeats the bit-28 set after antenna initialization."]
         #[inline(always)]
         pub const fn feature_edges(&self) -> &FeatureEdges {
             &self.feature_edges
@@ -10729,10 +10883,10 @@ pub mod wifi_mac_txrx_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FEATURE_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults.\n\nYou can [`read`](crate::Reg::read) this register and get [`feature_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`feature_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@feature_edges`] module"]
+    #[doc = "FEATURE_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered prefix updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults. Complete hal_init repeats the bit-28 set after antenna initialization.\n\nYou can [`read`](crate::Reg::read) this register and get [`feature_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`feature_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@feature_edges`] module"]
     #[doc(alias = "FEATURE_EDGES")]
     pub type FeatureEdges = crate::Reg<feature_edges::FeatureEdgesSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered prefix updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults. Complete hal_init repeats the bit-28 set after antenna initialization."]
     pub mod feature_edges {
         #[doc = "Register `FEATURE_EDGES` reader"]
         pub type R = crate::R<FeatureEdgesSpec>;
@@ -10778,9 +10932,9 @@ pub mod wifi_mac_txrx_prefix {
         pub type Preserved27_24UnknownR = crate::FieldReader;
         #[doc = "Field `PRESERVED_27_24_UNKNOWN` writer - "]
         pub type Preserved27_24UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `THIRD_ENABLE_UNKNOWN` reader - "]
+        #[doc = "Field `THIRD_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-repeated-edge\\]. Set once in mac_txrx_init and again at hal_init offset 0xe2 after the interrupt-mask store."]
         pub type ThirdEnableUnknownR = crate::BitReader;
-        #[doc = "Field `THIRD_ENABLE_UNKNOWN` writer - "]
+        #[doc = "Field `THIRD_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-repeated-edge\\]. Set once in mac_txrx_init and again at hal_init offset 0xe2 after the interrupt-mask store."]
         pub type ThirdEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `PRESERVED_30_29_UNKNOWN` reader - "]
         pub type Preserved30_29UnknownR = crate::FieldReader;
@@ -10841,7 +10995,7 @@ pub mod wifi_mac_txrx_prefix {
             pub fn preserved_27_24_unknown(&self) -> Preserved27_24UnknownR {
                 Preserved27_24UnknownR::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bit 28"]
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-repeated-edge\\]. Set once in mac_txrx_init and again at hal_init offset 0xe2 after the interrupt-mask store."]
             #[inline(always)]
             pub fn third_enable_unknown(&self) -> ThirdEnableUnknownR {
                 ThirdEnableUnknownR::new(((self.bits >> 28) & 1) != 0)
@@ -10922,7 +11076,7 @@ pub mod wifi_mac_txrx_prefix {
             ) -> Preserved27_24UnknownW<'_, FeatureEdgesSpec> {
                 Preserved27_24UnknownW::new(self, 24)
             }
-            #[doc = "Bit 28"]
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-repeated-edge\\]. Set once in mac_txrx_init and again at hal_init offset 0xe2 after the interrupt-mask store."]
             #[inline(always)]
             pub fn third_enable_unknown(&mut self) -> ThirdEnableUnknownW<'_, FeatureEdgesSpec> {
                 ThirdEnableUnknownW::new(self, 28)
@@ -10942,7 +11096,7 @@ pub mod wifi_mac_txrx_prefix {
                 FirstGroupBit31UnknownW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults.\n\nYou can [`read`](crate::Reg::read) this register and get [`feature_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`feature_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Four separately ordered prefix updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults. Complete hal_init repeats the bit-28 set after antenna initialization.\n\nYou can [`read`](crate::Reg::read) this register and get [`feature_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`feature_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeatureEdgesSpec;
         impl crate::RegisterSpec for FeatureEdgesSpec {
             type Ux = u32;
@@ -11900,14 +12054,14 @@ pub mod wifi_mac_txrx_suffix {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word. Complete mac_last_rxbuf_init sets bit 27; complete hal_init later replaces its low and second bytes through separate RMWs."]
 pub type WifiMacRxCsiControl = crate::Periph<wifi_mac_rx_csi_control::RegisterBlock, 0x2010_4098>;
 impl core::fmt::Debug for WifiMacRxCsiControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacRxCsiControl").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word. Complete mac_last_rxbuf_init sets bit 27; complete hal_init later replaces its low and second bytes through separate RMWs."]
 pub mod wifi_mac_rx_csi_control {
     #[repr(C)]
     #[doc = "Register block"]
@@ -11915,25 +12069,33 @@ pub mod wifi_mac_rx_csi_control {
         control: Control,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups. Complete hal_init later replaces byte zero with one, then byte one with one through a second fresh-read edge."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups. Complete hal_init later replaces byte zero with one, then byte one with one through a second fresh-read edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups. Complete hal_init later replaces byte zero with one, then byte one with one through a second fresh-read edge."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
-        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
-        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 27, u32>;
+        #[doc = "Field `HAL_INIT_LOW_BYTE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
+        pub type HalInitLowByteUnknownR = crate::FieldReader;
+        #[doc = "Field `HAL_INIT_LOW_BYTE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
+        pub type HalInitLowByteUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `HAL_INIT_SECOND_BYTE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
+        pub type HalInitSecondByteUnknownR = crate::FieldReader;
+        #[doc = "Field `HAL_INIT_SECOND_BYTE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
+        pub type HalInitSecondByteUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` reader - "]
+        pub type MiddlePreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` writer - "]
+        pub type MiddlePreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
         #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
         pub type LastRxBufferEnableUnknownR = crate::BitReader;
         #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
@@ -11943,10 +12105,20 @@ pub mod wifi_mac_rx_csi_control {
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
         pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
-            #[doc = "Bits 0:26"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
-                LowPreservedUnknownR::new(self.bits & 0x07ff_ffff)
+            pub fn hal_init_low_byte_unknown(&self) -> HalInitLowByteUnknownR {
+                HalInitLowByteUnknownR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
+            #[inline(always)]
+            pub fn hal_init_second_byte_unknown(&self) -> HalInitSecondByteUnknownR {
+                HalInitSecondByteUnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:26"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&self) -> MiddlePreservedUnknownR {
+                MiddlePreservedUnknownR::new(((self.bits >> 16) & 0x07ff) as u16)
             }
             #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
             #[inline(always)]
@@ -11960,10 +12132,22 @@ pub mod wifi_mac_rx_csi_control {
             }
         }
         impl W {
-            #[doc = "Bits 0:26"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ControlSpec> {
-                LowPreservedUnknownW::new(self, 0)
+            pub fn hal_init_low_byte_unknown(&mut self) -> HalInitLowByteUnknownW<'_, ControlSpec> {
+                HalInitLowByteUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
+            #[inline(always)]
+            pub fn hal_init_second_byte_unknown(
+                &mut self,
+            ) -> HalInitSecondByteUnknownW<'_, ControlSpec> {
+                HalInitSecondByteUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 16:26"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&mut self) -> MiddlePreservedUnknownW<'_, ControlSpec> {
+                MiddlePreservedUnknownW::new(self, 16)
             }
             #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-leaf\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
             #[inline(always)]
@@ -11978,7 +12162,7 @@ pub mod wifi_mac_rx_csi_control {
                 HighPreservedUnknownW::new(self, 28)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups. Complete hal_init later replaces byte zero with one, then byte one with one through a second fresh-read edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -12317,14 +12501,14 @@ pub mod wifi_mac_core_enable {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC, BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x2010_4c40>;
 impl core::fmt::Debug for WifiMacInterrupt {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacInterrupt").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC, BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub mod wifi_mac_interrupt {
     #[repr(C)]
     #[doc = "Register block"]
@@ -12335,7 +12519,7 @@ pub mod wifi_mac_interrupt {
         clear: Clear,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
         #[inline(always)]
         pub const fn enable(&self) -> &Enable {
             &self.enable
@@ -12351,34 +12535,34 @@ pub mod wifi_mac_interrupt {
             &self.clear
         }
     }
-    #[doc = "ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc = "ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
     #[doc(alias = "ENABLE")]
     pub type Enable = crate::Reg<enable::EnableSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
     pub mod enable {
         #[doc = "Register `ENABLE` reader"]
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
-        #[doc = "Field `EVENT_MASK` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
+        #[doc = "Field `EVENT_MASK` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
         pub type EventMaskR = crate::FieldReader<u32>;
-        #[doc = "Field `EVENT_MASK` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
+        #[doc = "Field `EVENT_MASK` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
         pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
+            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
             #[inline(always)]
             pub fn event_mask(&self) -> EventMaskR {
                 EventMaskR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
+            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
             #[inline(always)]
             pub fn event_mask(&mut self) -> EventMaskW<'_, EnableSpec> {
                 EventMaskW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EnableSpec;
         impl crate::RegisterSpec for EnableSpec {
             type Ux = u32;
@@ -12612,7 +12796,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_cold_control_unknown(&self) -> &RxColdControlUnknown {
             &self.rx_cold_control_unknown
         }
-        #[doc = "0x80 - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell."]
+        #[doc = "0x80 - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate, hardware-beacon reload selection and live-list append doorbell."]
         #[inline(always)]
         pub const fn rx_control(&self) -> &RxControl {
             &self.rx_control
@@ -12798,10 +12982,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_control`] module"]
+    #[doc = "RX_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate, hardware-beacon reload selection and live-list append doorbell.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_control`] module"]
     #[doc(alias = "RX_CONTROL")]
     pub type RxControl = crate::Reg<rx_control::RxControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell."]
+    #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate, hardware-beacon reload selection and live-list append doorbell."]
     pub mod rx_control {
         #[doc = "Register `RX_CONTROL` reader"]
         pub type R = crate::R<RxControlSpec>;
@@ -12811,6 +12995,10 @@ pub mod wifi_mac_rx_dma {
         pub type AppendDescriptorReloadR = crate::BitReader;
         #[doc = "Field `APPEND_DESCRIPTOR_RELOAD` writer - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Write one after publishing old_tail.next to make a prepared live-list append visible. Hardware clears the bit after accepting the append."]
         pub type AppendDescriptorReloadW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HARDWARE_BEACON_RELOAD_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."]
+        pub type HardwareBeaconReloadUnknownR = crate::BitReader;
+        #[doc = "Field `HARDWARE_BEACON_RELOAD_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."]
+        pub type HardwareBeaconReloadUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `WALKER_ENABLE` reader - SOURCE\\[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
         pub type WalkerEnableR = crate::BitReader;
         #[doc = "Field `WALKER_ENABLE` writer - SOURCE\\[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
@@ -12820,6 +13008,11 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn append_descriptor_reload(&self) -> AppendDescriptorReloadR {
                 AppendDescriptorReloadR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."]
+            #[inline(always)]
+            pub fn hardware_beacon_reload_unknown(&self) -> HardwareBeaconReloadUnknownR {
+                HardwareBeaconReloadUnknownR::new(((self.bits >> 27) & 1) != 0)
             }
             #[doc = "Bit 31 - SOURCE\\[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
             #[inline(always)]
@@ -12835,13 +13028,20 @@ pub mod wifi_mac_rx_dma {
             ) -> AppendDescriptorReloadW<'_, RxControlSpec> {
                 AppendDescriptorReloadW::new(self, 0)
             }
+            #[doc = "Bit 27 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."]
+            #[inline(always)]
+            pub fn hardware_beacon_reload_unknown(
+                &mut self,
+            ) -> HardwareBeaconReloadUnknownW<'_, RxControlSpec> {
+                HardwareBeaconReloadUnknownW::new(self, 27)
+            }
             #[doc = "Bit 31 - SOURCE\\[ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
             #[inline(always)]
             pub fn walker_enable(&mut self) -> WalkerEnableW<'_, RxControlSpec> {
                 WalkerEnableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate, hardware-beacon reload selection and live-list append doorbell.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxControlSpec;
         impl crate::RegisterSpec for RxControlSpec {
             type Ux = u32;
@@ -13739,6 +13939,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_ANTENNA_INIT"]
     pub wifi_mac_antenna_init: WifiMacAntennaInit,
+    #[doc = "WIFI_MAC_RTC_TIMER_UPDATE"]
+    pub wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate,
     #[doc = "WIFI_MAC_TXRX_PREFIX"]
     pub wifi_mac_txrx_prefix: WifiMacTxrxPrefix,
     #[doc = "WIFI_MAC_TXRX_CALLBACKS"]
@@ -13799,6 +14001,7 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
+            wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),
             wifi_mac_txrx_callbacks: WifiMacTxrxCallbacks::steal(),
             wifi_mac_txrx_suffix: WifiMacTxrxSuffix::steal(),

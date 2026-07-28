@@ -5,14 +5,12 @@
 //! stops before publishing an RX descriptor base: ownership of the DMA ring
 //! remains with [`crate::rx::publish_cold_ring`].
 
-use open_esp_radio_pac_esp32s31::{
-    mac::{self, init as registers},
-    Register32,
-};
+use open_esp_radio_pac_esp32s31::{mac::init as registers, Register32};
 
 pub use crate::cold_antenna::MacColdAntennaHardware;
 pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
+pub use crate::cold_hal_tail::{MacColdHalTailHardware, MacSlowClockCalibration};
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
@@ -44,6 +42,15 @@ pub trait MacClockControl {
 /// peripheral or depending on the vendor C ABI.
 pub trait MacDelayEntropy {
     fn mac_delay_random(&mut self) -> u32;
+}
+
+/// Platform slow-clock calibration used by `hal_timer_update_by_rtc`.
+///
+/// This is the Rust ownership boundary corresponding to the vendor
+/// `_slowclk_cal_get` callback. It keeps the open MAC independent of the
+/// vendor function table and of any future platform clock peripheral.
+pub trait MacSlowClockCalibrationSource {
+    fn mac_slow_clock_calibration(&mut self) -> u32;
 }
 
 #[inline]
@@ -141,6 +148,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdAntennaHardware
         + MacColdCryptoHardware
         + MacColdEnableHardware
+        + MacColdHalTailHardware
         + MacColdHandshakeHardware
         + MacColdLastRxBufferHardware
         + MacColdRxBufferHardware
@@ -149,7 +157,7 @@ pub fn initialize_promiscuous_receive<
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSnifferHardware,
-    P: MacClockControl + MacDelayEntropy,
+    P: MacClockControl + MacDelayEntropy + MacSlowClockCalibrationSource,
 >(
     platform: &mut P,
     mmio: &mut M,
@@ -197,14 +205,18 @@ pub fn initialize_promiscuous_receive<
     // Complete `hal_attenna_init`: 34 RMW edges, including both reverse
     // traversals of the eight queue/vector-bank words.
     mmio.initialize_mac_antenna();
+
+    // Complete direct hal_init tail before its first COEX operation. The OSI
+    // callback's u32 is reduced exactly as the complete RTC-update leaf does.
+    let slow_clock_calibration =
+        MacSlowClockCalibration::from_osi_value(platform.mac_slow_clock_calibration());
+    mmio.initialize_hal_tail(MAC_COLD_RX_INTERRUPT_MASK, slow_clock_calibration);
     initialize_coex(mmio);
 
     // Complete `hal_enable_mac`: clear the four common disable gates, then
     // publish the interrupt mask. This does not route the peripheral interrupt
     // to a CPU; the platform interrupt owner still installs that route and ISR.
     mmio.enable_mac_interrupts(MAC_COLD_RX_INTERRUPT_MASK);
-    modify(mmio, registers::R_4098, 0x0000_ffff, 0x0000_0101);
-    modify(mmio, mac::RX_CONTROL, 0x0800_0000, 0x0800_0000);
 
     // `wifi_set_rx_policy(0)` publishes both valid interface addresses after
     // `hal_init`; the address-valid bits are part of the S31 RX start gate even

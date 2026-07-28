@@ -964,6 +964,25 @@ generated PAC now preserves the complete order. The adjacent
 `hal_mac_rate_autoack_init` symbol was also checked in full: its two-byte body
 is only `ret`, so it has no omitted S31 MMIO effect.
 
+The next bounded part of complete `hal_init`, offsets `0xcc..0x12a`, stores
+interrupt mask `0x19a879e0`, repeats the bit-28 set at `0x20104c8c`, and
+replaces the low two bytes at `0x20104098` through two separate RMWs. Complete
+`hal_mac_set_rxbuf_reload_use_hw_beacon_enable` then sets bit 27 at
+`0x20104080`.
+
+`hal_init` obtains the following value from `g_wifi_osi_funcs` offset `0x148`.
+The pinned S31 OS-adapter header and generated binding identify this slot as
+`_slowclk_cal_get`. Complete `hal_timer_update_by_rtc(1, value)` sets bit 27
+at `0x2010d830`, then replaces bits 17:0 at `0x2010d878` with the callback's
+low eighteen bits. The pinned `esp32s31-async-platform` esp-hal adapter
+currently returns zero for S31 with an explicit TODO; it does not access an
+additional system peripheral.
+
+SVD v3.16 records all seven tail operations. The integration exposes the
+calibration through `MacSlowClockCalibrationSource`, so a future real clock
+calibration remains platform-owned and does not reintroduce the vendor C ABI
+or raw non-radio MMIO into the MAC crate.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

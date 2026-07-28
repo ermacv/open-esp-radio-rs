@@ -9,9 +9,10 @@ use open_esp_radio_mac_esp32s31::{
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdAntennaHardware, MacColdCryptoHardware, MacColdEnableHardware,
-        MacColdHandshakeHardware, MacColdLastRxBufferHardware, MacColdRxBufferHardware,
-        MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
-        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
+        MacColdHalTailHardware, MacColdHandshakeHardware, MacColdLastRxBufferHardware,
+        MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome,
+        MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware,
+        MacLowRateHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
         MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
@@ -44,6 +45,7 @@ enum Operation {
     Read(Register32),
     Write(Register32, u32),
     InitializeMacAntenna,
+    InitializeHalTail(u32, MacSlowClockCalibration),
     Fence,
 }
 
@@ -298,6 +300,19 @@ impl MacColdCryptoHardware for MockMmio {
 impl MacColdAntennaHardware for MockMmio {
     fn initialize_mac_antenna(&mut self) {
         self.operations.push(Operation::InitializeMacAntenna);
+    }
+}
+
+impl MacColdHalTailHardware for MockMmio {
+    fn initialize_hal_tail(
+        &mut self,
+        event_mask: u32,
+        slow_clock_calibration: MacSlowClockCalibration,
+    ) {
+        self.operations.push(Operation::InitializeHalTail(
+            event_mask,
+            slow_clock_calibration,
+        ));
     }
 }
 
@@ -614,6 +629,7 @@ enum PlatformOperation {
     ConfigureModemSourceClocks,
     SetWifiMacReset(bool),
     RequestMacDelayRandom,
+    RequestSlowClockCalibration,
 }
 
 #[derive(Default)]
@@ -647,6 +663,14 @@ impl MacDelayEntropy for MockPlatform {
         self.operations
             .push(PlatformOperation::RequestMacDelayRandom);
         7
+    }
+}
+
+impl MacSlowClockCalibrationSource for MockPlatform {
+    fn mac_slow_clock_calibration(&mut self) -> u32 {
+        self.operations
+            .push(PlatformOperation::RequestSlowClockCalibration);
+        0
     }
 }
 
@@ -687,6 +711,19 @@ fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
     assert_eq!(MacDelaySlot::from_random(10).value(), 10);
     assert_eq!(MacDelaySlot::from_random(11).value(), 0);
     assert_eq!(MacDelaySlot::from_random(u32::MAX).value(), 3);
+}
+
+#[test]
+fn slow_clock_calibration_reproduces_vendor_eighteen_bit_truncation() {
+    assert_eq!(MacSlowClockCalibration::from_osi_value(0).value(), 0);
+    assert_eq!(
+        MacSlowClockCalibration::from_osi_value(0x0003_ffff).value(),
+        0x0003_ffff
+    );
+    assert_eq!(
+        MacSlowClockCalibration::from_osi_value(0xabcd_0001).value(),
+        0x0001_0001
+    );
 }
 
 #[test]
@@ -947,6 +984,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             ]
     }));
     assert!(mmio.operations().contains(&Operation::InitializeMacAntenna));
+    assert!(mmio.operations().contains(&Operation::InitializeHalTail(
+        0x19a8_79e0,
+        MacSlowClockCalibration::from_osi_value(0),
+    )));
     assert_eq!(
         platform.operations,
         [
@@ -956,6 +997,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             PlatformOperation::SetWifiMacReset(true),
             PlatformOperation::SetWifiMacReset(false),
             PlatformOperation::RequestMacDelayRandom,
+            PlatformOperation::RequestSlowClockCalibration,
         ]
     );
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));

@@ -3095,13 +3095,15 @@ parent order. The public Espressif tree contains no source definitions for
 these internal PHY symbols, so uncertain electrical roles remain explicitly
 `UNKNOWN`.
 
-The new safe `phy_frequency` HAL owns frequency-module reset and hardware
-ownership, register initialization, the 85-entry frequency-memory publisher,
-packed PHY-I2C number-address words, channel-switch pulse and readiness
-sampling, NRX quotient calculation, BSS/CBW fields, shared FBW/BT filtering,
-Wi-Fi/baseband enable fields, and TX-cap command-memory publication. Host
-models record every read and write, including the two-read NRX operation and
-all pulse edges.
+The generated-PAC `RadioRegisters` owner now implements frequency-module
+reset and hardware ownership, register initialization, the 85-entry
+frequency-memory publisher, packed PHY-I2C number-address words,
+channel-switch pulse and readiness sampling, NRX quotient calculation,
+BSS/CBW fields, shared FBW/BT filtering, and TX-cap command-memory
+publication. The thin `phy_frequency` HAL only coordinates those methods with
+the official platform PAC for Wi-Fi/baseband fields. Each generated method
+retains the complete ROM's separate fresh-read edges; pure host tests keep the
+NRX and CBW branch transforms independently checkable.
 
 Cold init, baseband init, register init, D-code and channel transitions pass
 their existing `&mut RadioRegisters` into these methods. In particular,
@@ -3110,7 +3112,8 @@ borrow; it can no longer access `0x7848` through a hidden volatile pointer.
 The old raw wrappers, address constants, duplicate arithmetic helpers and
 their unit tests are deleted.
 
-The source audit now rejects raw `0x001c..0x003c`, `0x0874`, `0x4400`,
+The source audit now also rejects the `Register32`/`Field32` compatibility
+facade in `phy_frequency.rs`, in addition to raw `0x001c..0x003c`, `0x0874`, `0x4400`,
 `0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`, together with the old
 wrapper names. This leaves one PAC identity for each physical register,
 including the documented mode-dependent collision of frequency-memory

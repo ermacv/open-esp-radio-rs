@@ -238,11 +238,13 @@ The remaining recovered layout includes:
   `PHY_I2C_COMMAND_RAM.COMMAND_MEMORY[1]`, whose block/register/data byte
   layout already describes `value << 16 | 0x026b`.
 
-The `phy_frequency` HAL preserves all fresh-read edges, full-word constants,
-packed images and ROM branch encodings. Host tests record both reads and
-writes, not only final values. Cold init, baseband init and channel actions
-coordinate the platform capability with the same `&mut RadioRegisters`; the
-D-code MMIO
+The native generated-PAC `RadioRegisters` methods preserve all fresh-read
+edges, full-word constants, packed images and ROM branch encodings. Pure host
+tests retain the NRX and CBW transforms, while target compilation verifies
+the generated field accessors. The thin `phy_frequency` HAL performs no raw
+or compatibility-register access: cold init, baseband init and channel
+actions coordinate the platform capability with the same
+`&mut RadioRegisters`; the D-code MMIO
 binding is no longer `unsafe` and cannot manufacture a second peripheral
 owner. The source-only audit rejects all raw accesses to `0x001c..0x003c`,
 `0x0874`, `0x4400`, `0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`,

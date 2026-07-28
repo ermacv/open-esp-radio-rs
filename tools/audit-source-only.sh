@@ -55,12 +55,13 @@ if rg -n \
     crates/open-esp-radio-hal-esp32s31/src/phy_agc.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_iq_estimator.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_baseband.rs \
+    crates/open-esp-radio-hal-esp32s31/src/phy_frequency.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_memory.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_prelude.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_power_detector.rs \
     crates/open-esp-radio-hal-esp32s31/src/phy_rx_dco.rs
 then
-    echo "native PHY-I2C/PBus/prelude/AGC/IQ/baseband/memory/PWDET/RX-DCO compatibility MMIO returned to the HAL" >&2
+    echo "native PHY-I2C/PBus/prelude/AGC/IQ/baseband/frequency/memory/PWDET/RX-DCO compatibility MMIO returned to the HAL" >&2
     exit 1
 fi
 

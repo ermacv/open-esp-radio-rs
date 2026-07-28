@@ -9,6 +9,7 @@ mod frequency;
 mod iq_estimator;
 pub mod mac;
 mod mac_block_ack;
+mod mac_rx_dma;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;

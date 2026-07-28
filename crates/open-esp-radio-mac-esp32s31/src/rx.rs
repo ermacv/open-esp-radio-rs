@@ -4,10 +4,71 @@ use crate::descriptor::{
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
     rx_rearm_word, size as descriptor_size, Descriptor, BIT_31, DESCRIPTOR_BYTES,
 };
-use crate::registers::{
-    Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_DESCRIPTOR_HIGH_WINDOW, RX_DESCRIPTOR_LOW_MASK,
-    RX_ENABLE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD,
-};
+use open_esp_radio_pac_esp32s31::RadioRegisters;
+
+/// Semantic ownership boundary for the S31 RX descriptor walker.
+///
+/// Production uses the generated PAC implementation below. Host tests model
+/// these finite operations without receiving arbitrary register identities.
+pub trait RxDma {
+    fn last_descriptor_low(&mut self) -> u32;
+    fn next_descriptor_low(&mut self) -> u32;
+    fn walker_enabled(&mut self) -> bool;
+    fn reload_pending(&mut self) -> bool;
+    fn set_descriptor_high_window(&mut self, address_high: u16);
+    fn write_descriptor_base(&mut self, address: u32);
+    fn publish_walker_enable(&mut self);
+    fn request_reload(&mut self);
+    fn try_enable_walker(&mut self) -> bool;
+    fn try_disable_walker(&mut self) -> bool;
+    fn fence(&mut self);
+}
+
+impl RxDma for RadioRegisters {
+    fn last_descriptor_low(&mut self) -> u32 {
+        self.mac_rx_last_descriptor_low()
+    }
+
+    fn next_descriptor_low(&mut self) -> u32 {
+        self.mac_rx_next_descriptor_low()
+    }
+
+    fn walker_enabled(&mut self) -> bool {
+        self.mac_rx_walker_enabled()
+    }
+
+    fn reload_pending(&mut self) -> bool {
+        self.mac_rx_reload_pending()
+    }
+
+    fn set_descriptor_high_window(&mut self, address_high: u16) {
+        self.set_mac_rx_descriptor_high_window(address_high);
+    }
+
+    fn write_descriptor_base(&mut self, address: u32) {
+        self.write_mac_rx_descriptor_base(address);
+    }
+
+    fn publish_walker_enable(&mut self) {
+        self.publish_mac_rx_walker_enable();
+    }
+
+    fn request_reload(&mut self) {
+        self.request_mac_rx_descriptor_reload();
+    }
+
+    fn try_enable_walker(&mut self) -> bool {
+        self.try_enable_mac_rx_walker()
+    }
+
+    fn try_disable_walker(&mut self) -> bool {
+        self.try_disable_mac_rx_walker()
+    }
+
+    fn fence(&mut self) {
+        RadioRegisters::fence(self);
+    }
+}
 
 pub const INGRESS_STRICT_RXEND: u32 = 0x01;
 pub const INGRESS_STRICT_DUMP: u32 = 0x02;
@@ -42,6 +103,7 @@ const MLME_AUTH_BODY_SIZE: usize = 6;
 const SUBTYPE_ASSOC_RESPONSE: u8 = 0x10;
 const SUBTYPE_REASSOC_RESPONSE: u8 = 0x30;
 const SUBTYPE_AUTH: u8 = 0xb0;
+const RX_DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RxSegment<'a> {
@@ -221,11 +283,11 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         mut prepare_buffer: F,
     ) -> Result<Self, RxRingError>
     where
-        M: Mmio,
+        M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
         validate_live_ring_geometry::<COUNT>()?;
-        let retained_last_low = mmio.read32(RX_LAST_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK;
+        let retained_last_low = mmio.last_descriptor_low();
         let initial_start =
             descriptor_index(retained_last_low, descriptor_base, COUNT).map_or(0, |index| {
                 if index + 1 == COUNT {
@@ -235,7 +297,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
                 }
             });
 
-        if mmio.read32(RX_CONTROL) & RX_ENABLE != 0 {
+        if mmio.walker_enabled() {
             disable_receive(mmio)?;
         }
         for index in 0..COUNT {
@@ -277,7 +339,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     ///
     /// The caller owns any platform-specific settle delay between
     /// [`prepare`](Self::prepare) and this edge.
-    pub fn start<M: Mmio>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
+    pub fn start<M: RxDma>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
         enable_receive(mmio)?;
         Ok(RxRingLive {
             descriptors: self.descriptors,
@@ -329,10 +391,10 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         mut prepare_buffer: F,
     ) -> Result<Option<RxLiveAppend>, RxRingError>
     where
-        M: Mmio,
+        M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
-        if mmio.read32(RX_CONTROL) & RX_RELOAD != 0 {
+        if mmio.reload_pending() {
             return Ok(None);
         }
         self.settle_reload(mmio)?;
@@ -379,8 +441,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         // unreachable until this old-tail link and the following doorbell.
         unsafe { accepted_tail.publish_next_address(head_address) };
         mmio.fence();
-        let control = mmio.read32(RX_CONTROL);
-        mmio.write32(RX_CONTROL, control | RX_RELOAD);
+        mmio.request_reload();
         mmio.fence();
 
         self.pending_tail = Some(tail_index);
@@ -409,12 +470,12 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         self.pending_tail.is_some()
     }
 
-    fn settle_reload<M: Mmio>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
+    fn settle_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
         let Some(pending_tail) = self.pending_tail else {
             return Ok(());
         };
-        if mmio.read32(RX_NEXT_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK == 0 {
-            let last_low = mmio.read32(RX_LAST_DESCRIPTOR) & RX_DESCRIPTOR_LOW_MASK;
+        if mmio.next_descriptor_low() == 0 {
+            let last_low = mmio.last_descriptor_low();
             let last_index = descriptor_index(last_low, self.descriptor_base, COUNT)
                 .ok_or(RxRingError::Corrupt)?;
             if last_index != pending_tail {
@@ -422,7 +483,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
                 if repair_head == 0 {
                     return Err(RxRingError::Corrupt);
                 }
-                mmio.write32(RX_DESCRIPTOR_BASE, repair_head);
+                mmio.write_descriptor_base(repair_head);
                 mmio.fence();
             }
         }
@@ -452,7 +513,7 @@ fn descriptor_address(descriptor_base: u32, index: usize) -> Result<u32, RxRingE
 }
 
 fn descriptor_index(low_address: u32, descriptor_base: u32, count: usize) -> Option<usize> {
-    let base_low = descriptor_base & RX_DESCRIPTOR_LOW_MASK;
+    let base_low = descriptor_base & RX_DESCRIPTOR_ADDRESS_LOW_MASK;
     let offset = low_address.checked_sub(base_low)?;
     if offset % DESCRIPTOR_BYTES != 0 {
         return None;
@@ -561,7 +622,7 @@ pub fn build_cold_ring(
 
 /// Publishes a previously built cold ring using the instruction-confirmed
 /// fence/high-window/base/enable/fence sequence.
-pub fn publish_cold_ring<M: Mmio>(
+pub fn publish_cold_ring<M: RxDma>(
     mmio: &mut M,
     descriptor_dma_base: u32,
     enable_rx: bool,
@@ -570,15 +631,10 @@ pub fn publish_cold_ring<M: Mmio>(
         return Err(RxRingError::Address);
     }
     mmio.fence();
-    let high = mmio.read32(RX_LAST_DESCRIPTOR_HIGH);
-    mmio.write32(
-        RX_LAST_DESCRIPTOR_HIGH,
-        (high & RX_DESCRIPTOR_LOW_MASK) | RX_DESCRIPTOR_HIGH_WINDOW,
-    );
-    mmio.write32(RX_DESCRIPTOR_BASE, descriptor_dma_base);
+    mmio.set_descriptor_high_window(0x02f0);
+    mmio.write_descriptor_base(descriptor_dma_base);
     if enable_rx {
-        let control = mmio.read32(RX_CONTROL);
-        mmio.write32(RX_CONTROL, control | RX_ENABLE);
+        mmio.publish_walker_enable();
     }
     mmio.fence();
     Ok(())
@@ -591,17 +647,11 @@ pub fn publish_cold_ring<M: Mmio>(
 /// `chip_enable` path calls `hal_mac_rx_enable`. Keeping this as a distinct
 /// operation preserves that ordering and gives the base register time to
 /// settle while the caller completes channel/MAC setup.
-pub fn enable_receive<M: Mmio>(mmio: &mut M) -> Result<(), RxRingError> {
-    let control = mmio.read32(RX_CONTROL);
-    if control & RX_ENABLE != 0 {
-        return Err(RxRingError::Busy);
-    }
-    mmio.write32(RX_CONTROL, control | RX_ENABLE);
-    mmio.fence();
-    if mmio.read32(RX_CONTROL) & RX_ENABLE == 0 {
-        Err(RxRingError::Busy)
-    } else {
+pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
+    if mmio.try_enable_walker() {
         Ok(())
+    } else {
+        Err(RxRingError::Busy)
     }
 }
 
@@ -611,14 +661,11 @@ pub fn enable_receive<M: Mmio>(mmio: &mut M) -> Result<(), RxRingError> {
 /// The pinned `hal_mac_rx_disable` body is exactly this bit clear. The fence
 /// and readback turn that raw leaf into an explicit Rust ownership boundary:
 /// callers may mutate the ring only after this function returns `Ok(())`.
-pub fn disable_receive<M: Mmio>(mmio: &mut M) -> Result<(), RxRingError> {
-    let control = mmio.read32(RX_CONTROL);
-    mmio.write32(RX_CONTROL, control & !RX_ENABLE);
-    mmio.fence();
-    if mmio.read32(RX_CONTROL) & RX_ENABLE != 0 {
-        Err(RxRingError::Busy)
-    } else {
+pub fn disable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
+    if mmio.try_disable_walker() {
         Ok(())
+    } else {
+        Err(RxRingError::Busy)
     }
 }
 

@@ -3294,3 +3294,26 @@ The live MAC layer now owns only agreement validation and protocol-result
 decoding. Its `rx_ampdu_hw.rs` and `tx_ampdu.rs` modules contain no
 `Register32`, `Field32`, `read32`, `write32` or `modify32` calls; the source
 audit prevents that compatibility boundary from returning.
+
+## Semantic RX descriptor-walker ownership
+
+The live RX ring no longer receives the generic MAC `Mmio` interface. It now
+depends on the finite `RxDma` capability: last/next descriptor sampling,
+walker and reload state, high-window/base publication, reload request,
+confirmed enable/disable, and a device fence. Production implements that
+capability exclusively with generated `WIFI_MAC_RX_DMA` register accessors in
+the PAC; the host model implements the same semantic edges while retaining
+the existing operation-order assertions.
+
+The PAC preserves the complete source transactions. Cold publication remains
+fence, fresh high-window RMW, full descriptor-base store, optional fresh
+walker-enable RMW, fence. Checked enable and disable each retain one initial
+control read, the full preserved-image write, fence, and one confirmation
+read. Live append still publishes the descriptor link before its fence and
+fresh reload RMW, and terminal-frontier repair writes only the validated
+descriptor head.
+
+`rx.rs` therefore contains no `Register32`, `Field32`, generic `Mmio`, or raw
+read/write/modify calls. The unsafe descriptor publication that remains there
+is a DMA-memory ownership boundary, not peripheral MMIO, and is documented by
+the sole live-ring authority invariant.

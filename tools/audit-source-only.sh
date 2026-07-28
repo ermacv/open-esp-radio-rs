@@ -77,6 +77,17 @@ then
     exit 1
 fi
 
+# The live RX ring receives only the semantic descriptor-walker capability.
+# Raw register identities remain available to diagnostic HIL code, but may
+# not re-enter the ownership and recycling implementation.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/rx.rs
+then
+    echo "RX descriptor-walker compatibility MMIO returned to the live ring" >&2
+    exit 1
+fi
+
 # PHY target bindings may perform I2C/PBus work only through a borrowed
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.

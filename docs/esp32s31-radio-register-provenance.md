@@ -757,6 +757,14 @@ address arithmetic. The upper MAC modules accept semantic values or decoded
 register images and no longer import the handwritten register facade for
 these leaves.
 
+The same generated peripheral now owns the live RX descriptor-walker
+transaction. Complete rev0 ROM `wDev_AppendRxBlocks`,
+`hal_mac_rx_enable`, `hal_mac_rx_disable`, and last-descriptor sampling,
+together with `HIL_OPEN_RX_LIVE_APPEND_2026_07_27`, remain the primary
+evidence already attached to the SVD registers. The upper ring sees only a
+semantic `RxDma` capability; raw identities are no longer part of its API.
+Host tests retain the exact read/write/fence trace through a semantic model.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

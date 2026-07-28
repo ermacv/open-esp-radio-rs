@@ -19,7 +19,7 @@ use open_esp_radio_mac_esp32s31::{
     rx::{
         build_cold_ring, disable_receive, enable_receive, extract_ccmp_data, extract_data,
         extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
-        rearm_descriptor, RxError, RxIngressConfig, RxRingError, RxRingStopped, RxSegment,
+        rearm_descriptor, RxDma, RxError, RxIngressConfig, RxRingError, RxRingStopped, RxSegment,
         INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
@@ -65,6 +65,67 @@ impl Mmio for MockMmio {
 
     fn fence(&mut self) {
         self.operations.push(Operation::Fence);
+    }
+}
+
+impl RxDma for MockMmio {
+    fn last_descriptor_low(&mut self) -> u32 {
+        self.read32(RX_LAST_DESCRIPTOR) & 0x000f_ffff
+    }
+
+    fn next_descriptor_low(&mut self) -> u32 {
+        self.read32(RX_NEXT_DESCRIPTOR) & 0x000f_ffff
+    }
+
+    fn walker_enabled(&mut self) -> bool {
+        self.read32(RX_CONTROL) & RX_ENABLE != 0
+    }
+
+    fn reload_pending(&mut self) -> bool {
+        self.read32(RX_CONTROL) & RX_RELOAD != 0
+    }
+
+    fn set_descriptor_high_window(&mut self, address_high: u16) {
+        let previous = self.read32(RX_LAST_DESCRIPTOR_HIGH);
+        self.write32(
+            RX_LAST_DESCRIPTOR_HIGH,
+            (previous & 0x000f_ffff) | (u32::from(address_high) << 20),
+        );
+    }
+
+    fn write_descriptor_base(&mut self, address: u32) {
+        self.write32(RX_DESCRIPTOR_BASE, address);
+    }
+
+    fn publish_walker_enable(&mut self) {
+        let control = self.read32(RX_CONTROL);
+        self.write32(RX_CONTROL, control | RX_ENABLE);
+    }
+
+    fn request_reload(&mut self) {
+        let control = self.read32(RX_CONTROL);
+        self.write32(RX_CONTROL, control | RX_RELOAD);
+    }
+
+    fn try_enable_walker(&mut self) -> bool {
+        let control = self.read32(RX_CONTROL);
+        if control & RX_ENABLE != 0 {
+            return false;
+        }
+        self.write32(RX_CONTROL, control | RX_ENABLE);
+        Mmio::fence(self);
+        self.read32(RX_CONTROL) & RX_ENABLE != 0
+    }
+
+    fn try_disable_walker(&mut self) -> bool {
+        let control = self.read32(RX_CONTROL);
+        self.write32(RX_CONTROL, control & !RX_ENABLE);
+        Mmio::fence(self);
+        self.read32(RX_CONTROL) & RX_ENABLE == 0
+    }
+
+    fn fence(&mut self) {
+        Mmio::fence(self);
     }
 }
 

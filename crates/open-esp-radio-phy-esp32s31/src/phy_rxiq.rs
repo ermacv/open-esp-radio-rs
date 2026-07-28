@@ -26,9 +26,6 @@ use crate::{
     phy_txiq::{PhyTxIqLoopbackAction, PhyTxIqLoopbackCompletion, PhyTxIqLoopbackTransition},
 };
 
-pub const PHY_RXIQ_CORRECTION_ADDRESS: usize = 0x2010_0438;
-pub const PHY_RXIQ_AUX_ADDRESS: usize = 0x2010_0c0c;
-
 const INTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x11);
 const INTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x12);
 const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
@@ -2291,10 +2288,13 @@ impl PhyRxIqCalibrationMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxIqRfCalibrationCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxIqRfCalibrationCompletion {
         match self.action {
             PhyRxIqRfCalibrationAction::ConfigureCalibrationMode => {
-                crate::radio_hal::configure_phy_rxiq_calibration_mode();
+                crate::radio_hal::configure_phy_rxiq_calibration_mode(registers);
                 PhyRxIqRfCalibrationCompletion::CalibrationModeConfigured
             }
             PhyRxIqRfCalibrationAction::ConfigureTone {
@@ -2333,7 +2333,10 @@ impl PhyRxIqCoverMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxIqCoverCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxIqCoverCompletion {
         match self.action {
             PhyRxIqCoverAction::ConfigureCoefficient {
                 identity,
@@ -2342,7 +2345,7 @@ impl PhyRxIqCoverMmioBinding {
                 value,
                 final_value,
             } => {
-                crate::radio_hal::configure_phy_rxiq_coefficient(kind, value);
+                crate::radio_hal::configure_phy_rxiq_coefficient(registers, kind, value);
                 PhyRxIqCoverCompletion::CoefficientConfigured {
                     identity,
                     iteration,
@@ -2374,10 +2377,13 @@ impl PhyRxIqGainMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyRxIqGainCompletion {
+    pub unsafe fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyRxIqGainCompletion {
         match self.action {
             PhyRxIqGainAction::ConfigureTxIq { kind, value } => {
-                crate::radio_hal::configure_phy_txiq_coefficient(kind, value);
+                crate::radio_hal::configure_phy_txiq_coefficient(registers, kind, value);
                 PhyRxIqGainCompletion::TxIqConfigured { kind, value }
             }
             PhyRxIqGainAction::ConfigureTone {

@@ -7,6 +7,85 @@
 use super::RadioRegisters;
 
 impl RadioRegisters {
+    /// Enter or complete the TX-IQ correction phase with one fresh RMW.
+    ///
+    /// Complete ROM `phy_rfcal_txiq` clears the high mode bit while setting
+    /// the low bit on entry. Its completion edge sets only the high bit.
+    pub fn configure_tx_iq_correction(&mut self, begin: bool) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_aux();
+        if begin {
+            control.modify(|_, w| {
+                w.tx_iq_correction_mode_high()
+                    .clear_bit()
+                    .tx_iq_correction_mode_low()
+                    .set_bit()
+            });
+        } else {
+            control.modify(|_, w| w.tx_iq_correction_mode_high().set_bit());
+        }
+    }
+
+    /// Select the RX-IQ calibration mode with one fresh RMW.
+    pub fn configure_rx_iq_calibration_mode(&mut self) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_control()
+            .modify(|_, w| {
+                w.rx_iq_correction_mode_high()
+                    .clear_bit()
+                    .rx_iq_correction_mode_low()
+                    .set_bit()
+            });
+    }
+
+    /// Publish one signed TX-IQ gain coefficient using the ROM truncation.
+    pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_aux()
+            .modify(|_, w| {
+                // SAFETY: the complete ROM leaf retains the low six bits of
+                // the signed byte. Masking reproduces that bounded encoding.
+                unsafe { w.tx_iq_gain_coefficient().bits(coefficient as u8 & 0x3f) }
+            });
+    }
+
+    /// Publish one signed TX-IQ phase coefficient using the ROM truncation.
+    pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_aux()
+            .modify(|_, w| {
+                // SAFETY: the complete ROM leaf retains the low seven bits.
+                unsafe { w.tx_iq_phase_coefficient().bits(coefficient as u8 & 0x7f) }
+            });
+    }
+
+    /// Publish one signed RX-IQ gain coefficient using the ROM truncation.
+    pub fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_control()
+            .modify(|_, w| {
+                // SAFETY: the complete ROM leaf retains the low six bits.
+                unsafe { w.rx_iq_gain_coefficient().bits(coefficient as u8 & 0x3f) }
+            });
+    }
+
+    /// Publish one signed RX-IQ phase coefficient using the ROM truncation.
+    pub fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iq_correction_control()
+            .modify(|_, w| {
+                // SAFETY: the complete ROM leaf retains the low seven bits.
+                unsafe { w.rx_iq_phase_coefficient().bits(coefficient as u8 & 0x7f) }
+            });
+    }
+
     /// Trigger one TX-DC comparator measurement using three fresh RMW edges.
     pub fn trigger_tx_dc_measurement(&mut self) {
         let control = self

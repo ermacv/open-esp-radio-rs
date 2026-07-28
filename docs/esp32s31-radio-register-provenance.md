@@ -623,6 +623,21 @@ cross the ownership boundary as booleans. The ready binding now also borrows
 source-only audit rejects the raw address, former constants and unsafe wrapper
 signatures.
 
+## IQ correction ownership
+
+The already described `IQ_CORRECTION_CONTROL` and `IQ_CORRECTION_AUX`
+registers now have native generated-PAC operations for the remaining mode and
+coefficient consumers. Primary sources remain complete rev0 ROM
+`phy_txiq_set_reg`, `phy_rxiq_set_reg`, and the complete TXIQ/RXIQ calibration
+parents recorded in the SVD provenance.
+
+Entry mode updates preserve their combined clear/set RMW, completion preserves
+its single-bit set, and signed gain/phase values are truncated to the
+instruction-proven six- or seven-bit fields inside the PAC. TXIQ and RXIQ
+bindings now carry the unique `&mut RadioRegisters` borrow. The raw
+`0x2010_0438`/`0x2010_0c0c` constants and upper-layer coefficient transforms
+are deleted and rejected by the source-only audit.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

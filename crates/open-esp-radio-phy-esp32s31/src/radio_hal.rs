@@ -14,8 +14,6 @@ const PHY_TONE_SELECTOR_CONTROL_ADDRESS: usize = 0x2010_0428;
 const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
-const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
@@ -137,14 +135,6 @@ const fn with_phy_tone_path1_selector(value: u32, selector: i32) -> u32 {
     (value & !0xc) | (((selector as u32).wrapping_shl(2)) & 0xc)
 }
 
-const fn with_phy_txiq_calibration_enabled(value: u32) -> u32 {
-    (value & !0x0000_4000) | 0x0000_2000
-}
-
-const fn with_phy_txiq_calibration_complete(value: u32) -> u32 {
-    value | 0x0000_4000
-}
-
 const fn with_phy_txiq_first_polarity(
     value: u32,
     polarity: bool,
@@ -160,26 +150,6 @@ const fn with_phy_txiq_first_polarity(
 const fn with_phy_txiq_second_polarity(value: u32, polarity: bool) -> u32 {
     let polarity = polarity as u32;
     (value & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
-}
-
-const fn with_phy_txiq_gain(value: u32, coefficient: i8) -> u32 {
-    (value & 0xffff_ffc0) | (coefficient as u8 as u32 & 0x3f)
-}
-
-const fn with_phy_txiq_phase(value: u32, coefficient: i8) -> u32 {
-    (value & 0xffff_e03f) | ((coefficient as u8 as u32 & 0x7f) << 6)
-}
-
-const fn with_phy_rxiq_gain(value: u32, coefficient: i8) -> u32 {
-    (value & !0x003f_0000) | ((coefficient as u8 as u32 & 0x3f) << 16)
-}
-
-const fn with_phy_rxiq_phase(value: u32, coefficient: i8) -> u32 {
-    (value & !0x1fc0_0000) | ((coefficient as u8 as u32 & 0x7f) << 22)
-}
-
-const fn with_phy_rxiq_calibration_mode(value: u32) -> u32 {
-    (value & !0x4000_0000) | 0x2000_0000
 }
 
 const fn without_phy_tx_gain_compensation_low_byte(value: u32) -> u32 {
@@ -380,14 +350,8 @@ pub(crate) unsafe fn configure_phy_calibration_tone_wide(enabled: bool, selector
 /// Reference: complete ROM `phy_rfcal_txiq` prefix and suffix. Each branch is
 /// one finite read/modify/write and owns no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_txiq_correction(begin: bool) {
-    let control = PHY_IQ_CORRECTION_AUX_ADDRESS as *mut u32;
-    let value = control.read_volatile();
-    control.write_volatile(if begin {
-        with_phy_txiq_calibration_enabled(value)
-    } else {
-        with_phy_txiq_calibration_complete(value)
-    });
+pub(crate) fn configure_phy_txiq_correction(registers: &mut RadioRegisters, begin: bool) {
+    registers.configure_tx_iq_correction(begin);
 }
 
 /// Capture the complete tone-control word saved by ROM `phy_rfcal_txiq`.
@@ -438,37 +402,42 @@ pub(crate) unsafe fn configure_phy_txiq_mis_power(
 
 /// Publish one bounded TX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_txiq_coefficient(
+pub(crate) fn configure_phy_txiq_coefficient(
+    registers: &mut RadioRegisters,
     kind: crate::phy_txiq::PhyTxIqCoefficientKind,
     value: i8,
 ) {
-    let control = PHY_IQ_CORRECTION_AUX_ADDRESS as *mut u32;
-    let current = control.read_volatile();
-    control.write_volatile(match kind {
-        crate::phy_txiq::PhyTxIqCoefficientKind::Gain => with_phy_txiq_gain(current, value),
-        crate::phy_txiq::PhyTxIqCoefficientKind::Phase => with_phy_txiq_phase(current, value),
-    });
+    match kind {
+        crate::phy_txiq::PhyTxIqCoefficientKind::Gain => {
+            registers.set_tx_iq_gain_coefficient(value)
+        }
+        crate::phy_txiq::PhyTxIqCoefficientKind::Phase => {
+            registers.set_tx_iq_phase_coefficient(value)
+        }
+    }
 }
 
 /// Publish one bounded RX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rxiq_coefficient(
+pub(crate) fn configure_phy_rxiq_coefficient(
+    registers: &mut RadioRegisters,
     kind: crate::phy_rxiq::PhyRxIqCoefficientKind,
     value: i8,
 ) {
-    let control = PHY_IQ_CORRECTION_CONTROL_ADDRESS as *mut u32;
-    let current = control.read_volatile();
-    control.write_volatile(match kind {
-        crate::phy_rxiq::PhyRxIqCoefficientKind::Gain => with_phy_rxiq_gain(current, value),
-        crate::phy_rxiq::PhyRxIqCoefficientKind::Phase => with_phy_rxiq_phase(current, value),
-    });
+    match kind {
+        crate::phy_rxiq::PhyRxIqCoefficientKind::Gain => {
+            registers.set_rx_iq_gain_coefficient(value)
+        }
+        crate::phy_rxiq::PhyRxIqCoefficientKind::Phase => {
+            registers.set_rx_iq_phase_coefficient(value)
+        }
+    }
 }
 
 /// Select the finite correction path at entry to ROM `phy_rfcal_rxiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rxiq_calibration_mode() {
-    let control = PHY_IQ_CORRECTION_CONTROL_ADDRESS as *mut u32;
-    control.write_volatile(with_phy_rxiq_calibration_mode(control.read_volatile()));
+pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut RadioRegisters) {
+    registers.configure_rx_iq_calibration_mode();
 }
 
 /// Apply the finite MMIO suffix of rev0 ROM `phy_adc_rate_set`.
@@ -637,14 +606,12 @@ pub(crate) fn publish_phy_tx_gain_memory(
 mod tests {
     use super::{
         encode_phy_gain_memory_words, packed_byte, packed_halfword, tx_baseband_gain_index,
-        tx_gain_seed_halfword, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
-        with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
+        tx_gain_seed_halfword, with_phy_tone_path, with_phy_tone_path0_selector,
         with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
-        with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
-        with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
-        with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
-        with_register_field, without_phy_tx_gain_compensation_high_byte,
-        without_phy_tx_gain_compensation_low_byte, without_register_bits,
+        with_phy_tx_gain_compensation_byte2, with_phy_txiq_first_polarity,
+        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
+        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
+        without_register_bits,
     };
 
     #[test]
@@ -671,10 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn phy_txiq_register_transforms_match_complete_rom_leaves() {
-        assert_eq!(with_phy_txiq_calibration_enabled(u32::MAX), 0xffff_bfff);
-        assert_eq!(with_phy_txiq_calibration_enabled(0), 0x0000_2000);
-        assert_eq!(with_phy_txiq_calibration_complete(0x0000_2000), 0x0000_6000);
+    fn phy_txiq_mismatch_transforms_match_complete_rom_leaves() {
         assert_eq!(
             with_phy_txiq_first_polarity(0xa000_0000, true, 0x50, 0x80),
             0xa42e_c020
@@ -687,16 +651,6 @@ mod tests {
             with_phy_txiq_second_polarity(0xa6ae_c020, false),
             0xa1ae_c020
         );
-        assert_eq!(with_phy_txiq_gain(u32::MAX, -31), 0xffff_ffe1);
-        assert_eq!(with_phy_txiq_phase(u32::MAX, -63), 0xffff_f07f);
-    }
-
-    #[test]
-    fn phy_rxiq_register_transforms_match_complete_rom_leaves() {
-        assert_eq!(with_phy_rxiq_gain(u32::MAX, -31), 0xffe1_ffff);
-        assert_eq!(with_phy_rxiq_phase(u32::MAX, -63), 0xf07f_ffff);
-        assert_eq!(with_phy_rxiq_calibration_mode(0), 0x2000_0000);
-        assert_eq!(with_phy_rxiq_calibration_mode(u32::MAX), 0xbfff_ffff);
     }
 
     #[test]

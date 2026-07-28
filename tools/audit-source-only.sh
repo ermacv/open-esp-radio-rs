@@ -113,6 +113,15 @@ then
     exit 1
 fi
 
+# IQ mode and coefficient access now uses the existing generated PAC fields.
+if rg -n \
+    '0x2010_(0438|0c0c)|PHY_(TXIQ_CONTROL|RXIQ_CORRECTION|RXIQ_AUX)_ADDRESS|unsafe[[:space:]]+fn[[:space:]]+configure_phy_(txiq_correction|txiq_coefficient|rxiq_coefficient|rxiq_calibration_mode)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw IQ correction/coefficient access returned" >&2
+    exit 1
+fi
+
 # Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
 # DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
 # addresses have no remaining live raw consumer.

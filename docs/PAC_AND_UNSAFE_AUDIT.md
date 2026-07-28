@@ -200,5 +200,11 @@ operations. PHY actions and completions now exchange only booleans, not the
 physical address, masks or full register images; even the polling binding
 requires the unique mutable register owner.
 
+The same native PAC slice now owns TX-IQ/RX-IQ correction modes and signed
+gain/phase coefficient publication. Signed coefficients retain the complete
+ROM's six- or seven-bit truncation inside the PAC. Their bindings borrow
+`RadioRegisters`; the unused physical-address constants and four upper
+`unsafe` wrappers are removed.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

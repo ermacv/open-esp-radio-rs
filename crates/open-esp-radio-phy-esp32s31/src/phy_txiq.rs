@@ -36,7 +36,6 @@ use crate::{
     },
 };
 
-pub const PHY_TXIQ_CONTROL_ADDRESS: usize = 0x2010_0c0c;
 pub const PHY_TXIQ_TONE_CONTROL_ADDRESS: usize = 0x2010_041c;
 pub const PHY_TXIQ_TONE_SELECTOR_ADDRESS: usize = 0x2010_0428;
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
@@ -1643,7 +1642,7 @@ impl PhyTxIqMmioBinding {
     ) -> PhyTxIqCalibrationCompletion {
         match self.action {
             PhyTxIqCalibrationAction::ConfigureCorrection { begin } => {
-                crate::radio_hal::configure_phy_txiq_correction(begin);
+                crate::radio_hal::configure_phy_txiq_correction(registers, begin);
                 PhyTxIqCalibrationCompletion::CorrectionConfigured { begin }
             }
             PhyTxIqCalibrationAction::ConfigurePbusDebugMode => {
@@ -1721,7 +1720,10 @@ impl PhyTxIqCoverMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxIqCoverCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxIqCoverCompletion {
         match self.action {
             PhyTxIqCoverAction::ConfigureCoefficient {
                 identity,
@@ -1729,7 +1731,7 @@ impl PhyTxIqCoverMmioBinding {
                 kind,
                 value,
             } => {
-                crate::radio_hal::configure_phy_txiq_coefficient(kind, value);
+                crate::radio_hal::configure_phy_txiq_coefficient(registers, kind, value);
                 PhyTxIqCoverCompletion::CoefficientConfigured {
                     identity,
                     iteration,

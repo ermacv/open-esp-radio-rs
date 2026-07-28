@@ -9,12 +9,14 @@ mod frequency;
 mod iq_estimator;
 pub mod mac;
 mod mac_block_ack;
+mod mac_interrupt;
 mod mac_rx_dma;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
 pub mod power;
 mod table_memory;
+pub use mac_interrupt::MacInterruptRegisters;
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
@@ -169,12 +171,13 @@ impl Field32 {
 
 /// Unique logical owner of the ESP32-S31 radio register regions.
 ///
-/// The generated [`svd::Peripherals`] singleton is kept private so downstream
-/// code cannot split the radio into independently stolen register blocks.
-/// Higher layers retain semantic sequencing and borrow this owner mutably.
+/// The generated [`svd::Peripherals`] singleton is kept private. Higher layers
+/// retain semantic sequencing and borrow this owner mutably; the only
+/// supported split is the one-shot, finite hard-interrupt capability.
 pub struct RadioRegisters {
     peripherals: svd::Peripherals,
     wifi_baseband_enabled: bool,
+    mac_interrupt_taken: bool,
 }
 
 impl RadioRegisters {
@@ -190,7 +193,24 @@ impl RadioRegisters {
             // invariant required by `svd2rust::Peripherals::steal`.
             peripherals: unsafe { svd::Peripherals::steal() },
             wifi_baseband_enabled: false,
+            mac_interrupt_taken: false,
         }
+    }
+
+    /// Permanently split the hard-ISR register block from the task owner.
+    ///
+    /// The returned capability contains only MAC interrupt snapshot and
+    /// acknowledge operations. `None` prevents a second safe split.
+    pub fn take_mac_interrupt(&mut self) -> Option<MacInterruptRegisters> {
+        if self.mac_interrupt_taken {
+            return None;
+        }
+        self.mac_interrupt_taken = true;
+        // SAFETY: the generated singleton is already held by `self`, but this
+        // method permanently removes access to its private interrupt member
+        // from every typed `RadioRegisters` API. The returned finite
+        // capability is the sole safe owner of that disjoint register block.
+        Some(unsafe { MacInterruptRegisters::steal_from_radio_owner() })
     }
 
     /// Synchronize the owned Wi-Fi-enable image after a platform PAC update.
@@ -318,6 +338,15 @@ mod tests {
             power::phy_clock_oracle::FE_CLOCK_GATE_OPAQUE.reset_value(),
             None
         );
+    }
+
+    #[test]
+    fn mac_interrupt_capability_can_only_be_split_once() {
+        // SAFETY: this host test does not access MMIO and creates no second
+        // `RadioRegisters` value; it exercises only the local split state.
+        let mut registers = unsafe { RadioRegisters::steal() };
+        assert!(registers.take_mac_interrupt().is_some());
+        assert!(registers.take_mac_interrupt().is_none());
     }
 
     #[test]

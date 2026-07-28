@@ -40,12 +40,6 @@ impl Mmio for RadioRegisters {
     }
 }
 
-pub const MAC_INT_TX_COMPLETE: u32 = 0x0000_0080;
-pub const MAC_INT_COLLISION: u32 = 0x0000_0100;
-pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;
-pub const MAC_INT_RX_SUCCESS: u32 = 0x0000_4000;
-pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
-
 pub const RX_ENABLE: u32 = open_esp_radio_pac_esp32s31::mac::rx_control::WALKER_ENABLE.mask();
 pub const RX_RELOAD: u32 =
     open_esp_radio_pac_esp32s31::mac::rx_control::APPEND_DESCRIPTOR_RELOAD.mask();

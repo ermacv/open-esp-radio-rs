@@ -7,14 +7,17 @@ use open_esp_radio_mac_esp32s31::{
         tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
     init::{configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl},
-    irq::{handle_mac_irq, IrqDisposition, IrqState},
+    irq::{
+        handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
+        MAC_INT_TX_COMPLETE,
+    },
     registers::{
-        Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
-        MAC_INT_TX_COMPLETE, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR,
-        RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD, TX_CCA_CONTROL, TX_CCA_FORCE_MASK,
-        TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
-        TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
-        TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
+        Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_STATUS, RX_CONTROL, RX_DESCRIPTOR_BASE,
+        RX_ENABLE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD,
+        TX_CCA_CONTROL, TX_CCA_FORCE_MASK, TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0,
+        TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0, TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0,
+        TX_COMPLETE_Q0, TX_COMPLETE_STATE, TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE,
+        TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
         build_cold_ring, disable_receive, enable_receive, extract_ccmp_data, extract_data,
@@ -125,6 +128,19 @@ impl RxDma for MockMmio {
     }
 
     fn fence(&mut self) {
+        Mmio::fence(self);
+    }
+}
+
+impl MacInterrupt for MockMmio {
+    fn snapshot(&mut self) -> (u32, u32) {
+        let status = self.read32(MAC_INT_STATUS);
+        let enabled = self.read32(MAC_INT_ENABLE);
+        (status, enabled)
+    }
+
+    fn acknowledge(&mut self, events: u32) {
+        self.write32(MAC_INT_CLEAR, events);
         Mmio::fence(self);
     }
 }

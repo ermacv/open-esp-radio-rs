@@ -3317,3 +3317,24 @@ descriptor head.
 read/write/modify calls. The unsafe descriptor publication that remains there
 is a DMA-memory ownership boundary, not peripheral MMIO, and is documented by
 the sole live-ring authority invariant.
+
+## Semantic hard-interrupt ownership
+
+The hard MAC ISR no longer receives the generic compatibility `Mmio`
+interface. Its complete hardware authority is the `MacInterrupt` capability:
+one status/enable snapshot in the recovered order and one full sampled-image
+write-to-clear followed by the device fence. Production implements both edges
+through the generated `WIFI_MAC_INTERRUPT` peripheral; the host model retains
+the exact read/read/write/fence trace.
+
+`RadioRegisters::take_mac_interrupt` performs a one-way split and returns a
+non-constructible `MacInterruptRegisters` token only once. The HIL publishes
+that token before binding the interrupt and its handler is the sole mutable
+consumer. This replaces the application's former `InterruptMmio`, which could
+accept any compatibility `Register32` and performed raw volatile access.
+
+The SVD records each address and the five presently identified event bits
+with source and confidence. This keeps the bit hypotheses reviewable at the
+register source instead of duplicating unexplained numeric addresses in the
+ISR. A source audit rejects `Register32`, `Field32`, generic `Mmio`, and raw
+read/write/modify calls if they return to `irq.rs`.

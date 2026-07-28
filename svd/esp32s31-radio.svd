@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.8</version>
+  <version>2.9</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1479,6 +1479,51 @@
           <name>BB_CLOCK_GATE_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes all ones to open and the blob writes zero to close.</description>
           <addressOffset>0x7c80</addressOffset><size>32</size><access>write-only</access>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_INTERRUPT</name>
+      <description>
+        SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,
+        BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,
+        BLOB_LIBPP_WDEV_PROCESS_FIQ,
+        crates/open-esp-radio-mac-esp32s31/src/init.rs];
+        CONFIDENCE[instruction-exact-addresses-and-event-mapping].
+        Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture.
+        The two complete hal_mac leaves independently prove the status and
+        clear addresses. The recovered common FIQ and cold initializer prove
+        the event-bit mapping and mask transaction used by the open ISR.
+      </description>
+      <baseAddress>0x20104c40</baseAddress>
+      <registers>
+        <register>
+          <name>ENABLE</name>
+          <description>SOURCE[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-transaction]. Enabled MAC event bitmap sampled with each interrupt status snapshot.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>EVENT_MASK</name><description>SOURCE[crates/open-esp-radio-mac-esp32s31/src/init.rs]; CONFIDENCE[instruction-exact-mask-image]. One enable bit per MAC event; event identities are documented on STATUS.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>STATUS</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>TX_COMPLETE</name><description>SOURCE[BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-event-mapping]. At least one hardware TX queue completed.</description><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BSS_COLOR_COLLISION</name><description>SOURCE[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR]; CONFIDENCE[instruction-exact-event-mapping]. HE BSS-color collision event.</description><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WATCHDOG</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG]; CONFIDENCE[instruction-exact-bit]. MAC watchdog event cleared by the complete dedicated leaf.</description><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RX_SUCCESS</name><description>SOURCE[BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-event-mapping]. Successfully received frame is ready for the RX completion path.</description><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TX_TIMEOUT</name><description>SOURCE[BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-event-mapping]. Hardware TX queue timeout/abort event.</description><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLEAR</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-write-to-clear]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field><name>EVENTS</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT]; CONFIDENCE[instruction-exact-write-to-clear]. Ones acknowledge the corresponding event bits.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+          </fields>
         </register>
       </registers>
     </peripheral>

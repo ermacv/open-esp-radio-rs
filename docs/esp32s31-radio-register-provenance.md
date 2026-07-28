@@ -765,6 +765,16 @@ evidence already attached to the SVD registers. The upper ring sees only a
 semantic `RxDma` capability; raw identities are no longer part of its API.
 Host tests retain the exact read/write/fence trace through a semantic model.
 
+The hard MAC interrupt transaction is now a separate generated
+`WIFI_MAC_INTERRUPT` peripheral at `0x2010_4c40`. Complete
+`libpp.a::hal_mac_interrupt_get_event` reads masked status at
+`0x2010_4c48`; complete `hal_mac_interrupt_clr_event` writes the sampled
+image to the write-to-clear word at `0x2010_4c4c`. Recovered
+`wDev_ProcessFiq` supplies the known TX-complete, BSS-color-collision,
+watchdog, RX-success and TX-timeout bit identities recorded in the SVD. The
+upper ISR receives only a semantic snapshot/acknowledge capability and cannot
+name or manufacture an MMIO register.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

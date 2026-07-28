@@ -7914,6 +7914,158 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x2010_4c40>;
+impl core::fmt::Debug for WifiMacInterrupt {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInterrupt").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+pub mod wifi_mac_interrupt {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        enable: Enable,
+        _reserved1: [u8; 0x04],
+        status: Status,
+        clear: Clear,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot."]
+        #[inline(always)]
+        pub const fn enable(&self) -> &Enable {
+            &self.enable
+        }
+        #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."]
+        #[inline(always)]
+        pub const fn status(&self) -> &Status {
+            &self.status
+        }
+        #[doc = "0x0c - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events."]
+        #[inline(always)]
+        pub const fn clear(&self) -> &Clear {
+            &self.clear
+        }
+    }
+    #[doc = "ENABLE (rw) register accessor: SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc(alias = "ENABLE")]
+    pub type Enable = crate::Reg<enable::EnableSpec>;
+    #[doc = "SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot."]
+    pub mod enable {
+        #[doc = "Register `ENABLE` reader"]
+        pub type R = crate::R<EnableSpec>;
+        #[doc = "Register `ENABLE` writer"]
+        pub type W = crate::W<EnableSpec>;
+        #[doc = "Field `EVENT_MASK` reader - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+        pub type EventMaskR = crate::FieldReader<u32>;
+        #[doc = "Field `EVENT_MASK` writer - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+            #[inline(always)]
+            pub fn event_mask(&self) -> EventMaskR {
+                EventMaskR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+            #[inline(always)]
+            pub fn event_mask(&mut self) -> EventMaskW<'_, EnableSpec> {
+                EventMaskW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableSpec;
+        impl crate::RegisterSpec for EnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable::R`](R) reader structure"]
+        impl crate::Readable for EnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`enable::W`](W) writer structure"]
+        impl crate::Writable for EnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc(alias = "STATUS")]
+    pub type Status = crate::Reg<status::StatusSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."]
+    pub mod status {
+        #[doc = "Register `STATUS` reader"]
+        pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `TX_COMPLETE` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. At least one hardware TX queue completed."]
+        pub type TxCompleteR = crate::BitReader;
+        #[doc = "Field `BSS_COLOR_COLLISION` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. HE BSS-color collision event."]
+        pub type BssColorCollisionR = crate::BitReader;
+        #[doc = "Field `WATCHDOG` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-bit\\]. MAC watchdog event cleared by the complete dedicated leaf."]
+        pub type WatchdogR = crate::BitReader;
+        #[doc = "Field `RX_SUCCESS` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. Successfully received frame is ready for the RX completion path."]
+        pub type RxSuccessR = crate::BitReader;
+        #[doc = "Field `TX_TIMEOUT` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. Hardware TX queue timeout/abort event."]
+        pub type TxTimeoutR = crate::BitReader;
+        impl R {
+            #[doc = "Bit 7 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. At least one hardware TX queue completed."]
+            #[inline(always)]
+            pub fn tx_complete(&self) -> TxCompleteR {
+                TxCompleteR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&self) -> BssColorCollisionR {
+                BssColorCollisionR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 11 - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-bit\\]. MAC watchdog event cleared by the complete dedicated leaf."]
+            #[inline(always)]
+            pub fn watchdog(&self) -> WatchdogR {
+                WatchdogR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 14 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. Successfully received frame is ready for the RX completion path."]
+            #[inline(always)]
+            pub fn rx_success(&self) -> RxSuccessR {
+                RxSuccessR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 19 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-event-mapping\\]. Hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&self) -> TxTimeoutR {
+                TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StatusSpec;
+        impl crate::RegisterSpec for StatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`status::R`](R) reader structure"]
+        impl crate::Readable for StatusSpec {}
+    }
+    #[doc = "CLEAR (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
+    #[doc(alias = "CLEAR")]
+    pub type Clear = crate::Reg<clear::ClearSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events."]
+    pub mod clear {
+        #[doc = "Register `CLEAR` writer"]
+        pub type W = crate::W<ClearSpec>;
+        #[doc = "Field `EVENTS` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Ones acknowledge the corresponding event bits."]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Ones acknowledge the corresponding event bits."]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, ClearSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClearSpec;
+        impl crate::RegisterSpec for ClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
+        impl crate::Writable for ClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
 pub type WifiMacRxDma = crate::Periph<wifi_mac_rx_dma::RegisterBlock, 0x2010_4000>;
 impl core::fmt::Debug for WifiMacRxDma {
@@ -8892,6 +9044,8 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "WIFI_MAC_INTERRUPT"]
+    pub wifi_mac_interrupt: WifiMacInterrupt,
     #[doc = "WIFI_MAC_RX_DMA"]
     pub wifi_mac_rx_dma: WifiMacRxDma,
 }
@@ -8926,6 +9080,7 @@ impl Peripherals {
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),
             phy_clock_oracle: PhyClockOracle::steal(),
+            wifi_mac_interrupt: WifiMacInterrupt::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }
     }

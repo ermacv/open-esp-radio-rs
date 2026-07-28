@@ -2,10 +2,32 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::registers::{
-    Mmio, MAC_INT_CLEAR, MAC_INT_COLLISION, MAC_INT_ENABLE, MAC_INT_RX_SUCCESS, MAC_INT_STATUS,
-    MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
-};
+use open_esp_radio_pac_esp32s31::MacInterruptRegisters;
+
+pub const MAC_INT_TX_COMPLETE: u32 = 0x0000_0080;
+pub const MAC_INT_COLLISION: u32 = 0x0000_0100;
+pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;
+pub const MAC_INT_RX_SUCCESS: u32 = 0x0000_4000;
+pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
+
+/// Finite MAC interrupt capability used by the hard ISR.
+///
+/// Production delegates both operations to generated PAC registers. Tests
+/// can model the same ordering without receiving arbitrary MMIO identities.
+pub trait MacInterrupt {
+    fn snapshot(&mut self) -> (u32, u32);
+    fn acknowledge(&mut self, events: u32);
+}
+
+impl MacInterrupt for MacInterruptRegisters {
+    fn snapshot(&mut self) -> (u32, u32) {
+        self.mac_interrupt_snapshot()
+    }
+
+    fn acknowledge(&mut self, events: u32) {
+        self.acknowledge_mac_interrupts(events);
+    }
+}
 
 pub const EVENT_TX_COMPLETE: u32 = 0x01;
 pub const EVENT_TX_TIMEOUT: u32 = 0x02;
@@ -121,12 +143,11 @@ pub const fn event_mask(mac_pending: u32) -> u32 {
 /// Handles exactly one MAC status snapshot and posts only the four recovered
 /// task-side events. The complete status snapshot is acknowledged before the
 /// task can run, including unsupported bits, matching the pinned common ISR.
-pub fn handle_mac_irq<M: Mmio, S: IrqSink>(
-    mmio: &mut M,
+pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
+    interrupt: &mut M,
     sink: &S,
 ) -> (IrqDisposition, IrqSnapshot) {
-    let status = mmio.read32(MAC_INT_STATUS);
-    let enabled = mmio.read32(MAC_INT_ENABLE);
+    let (status, enabled) = interrupt.snapshot();
     let handled = status & HANDLED_MAC_MASK;
     let unhandled = status & !HANDLED_MAC_MASK;
     let snapshot = IrqSnapshot {
@@ -141,8 +162,7 @@ pub fn handle_mac_irq<M: Mmio, S: IrqSink>(
         return (IrqDisposition::Spurious, snapshot);
     }
 
-    mmio.write32(MAC_INT_CLEAR, status);
-    mmio.fence();
+    interrupt.acknowledge(status);
     sink.record_unhandled(unhandled);
     if handled == 0 {
         (IrqDisposition::Unhandled, snapshot)

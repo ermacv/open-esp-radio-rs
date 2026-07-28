@@ -454,6 +454,21 @@ mod tests {
     }
 
     #[test]
+    fn generated_rx_cold_prefix_registers_match_complete_leaf() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let dma = &registers.peripherals.wifi_mac_rx_dma;
+        assert_eq!(dma.rx_cold_control_unknown().as_ptr() as usize, 0x2010_407c);
+        assert_eq!(dma.rx_buffer_limit_unknown().as_ptr() as usize, 0x2010_4c68);
+        assert_eq!(dma.rx_buffer_base_unknown().as_ptr() as usize, 0x2010_4c6c);
+        assert_eq!(
+            dma.rx_descriptor_high_window().as_ptr() as usize,
+            0x2010_4c70
+        );
+    }
+
+    #[test]
     fn indexed_mac_registers_are_bounded_and_aligned() {
         for group in [
             &mac::init::INTERFACE_ADDRESS_LOW[..],

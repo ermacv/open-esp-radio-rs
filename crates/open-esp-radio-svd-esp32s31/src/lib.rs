@@ -10234,52 +10234,60 @@ pub mod wifi_mac_cold_handshake {
         }
     }
 }
-#[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX, ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
 pub type WifiMacRxDma = crate::Periph<wifi_mac_rx_dma::RegisterBlock, 0x2010_4000>;
 impl core::fmt::Debug for WifiMacRxDma {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacRxDma").finish()
     }
 }
-#[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX, ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE, ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. Descriptor-walker registers recovered from complete rev0 ROM leaves and qualified with the open driver's rotating 32-entry RX ring."]
 pub mod wifi_mac_rx_dma {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        _reserved0: [u8; 0x80],
+        _reserved0: [u8; 0x7c],
+        rx_cold_control_unknown: RxColdControlUnknown,
         rx_control: RxControl,
         rx_descriptor_base: RxDescriptorBase,
         rx_next_descriptor: RxNextDescriptor,
         rx_last_descriptor: RxLastDescriptor,
-        _reserved4: [u8; 0x0208],
+        _reserved5: [u8; 0x0208],
         rx_block_ack_agreement_update: RxBlockAckAgreementUpdate,
-        _reserved5: [u8; 0x09d4],
+        _reserved6: [u8; 0x09cc],
+        rx_buffer_limit_unknown: RxBufferLimitUnknown,
+        rx_buffer_base_unknown: RxBufferBaseUnknown,
         rx_descriptor_high_window: RxDescriptorHighWindow,
-        _reserved6: [u8; 0x0230],
+        _reserved9: [u8; 0x0230],
         rx_block_ack_control: RxBlockAckControl,
         rx_block_ack_peer_tail_and_policy: RxBlockAckPeerTailAndPolicy,
         rx_block_ack_peer_head: RxBlockAckPeerHead,
         rx_block_ack_start_sequence: RxBlockAckStartSequence,
         rx_block_ack_bitmap_low: RxBlockAckBitmapLow,
         rx_block_ack_bitmap_high: RxBlockAckBitmapHigh,
-        _reserved12: [u8; 0x04f8],
+        _reserved15: [u8; 0x04f8],
         tx_block_ack_bitmap_high_q3: TxBlockAckBitmapHighQ3,
         tx_block_ack_bitmap_low_q3: TxBlockAckBitmapLowQ3,
         tx_block_ack_control_sequence_q3: TxBlockAckControlSequenceQ3,
-        _reserved15: [u8; 0x70],
+        _reserved18: [u8; 0x70],
         tx_block_ack_bitmap_high_q2: TxBlockAckBitmapHighQ2,
         tx_block_ack_bitmap_low_q2: TxBlockAckBitmapLowQ2,
         tx_block_ack_control_sequence_q2: TxBlockAckControlSequenceQ2,
-        _reserved18: [u8; 0x70],
+        _reserved21: [u8; 0x70],
         tx_block_ack_bitmap_high_q1: TxBlockAckBitmapHighQ1,
         tx_block_ack_bitmap_low_q1: TxBlockAckBitmapLowQ1,
         tx_block_ack_control_sequence_q1: TxBlockAckControlSequenceQ1,
-        _reserved21: [u8; 0x70],
+        _reserved24: [u8; 0x70],
         tx_block_ack_bitmap_high_q0: TxBlockAckBitmapHighQ0,
         tx_block_ack_bitmap_low_q0: TxBlockAckBitmapLowQ0,
         tx_block_ack_control_sequence_q0: TxBlockAckControlSequenceQ0,
     }
     impl RegisterBlock {
+        #[doc = "0x7c - SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown."]
+        #[inline(always)]
+        pub const fn rx_cold_control_unknown(&self) -> &RxColdControlUnknown {
+            &self.rx_cold_control_unknown
+        }
         #[doc = "0x80 - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell."]
         #[inline(always)]
         pub const fn rx_control(&self) -> &RxControl {
@@ -10305,7 +10313,17 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_block_ack_agreement_update(&self) -> &RxBlockAckAgreementUpdate {
             &self.rx_block_ack_agreement_update
         }
-        #[doc = "0xc70 - SOURCE\\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM."]
+        #[doc = "0xc68 - SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication."]
+        #[inline(always)]
+        pub const fn rx_buffer_limit_unknown(&self) -> &RxBufferLimitUnknown {
+            &self.rx_buffer_limit_unknown
+        }
+        #[doc = "0xc6c - SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window."]
+        #[inline(always)]
+        pub const fn rx_buffer_base_unknown(&self) -> &RxBufferBaseUnknown {
+            &self.rx_buffer_base_unknown
+        }
+        #[doc = "0xc70 - SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM."]
         #[inline(always)]
         pub const fn rx_descriptor_high_window(&self) -> &RxDescriptorHighWindow {
             &self.rx_descriptor_high_window
@@ -10399,6 +10417,61 @@ pub mod wifi_mac_rx_dma {
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q0(&self) -> &TxBlockAckControlSequenceQ0 {
             &self.tx_block_ack_control_sequence_q0
+        }
+    }
+    #[doc = "RX_COLD_CONTROL_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_cold_control_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_cold_control_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_cold_control_unknown`] module"]
+    #[doc(alias = "RX_COLD_CONTROL_UNKNOWN")]
+    pub type RxColdControlUnknown = crate::Reg<rx_cold_control_unknown::RxColdControlUnknownSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown."]
+    pub mod rx_cold_control_unknown {
+        #[doc = "Register `RX_COLD_CONTROL_UNKNOWN` reader"]
+        pub type R = crate::R<RxColdControlUnknownSpec>;
+        #[doc = "Register `RX_COLD_CONTROL_UNKNOWN` writer"]
+        pub type W = crate::W<RxColdControlUnknownSpec>;
+        #[doc = "Field `COLD_LOW_UNKNOWN` reader - "]
+        pub type ColdLowUnknownR = crate::FieldReader;
+        #[doc = "Field `COLD_LOW_UNKNOWN` writer - "]
+        pub type ColdLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` reader - "]
+        pub type PreservedHighUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` writer - "]
+        pub type PreservedHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn cold_low_unknown(&self) -> ColdLowUnknownR {
+                ColdLowUnknownR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(&self) -> PreservedHighUnknownR {
+                PreservedHighUnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn cold_low_unknown(&mut self) -> ColdLowUnknownW<'_, RxColdControlUnknownSpec> {
+                ColdLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(
+                &mut self,
+            ) -> PreservedHighUnknownW<'_, RxColdControlUnknownSpec> {
+                PreservedHighUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_cold_control_unknown::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_cold_control_unknown::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxColdControlUnknownSpec;
+        impl crate::RegisterSpec for RxColdControlUnknownSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_cold_control_unknown::R`](R) reader structure"]
+        impl crate::Readable for RxColdControlUnknownSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_cold_control_unknown::W`](W) writer structure"]
+        impl crate::Writable for RxColdControlUnknownSpec {
+            type Safety = crate::Unsafe;
         }
     }
     #[doc = "RX_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. RX descriptor-walker gate and live-list append doorbell.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_control`] module"]
@@ -10543,11 +10616,121 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`rx_last_descriptor::R`](R) reader structure"]
         impl crate::Readable for RxLastDescriptorSpec {}
     }
-    #[doc = "RX_DESCRIPTOR_HIGH_WINDOW (rw) register accessor: SOURCE\\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_high_window::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_high_window::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_descriptor_high_window`] module"]
+    #[doc = "RX_BUFFER_LIMIT_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_buffer_limit_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_buffer_limit_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_buffer_limit_unknown`] module"]
+    #[doc(alias = "RX_BUFFER_LIMIT_UNKNOWN")]
+    pub type RxBufferLimitUnknown = crate::Reg<rx_buffer_limit_unknown::RxBufferLimitUnknownSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication."]
+    pub mod rx_buffer_limit_unknown {
+        #[doc = "Register `RX_BUFFER_LIMIT_UNKNOWN` reader"]
+        pub type R = crate::R<RxBufferLimitUnknownSpec>;
+        #[doc = "Register `RX_BUFFER_LIMIT_UNKNOWN` writer"]
+        pub type W = crate::W<RxBufferLimitUnknownSpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_UNKNOWN` writer - "]
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` reader - "]
+        pub type PreservedHighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` writer - "]
+        pub type PreservedHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(&self) -> PreservedHighUnknownR {
+                PreservedHighUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, RxBufferLimitUnknownSpec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(
+                &mut self,
+            ) -> PreservedHighUnknownW<'_, RxBufferLimitUnknownSpec> {
+                PreservedHighUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_buffer_limit_unknown::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_buffer_limit_unknown::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBufferLimitUnknownSpec;
+        impl crate::RegisterSpec for RxBufferLimitUnknownSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_buffer_limit_unknown::R`](R) reader structure"]
+        impl crate::Readable for RxBufferLimitUnknownSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_buffer_limit_unknown::W`](W) writer structure"]
+        impl crate::Writable for RxBufferLimitUnknownSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BUFFER_BASE_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_buffer_base_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_buffer_base_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_buffer_base_unknown`] module"]
+    #[doc(alias = "RX_BUFFER_BASE_UNKNOWN")]
+    pub type RxBufferBaseUnknown = crate::Reg<rx_buffer_base_unknown::RxBufferBaseUnknownSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window."]
+    pub mod rx_buffer_base_unknown {
+        #[doc = "Register `RX_BUFFER_BASE_UNKNOWN` reader"]
+        pub type R = crate::R<RxBufferBaseUnknownSpec>;
+        #[doc = "Register `RX_BUFFER_BASE_UNKNOWN` writer"]
+        pub type W = crate::W<RxBufferBaseUnknownSpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_UNKNOWN` writer - "]
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` reader - "]
+        pub type PreservedHighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` writer - "]
+        pub type PreservedHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(&self) -> PreservedHighUnknownR {
+                PreservedHighUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, RxBufferBaseUnknownSpec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(
+                &mut self,
+            ) -> PreservedHighUnknownW<'_, RxBufferBaseUnknownSpec> {
+                PreservedHighUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_buffer_base_unknown::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_buffer_base_unknown::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBufferBaseUnknownSpec;
+        impl crate::RegisterSpec for RxBufferBaseUnknownSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_buffer_base_unknown::R`](R) reader structure"]
+        impl crate::Readable for RxBufferBaseUnknownSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_buffer_base_unknown::W`](W) writer structure"]
+        impl crate::Writable for RxBufferBaseUnknownSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_DESCRIPTOR_HIGH_WINDOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_high_window::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_high_window::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_descriptor_high_window`] module"]
     #[doc(alias = "RX_DESCRIPTOR_HIGH_WINDOW")]
     pub type RxDescriptorHighWindow =
         crate::Reg<rx_descriptor_high_window::RxDescriptorHighWindowSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM."]
     pub mod rx_descriptor_high_window {
         #[doc = "Register `RX_DESCRIPTOR_HIGH_WINDOW` reader"]
         pub type R = crate::R<RxDescriptorHighWindowSpec>;
@@ -10571,7 +10754,7 @@ pub mod wifi_mac_rx_dma {
                 AddressHighW::new(self, 20)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_high_window::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_high_window::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-and-hil\\]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_high_window::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_high_window::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxDescriptorHighWindowSpec;
         impl crate::RegisterSpec for RxDescriptorHighWindowSpec {
             type Ux = u32;

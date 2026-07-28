@@ -12,6 +12,7 @@ use open_esp_radio_pac_esp32s31::{
 
 pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
+pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
@@ -136,6 +137,7 @@ pub fn initialize_promiscuous_receive<
     M: Mmio
         + MacColdCryptoHardware
         + MacColdHandshakeHardware
+        + MacColdRxBufferHardware
         + MacInterfaceAddressHardware
         + MacSnifferHardware,
     P: MacClockControl,
@@ -207,10 +209,7 @@ pub fn initialize_promiscuous_receive<
     }
 
     // `mac_rxbuf_init`, with descriptor publication left to the ring owner.
-    modify(mmio, registers::R_4C68, 0x000f_ffff, 0x000f_ffff);
-    modify(mmio, registers::R_4C6C, 0x000f_ffff, 0x0000_0004);
-    modify(mmio, mac::RX_LAST_DESCRIPTOR_HIGH, 0xfff0_0000, 0x2f00_0000);
-    modify(mmio, registers::R_407C, 0x0000_00ff, 0);
+    mmio.initialize_rx_buffer_prefix();
 
     initialize_he_receive(mmio);
 

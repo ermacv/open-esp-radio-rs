@@ -3467,3 +3467,17 @@ SVD v3.6 extends `WIFI_MAC_CRYPTO_CONTROL` with the instruction-exact but
 semantically unresolved `INIT_AUX_UNKNOWN` word at `0x2010_480c`. The host
 trace asserts all five stores, and the source audit prevents raw register
 access from returning to the upper cold-crypto module.
+
+## Semantic cold RX-buffer prefix
+
+Cold init now requests RX buffer geometry through
+`MacColdRxBufferHardware`. Generated PAC performs the first four RMWs of
+complete pinned `libpp.a[hal_mac.o]::mac_rxbuf_init`, including selection of
+the internal-SRAM descriptor high window.
+
+The complete leaf's last `RX_DESCRIPTOR_BASE` store is deliberately excluded.
+It consumes `wDevCtrl`, so in the open ownership model it belongs to
+`rx::publish_cold_ring`, after descriptor storage has been initialized and
+borrowed for the hardware lifetime. Host tests assert the four prefix RMWs,
+and the source audit prevents raw access from returning to the upper prefix
+module.

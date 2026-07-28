@@ -11,6 +11,7 @@ extern crate std;
 
 mod cold_crypto;
 mod cold_handshake;
+mod cold_rx_buffer;
 pub mod crypto;
 pub mod descriptor;
 pub mod init;

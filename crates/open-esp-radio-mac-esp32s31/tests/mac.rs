@@ -8,8 +8,9 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        MacColdCryptoHardware, MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome,
-        MacInterfaceAddressHardware, MacSnifferHardware, StaLinkRxPolicyHardware,
+        MacColdCryptoHardware, MacColdHandshakeHardware, MacColdRxBufferHardware,
+        MacColdStartError, MacColdStartOutcome, MacInterfaceAddressHardware, MacSnifferHardware,
+        StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -288,6 +289,19 @@ impl MacColdCryptoHardware for MockMmio {
         {
             self.write32(register, value);
         }
+    }
+}
+
+impl MacColdRxBufferHardware for MockMmio {
+    fn initialize_rx_buffer_prefix(&mut self) {
+        let mut modify = |register: Register32, mask: u32, value: u32| {
+            let current = self.read32(register);
+            self.write32(register, (current & !mask) | (value & mask));
+        };
+        modify(mac_init::R_4C68, 0x000f_ffff, 0x000f_ffff);
+        modify(mac_init::R_4C6C, 0x000f_ffff, 4);
+        modify(mac::RX_LAST_DESCRIPTOR_HIGH, 0xfff0_0000, 0x2f00_0000);
+        modify(mac_init::R_407C, 0x0000_00ff, 0);
     }
 }
 
@@ -573,6 +587,19 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
+    assert!(mmio.operations().windows(8).any(|operations| {
+        operations
+            == [
+                Operation::Read(mac_init::R_4C68),
+                Operation::Write(mac_init::R_4C68, 0x000f_ffff),
+                Operation::Read(mac_init::R_4C6C),
+                Operation::Write(mac_init::R_4C6C, 4),
+                Operation::Read(mac::RX_LAST_DESCRIPTOR_HIGH),
+                Operation::Write(mac::RX_LAST_DESCRIPTOR_HIGH, 0x2f00_0000),
+                Operation::Read(mac_init::R_407C),
+                Operation::Write(mac_init::R_407C, 0),
+            ]
+    }));
     assert!(mmio.operations().windows(5).any(|operations| {
         operations
             == [

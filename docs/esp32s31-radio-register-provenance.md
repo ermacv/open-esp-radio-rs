@@ -859,6 +859,17 @@ the five cold crypto stores at `0x2010_4800..0x2010_4810`: two
 the otherwise unresolved fourth word at `0x2010_480c`
 `INIT_AUX_UNKNOWN`; no algorithm meaning is inferred from its zero store.
 
+Complete pinned `libpp.a[hal_mac.o]::mac_rxbuf_init` proves a four-RMW cold
+RX-buffer prefix at `0x20104c68`, `0x20104c6c`, `0x20104c70` and
+`0x2010407c`. SVD v3.7 records the two unresolved low-twenty-bit words and the
+low-byte control as `UNKNOWN`, while the already qualified high-window field
+retains its descriptor meaning.
+
+The leaf's final store is intentionally outside this PAC prefix: it copies
+the external `wDevCtrl` pointer into `RX_DESCRIPTOR_BASE`. In the open driver,
+`rx::publish_cold_ring` owns that descriptor pointer and the corresponding
+software-to-hardware lifetime edge.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

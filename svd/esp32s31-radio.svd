@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.6</version>
+  <version>3.7</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1783,7 +1783,8 @@
     <peripheral>
       <name>WIFI_MAC_RX_DMA</name>
       <description>
-        SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+        SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,
+        ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
         ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
         CONFIDENCE[instruction-exact-and-hil]. Descriptor-walker registers
         recovered from complete rev0 ROM leaves and qualified with the open
@@ -1791,6 +1792,12 @@
       </description>
       <baseAddress>0x20104000</baseAddress>
       <registers>
+        <register>
+          <name>RX_COLD_CONTROL_UNKNOWN</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown.</description>
+          <addressOffset>0x007c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>COLD_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>PRESERVED_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>24</bitWidth></field></fields>
+        </register>
         <register>
           <name>RX_CONTROL</name>
           <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. RX descriptor-walker gate and live-list append doorbell.</description>
@@ -1833,8 +1840,20 @@
           </fields>
         </register>
         <register>
+          <name>RX_BUFFER_LIMIT_UNKNOWN</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication.</description>
+          <addressOffset>0x0c68</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>PRESERVED_HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RX_BUFFER_BASE_UNKNOWN</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window.</description>
+          <addressOffset>0x0c6c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>PRESERVED_HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
+        </register>
+        <register>
           <name>RX_DESCRIPTOR_HIGH_WINDOW</name>
-          <description>SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with the low-address RX pointer registers. The open driver programs 0x2f0 for internal SRAM.</description>
+          <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM.</description>
           <addressOffset>0x0c70</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>ADDRESS_HIGH</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field>
@@ -2013,6 +2032,7 @@
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>
       <source id="BLOB_LIBPP_HAL_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores.</source>
       <source id="BLOB_LIBPP_HAL_SNIFFER_ENABLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_enable body. At queue-three word 0x201040e4 it proves seven ordered fresh-read RMWs: set bit 17; clear bits 0, 1, 2, 3 and 8 separately; then clear bits 7 and 9 together.</source>
+      <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>

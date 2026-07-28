@@ -3,6 +3,23 @@
 use super::{device_fence, RadioRegisters};
 
 impl RadioRegisters {
+    /// Initialize the RX buffer geometry without publishing a descriptor.
+    ///
+    /// SOURCE: first four RMWs of complete pinned
+    /// `libpp.a[hal_mac.o]::mac_rxbuf_init`. Its final descriptor-base store
+    /// is deliberately excluded because the RX ring owner publishes it later.
+    pub fn initialize_mac_rx_buffer_prefix(&mut self) {
+        let dma = &self.peripherals.wifi_mac_rx_dma;
+        dma.rx_buffer_limit_unknown()
+            .modify(|_, w| unsafe { w.low_unknown().bits(0x000f_ffff) });
+        dma.rx_buffer_base_unknown()
+            .modify(|_, w| unsafe { w.low_unknown().bits(4) });
+        dma.rx_descriptor_high_window()
+            .modify(|_, w| unsafe { w.address_high().bits(0x02f0) });
+        dma.rx_cold_control_unknown()
+            .modify(|_, w| unsafe { w.cold_low_unknown().bits(0) });
+    }
+
     pub fn mac_rx_last_descriptor_low(&self) -> u32 {
         self.peripherals
             .wifi_mac_rx_dma

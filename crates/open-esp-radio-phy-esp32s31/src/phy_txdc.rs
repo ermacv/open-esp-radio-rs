@@ -713,7 +713,7 @@ impl PhyTxDcMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyTxDcCompletion {
@@ -737,14 +737,16 @@ impl PhyTxDcMmioBinding {
                     // replacement. The original leaf deliberately leaves DAC
                     // scale and TX-gain compensation disabled while the
                     // comparator search is active.
-                    crate::radio_hal::configure_phy_power_control_tone(selector, step);
+                    crate::radio_hal::configure_phy_power_control_tone(registers, selector, step);
                 } else {
                     // Preserve the selector/path write performed by
                     // `phy_start_tx_tone_step(0, ...)`, then restore the stop
                     // controls and DAC scale. The surrounding state machine
                     // has already cleared the comparator measurement.
-                    crate::radio_hal::configure_phy_calibration_tone_wide(false, selector, step);
-                    crate::radio_hal::stop_phy_power_detector_tone();
+                    crate::radio_hal::configure_phy_calibration_tone_wide(
+                        registers, false, selector, step,
+                    );
+                    crate::radio_hal::stop_phy_power_detector_tone(registers);
                 }
                 PhyTxDcCompletion::ToneConfigured {
                     enabled,

@@ -154,10 +154,6 @@ DMA engine; their volatile words are not peripheral MMIO.
 
 Not all upper layers are safe yet:
 
-- `open-esp-radio-phy-esp32s31::radio_hal` still contains the main raw-MMIO
-  compatibility leaves;
-- PHY `execute_target` methods are marked unsafe where they call those leaves
-  or require the caller to uphold hardware sequencing;
 - MAC descriptor, intrusive queue and A-MPDU code uses unsafe pointer access
   for DMA-owned SRAM;
 - WPA2 frame owners use volatile writes only to erase secret material;
@@ -172,13 +168,18 @@ The FE/BB gate and calibration-clock leaves now use native generated PAC
 access; their full-register `unsafe` writes are confined to the PAC and cite
 the complete ROM/blob sources.
 
+The complete `open-esp-radio-phy-esp32s31` crate is now free of `unsafe`, raw
+volatile access and pointer casts. Its target bindings express sequencing
+through non-cloneable actions and require the unique `RadioRegisters` borrow;
+hardware sequencing alone is not treated as a Rust memory-safety invariant.
+The source-only audit rejects any return of `unsafe` to this upper PHY crate.
+
 The power, PHY-I²C and PBus vertical slices are complete. PHY-I²C completion
 observations now require `&mut RadioRegisters`; this exclusive borrow is
 propagated through every nested cold-PHY binding rather than weakening the PAC
-owner to a shared MMIO handle. The continuing removal target is `radio_hal`:
-describe every remaining register in the SVD, expose an ownership-bound PAC
-operation, pass the existing `RadioRegisters` borrow into each leaf, and
-delete the unused C-ABI compatibility functions.
+owner to a shared MMIO handle. Any remaining peripheral migration follows the
+same rule: describe the register in the SVD, expose an ownership-bound PAC
+operation and pass the existing `RadioRegisters` borrow into the safe PHY leaf.
 
 The RX-gain DC calibration prefix/cleanup word at `0x2010_0424` is the first
 baseband leaf moved directly to that final form without extending the
@@ -205,6 +206,13 @@ gain/phase coefficient publication. Signed coefficients retain the complete
 ROM's six- or seven-bit truncation inside the PAC. Their bindings borrow
 `RadioRegisters`; the unused physical-address constants and four upper
 `unsafe` wrappers are removed.
+
+SVD v2.8 closes the complete calibration-tone cluster at `0x040c`,
+`0x0410..=0x0428` and `0x0c04`. Tone selectors, both packed path words,
+TX-gain compensation, DAC scale, PWDET arm/stop and TX-IQ mismatch polarity
+are now safe `RadioRegisters` operations. The SVD cites the exact rev0 ROM
+leaves and `_oracles/libphy.a[phy_reg.o]` bodies; fields whose electrical
+meaning is not independently established remain explicitly `UNKNOWN`.
 
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

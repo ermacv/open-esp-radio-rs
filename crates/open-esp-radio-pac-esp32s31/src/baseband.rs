@@ -6,7 +6,190 @@
 
 use super::RadioRegisters;
 
+const fn tone_path_image(previous: u32, enabled: bool, selector: u16, step: u8) -> u32 {
+    let encoded =
+        ((enabled as u32) << 18) | ((selector as u32) >> 2) | ((step.wrapping_neg() as u32) << 10);
+    (previous & 0xf000_0000) | (encoded & 0x0fff_ffff)
+}
+
+const fn txiq_first_mismatch_image(
+    previous: u32,
+    polarity: bool,
+    attenuation: u8,
+    selector: u16,
+) -> u32 {
+    let encoded = ((attenuation.wrapping_neg() as u32) << 10)
+        | ((selector as u32) >> 2)
+        | ((polarity as u32) << 26);
+    (previous & 0xf000_0000) | (encoded & 0x0fff_ffff) | 0x002c_0000
+}
+
+const fn txiq_second_mismatch_image(previous: u32, polarity: bool) -> u32 {
+    let polarity = polarity as u32;
+    (previous & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
+}
+
 impl RadioRegisters {
+    fn clear_tx_gain_compensation(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        // SAFETY: both complete archive leaves publish a full zero word, so
+        // no unknown reset image is used as the source of either write.
+        unsafe {
+            bb.tx_gain_compensation().write_with_zero(|w| w.bits(0));
+            bb.tx_gain_compensation_aux()
+                .write_with_zero(|w| w.auxiliary_image_unknown().bits(0));
+        }
+    }
+
+    fn restore_tx_gain_compensation(&mut self) {
+        let compensation = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tx_gain_compensation();
+        compensation.modify(|_, w| unsafe { w.compensation_byte_0_unknown().bits(0) });
+        compensation.modify(|_, w| unsafe { w.compensation_byte_1_unknown().bits(0xfa) });
+        compensation.modify(|_, w| unsafe { w.compensation_byte_2_unknown().bits(0xff) });
+        compensation.modify(|_, w| unsafe { w.compensation_byte_3_unknown().bits(0) });
+    }
+
+    fn configure_tone_selectors(&mut self, path_0: u16, path_1: u16) {
+        debug_assert!(path_0 <= 0x03ff);
+        debug_assert!(path_1 <= 0x03ff);
+        let selectors = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tone_selector_control();
+        selectors.modify(|_, w| unsafe { w.path_0_selector_low().bits((path_0 & 3) as u8) });
+        selectors.modify(|_, w| unsafe { w.path_1_selector_low().bits((path_1 & 3) as u8) });
+    }
+
+    fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
+        debug_assert!(path_0_selector <= 0x03ff);
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.tone_path_0_control().modify(|r, w| {
+            // SAFETY: the complete ROM/blob leaves replace the entire low
+            // 28-bit path image while preserving the high nibble. The helper
+            // reproduces that bounded instruction-level transform.
+            unsafe {
+                w.bits(tone_path_image(
+                    r.bits(),
+                    enabled,
+                    path_0_selector,
+                    path_0_step,
+                ))
+            }
+        });
+        bb.tone_path_1_control().modify(|r, w| {
+            // SAFETY: all currently evidenced callers disable path one and
+            // publish its zero low image while preserving the high nibble.
+            unsafe { w.bits(tone_path_image(r.bits(), false, 0, 0)) }
+        });
+    }
+
+    /// Program the complete archive calibration-tone leaf and restore TX gain.
+    ///
+    /// This preserves every fresh-read/write edge in
+    /// `_oracles/libphy.a[phy_reg.o]::phy_start_tx_tone_step_new` and its
+    /// `phy_txgain_comp_pacfg_new` child.
+    pub fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
+        self.clear_tx_gain_compensation();
+        self.configure_tone_selectors(selector, 0);
+        self.configure_tone_paths(enabled, selector, step);
+        self.restore_tx_gain_compensation();
+    }
+
+    /// Program the ROM power-control tone with DAC scale and TX gain disabled.
+    pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.front_end_and_tone_stop_control()
+            .modify(|_, w| unsafe { w.tone_stop_control_unknown().bits(0) });
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0) });
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0) });
+        self.clear_tx_gain_compensation();
+        self.configure_tone_selectors(selector, 0);
+        self.configure_tone_paths(true, selector, step);
+    }
+
+    /// Capture the full first-path word saved by complete ROM `phy_rfcal_txiq`.
+    pub fn txiq_tone_control(&mut self) -> u32 {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .tone_path_0_control()
+            .read()
+            .bits()
+    }
+
+    /// Restore the complete first-path word after TX-IQ cleanup.
+    pub fn restore_txiq_tone_control(&mut self, saved: u32) {
+        // SAFETY: `saved` is the complete word previously sampled through the
+        // same unique owner, exactly matching ROM `phy_rfcal_txiq`.
+        unsafe {
+            self.peripherals
+                .phy_baseband_config_oracle
+                .tone_path_0_control()
+                .write_with_zero(|w| w.bits(saved));
+        }
+    }
+
+    /// Configure one of the two complete TX-IQ mismatch-power polarity edges.
+    pub fn configure_txiq_mismatch_power(
+        &mut self,
+        first: bool,
+        polarity: bool,
+        attenuation: u8,
+        selector: u16,
+    ) {
+        debug_assert!(selector <= 0x03ff);
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        if first {
+            bb.tone_path_0_control().modify(|r, w| {
+                // SAFETY: the helper creates the complete recovered low
+                // 28-bit mismatch image and preserves only the high nibble.
+                unsafe {
+                    w.bits(txiq_first_mismatch_image(
+                        r.bits(),
+                        polarity,
+                        attenuation,
+                        selector,
+                    ))
+                }
+            });
+            bb.tone_selector_control()
+                .modify(|_, w| unsafe { w.path_0_selector_low().bits((selector & 3) as u8) });
+        } else {
+            bb.tone_path_0_control().modify(|r, w| {
+                // SAFETY: the second ROM edge replaces only bits 27:24 with
+                // one of the two evidenced polarity nibbles.
+                unsafe { w.bits(txiq_second_mismatch_image(r.bits(), polarity)) }
+            });
+        }
+    }
+
+    /// Set or clear the shared first-path arm bit for one PWDET sample.
+    pub fn set_power_detector_tone_armed(&mut self, armed: bool) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .tone_path_0_control()
+            .modify(|_, w| w.tone_enable_or_arm().bit(armed));
+    }
+
+    /// Stop both tone paths and restore the two DAC-scale fields.
+    pub fn stop_power_detector_tone(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.tone_path_0_control()
+            .modify(|_, w| w.tone_enable_or_arm().clear_bit());
+        bb.tone_path_1_control()
+            .modify(|_, w| w.tone_enable_or_arm().clear_bit());
+        bb.front_end_and_tone_stop_control()
+            .modify(|_, w| unsafe { w.tone_stop_control_unknown().bits(3) });
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0xff) });
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0xff) });
+    }
+
     /// Enter or complete the TX-IQ correction phase with one fresh RMW.
     ///
     /// Complete ROM `phy_rfcal_txiq` clears the high mode bit while setting
@@ -242,5 +425,27 @@ impl RadioRegisters {
                     w.calibration_enable_unknown().disabled()
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tone_path_image, txiq_first_mismatch_image, txiq_second_mismatch_image};
+
+    #[test]
+    fn calibration_tone_images_match_both_complete_archive_calls() {
+        assert_eq!(tone_path_image(0xa000_0000, true, 0x80, 0), 0xa004_0020);
+        assert_eq!(tone_path_image(0xa000_0000, false, 0x80, 0x28), 0xa003_6020);
+        assert_eq!(tone_path_image(0xbfff_ffff, false, 0, 0), 0xb000_0000);
+    }
+
+    #[test]
+    fn txiq_mismatch_images_match_complete_rom_leaves() {
+        assert_eq!(
+            txiq_first_mismatch_image(0xa000_0000, true, 0x50, 0x80),
+            0xa42e_c020
+        );
+        assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, true), 0xa8ae_c020);
+        assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, false), 0xa1ae_c020);
     }
 }

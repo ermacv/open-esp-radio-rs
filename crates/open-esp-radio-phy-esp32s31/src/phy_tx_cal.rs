@@ -1375,14 +1375,21 @@ impl PhyPowerAttenuationMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyPowerAttenuationCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyPowerAttenuationCompletion {
         match self.action {
             PhyPowerAttenuationAction::ConfigureTone {
                 iteration,
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
+                crate::radio_hal::configure_phy_power_control_tone(
+                    registers,
+                    selector,
+                    attenuation,
+                );
                 PhyPowerAttenuationCompletion::ToneConfigured {
                     iteration,
                     selector,
@@ -1417,7 +1424,7 @@ impl PhyToneSarMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyToneSarCompletion {
@@ -1426,7 +1433,7 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
             } => {
-                crate::radio_hal::arm_phy_power_detector_tone();
+                crate::radio_hal::arm_phy_power_detector_tone(registers);
                 PhyToneSarCompletion::ToneArmed {
                     measurement,
                     sample,
@@ -1459,7 +1466,7 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
             } => {
-                crate::radio_hal::clear_phy_power_detector_tone_arm();
+                crate::radio_hal::clear_phy_power_detector_tone_arm(registers);
                 PhyToneSarCompletion::ToneCleared {
                     measurement,
                     sample,
@@ -1517,7 +1524,7 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<
+    pub fn execute_target<
         P: open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
     >(
         self,
@@ -1546,7 +1553,7 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
                 PhyTxCalibrationEnvironmentCompletion::CalibrationModeConfigured
             }
             PhyTxCalibrationEnvironmentAction::StopTone => {
-                crate::radio_hal::stop_phy_power_detector_tone();
+                crate::radio_hal::stop_phy_power_detector_tone(registers);
                 PhyTxCalibrationEnvironmentCompletion::ToneStopped
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePbusWorkMode => {
@@ -1588,7 +1595,10 @@ impl PhyTxCapSearchMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxCapSearchCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxCapSearchCompletion {
         match self.action {
             PhyTxCapSearchAction::ConfigureTone {
                 selector,
@@ -1596,9 +1606,13 @@ impl PhyTxCapSearchMmioBinding {
                 enabled,
             } => {
                 if enabled {
-                    crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
+                    crate::radio_hal::configure_phy_power_control_tone(
+                        registers,
+                        selector,
+                        attenuation,
+                    );
                 } else {
-                    crate::radio_hal::stop_phy_power_detector_tone();
+                    crate::radio_hal::stop_phy_power_detector_tone(registers);
                 }
                 PhyTxCapSearchCompletion::ToneConfigured {
                     selector,

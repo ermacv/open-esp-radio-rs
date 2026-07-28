@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>2.7</version>
+  <version>2.8</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -817,9 +817,14 @@
       <registers>
         <register>
           <name>FRONT_END_AND_TONE_STOP_CONTROL</name>
-          <description>SOURCE[ROM_REV0_PHY_FE_REG_INIT]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf.</description>
+          <description>SOURCE[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_START_STOP_TX_TONE]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them.</description>
           <addressOffset>0x040c</addressOffset><size>32</size><access>read-write</access>
           <fields>
+            <field>
+              <name>TONE_STOP_CONTROL_UNKNOWN</name>
+              <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+            </field>
             <field><name>FRONT_END_INIT_ENABLE_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -835,6 +840,14 @@
           </fields>
         </register>
         <register>
+          <name>TX_GAIN_COMPENSATION_AUX</name>
+          <description>SOURCE[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Pinned _oracles/libphy.a[phy_reg.o] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation.</description>
+          <addressOffset>0x0414</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field><name>AUXILIARY_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+          </fields>
+        </register>
+        <register>
           <name>TX_DC_MEASUREMENT_CONTROL_STATUS</name>
           <description>SOURCE[ROM_REV0_PHY_TXDC_CAL]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0.</description>
           <addressOffset>0x0418</addressOffset><size>32</size><access>read-write</access>
@@ -844,6 +857,34 @@
             <field><name>MEASUREMENT_READY</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>Q_COMPARATOR_HIGH</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>I_COMPARATOR_HIGH</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TONE_PATH_0_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-semantics-partial]. First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown.</description>
+          <addressOffset>0x041c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SELECTOR_HIGH</name><description>Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>LOW_RESERVED_CLEAR_UNKNOWN</name><description>Complete tone writers clear these bits; their hardware meaning is unknown.</description><bitOffset>8</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>NEGATED_STEP_OR_ATTENUATION</name><description>Two's-complement negated eight-bit tone step or attenuation.</description><bitOffset>10</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TONE_ENABLE_OR_ARM</name><description>Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup.</description><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TXIQ_MISMATCH_MODE_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_TXIQ_GET_MIS_PWR]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup.</description><bitOffset>19</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>MIDDLE_RESERVED_CLEAR_UNKNOWN</name><description>Complete general and first-polarity tone writers clear these bits.</description><bitOffset>22</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>TXIQ_POLARITY_IMAGE</name><description>SOURCE[ROM_REV0_PHY_TXIQ_GET_MIS_PWR]; CONFIDENCE[instruction-exact-semantics-from-control-flow]. Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8.</description><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>PRESERVED_HIGH_UNKNOWN</name><description>All complete tone and mismatch writers preserve this high nibble.</description><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TONE_PATH_1_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-semantics-partial]. Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble.</description>
+          <addressOffset>0x0420</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>SELECTOR_HIGH</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>LOW_RESERVED_CLEAR_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>NEGATED_STEP_OR_ATTENUATION</name><bitOffset>10</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TONE_ENABLE_OR_ARM</name><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>LOW_IMAGE_REMAINDER_UNKNOWN</name><bitOffset>19</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>PRESERVED_HIGH_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -873,6 +914,15 @@
                 </enumeratedValue>
               </enumeratedValues>
             </field>
+          </fields>
+        </register>
+        <register>
+          <name>TONE_SELECTOR_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-packed-layout]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges.</description>
+          <addressOffset>0x0428</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PATH_0_SELECTOR_LOW</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>PATH_1_SELECTOR_LOW</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -989,6 +1039,15 @@
           <addressOffset>0x0894</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>INIT_ENABLE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>DAC_SCALE_CONTROL</name>
+          <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes.</description>
+          <addressOffset>0x0c04</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>DAC_SCALE_LOW_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DAC_SCALE_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
         </register>
         <register>

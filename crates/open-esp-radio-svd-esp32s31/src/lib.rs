@@ -4036,80 +4036,83 @@ pub mod phy_baseband_config_oracle {
         _reserved0: [u8; 0x040c],
         front_end_and_tone_stop_control: FrontEndAndToneStopControl,
         tx_gain_compensation: TxGainCompensation,
-        _reserved2: [u8; 0x04],
+        tx_gain_compensation_aux: TxGainCompensationAux,
         tx_dc_measurement_control_status: TxDcMeasurementControlStatus,
-        _reserved3: [u8; 0x08],
+        tone_path_0_control: TonePath0Control,
+        tone_path_1_control: TonePath1Control,
         rx_gain_dc_control: RxGainDcControl,
-        _reserved4: [u8; 0x10],
+        tone_selector_control: ToneSelectorControl,
+        _reserved8: [u8; 0x0c],
         iq_correction_control: IqCorrectionControl,
-        _reserved5: [u8; 0x08],
+        _reserved9: [u8; 0x08],
         front_end_clear_control: FrontEndClearControl,
         adc_rate_and_front_end_control: AdcRateAndFrontEndControl,
-        _reserved7: [u8; 0x03bc],
+        _reserved11: [u8; 0x03bc],
         power_detector_control: PowerDetectorControl,
         power_detector_sar_control_status: PowerDetectorSarControlStatus,
         power_detector_table_0_opaque: PowerDetectorTable0Opaque,
         power_detector_table_1: PowerDetectorTable1,
         power_detector_reference: PowerDetectorReference,
         power_detector_sar_result: PowerDetectorSarResult,
-        _reserved13: [u8; 0x4c],
+        _reserved17: [u8; 0x4c],
         tx_pa_control_0: TxPaControl0,
         tx_pa_control_1: TxPaControl1,
-        _reserved15: [u8; 0x20],
+        _reserved19: [u8; 0x20],
         front_end_init_0894: FrontEndInit0894,
-        _reserved16: [u8; 0x0370],
+        _reserved20: [u8; 0x036c],
+        dac_scale_control: DacScaleControl,
         front_end_init_0c08: FrontEndInit0c08,
         iq_correction_aux: IqCorrectionAux,
-        _reserved18: [u8; 0x10],
-        front_end_init_0c20: FrontEndInit0c20,
-        _reserved19: [u8; 0x3868],
-        i2c_tx_rate_control: I2cTxRateControl,
-        _reserved20: [u8; 0x2b88],
-        noise_floor_control: NoiseFloorControl,
-        _reserved21: [u8; 0x03e4],
-        baseband_init_7400: BasebandInit7400,
-        _reserved22: [u8; 0x24],
-        baseband_init_7428: BasebandInit7428,
         _reserved23: [u8; 0x10],
+        front_end_init_0c20: FrontEndInit0c20,
+        _reserved24: [u8; 0x3868],
+        i2c_tx_rate_control: I2cTxRateControl,
+        _reserved25: [u8; 0x2b88],
+        noise_floor_control: NoiseFloorControl,
+        _reserved26: [u8; 0x03e4],
+        baseband_init_7400: BasebandInit7400,
+        _reserved27: [u8; 0x24],
+        baseband_init_7428: BasebandInit7428,
+        _reserved28: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved24: [u8; 0x14],
+        _reserved29: [u8; 0x14],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved28: [u8; 0x03a4],
+        _reserved33: [u8; 0x03a4],
         baseband_init_7808: BasebandInit7808,
-        _reserved29: [u8; 0x84],
+        _reserved34: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved30: [u8; 0x48],
+        _reserved35: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved31: [u8; 0x04],
+        _reserved36: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved32: [u8; 0x24],
+        _reserved37: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved33: [u8; 0x70],
+        _reserved38: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved34: [u8; 0xa4],
+        _reserved39: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved35: [u8; 0x01d4],
+        _reserved40: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved36: [u8; 0x2c],
+        _reserved41: [u8; 0x2c],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved37: [u8; 0x08],
+        _reserved42: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved40: [u8; 0x08],
+        _reserved45: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved41: [u8; 0x18],
+        _reserved46: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved42: [u8; 0x38],
+        _reserved47: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved43: [u8; 0x24],
+        _reserved48: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
-        #[doc = "0x40c - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf."]
+        #[doc = "0x40c - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them."]
         #[inline(always)]
         pub const fn front_end_and_tone_stop_control(&self) -> &FrontEndAndToneStopControl {
             &self.front_end_and_tone_stop_control
@@ -4119,15 +4122,35 @@ pub mod phy_baseband_config_oracle {
         pub const fn tx_gain_compensation(&self) -> &TxGainCompensation {
             &self.tx_gain_compensation
         }
+        #[doc = "0x414 - SOURCE\\[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Pinned _oracles/libphy.a\\[phy_reg.o\\] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation."]
+        #[inline(always)]
+        pub const fn tx_gain_compensation_aux(&self) -> &TxGainCompensationAux {
+            &self.tx_gain_compensation_aux
+        }
         #[doc = "0x418 - SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0."]
         #[inline(always)]
         pub const fn tx_dc_measurement_control_status(&self) -> &TxDcMeasurementControlStatus {
             &self.tx_dc_measurement_control_status
         }
+        #[doc = "0x41c - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown."]
+        #[inline(always)]
+        pub const fn tone_path_0_control(&self) -> &TonePath0Control {
+            &self.tone_path_0_control
+        }
+        #[doc = "0x420 - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble."]
+        #[inline(always)]
+        pub const fn tone_path_1_control(&self) -> &TonePath1Control {
+            &self.tone_path_1_control
+        }
         #[doc = "0x424 - SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved."]
         #[inline(always)]
         pub const fn rx_gain_dc_control(&self) -> &RxGainDcControl {
             &self.rx_gain_dc_control
+        }
+        #[doc = "0x428 - SOURCE\\[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-packed-layout\\]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges."]
+        #[inline(always)]
+        pub const fn tone_selector_control(&self) -> &ToneSelectorControl {
+            &self.tone_selector_control
         }
         #[doc = "0x438 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared RX-IQ coefficient and correction-mode word."]
         #[inline(always)]
@@ -4188,6 +4211,11 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn front_end_init_0894(&self) -> &FrontEndInit0894 {
             &self.front_end_init_0894
+        }
+        #[doc = "0xc04 - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes."]
+        #[inline(always)]
+        pub const fn dac_scale_control(&self) -> &DacScaleControl {
+            &self.dac_scale_control
         }
         #[doc = "0xc08 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
         #[inline(always)]
@@ -4330,21 +4358,30 @@ pub mod phy_baseband_config_oracle {
             &self.baseband_init_7cd0
         }
     }
-    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
+    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
     #[doc(alias = "FRONT_END_AND_TONE_STOP_CONTROL")]
     pub type FrontEndAndToneStopControl =
         crate::Reg<front_end_and_tone_stop_control::FrontEndAndToneStopControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them."]
     pub mod front_end_and_tone_stop_control {
         #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` reader"]
         pub type R = crate::R<FrontEndAndToneStopControlSpec>;
         #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` writer"]
         pub type W = crate::W<FrontEndAndToneStopControlSpec>;
+        #[doc = "Field `TONE_STOP_CONTROL_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
+        pub type ToneStopControlUnknownR = crate::FieldReader;
+        #[doc = "Field `TONE_STOP_CONTROL_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
+        pub type ToneStopControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` reader - "]
         pub type FrontEndInitEnableUnknownR = crate::BitReader;
         #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` writer - "]
         pub type FrontEndInitEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:1 - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
+            #[inline(always)]
+            pub fn tone_stop_control_unknown(&self) -> ToneStopControlUnknownR {
+                ToneStopControlUnknownR::new((self.bits & 3) as u8)
+            }
             #[doc = "Bit 2"]
             #[inline(always)]
             pub fn front_end_init_enable_unknown(&self) -> FrontEndInitEnableUnknownR {
@@ -4352,6 +4389,13 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
+            #[doc = "Bits 0:1 - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
+            #[inline(always)]
+            pub fn tone_stop_control_unknown(
+                &mut self,
+            ) -> ToneStopControlUnknownW<'_, FrontEndAndToneStopControlSpec> {
+                ToneStopControlUnknownW::new(self, 0)
+            }
             #[doc = "Bit 2"]
             #[inline(always)]
             pub fn front_end_init_enable_unknown(
@@ -4360,7 +4404,7 @@ pub mod phy_baseband_config_oracle {
                 FrontEndInitEnableUnknownW::new(self, 2)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrontEndAndToneStopControlSpec;
         impl crate::RegisterSpec for FrontEndAndToneStopControlSpec {
             type Ux = u32;
@@ -4458,6 +4502,35 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for TxGainCompensationSpec {}
         #[doc = "`write(|w| ..)` method takes [`tx_gain_compensation::W`](W) writer structure"]
         impl crate::Writable for TxGainCompensationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TX_GAIN_COMPENSATION_AUX (w) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Pinned _oracles/libphy.a\\[phy_reg.o\\] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_gain_compensation_aux::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_gain_compensation_aux`] module"]
+    #[doc(alias = "TX_GAIN_COMPENSATION_AUX")]
+    pub type TxGainCompensationAux =
+        crate::Reg<tx_gain_compensation_aux::TxGainCompensationAuxSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Pinned _oracles/libphy.a\\[phy_reg.o\\] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation."]
+    pub mod tx_gain_compensation_aux {
+        #[doc = "Register `TX_GAIN_COMPENSATION_AUX` writer"]
+        pub type W = crate::W<TxGainCompensationAuxSpec>;
+        #[doc = "Field `AUXILIARY_IMAGE_UNKNOWN` writer - "]
+        pub type AuxiliaryImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn auxiliary_image_unknown(
+                &mut self,
+            ) -> AuxiliaryImageUnknownW<'_, TxGainCompensationAuxSpec> {
+                AuxiliaryImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Pinned _oracles/libphy.a\\[phy_reg.o\\] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_gain_compensation_aux::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxGainCompensationAuxSpec;
+        impl crate::RegisterSpec for TxGainCompensationAuxSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`tx_gain_compensation_aux::W`](W) writer structure"]
+        impl crate::Writable for TxGainCompensationAuxSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -4567,6 +4640,270 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "TONE_PATH_0_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_0_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_0_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tone_path_0_control`] module"]
+    #[doc(alias = "TONE_PATH_0_CONTROL")]
+    pub type TonePath0Control = crate::Reg<tone_path_0_control::TonePath0ControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown."]
+    pub mod tone_path_0_control {
+        #[doc = "Register `TONE_PATH_0_CONTROL` reader"]
+        pub type R = crate::R<TonePath0ControlSpec>;
+        #[doc = "Register `TONE_PATH_0_CONTROL` writer"]
+        pub type W = crate::W<TonePath0ControlSpec>;
+        #[doc = "Field `SELECTOR_HIGH` reader - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
+        pub type SelectorHighR = crate::FieldReader;
+        #[doc = "Field `SELECTOR_HIGH` writer - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
+        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` reader - Complete tone writers clear these bits; their hardware meaning is unknown."]
+        pub type LowReservedClearUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` writer - Complete tone writers clear these bits; their hardware meaning is unknown."]
+        pub type LowReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` reader - Two's-complement negated eight-bit tone step or attenuation."]
+        pub type NegatedStepOrAttenuationR = crate::FieldReader;
+        #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` writer - Two's-complement negated eight-bit tone step or attenuation."]
+        pub type NegatedStepOrAttenuationW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `TONE_ENABLE_OR_ARM` reader - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
+        pub type ToneEnableOrArmR = crate::BitReader;
+        #[doc = "Field `TONE_ENABLE_OR_ARM` writer - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
+        pub type ToneEnableOrArmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TXIQ_MISMATCH_MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
+        pub type TxiqMismatchModeUnknownR = crate::FieldReader;
+        #[doc = "Field `TXIQ_MISMATCH_MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
+        pub type TxiqMismatchModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `MIDDLE_RESERVED_CLEAR_UNKNOWN` reader - Complete general and first-polarity tone writers clear these bits."]
+        pub type MiddleReservedClearUnknownR = crate::FieldReader;
+        #[doc = "Field `MIDDLE_RESERVED_CLEAR_UNKNOWN` writer - Complete general and first-polarity tone writers clear these bits."]
+        pub type MiddleReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `TXIQ_POLARITY_IMAGE` reader - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
+        pub type TxiqPolarityImageR = crate::FieldReader;
+        #[doc = "Field `TXIQ_POLARITY_IMAGE` writer - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
+        pub type TxiqPolarityImageW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` reader - All complete tone and mismatch writers preserve this high nibble."]
+        pub type PreservedHighUnknownR = crate::FieldReader;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` writer - All complete tone and mismatch writers preserve this high nibble."]
+        pub type PreservedHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:7 - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
+            #[inline(always)]
+            pub fn selector_high(&self) -> SelectorHighR {
+                SelectorHighR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:9 - Complete tone writers clear these bits; their hardware meaning is unknown."]
+            #[inline(always)]
+            pub fn low_reserved_clear_unknown(&self) -> LowReservedClearUnknownR {
+                LowReservedClearUnknownR::new(((self.bits >> 8) & 3) as u8)
+            }
+            #[doc = "Bits 10:17 - Two's-complement negated eight-bit tone step or attenuation."]
+            #[inline(always)]
+            pub fn negated_step_or_attenuation(&self) -> NegatedStepOrAttenuationR {
+                NegatedStepOrAttenuationR::new(((self.bits >> 10) & 0xff) as u8)
+            }
+            #[doc = "Bit 18 - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
+            #[inline(always)]
+            pub fn tone_enable_or_arm(&self) -> ToneEnableOrArmR {
+                ToneEnableOrArmR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bits 19:21 - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
+            #[inline(always)]
+            pub fn txiq_mismatch_mode_unknown(&self) -> TxiqMismatchModeUnknownR {
+                TxiqMismatchModeUnknownR::new(((self.bits >> 19) & 7) as u8)
+            }
+            #[doc = "Bits 22:23 - Complete general and first-polarity tone writers clear these bits."]
+            #[inline(always)]
+            pub fn middle_reserved_clear_unknown(&self) -> MiddleReservedClearUnknownR {
+                MiddleReservedClearUnknownR::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:27 - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
+            #[inline(always)]
+            pub fn txiq_polarity_image(&self) -> TxiqPolarityImageR {
+                TxiqPolarityImageR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31 - All complete tone and mismatch writers preserve this high nibble."]
+            #[inline(always)]
+            pub fn preserved_high_unknown(&self) -> PreservedHighUnknownR {
+                PreservedHighUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
+            #[inline(always)]
+            pub fn selector_high(&mut self) -> SelectorHighW<'_, TonePath0ControlSpec> {
+                SelectorHighW::new(self, 0)
+            }
+            #[doc = "Bits 8:9 - Complete tone writers clear these bits; their hardware meaning is unknown."]
+            #[inline(always)]
+            pub fn low_reserved_clear_unknown(
+                &mut self,
+            ) -> LowReservedClearUnknownW<'_, TonePath0ControlSpec> {
+                LowReservedClearUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 10:17 - Two's-complement negated eight-bit tone step or attenuation."]
+            #[inline(always)]
+            pub fn negated_step_or_attenuation(
+                &mut self,
+            ) -> NegatedStepOrAttenuationW<'_, TonePath0ControlSpec> {
+                NegatedStepOrAttenuationW::new(self, 10)
+            }
+            #[doc = "Bit 18 - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
+            #[inline(always)]
+            pub fn tone_enable_or_arm(&mut self) -> ToneEnableOrArmW<'_, TonePath0ControlSpec> {
+                ToneEnableOrArmW::new(self, 18)
+            }
+            #[doc = "Bits 19:21 - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
+            #[inline(always)]
+            pub fn txiq_mismatch_mode_unknown(
+                &mut self,
+            ) -> TxiqMismatchModeUnknownW<'_, TonePath0ControlSpec> {
+                TxiqMismatchModeUnknownW::new(self, 19)
+            }
+            #[doc = "Bits 22:23 - Complete general and first-polarity tone writers clear these bits."]
+            #[inline(always)]
+            pub fn middle_reserved_clear_unknown(
+                &mut self,
+            ) -> MiddleReservedClearUnknownW<'_, TonePath0ControlSpec> {
+                MiddleReservedClearUnknownW::new(self, 22)
+            }
+            #[doc = "Bits 24:27 - SOURCE\\[ROM_REV0_PHY_TXIQ_GET_MIS_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
+            #[inline(always)]
+            pub fn txiq_polarity_image(&mut self) -> TxiqPolarityImageW<'_, TonePath0ControlSpec> {
+                TxiqPolarityImageW::new(self, 24)
+            }
+            #[doc = "Bits 28:31 - All complete tone and mismatch writers preserve this high nibble."]
+            #[inline(always)]
+            pub fn preserved_high_unknown(
+                &mut self,
+            ) -> PreservedHighUnknownW<'_, TonePath0ControlSpec> {
+                PreservedHighUnknownW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_0_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_0_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TonePath0ControlSpec;
+        impl crate::RegisterSpec for TonePath0ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tone_path_0_control::R`](R) reader structure"]
+        impl crate::Readable for TonePath0ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tone_path_0_control::W`](W) writer structure"]
+        impl crate::Writable for TonePath0ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TONE_PATH_1_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_1_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_1_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tone_path_1_control`] module"]
+    #[doc(alias = "TONE_PATH_1_CONTROL")]
+    pub type TonePath1Control = crate::Reg<tone_path_1_control::TonePath1ControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble."]
+    pub mod tone_path_1_control {
+        #[doc = "Register `TONE_PATH_1_CONTROL` reader"]
+        pub type R = crate::R<TonePath1ControlSpec>;
+        #[doc = "Register `TONE_PATH_1_CONTROL` writer"]
+        pub type W = crate::W<TonePath1ControlSpec>;
+        #[doc = "Field `SELECTOR_HIGH` reader - "]
+        pub type SelectorHighR = crate::FieldReader;
+        #[doc = "Field `SELECTOR_HIGH` writer - "]
+        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` reader - "]
+        pub type LowReservedClearUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` writer - "]
+        pub type LowReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` reader - "]
+        pub type NegatedStepOrAttenuationR = crate::FieldReader;
+        #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` writer - "]
+        pub type NegatedStepOrAttenuationW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `TONE_ENABLE_OR_ARM` reader - "]
+        pub type ToneEnableOrArmR = crate::BitReader;
+        #[doc = "Field `TONE_ENABLE_OR_ARM` writer - "]
+        pub type ToneEnableOrArmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOW_IMAGE_REMAINDER_UNKNOWN` reader - "]
+        pub type LowImageRemainderUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_IMAGE_REMAINDER_UNKNOWN` writer - "]
+        pub type LowImageRemainderUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` reader - "]
+        pub type PreservedHighUnknownR = crate::FieldReader;
+        #[doc = "Field `PRESERVED_HIGH_UNKNOWN` writer - "]
+        pub type PreservedHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn selector_high(&self) -> SelectorHighR {
+                SelectorHighR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:9"]
+            #[inline(always)]
+            pub fn low_reserved_clear_unknown(&self) -> LowReservedClearUnknownR {
+                LowReservedClearUnknownR::new(((self.bits >> 8) & 3) as u8)
+            }
+            #[doc = "Bits 10:17"]
+            #[inline(always)]
+            pub fn negated_step_or_attenuation(&self) -> NegatedStepOrAttenuationR {
+                NegatedStepOrAttenuationR::new(((self.bits >> 10) & 0xff) as u8)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn tone_enable_or_arm(&self) -> ToneEnableOrArmR {
+                ToneEnableOrArmR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bits 19:27"]
+            #[inline(always)]
+            pub fn low_image_remainder_unknown(&self) -> LowImageRemainderUnknownR {
+                LowImageRemainderUnknownR::new(((self.bits >> 19) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(&self) -> PreservedHighUnknownR {
+                PreservedHighUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn selector_high(&mut self) -> SelectorHighW<'_, TonePath1ControlSpec> {
+                SelectorHighW::new(self, 0)
+            }
+            #[doc = "Bits 8:9"]
+            #[inline(always)]
+            pub fn low_reserved_clear_unknown(
+                &mut self,
+            ) -> LowReservedClearUnknownW<'_, TonePath1ControlSpec> {
+                LowReservedClearUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 10:17"]
+            #[inline(always)]
+            pub fn negated_step_or_attenuation(
+                &mut self,
+            ) -> NegatedStepOrAttenuationW<'_, TonePath1ControlSpec> {
+                NegatedStepOrAttenuationW::new(self, 10)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn tone_enable_or_arm(&mut self) -> ToneEnableOrArmW<'_, TonePath1ControlSpec> {
+                ToneEnableOrArmW::new(self, 18)
+            }
+            #[doc = "Bits 19:27"]
+            #[inline(always)]
+            pub fn low_image_remainder_unknown(
+                &mut self,
+            ) -> LowImageRemainderUnknownW<'_, TonePath1ControlSpec> {
+                LowImageRemainderUnknownW::new(self, 19)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn preserved_high_unknown(
+                &mut self,
+            ) -> PreservedHighUnknownW<'_, TonePath1ControlSpec> {
+                PreservedHighUnknownW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_1_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_1_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TonePath1ControlSpec;
+        impl crate::RegisterSpec for TonePath1ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tone_path_1_control::R`](R) reader structure"]
+        impl crate::Readable for TonePath1ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tone_path_1_control::W`](W) writer structure"]
+        impl crate::Writable for TonePath1ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "RX_GAIN_DC_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_dc_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_dc_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_dc_control`] module"]
     #[doc(alias = "RX_GAIN_DC_CONTROL")]
     pub type RxGainDcControl = crate::Reg<rx_gain_dc_control::RxGainDcControlSpec>;
@@ -4662,6 +4999,63 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for RxGainDcControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`rx_gain_dc_control::W`](W) writer structure"]
         impl crate::Writable for RxGainDcControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TONE_SELECTOR_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-packed-layout\\]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_selector_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_selector_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tone_selector_control`] module"]
+    #[doc(alias = "TONE_SELECTOR_CONTROL")]
+    pub type ToneSelectorControl = crate::Reg<tone_selector_control::ToneSelectorControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-packed-layout\\]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges."]
+    pub mod tone_selector_control {
+        #[doc = "Register `TONE_SELECTOR_CONTROL` reader"]
+        pub type R = crate::R<ToneSelectorControlSpec>;
+        #[doc = "Register `TONE_SELECTOR_CONTROL` writer"]
+        pub type W = crate::W<ToneSelectorControlSpec>;
+        #[doc = "Field `PATH_0_SELECTOR_LOW` reader - "]
+        pub type Path0SelectorLowR = crate::FieldReader;
+        #[doc = "Field `PATH_0_SELECTOR_LOW` writer - "]
+        pub type Path0SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `PATH_1_SELECTOR_LOW` reader - "]
+        pub type Path1SelectorLowR = crate::FieldReader;
+        #[doc = "Field `PATH_1_SELECTOR_LOW` writer - "]
+        pub type Path1SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn path_0_selector_low(&self) -> Path0SelectorLowR {
+                Path0SelectorLowR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn path_1_selector_low(&self) -> Path1SelectorLowR {
+                Path1SelectorLowR::new(((self.bits >> 2) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn path_0_selector_low(
+                &mut self,
+            ) -> Path0SelectorLowW<'_, ToneSelectorControlSpec> {
+                Path0SelectorLowW::new(self, 0)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn path_1_selector_low(
+                &mut self,
+            ) -> Path1SelectorLowW<'_, ToneSelectorControlSpec> {
+                Path1SelectorLowW::new(self, 2)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW\\]; CONFIDENCE\\[instruction-exact-packed-layout\\]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_selector_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_selector_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ToneSelectorControlSpec;
+        impl crate::RegisterSpec for ToneSelectorControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tone_selector_control::R`](R) reader structure"]
+        impl crate::Readable for ToneSelectorControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tone_selector_control::W`](W) writer structure"]
+        impl crate::Writable for ToneSelectorControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -5341,6 +5735,63 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for FrontEndInit0894Spec {}
         #[doc = "`write(|w| ..)` method takes [`front_end_init_0894::W`](W) writer structure"]
         impl crate::Writable for FrontEndInit0894Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DAC_SCALE_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes.\n\nYou can [`read`](crate::Reg::read) this register and get [`dac_scale_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dac_scale_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dac_scale_control`] module"]
+    #[doc(alias = "DAC_SCALE_CONTROL")]
+    pub type DacScaleControl = crate::Reg<dac_scale_control::DacScaleControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes."]
+    pub mod dac_scale_control {
+        #[doc = "Register `DAC_SCALE_CONTROL` reader"]
+        pub type R = crate::R<DacScaleControlSpec>;
+        #[doc = "Register `DAC_SCALE_CONTROL` writer"]
+        pub type W = crate::W<DacScaleControlSpec>;
+        #[doc = "Field `DAC_SCALE_LOW_UNKNOWN` reader - "]
+        pub type DacScaleLowUnknownR = crate::FieldReader;
+        #[doc = "Field `DAC_SCALE_LOW_UNKNOWN` writer - "]
+        pub type DacScaleLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `DAC_SCALE_HIGH_UNKNOWN` reader - "]
+        pub type DacScaleHighUnknownR = crate::FieldReader;
+        #[doc = "Field `DAC_SCALE_HIGH_UNKNOWN` writer - "]
+        pub type DacScaleHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn dac_scale_low_unknown(&self) -> DacScaleLowUnknownR {
+                DacScaleLowUnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn dac_scale_high_unknown(&self) -> DacScaleHighUnknownR {
+                DacScaleHighUnknownR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn dac_scale_low_unknown(
+                &mut self,
+            ) -> DacScaleLowUnknownW<'_, DacScaleControlSpec> {
+                DacScaleLowUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn dac_scale_high_unknown(
+                &mut self,
+            ) -> DacScaleHighUnknownW<'_, DacScaleControlSpec> {
+                DacScaleHighUnknownW::new(self, 16)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes.\n\nYou can [`read`](crate::Reg::read) this register and get [`dac_scale_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dac_scale_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DacScaleControlSpec;
+        impl crate::RegisterSpec for DacScaleControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dac_scale_control::R`](R) reader structure"]
+        impl crate::Readable for DacScaleControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dac_scale_control::W`](W) writer structure"]
+        impl crate::Writable for DacScaleControlSpec {
             type Safety = crate::Unsafe;
         }
     }

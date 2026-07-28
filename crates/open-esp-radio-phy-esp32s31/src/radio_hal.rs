@@ -7,14 +7,6 @@
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_hal_esp32s31::RadioRegisters;
 
-const PHY_TONE_PATH0_CONTROL_ADDRESS: usize = 0x2010_041c;
-const PHY_TONE_PATH1_CONTROL_ADDRESS: usize = 0x2010_0420;
-const PHY_TONE_STOP_CONTROL_ADDRESS: usize = 0x2010_040c;
-const PHY_TONE_SELECTOR_CONTROL_ADDRESS: usize = 0x2010_0428;
-const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
-const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
-const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters, enabled: bool) {
@@ -120,66 +112,6 @@ pub(crate) fn configure_phy_rx_table(
     enable_phy_agc(registers);
 }
 
-const fn with_phy_tone_path(value: u32, enable: i32, selector: i32, step: i32) -> u32 {
-    let encoded = (enable as u32).wrapping_shl(18)
-        | ((selector >> 2) as u32)
-        | ((step.wrapping_neg() as u32) & 0xff).wrapping_shl(10);
-    (value & 0xf000_0000) | (encoded & 0x0fff_ffff)
-}
-
-const fn with_phy_tone_path0_selector(value: u32, selector: i32) -> u32 {
-    (value & !0x3) | ((selector as u32) & 0x3)
-}
-
-const fn with_phy_tone_path1_selector(value: u32, selector: i32) -> u32 {
-    (value & !0xc) | (((selector as u32).wrapping_shl(2)) & 0xc)
-}
-
-const fn with_phy_txiq_first_polarity(
-    value: u32,
-    polarity: bool,
-    attenuation: u8,
-    selector: u16,
-) -> u32 {
-    let encoded = (((attenuation as u32).wrapping_mul(0xffff_fc00)) & 0x0003_fc00)
-        | ((selector as u32) >> 2)
-        | ((polarity as u32) << 26);
-    (value & 0xf000_0000) | ((encoded & 0x0fff_ffff) | 0x002c_0000)
-}
-
-const fn with_phy_txiq_second_polarity(value: u32, polarity: bool) -> u32 {
-    let polarity = polarity as u32;
-    (value & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
-}
-
-const fn without_phy_tx_gain_compensation_low_byte(value: u32) -> u32 {
-    value & 0xffff_ff00
-}
-
-const fn with_phy_tx_gain_compensation_byte1(value: u32) -> u32 {
-    (value & 0xffff_00ff) | 0x0000_fa00
-}
-
-const fn with_phy_tx_gain_compensation_byte2(value: u32) -> u32 {
-    value | 0x00ff_0000
-}
-
-const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
-    value & 0x00ff_ffff
-}
-
-const fn with_register_bits(value: u32, bits: u32) -> u32 {
-    value | bits
-}
-
-const fn without_register_bits(value: u32, bits: u32) -> u32 {
-    value & !bits
-}
-
-const fn with_register_field(value: u32, mask: u32, field: u32) -> u32 {
-    (value & !mask) | (field & mask)
-}
-
 const fn tx_baseband_gain_index(gain: u16) -> usize {
     match gain {
         0x0080 => 1,
@@ -260,8 +192,13 @@ pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut RadioRegisters,
 /// write is retained because the registers are hardware state. There is no
 /// callback, loop, wait, allocation, or software-global access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_calibration_tone(enabled: bool, selector: u8, step: u8) {
-    configure_phy_calibration_tone_wide(enabled, selector as u16, step);
+pub(crate) fn configure_phy_calibration_tone(
+    registers: &mut RadioRegisters,
+    enabled: bool,
+    selector: u8,
+    step: u8,
+) {
+    configure_phy_calibration_tone_wide(registers, enabled, selector as u16, step);
 }
 
 /// Program the enabled path of rev0 ROM `phy_start_tx_tone_step`.
@@ -270,79 +207,25 @@ pub(crate) unsafe fn configure_phy_calibration_tone(enabled: bool, selector: u8,
 /// the DAC scale and TX-gain compensation, and leaves both disabled while the
 /// power-control loop measures the tone.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_power_control_tone(selector: u16, step: u8) {
-    clear_register_bits(PHY_TONE_STOP_CONTROL_ADDRESS, 0x0000_0003);
-    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x00ff_0000, 0);
-    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x0000_ff00, 0);
-
-    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
-    let compensation_aux = PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS as *mut u32;
-    compensation.write_volatile(0);
-    compensation_aux.write_volatile(0);
-
-    let selectors = PHY_TONE_SELECTOR_CONTROL_ADDRESS as *mut u32;
-    selectors.write_volatile(with_phy_tone_path0_selector(
-        selectors.read_volatile(),
-        i32::from(selector),
-    ));
-    selectors.write_volatile(with_phy_tone_path1_selector(selectors.read_volatile(), 0));
-
-    let path0 = PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32;
-    path0.write_volatile(with_phy_tone_path(
-        path0.read_volatile(),
-        1,
-        i32::from(selector),
-        i32::from(step),
-    ));
-
-    let path1 = PHY_TONE_PATH1_CONTROL_ADDRESS as *mut u32;
-    path1.write_volatile(with_phy_tone_path(path1.read_volatile(), 0, 0, 0));
+pub(crate) fn configure_phy_power_control_tone(
+    registers: &mut RadioRegisters,
+    selector: u16,
+    step: u8,
+) {
+    registers.configure_power_control_tone(selector, step);
 }
 
 /// Wide-selector form used by TX-DC calibration, whose evidenced selector is
 /// 600 and therefore cannot be represented by the older `u8` child actions.
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
-pub(crate) unsafe fn configure_phy_calibration_tone_wide(enabled: bool, selector: u16, step: u8) {
-    let compensation = PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS as *mut u32;
-    let compensation_aux = PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS as *mut u32;
-
-    // Exact `configure_tx_gain_compensation(0)` callback body.
-    compensation.write_volatile(0);
-    compensation_aux.write_volatile(0);
-
-    let selectors = PHY_TONE_SELECTOR_CONTROL_ADDRESS as *mut u32;
-    selectors.write_volatile(with_phy_tone_path0_selector(
-        selectors.read_volatile(),
-        i32::from(selector),
-    ));
-    selectors.write_volatile(with_phy_tone_path1_selector(selectors.read_volatile(), 0));
-
-    let path0 = PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32;
-    path0.write_volatile(with_phy_tone_path(
-        path0.read_volatile(),
-        enabled as i32,
-        i32::from(selector),
-        i32::from(step),
-    ));
-
-    let path1 = PHY_TONE_PATH1_CONTROL_ADDRESS as *mut u32;
-    path1.write_volatile(with_phy_tone_path(path1.read_volatile(), 0, 0, 0));
-
-    // Exact `configure_tx_gain_compensation(1)` callback body. Preserve the
-    // four writes rather than collapsing their final value.
-    compensation.write_volatile(without_phy_tx_gain_compensation_low_byte(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(with_phy_tx_gain_compensation_byte1(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(with_phy_tx_gain_compensation_byte2(
-        compensation.read_volatile(),
-    ));
-    compensation.write_volatile(without_phy_tx_gain_compensation_high_byte(
-        compensation.read_volatile(),
-    ));
+pub(crate) fn configure_phy_calibration_tone_wide(
+    registers: &mut RadioRegisters,
+    enabled: bool,
+    selector: u16,
+    step: u8,
+) {
+    registers.configure_calibration_tone(enabled, selector, step);
 }
 
 /// Enter or leave the TX-IQ coefficient calibration register mode.
@@ -356,14 +239,14 @@ pub(crate) fn configure_phy_txiq_correction(registers: &mut RadioRegisters, begi
 
 /// Capture the complete tone-control word saved by ROM `phy_rfcal_txiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn read_phy_txiq_tone_control() -> u32 {
-    (PHY_TONE_PATH0_CONTROL_ADDRESS as *const u32).read_volatile()
+pub(crate) fn read_phy_txiq_tone_control(registers: &mut RadioRegisters) -> u32 {
+    registers.txiq_tone_control()
 }
 
 /// Restore the exact tone-control word after TX-IQ work-mode cleanup.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn restore_phy_txiq_tone_control(saved: u32) {
-    (PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32).write_volatile(saved);
+pub(crate) fn restore_phy_txiq_tone_control(registers: &mut RadioRegisters, saved: u32) {
+    registers.restore_txiq_tone_control(saved);
 }
 
 /// Configure one of the two mismatch-power polarities.
@@ -373,31 +256,14 @@ pub(crate) unsafe fn restore_phy_txiq_tone_control(saved: u32) {
 /// the first linear-power sample. The two-microsecond intervals remain
 /// separate async actions in `phy_txiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_txiq_mis_power(
+pub(crate) fn configure_phy_txiq_mis_power(
+    registers: &mut RadioRegisters,
     first: bool,
     polarity: bool,
     attenuation: u8,
     selector: u16,
 ) {
-    let tone = PHY_TONE_PATH0_CONTROL_ADDRESS as *mut u32;
-    if first {
-        tone.write_volatile(with_phy_txiq_first_polarity(
-            tone.read_volatile(),
-            polarity,
-            attenuation,
-            selector,
-        ));
-        let selectors = PHY_TONE_SELECTOR_CONTROL_ADDRESS as *mut u32;
-        selectors.write_volatile(with_phy_tone_path0_selector(
-            selectors.read_volatile(),
-            i32::from(selector),
-        ));
-    } else {
-        tone.write_volatile(with_phy_txiq_second_polarity(
-            tone.read_volatile(),
-            polarity,
-        ));
-    }
+    registers.configure_txiq_mismatch_power(first, polarity, attenuation, selector);
 }
 
 /// Publish one bounded TX-IQ gain or phase coefficient.
@@ -450,27 +316,6 @@ pub(crate) fn configure_phy_adc_rate(registers: &mut RadioRegisters, rate: u32) 
     registers.configure_adc_rate(rate);
 }
 
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-unsafe fn set_register_bits(address: usize, bits: u32) {
-    let register = address as *mut u32;
-    register.write_volatile(with_register_bits(register.read_volatile(), bits));
-}
-
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-unsafe fn clear_register_bits(address: usize, bits: u32) {
-    let register = address as *mut u32;
-    register.write_volatile(without_register_bits(register.read_volatile(), bits));
-}
-
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-unsafe fn replace_register_field(address: usize, mask: u32, field: u32) {
-    let register = address as *mut u32;
-    register.write_volatile(with_register_field(register.read_volatile(), mask, field));
-}
-
 /// Apply complete rev0 ROM `phy_fe_reg_init`.
 ///
 /// The pinned body at `0x2f82_7740`, size `0xf6`, is a finite sequence of
@@ -498,14 +343,14 @@ pub(crate) fn configure_phy_front_end_update(registers: &mut RadioRegisters) {
 
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn arm_phy_power_detector_tone() {
-    set_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
+pub(crate) fn arm_phy_power_detector_tone(registers: &mut RadioRegisters) {
+    registers.set_power_detector_tone_armed(true);
 }
 
 /// Clear the temporary tone-arm bit selected by former `phy_param[0x1aa]`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn clear_phy_power_detector_tone_arm() {
-    clear_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
+pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut RadioRegisters) {
+    registers.set_power_detector_tone_armed(false);
 }
 
 /// Stop the calibration tone exactly as `phy_stop_tx_tone(1)`.
@@ -514,12 +359,8 @@ pub(crate) unsafe fn clear_phy_power_detector_tone_arm() {
 /// is an unconditional cleanup leaf with no wait, branch, callback, or
 /// software-global access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn stop_phy_power_detector_tone() {
-    clear_register_bits(PHY_TONE_PATH0_CONTROL_ADDRESS, 0x0004_0000);
-    clear_register_bits(PHY_TONE_PATH1_CONTROL_ADDRESS, 0x0004_0000);
-    set_register_bits(PHY_TONE_STOP_CONTROL_ADDRESS, 0x0000_0003);
-    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x00ff_0000, 0x00ff_0000);
-    replace_register_field(PHY_DAC_SCALE_CONTROL_ADDRESS, 0x0000_ff00, 0x0000_ff00);
+pub(crate) fn stop_phy_power_detector_tone(registers: &mut RadioRegisters) {
+    registers.stop_power_detector_tone();
 }
 
 /// Trigger one TX-DC comparator measurement using the three fresh-read writes
@@ -606,67 +447,8 @@ pub(crate) fn publish_phy_tx_gain_memory(
 mod tests {
     use super::{
         encode_phy_gain_memory_words, packed_byte, packed_halfword, tx_baseband_gain_index,
-        tx_gain_seed_halfword, with_phy_tone_path, with_phy_tone_path0_selector,
-        with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
-        with_phy_tx_gain_compensation_byte2, with_phy_txiq_first_polarity,
-        with_phy_txiq_second_polarity, with_register_bits, with_register_field,
-        without_phy_tx_gain_compensation_high_byte, without_phy_tx_gain_compensation_low_byte,
-        without_register_bits,
+        tx_gain_seed_halfword,
     };
-
-    #[test]
-    fn phy_calibration_tone_matches_both_evidenced_call_images() {
-        assert_eq!(with_phy_tone_path0_selector(u32::MAX, 0x80), 0xffff_fffc);
-        assert_eq!(with_phy_tone_path1_selector(u32::MAX, 0), 0xffff_fff3);
-
-        assert_eq!(with_phy_tone_path(0xa000_0000, 1, 0x80, 0), 0xa004_0020);
-        assert_eq!(with_phy_tone_path(0xa000_0000, 0, 0x80, 0x28), 0xa003_6020);
-        assert_eq!(with_phy_tone_path(0xbfff_ffff, 0, 0, 0), 0xb000_0000);
-    }
-
-    #[test]
-    fn phy_tone_gain_compensation_preserves_all_four_vendor_writes() {
-        let first = without_phy_tx_gain_compensation_low_byte(0x1234_5678);
-        let second = with_phy_tx_gain_compensation_byte1(first);
-        let third = with_phy_tx_gain_compensation_byte2(second);
-        let fourth = without_phy_tx_gain_compensation_high_byte(third);
-
-        assert_eq!(first, 0x1234_5600);
-        assert_eq!(second, 0x1234_fa00);
-        assert_eq!(third, 0x12ff_fa00);
-        assert_eq!(fourth, 0x00ff_fa00);
-    }
-
-    #[test]
-    fn phy_txiq_mismatch_transforms_match_complete_rom_leaves() {
-        assert_eq!(
-            with_phy_txiq_first_polarity(0xa000_0000, true, 0x50, 0x80),
-            0xa42e_c020
-        );
-        assert_eq!(
-            with_phy_txiq_second_polarity(0xa6ae_c020, true),
-            0xa8ae_c020
-        );
-        assert_eq!(
-            with_phy_txiq_second_polarity(0xa6ae_c020, false),
-            0xa1ae_c020
-        );
-    }
-
-    #[test]
-    fn phy_front_end_register_transforms_preserve_exact_masks() {
-        assert_eq!(with_register_bits(0x1234_5678, 0x0010_0000), 0x1234_5678);
-        assert_eq!(with_register_bits(0x1234_5678, 0x8000_0000), 0x9234_5678);
-        assert_eq!(without_register_bits(u32::MAX, 0x0000_0900), 0xffff_f6ff);
-        assert_eq!(
-            with_register_field(u32::MAX, 0xff00_0000, 0xa000_0000),
-            0xa0ff_ffff
-        );
-        assert_eq!(
-            with_register_field(0x1234_56ff, 0x0000_00ff, 0x0000_0057),
-            0x1234_5657
-        );
-    }
 
     #[test]
     fn phy_baseband_gain_indices_match_the_rom_leaf() {

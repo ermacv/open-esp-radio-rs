@@ -863,7 +863,7 @@ impl PhyPwdetMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<
+    pub fn execute_target<
         P: open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
     >(
         self,
@@ -896,7 +896,7 @@ impl PhyPwdetMmioBinding {
                 // `phy_start_tx_tone_step(1, 0x80, 0x50, 0, 0, 0)`.
                 // Its measurement invariant requires DAC scale and TX-gain
                 // compensation to remain disabled until `StopTone`.
-                crate::radio_hal::configure_phy_power_control_tone(0x80, 0x50);
+                crate::radio_hal::configure_phy_power_control_tone(registers, 0x80, 0x50);
                 PhyPwdetCompletion::ToneConfigured
             }
             PhyPwdetAction::WriteReferenceControl { value } => {
@@ -907,7 +907,7 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
             } => {
-                crate::radio_hal::arm_phy_power_detector_tone();
+                crate::radio_hal::arm_phy_power_detector_tone(registers);
                 PhyPwdetCompletion::ToneArmed {
                     measurement_index,
                     sample_index,
@@ -927,7 +927,7 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
             } => {
-                crate::radio_hal::clear_phy_power_detector_tone_arm();
+                crate::radio_hal::clear_phy_power_detector_tone_arm(registers);
                 PhyPwdetCompletion::ToneArmCleared {
                     measurement_index,
                     sample_index,
@@ -946,7 +946,7 @@ impl PhyPwdetMmioBinding {
                 ),
             },
             PhyPwdetAction::StopTone => {
-                crate::radio_hal::stop_phy_power_detector_tone();
+                crate::radio_hal::stop_phy_power_detector_tone(registers);
                 PhyPwdetCompletion::ToneStopped
             }
             PhyPwdetAction::ConfigurePbusWorkMode => PhyPwdetCompletion::PbusWorkModeConfigured {

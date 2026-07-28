@@ -603,8 +603,8 @@ DAC-scale tail. The generated PAC now owns unique words at `0x2010_0444`,
 `0x2010_0448`, `0x2010_086c`, `0x2010_0894`, `0x2010_0c08`, and
 `0x2010_0c20`; the source-only audit rejects those literals in the PHY crate.
 Shared `0x2010_040c`, `0x2010_0438`, and `0x2010_0c0c` identities remain
-single generated register objects even though later tone/IQ slices still
-have raw consumers awaiting ownership threading.
+single generated register objects. Their later tone/IQ consumers are now
+also ownership-threaded through those same objects.
 
 ## TX-DC measurement and comparator control
 
@@ -637,6 +637,40 @@ instruction-proven six- or seven-bit fields inside the PAC. TXIQ and RXIQ
 bindings now carry the unique `&mut RadioRegisters` borrow. The raw
 `0x2010_0438`/`0x2010_0c0c` constants and upper-layer coefficient transforms
 are deleted and rejected by the source-only audit.
+
+## Calibration-tone ownership
+
+SVD v2.8 describes the complete tone cluster used by PWDET, TX-power, TX-DC,
+TX-IQ, RX-IQ and crystal-duty calibration. Primary local sources are the
+pinned `_oracles/esp32s31_rev0_rom.elf` bodies
+`phy_start_tx_tone_step`, `phy_stop_tx_tone`, `phy_dac_scale_set` and
+`phy_txiq_get_mis_pwr`, plus
+`_oracles/libphy.a[phy_reg.o]::phy_start_tx_tone_step_new` (size `0xc2`) and
+`phy_txgain_comp_pacfg_new` (size `0x54`).
+
+The generated PAC now owns:
+
+- the shared tone-stop field in `0x2010_040c`;
+- ordered TX-gain compensation writes at `0x2010_0410` and the full zero
+  auxiliary write at `0x2010_0414`;
+- both packed tone path words at `0x2010_041c` and `0x2010_0420`, including
+  selector-high, negated step/attenuation, arm/enable and recovered TX-IQ
+  mismatch images;
+- the two separately written selector-low fields at `0x2010_0428`;
+- both separately written DAC-scale bytes at `0x2010_0c04`.
+
+The PAC preserves the complete source operation order and all fresh-read RMW
+edges. Full-word TX-IQ save/restore is safe at the PHY boundary because the
+saved image is sampled and restored through the same unique
+`RadioRegisters` owner; its necessary generated writer `unsafe` is local to
+the PAC with that invariant documented.
+
+All former address constants and raw volatile helpers are removed from
+`open-esp-radio-phy-esp32s31`. Tone actions now borrow
+`&mut RadioRegisters`, and the final removal of obsolete `unsafe` markings
+from every PHY target binding makes the entire upper PHY crate safe. The
+source-only audit rejects all seven physical tone literals, former wrapper
+signatures, and any future `unsafe` or raw volatile access in the PHY crate.
 
 ## Cross-chip comparison
 

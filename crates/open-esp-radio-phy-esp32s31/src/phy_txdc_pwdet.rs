@@ -943,7 +943,7 @@ impl PhyTxDcPwdetMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<
+    pub fn execute_target<
         P: open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl,
     >(
         self,
@@ -979,6 +979,7 @@ impl PhyTxDcPwdetMmioBinding {
                 attenuation,
             } => {
                 crate::radio_hal::configure_phy_calibration_tone_wide(
+                    registers,
                     enabled,
                     selector,
                     attenuation,

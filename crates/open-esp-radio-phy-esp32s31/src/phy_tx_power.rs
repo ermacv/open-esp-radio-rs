@@ -740,7 +740,10 @@ impl PhyPowerControlPointMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyPowerControlPointCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyPowerControlPointCompletion {
         match self.action {
             PhyPowerControlPointAction::ConfigureTone {
                 identity,
@@ -748,7 +751,11 @@ impl PhyPowerControlPointMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
+                crate::radio_hal::configure_phy_power_control_tone(
+                    registers,
+                    selector,
+                    attenuation,
+                );
                 PhyPowerControlPointCompletion::ToneConfigured {
                     identity,
                     iteration,
@@ -757,7 +764,7 @@ impl PhyPowerControlPointMmioBinding {
                 }
             }
             PhyPowerControlPointAction::StopTone { identity } => {
-                crate::radio_hal::stop_phy_power_detector_tone();
+                crate::radio_hal::stop_phy_power_detector_tone(registers);
                 PhyPowerControlPointCompletion::ToneStopped { identity }
             }
             _ => unreachable!(),
@@ -780,7 +787,7 @@ impl PhyTxPowerMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyTxPowerCompletion {
@@ -790,7 +797,11 @@ impl PhyTxPowerMmioBinding {
                 attenuation,
                 enabled: true,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(selector, attenuation);
+                crate::radio_hal::configure_phy_power_control_tone(
+                    registers,
+                    selector,
+                    attenuation,
+                );
                 PhyTxPowerCompletion::ToneConfigured {
                     selector,
                     attenuation,

@@ -1892,7 +1892,7 @@ impl PhyColdMmioBinding {
     /// Execute exactly one finite target MMIO transaction and consume its
     /// identity token.
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target<
+    pub fn execute_target<
         P: open_esp_radio_hal_esp32s31::analog_i2c::PhyPmuControl
             + open_esp_radio_hal_esp32s31::power_detector_platform::PhyPowerDetectorPlatformControl
             + open_esp_radio_hal_esp32s31::phy_temperature::PhyTemperatureSystemControl
@@ -2017,7 +2017,9 @@ impl PhyColdMmioBinding {
                     selector,
                     step,
                 }),
-            )) => crate::radio_hal::configure_phy_calibration_tone(enabled, selector, step),
+            )) => {
+                crate::radio_hal::configure_phy_calibration_tone(registers, enabled, selector, step)
+            }
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::ConfigureRxClock { enabled }),
             )) => open_esp_radio_hal_esp32s31::pbus::configure_rx_clock(registers, enabled),
@@ -2076,7 +2078,9 @@ impl PhyColdMmioBinding {
                     selector,
                     step,
                 }),
-            )) => crate::radio_hal::configure_phy_calibration_tone(enabled, selector, step),
+            )) => {
+                crate::radio_hal::configure_phy_calibration_tone(registers, enabled, selector, step)
+            }
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigureRxClock { enabled }),
             )) => open_esp_radio_hal_esp32s31::pbus::configure_rx_clock(registers, enabled),

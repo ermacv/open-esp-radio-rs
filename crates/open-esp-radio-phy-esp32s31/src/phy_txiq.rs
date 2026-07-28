@@ -36,8 +36,6 @@ use crate::{
     },
 };
 
-pub const PHY_TXIQ_TONE_CONTROL_ADDRESS: usize = 0x2010_041c;
-pub const PHY_TXIQ_TONE_SELECTOR_ADDRESS: usize = 0x2010_0428;
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
 const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x14);
@@ -845,10 +843,10 @@ pub enum PhyTxIqCalibrationAction {
     Loopback(PhyTxIqLoopbackAction),
     ForcePbus(PhyPbusForceTest),
     Environment(PhyTxCalibrationEnvironmentAction),
-    CaptureToneControl { address: usize },
+    CaptureToneControl,
     PowerAttenuation(PhyPowerAttenuationAction),
     Cover(PhyTxIqCoverAction),
-    RestoreToneControl { address: usize, saved: u32 },
+    RestoreToneControl { saved: u32 },
     Complete(PhyTxIqCalibrationOutcome),
     Failed(PhyTxIqCalibrationFailure),
 }
@@ -861,10 +859,10 @@ pub enum PhyTxIqCalibrationCompletion {
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
     Environment(PhyTxCalibrationEnvironmentCompletion),
-    ToneControlCaptured { address: usize, value: u32 },
+    ToneControlCaptured { value: u32 },
     PowerAttenuation(PhyPowerAttenuationCompletion),
     Cover(PhyTxIqCoverCompletion),
-    ToneControlRestored { address: usize, saved: u32 },
+    ToneControlRestored { saved: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -984,9 +982,7 @@ impl PhyTxIqCalibrationTransition {
             CalibrationStep::LoopbackGain { index } => PhyTxIqCalibrationAction::ForcePbus(
                 loopback_gain_transaction(index, self.request.environment.pbus_rx_path_value),
             ),
-            CalibrationStep::Capture => PhyTxIqCalibrationAction::CaptureToneControl {
-                address: PHY_TXIQ_TONE_CONTROL_ADDRESS,
-            },
+            CalibrationStep::Capture => PhyTxIqCalibrationAction::CaptureToneControl,
             CalibrationStep::PowerAttenuation(transition) => {
                 PhyTxIqCalibrationAction::PowerAttenuation(transition.action())
             }
@@ -994,7 +990,6 @@ impl PhyTxIqCalibrationTransition {
                 PhyTxIqCalibrationAction::Cover(transition.action())
             }
             CalibrationStep::Restore { .. } => PhyTxIqCalibrationAction::RestoreToneControl {
-                address: PHY_TXIQ_TONE_CONTROL_ADDRESS,
                 saved: self.saved_tone_control,
             },
             CalibrationStep::Finish { .. } => {
@@ -1113,10 +1108,7 @@ impl PhyTxIqCalibrationTransition {
             }
             (
                 CalibrationStep::Capture,
-                PhyTxIqCalibrationCompletion::ToneControlCaptured {
-                    address: PHY_TXIQ_TONE_CONTROL_ADDRESS,
-                    value,
-                },
+                PhyTxIqCalibrationCompletion::ToneControlCaptured { value },
             ) => {
                 self.saved_tone_control = value;
                 self.tone_control_captured = true;
@@ -1195,10 +1187,7 @@ impl PhyTxIqCalibrationTransition {
             }
             (
                 CalibrationStep::Restore { terminal },
-                PhyTxIqCalibrationCompletion::ToneControlRestored {
-                    address: PHY_TXIQ_TONE_CONTROL_ADDRESS,
-                    saved,
-                },
+                PhyTxIqCalibrationCompletion::ToneControlRestored { saved },
             ) if saved == self.saved_tone_control => {
                 self.step = if self.request.variant == PhyTxIqCalibrationVariant::Loopback {
                     CalibrationStep::DisableLoopback {
@@ -1625,7 +1614,7 @@ impl PhyTxIqMmioBinding {
         match action {
             PhyTxIqCalibrationAction::ConfigureCorrection { .. }
             | PhyTxIqCalibrationAction::ConfigurePbusDebugMode
-            | PhyTxIqCalibrationAction::CaptureToneControl { .. }
+            | PhyTxIqCalibrationAction::CaptureToneControl
             | PhyTxIqCalibrationAction::RestoreToneControl { .. } => Ok(Self { action }),
             _ => Err(PhyTxIqBindingError::NotDirectMmio),
         }
@@ -1636,7 +1625,7 @@ impl PhyTxIqMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyTxIqCalibrationCompletion {
@@ -1649,15 +1638,14 @@ impl PhyTxIqMmioBinding {
                 open_esp_radio_hal_esp32s31::pbus::configure_debug_mode(registers);
                 PhyTxIqCalibrationCompletion::PbusDebugModeConfigured
             }
-            PhyTxIqCalibrationAction::CaptureToneControl { address } => {
+            PhyTxIqCalibrationAction::CaptureToneControl => {
                 PhyTxIqCalibrationCompletion::ToneControlCaptured {
-                    address,
-                    value: crate::radio_hal::read_phy_txiq_tone_control(),
+                    value: crate::radio_hal::read_phy_txiq_tone_control(registers),
                 }
             }
-            PhyTxIqCalibrationAction::RestoreToneControl { address, saved } => {
-                crate::radio_hal::restore_phy_txiq_tone_control(saved);
-                PhyTxIqCalibrationCompletion::ToneControlRestored { address, saved }
+            PhyTxIqCalibrationAction::RestoreToneControl { saved } => {
+                crate::radio_hal::restore_phy_txiq_tone_control(registers, saved);
+                PhyTxIqCalibrationCompletion::ToneControlRestored { saved }
             }
             _ => unreachable!(),
         }
@@ -1678,7 +1666,10 @@ impl PhyTxIqMisPowerMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(self) -> PhyTxIqMisPowerCompletion {
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
+    ) -> PhyTxIqMisPowerCompletion {
         match self.action {
             PhyTxIqMisPowerAction::Configure {
                 identity,
@@ -1688,6 +1679,7 @@ impl PhyTxIqMisPowerMmioBinding {
                 selector,
             } => {
                 crate::radio_hal::configure_phy_txiq_mis_power(
+                    registers,
                     first,
                     polarity,
                     attenuation,
@@ -2394,11 +2386,8 @@ mod tests {
             PhyTxIqCalibrationAction::Environment(action) => {
                 PhyTxIqCalibrationCompletion::Environment(environment_completion(action))
             }
-            PhyTxIqCalibrationAction::CaptureToneControl { address } => {
-                PhyTxIqCalibrationCompletion::ToneControlCaptured {
-                    address,
-                    value: 0xa5a5_5a5a,
-                }
+            PhyTxIqCalibrationAction::CaptureToneControl => {
+                PhyTxIqCalibrationCompletion::ToneControlCaptured { value: 0xa5a5_5a5a }
             }
             PhyTxIqCalibrationAction::PowerAttenuation(action) => {
                 PhyTxIqCalibrationCompletion::PowerAttenuation(power_attenuation_completion(
@@ -2408,8 +2397,8 @@ mod tests {
             PhyTxIqCalibrationAction::Cover(action) => {
                 PhyTxIqCalibrationCompletion::Cover(cover_completion(action, sample))
             }
-            PhyTxIqCalibrationAction::RestoreToneControl { address, saved } => {
-                PhyTxIqCalibrationCompletion::ToneControlRestored { address, saved }
+            PhyTxIqCalibrationAction::RestoreToneControl { saved } => {
+                PhyTxIqCalibrationCompletion::ToneControlRestored { saved }
             }
             terminal => panic!("unexpected calibration terminal: {terminal:?}"),
         }

@@ -2288,7 +2288,7 @@ impl PhyRxIqCalibrationMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyRxIqRfCalibrationCompletion {
@@ -2303,6 +2303,7 @@ impl PhyRxIqCalibrationMmioBinding {
                 attenuation,
             } => {
                 crate::radio_hal::configure_phy_calibration_tone_wide(
+                    registers,
                     enabled,
                     selector,
                     attenuation,
@@ -2377,7 +2378,7 @@ impl PhyRxIqGainMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub unsafe fn execute_target(
+    pub fn execute_target(
         self,
         registers: &mut open_esp_radio_hal_esp32s31::RadioRegisters,
     ) -> PhyRxIqGainCompletion {
@@ -2392,6 +2393,7 @@ impl PhyRxIqGainMmioBinding {
                 attenuation,
             } => {
                 crate::radio_hal::configure_phy_calibration_tone_wide(
+                    registers,
                     enabled,
                     selector,
                     attenuation,

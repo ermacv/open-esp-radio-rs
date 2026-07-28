@@ -122,6 +122,28 @@ then
     exit 1
 fi
 
+# Calibration-tone, DAC-scale and TX-gain-compensation MMIO is native PAC
+# state. Reject every former physical identity and wrapper that could bypass
+# the unique register owner.
+if rg -n \
+    '0x2010_(040c|0410|0414|041c|0420|0428|0c04)|PHY_(TONE_PATH[01]_CONTROL|TONE_STOP_CONTROL|TONE_SELECTOR_CONTROL|TX_GAIN_COMPENSATION_(CONTROL|AUX)|DAC_SCALE_CONTROL)_ADDRESS|unsafe[[:space:]]+fn[[:space:]]+(configure_phy_(calibration_tone|power_control_tone|calibration_tone_wide|txiq_mis_power)|read_phy_txiq_tone_control|restore_phy_txiq_tone_control|arm_phy_power_detector_tone|clear_phy_power_detector_tone_arm|stop_phy_power_detector_tone)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw calibration-tone access returned" >&2
+    exit 1
+fi
+
+# Every live PHY target operation is now ownership-bound and safe. Peripheral
+# writer unsafety belongs only inside the PAC, while DMA pointer unsafety
+# remains a separate MAC concern.
+if rg -n \
+    '\bunsafe\b|read_volatile|write_volatile|as \*(const|mut)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "unsafe operation returned to the upper PHY crate" >&2
+    exit 1
+fi
+
 # Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
 # DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
 # addresses have no remaining live raw consumer.

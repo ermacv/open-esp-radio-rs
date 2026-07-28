@@ -14,11 +14,7 @@ use svd2rust::{
 use svd_parser::svd::{MaybeArray, RegisterCluster, RegisterProperties};
 
 const USAGE: &str = "usage: cargo pac-gen [--check]";
-const MMIO_WINDOWS: [(&str, u64, u64); 3] = [
-    ("modem-radio-core", 0x2010_0000, 0x2020_0000),
-    ("low-power-system", 0x2070_0000, 0x2080_0000),
-    ("low-power-peripheral", 0x2080_0000, 0x2090_0000),
-];
+const MMIO_WINDOWS: [(&str, u64, u64); 1] = [("modem-radio-core", 0x2010_0000, 0x2020_0000)];
 
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -266,18 +262,10 @@ mod tests {
     use super::mmio_window;
 
     #[test]
-    fn accepts_each_remaining_custom_pac_decode_window() {
+    fn accepts_the_remaining_custom_pac_decode_window() {
         assert_eq!(
             mmio_window(0x2010_0000, 0x2010_0004),
             Some("modem-radio-core")
-        );
-        assert_eq!(
-            mmio_window(0x2070_4000, 0x2070_4004),
-            Some("low-power-system")
-        );
-        assert_eq!(
-            mmio_window(0x2081_8000, 0x2081_8004),
-            Some("low-power-peripheral")
         );
     }
 
@@ -287,6 +275,8 @@ mod tests {
         assert_eq!(mmio_window(0x2020_0000, 0x2020_0004), None);
         assert_eq!(mmio_window(0x201f_fffc, 0x2020_0004), None);
         assert_eq!(mmio_window(0x2058_7000, 0x2058_7004), None);
+        assert_eq!(mmio_window(0x2070_4000, 0x2070_4004), None);
+        assert_eq!(mmio_window(0x2081_8000, 0x2081_8004), None);
         assert_eq!(mmio_window(0x2090_0000, 0x2090_0004), None);
     }
 }

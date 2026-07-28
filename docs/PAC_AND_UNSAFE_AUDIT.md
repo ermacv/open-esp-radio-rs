@@ -90,8 +90,9 @@ host tests record and verify the same semantic capability calls as the target.
 
 ## Peripheral scope
 
-The word "radio" is not one peripheral ownership block. The recovered SVD
-currently touches three independently decoded chip-level windows:
+The word "radio" is not one peripheral ownership block. The chip map exposes
+three independently decoded 1-MiB windows used by the recovered initialization
+sequence:
 
 - `0x2010_0000..0x201f_ffff`: modem/radio core, including PHY and Wi-Fi MAC;
 - `0x2070_0000..0x207f_ffff`: LP-system and PMU dependencies;
@@ -101,14 +102,16 @@ currently touches three independently decoded chip-level windows:
 The latter two are dependencies of the radio driver, not parts of the Wi-Fi
 MAC/PHY register fabric. Their source is the pinned ESP32-S31 `reg_base.h`;
 the `0x201x_xxxx` identities additionally come from modem structures and
-complete ROM/blob MMIO instructions. The PAC exposes this distinction through
-`Esp32s31MmioWindow`, while one top-level `RadioRegisters` owner still
-serializes cross-window initialization sequences.
+complete ROM/blob MMIO instructions. All recovered `0x207x/0x208x`
+dependencies are now delegated to official platform PAC singletons. The
+custom SVD generator therefore accepts only the
+`0x2010_0000..0x201f_ffff` modem/radio decode window; the legacy raw
+compatibility owner remains narrower still at `0x2010_0000..0x2010_ffff`.
 
 The separately decoded HP-system window at
-`0x2050_0000..0x205f_ffff` is still documented by `Esp32s31MmioWindow`, but
-the custom SVD generator now rejects it. `HP_SYS_CLKRST` ownership and field
-access are delegated entirely to the official `esp-hal` PAC.
+`0x2050_0000..0x205f_ffff` is also rejected by the custom SVD generator.
+`HP_SYS_CLKRST` ownership and field access are delegated entirely to the
+official `esp-hal` PAC.
 
 Within those windows the recovered SVD currently covers:
 

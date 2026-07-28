@@ -15,7 +15,6 @@ const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_FE_TXRX_RESET_ADDRESS: usize = 0x2010_0440;
 const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
 const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
 const PHY_FE_CONTROL_0438_ADDRESS: usize = 0x2010_0438;
@@ -27,9 +26,6 @@ const PHY_FE_CONTROL_0C08_ADDRESS: usize = 0x2010_0c08;
 const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
 const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
-const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
-const PHY_PBUS_TRANSACTION_BIT: u32 = 1 << 1;
-const PHY_PBUS_BUSY_BIT: u32 = 1 << 31;
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
@@ -136,15 +132,6 @@ pub(crate) fn configure_phy_rx_table(
     enable_phy_agc(registers);
 }
 
-const fn with_phy_pbus_force_test(value: u32, selector: u8, path: u8, test_value: u16) -> u32 {
-    let command = ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15);
-    (value & 0xfffe_0001) | (command & 0x0001_fffc) | PHY_PBUS_TRANSACTION_BIT
-}
-
-const fn phy_pbus_is_busy(value: u32) -> bool {
-    value & PHY_PBUS_BUSY_BIT != 0
-}
-
 const fn with_phy_tone_path(value: u32, enable: i32, selector: i32, step: i32) -> u32 {
     let encoded = (enable as u32).wrapping_shl(18)
         | ((selector >> 2) as u32)
@@ -219,14 +206,6 @@ const fn with_phy_tx_gain_compensation_byte2(value: u32) -> u32 {
 
 const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
     value & 0x00ff_ffff
-}
-
-const fn without_phy_fe_txrx_reset(value: u32) -> u32 {
-    value & !0x0600_0000
-}
-
-const fn with_phy_fe_txrx_reset(value: u32) -> u32 {
-    value | 0x0600_0000
 }
 
 const fn with_phy_adc_rate_high(value: u32, rate: u32) -> u32 {
@@ -527,18 +506,6 @@ pub(crate) unsafe fn configure_phy_rxiq_calibration_mode() {
     control.write_volatile(with_phy_rxiq_calibration_mode(control.read_volatile()));
 }
 
-/// Apply the complete rev0 ROM `phy_fe_txrx_reset` pulse.
-///
-/// The pinned body at `0x2f82_788c`, size `0x24`, ignores its argument,
-/// clears bits 25 and 26 at `0x2010_0440`, then sets both bits. There is no
-/// delay or status observation between the two writes.
-#[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_fe_txrx_reset() {
-    let register = PHY_FE_TXRX_RESET_ADDRESS as *mut u32;
-    register.write_volatile(without_phy_fe_txrx_reset(register.read_volatile()));
-    register.write_volatile(with_phy_fe_txrx_reset(register.read_volatile()));
-}
-
 /// Apply the finite MMIO suffix of rev0 ROM `phy_adc_rate_set`.
 ///
 /// The complete parent action performs its masked PHY-I2C transaction first.
@@ -728,27 +695,18 @@ pub(crate) fn publish_phy_tx_gain_memory(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_phy_gain_memory_words, packed_byte, packed_halfword, phy_pbus_is_busy,
-        tx_baseband_gain_index, tx_gain_seed_halfword, with_phy_adc_rate_high,
-        with_phy_adc_rate_low, with_phy_fe_txrx_reset, with_phy_front_end_adc_update,
-        with_phy_front_end_update_first, with_phy_front_end_update_second,
-        with_phy_pbus_force_test, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
+        encode_phy_gain_memory_words, packed_byte, packed_halfword, tx_baseband_gain_index,
+        tx_gain_seed_halfword, with_phy_adc_rate_high, with_phy_adc_rate_low,
+        with_phy_front_end_adc_update, with_phy_front_end_update_first,
+        with_phy_front_end_update_second, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
         with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
         with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
         with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
         with_phy_txiq_calibration_enabled, with_phy_txiq_first_polarity, with_phy_txiq_gain,
         with_phy_txiq_phase, with_phy_txiq_second_polarity, with_register_bits,
-        with_register_field, without_phy_fe_txrx_reset, without_phy_tx_gain_compensation_high_byte,
+        with_register_field, without_phy_tx_gain_compensation_high_byte,
         without_phy_tx_gain_compensation_low_byte, without_register_bits,
     };
-
-    #[test]
-    fn phy_pbus_masks_and_command_encoding_match_complete_rom_leaves() {
-        assert_eq!(with_phy_pbus_force_test(0, 4, 1, 0), 0x0000_8012);
-        assert_eq!(with_phy_pbus_force_test(u32::MAX, 3, 2, 0x100), 0xffff_400f);
-        assert!(!phy_pbus_is_busy(0x7fff_ffff));
-        assert!(phy_pbus_is_busy(0x8000_0000));
-    }
 
     #[test]
     fn phy_calibration_tone_matches_both_evidenced_call_images() {
@@ -800,16 +758,6 @@ mod tests {
         assert_eq!(with_phy_rxiq_phase(u32::MAX, -63), 0xf07f_ffff);
         assert_eq!(with_phy_rxiq_calibration_mode(0), 0x2000_0000);
         assert_eq!(with_phy_rxiq_calibration_mode(u32::MAX), 0xbfff_ffff);
-    }
-
-    #[test]
-    fn phy_fe_txrx_reset_matches_both_rom_writes() {
-        assert_eq!(without_phy_fe_txrx_reset(u32::MAX), 0xf9ff_ffff);
-        assert_eq!(with_phy_fe_txrx_reset(0), 0x0600_0000);
-        assert_eq!(
-            with_phy_fe_txrx_reset(without_phy_fe_txrx_reset(0xa5a5_5a5a)),
-            0xa7a5_5a5a
-        );
     }
 
     #[test]

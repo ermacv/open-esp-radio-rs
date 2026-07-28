@@ -667,6 +667,13 @@ work-mode pulse segments now operate on generated fields. The one- and
 two-microsecond delays remain in the caller state machine; moving MMIO into
 the PAC does not collapse those asynchronous hardware boundaries.
 
+All remaining AGC consumers now use native generated access too:
+`phy_bb_agc_reg_update`, `phy_agc_reg_init`, antenna setup, both RF-RX
+saturation branches, final gain limits, saturation-gain stores,
+`phy_reg_update_new`, and both `phy_rx_11b_opt` branches. Instruction-exact
+full-word constants are localized in the PAC next to the source citations;
+HAL no longer carries an AGC register model or numeric masks.
+
 ## Calibration-tone ownership
 
 SVD v2.8 describes the complete tone cluster used by PWDET, TX-power, TX-DC,

@@ -259,5 +259,12 @@ caller-timed PBus work-mode pulse segments have begun the same migration.
 Their generated fields now live behind `RadioRegisters`; delay placement
 remains explicit in the upper transition.
 
+The AGC migration is now complete. Full baseband update/init sequences,
+antenna setup, both RF-RX saturation branches, gain limits and stores,
+post-initialization and both 11b optimization branches are generated-PAC
+operations. Full-word constants remain confined to the PAC beside their
+ROM/blob provenance. `phy_agc` is a thin sequencing facade and the audit
+rejects generic register access there.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

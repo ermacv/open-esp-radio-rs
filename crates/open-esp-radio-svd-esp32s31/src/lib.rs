@@ -8191,14 +8191,14 @@ pub mod wifi_mac_interface_address {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Partly decoded field names deliberately retain UNKNOWN semantics."]
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY,BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Queue three is also the complete promiscuous-sniffer control word. Partly decoded field names deliberately retain UNKNOWN semantics."]
 pub type WifiMacRxFilter = crate::Periph<wifi_mac_rx_filter::RegisterBlock, 0x2010_40d8>;
 impl core::fmt::Debug for WifiMacRxFilter {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacRxFilter").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Partly decoded field names deliberately retain UNKNOWN semantics."]
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY,BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Queue three is also the complete promiscuous-sniffer control word. Partly decoded field names deliberately retain UNKNOWN semantics."]
 pub mod wifi_mac_rx_filter {
     #[repr(C)]
     #[doc = "Register block"]
@@ -8235,10 +8235,14 @@ pub mod wifi_mac_rx_filter {
         pub type UbssidCheckLowUnknownR = crate::BitReader;
         #[doc = "Field `UBSSID_CHECK_LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second bit cleared by hal_mac_set_rxq_policy(queue, false)."]
         pub type UbssidCheckLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `POLICY_3_2_UNKNOWN` reader - "]
-        pub type Policy3_2UnknownR = crate::FieldReader;
-        #[doc = "Field `POLICY_3_2_UNKNOWN` writer - "]
-        pub type Policy3_2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `POLICY_BIT_2_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+        pub type PolicyBit2UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_2_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+        pub type PolicyBit2UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_BIT_3_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+        pub type PolicyBit3UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_3_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+        pub type PolicyBit3UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `MANAGEMENT_POLICY_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
         pub type ManagementPolicyUnknownR = crate::BitReader;
         #[doc = "Field `MANAGEMENT_POLICY_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
@@ -8267,10 +8271,18 @@ pub mod wifi_mac_rx_filter {
         pub type ModePolicyUnknownR = crate::BitReader;
         #[doc = "Field `MODE_POLICY_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared for receive-policy mode zero."]
         pub type ModePolicyUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `HIGH_UNKNOWN` reader - "]
-        pub type HighUnknownR = crate::FieldReader<u32>;
-        #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 21, u32>;
+        #[doc = "Field `POLICY_16_11_UNKNOWN` reader - "]
+        pub type Policy16_11UnknownR = crate::FieldReader;
+        #[doc = "Field `POLICY_16_11_UNKNOWN` writer - "]
+        pub type Policy16_11UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `SNIFFER_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set first by complete hal_sniffer_enable on queue three."]
+        pub type SnifferEnableR = crate::BitReader;
+        #[doc = "Field `SNIFFER_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set first by complete hal_sniffer_enable on queue three."]
+        pub type SnifferEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_31_18_UNKNOWN` reader - "]
+        pub type Policy31_18UnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `POLICY_31_18_UNKNOWN` writer - "]
+        pub type Policy31_18UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -8282,10 +8294,15 @@ pub mod wifi_mac_rx_filter {
             pub fn ubssid_check_low_unknown(&self) -> UbssidCheckLowUnknownR {
                 UbssidCheckLowUnknownR::new(((self.bits >> 1) & 1) != 0)
             }
-            #[doc = "Bits 2:3"]
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
             #[inline(always)]
-            pub fn policy_3_2_unknown(&self) -> Policy3_2UnknownR {
-                Policy3_2UnknownR::new(((self.bits >> 2) & 3) as u8)
+            pub fn policy_bit_2_unknown(&self) -> PolicyBit2UnknownR {
+                PolicyBit2UnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+            #[inline(always)]
+            pub fn policy_bit_3_unknown(&self) -> PolicyBit3UnknownR {
+                PolicyBit3UnknownR::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
             #[inline(always)]
@@ -8322,10 +8339,20 @@ pub mod wifi_mac_rx_filter {
             pub fn mode_policy_unknown(&self) -> ModePolicyUnknownR {
                 ModePolicyUnknownR::new(((self.bits >> 10) & 1) != 0)
             }
-            #[doc = "Bits 11:31"]
+            #[doc = "Bits 11:16"]
             #[inline(always)]
-            pub fn high_unknown(&self) -> HighUnknownR {
-                HighUnknownR::new((self.bits >> 11) & 0x001f_ffff)
+            pub fn policy_16_11_unknown(&self) -> Policy16_11UnknownR {
+                Policy16_11UnknownR::new(((self.bits >> 11) & 0x3f) as u8)
+            }
+            #[doc = "Bit 17 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set first by complete hal_sniffer_enable on queue three."]
+            #[inline(always)]
+            pub fn sniffer_enable(&self) -> SnifferEnableR {
+                SnifferEnableR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn policy_31_18_unknown(&self) -> Policy31_18UnknownR {
+                Policy31_18UnknownR::new(((self.bits >> 18) & 0x3fff) as u16)
             }
         }
         impl W {
@@ -8339,10 +8366,15 @@ pub mod wifi_mac_rx_filter {
             pub fn ubssid_check_low_unknown(&mut self) -> UbssidCheckLowUnknownW<'_, PolicySpec> {
                 UbssidCheckLowUnknownW::new(self, 1)
             }
-            #[doc = "Bits 2:3"]
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
             #[inline(always)]
-            pub fn policy_3_2_unknown(&mut self) -> Policy3_2UnknownW<'_, PolicySpec> {
-                Policy3_2UnknownW::new(self, 2)
+            pub fn policy_bit_2_unknown(&mut self) -> PolicyBit2UnknownW<'_, PolicySpec> {
+                PolicyBit2UnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared as its own fresh-read RMW for queue three."]
+            #[inline(always)]
+            pub fn policy_bit_3_unknown(&mut self) -> PolicyBit3UnknownW<'_, PolicySpec> {
+                PolicyBit3UnknownW::new(self, 3)
             }
             #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
             #[inline(always)]
@@ -8381,10 +8413,20 @@ pub mod wifi_mac_rx_filter {
             pub fn mode_policy_unknown(&mut self) -> ModePolicyUnknownW<'_, PolicySpec> {
                 ModePolicyUnknownW::new(self, 10)
             }
-            #[doc = "Bits 11:31"]
+            #[doc = "Bits 11:16"]
             #[inline(always)]
-            pub fn high_unknown(&mut self) -> HighUnknownW<'_, PolicySpec> {
-                HighUnknownW::new(self, 11)
+            pub fn policy_16_11_unknown(&mut self) -> Policy16_11UnknownW<'_, PolicySpec> {
+                Policy16_11UnknownW::new(self, 11)
+            }
+            #[doc = "Bit 17 - SOURCE\\[BLOB_LIBPP_HAL_SNIFFER_ENABLE\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set first by complete hal_sniffer_enable on queue three."]
+            #[inline(always)]
+            pub fn sniffer_enable(&mut self) -> SnifferEnableW<'_, PolicySpec> {
+                SnifferEnableW::new(self, 17)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn policy_31_18_unknown(&mut self) -> Policy31_18UnknownW<'_, PolicySpec> {
+                Policy31_18UnknownW::new(self, 18)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

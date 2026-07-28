@@ -3441,3 +3441,16 @@ loop, a missing READY edge returns a finite timeout before interrupt state or
 the rest of MAC init is touched. The host trace tests both success and timeout
 paths, and the source audit prevents raw register access from returning to the
 upper handshake module.
+
+## Semantic promiscuous-sniffer enable
+
+The upper cold initializer now requests sniffer enable only through
+`MacSnifferHardware`. Generated PAC owns queue-three RX policy at
+`0x2010_40e4` and preserves all seven fresh-read RMW edges from complete
+`libpp.a[hal_sniffer.o]::hal_sniffer_enable`.
+
+This corrects an earlier value-equivalent shortcut that combined bit 17 set
+and rejection-bit clears into one RMW. The final word was the same, but the
+blob's separate hardware edges are now retained. A host trace asserts every
+intermediate image, and the source audit prevents raw register access from
+returning to the upper sniffer module.

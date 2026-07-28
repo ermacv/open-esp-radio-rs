@@ -22,6 +22,7 @@ pub mod registers;
 pub mod rx;
 pub mod rx_ampdu;
 pub mod rx_ampdu_hw;
+mod sniffer;
 mod sta_link_policy;
 pub mod tx;
 pub mod tx_ampdu;

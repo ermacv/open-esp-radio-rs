@@ -9,7 +9,7 @@ use open_esp_radio_mac_esp32s31::{
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome,
-        MacInterfaceAddressHardware, StaLinkRxPolicyHardware,
+        MacInterfaceAddressHardware, MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -259,6 +259,23 @@ impl MacColdHandshakeHardware for MockMmio {
             handshake_samples: samples,
             handshake_value: value,
         })
+    }
+}
+
+impl MacSnifferHardware for MockMmio {
+    fn enable_promiscuous_sniffer(&mut self) {
+        let control = mac_init::RX_SNIFFER_CONTROL;
+        let mut modify = |mask: u32, value: u32| {
+            let current = self.read32(control);
+            self.write32(control, (current & !mask) | (value & mask));
+        };
+        modify(1 << 17, 1 << 17);
+        modify(1 << 0, 0);
+        modify(1 << 1, 0);
+        modify(1 << 2, 0);
+        modify(1 << 3, 0);
+        modify(1 << 8, 0);
+        modify((1 << 7) | (1 << 9), 0);
     }
 }
 
@@ -518,6 +535,26 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             ]
     }));
     assert_eq!(mmio.words.get(&mac_init::CONTROL), Some(&0));
+    assert!(mmio.operations().windows(15).any(|operations| {
+        operations
+            == [
+                Operation::Write(mac_init::CONTROL, 0),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0285),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0284),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0284),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0280),
+                Operation::Read(mac_init::RX_SNIFFER_CONTROL),
+                Operation::Write(mac_init::RX_SNIFFER_CONTROL, 0x0002_0000),
+            ]
+    }));
     assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
     assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));

@@ -846,6 +846,13 @@ READY polling loop, then ordered `INT_ENABLE=0` and
 `INT_CLEAR=0xffffffff` stores. The PAC keeps that successful hardware order
 but replaces the blob's unbounded loop with a caller-bounded sample limit.
 
+Queue-three RX policy at `0x2010_40e4` is also the promiscuous-sniffer control
+word. Complete pinned `libpp.a[hal_sniffer.o]::hal_sniffer_enable` proves
+seven ordered fresh-read RMW edges: set bit 17; clear bits 0, 1, 2, 3 and 8
+separately; then clear bits 7 and 9 together. SVD v3.5 splits the formerly
+combined bits 3:2 and high unknown range only as far as this evidence permits;
+unresolved electrical meanings retain `UNKNOWN`.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

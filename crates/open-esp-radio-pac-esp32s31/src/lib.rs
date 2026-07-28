@@ -15,6 +15,7 @@ mod mac_interface_address;
 mod mac_interrupt;
 mod mac_rx_dma;
 mod mac_rx_policy;
+mod mac_sniffer;
 mod mac_tx;
 pub mod pbus;
 pub mod phy;
@@ -397,6 +398,10 @@ mod tests {
         assert_eq!(
             registers.peripherals.wifi_mac_rx_filter.policy(0).as_ptr() as usize,
             0x2010_40d8
+        );
+        assert_eq!(
+            registers.peripherals.wifi_mac_rx_filter.policy(3).as_ptr() as usize,
+            0x2010_40e4
         );
     }
 

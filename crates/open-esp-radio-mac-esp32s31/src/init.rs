@@ -12,11 +12,10 @@ use open_esp_radio_pac_esp32s31::{
 
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::interface_address::MacInterfaceAddressHardware;
+pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
 use crate::{interface_address::program_cold_receive_addresses, registers::Mmio};
 
-const RX_SNIFFER_REJECT_MASK: u32 = 0x0000_038f;
-const RX_SNIFFER_ENABLE: u32 = 0x0002_0000;
 const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
 
 /// Official chip-platform capability required before touching MAC-local MMIO.
@@ -133,7 +132,7 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
 pub fn initialize_promiscuous_receive<
-    M: Mmio + MacColdHandshakeHardware + MacInterfaceAddressHardware,
+    M: Mmio + MacColdHandshakeHardware + MacInterfaceAddressHardware + MacSnifferHardware,
     P: MacClockControl,
 >(
     platform: &mut P,
@@ -288,12 +287,7 @@ pub fn initialize_promiscuous_receive<
     // policy words at 0x40fc/0x4100/0x4108 do not change when promiscuous mode
     // is enabled; they must retain the defaults installed by `mac_txrx_init`.
     mmio.write32(registers::CONTROL, 0);
-    modify(
-        mmio,
-        registers::RX_SNIFFER_CONTROL,
-        RX_SNIFFER_ENABLE | RX_SNIFFER_REJECT_MASK,
-        RX_SNIFFER_ENABLE,
-    );
+    mmio.enable_promiscuous_sniffer();
     modify(mmio, registers::R_40F4, 0x0000_ff00, 0x0000_ff00);
     mmio.fence();
 

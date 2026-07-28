@@ -151,6 +151,15 @@ then
     exit 1
 fi
 
+# Promiscuous-sniffer enable is seven ordered generated-PAC RMW edges.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/sniffer.rs
+then
+    echo "raw compatibility MMIO returned to MAC sniffer enable" >&2
+    exit 1
+fi
+
 # PHY target bindings may perform I2C/PBus work only through a borrowed
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.

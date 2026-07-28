@@ -951,6 +951,19 @@ filter bit 13 from the formerly opaque bits-16:11 group and records the exact
 source without assigning an unproven electrical name. Generated PAC code now
 owns the complete 62-operation read/write trace.
 
+Complete pinned `libpp.a[hal_mac_tx.o]::hal_attenna_init` (the misspelling is
+the archive's symbol name) contains two reverse traversals of eight words from
+`0x20105510` down to `0x201051ac`, with a `0x7c` stride. The first traversal
+clears bit 2 once per word. The second performs three distinct fresh-read
+updates per word: clear bit 3, set bit 5, then clear bit 4. Two final RMWs at
+`0x201042b0` clear bit 2 and set bit 5. This is 34 RMW edges in total.
+
+The former Rust code combined each bank's four edges into one update. SVD
+v3.15 records the evidenced fields without guessing electrical names, and the
+generated PAC now preserves the complete order. The adjacent
+`hal_mac_rate_autoack_init` symbol was also checked in full: its two-byte body
+is only `ret`, so it has no omitted S31 MMIO effect.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

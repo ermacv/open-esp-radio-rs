@@ -10,6 +10,7 @@ use open_esp_radio_pac_esp32s31::{
     Register32,
 };
 
+pub use crate::cold_antenna::MacColdAntennaHardware;
 pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
@@ -117,20 +118,8 @@ fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
     }
 }
 
-/// Direct bodies of `hal_attenna_init` and the receive-relevant default COEX
-/// PTI setup at the tail of `hal_init`.
-fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
-    for index in 0..registers::ANTENNA_CONTROL_COUNT {
-        modify(
-            mmio,
-            registers::antenna_control(index).expect("bounded antenna index"),
-            0x0000_003c,
-            0x0000_0020,
-        );
-    }
-    modify(mmio, registers::R_42B0, 0x0000_0004, 0);
-    modify(mmio, registers::R_42B0, 0x0000_0020, 0x0000_0020);
-
+/// Receive-relevant default COEX PTI setup at the tail of `hal_init`.
+fn initialize_coex<M: Mmio>(mmio: &mut M) {
     // `hal_coex_pti_init`, `hal_coex_enable_default_pti(1)` and the cold
     // default returned by the OSI PTI query: RX-active/ACK zero, Wi-Fi one.
     modify(mmio, registers::R_4DDC, 0x0000_003f, 0x0000_0031);
@@ -149,6 +138,7 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 /// nor MAC interrupts. The caller must publish its ring after this returns.
 pub fn initialize_promiscuous_receive<
     M: Mmio
+        + MacColdAntennaHardware
         + MacColdCryptoHardware
         + MacColdEnableHardware
         + MacColdHandshakeHardware
@@ -204,7 +194,10 @@ pub fn initialize_promiscuous_receive<
     // common RX crypto bypass block.
     mmio.initialize_crypto_bypass();
 
-    initialize_antenna_and_coex(mmio);
+    // Complete `hal_attenna_init`: 34 RMW edges, including both reverse
+    // traversals of the eight queue/vector-bank words.
+    mmio.initialize_mac_antenna();
+    initialize_coex(mmio);
 
     // Complete `hal_enable_mac`: clear the four common disable gates, then
     // publish the interrupt mask. This does not route the peripheral interrupt

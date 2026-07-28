@@ -8,6 +8,7 @@ pub mod clock;
 mod frequency;
 mod iq_estimator;
 pub mod mac;
+mod mac_antenna_init;
 mod mac_block_ack;
 mod mac_cold_start;
 mod mac_crypto;
@@ -554,6 +555,22 @@ mod tests {
     }
 
     #[test]
+    fn generated_mac_antenna_init_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let init = &registers.peripherals.wifi_mac_antenna_init;
+        assert_eq!(init.common_control().as_ptr() as usize, 0x2010_42b0);
+        for physical_bank in 0..8 {
+            assert_eq!(
+                init.bank_control(physical_bank).as_ptr() as usize,
+                0x2010_51ac + physical_bank * 0x7c
+            );
+        }
+        assert_eq!(init.bank_control(7).as_ptr() as usize, 0x2010_5510);
+    }
+
+    #[test]
     fn generated_mac_txrx_callbacks_match_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.
@@ -629,11 +646,6 @@ mod tests {
             assert_valid(mac::init::he_scratch(index).unwrap());
         }
         assert!(mac::init::he_scratch(mac::init::HE_SCRATCH_COUNT).is_none());
-
-        for index in 0..mac::init::ANTENNA_CONTROL_COUNT {
-            assert_valid(mac::init::antenna_control(index).unwrap());
-        }
-        assert!(mac::init::antenna_control(mac::init::ANTENNA_CONTROL_COUNT).is_none());
     }
 
     #[test]
@@ -642,9 +654,5 @@ mod tests {
         assert_eq!(mac::init::RX_SNIFFER_CONTROL, mac::init::RX_FILTER[3]);
         assert_eq!(mac::init::HE_PROTECTION[0], mac::TX_Q0_PROTECTION);
         assert_eq!(mac::init::HE_QUEUE_CONTROL[0], mac::TX_Q0_PPDU_CONTROL);
-        assert_eq!(
-            mac::init::antenna_control(0),
-            Some(mac::TX_Q0_LENGTH_CONTROL)
-        );
     }
 }

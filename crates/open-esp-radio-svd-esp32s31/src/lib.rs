@@ -10132,6 +10132,263 @@ pub mod wifi_mac_tx_completion {
         impl crate::Readable for AuxCSpec {}
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_attenna_init transaction. The misspelled vendor symbol first visits eight reverse-stride queue/vector words, then updates one common word."]
+pub type WifiMacAntennaInit = crate::Periph<wifi_mac_antenna_init::RegisterBlock, 0x2010_42b0>;
+impl core::fmt::Debug for WifiMacAntennaInit {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacAntennaInit").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_attenna_init transaction. The misspelled vendor symbol first visits eight reverse-stride queue/vector words, then updates one common word."]
+pub mod wifi_mac_antenna_init {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        common_control: CommonControl,
+        _reserved1: [u8; 0x0ef8],
+        bank_control: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete leaf clears bit 2, then sets bit 5 through a separate fresh-read RMW."]
+        #[inline(always)]
+        pub const fn common_control(&self) -> &CommonControl {
+            &self.common_control
+        }
+        #[doc = "0xefc..0xf1c - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4."]
+        #[inline(always)]
+        pub const fn bank_control(&self, n: usize) -> &BankControl {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(3836)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0xefc..0xf1c - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4."]
+        #[inline(always)]
+        pub fn bank_control_iter(&self) -> impl Iterator<Item = &BankControl> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(3836)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "COMMON_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete leaf clears bit 2, then sets bit 5 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`common_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`common_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@common_control`] module"]
+    #[doc(alias = "COMMON_CONTROL")]
+    pub type CommonControl = crate::Reg<common_control::CommonControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete leaf clears bit 2, then sets bit 5 through a separate fresh-read RMW."]
+    pub mod common_control {
+        #[doc = "Register `COMMON_CONTROL` reader"]
+        pub type R = crate::R<CommonControlSpec>;
+        #[doc = "Register `COMMON_CONTROL` writer"]
+        pub type W = crate::W<CommonControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `COMMON_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared by the penultimate RMW of the complete leaf."]
+        pub type CommonClearUnknownR = crate::BitReader;
+        #[doc = "Field `COMMON_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared by the penultimate RMW of the complete leaf."]
+        pub type CommonClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` reader - "]
+        pub type MiddlePreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` writer - "]
+        pub type MiddlePreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `COMMON_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set by the final RMW of the complete leaf."]
+        pub type CommonEnableUnknownR = crate::BitReader;
+        #[doc = "Field `COMMON_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set by the final RMW of the complete leaf."]
+        pub type CommonEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 26, u32>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared by the penultimate RMW of the complete leaf."]
+            #[inline(always)]
+            pub fn common_clear_unknown(&self) -> CommonClearUnknownR {
+                CommonClearUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bits 3:4"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&self) -> MiddlePreservedUnknownR {
+                MiddlePreservedUnknownR::new(((self.bits >> 3) & 3) as u8)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set by the final RMW of the complete leaf."]
+            #[inline(always)]
+            pub fn common_enable_unknown(&self) -> CommonEnableUnknownR {
+                CommonEnableUnknownR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 6) & 0x03ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, CommonControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared by the penultimate RMW of the complete leaf."]
+            #[inline(always)]
+            pub fn common_clear_unknown(&mut self) -> CommonClearUnknownW<'_, CommonControlSpec> {
+                CommonClearUnknownW::new(self, 2)
+            }
+            #[doc = "Bits 3:4"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(
+                &mut self,
+            ) -> MiddlePreservedUnknownW<'_, CommonControlSpec> {
+                MiddlePreservedUnknownW::new(self, 3)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set by the final RMW of the complete leaf."]
+            #[inline(always)]
+            pub fn common_enable_unknown(&mut self) -> CommonEnableUnknownW<'_, CommonControlSpec> {
+                CommonEnableUnknownW::new(self, 5)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, CommonControlSpec> {
+                HighPreservedUnknownW::new(self, 6)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete leaf clears bit 2, then sets bit 5 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`common_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`common_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CommonControlSpec;
+        impl crate::RegisterSpec for CommonControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`common_control::R`](R) reader structure"]
+        impl crate::Readable for CommonControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`common_control::W`](W) writer structure"]
+        impl crate::Writable for CommonControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BANK_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`bank_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bank_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bank_control`] module"]
+    #[doc(alias = "BANK_CONTROL")]
+    pub type BankControl = crate::Reg<bank_control::BankControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4."]
+    pub mod bank_control {
+        #[doc = "Register `BANK_CONTROL%s` reader"]
+        pub type R = crate::R<BankControlSpec>;
+        #[doc = "Register `BANK_CONTROL%s` writer"]
+        pub type W = crate::W<BankControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `FIRST_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared for all eight words in the first reverse traversal."]
+        pub type FirstClearUnknownR = crate::BitReader;
+        #[doc = "Field `FIRST_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared for all eight words in the first reverse traversal."]
+        pub type FirstClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SECOND_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the first RMW of each word in the second reverse traversal."]
+        pub type SecondClearUnknownR = crate::BitReader;
+        #[doc = "Field `SECOND_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the first RMW of each word in the second reverse traversal."]
+        pub type SecondClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `THIRD_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the third RMW of each word in the second reverse traversal."]
+        pub type ThirdClearUnknownR = crate::BitReader;
+        #[doc = "Field `THIRD_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the third RMW of each word in the second reverse traversal."]
+        pub type ThirdClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BANK_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set in the middle RMW of each word in the second reverse traversal."]
+        pub type BankEnableUnknownR = crate::BitReader;
+        #[doc = "Field `BANK_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set in the middle RMW of each word in the second reverse traversal."]
+        pub type BankEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 26, u32>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared for all eight words in the first reverse traversal."]
+            #[inline(always)]
+            pub fn first_clear_unknown(&self) -> FirstClearUnknownR {
+                FirstClearUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the first RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn second_clear_unknown(&self) -> SecondClearUnknownR {
+                SecondClearUnknownR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the third RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn third_clear_unknown(&self) -> ThirdClearUnknownR {
+                ThirdClearUnknownR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set in the middle RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn bank_enable_unknown(&self) -> BankEnableUnknownR {
+                BankEnableUnknownR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 6) & 0x03ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, BankControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared for all eight words in the first reverse traversal."]
+            #[inline(always)]
+            pub fn first_clear_unknown(&mut self) -> FirstClearUnknownW<'_, BankControlSpec> {
+                FirstClearUnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the first RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn second_clear_unknown(&mut self) -> SecondClearUnknownW<'_, BankControlSpec> {
+                SecondClearUnknownW::new(self, 3)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Cleared in the third RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn third_clear_unknown(&mut self) -> ThirdClearUnknownW<'_, BankControlSpec> {
+                ThirdClearUnknownW::new(self, 4)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-bit\\]. Set in the middle RMW of each word in the second reverse traversal."]
+            #[inline(always)]
+            pub fn bank_enable_unknown(&mut self) -> BankEnableUnknownW<'_, BankControlSpec> {
+                BankEnableUnknownW::new(self, 5)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, BankControlSpec> {
+                HighPreservedUnknownW::new(self, 6)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`bank_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bank_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BankControlSpec;
+        impl crate::RegisterSpec for BankControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bank_control::R`](R) reader structure"]
+        impl crate::Readable for BankControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bank_control::W`](W) writer structure"]
+        impl crate::Writable for BankControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init."]
 pub type WifiMacTxrxPrefix = crate::Periph<wifi_mac_txrx_prefix::RegisterBlock, 0x2010_40fc>;
 impl core::fmt::Debug for WifiMacTxrxPrefix {
@@ -13480,6 +13737,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
+    #[doc = "WIFI_MAC_ANTENNA_INIT"]
+    pub wifi_mac_antenna_init: WifiMacAntennaInit,
     #[doc = "WIFI_MAC_TXRX_PREFIX"]
     pub wifi_mac_txrx_prefix: WifiMacTxrxPrefix,
     #[doc = "WIFI_MAC_TXRX_CALLBACKS"]
@@ -13539,6 +13798,7 @@ impl Peripherals {
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
+            wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),
             wifi_mac_txrx_callbacks: WifiMacTxrxCallbacks::steal(),
             wifi_mac_txrx_suffix: WifiMacTxrxSuffix::steal(),

@@ -65,6 +65,7 @@ identities for every entry.
 | `BLOB_LIBPHY_PHY_DC_MEM_CLR` | Complete 0x1c-byte DC-memory-clear body from `phy_reg.o` |
 | `BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK` | Complete 0x20-byte `libphy.a[phy_init.o]` body |
 | `BLOB_LIBPHY_PHY_BB_INIT` | Complete 0x16a-byte `phy_bb_init` body and relocation graph |
+| `BLOB_LIBPP_HAL_ANTENNA_INIT` | Complete 0x5e-byte `libpp.a[hal_mac_tx.o]::hal_attenna_init` body; 34 ordered RMW edges across eight reverse-stride bank words and one common word |
 
 The public ESP-IDF ESP32-C5/C61 register headers are only cross-chip
 validation. They are not accepted as the sole basis for an S31 address or bit.

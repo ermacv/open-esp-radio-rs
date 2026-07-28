@@ -8,11 +8,11 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
-        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
-        MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
-        StaLinkRxPolicyHardware,
+        MacColdAntennaHardware, MacColdCryptoHardware, MacColdEnableHardware,
+        MacColdHandshakeHardware, MacColdLastRxBufferHardware, MacColdRxBufferHardware,
+        MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
+        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
+        MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -43,6 +43,7 @@ use open_esp_radio_pac_esp32s31::{
 enum Operation {
     Read(Register32),
     Write(Register32, u32),
+    InitializeMacAntenna,
     Fence,
 }
 
@@ -291,6 +292,12 @@ impl MacColdCryptoHardware for MockMmio {
         {
             self.write32(register, value);
         }
+    }
+}
+
+impl MacColdAntennaHardware for MockMmio {
+    fn initialize_mac_antenna(&mut self) {
+        self.operations.push(Operation::InitializeMacAntenna);
     }
 }
 
@@ -939,6 +946,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
                 Operation::Write(mac_init::R_807C, 0),
             ]
     }));
+    assert!(mmio.operations().contains(&Operation::InitializeMacAntenna));
     assert_eq!(
         platform.operations,
         [

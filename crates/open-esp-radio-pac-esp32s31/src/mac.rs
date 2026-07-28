@@ -421,7 +421,6 @@ pub mod init {
     pub const R_4114: Register32 = Register32::new(0x2010_4114);
     pub const R_4118: Register32 = Register32::new(0x2010_4118);
     pub const R_4120: Register32 = Register32::new(0x2010_4120);
-    pub const R_42B0: Register32 = Register32::new(0x2010_42b0);
     pub const R_42B8: Register32 = Register32::new(0x2010_42b8);
     pub const R_42FC: Register32 = Register32::new(0x2010_42fc);
     pub const R_4308: Register32 = Register32::new(0x2010_4308);
@@ -532,23 +531,10 @@ pub mod init {
     ];
 
     pub const HE_SCRATCH_COUNT: usize = 120;
-    pub const ANTENNA_CONTROL_COUNT: usize = 8;
 
     pub const fn he_scratch(index: usize) -> Option<Register32> {
         if index < HE_SCRATCH_COUNT {
             Some(Register32::new(0x2010_55f0 + index * 4))
-        } else {
-            None
-        }
-    }
-
-    pub const fn antenna_control(index: usize) -> Option<Register32> {
-        if index < ANTENNA_CONTROL_COUNT {
-            Some(if index == 0 {
-                mac::TX_Q0_LENGTH_CONTROL
-            } else {
-                Register32::new(0x2010_5510 - index * 0x7c)
-            })
         } else {
             None
         }

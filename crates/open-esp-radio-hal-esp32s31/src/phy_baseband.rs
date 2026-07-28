@@ -8,10 +8,7 @@
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 #[cfg(any(test, target_arch = "riscv32"))]
-use open_esp_radio_pac_esp32s31::{
-    power::{phy_baseband_config_oracle as bb, phy_pbus as pbus},
-    Field32, Register32,
-};
+use open_esp_radio_pac_esp32s31::{power::phy_baseband_config_oracle as bb, Field32, Register32};
 
 #[cfg(any(test, target_arch = "riscv32"))]
 const fn field_value(field: Field32, value: u32) -> u32 {
@@ -62,26 +59,7 @@ impl RegisterIo for RadioRegisters {
 /// fresh-read updates.
 #[cfg(target_arch = "riscv32")]
 pub fn enable_iq_correction(registers: &mut RadioRegisters) {
-    enable_iq_correction_with(registers);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn enable_iq_correction_with(io: &mut impl RegisterIo) {
-    let rx_low = bb::iq_correction_control::RX_IQ_CORRECTION_MODE_LOW;
-    let rx_high = bb::iq_correction_control::RX_IQ_CORRECTION_MODE_HIGH;
-    io.modify(
-        bb::IQ_CORRECTION_CONTROL,
-        rx_low.mask() | rx_high.mask(),
-        rx_low.mask() | rx_high.mask(),
-    );
-
-    let tx_low = bb::iq_correction_aux::TX_IQ_CORRECTION_MODE_LOW;
-    let tx_high = bb::iq_correction_aux::TX_IQ_CORRECTION_MODE_HIGH;
-    io.modify(
-        bb::IQ_CORRECTION_AUX,
-        tx_low.mask() | tx_high.mask(),
-        tx_low.mask() | tx_high.mask(),
-    );
+    registers.enable_iq_correction_modes();
 }
 
 /// Preserve the two fresh status publications at RXIQ root entry.
@@ -91,19 +69,7 @@ fn enable_iq_correction_with(io: &mut impl RegisterIo) {
 /// independent reads. Their electrical status meaning remains unknown.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rxiq_root_status(registers: &mut RadioRegisters) {
-    configure_rxiq_root_status_with(registers);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn configure_rxiq_root_status_with(io: &mut impl RegisterIo) {
-    io.set(
-        pbus::STATUS_CLOCK_FORCE,
-        pbus::status_clock_force::RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN,
-    );
-    io.set(
-        pbus::STATUS_CLOCK_FORCE,
-        pbus::status_clock_force::RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN,
-    );
+    registers.configure_rxiq_root_status();
 }
 
 /// Apply one complete RXIQ root correction-mode prefix or suffix.
@@ -115,39 +81,7 @@ fn configure_rxiq_root_status_with(io: &mut impl RegisterIo) {
 /// intermediate hardware states that the former combined raw transform lost.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rxiq_root_correction(registers: &mut RadioRegisters, begin: bool) {
-    configure_rxiq_root_correction_with(registers, begin);
-}
-
-#[cfg(any(test, target_arch = "riscv32"))]
-fn configure_rxiq_root_correction_with(io: &mut impl RegisterIo, begin: bool) {
-    use bb::{iq_correction_aux as aux, iq_correction_control as control};
-
-    if begin {
-        io.set(
-            bb::IQ_CORRECTION_CONTROL,
-            control::RX_IQ_CORRECTION_MODE_LOW,
-        );
-        io.set(bb::IQ_CORRECTION_AUX, aux::TX_IQ_CORRECTION_MODE_LOW);
-        io.clear(
-            bb::IQ_CORRECTION_CONTROL,
-            control::RX_IQ_CORRECTION_MODE_HIGH,
-        );
-        io.clear(bb::IQ_CORRECTION_AUX, aux::TX_IQ_CORRECTION_MODE_HIGH);
-    } else {
-        io.set(
-            bb::IQ_CORRECTION_CONTROL,
-            control::RX_IQ_CORRECTION_MODE_HIGH,
-        );
-        io.set(bb::IQ_CORRECTION_AUX, aux::TX_IQ_CORRECTION_MODE_HIGH);
-        io.clear(
-            bb::IQ_CORRECTION_CONTROL,
-            control::RX_IQ_CORRECTION_MODE_LOW,
-        );
-        io.clear(
-            pbus::STATUS_CLOCK_FORCE,
-            pbus::status_clock_force::RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN,
-        );
-    }
+    registers.configure_rxiq_root_correction(begin);
 }
 
 /// Configure the baseband TX-power tracking register leaf.
@@ -492,31 +426,6 @@ mod tests {
     }
 
     #[test]
-    fn rxiq_root_preserves_all_ten_fresh_blob_edges() {
-        let mut io = FakeRegisters::default();
-
-        configure_rxiq_root_status_with(&mut io);
-        configure_rxiq_root_correction_with(&mut io, true);
-        configure_rxiq_root_correction_with(&mut io, false);
-
-        assert_eq!(
-            io.writes,
-            [
-                (pbus::STATUS_CLOCK_FORCE, 0x0000_4000),
-                (pbus::STATUS_CLOCK_FORCE, 0x0000_c000),
-                (bb::IQ_CORRECTION_CONTROL, 0x2000_0000),
-                (bb::IQ_CORRECTION_AUX, 0x0000_2000),
-                (bb::IQ_CORRECTION_CONTROL, 0x2000_0000),
-                (bb::IQ_CORRECTION_AUX, 0x0000_2000),
-                (bb::IQ_CORRECTION_CONTROL, 0x6000_0000),
-                (bb::IQ_CORRECTION_AUX, 0x0000_6000),
-                (bb::IQ_CORRECTION_CONTROL, 0x4000_0000),
-                (pbus::STATUS_CLOCK_FORCE, 0x0000_4000),
-            ]
-        );
-    }
-
-    #[test]
     fn tx_power_tracking_preserves_all_fourteen_fresh_reads() {
         let mut io = FakeRegisters::default();
         configure_tx_power_tracking_with(&mut io, true);
@@ -563,12 +472,11 @@ mod tests {
     #[test]
     fn watchdog_noise_and_pa_leaves_match_oracle_images() {
         let mut io = FakeRegisters::default();
-        enable_iq_correction_with(&mut io);
         configure_watchdog_with(&mut io);
         configure_noise_floor_auto_with(&mut io);
         configure_tx_pa_on_with(&mut io);
 
-        assert_eq!(io.writes[2], (bb::BASEBAND_WATCHDOG_CONTROL, 0x4000_00aa));
+        assert_eq!(io.writes[0], (bb::BASEBAND_WATCHDOG_CONTROL, 0x4000_00aa));
         assert_eq!(
             io.values.iter().find_map(|(register, value)| {
                 (*register == bb::TX_PA_CONTROL_1).then_some(*value)

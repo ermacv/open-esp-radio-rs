@@ -47,6 +47,59 @@ const fn txdc_power_detector_images(table: u32, control: u32) -> (u8, u32, u32, 
 }
 
 impl RadioRegisters {
+    /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
+    ///
+    /// Complete rev0 ROM `phy_iq_corr_enable` at `0x2f82_7d8c` sets both
+    /// recovered mode bits in each word while preserving all coefficients.
+    pub fn enable_iq_correction_modes(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.iq_correction_control().modify(|_, w| {
+            w.rx_iq_correction_mode_low()
+                .set_bit()
+                .rx_iq_correction_mode_high()
+                .set_bit()
+        });
+        bb.iq_correction_aux().modify(|_, w| {
+            w.tx_iq_correction_mode_low()
+                .set_bit()
+                .tx_iq_correction_mode_high()
+                .set_bit()
+        });
+    }
+
+    /// Publish both RXIQ root status bits through independent fresh RMWs.
+    pub fn configure_rxiq_root_status(&mut self) {
+        let status = self.peripherals.phy_pbus.status_clock_force();
+        status.modify(|_, w| w.rx_clock_low_or_rxiq_status_first_unknown().set_bit());
+        status.modify(|_, w| w.rx_clock_high_or_rxiq_status_second_unknown().set_bit());
+    }
+
+    /// Apply the complete four-edge RXIQ correction prefix or suffix.
+    pub fn configure_rxiq_root_correction(&mut self, begin: bool) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        if begin {
+            bb.iq_correction_control()
+                .modify(|_, w| w.rx_iq_correction_mode_low().set_bit());
+            bb.iq_correction_aux()
+                .modify(|_, w| w.tx_iq_correction_mode_low().set_bit());
+            bb.iq_correction_control()
+                .modify(|_, w| w.rx_iq_correction_mode_high().clear_bit());
+            bb.iq_correction_aux()
+                .modify(|_, w| w.tx_iq_correction_mode_high().clear_bit());
+        } else {
+            bb.iq_correction_control()
+                .modify(|_, w| w.rx_iq_correction_mode_high().set_bit());
+            bb.iq_correction_aux()
+                .modify(|_, w| w.tx_iq_correction_mode_high().set_bit());
+            bb.iq_correction_control()
+                .modify(|_, w| w.rx_iq_correction_mode_low().clear_bit());
+            self.peripherals
+                .phy_pbus
+                .status_clock_force()
+                .modify(|_, w| w.rx_clock_high_or_rxiq_status_second_unknown().clear_bit());
+        }
+    }
+
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
     pub fn initialize_power_detector_registers(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;

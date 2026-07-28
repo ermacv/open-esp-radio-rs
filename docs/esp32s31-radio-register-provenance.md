@@ -647,6 +647,12 @@ bindings now carry the unique `&mut RadioRegisters` borrow. The raw
 `0x2010_0438`/`0x2010_0c0c` constants and upper-layer coefficient transforms
 are deleted and rejected by the source-only audit.
 
+The common register-initialization enable leaf and complete RXIQ root
+status/prefix/suffix sequence now use these same generated objects directly.
+The two PBus status publications and all eight correction-mode updates remain
+separate fresh-read edges exactly as in the complete pinned body; the former
+HAL mask model and its duplicated status-register identity are removed.
+
 ## Calibration-tone ownership
 
 SVD v2.8 describes the complete tone cluster used by PWDET, TX-power, TX-DC,

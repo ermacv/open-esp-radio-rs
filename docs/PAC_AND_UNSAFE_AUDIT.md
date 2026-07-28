@@ -241,5 +241,11 @@ are serialized inside `RadioRegisters`. The instruction-proven ordering is
 visible in one PAC module, and HAL no longer imports field masks or generic
 register descriptors.
 
+The IQ-correction enable leaf and complete ten-edge RXIQ root
+status/prefix/suffix sequence are native PAC operations. Each source-proven
+fresh RMW remains separate, including the final PBus status clear; coefficient
+fields are preserved by generated field writers rather than a full-word mask
+model.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

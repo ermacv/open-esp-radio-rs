@@ -8,6 +8,9 @@
 use open_esp_radio_pac_esp32s31::{mac::init as registers, Register32};
 
 pub use crate::cold_antenna::MacColdAntennaHardware;
+pub use crate::cold_coex::{
+    MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdCoexHardware, MacColdCoexPti,
+};
 pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_hal_tail::{MacColdHalTailHardware, MacSlowClockCalibration};
@@ -125,14 +128,6 @@ fn initialize_he_receive<M: Mmio>(mmio: &mut M) {
     }
 }
 
-/// Receive-relevant default COEX PTI setup at the tail of `hal_init`.
-fn initialize_coex<M: Mmio>(mmio: &mut M) {
-    // `hal_coex_pti_init`, `hal_coex_enable_default_pti(1)` and the cold
-    // default returned by the OSI PTI query: RX-active/ACK zero, Wi-Fi one.
-    modify(mmio, registers::R_4DDC, 0x0000_003f, 0x0000_0031);
-    modify(mmio, registers::R_42FC, 0x0000_00ff, 0);
-}
-
 /// Establish the reset-state MAC register configuration and accept all RX
 /// frame classes.
 ///
@@ -146,6 +141,7 @@ fn initialize_coex<M: Mmio>(mmio: &mut M) {
 pub fn initialize_promiscuous_receive<
     M: Mmio
         + MacColdAntennaHardware
+        + MacColdCoexHardware
         + MacColdCryptoHardware
         + MacColdEnableHardware
         + MacColdHalTailHardware
@@ -157,7 +153,7 @@ pub fn initialize_promiscuous_receive<
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSnifferHardware,
-    P: MacClockControl + MacDelayEntropy + MacSlowClockCalibrationSource,
+    P: MacClockControl + MacCoexPtiSource + MacDelayEntropy + MacSlowClockCalibrationSource,
 >(
     platform: &mut P,
     mmio: &mut M,
@@ -211,7 +207,11 @@ pub fn initialize_promiscuous_receive<
     let slow_clock_calibration =
         MacSlowClockCalibration::from_osi_value(platform.mac_slow_clock_calibration());
     mmio.initialize_hal_tail(MAC_COLD_RX_INTERRUPT_MASK, slow_clock_calibration);
-    initialize_coex(mmio);
+
+    // Complete seventeen-edge COEX/PTI tail. Query values in the blob's exact
+    // callback order before handing the finite program to its PAC owner.
+    let coex_pti = MacColdCoexPti::query(platform);
+    mmio.initialize_cold_coex(coex_pti);
 
     // Complete `hal_enable_mac`: clear the four common disable gates, then
     // publish the interrupt mask. This does not route the peripheral interrupt

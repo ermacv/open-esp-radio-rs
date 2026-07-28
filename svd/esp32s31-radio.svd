@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.16</version>
+  <version>3.17</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1738,6 +1738,61 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_COEX_INIT</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-fields-and-default-values]. Complete COEX/PTI tail of hal_init and complete setter leaves. PTI values remain platform-supplied because the coexistence table may be changed at runtime.</description>
+      <baseAddress>0x201042fc</baseAddress>
+      <registers>
+        <register>
+          <name>RX_PTI</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact-fields]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>RX_ACTIVE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact-argument-field]. Complete hal_init passes zero to hal_set_rx_active_pti.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>RX_ACK</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-callback-field]. PTI returned for event three and published by hal_set_rx_ack_pti.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>24</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>OFDMA_TB_AND_BEAMFORMING</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-nibble-fields]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters.</description>
+          <addressOffset>0xad8</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TB_4</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_6</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_5</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_3</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_2</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_1</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_0</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>BEAMFORMING_0</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BEAMFORMING</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-fields]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs.</description>
+          <addressOffset>0xadc</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BEAMFORMING_2</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>BEAMFORMING_1</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MULTI_TARGET_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MULTI_TARGET_0</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact-wide-setter-field]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field.</description><bitOffset>12</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>DEFAULT_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-fields]. Common COEX enable/default PTI word updated by three separate setter RMWs.</description>
+          <addressOffset>0xae0</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>WIFI_DEFAULT_PTI</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact-callback-field]. PTI returned for event fifteen.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>DEFAULT_PTI_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Set by hal_coex_enable_default_pti(1).</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>COEX_PTI_INIT_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact-semantics-from-symbol]. Set by complete hal_coex_pti_init.</description><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>26</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_ANTENNA_INIT</name>
       <description>SOURCE[BLOB_LIBPP_HAL_ANTENNA_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_attenna_init transaction. The misspelled vendor symbol first visits eight reverse-stride queue/vector words, then updates one common word.</description>
       <baseAddress>0x201042b0</baseAddress>
@@ -2370,6 +2425,8 @@
       <source id="BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct suffix offsets 0xee..0x16e after the hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls. It proves nine fresh-read RMW edges ending with RX_CONTROL walker-disable bit 31 clear.</source>
       <source id="BLOB_LIBPP_HAL_INIT_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init offsets 0x56..0x90 and complete hal_mac_rx_set_policy body, size 0xd2. For each of four queues hal_init performs four direct fresh-read RMWs at 0x201040d8 + 4*q, then calls hal_mac_rx_set_policy(q,0,0,0). Queues 0..2 each add five leaf RMWs across filter, BSSID-high and interface-address-high; queue 3 is rejected by the leaf after its four direct RMWs. The complete cold transaction is therefore 31 distinct RMW edges.</source>
       <source id="BLOB_LIBPP_HAL_INIT_TAIL">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init offsets 0xcc..0x12a, complete hal_mac_rx.o hal_mac_set_rxbuf_reload_use_hw_beacon_enable size 0x14, and complete hal_tsf.o hal_timer_update_by_rtc size 0x38. This bounded tail stores interrupt mask 0x19a879e0, repeats the bit-28 set at 0x20104c8c, performs two separate byte RMWs at 0x20104098, sets RX_CONTROL bit 27, then enables RTC timer update and publishes an 18-bit slow-clock calibration. g_wifi_osi_funcs offset 0x148 is independently pinned as _slowclk_cal_get by esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, esp-wifi-sys-esp32s31/src/include.rs sha256 de6ecd8853cc1925389f89e768a8a865ad58db6025f94a63584096eb8ad5f1dc and c/headers/esp32s31/esp_private/wifi_os_adapter.h sha256 08fb73f76da7e6800c42dbff2fb724dff5205e1c8262e969da0f391be21f1eae. esp-hal branch esp32s31-async-platform commit 07de55443721de6fa32e7fb721f0fa7996e604d3, esp-radio/src/wifi/internal.rs sha256 252cfe7cfdcdb104a91596fcbc173af6e07432b907480df746d0599463c6cdc7 and esp-radio/src/wifi/os_adapter/mod.rs sha256 cf8439e907161228875d852eb1e4cfa45628b62532bfbe4bc8adcebd8c6112ed prove that S31 installs this callback and currently returns zero with an explicit TODO rather than reading extra peripheral MMIO.</source>
+      <source id="BLOB_LIBPP_HAL_INIT_COEX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init offsets 0x12e..0x190; complete hal_coex.o hal_coex_pti_init size 0x12, hal_set_rx_active_pti size 0x14, hal_set_rx_ack_pti size 0x1a, hal_set_wifi_default_pti size 0x14, hal_set_ofdma_sequence_pti size 0x13a, hal_set_tb_pti size 0xb4, hal_set_beamf_pti size 0x34 and hal_set_beamf_mt_pti size 0x32; complete hal_mac_ctl.o hal_coex_enable_default_pti size 0x18. These bodies prove seventeen separate cold RMW edges. The OSI callback at offset 0x1a8 is _coex_pti_get in the independently pinned S31 esp-wifi-sys layout. The esp-hal no-coex stub at commit 07de55443721de6fa32e7fb721f0fa7996e604d3 returns zero without initializing its output pointer. hal_init preinitializes its ordinary RX outputs, but hal_set_ofdma_sequence_pti does not initialize twelve stack outputs before reading them; reproducing that disabled-feature path would therefore publish indeterminate data and is deliberately rejected in favor of an explicit platform PTI source.</source>
+      <source id="BLOB_LIBCOEX_PTI_TABLE">_oracles/libcoexist.a sha256 4b00fc4258ac3a7bef3ecd6c0f402d38afde9aafe50ceaf07951406cff576276; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values.</source>
       <source id="BLOB_LIBPP_HAL_ANTENNA_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_attenna_init body, size 0x5e. The symbol spelling is preserved from the archive. Its first reverse traversal clears bit 2 at eight words from 0x20105510 down to 0x201051ac with stride 0x7c. Its second reverse traversal clears bit 3, sets bit 5 and clears bit 4 through three separate fresh-read RMWs per word. It finishes with separate bit-2-clear and bit-5-set RMWs at 0x201042b0. Complete hal_mac_rate_autoack_init in the same object is independently verified as a two-byte ret-only no-op.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>

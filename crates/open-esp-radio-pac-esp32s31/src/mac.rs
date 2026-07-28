@@ -422,7 +422,6 @@ pub mod init {
     pub const R_4118: Register32 = Register32::new(0x2010_4118);
     pub const R_4120: Register32 = Register32::new(0x2010_4120);
     pub const R_42B8: Register32 = Register32::new(0x2010_42b8);
-    pub const R_42FC: Register32 = Register32::new(0x2010_42fc);
     pub const R_4308: Register32 = Register32::new(0x2010_4308);
     pub const R_4400: Register32 = Register32::new(0x2010_4400);
     pub const R_4404: Register32 = Register32::new(0x2010_4404);
@@ -450,7 +449,6 @@ pub mod init {
     pub const R_4CA0: Register32 = Register32::new(0x2010_4ca0);
     pub const R_4CA8: Register32 = Register32::new(0x2010_4ca8);
     pub const R_4CC0: Register32 = Register32::new(0x2010_4cc0);
-    pub const R_4DDC: Register32 = Register32::new(0x2010_4ddc);
     pub const R_4DE4: Register32 = Register32::new(0x2010_4de4);
     pub const R_4E04: Register32 = Register32::new(0x2010_4e04);
     pub const R_8060: Register32 = Register32::new(0x2010_8060);

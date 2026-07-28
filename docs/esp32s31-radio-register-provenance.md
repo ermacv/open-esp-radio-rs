@@ -983,6 +983,26 @@ calibration through `MacSlowClockCalibrationSource`, so a future real clock
 calibration remains platform-owned and does not reintroduce the vendor C ABI
 or raw non-radio MMIO into the MAC crate.
 
+Complete `hal_init` offsets `0x12e..0x190` finish with COEX/PTI setup. Together
+with the complete setter leaves, this is seventeen distinct RMW edges at
+`0x201042fc` and `0x20104dd4..0x20104ddc`; the former Rust implementation
+combined the ordinary defaults into two edges and omitted all twelve OFDMA
+and beamforming edges.
+
+The callback at `g_wifi_osi_funcs` offset `0x1a8` is `_coex_pti_get`. Complete
+`libcoexist.a::coex_core_pti_get` copies `coex_pti_tab[event]`; its complete
+48-byte cold table gives event 1 = 5, event 3 = 7, event 10 = 3 and event 15 =
+1. These are exactly the four events queried by the complete MAC tail.
+
+There is an important disabled-feature oracle defect: the pinned esp-hal
+no-COEX stub returns zero without writing its output pointer.
+`hal_set_ofdma_sequence_pti` does not initialize its twelve stack output bytes
+before reading them, so following that path would publish indeterminate PTI
+values. SVD v3.17 records the intended table source and the complete setter
+geometry. The MAC queries an explicit `MacCoexPtiSource` in exact blob order;
+the current integration supplies the pinned cold-table values without linking
+the vendor coexistence runtime.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

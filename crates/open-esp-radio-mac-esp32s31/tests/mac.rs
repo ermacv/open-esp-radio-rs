@@ -8,12 +8,13 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        MacColdAntennaHardware, MacColdCryptoHardware, MacColdEnableHardware,
-        MacColdHalTailHardware, MacColdHandshakeHardware, MacColdLastRxBufferHardware,
-        MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome,
-        MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware,
-        MacLowRateHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
-        MacSnifferHardware, StaLinkRxPolicyHardware,
+        MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware, MacColdCoexHardware,
+        MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware, MacColdHalTailHardware,
+        MacColdHandshakeHardware, MacColdLastRxBufferHardware, MacColdRxBufferHardware,
+        MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
+        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
+        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware,
+        StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -46,6 +47,7 @@ enum Operation {
     Write(Register32, u32),
     InitializeMacAntenna,
     InitializeHalTail(u32, MacSlowClockCalibration),
+    InitializeColdCoex(MacColdCoexPti),
     Fence,
 }
 
@@ -313,6 +315,12 @@ impl MacColdHalTailHardware for MockMmio {
             event_mask,
             slow_clock_calibration,
         ));
+    }
+}
+
+impl MacColdCoexHardware for MockMmio {
+    fn initialize_cold_coex(&mut self, pti: MacColdCoexPti) {
+        self.operations.push(Operation::InitializeColdCoex(pti));
     }
 }
 
@@ -630,6 +638,7 @@ enum PlatformOperation {
     SetWifiMacReset(bool),
     RequestMacDelayRandom,
     RequestSlowClockCalibration,
+    RequestCoexPti(MacCoexEvent),
 }
 
 #[derive(Default)]
@@ -671,6 +680,19 @@ impl MacSlowClockCalibrationSource for MockPlatform {
         self.operations
             .push(PlatformOperation::RequestSlowClockCalibration);
         0
+    }
+}
+
+impl MacCoexPtiSource for MockPlatform {
+    fn mac_coex_pti(&mut self, event: MacCoexEvent) -> MacCoexPti {
+        self.operations
+            .push(PlatformOperation::RequestCoexPti(event));
+        MacCoexPti::from_osi_value(match event {
+            MacCoexEvent::Event1 => 5,
+            MacCoexEvent::Event3 => 7,
+            MacCoexEvent::Event10 => 3,
+            MacCoexEvent::Event15 => 1,
+        })
     }
 }
 
@@ -988,6 +1010,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         0x19a8_79e0,
         MacSlowClockCalibration::from_osi_value(0),
     )));
+    assert!(mmio
+        .operations()
+        .iter()
+        .any(|operation| matches!(operation, Operation::InitializeColdCoex(_))));
     assert_eq!(
         platform.operations,
         [
@@ -998,6 +1024,20 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             PlatformOperation::SetWifiMacReset(false),
             PlatformOperation::RequestMacDelayRandom,
             PlatformOperation::RequestSlowClockCalibration,
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event15),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
+            PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
         ]
     );
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));

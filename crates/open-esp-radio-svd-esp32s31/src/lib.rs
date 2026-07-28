@@ -10132,6 +10132,430 @@ pub mod wifi_mac_tx_completion {
         impl crate::Readable for AuxCSpec {}
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields-and-default-values\\]. Complete COEX/PTI tail of hal_init and complete setter leaves. PTI values remain platform-supplied because the coexistence table may be changed at runtime."]
+pub type WifiMacCoexInit = crate::Periph<wifi_mac_coex_init::RegisterBlock, 0x2010_42fc>;
+impl core::fmt::Debug for WifiMacCoexInit {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacCoexInit").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields-and-default-values\\]. Complete COEX/PTI tail of hal_init and complete setter leaves. PTI values remain platform-supplied because the coexistence table may be changed at runtime."]
+pub mod wifi_mac_coex_init {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        rx_pti: RxPti,
+        _reserved1: [u8; 0x0ad4],
+        ofdma_tb_and_beamforming: OfdmaTbAndBeamforming,
+        beamforming: Beamforming,
+        default_control: DefaultControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs."]
+        #[inline(always)]
+        pub const fn rx_pti(&self) -> &RxPti {
+            &self.rx_pti
+        }
+        #[doc = "0xad8 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-nibble-fields\\]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters."]
+        #[inline(always)]
+        pub const fn ofdma_tb_and_beamforming(&self) -> &OfdmaTbAndBeamforming {
+            &self.ofdma_tb_and_beamforming
+        }
+        #[doc = "0xadc - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs."]
+        #[inline(always)]
+        pub const fn beamforming(&self) -> &Beamforming {
+            &self.beamforming
+        }
+        #[doc = "0xae0 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Common COEX enable/default PTI word updated by three separate setter RMWs."]
+        #[inline(always)]
+        pub const fn default_control(&self) -> &DefaultControl {
+            &self.default_control
+        }
+    }
+    #[doc = "RX_PTI (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_pti`] module"]
+    #[doc(alias = "RX_PTI")]
+    pub type RxPti = crate::Reg<rx_pti::RxPtiSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs."]
+    pub mod rx_pti {
+        #[doc = "Register `RX_PTI` reader"]
+        pub type R = crate::R<RxPtiSpec>;
+        #[doc = "Register `RX_PTI` writer"]
+        pub type W = crate::W<RxPtiSpec>;
+        #[doc = "Field `RX_ACTIVE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-argument-field\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
+        pub type RxActiveR = crate::FieldReader;
+        #[doc = "Field `RX_ACTIVE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-argument-field\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
+        pub type RxActiveW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `RX_ACK` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
+        pub type RxAckR = crate::FieldReader;
+        #[doc = "Field `RX_ACK` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
+        pub type RxAckW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        impl R {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-argument-field\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
+            #[inline(always)]
+            pub fn rx_active(&self) -> RxActiveR {
+                RxActiveR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
+            #[inline(always)]
+            pub fn rx_ack(&self) -> RxAckR {
+                RxAckR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-argument-field\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
+            #[inline(always)]
+            pub fn rx_active(&mut self) -> RxActiveW<'_, RxPtiSpec> {
+                RxActiveW::new(self, 0)
+            }
+            #[doc = "Bits 4:7 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
+            #[inline(always)]
+            pub fn rx_ack(&mut self) -> RxAckW<'_, RxPtiSpec> {
+                RxAckW::new(self, 4)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, RxPtiSpec> {
+                HighPreservedUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxPtiSpec;
+        impl crate::RegisterSpec for RxPtiSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_pti::R`](R) reader structure"]
+        impl crate::Readable for RxPtiSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_pti::W`](W) writer structure"]
+        impl crate::Writable for RxPtiSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "OFDMA_TB_AND_BEAMFORMING (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-nibble-fields\\]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters.\n\nYou can [`read`](crate::Reg::read) this register and get [`ofdma_tb_and_beamforming::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ofdma_tb_and_beamforming::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ofdma_tb_and_beamforming`] module"]
+    #[doc(alias = "OFDMA_TB_AND_BEAMFORMING")]
+    pub type OfdmaTbAndBeamforming =
+        crate::Reg<ofdma_tb_and_beamforming::OfdmaTbAndBeamformingSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-nibble-fields\\]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters."]
+    pub mod ofdma_tb_and_beamforming {
+        #[doc = "Register `OFDMA_TB_AND_BEAMFORMING` reader"]
+        pub type R = crate::R<OfdmaTbAndBeamformingSpec>;
+        #[doc = "Register `OFDMA_TB_AND_BEAMFORMING` writer"]
+        pub type W = crate::W<OfdmaTbAndBeamformingSpec>;
+        #[doc = "Field `TB_4` reader - "]
+        pub type Tb4R = crate::FieldReader;
+        #[doc = "Field `TB_4` writer - "]
+        pub type Tb4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_6` reader - "]
+        pub type Tb6R = crate::FieldReader;
+        #[doc = "Field `TB_6` writer - "]
+        pub type Tb6W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_5` reader - "]
+        pub type Tb5R = crate::FieldReader;
+        #[doc = "Field `TB_5` writer - "]
+        pub type Tb5W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_3` reader - "]
+        pub type Tb3R = crate::FieldReader;
+        #[doc = "Field `TB_3` writer - "]
+        pub type Tb3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_2` reader - "]
+        pub type Tb2R = crate::FieldReader;
+        #[doc = "Field `TB_2` writer - "]
+        pub type Tb2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_1` reader - "]
+        pub type Tb1R = crate::FieldReader;
+        #[doc = "Field `TB_1` writer - "]
+        pub type Tb1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TB_0` reader - "]
+        pub type Tb0R = crate::FieldReader;
+        #[doc = "Field `TB_0` writer - "]
+        pub type Tb0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BEAMFORMING_0` reader - "]
+        pub type Beamforming0R = crate::FieldReader;
+        #[doc = "Field `BEAMFORMING_0` writer - "]
+        pub type Beamforming0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn tb_4(&self) -> Tb4R {
+                Tb4R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn tb_6(&self) -> Tb6R {
+                Tb6R::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn tb_5(&self) -> Tb5R {
+                Tb5R::new(((self.bits >> 8) & 0x0f) as u8)
+            }
+            #[doc = "Bits 12:15"]
+            #[inline(always)]
+            pub fn tb_3(&self) -> Tb3R {
+                Tb3R::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tb_2(&self) -> Tb2R {
+                Tb2R::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn tb_1(&self) -> Tb1R {
+                Tb1R::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn tb_0(&self) -> Tb0R {
+                Tb0R::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn beamforming_0(&self) -> Beamforming0R {
+                Beamforming0R::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn tb_4(&mut self) -> Tb4W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb4W::new(self, 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn tb_6(&mut self) -> Tb6W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb6W::new(self, 4)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn tb_5(&mut self) -> Tb5W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb5W::new(self, 8)
+            }
+            #[doc = "Bits 12:15"]
+            #[inline(always)]
+            pub fn tb_3(&mut self) -> Tb3W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb3W::new(self, 12)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tb_2(&mut self) -> Tb2W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb2W::new(self, 16)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn tb_1(&mut self) -> Tb1W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb1W::new(self, 20)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn tb_0(&mut self) -> Tb0W<'_, OfdmaTbAndBeamformingSpec> {
+                Tb0W::new(self, 24)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn beamforming_0(&mut self) -> Beamforming0W<'_, OfdmaTbAndBeamformingSpec> {
+                Beamforming0W::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-nibble-fields\\]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters.\n\nYou can [`read`](crate::Reg::read) this register and get [`ofdma_tb_and_beamforming::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ofdma_tb_and_beamforming::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct OfdmaTbAndBeamformingSpec;
+        impl crate::RegisterSpec for OfdmaTbAndBeamformingSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ofdma_tb_and_beamforming::R`](R) reader structure"]
+        impl crate::Readable for OfdmaTbAndBeamformingSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ofdma_tb_and_beamforming::W`](W) writer structure"]
+        impl crate::Writable for OfdmaTbAndBeamformingSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BEAMFORMING (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`beamforming::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`beamforming::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@beamforming`] module"]
+    #[doc(alias = "BEAMFORMING")]
+    pub type Beamforming = crate::Reg<beamforming::BeamformingSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs."]
+    pub mod beamforming {
+        #[doc = "Register `BEAMFORMING` reader"]
+        pub type R = crate::R<BeamformingSpec>;
+        #[doc = "Register `BEAMFORMING` writer"]
+        pub type W = crate::W<BeamformingSpec>;
+        #[doc = "Field `BEAMFORMING_2` reader - "]
+        pub type Beamforming2R = crate::FieldReader;
+        #[doc = "Field `BEAMFORMING_2` writer - "]
+        pub type Beamforming2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BEAMFORMING_1` reader - "]
+        pub type Beamforming1R = crate::FieldReader;
+        #[doc = "Field `BEAMFORMING_1` writer - "]
+        pub type Beamforming1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `MULTI_TARGET_1` reader - "]
+        pub type MultiTarget1R = crate::FieldReader;
+        #[doc = "Field `MULTI_TARGET_1` writer - "]
+        pub type MultiTarget1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `MULTI_TARGET_0` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-wide-setter-field\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
+        pub type MultiTarget0R = crate::FieldReader<u16>;
+        #[doc = "Field `MULTI_TARGET_0` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-wide-setter-field\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
+        pub type MultiTarget0W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn beamforming_2(&self) -> Beamforming2R {
+                Beamforming2R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn beamforming_1(&self) -> Beamforming1R {
+                Beamforming1R::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn multi_target_1(&self) -> MultiTarget1R {
+                MultiTarget1R::new(((self.bits >> 8) & 0x0f) as u8)
+            }
+            #[doc = "Bits 12:21 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-wide-setter-field\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
+            #[inline(always)]
+            pub fn multi_target_0(&self) -> MultiTarget0R {
+                MultiTarget0R::new(((self.bits >> 12) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn beamforming_2(&mut self) -> Beamforming2W<'_, BeamformingSpec> {
+                Beamforming2W::new(self, 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn beamforming_1(&mut self) -> Beamforming1W<'_, BeamformingSpec> {
+                Beamforming1W::new(self, 4)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn multi_target_1(&mut self) -> MultiTarget1W<'_, BeamformingSpec> {
+                MultiTarget1W::new(self, 8)
+            }
+            #[doc = "Bits 12:21 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-wide-setter-field\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
+            #[inline(always)]
+            pub fn multi_target_0(&mut self) -> MultiTarget0W<'_, BeamformingSpec> {
+                MultiTarget0W::new(self, 12)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, BeamformingSpec> {
+                HighPreservedUnknownW::new(self, 22)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`beamforming::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`beamforming::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BeamformingSpec;
+        impl crate::RegisterSpec for BeamformingSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`beamforming::R`](R) reader structure"]
+        impl crate::Readable for BeamformingSpec {}
+        #[doc = "`write(|w| ..)` method takes [`beamforming::W`](W) writer structure"]
+        impl crate::Writable for BeamformingSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DEFAULT_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Common COEX enable/default PTI word updated by three separate setter RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@default_control`] module"]
+    #[doc(alias = "DEFAULT_CONTROL")]
+    pub type DefaultControl = crate::Reg<default_control::DefaultControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Common COEX enable/default PTI word updated by three separate setter RMWs."]
+    pub mod default_control {
+        #[doc = "Register `DEFAULT_CONTROL` reader"]
+        pub type R = crate::R<DefaultControlSpec>;
+        #[doc = "Register `DEFAULT_CONTROL` writer"]
+        pub type W = crate::W<DefaultControlSpec>;
+        #[doc = "Field `WIFI_DEFAULT_PTI` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event fifteen."]
+        pub type WifiDefaultPtiR = crate::FieldReader;
+        #[doc = "Field `WIFI_DEFAULT_PTI` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event fifteen."]
+        pub type WifiDefaultPtiW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `DEFAULT_PTI_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by hal_coex_enable_default_pti(1)."]
+        pub type DefaultPtiEnableR = crate::BitReader;
+        #[doc = "Field `DEFAULT_PTI_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by hal_coex_enable_default_pti(1)."]
+        pub type DefaultPtiEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COEX_PTI_INIT_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete hal_coex_pti_init."]
+        pub type CoexPtiInitUnknownR = crate::BitReader;
+        #[doc = "Field `COEX_PTI_INIT_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete hal_coex_pti_init."]
+        pub type CoexPtiInitUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 26, u32>;
+        impl R {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event fifteen."]
+            #[inline(always)]
+            pub fn wifi_default_pti(&self) -> WifiDefaultPtiR {
+                WifiDefaultPtiR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by hal_coex_enable_default_pti(1)."]
+            #[inline(always)]
+            pub fn default_pti_enable(&self) -> DefaultPtiEnableR {
+                DefaultPtiEnableR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete hal_coex_pti_init."]
+            #[inline(always)]
+            pub fn coex_pti_init_unknown(&self) -> CoexPtiInitUnknownR {
+                CoexPtiInitUnknownR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 6) & 0x03ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-callback-field\\]. PTI returned for event fifteen."]
+            #[inline(always)]
+            pub fn wifi_default_pti(&mut self) -> WifiDefaultPtiW<'_, DefaultControlSpec> {
+                WifiDefaultPtiW::new(self, 0)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by hal_coex_enable_default_pti(1)."]
+            #[inline(always)]
+            pub fn default_pti_enable(&mut self) -> DefaultPtiEnableW<'_, DefaultControlSpec> {
+                DefaultPtiEnableW::new(self, 4)
+            }
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Set by complete hal_coex_pti_init."]
+            #[inline(always)]
+            pub fn coex_pti_init_unknown(&mut self) -> CoexPtiInitUnknownW<'_, DefaultControlSpec> {
+                CoexPtiInitUnknownW::new(self, 5)
+            }
+            #[doc = "Bits 6:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, DefaultControlSpec> {
+                HighPreservedUnknownW::new(self, 6)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact-fields\\]. Common COEX enable/default PTI word updated by three separate setter RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DefaultControlSpec;
+        impl crate::RegisterSpec for DefaultControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`default_control::R`](R) reader structure"]
+        impl crate::Readable for DefaultControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`default_control::W`](W) writer structure"]
+        impl crate::Writable for DefaultControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ANTENNA_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_attenna_init transaction. The misspelled vendor symbol first visits eight reverse-stride queue/vector words, then updates one common word."]
 pub type WifiMacAntennaInit = crate::Periph<wifi_mac_antenna_init::RegisterBlock, 0x2010_42b0>;
 impl core::fmt::Debug for WifiMacAntennaInit {
@@ -13937,6 +14361,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
+    #[doc = "WIFI_MAC_COEX_INIT"]
+    pub wifi_mac_coex_init: WifiMacCoexInit,
     #[doc = "WIFI_MAC_ANTENNA_INIT"]
     pub wifi_mac_antenna_init: WifiMacAntennaInit,
     #[doc = "WIFI_MAC_RTC_TIMER_UPDATE"]
@@ -14000,6 +14426,7 @@ impl Peripherals {
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
+            wifi_mac_coex_init: WifiMacCoexInit::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
             wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),

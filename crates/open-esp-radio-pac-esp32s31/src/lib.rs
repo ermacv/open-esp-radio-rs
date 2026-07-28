@@ -10,6 +10,7 @@ mod iq_estimator;
 pub mod mac;
 mod mac_antenna_init;
 mod mac_block_ack;
+mod mac_coex_init;
 mod mac_cold_start;
 mod mac_crypto;
 mod mac_enable;
@@ -569,6 +570,21 @@ mod tests {
             );
         }
         assert_eq!(init.bank_control(7).as_ptr() as usize, 0x2010_5510);
+    }
+
+    #[test]
+    fn generated_mac_coex_init_matches_complete_setter_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let coex = &registers.peripherals.wifi_mac_coex_init;
+        assert_eq!(coex.rx_pti().as_ptr() as usize, 0x2010_42fc);
+        assert_eq!(
+            coex.ofdma_tb_and_beamforming().as_ptr() as usize,
+            0x2010_4dd4
+        );
+        assert_eq!(coex.beamforming().as_ptr() as usize, 0x2010_4dd8);
+        assert_eq!(coex.default_control().as_ptr() as usize, 0x2010_4ddc);
     }
 
     #[test]

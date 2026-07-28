@@ -10,6 +10,7 @@
 extern crate std;
 
 mod cold_antenna;
+mod cold_coex;
 mod cold_crypto;
 mod cold_enable;
 mod cold_hal_tail;

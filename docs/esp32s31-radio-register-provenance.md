@@ -689,6 +689,12 @@ Platform-only LP-AON mode selection remains in the official PAC adapter and
 is sequenced by the thin HAL wrapper. The source audit rejects any return of
 `Register32`, `Field32` or compatibility read/write methods to this module.
 
+`PHY_RX_DCO_ORACLE.CONTROL` has independently moved to the same native API.
+The PAC samples the saved field, performs the complete source's second fresh
+read while clearing it, and restores a caller-carried encoded image through
+one generated-field RMW. Pure tests pin the bits-23:22 encode/decode boundary;
+the HAL no longer imports compatibility register or field types.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

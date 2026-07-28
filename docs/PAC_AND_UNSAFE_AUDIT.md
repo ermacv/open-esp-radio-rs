@@ -221,5 +221,10 @@ ready/result sampling are native generated-PAC operations. The HAL module is
 now a thin coordinator for the official platform PAC mode selection; the
 audit prevents compatibility register access from returning there.
 
+The RX-DCO save/clear/restore word is native generated PAC as well. Capture
+retains the complete source's two fresh reads, returns only the encoded
+bits 23:22, and restore truncates its input back to that field. Its HAL module
+is now a two-function semantic facade with no register compatibility types.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

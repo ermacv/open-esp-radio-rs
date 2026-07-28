@@ -3454,3 +3454,16 @@ and rejection-bit clears into one RMW. The final word was the same, but the
 blob's separate hardware edges are now retained. A host trace asserts every
 intermediate image, and the source audit prevents raw register access from
 returning to the upper sniffer module.
+
+## Semantic cold crypto bypass
+
+Cold init now requests the common hardware-crypto reset state through
+`MacColdCryptoHardware`. The generated PAC performs the five ordered
+full-word stores from complete pinned
+`libpp.a[hal_crypto.o]::hal_crypto_init`; upper MAC code no longer sees their
+addresses or images.
+
+SVD v3.6 extends `WIFI_MAC_CRYPTO_CONTROL` with the instruction-exact but
+semantically unresolved `INIT_AUX_UNKNOWN` word at `0x2010_480c`. The host
+trace asserts all five stores, and the source audit prevents raw register
+access from returning to the upper cold-crypto module.

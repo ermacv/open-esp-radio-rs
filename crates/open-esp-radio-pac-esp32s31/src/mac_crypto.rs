@@ -15,6 +15,27 @@ pub enum MacKeyInstallOutcome {
 }
 
 impl RadioRegisters {
+    /// Establish the common cold hardware-crypto bypass state.
+    ///
+    /// SOURCE: complete pinned
+    /// `libpp.a[hal_crypto.o]::hal_crypto_init`.
+    pub fn initialize_mac_crypto_bypass(&mut self) {
+        let control = &self.peripherals.wifi_mac_crypto_control;
+        // SAFETY: all five complete full-word images and their order come from
+        // the complete recovered leaf.
+        unsafe {
+            control
+                .interface_control(0)
+                .write_with_zero(|w| w.bits(0x0003_0000));
+            control
+                .interface_control(1)
+                .write_with_zero(|w| w.bits(0x0003_0000));
+            control.interface_control(2).write_with_zero(|w| w.bits(0));
+            control.init_aux_unknown().write_with_zero(|w| w.bits(0));
+            control.policy_control().write_with_zero(|w| w.bits(0));
+        }
+    }
+
     /// Install one six-word STA CCMP image into an invalid hardware entry.
     ///
     /// SOURCE: complete `_oracles/libpp.a::hal_crypto_clr_key_entry`,

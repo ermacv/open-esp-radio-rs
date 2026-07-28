@@ -853,6 +853,12 @@ separately; then clear bits 7 and 9 together. SVD v3.5 splits the formerly
 combined bits 3:2 and high unknown range only as far as this evidence permits;
 unresolved electrical meanings retain `UNKNOWN`.
 
+Complete pinned `libpp.a[hal_crypto.o]::hal_crypto_init` independently proves
+the five cold crypto stores at `0x2010_4800..0x2010_4810`: two
+`0x00030000` interface images followed by three zero images. SVD v3.6 names
+the otherwise unresolved fourth word at `0x2010_480c`
+`INIT_AUX_UNKNOWN`; no algorithm meaning is inferred from its zero store.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

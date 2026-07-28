@@ -8442,20 +8442,20 @@ pub mod wifi_mac_rx_filter {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO,BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
 pub type WifiMacCryptoControl = crate::Periph<wifi_mac_crypto_control::RegisterBlock, 0x2010_4800>;
 impl core::fmt::Debug for WifiMacCryptoControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacCryptoControl").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO,BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
 pub mod wifi_mac_crypto_control {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
         interface_control: [InterfaceControl; 3],
-        _reserved1: [u8; 0x04],
+        init_aux_unknown: InitAuxUnknown,
         policy_control: PolicyControl,
         key_valid_bitmap: KeyValidBitmap,
     }
@@ -8470,6 +8470,11 @@ pub mod wifi_mac_crypto_control {
         #[inline(always)]
         pub fn interface_control_iter(&self) -> impl Iterator<Item = &InterfaceControl> {
             self.interface_control.iter()
+        }
+        #[doc = "0x0c - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered."]
+        #[inline(always)]
+        pub const fn init_aux_unknown(&self) -> &InitAuxUnknown {
+            &self.init_aux_unknown
         }
         #[doc = "0x10 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6."]
         #[inline(always)]
@@ -8601,6 +8606,45 @@ pub mod wifi_mac_crypto_control {
         impl crate::Readable for PolicyControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`policy_control::W`](W) writer structure"]
         impl crate::Writable for PolicyControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "INIT_AUX_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_aux_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_aux_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_aux_unknown`] module"]
+    #[doc(alias = "INIT_AUX_UNKNOWN")]
+    pub type InitAuxUnknown = crate::Reg<init_aux_unknown::InitAuxUnknownSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered."]
+    pub mod init_aux_unknown {
+        #[doc = "Register `INIT_AUX_UNKNOWN` reader"]
+        pub type R = crate::R<InitAuxUnknownSpec>;
+        #[doc = "Register `INIT_AUX_UNKNOWN` writer"]
+        pub type W = crate::W<InitAuxUnknownSpec>;
+        #[doc = "Field `VALUE_UNKNOWN` reader - "]
+        pub type ValueUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE_UNKNOWN` writer - "]
+        pub type ValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value_unknown(&self) -> ValueUnknownR {
+                ValueUnknownR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value_unknown(&mut self) -> ValueUnknownW<'_, InitAuxUnknownSpec> {
+                ValueUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_aux_unknown::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_aux_unknown::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InitAuxUnknownSpec;
+        impl crate::RegisterSpec for InitAuxUnknownSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`init_aux_unknown::R`](R) reader structure"]
+        impl crate::Readable for InitAuxUnknownSpec {}
+        #[doc = "`write(|w| ..)` method takes [`init_aux_unknown::W`](W) writer structure"]
+        impl crate::Writable for InitAuxUnknownSpec {
             type Safety = crate::Unsafe;
         }
     }

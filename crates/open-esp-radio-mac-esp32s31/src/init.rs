@@ -10,6 +10,7 @@ use open_esp_radio_pac_esp32s31::{
     Register32,
 };
 
+pub use crate::cold_crypto::MacColdCryptoHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::sniffer::MacSnifferHardware;
@@ -132,7 +133,11 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 /// This function owns no descriptor storage and enables neither the RX walker
 /// nor MAC interrupts. The caller must publish its ring after this returns.
 pub fn initialize_promiscuous_receive<
-    M: Mmio + MacColdHandshakeHardware + MacInterfaceAddressHardware + MacSnifferHardware,
+    M: Mmio
+        + MacColdCryptoHardware
+        + MacColdHandshakeHardware
+        + MacInterfaceAddressHardware
+        + MacSnifferHardware,
     P: MacClockControl,
 >(
     platform: &mut P,
@@ -253,13 +258,7 @@ pub fn initialize_promiscuous_receive<
 
     // `hal_crypto_init`: even unencrypted promiscuous frames traverse the
     // common RX crypto bypass block.
-    for (register, value) in
-        registers::CRYPTO_BYPASS
-            .into_iter()
-            .zip([0x0003_0000, 0x0003_0000, 0, 0, 0])
-    {
-        mmio.write32(register, value);
-    }
+    mmio.initialize_crypto_bypass();
 
     initialize_antenna_and_coex(mmio);
 

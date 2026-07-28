@@ -439,6 +439,21 @@ mod tests {
     }
 
     #[test]
+    fn generated_crypto_aux_register_matches_complete_cold_leaf() {
+        // SAFETY: this host test inspects a generated register pointer only
+        // and performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_crypto_control
+                .init_aux_unknown()
+                .as_ptr() as usize,
+            0x2010_480c
+        );
+    }
+
+    #[test]
     fn indexed_mac_registers_are_bounded_and_aligned() {
         for group in [
             &mac::init::INTERFACE_ADDRESS_LOW[..],

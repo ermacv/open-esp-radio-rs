@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.5</version>
+  <version>3.6</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1549,7 +1549,7 @@
     <peripheral>
       <name>WIFI_MAC_CRYPTO_CONTROL</name>
       <description>
-        SOURCE[BLOB_LIBPP_HAL_CRYPTO];
+        SOURCE[BLOB_LIBPP_HAL_CRYPTO,BLOB_LIBPP_HAL_CRYPTO_INIT];
         CONFIDENCE[instruction-exact-not-independently-hil].
         Per-interface hardware-crypto controls, shared policy mask and key
         validity bitmap recovered from complete libpp hal_crypto leaves.
@@ -1575,6 +1575,12 @@
             <field><name>ORDINARY_ENABLE_CLEAR_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Cleared by the reachable STA CCMP enable transaction.</description><bitOffset>6</bitOffset><bitWidth>16</bitWidth></field>
             <field><name>HIGH_POLICY_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field>
           </fields>
+        </register>
+        <register>
+          <name>INIT_AUX_UNKNOWN</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>VALUE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
         <register>
           <name>KEY_VALID_BITMAP</name>
@@ -2003,6 +2009,7 @@
       <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
+      <source id="BLOB_LIBPP_HAL_CRYPTO_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_init body. It proves five ordered full-word stores at 0x20104800, 0x20104804, 0x20104808, 0x2010480c and 0x20104810 with images 0x00030000, 0x00030000, zero, zero and zero.</source>
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>
       <source id="BLOB_LIBPP_HAL_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores.</source>
       <source id="BLOB_LIBPP_HAL_SNIFFER_ENABLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_enable body. At queue-three word 0x201040e4 it proves seven ordered fresh-read RMWs: set bit 17; clear bits 0, 1, 2, 3 and 8 separately; then clear bits 7 and 9 together.</source>

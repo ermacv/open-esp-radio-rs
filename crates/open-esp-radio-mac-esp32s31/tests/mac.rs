@@ -8,7 +8,7 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome,
+        MacColdCryptoHardware, MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome,
         MacInterfaceAddressHardware, MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
@@ -276,6 +276,18 @@ impl MacSnifferHardware for MockMmio {
         modify(1 << 3, 0);
         modify(1 << 8, 0);
         modify((1 << 7) | (1 << 9), 0);
+    }
+}
+
+impl MacColdCryptoHardware for MockMmio {
+    fn initialize_crypto_bypass(&mut self) {
+        for (register, value) in
+            mac_init::CRYPTO_BYPASS
+                .into_iter()
+                .zip([0x0003_0000, 0x0003_0000, 0, 0, 0])
+        {
+            self.write32(register, value);
+        }
     }
 }
 
@@ -561,6 +573,16 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
+    assert!(mmio.operations().windows(5).any(|operations| {
+        operations
+            == [
+                Operation::Write(mac_init::CRYPTO_BYPASS[0], 0x0003_0000),
+                Operation::Write(mac_init::CRYPTO_BYPASS[1], 0x0003_0000),
+                Operation::Write(mac_init::CRYPTO_BYPASS[2], 0),
+                Operation::Write(mac_init::CRYPTO_BYPASS[3], 0),
+                Operation::Write(mac_init::CRYPTO_BYPASS[4], 0),
+            ]
+    }));
     assert_eq!(
         platform.operations,
         [

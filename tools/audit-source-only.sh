@@ -95,11 +95,19 @@ then
     exit 1
 fi
 
+if rg -n \
+    'unsafe[[:space:]]+fn[[:space:]]+configure_phy_(adc_rate|front_end_registers|front_end_update)' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw ADC/front-end owner access returned" >&2
+    exit 1
+fi
+
 # Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
 # DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
 # addresses have no remaining live raw consumer.
 if rg -n \
-    '0x(2010_(001c|0024|0028|002c|0030|0034|0038|003c|0434|044c|0450|0454|0458|045c|0460|0464|0468|046c|047c|0808|080c|0810|0814|0818|081c|0870|0874|0884|088c|0890|08bc|08d0|4400|448c|7018|702c|7030|703c|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|7400|7428|743c|7454|7458|745c|7460|7808|7848|7890|78a4|78c8|78dc|78e4|790c|7980|7a28|7c00|7c30|7c3c|7c40|7c44|7c50|7c6c|7ca8|7cd0|7ce0|7ce4|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078|9c18|d800|f028|f800|f804|f818|fc04)|2070_1068|2071_0030|2081_(8000|8018))' \
+    '0x(2010_(001c|0024|0028|002c|0030|0034|0038|003c|0434|0444|0448|044c|0450|0454|0458|045c|0460|0464|0468|046c|047c|0808|080c|0810|0814|0818|081c|086c|0870|0874|0884|088c|0890|0894|08bc|08d0|0c08|0c20|4400|448c|7018|702c|7030|703c|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|7400|7428|743c|7454|7458|745c|7460|7808|7848|7890|78a4|78c8|78dc|78e4|790c|7980|7a28|7c00|7c30|7c3c|7c40|7c44|7c50|7c6c|7ca8|7cd0|7ce0|7ce4|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078|9c18|d800|f028|f800|f804|f818|fc04)|2070_1068|2071_0030|2081_(8000|8018))' \
     crates/open-esp-radio-phy-esp32s31/src
 then
     echo "raw recovered PHY address escaped the PAC/HAL boundary" >&2

@@ -1969,7 +1969,7 @@ impl PhyColdMmioBinding {
                 open_esp_radio_hal_esp32s31::phy_agc::clear_pbus_work_mode_pulse(registers)
             }
             PhyRfInitPrefixAction::AdcRate(AdcRateAction::ConfigureMmio { rate }) => {
-                crate::radio_hal::configure_phy_adc_rate(rate)
+                crate::radio_hal::configure_phy_adc_rate(registers, rate)
             }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
                 crate::radio_hal::configure_phy_front_end_registers(registers)
@@ -1978,7 +1978,7 @@ impl PhyColdMmioBinding {
                 crate::phy_i2c::configure_i2c_master_command_memory(registers, parameter)
             }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate => {
-                crate::radio_hal::configure_phy_front_end_update()
+                crate::radio_hal::configure_phy_front_end_update(registers)
             }
             PhyRfInitPrefixAction::ChannelFrequency(
                 PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters { parameter_override },

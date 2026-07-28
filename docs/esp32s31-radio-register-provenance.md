@@ -575,6 +575,37 @@ former `PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4` expression is deleted, and the
 source-only audit rejects that derived address, the raw literal, and an unsafe
 version of the wrapper.
 
+## ADC-rate and front-end register cluster
+
+SVD v2.6 moves three complete leaves directly onto the generated PAC. Primary
+sources are the pinned rev0 ROM ELF's complete `phy_adc_rate_set` at
+`0x2f82_a6d2`, size `0x4a`, complete `phy_fe_reg_init` at `0x2f82_7740`,
+size `0xf6`, and pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`, size
+`0x32`. Their hashes and source identities are recorded in the SVD ledger.
+
+`phy_adc_rate_set` performs its separately owned PHY-I2C subgraph first, then
+uses two fresh reads of `0x2010_0448` to publish rate bit zero into physical
+bit one and physical bit zero. The PAC method preserves those two edges and
+the caller passes the existing unique `&mut RadioRegisters` capability.
+
+The complete front-end initializer has seventeen ordered writes. Four form a
+prefix, the fifth configures the already owned table-memory base index, and
+the remaining twelve form the suffix. The PAC exposes prefix and suffix
+methods so the PHY wrapper can retain that intervening typed table-memory
+operation without raw MMIO or a second register owner. Repeated writes to
+`0x2010_0448` and combined updates to the shared IQ-control words remain
+exactly as instructed by ROM.
+
+The pinned front-end update is deliberately the three-write archive body:
+two separate sets at `0x2010_0c08`, then one combined set of bits 1:0 at
+`0x2010_0448`. It does not acquire the similarly named ROM function's extra
+DAC-scale tail. The generated PAC now owns unique words at `0x2010_0444`,
+`0x2010_0448`, `0x2010_086c`, `0x2010_0894`, `0x2010_0c08`, and
+`0x2010_0c20`; the source-only audit rejects those literals in the PHY crate.
+Shared `0x2010_040c`, `0x2010_0438`, and `0x2010_0c0c` identities remain
+single generated register objects even though later tone/IQ slices still
+have raw consumers awaiting ownership threading.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

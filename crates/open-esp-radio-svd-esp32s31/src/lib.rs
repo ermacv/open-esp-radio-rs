@@ -4033,71 +4033,85 @@ pub mod phy_baseband_config_oracle {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        _reserved0: [u8; 0x0410],
+        _reserved0: [u8; 0x040c],
+        front_end_and_tone_stop_control: FrontEndAndToneStopControl,
         tx_gain_compensation: TxGainCompensation,
-        _reserved1: [u8; 0x10],
-        rx_gain_dc_control: RxGainDcControl,
         _reserved2: [u8; 0x10],
+        rx_gain_dc_control: RxGainDcControl,
+        _reserved3: [u8; 0x10],
         iq_correction_control: IqCorrectionControl,
-        _reserved3: [u8; 0x03cc],
+        _reserved4: [u8; 0x08],
+        front_end_clear_control: FrontEndClearControl,
+        adc_rate_and_front_end_control: AdcRateAndFrontEndControl,
+        _reserved6: [u8; 0x03bc],
         power_detector_control: PowerDetectorControl,
         power_detector_sar_control_status: PowerDetectorSarControlStatus,
         power_detector_table_0_opaque: PowerDetectorTable0Opaque,
         power_detector_table_1: PowerDetectorTable1,
         power_detector_reference: PowerDetectorReference,
         power_detector_sar_result: PowerDetectorSarResult,
-        _reserved9: [u8; 0x4c],
+        _reserved12: [u8; 0x4c],
         tx_pa_control_0: TxPaControl0,
         tx_pa_control_1: TxPaControl1,
-        _reserved11: [u8; 0x0398],
+        _reserved14: [u8; 0x20],
+        front_end_init_0894: FrontEndInit0894,
+        _reserved15: [u8; 0x0370],
+        front_end_init_0c08: FrontEndInit0c08,
         iq_correction_aux: IqCorrectionAux,
-        _reserved12: [u8; 0x387c],
+        _reserved17: [u8; 0x10],
+        front_end_init_0c20: FrontEndInit0c20,
+        _reserved18: [u8; 0x3868],
         i2c_tx_rate_control: I2cTxRateControl,
-        _reserved13: [u8; 0x2b88],
+        _reserved19: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved14: [u8; 0x03e4],
+        _reserved20: [u8; 0x03e4],
         baseband_init_7400: BasebandInit7400,
-        _reserved15: [u8; 0x24],
+        _reserved21: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved16: [u8; 0x10],
+        _reserved22: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved17: [u8; 0x14],
+        _reserved23: [u8; 0x14],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved21: [u8; 0x03a4],
+        _reserved27: [u8; 0x03a4],
         baseband_init_7808: BasebandInit7808,
-        _reserved22: [u8; 0x84],
+        _reserved28: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved23: [u8; 0x48],
+        _reserved29: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved24: [u8; 0x04],
+        _reserved30: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved25: [u8; 0x24],
+        _reserved31: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved26: [u8; 0x70],
+        _reserved32: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved27: [u8; 0xa4],
+        _reserved33: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved28: [u8; 0x01d4],
+        _reserved34: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved29: [u8; 0x2c],
+        _reserved35: [u8; 0x2c],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved30: [u8; 0x08],
+        _reserved36: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved33: [u8; 0x08],
+        _reserved39: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved34: [u8; 0x18],
+        _reserved40: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved35: [u8; 0x38],
+        _reserved41: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved36: [u8; 0x24],
+        _reserved42: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
+        #[doc = "0x40c - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf."]
+        #[inline(always)]
+        pub const fn front_end_and_tone_stop_control(&self) -> &FrontEndAndToneStopControl {
+            &self.front_end_and_tone_stop_control
+        }
         #[doc = "0x410 - SOURCE\\[BLOB_LIBPHY_PHY_BASEBAND_CONFIG\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates."]
         #[inline(always)]
         pub const fn tx_gain_compensation(&self) -> &TxGainCompensation {
@@ -4112,6 +4126,16 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn iq_correction_control(&self) -> &IqCorrectionControl {
             &self.iq_correction_control
+        }
+        #[doc = "0x444 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init clears bits 8 and 11 in two separately ordered RMW edges."]
+        #[inline(always)]
+        pub const fn front_end_clear_control(&self) -> &FrontEndClearControl {
+            &self.front_end_clear_control
+        }
+        #[doc = "0x448 - SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
+        #[inline(always)]
+        pub const fn adc_rate_and_front_end_control(&self) -> &AdcRateAndFrontEndControl {
+            &self.adc_rate_and_front_end_control
         }
         #[doc = "0x808 - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared PWDET trigger, calibration and background-control word."]
         #[inline(always)]
@@ -4153,10 +4177,25 @@ pub mod phy_baseband_config_oracle {
         pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
             &self.tx_pa_control_1
         }
+        #[doc = "0x894 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. First complete phy_fe_reg_init RMW sets bit 20."]
+        #[inline(always)]
+        pub const fn front_end_init_0894(&self) -> &FrontEndInit0894 {
+            &self.front_end_init_0894
+        }
+        #[doc = "0xc08 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
+        #[inline(always)]
+        pub const fn front_end_init_0c08(&self) -> &FrontEndInit0c08 {
+            &self.front_end_init_0c08
+        }
         #[doc = "0xc0c - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared TX-IQ coefficient and correction-mode word."]
         #[inline(always)]
         pub const fn iq_correction_aux(&self) -> &IqCorrectionAux {
             &self.iq_correction_aux
+        }
+        #[doc = "0xc20 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
+        #[inline(always)]
+        pub const fn front_end_init_0c20(&self) -> &FrontEndInit0c20 {
+            &self.front_end_init_0c20
         }
         #[doc = "0x448c - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_i2c_txrate_init replaces both evidenced rate fields before dispatching TX-gain compensation."]
         #[inline(always)]
@@ -4282,6 +4321,48 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn baseband_init_7cd0(&self) -> &BasebandInit7cd0 {
             &self.baseband_init_7cd0
+        }
+    }
+    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
+    #[doc(alias = "FRONT_END_AND_TONE_STOP_CONTROL")]
+    pub type FrontEndAndToneStopControl =
+        crate::Reg<front_end_and_tone_stop_control::FrontEndAndToneStopControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf."]
+    pub mod front_end_and_tone_stop_control {
+        #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` reader"]
+        pub type R = crate::R<FrontEndAndToneStopControlSpec>;
+        #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` writer"]
+        pub type W = crate::W<FrontEndAndToneStopControlSpec>;
+        #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` reader - "]
+        pub type FrontEndInitEnableUnknownR = crate::BitReader;
+        #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` writer - "]
+        pub type FrontEndInitEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn front_end_init_enable_unknown(&self) -> FrontEndInitEnableUnknownR {
+                FrontEndInitEnableUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn front_end_init_enable_unknown(
+                &mut self,
+            ) -> FrontEndInitEnableUnknownW<'_, FrontEndAndToneStopControlSpec> {
+                FrontEndInitEnableUnknownW::new(self, 2)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Shared word whose bit 2 is set by complete phy_fe_reg_init. Bits 1:0 have a separately recovered tone-stop consumer and remain outside this front-end leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndAndToneStopControlSpec;
+        impl crate::RegisterSpec for FrontEndAndToneStopControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_and_tone_stop_control::R`](R) reader structure"]
+        impl crate::Readable for FrontEndAndToneStopControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_and_tone_stop_control::W`](W) writer structure"]
+        impl crate::Writable for FrontEndAndToneStopControlSpec {
+            type Safety = crate::Unsafe;
         }
     }
     #[doc = "TX_GAIN_COMPENSATION (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_BASEBAND_CONFIG\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Complete phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_gain_compensation::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_gain_compensation::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_gain_compensation`] module"]
@@ -4496,6 +4577,10 @@ pub mod phy_baseband_config_oracle {
         pub type RxIqCorrectionModeHighR = crate::BitReader;
         #[doc = "Field `RX_IQ_CORRECTION_MODE_HIGH` writer - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol-and-control-flow\\]. High bit of the correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
         pub type RxIqCorrectionModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 31 after the repeated ADC-control writes."]
+        pub type FrontEndInitHighUnknownR = crate::BitReader;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 31 after the repeated ADC-control writes."]
+        pub type FrontEndInitHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 16:21"]
             #[inline(always)]
@@ -4516,6 +4601,11 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn rx_iq_correction_mode_high(&self) -> RxIqCorrectionModeHighR {
                 RxIqCorrectionModeHighR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 31 after the repeated ADC-control writes."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(&self) -> FrontEndInitHighUnknownR {
+                FrontEndInitHighUnknownR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -4547,6 +4637,13 @@ pub mod phy_baseband_config_oracle {
             ) -> RxIqCorrectionModeHighW<'_, IqCorrectionControlSpec> {
                 RxIqCorrectionModeHighW::new(self, 30)
             }
+            #[doc = "Bit 31 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 31 after the repeated ADC-control writes."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(
+                &mut self,
+            ) -> FrontEndInitHighUnknownW<'_, IqCorrectionControlSpec> {
+                FrontEndInitHighUnknownW::new(self, 31)
+            }
         }
         #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared RX-IQ coefficient and correction-mode word.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IqCorrectionControlSpec;
@@ -4557,6 +4654,127 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for IqCorrectionControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`iq_correction_control::W`](W) writer structure"]
         impl crate::Writable for IqCorrectionControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_CLEAR_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init clears bits 8 and 11 in two separately ordered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_clear_control`] module"]
+    #[doc(alias = "FRONT_END_CLEAR_CONTROL")]
+    pub type FrontEndClearControl = crate::Reg<front_end_clear_control::FrontEndClearControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init clears bits 8 and 11 in two separately ordered RMW edges."]
+    pub mod front_end_clear_control {
+        #[doc = "Register `FRONT_END_CLEAR_CONTROL` reader"]
+        pub type R = crate::R<FrontEndClearControlSpec>;
+        #[doc = "Register `FRONT_END_CLEAR_CONTROL` writer"]
+        pub type W = crate::W<FrontEndClearControlSpec>;
+        #[doc = "Field `INIT_CLEAR_FIRST_UNKNOWN` reader - "]
+        pub type InitClearFirstUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_FIRST_UNKNOWN` writer - "]
+        pub type InitClearFirstUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_CLEAR_SECOND_UNKNOWN` reader - "]
+        pub type InitClearSecondUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_SECOND_UNKNOWN` writer - "]
+        pub type InitClearSecondUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn init_clear_first_unknown(&self) -> InitClearFirstUnknownR {
+                InitClearFirstUnknownR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn init_clear_second_unknown(&self) -> InitClearSecondUnknownR {
+                InitClearSecondUnknownR::new(((self.bits >> 11) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn init_clear_first_unknown(
+                &mut self,
+            ) -> InitClearFirstUnknownW<'_, FrontEndClearControlSpec> {
+                InitClearFirstUnknownW::new(self, 8)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn init_clear_second_unknown(
+                &mut self,
+            ) -> InitClearSecondUnknownW<'_, FrontEndClearControlSpec> {
+                InitClearSecondUnknownW::new(self, 11)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init clears bits 8 and 11 in two separately ordered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndClearControlSpec;
+        impl crate::RegisterSpec for FrontEndClearControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_clear_control::R`](R) reader structure"]
+        impl crate::Readable for FrontEndClearControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_clear_control::W`](W) writer structure"]
+        impl crate::Writable for FrontEndClearControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
+    #[doc(alias = "ADC_RATE_AND_FRONT_END_CONTROL")]
+    pub type AdcRateAndFrontEndControl =
+        crate::Reg<adc_rate_and_front_end_control::AdcRateAndFrontEndControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
+    pub mod adc_rate_and_front_end_control {
+        #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` reader"]
+        pub type R = crate::R<AdcRateAndFrontEndControlSpec>;
+        #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` writer"]
+        pub type W = crate::W<AdcRateAndFrontEndControlSpec>;
+        #[doc = "Field `ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN` reader - "]
+        pub type AdcRateLowOrFrontEndControlUnknownR = crate::BitReader;
+        #[doc = "Field `ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN` writer - "]
+        pub type AdcRateLowOrFrontEndControlUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN` reader - "]
+        pub type AdcRateHighOrFrontEndControlUnknownR = crate::BitReader;
+        #[doc = "Field `ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN` writer - "]
+        pub type AdcRateHighOrFrontEndControlUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn adc_rate_low_or_front_end_control_unknown(
+                &self,
+            ) -> AdcRateLowOrFrontEndControlUnknownR {
+                AdcRateLowOrFrontEndControlUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn adc_rate_high_or_front_end_control_unknown(
+                &self,
+            ) -> AdcRateHighOrFrontEndControlUnknownR {
+                AdcRateHighOrFrontEndControlUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn adc_rate_low_or_front_end_control_unknown(
+                &mut self,
+            ) -> AdcRateLowOrFrontEndControlUnknownW<'_, AdcRateAndFrontEndControlSpec>
+            {
+                AdcRateLowOrFrontEndControlUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn adc_rate_high_or_front_end_control_unknown(
+                &mut self,
+            ) -> AdcRateHighOrFrontEndControlUnknownW<'_, AdcRateAndFrontEndControlSpec>
+            {
+                AdcRateHighOrFrontEndControlUnknownW::new(self, 1)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AdcRateAndFrontEndControlSpec;
+        impl crate::RegisterSpec for AdcRateAndFrontEndControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`adc_rate_and_front_end_control::R`](R) reader structure"]
+        impl crate::Readable for AdcRateAndFrontEndControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`adc_rate_and_front_end_control::W`](W) writer structure"]
+        impl crate::Writable for AdcRateAndFrontEndControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -4974,6 +5192,98 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "FRONT_END_INIT_0894 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. First complete phy_fe_reg_init RMW sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0894`] module"]
+    #[doc(alias = "FRONT_END_INIT_0894")]
+    pub type FrontEndInit0894 = crate::Reg<front_end_init_0894::FrontEndInit0894Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. First complete phy_fe_reg_init RMW sets bit 20."]
+    pub mod front_end_init_0894 {
+        #[doc = "Register `FRONT_END_INIT_0894` reader"]
+        pub type R = crate::R<FrontEndInit0894Spec>;
+        #[doc = "Register `FRONT_END_INIT_0894` writer"]
+        pub type W = crate::W<FrontEndInit0894Spec>;
+        #[doc = "Field `INIT_ENABLE_UNKNOWN` reader - "]
+        pub type InitEnableUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_ENABLE_UNKNOWN` writer - "]
+        pub type InitEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn init_enable_unknown(&self) -> InitEnableUnknownR {
+                InitEnableUnknownR::new(((self.bits >> 20) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn init_enable_unknown(&mut self) -> InitEnableUnknownW<'_, FrontEndInit0894Spec> {
+                InitEnableUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. First complete phy_fe_reg_init RMW sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0894Spec;
+        impl crate::RegisterSpec for FrontEndInit0894Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0894::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0894Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0894::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0894Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0C08 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c08`] module"]
+    #[doc(alias = "FRONT_END_INIT_0C08")]
+    pub type FrontEndInit0c08 = crate::Reg<front_end_init_0c08::FrontEndInit0c08Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
+    pub mod front_end_init_0c08 {
+        #[doc = "Register `FRONT_END_INIT_0C08` reader"]
+        pub type R = crate::R<FrontEndInit0c08Spec>;
+        #[doc = "Register `FRONT_END_INIT_0C08` writer"]
+        pub type W = crate::W<FrontEndInit0c08Spec>;
+        #[doc = "Field `INIT_FIRST_UNKNOWN` reader - "]
+        pub type InitFirstUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_FIRST_UNKNOWN` writer - "]
+        pub type InitFirstUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_SECOND_UNKNOWN` reader - "]
+        pub type InitSecondUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_SECOND_UNKNOWN` writer - "]
+        pub type InitSecondUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn init_first_unknown(&self) -> InitFirstUnknownR {
+                InitFirstUnknownR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn init_second_unknown(&self) -> InitSecondUnknownR {
+                InitSecondUnknownR::new(((self.bits >> 26) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn init_first_unknown(&mut self) -> InitFirstUnknownW<'_, FrontEndInit0c08Spec> {
+                InitFirstUnknownW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn init_second_unknown(&mut self) -> InitSecondUnknownW<'_, FrontEndInit0c08Spec> {
+                InitSecondUnknownW::new(self, 26)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0c08Spec;
+        impl crate::RegisterSpec for FrontEndInit0c08Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0c08::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0c08Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c08::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0c08Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "IQ_CORRECTION_AUX (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared TX-IQ coefficient and correction-mode word.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_aux`] module"]
     #[doc(alias = "IQ_CORRECTION_AUX")]
     pub type IqCorrectionAux = crate::Reg<iq_correction_aux::IqCorrectionAuxSpec>;
@@ -4999,6 +5309,10 @@ pub mod phy_baseband_config_oracle {
         pub type TxIqCorrectionModeHighR = crate::BitReader;
         #[doc = "Field `TX_IQ_CORRECTION_MODE_HIGH` writer - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol-and-control-flow\\]. High bit of the auxiliary correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
         pub type TxIqCorrectionModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 15 after the shared correction-mode initialization."]
+        pub type FrontEndInitHighUnknownR = crate::BitReader;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 15 after the shared correction-mode initialization."]
+        pub type FrontEndInitHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:5"]
             #[inline(always)]
@@ -5019,6 +5333,11 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn tx_iq_correction_mode_high(&self) -> TxIqCorrectionModeHighR {
                 TxIqCorrectionModeHighR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 15 after the shared correction-mode initialization."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(&self) -> FrontEndInitHighUnknownR {
+                FrontEndInitHighUnknownR::new(((self.bits >> 15) & 1) != 0)
             }
         }
         impl W {
@@ -5050,6 +5369,13 @@ pub mod phy_baseband_config_oracle {
             ) -> TxIqCorrectionModeHighW<'_, IqCorrectionAuxSpec> {
                 TxIqCorrectionModeHighW::new(self, 14)
             }
+            #[doc = "Bit 15 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_fe_reg_init sets bit 15 after the shared correction-mode initialization."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(
+                &mut self,
+            ) -> FrontEndInitHighUnknownW<'_, IqCorrectionAuxSpec> {
+                FrontEndInitHighUnknownW::new(self, 15)
+            }
         }
         #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared TX-IQ coefficient and correction-mode word.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IqCorrectionAuxSpec;
@@ -5060,6 +5386,45 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for IqCorrectionAuxSpec {}
         #[doc = "`write(|w| ..)` method takes [`iq_correction_aux::W`](W) writer structure"]
         impl crate::Writable for IqCorrectionAuxSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0C20 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c20`] module"]
+    #[doc(alias = "FRONT_END_INIT_0C20")]
+    pub type FrontEndInit0c20 = crate::Reg<front_end_init_0c20::FrontEndInit0c20Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
+    pub mod front_end_init_0c20 {
+        #[doc = "Register `FRONT_END_INIT_0C20` reader"]
+        pub type R = crate::R<FrontEndInit0c20Spec>;
+        #[doc = "Register `FRONT_END_INIT_0C20` writer"]
+        pub type W = crate::W<FrontEndInit0c20Spec>;
+        #[doc = "Field `INIT_LOW_UNKNOWN` reader - "]
+        pub type InitLowUnknownR = crate::FieldReader;
+        #[doc = "Field `INIT_LOW_UNKNOWN` writer - "]
+        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn init_low_unknown(&self) -> InitLowUnknownR {
+                InitLowUnknownR::new((self.bits & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn init_low_unknown(&mut self) -> InitLowUnknownW<'_, FrontEndInit0c20Spec> {
+                InitLowUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0c20Spec;
+        impl crate::RegisterSpec for FrontEndInit0c20Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0c20::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0c20Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c20::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0c20Spec {
             type Safety = crate::Unsafe;
         }
     }

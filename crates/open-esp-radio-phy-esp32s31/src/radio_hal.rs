@@ -15,17 +15,8 @@ const PHY_TX_GAIN_COMPENSATION_CONTROL_ADDRESS: usize = 0x2010_0410;
 const PHY_TX_GAIN_COMPENSATION_AUX_ADDRESS: usize = 0x2010_0414;
 const PHY_TX_DC_MEASUREMENT_CONTROL_ADDRESS: usize = 0x2010_0418;
 const PHY_DAC_SCALE_CONTROL_ADDRESS: usize = 0x2010_0c04;
-const PHY_ADC_RATE_ADDRESS: usize = 0x2010_0448;
-const PHY_FE_CONTROL_040C_ADDRESS: usize = 0x2010_040c;
-const PHY_FE_CONTROL_0438_ADDRESS: usize = 0x2010_0438;
-const PHY_FE_CONTROL_0444_ADDRESS: usize = 0x2010_0444;
-const PHY_FE_CONTROL_0448_ADDRESS: usize = 0x2010_0448;
-const PHY_FE_CONTROL_086C_ADDRESS: usize = 0x2010_086c;
-const PHY_FE_CONTROL_0894_ADDRESS: usize = 0x2010_0894;
-const PHY_FE_CONTROL_0C08_ADDRESS: usize = 0x2010_0c08;
-const PHY_FE_CONTROL_0C0C_ADDRESS: usize = 0x2010_0c0c;
-const PHY_FE_CONTROL_0C20_ADDRESS: usize = 0x2010_0c20;
 const PHY_IQ_CORRECTION_CONTROL_ADDRESS: usize = 0x2010_0438;
+const PHY_IQ_CORRECTION_AUX_ADDRESS: usize = 0x2010_0c0c;
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
@@ -208,28 +199,8 @@ const fn without_phy_tx_gain_compensation_high_byte(value: u32) -> u32 {
     value & 0x00ff_ffff
 }
 
-const fn with_phy_adc_rate_high(value: u32, rate: u32) -> u32 {
-    (value & !0x0000_0002) | ((rate << 1) & 0x0000_0002)
-}
-
-const fn with_phy_adc_rate_low(value: u32, rate: u32) -> u32 {
-    (value & !0x0000_0001) | (rate & 0x0000_0001)
-}
-
 const fn with_register_bits(value: u32, bits: u32) -> u32 {
     value | bits
-}
-
-const fn with_phy_front_end_update_first(value: u32) -> u32 {
-    with_register_bits(value, 0x0200_0000)
-}
-
-const fn with_phy_front_end_update_second(value: u32) -> u32 {
-    with_register_bits(value, 0x0400_0000)
-}
-
-const fn with_phy_front_end_adc_update(value: u32) -> u32 {
-    with_register_bits(value, 0x0000_0003)
 }
 
 const fn without_register_bits(value: u32, bits: u32) -> u32 {
@@ -411,7 +382,7 @@ pub(crate) unsafe fn configure_phy_calibration_tone_wide(enabled: bool, selector
 /// one finite read/modify/write and owns no software state.
 #[cfg(target_arch = "riscv32")]
 pub(crate) unsafe fn configure_phy_txiq_correction(begin: bool) {
-    let control = PHY_FE_CONTROL_0C0C_ADDRESS as *mut u32;
+    let control = PHY_IQ_CORRECTION_AUX_ADDRESS as *mut u32;
     let value = control.read_volatile();
     control.write_volatile(if begin {
         with_phy_txiq_calibration_enabled(value)
@@ -472,7 +443,7 @@ pub(crate) unsafe fn configure_phy_txiq_coefficient(
     kind: crate::phy_txiq::PhyTxIqCoefficientKind,
     value: i8,
 ) {
-    let control = PHY_FE_CONTROL_0C0C_ADDRESS as *mut u32;
+    let control = PHY_IQ_CORRECTION_AUX_ADDRESS as *mut u32;
     let current = control.read_volatile();
     control.write_volatile(match kind {
         crate::phy_txiq::PhyTxIqCoefficientKind::Gain => with_phy_txiq_gain(current, value),
@@ -504,12 +475,11 @@ pub(crate) unsafe fn configure_phy_rxiq_calibration_mode() {
 /// Apply the finite MMIO suffix of rev0 ROM `phy_adc_rate_set`.
 ///
 /// The complete parent action performs its masked PHY-I2C transaction first.
-/// This leaf preserves the following two fresh-read writes to `0x2010_0448`.
+/// This leaf preserves the following two fresh-read writes to the generated
+/// PAC `ADC_RATE_AND_FRONT_END_CONTROL` identity.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_adc_rate(rate: u32) {
-    let register = PHY_ADC_RATE_ADDRESS as *mut u32;
-    register.write_volatile(with_phy_adc_rate_high(register.read_volatile(), rate));
-    register.write_volatile(with_phy_adc_rate_low(register.read_volatile(), rate));
+pub(crate) fn configure_phy_adc_rate(registers: &mut RadioRegisters, rate: u32) {
+    registers.configure_adc_rate(rate);
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -540,24 +510,10 @@ unsafe fn replace_register_field(address: usize, mask: u32, field: u32) {
 /// repeated fresh-read writes to the same register. There is no wait, delay,
 /// loop, callback, or mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_front_end_registers(registers: &mut RadioRegisters) {
-    set_register_bits(PHY_FE_CONTROL_0894_ADDRESS, 0x0010_0000);
-    set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0200_0000);
-    set_register_bits(PHY_FE_CONTROL_0C08_ADDRESS, 0x0400_0000);
-    clear_register_bits(PHY_FE_CONTROL_0444_ADDRESS, 0x0000_0100);
+pub(crate) fn configure_phy_front_end_registers(registers: &mut RadioRegisters) {
+    registers.initialize_front_end_prefix();
     open_esp_radio_hal_esp32s31::phy_memory::configure_table_memory_base_index(registers, 0xa0);
-    set_register_bits(PHY_FE_CONTROL_040C_ADDRESS, 0x0000_0004);
-    set_register_bits(PHY_FE_CONTROL_0438_ADDRESS, 0x6000_0000);
-    set_register_bits(PHY_FE_CONTROL_0C0C_ADDRESS, 0x0000_6000);
-    clear_register_bits(PHY_FE_CONTROL_0444_ADDRESS, 0x0000_0800);
-    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0002);
-    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0001);
-    replace_register_field(PHY_FE_CONTROL_086C_ADDRESS, 0x0000_00ff, 0x0000_0004);
-    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0001);
-    set_register_bits(PHY_FE_CONTROL_0448_ADDRESS, 0x0000_0002);
-    set_register_bits(PHY_FE_CONTROL_0438_ADDRESS, 0x8000_0000);
-    set_register_bits(PHY_FE_CONTROL_0C0C_ADDRESS, 0x0000_8000);
-    replace_register_field(PHY_FE_CONTROL_0C20_ADDRESS, 0x0000_00ff, 0x0000_0057);
+    registers.initialize_front_end_suffix();
 }
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
@@ -568,13 +524,8 @@ pub(crate) unsafe fn configure_phy_front_end_registers(registers: &mut RadioRegi
 /// tail-call to `phy_dac_scale_set`. There is no loop, delay, callback, or
 /// mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_front_end_update() {
-    let front_end = PHY_FE_CONTROL_0C08_ADDRESS as *mut u32;
-    front_end.write_volatile(with_phy_front_end_update_first(front_end.read_volatile()));
-    front_end.write_volatile(with_phy_front_end_update_second(front_end.read_volatile()));
-
-    let adc = PHY_FE_CONTROL_0448_ADDRESS as *mut u32;
-    adc.write_volatile(with_phy_front_end_adc_update(adc.read_volatile()));
+pub(crate) fn configure_phy_front_end_update(registers: &mut RadioRegisters) {
+    registers.update_front_end();
 }
 
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
@@ -691,9 +642,7 @@ pub(crate) fn publish_phy_tx_gain_memory(
 mod tests {
     use super::{
         encode_phy_gain_memory_words, packed_byte, packed_halfword, tx_baseband_gain_index,
-        tx_gain_seed_halfword, with_phy_adc_rate_high, with_phy_adc_rate_low,
-        with_phy_front_end_adc_update, with_phy_front_end_update_first,
-        with_phy_front_end_update_second, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
+        tx_gain_seed_halfword, with_phy_rxiq_calibration_mode, with_phy_rxiq_gain,
         with_phy_rxiq_phase, with_phy_tone_path, with_phy_tone_path0_selector,
         with_phy_tone_path1_selector, with_phy_tx_gain_compensation_byte1,
         with_phy_tx_gain_compensation_byte2, with_phy_txiq_calibration_complete,
@@ -756,14 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn phy_adc_rate_mmio_suffix_matches_both_rom_fields() {
-        assert_eq!(with_phy_adc_rate_high(0, 1), 0x0000_0002);
-        assert_eq!(with_phy_adc_rate_low(0x0000_0002, 1), 0x0000_0003);
-        assert_eq!(with_phy_adc_rate_high(u32::MAX, 0), 0xffff_fffd);
-        assert_eq!(with_phy_adc_rate_low(u32::MAX, 0), 0xffff_fffe);
-    }
-
-    #[test]
     fn phy_front_end_register_transforms_preserve_exact_masks() {
         assert_eq!(with_register_bits(0x1234_5678, 0x0010_0000), 0x1234_5678);
         assert_eq!(with_register_bits(0x1234_5678, 0x8000_0000), 0x9234_5678);
@@ -776,17 +717,6 @@ mod tests {
             with_register_field(0x1234_56ff, 0x0000_00ff, 0x0000_0057),
             0x1234_5657
         );
-    }
-
-    #[test]
-    fn phy_front_end_update_preserves_archive_masks_and_fresh_read_order() {
-        let initial = 0x8100_4000;
-        let first = with_phy_front_end_update_first(initial);
-        let second = with_phy_front_end_update_second(first);
-
-        assert_eq!(first, 0x8300_4000);
-        assert_eq!(second, 0x8700_4000);
-        assert_eq!(with_phy_front_end_adc_update(0xa5a5_0100), 0xa5a5_0103);
     }
 
     #[test]

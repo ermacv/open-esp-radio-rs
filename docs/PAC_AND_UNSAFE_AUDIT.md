@@ -186,5 +186,13 @@ baseband leaf moved directly to that final form without extending the
 provenance live in the SVD; the generated writer is reachable only through the
 unique `RadioRegisters` owner. The former derived raw address and upper-layer
 `unsafe fn` are gone, and the source-only audit rejects both regressions.
+
+SVD v2.6 moves the complete ADC-rate suffix, all seventeen ordered
+front-end-initialization writes, and the three-write pinned front-end update
+through the same native generated-PAC boundary. The front-end initializer is
+split only around the already owned table-memory operation, preserving the
+complete ROM order. Raw access to the six newly described unique words and
+unsafe versions of all three upper wrappers are rejected by the audit.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

@@ -15,7 +15,7 @@ pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
-pub use crate::cold_txrx::MacColdTxRxHardware;
+pub use crate::cold_txrx::{MacColdTxRxHardware, MacDelaySlot};
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
@@ -33,6 +33,15 @@ pub trait MacClockControl {
     fn enable_coexistence_clock(&mut self);
     fn configure_modem_source_clocks(&mut self);
     fn set_wifi_mac_reset(&mut self, asserted: bool);
+}
+
+/// Platform entropy used by the on-chip branch of `hal_he_set_mac_delay`.
+///
+/// The vendor OS adapter obtains this from its `_random` callback. Keeping it
+/// as a narrow trait prevents the MAC crate from borrowing a chip RNG
+/// peripheral or depending on the vendor C ABI.
+pub trait MacDelayEntropy {
+    fn mac_delay_random(&mut self) -> u32;
 }
 
 #[inline]
@@ -148,7 +157,7 @@ pub fn initialize_promiscuous_receive<
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSnifferHardware,
-    P: MacClockControl,
+    P: MacClockControl + MacDelayEntropy,
 >(
     platform: &mut P,
     mmio: &mut M,
@@ -169,9 +178,10 @@ pub fn initialize_promiscuous_receive<
 
     let outcome = mmio.begin_cold_handshake(handshake_sample_limit)?;
 
-    // Direct `mac_txrx_init` prefix, stopping before its first HE callback.
+    // Direct prefix, all three exact on-chip HE callback paths, then suffix.
     mmio.initialize_txrx_prefix();
-    // The three intervening HE callbacks remain a separate migration frontier.
+    let delay_slot = MacDelaySlot::from_random(platform.mac_delay_random());
+    mmio.initialize_txrx_callbacks(delay_slot);
     mmio.initialize_txrx_suffix();
 
     // Reset the four hardware RX queue policy words. The first three have
@@ -203,18 +213,6 @@ pub fn initialize_promiscuous_receive<
 
     // Complete `mac_last_rxbuf_init`, including its three separate enable RMWs.
     mmio.initialize_last_rx_buffer_table();
-
-    // No-power-save timing defaults used by `mac_txrx_init`.
-    modify(mmio, registers::R_4C58, 0x001f_fc00, 0x000e_e000);
-    modify(mmio, registers::R_4C58, 0x0000_03ff, 0x0000_00f0);
-    modify(mmio, registers::R_4C58, 0x7fe0_0000, 0x0bc0_0000);
-    modify(mmio, registers::R_4C54, 0x7fe0_0000, 0x1d40_0000);
-    modify(mmio, registers::R_4C54, 0x001f_fc00, 0x0009_d800);
-    mmio.write32(registers::R_444C, 0x0009_0a0b);
-    mmio.write32(registers::R_4458, 0x0009_0a0b);
-    mmio.write32(registers::R_4450, 0x0005_0100);
-    mmio.write32(registers::R_445C, 0x0005_0100);
-    modify(mmio, registers::R_4C1C, 0x0000_0fff, 0x0000_000f);
 
     // `phy_disable_low_rate`, invoked by `hal_mac_disable_low_rate`.
     mmio.disable_phy_low_rate();

@@ -10,8 +10,9 @@ use open_esp_radio_mac_esp32s31::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
         MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdStartError,
-        MacColdStartOutcome, MacColdTxRxHardware, MacInterfaceAddressHardware, MacLowRateHardware,
-        MacSnifferHardware, StaLinkRxPolicyHardware,
+        MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
+        MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
+        StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -361,6 +362,27 @@ impl MacColdTxRxHardware for MockMmio {
         modify(mac_init::R_4CA0, 0x3, 0x3);
     }
 
+    fn initialize_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
+        let slot = u32::from(delay_slot.value());
+        {
+            let mut modify = |register: Register32, mask: u32, value: u32| {
+                let current = self.read32(register);
+                self.write32(register, (current & !mask) | (value & mask));
+            };
+            modify(mac_init::R_4C58, 0x001f_fc00, 0x000e_e400);
+            modify(mac_init::R_4C58, 0x0000_03ff, 0x0000_00f5 + slot);
+            modify(mac_init::R_4C58, 0x7fe0_0000, 0x0bc0_0000);
+            modify(mac_init::R_4C54, 0x7fe0_0000, (0x0000_00fa + slot) << 21);
+            modify(mac_init::R_4C54, 0x001f_fc00, 0x0009_d800);
+        }
+        self.write32(mac_init::R_444C, 0x0009_0a0b);
+        self.write32(mac_init::R_4458, 0x0009_0a0b);
+        self.write32(mac_init::R_4450, 0x0005_0100);
+        self.write32(mac_init::R_445C, 0x0005_0100);
+        let current = self.read32(mac_init::R_4C1C);
+        self.write32(mac_init::R_4C1C, (current & !0x0000_0fff) | 0x0000_000f);
+    }
+
     fn initialize_txrx_suffix(&mut self) {
         let mut modify = |register: Register32, mask: u32, value: u32| {
             let current = self.read32(register);
@@ -548,6 +570,7 @@ enum PlatformOperation {
     EnableCoexistenceClock,
     ConfigureModemSourceClocks,
     SetWifiMacReset(bool),
+    RequestMacDelayRandom,
 }
 
 #[derive(Default)]
@@ -573,6 +596,14 @@ impl MacClockControl for MockPlatform {
     fn set_wifi_mac_reset(&mut self, asserted: bool) {
         self.operations
             .push(PlatformOperation::SetWifiMacReset(asserted));
+    }
+}
+
+impl MacDelayEntropy for MockPlatform {
+    fn mac_delay_random(&mut self) -> u32 {
+        self.operations
+            .push(PlatformOperation::RequestMacDelayRandom);
+        7
     }
 }
 
@@ -605,6 +636,14 @@ fn descriptor_words_preserve_the_recovered_geometry() {
     assert_eq!(length(tx), 123);
     assert_eq!(tx & (BIT_30 | BIT_31), BIT_30 | BIT_31);
     assert_eq!(tx_owned_word(64, 65), None);
+}
+
+#[test]
+fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
+    assert_eq!(MacDelaySlot::from_random(0).value(), 0);
+    assert_eq!(MacDelaySlot::from_random(10).value(), 10);
+    assert_eq!(MacDelaySlot::from_random(11).value(), 0);
+    assert_eq!(MacDelaySlot::from_random(u32::MAX).value(), 3);
 }
 
 #[test]
@@ -752,9 +791,30 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             },
         )
     }));
+    assert!(mmio.operations().windows(16).any(|operations| {
+        operations
+            == [
+                Operation::Read(mac_init::R_4C58),
+                Operation::Write(mac_init::R_4C58, 0x000e_e400),
+                Operation::Read(mac_init::R_4C58),
+                Operation::Write(mac_init::R_4C58, 0x000e_e4fc),
+                Operation::Read(mac_init::R_4C58),
+                Operation::Write(mac_init::R_4C58, 0x0bce_e4fc),
+                Operation::Read(mac_init::R_4C54),
+                Operation::Write(mac_init::R_4C54, 0x2020_0000),
+                Operation::Read(mac_init::R_4C54),
+                Operation::Write(mac_init::R_4C54, 0x2029_d800),
+                Operation::Write(mac_init::R_444C, 0x0009_0a0b),
+                Operation::Write(mac_init::R_4458, 0x0009_0a0b),
+                Operation::Write(mac_init::R_4450, 0x0005_0100),
+                Operation::Write(mac_init::R_445C, 0x0005_0100),
+                Operation::Read(mac_init::R_4C1C),
+                Operation::Write(mac_init::R_4C1C, 0x0000_000f),
+            ]
+    }));
     let expected_txrx_suffix = [
-        (mac_init::R_4C1C, 0x8000_0000),
-        (mac_init::R_4C1C, 0xc000_0000),
+        (mac_init::R_4C1C, 0x8000_000f),
+        (mac_init::R_4C1C, 0xc000_000f),
         (mac_init::R_4C20, 0x0000_00f0),
         (mac_init::R_4C24, 0x0000_00f0),
         (mac_init::R_4CA8, 0x0000_0040),
@@ -816,6 +876,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             PlatformOperation::ConfigureModemSourceClocks,
             PlatformOperation::SetWifiMacReset(true),
             PlatformOperation::SetWifiMacReset(false),
+            PlatformOperation::RequestMacDelayRandom,
         ]
     );
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));

@@ -10794,6 +10794,392 @@ pub mod wifi_mac_txrx_prefix {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. Hardware effects of the three HE callbacks between the direct mac_txrx_init prefix and suffix. Diagnostic logging calls are intentionally omitted."]
+pub type WifiMacTxrxCallbacks = crate::Periph<wifi_mac_txrx_callbacks::RegisterBlock, 0x2010_444c>;
+impl core::fmt::Debug for WifiMacTxrxCallbacks {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxrxCallbacks").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. Hardware effects of the three HE callbacks between the direct mac_txrx_init prefix and suffix. Diagnostic logging calls are intentionally omitted."]
+pub mod wifi_mac_txrx_callbacks {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        ack_rate_primary: AckRatePrimary,
+        ack_policy_primary: AckPolicyPrimary,
+        _reserved2: [u8; 0x04],
+        ack_rate_secondary: AckRateSecondary,
+        ack_policy_secondary: AckPolicySecondary,
+        _reserved4: [u8; 0x07bc],
+        bb_rx_hang_control: BbRxHangControl,
+        _reserved5: [u8; 0x34],
+        delay_secondary: DelaySecondary,
+        delay_primary: DelayPrimary,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00090a0b."]
+        #[inline(always)]
+        pub const fn ack_rate_primary(&self) -> &AckRatePrimary {
+            &self.ack_rate_primary
+        }
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00050100."]
+        #[inline(always)]
+        pub const fn ack_policy_primary(&self) -> &AckPolicyPrimary {
+            &self.ack_policy_primary
+        }
+        #[doc = "0x0c - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same rate image as the primary word."]
+        #[inline(always)]
+        pub const fn ack_rate_secondary(&self) -> &AckRateSecondary {
+            &self.ack_rate_secondary
+        }
+        #[doc = "0x10 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same policy image as the primary word."]
+        #[inline(always)]
+        pub const fn ack_policy_secondary(&self) -> &AckPolicySecondary {
+            &self.ack_policy_secondary
+        }
+        #[doc = "0x7d0 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f."]
+        #[inline(always)]
+        pub const fn bb_rx_hang_control(&self) -> &BbRxHangControl {
+            &self.bb_rx_hang_control
+        }
+        #[doc = "0x808 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces bits 20:10 through a separate RMW."]
+        #[inline(always)]
+        pub const fn delay_secondary(&self) -> &DelaySecondary {
+            &self.delay_secondary
+        }
+        #[doc = "0x80c - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay performs three separate RMWs for bits 20:10, 9:0 and 30:21."]
+        #[inline(always)]
+        pub const fn delay_primary(&self) -> &DelayPrimary {
+            &self.delay_primary
+        }
+    }
+    #[doc = "ACK_RATE_PRIMARY (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00090a0b.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_rate_primary::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ack_rate_primary`] module"]
+    #[doc(alias = "ACK_RATE_PRIMARY")]
+    pub type AckRatePrimary = crate::Reg<ack_rate_primary::AckRatePrimarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00090a0b."]
+    pub mod ack_rate_primary {
+        #[doc = "Register `ACK_RATE_PRIMARY` writer"]
+        pub type W = crate::W<AckRatePrimarySpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, AckRatePrimarySpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00090a0b.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_rate_primary::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AckRatePrimarySpec;
+        impl crate::RegisterSpec for AckRatePrimarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`ack_rate_primary::W`](W) writer structure"]
+        impl crate::Writable for AckRatePrimarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ACK_POLICY_PRIMARY (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00050100.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_policy_primary::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ack_policy_primary`] module"]
+    #[doc(alias = "ACK_POLICY_PRIMARY")]
+    pub type AckPolicyPrimary = crate::Reg<ack_policy_primary::AckPolicyPrimarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00050100."]
+    pub mod ack_policy_primary {
+        #[doc = "Register `ACK_POLICY_PRIMARY` writer"]
+        pub type W = crate::W<AckPolicyPrimarySpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, AckPolicyPrimarySpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes 0x00050100.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_policy_primary::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AckPolicyPrimarySpec;
+        impl crate::RegisterSpec for AckPolicyPrimarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`ack_policy_primary::W`](W) writer structure"]
+        impl crate::Writable for AckPolicyPrimarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ACK_RATE_SECONDARY (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same rate image as the primary word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_rate_secondary::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ack_rate_secondary`] module"]
+    #[doc(alias = "ACK_RATE_SECONDARY")]
+    pub type AckRateSecondary = crate::Reg<ack_rate_secondary::AckRateSecondarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same rate image as the primary word."]
+    pub mod ack_rate_secondary {
+        #[doc = "Register `ACK_RATE_SECONDARY` writer"]
+        pub type W = crate::W<AckRateSecondarySpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, AckRateSecondarySpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same rate image as the primary word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_rate_secondary::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AckRateSecondarySpec;
+        impl crate::RegisterSpec for AckRateSecondarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`ack_rate_secondary::W`](W) writer structure"]
+        impl crate::Writable for AckRateSecondarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ACK_POLICY_SECONDARY (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same policy image as the primary word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_policy_secondary::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ack_policy_secondary`] module"]
+    #[doc(alias = "ACK_POLICY_SECONDARY")]
+    pub type AckPolicySecondary = crate::Reg<ack_policy_secondary::AckPolicySecondarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same policy image as the primary word."]
+    pub mod ack_policy_secondary {
+        #[doc = "Register `ACK_POLICY_SECONDARY` writer"]
+        pub type W = crate::W<AckPolicySecondarySpec>;
+        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, AckPolicySecondarySpec> {
+                ImageUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_ack_rate(0) publishes the same policy image as the primary word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ack_policy_secondary::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AckPolicySecondarySpec;
+        impl crate::RegisterSpec for AckPolicySecondarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`ack_policy_secondary::W`](W) writer structure"]
+        impl crate::Writable for AckPolicySecondarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BB_RX_HANG_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_rx_hang_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_rx_hang_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_rx_hang_control`] module"]
+    #[doc(alias = "BB_RX_HANG_CONTROL")]
+    pub type BbRxHangControl = crate::Reg<bb_rx_hang_control::BbRxHangControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f."]
+    pub mod bb_rx_hang_control {
+        #[doc = "Register `BB_RX_HANG_CONTROL` reader"]
+        pub type R = crate::R<BbRxHangControlSpec>;
+        #[doc = "Register `BB_RX_HANG_CONTROL` writer"]
+        pub type W = crate::W<BbRxHangControlSpec>;
+        #[doc = "Field `TIMEOUT_UNKNOWN` reader - "]
+        pub type TimeoutUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TIMEOUT_UNKNOWN` writer - "]
+        pub type TimeoutUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn timeout_unknown(&self) -> TimeoutUnknownR {
+                TimeoutUnknownR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 12) & 0x000f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn timeout_unknown(&mut self) -> TimeoutUnknownW<'_, BbRxHangControlSpec> {
+                TimeoutUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, BbRxHangControlSpec> {
+                HighPreservedUnknownW::new(self, 12)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-value-semantics-partial\\]. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_rx_hang_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_rx_hang_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BbRxHangControlSpec;
+        impl crate::RegisterSpec for BbRxHangControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bb_rx_hang_control::R`](R) reader structure"]
+        impl crate::Readable for BbRxHangControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bb_rx_hang_control::W`](W) writer structure"]
+        impl crate::Writable for BbRxHangControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DELAY_SECONDARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces bits 20:10 through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_secondary`] module"]
+    #[doc(alias = "DELAY_SECONDARY")]
+    pub type DelaySecondary = crate::Reg<delay_secondary::DelaySecondarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces bits 20:10 through a separate RMW."]
+    pub mod delay_secondary {
+        #[doc = "Register `DELAY_SECONDARY` reader"]
+        pub type R = crate::R<DelaySecondarySpec>;
+        #[doc = "Register `DELAY_SECONDARY` writer"]
+        pub type W = crate::W<DelaySecondarySpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `MIDDLE_DELAY_UNKNOWN` reader - "]
+        pub type MiddleDelayUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `MIDDLE_DELAY_UNKNOWN` writer - "]
+        pub type MiddleDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        #[doc = "Field `HIGH_DELAY_UNKNOWN` reader - "]
+        pub type HighDelayUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_DELAY_UNKNOWN` writer - "]
+        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` reader - "]
+        pub type TopPreservedUnknownR = crate::BitReader;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` writer - "]
+        pub type TopPreservedUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x03ff) as u16)
+            }
+            #[doc = "Bits 10:20"]
+            #[inline(always)]
+            pub fn middle_delay_unknown(&self) -> MiddleDelayUnknownR {
+                MiddleDelayUnknownR::new(((self.bits >> 10) & 0x07ff) as u16)
+            }
+            #[doc = "Bits 21:30"]
+            #[inline(always)]
+            pub fn high_delay_unknown(&self) -> HighDelayUnknownR {
+                HighDelayUnknownR::new(((self.bits >> 21) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(&self) -> TopPreservedUnknownR {
+                TopPreservedUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(
+                &mut self,
+            ) -> LowPreservedUnknownW<'_, DelaySecondarySpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 10:20"]
+            #[inline(always)]
+            pub fn middle_delay_unknown(&mut self) -> MiddleDelayUnknownW<'_, DelaySecondarySpec> {
+                MiddleDelayUnknownW::new(self, 10)
+            }
+            #[doc = "Bits 21:30"]
+            #[inline(always)]
+            pub fn high_delay_unknown(&mut self) -> HighDelayUnknownW<'_, DelaySecondarySpec> {
+                HighDelayUnknownW::new(self, 21)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(
+                &mut self,
+            ) -> TopPreservedUnknownW<'_, DelaySecondarySpec> {
+                TopPreservedUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces bits 20:10 through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DelaySecondarySpec;
+        impl crate::RegisterSpec for DelaySecondarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`delay_secondary::R`](R) reader structure"]
+        impl crate::Readable for DelaySecondarySpec {}
+        #[doc = "`write(|w| ..)` method takes [`delay_secondary::W`](W) writer structure"]
+        impl crate::Writable for DelaySecondarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DELAY_PRIMARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay performs three separate RMWs for bits 20:10, 9:0 and 30:21.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_primary`] module"]
+    #[doc(alias = "DELAY_PRIMARY")]
+    pub type DelayPrimary = crate::Reg<delay_primary::DelayPrimarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay performs three separate RMWs for bits 20:10, 9:0 and 30:21."]
+    pub mod delay_primary {
+        #[doc = "Register `DELAY_PRIMARY` reader"]
+        pub type R = crate::R<DelayPrimarySpec>;
+        #[doc = "Register `DELAY_PRIMARY` writer"]
+        pub type W = crate::W<DelayPrimarySpec>;
+        #[doc = "Field `LOW_DELAY_UNKNOWN` reader - "]
+        pub type LowDelayUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_DELAY_UNKNOWN` writer - "]
+        pub type LowDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `MIDDLE_DELAY_UNKNOWN` reader - "]
+        pub type MiddleDelayUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `MIDDLE_DELAY_UNKNOWN` writer - "]
+        pub type MiddleDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        #[doc = "Field `HIGH_DELAY_UNKNOWN` reader - "]
+        pub type HighDelayUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_DELAY_UNKNOWN` writer - "]
+        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` reader - "]
+        pub type TopPreservedUnknownR = crate::BitReader;
+        #[doc = "Field `TOP_PRESERVED_UNKNOWN` writer - "]
+        pub type TopPreservedUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn low_delay_unknown(&self) -> LowDelayUnknownR {
+                LowDelayUnknownR::new((self.bits & 0x03ff) as u16)
+            }
+            #[doc = "Bits 10:20"]
+            #[inline(always)]
+            pub fn middle_delay_unknown(&self) -> MiddleDelayUnknownR {
+                MiddleDelayUnknownR::new(((self.bits >> 10) & 0x07ff) as u16)
+            }
+            #[doc = "Bits 21:30"]
+            #[inline(always)]
+            pub fn high_delay_unknown(&self) -> HighDelayUnknownR {
+                HighDelayUnknownR::new(((self.bits >> 21) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(&self) -> TopPreservedUnknownR {
+                TopPreservedUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn low_delay_unknown(&mut self) -> LowDelayUnknownW<'_, DelayPrimarySpec> {
+                LowDelayUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 10:20"]
+            #[inline(always)]
+            pub fn middle_delay_unknown(&mut self) -> MiddleDelayUnknownW<'_, DelayPrimarySpec> {
+                MiddleDelayUnknownW::new(self, 10)
+            }
+            #[doc = "Bits 21:30"]
+            #[inline(always)]
+            pub fn high_delay_unknown(&mut self) -> HighDelayUnknownW<'_, DelayPrimarySpec> {
+                HighDelayUnknownW::new(self, 21)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn top_preserved_unknown(&mut self) -> TopPreservedUnknownW<'_, DelayPrimarySpec> {
+                TopPreservedUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS\\]; CONFIDENCE\\[instruction-exact-on-chip-path\\]. On-chip hal_he_set_mac_delay performs three separate RMWs for bits 20:10, 9:0 and 30:21.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DelayPrimarySpec;
+        impl crate::RegisterSpec for DelayPrimarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`delay_primary::R`](R) reader structure"]
+        impl crate::Readable for DelayPrimarySpec {}
+        #[doc = "`write(|w| ..)` method takes [`delay_primary::W`](W) writer structure"]
+        impl crate::Writable for DelayPrimarySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Nine direct fresh-read RMW edges after the three external HE callbacks in complete mac_txrx_init."]
 pub type WifiMacTxrxSuffix = crate::Periph<wifi_mac_txrx_suffix::RegisterBlock, 0x2010_4308>;
 impl core::fmt::Debug for WifiMacTxrxSuffix {
@@ -13068,6 +13454,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_TXRX_PREFIX"]
     pub wifi_mac_txrx_prefix: WifiMacTxrxPrefix,
+    #[doc = "WIFI_MAC_TXRX_CALLBACKS"]
+    pub wifi_mac_txrx_callbacks: WifiMacTxrxCallbacks,
     #[doc = "WIFI_MAC_TXRX_SUFFIX"]
     pub wifi_mac_txrx_suffix: WifiMacTxrxSuffix,
     #[doc = "WIFI_MAC_RX_CSI_CONTROL"]
@@ -13124,6 +13512,7 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),
+            wifi_mac_txrx_callbacks: WifiMacTxrxCallbacks::steal(),
             wifi_mac_txrx_suffix: WifiMacTxrxSuffix::steal(),
             wifi_mac_rx_csi_control: WifiMacRxCsiControl::steal(),
             wifi_mac_last_rx_buffer: WifiMacLastRxBuffer::steal(),

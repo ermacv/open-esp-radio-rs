@@ -554,6 +554,42 @@ mod tests {
     }
 
     #[test]
+    fn generated_mac_txrx_callbacks_match_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let callbacks = &registers.peripherals.wifi_mac_txrx_callbacks;
+        assert_eq!(callbacks.ack_rate_primary().as_ptr() as usize, 0x2010_444c);
+        assert_eq!(
+            callbacks.ack_policy_primary().as_ptr() as usize,
+            0x2010_4450
+        );
+        assert_eq!(
+            callbacks.ack_rate_secondary().as_ptr() as usize,
+            0x2010_4458
+        );
+        assert_eq!(
+            callbacks.ack_policy_secondary().as_ptr() as usize,
+            0x2010_445c
+        );
+        assert_eq!(
+            callbacks.bb_rx_hang_control().as_ptr() as usize,
+            0x2010_4c1c
+        );
+        assert_eq!(callbacks.delay_secondary().as_ptr() as usize, 0x2010_4c54);
+        assert_eq!(callbacks.delay_primary().as_ptr() as usize, 0x2010_4c58);
+    }
+
+    #[test]
+    fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
+        // SAFETY: the rejected input returns before any generated register is
+        // accessed; the host test therefore performs no volatile MMIO.
+        let mut registers = unsafe { RadioRegisters::steal() };
+        assert!(!registers.initialize_mac_txrx_callbacks(11));
+        assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
+    }
+
+    #[test]
     fn generated_mac_txrx_suffix_matches_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.

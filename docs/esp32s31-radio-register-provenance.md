@@ -917,7 +917,26 @@ records this as a separate generated-PAC transaction. In particular, bit 31
 and bit 30 at `0x20104c1c` are distinct edges, as are the bits-30:16 group and
 bit 31 at `0x20104c60`; the earlier Rust transcription combined each pair.
 The suffix then clears RX walker-enable at `0x20104080`. Callback effects are
-still not claimed by either direct transaction.
+not claimed by either direct transaction.
+
+Complete pinned `libpp.a[hal_mac_ctl.o]` bodies close that callback gap.
+`hal_he_set_ack_rate(0)` performs four full-word stores at
+`0x2010444c/0x20104458` and `0x20104450/0x2010445c`;
+`hal_he_set_bbrxhung_time(0)` replaces the low twelve bits at
+`0x20104c1c` with `0x00f`.
+
+`hal_he_set_mac_delay` first calls `g_wifi_osi_funcs._env_is_chip` at table
+offset `0x04`. The S31 esp-hal adapter returns true, so real hardware follows
+the on-chip branch, calls `_random` at table offset `0x144`, and reduces its
+result modulo eleven. The five resulting RMWs program `0x20104c58` three
+times and `0x20104c54` twice. The former Rust fixed values followed the
+function's FPGA branch and were therefore incorrect for the connected chip.
+
+SVD v3.13 records the exact on-chip fields and cites the archive, pinned
+esp-wifi-sys OS-adapter layout, and pinned esp-hal implementations. The MAC
+crate owns the modulo-eleven value as `MacDelaySlot`; the integration supplies
+entropy through a platform trait, so neither raw RNG MMIO nor the vendor C ABI
+crosses into the open driver.
 
 ## Cross-chip comparison
 

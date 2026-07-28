@@ -3520,15 +3520,23 @@ the upper module.
 ## Semantic MAC TX/RX cold direct transactions
 
 Both call-free portions of `mac_txrx_init` are now exposed through
-`MacColdTxRxHardware`. Upper init requests two semantic operations; generated
+`MacColdTxRxHardware`. Upper init requests the two direct operations; generated
 PAC code owns the register identities and exact RMW order of the eighteen-edge
 prefix and nine-edge suffix.
 
-The boundary deliberately leaves the three HE callbacks between those
-transactions. This lets the source-owned driver preserve the complete proven
-direct code without folding the OSI-dependent `hal_he_set_mac_delay` behavior
-into a guessed register image. The suffix also corrects two earlier
-value-equivalent collapses: bit 31 and bit 30 at `0x20104c1c`, and bits 30:16
-then bit 31 at `0x20104c60`, are separate fresh-read edges. Host tracing
-asserts all 54 read/write operations, and the source audit keeps raw access
-out of `cold_txrx.rs`.
+The three intervening HE callbacks are now a third semantic operation.
+`MacDelayEntropy` asks the platform for one random word without exposing the
+RNG peripheral to the MAC crate; `MacDelaySlot` performs the vendor modulo-11
+reduction and makes the `0..=10` invariant explicit. Generated PAC code then
+owns the five delay RMWs, four ACK-rate stores and one baseband-hang RMW.
+
+This corrected a behavioral bug, not only an ownership leak. The fixed timing
+values previously carried by upper init are the FPGA branch of
+`hal_he_set_mac_delay`. The real-chip OS adapter returns true from
+`_env_is_chip` and obtains a random word from its `_random` callback. The
+integration now supplies that word through `esp_hal::rng::Rng`.
+
+The suffix also corrects two earlier value-equivalent collapses: bit 31 and
+bit 30 at `0x20104c1c`, and bits 30:16 then bit 31 at `0x20104c60`, are
+separate fresh-read edges. Host tracing asserts the exact callback and direct
+transactions, and the source audit keeps raw access out of `cold_txrx.rs`.

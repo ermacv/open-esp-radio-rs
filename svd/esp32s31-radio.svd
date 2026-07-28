@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.12</version>
+  <version>3.13</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1810,6 +1810,55 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_TXRX_CALLBACKS</name>
+      <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-on-chip-path]. Hardware effects of the three HE callbacks between the direct mac_txrx_init prefix and suffix. Diagnostic logging calls are intentionally omitted.</description>
+      <baseAddress>0x2010444c</baseAddress>
+      <registers>
+        <register>
+          <name>ACK_RATE_PRIMARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-value-semantics-partial]. hal_he_set_ack_rate(0) publishes 0x00090a0b.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>ACK_POLICY_PRIMARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-value-semantics-partial]. hal_he_set_ack_rate(0) publishes 0x00050100.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>ACK_RATE_SECONDARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-value-semantics-partial]. hal_he_set_ack_rate(0) publishes the same rate image as the primary word.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>ACK_POLICY_SECONDARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-value-semantics-partial]. hal_he_set_ack_rate(0) publishes the same policy image as the primary word.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BB_RX_HANG_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-value-semantics-partial]. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f.</description>
+          <addressOffset>0x7d0</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>TIMEOUT_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>20</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DELAY_SECONDARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-on-chip-path]. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces bits 20:10 through a separate RMW.</description>
+          <addressOffset>0x808</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field><field><name>MIDDLE_DELAY_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>11</bitWidth></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field><field><name>TOP_PRESERVED_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DELAY_PRIMARY</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS]; CONFIDENCE[instruction-exact-on-chip-path]. On-chip hal_he_set_mac_delay performs three separate RMWs for bits 20:10, 9:0 and 30:21.</description>
+          <addressOffset>0x80c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_DELAY_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field><field><name>MIDDLE_DELAY_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>11</bitWidth></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field><field><name>TOP_PRESERVED_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_TXRX_SUFFIX</name>
       <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-partial]. Nine direct fresh-read RMW edges after the three external HE callbacks in complete mac_txrx_init.</description>
       <baseAddress>0x20104308</baseAddress>
@@ -2248,6 +2297,7 @@
       <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>
       <source id="BLOB_LIBPP_MAC_LAST_RXBUF_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_last_rxbuf_init body, size 0xd2. It performs eighteen ordered full-word stores for six three-word entries at 0x20104124..0x20104170, then two separate fresh-read RMWs setting 0x3f00 and 0x007e at 0x20104120, followed by one fresh-read RMW setting bit 27 at 0x20104098.</source>
       <source id="BLOB_LIBPP_MAC_TXRX_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct prefix offsets 0x08..0xd0 before its first external call at 0xd2. It proves eighteen fresh-read RMW edges. The following hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls are deliberately outside this source entry.</source>
+      <source id="BLOB_LIBPP_MAC_TXRX_CALLBACKS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_set_mac_delay (size 0x180), hal_he_set_ack_rate (size 0x156), and hal_he_set_bbrxhung_time (size 0x1e), reached from complete hal_mac.o mac_txrx_init with zero arguments for the latter two. g_wifi_osi_funcs layout is independently pinned by esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, esp-wifi-sys-esp32s31/src/include.rs sha256 de6ecd8853cc1925389f89e768a8a865ad58db6025f94a63584096eb8ad5f1dc and c/headers/esp32s31/esp_private/wifi_os_adapter.h sha256 08fb73f76da7e6800c42dbff2fb724dff5205e1c8262e969da0f391be21f1eae: offset 0x04 is _env_is_chip and offset 0x144 is _random. esp-hal branch esp32s31-async-platform commit 07de55443721de6fa32e7fb721f0fa7996e604d3, esp-radio/src/wifi/os_adapter/mod.rs sha256 cf8439e907161228875d852eb1e4cfa45628b62532bfbe4bc8adcebd8c6112ed and esp-radio/src/common_adapter.rs sha256 6e9ef6acc2236d29e7b2ef2ed957eaa878c8f5f767a77ecff19b6711e135ab34 prove the real-chip adapter returns true and sources _random from esp_hal::rng::Rng. The on-chip blob path uses that value modulo 11; the previously transcribed fixed values were the FPGA branch. Diagnostic log calls after hardware writes do not alter MMIO and are omitted.</source>
       <source id="BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct suffix offsets 0xee..0x16e after the hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls. It proves nine fresh-read RMW edges ending with RX_CONTROL walker-disable bit 31 clear.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>

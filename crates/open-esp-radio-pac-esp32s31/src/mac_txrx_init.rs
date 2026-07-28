@@ -59,6 +59,60 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.enable_group_unknown().bits(3) });
     }
 
+    /// Apply the on-chip paths of all three HE callbacks in `mac_txrx_init`.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_set_mac_delay`, `hal_he_set_ack_rate(0)` and
+    /// `hal_he_set_bbrxhung_time(0)`. `delay_slot` is `_random() % 11`.
+    ///
+    /// Returns false without touching hardware when the slot is outside the
+    /// complete vendor range `0..=10`.
+    pub fn initialize_mac_txrx_callbacks(&mut self, delay_slot: u8) -> bool {
+        if delay_slot > 10 {
+            return false;
+        }
+
+        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        // SAFETY: all images fit their complete generated fields. Arithmetic
+        // bounds follow from the checked vendor slot range above.
+        callbacks
+            .delay_primary()
+            .modify(|_, w| unsafe { w.middle_delay_unknown().bits(0x3b9) });
+        callbacks
+            .delay_primary()
+            .modify(|_, w| unsafe { w.low_delay_unknown().bits(0xf5 + u16::from(delay_slot)) });
+        callbacks
+            .delay_primary()
+            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0x5e) });
+        callbacks
+            .delay_secondary()
+            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0xfa + u16::from(delay_slot)) });
+        callbacks
+            .delay_secondary()
+            .modify(|_, w| unsafe { w.middle_delay_unknown().bits(0x276) });
+
+        // SAFETY: each callback performs a complete full-word store; no reset
+        // value or unread field is used to construct these exact blob images.
+        unsafe {
+            callbacks
+                .ack_rate_primary()
+                .write_with_zero(|w| w.image_unknown().bits(0x0009_0a0b));
+            callbacks
+                .ack_rate_secondary()
+                .write_with_zero(|w| w.image_unknown().bits(0x0009_0a0b));
+            callbacks
+                .ack_policy_primary()
+                .write_with_zero(|w| w.image_unknown().bits(0x0005_0100));
+            callbacks
+                .ack_policy_secondary()
+                .write_with_zero(|w| w.image_unknown().bits(0x0005_0100));
+        }
+        callbacks
+            .bb_rx_hang_control()
+            .modify(|_, w| unsafe { w.timeout_unknown().bits(0x00f) });
+        true
+    }
+
     /// Apply all nine direct RMW edges after the three HE callbacks.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::mac_txrx_init`,

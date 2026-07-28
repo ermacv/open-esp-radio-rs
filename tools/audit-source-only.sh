@@ -188,13 +188,20 @@ then
     exit 1
 fi
 
-# The direct mac_txrx_init prefix and suffix are PAC transactions. The three
-# intervening HE callbacks remain an explicit separate migration boundary.
+# The direct mac_txrx_init prefix/suffix and all three intervening callback
+# hardware paths are generated-PAC transactions.
 if rg -n \
     '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
     crates/open-esp-radio-mac-esp32s31/src/cold_txrx.rs
 then
     echo "raw compatibility MMIO returned to cold MAC TX/RX init" >&2
+    exit 1
+fi
+if rg -n \
+    'R_(444C|4450|4458|445C|4C1C|4C54|4C58)' \
+    crates/open-esp-radio-mac-esp32s31/src/init.rs
+then
+    echo "PAC-owned MAC TX/RX callback register returned to upper init" >&2
     exit 1
 fi
 

@@ -794,6 +794,26 @@ transaction but is not treated as independent register-level HIL evidence.
 The upper MAC therefore receives only a semantic install/clear capability;
 all table geometry and generated register access remain inside the PAC.
 
+Ordinary EDCA TX is described as four generated blocks rather than one guessed
+monolith. `WIFI_MAC_TX_COMMON` contains shared CCA and queue
+timeout/completion state. `WIFI_MAC_TX_QUEUE_CONTROL` contains four ascending
+`0x10`-byte banks; `WIFI_MAC_TX_QUEUE_VECTOR` and
+`WIFI_MAC_TX_COMPLETION` contain four ascending `0x7c`-byte banks. In all
+three cases physical order is logical queue 3,2,1,0, and the PAC performs the
+single reversal at its semantic boundary.
+
+Primary evidence is pinned `_oracles/libpp.a` SHA-256
+`f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e`:
+complete `hal_mac_tx_config_timeout`, `hal_mac_tx_set_ppdu`,
+`hal_mac_tx_config_edca`, `hal_mac_txq_enable`, `hal_mac_txq_disable`,
+`hal_mac_get_txq_state`, `hal_mac_clr_txq_state`, and `mac_tx_set_pti`
+leaves, together with the recovered completion reader. The former migration
+runtime in the parent of promotion commit `f233006` preserves the exact
+address/stride and async timeout/completion transcription. Open
+authentication and connected WPA2 HIL qualify queue zero; the other three
+ordinary banks remain instruction-exact but have not been independently
+exercised by the open driver.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

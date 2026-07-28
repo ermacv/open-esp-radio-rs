@@ -8183,6 +8183,1244 @@ pub mod wifi_mac_key_table {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues."]
+pub type WifiMacTxCommon = crate::Periph<wifi_mac_tx_common::RegisterBlock, 0x2010_4c5c>;
+impl core::fmt::Debug for WifiMacTxCommon {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxCommon").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues."]
+pub mod wifi_mac_tx_common {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        cca_control: CcaControl,
+        _reserved1: [u8; 0x50],
+        queue_state_clear: QueueStateClear,
+        queue_state: QueueState,
+        complete_clear: CompleteClear,
+        complete_state: CompleteState,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field."]
+        #[inline(always)]
+        pub const fn cca_control(&self) -> &CcaControl {
+            &self.cca_control
+        }
+        #[doc = "0x54 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Queue collision/timeout state acknowledgement."]
+        #[inline(always)]
+        pub const fn queue_state_clear(&self) -> &QueueStateClear {
+            &self.queue_state_clear
+        }
+        #[doc = "0x58 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue timeout and trigger-flow state."]
+        #[inline(always)]
+        pub const fn queue_state(&self) -> &QueueState {
+            &self.queue_state
+        }
+        #[doc = "0x5c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Preserved-image acknowledgement for ordinary queue completion bits."]
+        #[inline(always)]
+        pub const fn complete_clear(&self) -> &CompleteClear {
+            &self.complete_clear
+        }
+        #[doc = "0x60 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Low four bits report completed ordinary queues 0..3."]
+        #[inline(always)]
+        pub const fn complete_state(&self) -> &CompleteState {
+            &self.complete_state
+        }
+    }
+    #[doc = "CCA_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control`] module"]
+    #[doc(alias = "CCA_CONTROL")]
+    pub type CcaControl = crate::Reg<cca_control::CcaControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field."]
+    pub mod cca_control {
+        #[doc = "Register `CCA_CONTROL` reader"]
+        pub type R = crate::R<CcaControlSpec>;
+        #[doc = "Register `CCA_CONTROL` writer"]
+        pub type W = crate::W<CcaControlSpec>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - "]
+        pub type ControlLowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - "]
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        #[doc = "Field `FORCE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+        pub type ForceR = crate::FieldReader;
+        #[doc = "Field `FORCE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+        pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn control_low_unknown(&self) -> ControlLowUnknownR {
+                ControlLowUnknownR::new(self.bits & 0x3fff_ffff)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+            #[inline(always)]
+            pub fn force(&self) -> ForceR {
+                ForceR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn control_low_unknown(&mut self) -> ControlLowUnknownW<'_, CcaControlSpec> {
+                ControlLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+            #[inline(always)]
+            pub fn force(&mut self) -> ForceW<'_, CcaControlSpec> {
+                ForceW::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaControlSpec;
+        impl crate::RegisterSpec for CcaControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_control::R`](R) reader structure"]
+        impl crate::Readable for CcaControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_control::W`](W) writer structure"]
+        impl crate::Writable for CcaControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "QUEUE_STATE_CLEAR (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state_clear`] module"]
+    #[doc(alias = "QUEUE_STATE_CLEAR")]
+    pub type QueueStateClear = crate::Reg<queue_state_clear::QueueStateClearSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Queue collision/timeout state acknowledgement."]
+    pub mod queue_state_clear {
+        #[doc = "Register `QUEUE_STATE_CLEAR` writer"]
+        pub type W = crate::W<QueueStateClearSpec>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, QueueStateClearSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-write-to-clear\\]. Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct QueueStateClearSpec;
+        impl crate::RegisterSpec for QueueStateClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`queue_state_clear::W`](W) writer structure"]
+        impl crate::Writable for QueueStateClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "QUEUE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue timeout and trigger-flow state.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
+    #[doc(alias = "QUEUE_STATE")]
+    pub type QueueState = crate::Reg<queue_state::QueueStateSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue timeout and trigger-flow state."]
+    pub mod queue_state {
+        #[doc = "Register `QUEUE_STATE` reader"]
+        pub type R = crate::R<QueueStateSpec>;
+        #[doc = "Field `LOW_STATE_UNKNOWN` reader - "]
+        pub type LowStateUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TIMEOUT` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 16..19 correspond to ordinary queues 0..3."]
+        pub type TimeoutR = crate::FieldReader;
+        #[doc = "Field `MIDDLE_STATE_UNKNOWN` reader - "]
+        pub type MiddleStateUnknownR = crate::FieldReader;
+        #[doc = "Field `TRIGGER_FLOW` reader - SOURCE\\[MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24..27 correspond to ordinary queues 0..3."]
+        pub type TriggerFlowR = crate::FieldReader;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` reader - "]
+        pub type HighStateUnknownR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_state_unknown(&self) -> LowStateUnknownR {
+                LowStateUnknownR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 16..19 correspond to ordinary queues 0..3."]
+            #[inline(always)]
+            pub fn timeout(&self) -> TimeoutR {
+                TimeoutR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn middle_state_unknown(&self) -> MiddleStateUnknownR {
+                MiddleStateUnknownR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:27 - SOURCE\\[MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24..27 correspond to ordinary queues 0..3."]
+            #[inline(always)]
+            pub fn trigger_flow(&self) -> TriggerFlowR {
+                TriggerFlowR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&self) -> HighStateUnknownR {
+                HighStateUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue timeout and trigger-flow state.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct QueueStateSpec;
+        impl crate::RegisterSpec for QueueStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`queue_state::R`](R) reader structure"]
+        impl crate::Readable for QueueStateSpec {}
+    }
+    #[doc = "COMPLETE_CLEAR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_clear`] module"]
+    #[doc(alias = "COMPLETE_CLEAR")]
+    pub type CompleteClear = crate::Reg<complete_clear::CompleteClearSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Preserved-image acknowledgement for ordinary queue completion bits."]
+    pub mod complete_clear {
+        #[doc = "Register `COMPLETE_CLEAR` reader"]
+        pub type R = crate::R<CompleteClearSpec>;
+        #[doc = "Register `COMPLETE_CLEAR` writer"]
+        pub type W = crate::W<CompleteClearSpec>;
+        #[doc = "Field `STATE` reader - "]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - "]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, CompleteClearSpec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CompleteClearSpec;
+        impl crate::RegisterSpec for CompleteClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`complete_clear::R`](R) reader structure"]
+        impl crate::Readable for CompleteClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`complete_clear::W`](W) writer structure"]
+        impl crate::Writable for CompleteClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "COMPLETE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_state`] module"]
+    #[doc(alias = "COMPLETE_STATE")]
+    pub type CompleteState = crate::Reg<complete_state::CompleteStateSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Low four bits report completed ordinary queues 0..3."]
+    pub mod complete_state {
+        #[doc = "Register `COMPLETE_STATE` reader"]
+        pub type R = crate::R<CompleteStateSpec>;
+        #[doc = "Field `ORDINARY_QUEUES` reader - "]
+        pub type OrdinaryQueuesR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn ordinary_queues(&self) -> OrdinaryQueuesR {
+                OrdinaryQueuesR::new((self.bits & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CompleteStateSpec;
+        impl crate::RegisterSpec for CompleteStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`complete_state::R`](R) reader structure"]
+        impl crate::Readable for CompleteStateSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four ascending physical banks represent logical EDCA queues 3,2,1,0."]
+pub type WifiMacTxQueueControl =
+    crate::Periph<wifi_mac_tx_queue_control::RegisterBlock, 0x2010_4d34>;
+impl core::fmt::Debug for WifiMacTxQueueControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxQueueControl").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four ascending physical banks represent logical EDCA queues 3,2,1,0."]
+pub mod wifi_mac_tx_queue_control {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        protection: (),
+        _reserved1: [u8; 0x04],
+        ppdu_control: (),
+        _reserved2: [u8; 0x04],
+        config: (),
+        _reserved3: [u8; 0x04],
+        control: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+        #[inline(always)]
+        pub const fn protection(&self, n: usize) -> &Protection {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+        #[inline(always)]
+        pub fn protection_iter(&self) -> impl Iterator<Item = &Protection> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast()
+            })
+        }
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue PPDU control; open legacy formatting clears bit 3."]
+        #[inline(always)]
+        pub const fn ppdu_control(&self, n: usize) -> &PpduControl {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue PPDU control; open legacy formatting clears bit 3."]
+        #[inline(always)]
+        pub fn ppdu_control_iter(&self) -> impl Iterator<Item = &PpduControl> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+        #[inline(always)]
+        pub const fn config(&self, n: usize) -> &Config {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+        #[inline(always)]
+        pub fn config_iter(&self) -> impl Iterator<Item = &Config> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+        #[inline(always)]
+        pub const fn control(&self, n: usize) -> &Control {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+        #[inline(always)]
+        pub fn control_iter(&self) -> impl Iterator<Item = &Control> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "PROTECTION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
+    #[doc(alias = "PROTECTION")]
+    pub type Protection = crate::Reg<protection::ProtectionSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+    pub mod protection {
+        #[doc = "Register `PROTECTION%s` reader"]
+        pub type R = crate::R<ProtectionSpec>;
+        #[doc = "Register `PROTECTION%s` writer"]
+        pub type W = crate::W<ProtectionSpec>;
+        #[doc = "Field `POLICY_LOW_UNKNOWN` reader - "]
+        pub type PolicyLowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `POLICY_LOW_UNKNOWN` writer - "]
+        pub type PolicyLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
+        #[doc = "Field `PROTECTION_HIGH_UNKNOWN` reader - "]
+        pub type ProtectionHighUnknownR = crate::BitReader;
+        #[doc = "Field `PROTECTION_HIGH_UNKNOWN` writer - "]
+        pub type ProtectionHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:30"]
+            #[inline(always)]
+            pub fn policy_low_unknown(&self) -> PolicyLowUnknownR {
+                PolicyLowUnknownR::new(self.bits & 0x7fff_ffff)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn protection_high_unknown(&self) -> ProtectionHighUnknownR {
+                ProtectionHighUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:30"]
+            #[inline(always)]
+            pub fn policy_low_unknown(&mut self) -> PolicyLowUnknownW<'_, ProtectionSpec> {
+                PolicyLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn protection_high_unknown(
+                &mut self,
+            ) -> ProtectionHighUnknownW<'_, ProtectionSpec> {
+                ProtectionHighUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ProtectionSpec;
+        impl crate::RegisterSpec for ProtectionSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`protection::R`](R) reader structure"]
+        impl crate::Readable for ProtectionSpec {}
+        #[doc = "`write(|w| ..)` method takes [`protection::W`](W) writer structure"]
+        impl crate::Writable for ProtectionSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PPDU_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue PPDU control; open legacy formatting clears bit 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`ppdu_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ppdu_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ppdu_control`] module"]
+    #[doc(alias = "PPDU_CONTROL")]
+    pub type PpduControl = crate::Reg<ppdu_control::PpduControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue PPDU control; open legacy formatting clears bit 3."]
+    pub mod ppdu_control {
+        #[doc = "Register `PPDU_CONTROL%s` reader"]
+        pub type R = crate::R<PpduControlSpec>;
+        #[doc = "Register `PPDU_CONTROL%s` writer"]
+        pub type W = crate::W<PpduControlSpec>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - "]
+        pub type ControlLowUnknownR = crate::FieldReader;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - "]
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `LEGACY_CLEAR_UNKNOWN` reader - "]
+        pub type LegacyClearUnknownR = crate::BitReader;
+        #[doc = "Field `LEGACY_CLEAR_UNKNOWN` writer - "]
+        pub type LegacyClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` reader - "]
+        pub type ControlHighUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` writer - "]
+        pub type ControlHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        impl R {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn control_low_unknown(&self) -> ControlLowUnknownR {
+                ControlLowUnknownR::new((self.bits & 7) as u8)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn legacy_clear_unknown(&self) -> LegacyClearUnknownR {
+                LegacyClearUnknownR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn control_high_unknown(&self) -> ControlHighUnknownR {
+                ControlHighUnknownR::new((self.bits >> 4) & 0x0fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn control_low_unknown(&mut self) -> ControlLowUnknownW<'_, PpduControlSpec> {
+                ControlLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn legacy_clear_unknown(&mut self) -> LegacyClearUnknownW<'_, PpduControlSpec> {
+                LegacyClearUnknownW::new(self, 3)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn control_high_unknown(&mut self) -> ControlHighUnknownW<'_, PpduControlSpec> {
+                ControlHighUnknownW::new(self, 4)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue PPDU control; open legacy formatting clears bit 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`ppdu_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ppdu_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PpduControlSpec;
+        impl crate::RegisterSpec for PpduControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ppdu_control::R`](R) reader structure"]
+        impl crate::Readable for PpduControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ppdu_control::W`](W) writer structure"]
+        impl crate::Writable for PpduControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config`] module"]
+    #[doc(alias = "CONFIG")]
+    pub type Config = crate::Reg<config::ConfigSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+    pub mod config {
+        #[doc = "Register `CONFIG%s` reader"]
+        pub type R = crate::R<ConfigSpec>;
+        #[doc = "Register `CONFIG%s` writer"]
+        pub type W = crate::W<ConfigSpec>;
+        #[doc = "Field `TIMEOUT` reader - "]
+        pub type TimeoutR = crate::FieldReader<u16>;
+        #[doc = "Field `TIMEOUT` writer - "]
+        pub type TimeoutW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `CONTENTION_WINDOW` reader - "]
+        pub type ContentionWindowR = crate::FieldReader<u16>;
+        #[doc = "Field `CONTENTION_WINDOW` writer - "]
+        pub type ContentionWindowW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `INTERFACE` reader - "]
+        pub type InterfaceR = crate::FieldReader;
+        #[doc = "Field `INTERFACE` writer - "]
+        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `AIFSN` reader - "]
+        pub type AifsnR = crate::FieldReader;
+        #[doc = "Field `AIFSN` writer - "]
+        pub type AifsnW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PRIORITY` reader - "]
+        pub type PriorityR = crate::FieldReader;
+        #[doc = "Field `PRIORITY` writer - "]
+        pub type PriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn timeout(&self) -> TimeoutR {
+                TimeoutR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:21"]
+            #[inline(always)]
+            pub fn contention_window(&self) -> ContentionWindowR {
+                ContentionWindowR::new(((self.bits >> 12) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn interface(&self) -> InterfaceR {
+                InterfaceR::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn aifsn(&self) -> AifsnR {
+                AifsnR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn priority(&self) -> PriorityR {
+                PriorityR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn timeout(&mut self) -> TimeoutW<'_, ConfigSpec> {
+                TimeoutW::new(self, 0)
+            }
+            #[doc = "Bits 12:21"]
+            #[inline(always)]
+            pub fn contention_window(&mut self) -> ContentionWindowW<'_, ConfigSpec> {
+                ContentionWindowW::new(self, 12)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn interface(&mut self) -> InterfaceW<'_, ConfigSpec> {
+                InterfaceW::new(self, 22)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn aifsn(&mut self) -> AifsnW<'_, ConfigSpec> {
+                AifsnW::new(self, 24)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn priority(&mut self) -> PriorityW<'_, ConfigSpec> {
+                PriorityW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ConfigSpec;
+        impl crate::RegisterSpec for ConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`config::R`](R) reader structure"]
+        impl crate::Readable for ConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`config::W`](W) writer structure"]
+        impl crate::Writable for ConfigSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+    pub mod control {
+        #[doc = "Register `CONTROL%s` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL%s` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `PLCP0` reader - "]
+        pub type Plcp0R = crate::FieldReader<u32>;
+        #[doc = "Field `PLCP0` writer - "]
+        pub type Plcp0W<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        #[doc = "Field `VALID` reader - "]
+        pub type ValidR = crate::BitReader;
+        #[doc = "Field `VALID` writer - "]
+        pub type ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE` reader - "]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - "]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn plcp0(&self) -> Plcp0R {
+                Plcp0R::new(self.bits & 0x3fff_ffff)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn valid(&self) -> ValidR {
+                ValidR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn plcp0(&mut self) -> Plcp0W<'_, ControlSpec> {
+                Plcp0W::new(self, 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn valid(&mut self) -> ValidW<'_, ControlSpec> {
+                ValidW::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, ControlSpec> {
+                EnableW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+pub type WifiMacTxQueueVector = crate::Periph<wifi_mac_tx_queue_vector::RegisterBlock, 0x2010_5364>;
+impl core::fmt::Debug for WifiMacTxQueueVector {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxQueueVector").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+pub mod wifi_mac_tx_queue_vector {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        plcp1: (),
+        _reserved1: [u8; 0x08],
+        pti: (),
+        _reserved2: [u8; 0x20],
+        power: (),
+        _reserved3: [u8; 0x10],
+        length_control: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+        #[inline(always)]
+        pub const fn plcp1(&self, n: usize) -> &Plcp1 {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+        #[inline(always)]
+        pub fn plcp1_iter(&self) -> impl Iterator<Item = &Plcp1> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast()
+            })
+        }
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+        #[inline(always)]
+        pub const fn pti(&self, n: usize) -> &Pti {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+        #[inline(always)]
+        pub fn pti_iter(&self) -> impl Iterator<Item = &Pti> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x28..0x38 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm."]
+        #[inline(always)]
+        pub const fn power(&self, n: usize) -> &Power {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(40)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x28..0x38 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm."]
+        #[inline(always)]
+        pub fn power_iter(&self) -> impl Iterator<Item = &Power> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(40)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+        #[inline(always)]
+        pub const fn length_control(&self, n: usize) -> &LengthControl {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(56)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+        #[inline(always)]
+        pub fn length_control_iter(&self) -> impl Iterator<Item = &LengthControl> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(56)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "PLCP1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
+    #[doc(alias = "PLCP1")]
+    pub type Plcp1 = crate::Reg<plcp1::Plcp1Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+    pub mod plcp1 {
+        #[doc = "Register `PLCP1%s` reader"]
+        pub type R = crate::R<Plcp1Spec>;
+        #[doc = "Register `PLCP1%s` writer"]
+        pub type W = crate::W<Plcp1Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, Plcp1Spec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Plcp1Spec;
+        impl crate::RegisterSpec for Plcp1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`plcp1::R`](R) reader structure"]
+        impl crate::Readable for Plcp1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`plcp1::W`](W) writer structure"]
+        impl crate::Writable for Plcp1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PTI (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
+    #[doc(alias = "PTI")]
+    pub type Pti = crate::Reg<pti::PtiSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+    pub mod pti {
+        #[doc = "Register `PTI%s` reader"]
+        pub type R = crate::R<PtiSpec>;
+        #[doc = "Register `PTI%s` writer"]
+        pub type W = crate::W<PtiSpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_UNKNOWN` writer - "]
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PTI_0` reader - "]
+        pub type Pti0R = crate::FieldReader;
+        #[doc = "Field `PTI_0` writer - "]
+        pub type Pti0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PTI_1` reader - "]
+        pub type Pti1R = crate::FieldReader;
+        #[doc = "Field `PTI_1` writer - "]
+        pub type Pti1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PTI_2` reader - "]
+        pub type Pti2R = crate::FieldReader;
+        #[doc = "Field `PTI_2` writer - "]
+        pub type Pti2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PTI_3` reader - "]
+        pub type Pti3R = crate::FieldReader;
+        #[doc = "Field `PTI_3` writer - "]
+        pub type Pti3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        #[doc = "Field `COUNT` writer - "]
+        pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn pti_0(&self) -> Pti0R {
+                Pti0R::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn pti_1(&self) -> Pti1R {
+                Pti1R::new(((self.bits >> 8) & 0x0f) as u8)
+            }
+            #[doc = "Bits 12:15"]
+            #[inline(always)]
+            pub fn pti_2(&self) -> Pti2R {
+                Pti2R::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn pti_3(&self) -> Pti3R {
+                Pti3R::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, PtiSpec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn pti_0(&mut self) -> Pti0W<'_, PtiSpec> {
+                Pti0W::new(self, 4)
+            }
+            #[doc = "Bits 8:11"]
+            #[inline(always)]
+            pub fn pti_1(&mut self) -> Pti1W<'_, PtiSpec> {
+                Pti1W::new(self, 8)
+            }
+            #[doc = "Bits 12:15"]
+            #[inline(always)]
+            pub fn pti_2(&mut self) -> Pti2W<'_, PtiSpec> {
+                Pti2W::new(self, 12)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn pti_3(&mut self) -> Pti3W<'_, PtiSpec> {
+                Pti3W::new(self, 16)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn count(&mut self) -> CountW<'_, PtiSpec> {
+                CountW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PtiSpec;
+        impl crate::RegisterSpec for PtiSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`pti::R`](R) reader structure"]
+        impl crate::Readable for PtiSpec {}
+        #[doc = "`write(|w| ..)` method takes [`pti::W`](W) writer structure"]
+        impl crate::Writable for PtiSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm.\n\nYou can [`read`](crate::Reg::read) this register and get [`power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power`] module"]
+    #[doc(alias = "POWER")]
+    pub type Power = crate::Reg<power::PowerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm."]
+    pub mod power {
+        #[doc = "Register `POWER%s` reader"]
+        pub type R = crate::R<PowerSpec>;
+        #[doc = "Register `POWER%s` writer"]
+        pub type W = crate::W<PowerSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, PowerSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm.\n\nYou can [`read`](crate::Reg::read) this register and get [`power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerSpec;
+        impl crate::RegisterSpec for PowerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power::R`](R) reader structure"]
+        impl crate::Readable for PowerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`power::W`](W) writer structure"]
+        impl crate::Writable for PowerSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "LENGTH_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
+    #[doc(alias = "LENGTH_CONTROL")]
+    pub type LengthControl = crate::Reg<length_control::LengthControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+    pub mod length_control {
+        #[doc = "Register `LENGTH_CONTROL%s` reader"]
+        pub type R = crate::R<LengthControlSpec>;
+        #[doc = "Register `LENGTH_CONTROL%s` writer"]
+        pub type W = crate::W<LengthControlSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, LengthControlSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct LengthControlSpec;
+        impl crate::RegisterSpec for LengthControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`length_control::R`](R) reader structure"]
+        impl crate::Readable for LengthControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`length_control::W`](W) writer structure"]
+        impl crate::Writable for LengthControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte completion banks represent logical EDCA queues 3,2,1,0."]
+pub type WifiMacTxCompletion = crate::Periph<wifi_mac_tx_completion::RegisterBlock, 0x2010_53b0>;
+impl core::fmt::Debug for WifiMacTxCompletion {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxCompletion").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte completion banks represent logical EDCA queues 3,2,1,0."]
+pub mod wifi_mac_tx_completion {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        aux_b: (),
+        _reserved1: [u8; 0x10],
+        aux_a: (),
+        _reserved2: [u8; 0x08],
+        primary: (),
+        _reserved3: [u8; 0x04],
+        alternate: (),
+        _reserved4: [u8; 0x0c],
+        aux_c: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+        #[inline(always)]
+        pub const fn aux_b(&self, n: usize) -> &AuxB {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+        #[inline(always)]
+        pub fn aux_b_iter(&self) -> impl Iterator<Item = &AuxB> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast()
+            })
+        }
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+        #[inline(always)]
+        pub const fn aux_a(&self, n: usize) -> &AuxA {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+        #[inline(always)]
+        pub fn aux_a_iter(&self) -> impl Iterator<Item = &AuxA> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+        #[inline(always)]
+        pub const fn primary(&self, n: usize) -> &Primary {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+        #[inline(always)]
+        pub fn primary_iter(&self) -> impl Iterator<Item = &Primary> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x1c..0x2c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Alternate completion/status word selected by the recovered auxiliary bit."]
+        #[inline(always)]
+        pub const fn alternate(&self, n: usize) -> &Alternate {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x1c..0x2c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Alternate completion/status word selected by the recovered auxiliary bit."]
+        #[inline(always)]
+        pub fn alternate_iter(&self) -> impl Iterator<Item = &Alternate> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x28..0x38 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Third auxiliary completion word contributing to the second decoded extension image."]
+        #[inline(always)]
+        pub const fn aux_c(&self, n: usize) -> &AuxC {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(40)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x28..0x38 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Third auxiliary completion word contributing to the second decoded extension image."]
+        #[inline(always)]
+        pub fn aux_c_iter(&self) -> impl Iterator<Item = &AuxC> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(40)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "AUX_B (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_b::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_b`] module"]
+    #[doc(alias = "AUX_B")]
+    pub type AuxB = crate::Reg<aux_b::AuxBSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+    pub mod aux_b {
+        #[doc = "Register `AUX_B%s` reader"]
+        pub type R = crate::R<AuxBSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_b::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AuxBSpec;
+        impl crate::RegisterSpec for AuxBSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`aux_b::R`](R) reader structure"]
+        impl crate::Readable for AuxBSpec {}
+    }
+    #[doc = "AUX_A (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_a::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_a`] module"]
+    #[doc(alias = "AUX_A")]
+    pub type AuxA = crate::Reg<aux_a::AuxASpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension."]
+    pub mod aux_a {
+        #[doc = "Register `AUX_A%s` reader"]
+        pub type R = crate::R<AuxASpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Auxiliary completion bits contributing to alternate selection and decoded status extension.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_a::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AuxASpec;
+        impl crate::RegisterSpec for AuxASpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`aux_a::R`](R) reader structure"]
+        impl crate::Readable for AuxASpec {}
+    }
+    #[doc = "PRIMARY (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@primary`] module"]
+    #[doc(alias = "PRIMARY")]
+    pub type Primary = crate::Reg<primary::PrimarySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+    pub mod primary {
+        #[doc = "Register `PRIMARY%s` reader"]
+        pub type R = crate::R<PrimarySpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PrimarySpec;
+        impl crate::RegisterSpec for PrimarySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`primary::R`](R) reader structure"]
+        impl crate::Readable for PrimarySpec {}
+    }
+    #[doc = "ALTERNATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Alternate completion/status word selected by the recovered auxiliary bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`alternate::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@alternate`] module"]
+    #[doc(alias = "ALTERNATE")]
+    pub type Alternate = crate::Reg<alternate::AlternateSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Alternate completion/status word selected by the recovered auxiliary bit."]
+    pub mod alternate {
+        #[doc = "Register `ALTERNATE%s` reader"]
+        pub type R = crate::R<AlternateSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Alternate completion/status word selected by the recovered auxiliary bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`alternate::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AlternateSpec;
+        impl crate::RegisterSpec for AlternateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`alternate::R`](R) reader structure"]
+        impl crate::Readable for AlternateSpec {}
+    }
+    #[doc = "AUX_C (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Third auxiliary completion word contributing to the second decoded extension image.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_c::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_c`] module"]
+    #[doc(alias = "AUX_C")]
+    pub type AuxC = crate::Reg<aux_c::AuxCSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Third auxiliary completion word contributing to the second decoded extension image."]
+    pub mod aux_c {
+        #[doc = "Register `AUX_C%s` reader"]
+        pub type R = crate::R<AuxCSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Third auxiliary completion word contributing to the second decoded extension image.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_c::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AuxCSpec;
+        impl crate::RegisterSpec for AuxCSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`aux_c::R`](R) reader structure"]
+        impl crate::Readable for AuxCSpec {}
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x2010_4c40>;
 impl core::fmt::Debug for WifiMacInterrupt {
@@ -9317,6 +10555,14 @@ pub struct Peripherals {
     pub wifi_mac_crypto_control: WifiMacCryptoControl,
     #[doc = "WIFI_MAC_KEY_TABLE"]
     pub wifi_mac_key_table: WifiMacKeyTable,
+    #[doc = "WIFI_MAC_TX_COMMON"]
+    pub wifi_mac_tx_common: WifiMacTxCommon,
+    #[doc = "WIFI_MAC_TX_QUEUE_CONTROL"]
+    pub wifi_mac_tx_queue_control: WifiMacTxQueueControl,
+    #[doc = "WIFI_MAC_TX_QUEUE_VECTOR"]
+    pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
+    #[doc = "WIFI_MAC_TX_COMPLETION"]
+    pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_INTERRUPT"]
     pub wifi_mac_interrupt: WifiMacInterrupt,
     #[doc = "WIFI_MAC_RX_DMA"]
@@ -9355,6 +10601,10 @@ impl Peripherals {
             phy_clock_oracle: PhyClockOracle::steal(),
             wifi_mac_crypto_control: WifiMacCryptoControl::steal(),
             wifi_mac_key_table: WifiMacKeyTable::steal(),
+            wifi_mac_tx_common: WifiMacTxCommon::steal(),
+            wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
+            wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
+            wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }

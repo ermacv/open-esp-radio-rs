@@ -3363,3 +3363,27 @@ consuming the token performs the generated-PAC invalidate/zero operation.
 `crypto.rs` contains no `Register32`, `Field32`, generic `Mmio`, or raw
 read/write/modify calls; the source-only audit prevents that register boundary
 from returning.
+
+## Semantic ordinary-queue TX ownership
+
+The live `TxSlot` no longer receives generic MAC `Mmio`. It validates and pins
+descriptor storage, composes the pure legacy PLCP images, owns the
+Reserved/HardwareOwned/Completed state transition, and decodes a finite
+completion snapshot. Generated-PAC operations now exclusively own the four
+ordinary EDCA control/vector/completion banks and the shared CCA/state block.
+
+SVD v3.1 records the reversed physical-bank geometry explicitly: logical
+queues 3,2,1,0 occupy ascending `0x10`-byte control banks and `0x7c`-byte
+vector/completion banks. The primary evidence is complete pinned
+`_oracles/libpp.a` TX HAL/PP leaves plus the exact former
+`migration/esp32s31-hybrid-runtime/src/lmac.rs` transcription in the parent of
+promotion commit `f233006`. Existing open authentication and connected WPA2
+HIL runs qualify the ordinary queue-zero transaction.
+
+Submission remains deliberately split. The PAC prepares timeout, PLCP,
+PPDU/protection, power, five separate PTI RMW edges, and three separate EDCA
+RMW edges; the MAC then publishes `HardwareOwned`; only afterward may the PAC
+write ENABLE|VALID. Completion sampling/acknowledgement, CCA force/release,
+timeout invalidate/disable/clear, fences and detach readback are likewise
+finite PAC transactions. The source-only audit rejects compatibility register
+types or generic read/write/modify calls returning to `tx.rs`.

@@ -12,6 +12,7 @@ mod mac_block_ack;
 mod mac_crypto;
 mod mac_interrupt;
 mod mac_rx_dma;
+mod mac_tx;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
@@ -19,6 +20,7 @@ pub mod power;
 mod table_memory;
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_interrupt::MacInterruptRegisters;
+pub use mac_tx::{MacLegacyTxProgram, MacTxCompletionRegisters};
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
@@ -349,6 +351,22 @@ mod tests {
         let mut registers = unsafe { RadioRegisters::steal() };
         assert!(registers.take_mac_interrupt().is_some());
         assert!(registers.take_mac_interrupt().is_none());
+    }
+
+    #[test]
+    fn generated_tx_banks_reverse_physical_order_exactly_once() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let control = &registers.peripherals.wifi_mac_tx_queue_control;
+        let vector = &registers.peripherals.wifi_mac_tx_queue_vector;
+        let completion = &registers.peripherals.wifi_mac_tx_completion;
+        assert_eq!(control.control(3).as_ptr() as usize, 0x2010_4d70);
+        assert_eq!(control.control(0).as_ptr() as usize, 0x2010_4d40);
+        assert_eq!(vector.plcp1(3).as_ptr() as usize, 0x2010_54d8);
+        assert_eq!(vector.plcp1(0).as_ptr() as usize, 0x2010_5364);
+        assert_eq!(completion.primary(3).as_ptr() as usize, 0x2010_553c);
+        assert_eq!(completion.primary(0).as_ptr() as usize, 0x2010_53c8);
     }
 
     #[test]

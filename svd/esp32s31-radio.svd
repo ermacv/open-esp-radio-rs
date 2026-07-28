@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.0</version>
+  <version>3.1</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1543,6 +1543,112 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_TX_COMMON</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues.</description>
+      <baseAddress>0x20104c5c</baseAddress>
+      <registers>
+        <register>
+          <name>CCA_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Global TX CCA control; timeout abort forces and later clears the high two-bit field.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>CONTROL_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field>
+            <field><name>FORCE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>QUEUE_STATE_CLEAR</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-write-to-clear]. Queue collision/timeout state acknowledgement.</description>
+          <addressOffset>0x54</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>QUEUE_STATE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Per-queue timeout and trigger-flow state.</description>
+          <addressOffset>0x58</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>LOW_STATE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>TIMEOUT</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact]. Bits 16..19 correspond to ordinary queues 0..3.</description><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MIDDLE_STATE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TRIGGER_FLOW</name><description>SOURCE[MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Bits 24..27 correspond to ordinary queues 0..3.</description><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HIGH_STATE_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>COMPLETE_CLEAR</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Preserved-image acknowledgement for ordinary queue completion bits.</description>
+          <addressOffset>0x5c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>STATE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>COMPLETE_STATE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Low four bits report completed ordinary queues 0..3.</description>
+          <addressOffset>0x60</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>ORDINARY_QUEUES</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TX_QUEUE_CONTROL</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Four ascending physical banks represent logical EDCA queues 3,2,1,0.</description>
+      <baseAddress>0x20104d34</baseAddress>
+      <registers>
+        <register>
+          <name>PROTECTION%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Per-queue protection policy; open legacy formatting clears bit 31.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields><field><name>POLICY_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>31</bitWidth></field><field><name>PROTECTION_HIGH_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>PPDU_CONTROL%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Per-queue PPDU control; open legacy formatting clears bit 3.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields><field><name>CONTROL_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field><field><name>LEGACY_CLEAR_UNKNOWN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>CONTROL_HIGH_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>28</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CONFIG%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-fields]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields>
+            <field><name>TIMEOUT</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field>
+            <field><name>CONTENTION_WINDOW</name><bitOffset>12</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>INTERFACE</name><bitOffset>22</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>AIFSN</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>PRIORITY</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CONTROL%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Descriptor/PLCP0 image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields><field><name>PLCP0</name><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field><field><name>VALID</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field><field><name>ENABLE</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TX_QUEUE_VECTOR</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0.</description>
+      <baseAddress>0x20105364</baseAddress>
+      <registers>
+        <register><name>PLCP1%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact]. Per-queue second PLCP/vector word.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>PTI%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-fields]. Five separately published priority/count fields.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_0</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_2</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_3</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field><field><name>COUNT</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields></register>
+        <register><name>POWER%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Packed data/RTS PHY gain-table indices, not dBm.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>LENGTH_CONTROL%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Recovered non-HE length/rate/key-selector image.</description><addressOffset>0x38</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TX_COMPLETION</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Four 0x7c-byte completion banks represent logical EDCA queues 3,2,1,0.</description>
+      <baseAddress>0x201053b0</baseAddress>
+      <registers>
+        <register><name>AUX_B%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>AUX_A%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x10</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>PRIMARY%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.</description><addressOffset>0x18</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>ALTERNATE%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Alternate completion/status word selected by the recovered auxiliary bit.</description><addressOffset>0x1c</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>AUX_C%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Third auxiliary completion word contributing to the second decoded extension image.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_INTERRUPT</name>
       <description>
         SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,
@@ -1816,6 +1922,8 @@
       <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>
+      <source id="MIGRATION_LMAC_TX">Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/lmac.rs; exact ESP32-S31 queue-bank address/stride transcription and async timeout/completion path later promoted into crates/open-esp-radio-mac-esp32s31/src/tx.rs. Existing open authentication and connected-network HIL qualify the ordinary queue-zero path.</source>
       <source id="HIL_OPEN_RX_LIVE_APPEND_2026_07_27">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs run_connected_network on ESP32-S31 rev0, psram-code-psram-data profile, 2026-07-27; rotating 32-entry ring survived more than 7000 receives and completed open scan, WPA2, DHCP and 5/5 ICMP echo with zero loss</source>
     </openEspRadioProvenance>
     <openEspRadioAddressWindows source="S31_REG_BASE">

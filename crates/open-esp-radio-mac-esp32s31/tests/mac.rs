@@ -25,11 +25,11 @@ use open_esp_radio_mac_esp32s31::{
         rearm_descriptor, RxDma, RxError, RxIngressConfig, RxRingError, RxRingStopped, RxSegment,
         INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
-    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxSlot, TxSlotState},
+    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxHardware, TxSlot, TxSlotState},
 };
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as mac_init},
-    MacKeyInstallOutcome, Register32,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, Register32,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -182,6 +182,144 @@ impl CcmpKeyHardware for MockMmio {
             self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
         }
         Mmio::fence(self);
+    }
+}
+
+impl TxHardware for MockMmio {
+    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+        let index = usize::from(queue);
+        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
+            return false;
+        }
+        let mut config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xffff_f000) | u32::from(program.timeout),
+        );
+        self.write32(mac::TX_Q_CONTROL[index], program.plcp0);
+        self.write32(mac::TX_Q_PLCP1[index], program.plcp1);
+        let ppdu = self.read32(mac::TX_Q_PPDU_CONTROL[index]);
+        self.write32(mac::TX_Q_PPDU_CONTROL[index], ppdu & !0x08);
+        let protection = self.read32(mac::TX_Q_PROTECTION[index]);
+        self.write32(mac::TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
+        self.write32(mac::TX_Q_LENGTH_CONTROL[index], program.length_control);
+        self.write32(mac::TX_Q_POWER[index], program.power);
+
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0x0fff_ffff) | (u32::from(program.priority) << 28),
+        );
+        for (mask, shift) in [
+            (0xffff_0fff, 12),
+            (0xffff_f0ff, 8),
+            (0xffff_ff0f, 4),
+            (0xfff0_ffff, 16),
+        ] {
+            let pti = self.read32(mac::TX_Q_PTI[index]);
+            self.write32(
+                mac::TX_Q_PTI[index],
+                (pti & mask) | (u32::from(program.priority) << shift),
+            );
+        }
+        let pti = self.read32(mac::TX_Q_PTI[index]);
+        self.write32(
+            mac::TX_Q_PTI[index],
+            (pti & 0x000f_ffff) | (u32::from(program.priority_count) << 20),
+        );
+
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xf0ff_ffff) | (u32::from(program.aifsn) << 24),
+        );
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xffc0_0fff) | (u32::from(program.contention_window) << 12),
+        );
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xff3f_ffff) | (u32::from(program.interface) << 22),
+        );
+        true
+    }
+
+    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
+        Mmio::fence(self);
+        self.write32(
+            mac::TX_Q_CONTROL[usize::from(queue)],
+            plcp0 | TX_Q_ENABLE_VALID,
+        );
+        Mmio::fence(self);
+    }
+
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+        let index = usize::from(queue);
+        let mask = 1_u32 << queue;
+        if self.read32(TX_COMPLETE_STATE) & mask == 0 {
+            return None;
+        }
+        let aux_a = self.read32(mac::TX_COMPLETE_AUX_A[index]);
+        let aux_b = self.read32(mac::TX_COMPLETE_AUX_B[index]);
+        let aux_c = self.read32(mac::TX_COMPLETE_AUX_C[index]);
+        let primary = self.read32(mac::TX_COMPLETE_PRIMARY[index]);
+        let alternate = self.read32(mac::TX_COMPLETE_ALTERNATE[index]);
+        let trigger_flow = self.read32(TX_STATE) & (1_u32 << (24 + queue)) != 0;
+        let clear = self.read32(TX_COMPLETE_CLEAR);
+        self.write32(TX_COMPLETE_CLEAR, clear | mask);
+        Mmio::fence(self);
+        Some(MacTxCompletionRegisters {
+            aux_a,
+            aux_b,
+            aux_c,
+            primary,
+            alternate,
+            trigger_flow,
+        })
+    }
+
+    fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
+        let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
+        if self.read32(TX_STATE) & timeout_mask == 0 {
+            return false;
+        }
+        let cca = self.read32(TX_CCA_CONTROL);
+        self.write32(
+            TX_CCA_CONTROL,
+            (cca & !TX_CCA_FORCE_MASK) | TX_CCA_FORCE_MASK,
+        );
+        Mmio::fence(self);
+        true
+    }
+
+    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
+        let index = usize::from(queue);
+        let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
+        if self.read32(TX_STATE) & timeout_mask == 0 {
+            return None;
+        }
+        let control = self.read32(mac::TX_Q_CONTROL[index]);
+        let was_valid = control & (1 << 30) != 0;
+        self.write32(mac::TX_Q_CONTROL[index], control & !(1 << 30));
+        let cca = self.read32(TX_CCA_CONTROL);
+        self.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
+        if was_valid {
+            let invalid = self.read32(mac::TX_Q_CONTROL[index]);
+            self.write32(mac::TX_Q_CONTROL[index], invalid & !(1 << 31));
+        }
+        self.write32(TX_STATE_CLEAR, timeout_mask);
+        Mmio::fence(self);
+        Some(self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID == 0)
+    }
+
+    fn detach_completed_tx(&mut self, queue: u8) -> bool {
+        let control = mac::TX_Q_CONTROL[usize::from(queue)];
+        let image = self.read32(control);
+        self.write32(control, image & !TX_Q_ENABLE_VALID);
+        Mmio::fence(self);
+        self.read32(control) & TX_Q_ENABLE_VALID == 0
     }
 }
 

@@ -2,15 +2,10 @@
 
 use core::pin::Pin;
 
+use open_esp_radio_pac_esp32s31::{MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters};
+
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
-    registers::{
-        Mmio, TX_CCA_CONTROL, TX_CCA_FORCE_DISABLE, TX_CCA_FORCE_MASK, TX_COMPLETE_ALTERNATE,
-        TX_COMPLETE_AUX_A, TX_COMPLETE_AUX_B, TX_COMPLETE_AUX_C, TX_COMPLETE_CLEAR,
-        TX_COMPLETE_PRIMARY, TX_COMPLETE_STATE, TX_Q_CONFIG, TX_Q_CONTROL, TX_Q_ENABLE,
-        TX_Q_ENABLE_VALID, TX_Q_LENGTH_CONTROL, TX_Q_PLCP1, TX_Q_POWER, TX_Q_PPDU_CONTROL,
-        TX_Q_PROTECTION, TX_Q_PTI, TX_Q_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
-    },
     tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word},
 };
 
@@ -34,12 +29,44 @@ pub enum LegacyTxQueue {
 }
 
 impl LegacyTxQueue {
-    const fn index(self) -> usize {
-        self as usize
+    const fn index(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Finite ordinary-queue hardware authority used by one owned TX slot.
+pub trait TxHardware {
+    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool;
+    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32);
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
+    fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
+    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
+    fn detach_completed_tx(&mut self, queue: u8) -> bool;
+}
+
+impl TxHardware for RadioRegisters {
+    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+        self.prepare_legacy_mac_tx(queue, program)
     }
 
-    const fn completion_mask(self) -> u32 {
-        1 << self.index()
+    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_legacy_mac_tx(queue, plcp0);
+    }
+
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+        self.take_mac_tx_completion(queue)
+    }
+
+    fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
+        self.begin_mac_tx_timeout_abort(queue)
+    }
+
+    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
+        self.finish_mac_tx_timeout_abort(queue)
+    }
+
+    fn detach_completed_tx(&mut self, queue: u8) -> bool {
+        self.detach_completed_mac_tx(queue)
     }
 }
 
@@ -256,19 +283,19 @@ impl TxSlot {
     /// Pinning makes the descriptor address checked at `reserve` stable across
     /// the hardware ownership interval. The buffer must likewise remain in
     /// static/pinned DMA-visible SRAM until completion is detached.
-    pub fn submit_legacy_q0<M: Mmio>(
+    pub fn submit_legacy_q0<H: TxHardware>(
         self: Pin<&mut Self>,
-        mmio: &mut M,
+        hardware: &mut H,
         cookie: TxCookie,
         config: LegacyTxConfig,
     ) -> Result<(), TxError> {
-        self.submit_legacy(mmio, cookie, LegacyTxQueue::Voice, config)
+        self.submit_legacy(hardware, cookie, LegacyTxQueue::Voice, config)
     }
 
     /// Programs and starts one legacy attempt on an ordinary EDCA queue.
-    pub fn submit_legacy<M: Mmio>(
+    pub fn submit_legacy<H: TxHardware>(
         self: Pin<&mut Self>,
-        mmio: &mut M,
+        hardware: &mut H,
         cookie: TxCookie,
         queue: LegacyTxQueue,
         config: LegacyTxConfig,
@@ -285,66 +312,27 @@ impl TxSlot {
         }
         let image = legacy_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
-        if mmio.read32(TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
+        let program = MacLegacyTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            power: image.power,
+            length_control: image.length_control,
+            timeout: config.timeout,
+            priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        if !hardware.prepare_legacy_tx(index, program) {
             return Err(TxError::QueueActive);
         }
-
-        // Match `lmacSetTxFrame`: timeout is published before the PPDU
-        // formatter touches the queue's PLCP/vector registers.
-        let mut queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0xffff_f000) | u32::from(config.timeout);
-        mmio.write32(TX_Q_CONFIG[index], queue_config);
-
-        mmio.write32(TX_Q_CONTROL[index], image.plcp0);
-        mmio.write32(TX_Q_PLCP1[index], image.plcp1);
-        let ppdu_control = mmio.read32(TX_Q_PPDU_CONTROL[index]);
-        mmio.write32(TX_Q_PPDU_CONTROL[index], ppdu_control & !0x08);
-        let protection = mmio.read32(TX_Q_PROTECTION[index]);
-        mmio.write32(TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
-        mmio.write32(TX_Q_LENGTH_CONTROL[index], image.length_control);
-        mmio.write32(TX_Q_POWER[index], image.power);
-
-        // `mac_tx_set_pti` publishes the queue priority first, then performs
-        // one read/modify/write edge for each PTI field.
-        queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0x0fff_ffff) | (u32::from(config.pti) << 28);
-        mmio.write32(TX_Q_CONFIG[index], queue_config);
-
-        let mut pti = mmio.read32(TX_Q_PTI[index]);
-        pti = (pti & 0xffff_0fff) | (u32::from(config.pti) << 12);
-        mmio.write32(TX_Q_PTI[index], pti);
-        pti = mmio.read32(TX_Q_PTI[index]);
-        pti = (pti & 0xffff_f0ff) | (u32::from(config.pti) << 8);
-        mmio.write32(TX_Q_PTI[index], pti);
-        pti = mmio.read32(TX_Q_PTI[index]);
-        pti = (pti & 0xffff_ff0f) | (u32::from(config.pti) << 4);
-        mmio.write32(TX_Q_PTI[index], pti);
-        pti = mmio.read32(TX_Q_PTI[index]);
-        pti = (pti & 0xfff0_ffff) | (u32::from(config.pti) << 16);
-        mmio.write32(TX_Q_PTI[index], pti);
-        pti = mmio.read32(TX_Q_PTI[index]);
-        pti = (pti & 0x000f_ffff) | (u32::from(config.pti_count) << 20);
-        mmio.write32(TX_Q_PTI[index], pti);
-
-        // Match `hal_mac_tx_config_edca`: its three fields are separate MMIO
-        // edges after PPDU/PTI formatting.
-        queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0xf0ff_ffff) | (u32::from(config.aifsn) << 24);
-        mmio.write32(TX_Q_CONFIG[index], queue_config);
-        queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0xffc0_0fff) | (u32::from(config.contention_window) << 12);
-        mmio.write32(TX_Q_CONFIG[index], queue_config);
-        queue_config = mmio.read32(TX_Q_CONFIG[index]);
-        queue_config = (queue_config & 0xff3f_ffff) | (u32::from(config.interface) << 22);
-        mmio.write32(TX_Q_CONFIG[index], queue_config);
 
         // Publish the software owner before the final hardware edge. A fast
         // completion can therefore never observe the old Reserved state.
         slot.queue = queue;
         slot.state = TxSlotState::HardwareOwned;
-        mmio.fence();
-        mmio.write32(TX_Q_CONTROL[index], image.plcp0 | TX_Q_ENABLE_VALID);
-        mmio.fence();
+        hardware.start_legacy_tx(index, image.plcp0);
         Ok(())
     }
 
@@ -362,41 +350,33 @@ impl TxSlot {
 
     /// Decodes and acknowledges one q0 completion. Storage stays retained in
     /// `Completed`; it is not reusable until `detach_completed` closes q0.
-    pub fn acknowledge_q0_completion<M: Mmio>(
+    pub fn acknowledge_q0_completion<H: TxHardware>(
         &mut self,
-        mmio: &mut M,
+        hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
-        self.acknowledge_completion(mmio)
+        self.acknowledge_completion(hardware)
     }
 
     /// Decodes and acknowledges the completion for the queue retained by the
     /// hardware-owned slot.
-    pub fn acknowledge_completion<M: Mmio>(
+    pub fn acknowledge_completion<H: TxHardware>(
         &mut self,
-        mmio: &mut M,
+        hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
         let index = self.queue.index();
-        let completion_mask = self.queue.completion_mask();
-        if mmio.read32(TX_COMPLETE_STATE) & completion_mask == 0 {
+        let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
-        }
+        };
 
-        let aux_a = mmio.read32(TX_COMPLETE_AUX_A[index]);
-        let aux_b = mmio.read32(TX_COMPLETE_AUX_B[index]);
-        let aux_c = mmio.read32(TX_COMPLETE_AUX_C[index]);
-        let ext_word0 =
-            ((aux_a & 0x000f_0000) << 12) | (aux_b & 0x001f_e000) | (((aux_b >> 25) & 0x7f) << 21);
-        let _ext_word1 = ((aux_a >> 20) & 0x03) | ((aux_c >> 5) & 0x1fc);
-        let primary = mmio.read32(TX_COMPLETE_PRIMARY[index]);
-        let alternate = mmio.read32(TX_COMPLETE_ALTERNATE[index]);
+        let ext_word0 = ((registers.aux_a & 0x000f_0000) << 12)
+            | (registers.aux_b & 0x001f_e000)
+            | (((registers.aux_b >> 25) & 0x7f) << 21);
+        let _ext_word1 = ((registers.aux_a >> 20) & 0x03) | ((registers.aux_c >> 5) & 0x1fc);
+        let primary = registers.primary;
+        let alternate = registers.alternate;
         let used_alternate = ext_word0 & EXT_ALT_SELECT != 0;
         let selected = if used_alternate { alternate } else { primary };
         let status = ((selected >> 12) & 0x0f) as u8;
-        let trigger_flow = (mmio.read32(TX_STATE) >> (24 + index)) & 1 != 0;
-
-        let clear = mmio.read32(TX_COMPLETE_CLEAR);
-        mmio.write32(TX_COMPLETE_CLEAR, clear | completion_mask);
-        mmio.fence();
 
         if self.state != TxSlotState::HardwareOwned {
             self.state = TxSlotState::ResetRequired;
@@ -406,7 +386,7 @@ impl TxSlot {
         Ok(Some(TxCompletion {
             cookie: self.active,
             status,
-            trigger_flow,
+            trigger_flow: registers.trigger_flow,
             used_alternate,
             primary_word: primary,
             alternate_word: alternate,
@@ -418,25 +398,17 @@ impl TxSlot {
     /// `migration/lmac.rs::begin_tx_timeout` forces CCA to three before its
     /// fixed 16-us settling interval. `Ok(false)` means that this queue has no
     /// timeout edge and leaves all registers untouched.
-    pub fn begin_timeout_abort<M: Mmio>(
+    pub fn begin_timeout_abort<H: TxHardware>(
         &mut self,
-        mmio: &mut M,
+        hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
         if self.state != TxSlotState::HardwareOwned || cookie != self.active {
             return Err(TxError::Stale);
         }
-        let timeout_mask = self.queue.completion_mask() << TX_TIMEOUT_SHIFT;
-        if mmio.read32(TX_STATE) & timeout_mask == 0 {
+        if !hardware.begin_tx_timeout_abort(self.queue.index()) {
             return Ok(false);
         }
-
-        let cca = mmio.read32(TX_CCA_CONTROL);
-        mmio.write32(
-            TX_CCA_CONTROL,
-            (cca & !TX_CCA_FORCE_MASK) | TX_CCA_FORCE_DISABLE,
-        );
-        mmio.fence();
         Ok(true)
     }
 
@@ -446,35 +418,18 @@ impl TxSlot {
     /// [`begin_timeout_abort`](Self::begin_timeout_abort). The register order
     /// matches the recovered migration path: invalidate, release forced CCA,
     /// disable a queue that was still valid, then clear its timeout bit.
-    pub fn finish_timeout_abort<M: Mmio>(
+    pub fn finish_timeout_abort<H: TxHardware>(
         &mut self,
-        mmio: &mut M,
+        hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
         if self.state != TxSlotState::HardwareOwned || cookie != self.active {
             return Err(TxError::Stale);
         }
-        let index = self.queue.index();
-        let timeout_mask = self.queue.completion_mask() << TX_TIMEOUT_SHIFT;
-        if mmio.read32(TX_STATE) & timeout_mask == 0 {
+        let Some(detached) = hardware.finish_tx_timeout_abort(self.queue.index()) else {
             return Err(TxError::TimeoutNotPending);
-        }
-
-        let control_register = TX_Q_CONTROL[index];
-        let control = mmio.read32(control_register);
-        let was_valid = control & TX_Q_VALID != 0;
-        mmio.write32(control_register, control & !TX_Q_VALID);
-
-        let cca = mmio.read32(TX_CCA_CONTROL);
-        mmio.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
-        if was_valid {
-            let invalid = mmio.read32(control_register);
-            mmio.write32(control_register, invalid & !TX_Q_ENABLE);
-        }
-        mmio.write32(TX_STATE_CLEAR, timeout_mask);
-        mmio.fence();
-
-        if mmio.read32(control_register) & TX_Q_ENABLE_VALID != 0 {
+        };
+        if !detached {
             self.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }
@@ -487,19 +442,15 @@ impl TxSlot {
     /// Makes the completed static slot reusable after disabling q0 and exact
     /// readback. This is normal single-attempt turnover, not a global DMA
     /// release oracle for freeing the backing allocation during teardown.
-    pub fn detach_completed<M: Mmio>(
+    pub fn detach_completed<H: TxHardware>(
         &mut self,
-        mmio: &mut M,
+        hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
         if self.state != TxSlotState::Completed || cookie != self.active {
             return Err(TxError::Stale);
         }
-        let control_register = TX_Q_CONTROL[self.queue.index()];
-        let control = mmio.read32(control_register);
-        mmio.write32(control_register, control & !TX_Q_ENABLE_VALID);
-        mmio.fence();
-        if mmio.read32(control_register) & TX_Q_ENABLE_VALID != 0 {
+        if !hardware.detach_completed_tx(self.queue.index()) {
             self.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }

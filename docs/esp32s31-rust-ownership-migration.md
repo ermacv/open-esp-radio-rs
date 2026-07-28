@@ -3387,3 +3387,26 @@ write ENABLE|VALID. Completion sampling/acknowledgement, CCA force/release,
 timeout invalidate/disable/clear, fences and detach readback are likewise
 finite PAC transactions. The source-only audit rejects compatibility register
 types or generic read/write/modify calls returning to `tx.rs`.
+
+## Semantic scan-to-STA receive policy
+
+The policy-five transition between off-channel scan and associated STA no
+longer shares the generic cold-init `Mmio` boundary. The upper
+`sta_link_policy.rs` module can request only one semantic operation through
+`StaLinkRxPolicyHardware`; production delegates it to the unique generated
+`RadioRegisters` owner.
+
+SVD v3.2 describes the three independently addressed blocks touched by the
+complete transaction: BSSID high/policy words at `0x2010_4004`, interface
+address pairs at `0x2010_405c`, and four RX filter words at `0x2010_40d8`.
+Primary evidence is complete pinned `libpp.a` `hal_mac_rx_set_policy` and
+`hal_mac_set_rxq_policy` plus the complete `libnet80211.a`
+`wifi_set_rx_policy` parent. Fields whose protocol meaning is only partial
+remain explicitly named `UNKNOWN`.
+
+The PAC preserves all seven fresh-read RMW edges: combined mode/management
+clear, BSSID bit-30 clear, control-policy clear, BSSID address-check set,
+interface policy-enable set, then the two ordered UBSSID-check clears,
+followed by the device fence. The existing connected STA HIL qualifies this
+queue-zero path. A source audit prevents generic register access from
+returning to the upper policy module.

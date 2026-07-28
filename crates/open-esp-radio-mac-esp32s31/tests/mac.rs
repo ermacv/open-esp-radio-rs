@@ -6,7 +6,10 @@ use open_esp_radio_mac_esp32s31::{
         descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
         tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
-    init::{configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl},
+    init::{
+        configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
+        StaLinkRxPolicyHardware,
+    },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
         MAC_INT_TX_COMPLETE,
@@ -181,6 +184,26 @@ impl CcmpKeyHardware for MockMmio {
         for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
             self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
         }
+        Mmio::fence(self);
+    }
+}
+
+impl StaLinkRxPolicyHardware for MockMmio {
+    fn apply_sta_link_policy(&mut self) {
+        let filter = mac_init::RX_FILTER[0];
+        let bssid = mac_init::BSSID_HIGH[0];
+        let interface = mac_init::INTERFACE_ADDRESS_HIGH[0];
+        let mut modify = |register: Register32, mask: u32, value: u32| {
+            let current = self.read32(register);
+            self.write32(register, (current & !mask) | (value & mask));
+        };
+        modify(filter, (1 << 10) | (1 << 4), 0);
+        modify(bssid, 1 << 30, 0);
+        modify(filter, 1 << 6, 0);
+        modify(bssid, 1 << 31, 1 << 31);
+        modify(interface, 1 << 16, 1 << 16);
+        modify(filter, 1 << 8, 0);
+        modify(filter, 1 << 1, 0);
         Mmio::fence(self);
     }
 }

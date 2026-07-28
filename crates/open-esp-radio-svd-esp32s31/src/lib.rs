@@ -7914,6 +7914,492 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-interface BSSID policy words used by scan and associated-STA receive filtering."]
+pub type WifiMacBssidPolicy = crate::Periph<wifi_mac_bssid_policy::RegisterBlock, 0x2010_4004>;
+impl core::fmt::Debug for WifiMacBssidPolicy {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacBssidPolicy").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-interface BSSID policy words used by scan and associated-STA receive filtering."]
+pub mod wifi_mac_bssid_policy {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        bssid_high: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x0c - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. High BSSID bytes and two recovered receive-policy bits for interfaces 0..2."]
+        #[inline(always)]
+        pub const fn bssid_high(&self, n: usize) -> &BssidHigh {
+            #[allow(clippy::no_effect)]
+            [(); 3][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x0c - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. High BSSID bytes and two recovered receive-policy bits for interfaces 0..2."]
+        #[inline(always)]
+        pub fn bssid_high_iter(&self) -> impl Iterator<Item = &BssidHigh> {
+            (0..3)
+                .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
+        }
+    }
+    #[doc = "BSSID_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. High BSSID bytes and two recovered receive-policy bits for interfaces 0..2.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bssid_high`] module"]
+    #[doc(alias = "BSSID_HIGH")]
+    pub type BssidHigh = crate::Reg<bssid_high::BssidHighSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. High BSSID bytes and two recovered receive-policy bits for interfaces 0..2."]
+    pub mod bssid_high {
+        #[doc = "Register `BSSID_HIGH%s` reader"]
+        pub type R = crate::R<BssidHighSpec>;
+        #[doc = "Register `BSSID_HIGH%s` writer"]
+        pub type W = crate::W<BssidHighSpec>;
+        #[doc = "Field `BSSID_HIGH` reader - "]
+        pub type BssidHighR = crate::FieldReader<u16>;
+        #[doc = "Field `BSSID_HIGH` writer - "]
+        pub type BssidHighW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `POLICY_MIDDLE_UNKNOWN` reader - "]
+        pub type PolicyMiddleUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `POLICY_MIDDLE_UNKNOWN` writer - "]
+        pub type PolicyMiddleUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        #[doc = "Field `POLICY_BIT_30_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
+        pub type PolicyBit30UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_30_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
+        pub type PolicyBit30UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ADDRESS_CHECK_ENABLE` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        pub type AddressCheckEnableR = crate::BitReader;
+        #[doc = "Field `ADDRESS_CHECK_ENABLE` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        pub type AddressCheckEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bssid_high(&self) -> BssidHighR {
+                BssidHighR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:29"]
+            #[inline(always)]
+            pub fn policy_middle_unknown(&self) -> PolicyMiddleUnknownR {
+                PolicyMiddleUnknownR::new(((self.bits >> 16) & 0x3fff) as u16)
+            }
+            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
+            #[inline(always)]
+            pub fn policy_bit_30_unknown(&self) -> PolicyBit30UnknownR {
+                PolicyBit30UnknownR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn address_check_enable(&self) -> AddressCheckEnableR {
+                AddressCheckEnableR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bssid_high(&mut self) -> BssidHighW<'_, BssidHighSpec> {
+                BssidHighW::new(self, 0)
+            }
+            #[doc = "Bits 16:29"]
+            #[inline(always)]
+            pub fn policy_middle_unknown(&mut self) -> PolicyMiddleUnknownW<'_, BssidHighSpec> {
+                PolicyMiddleUnknownW::new(self, 16)
+            }
+            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
+            #[inline(always)]
+            pub fn policy_bit_30_unknown(&mut self) -> PolicyBit30UnknownW<'_, BssidHighSpec> {
+                PolicyBit30UnknownW::new(self, 30)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn address_check_enable(&mut self) -> AddressCheckEnableW<'_, BssidHighSpec> {
+                AddressCheckEnableW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. High BSSID bytes and two recovered receive-policy bits for interfaces 0..2.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssidHighSpec;
+        impl crate::RegisterSpec for BssidHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bssid_high::R`](R) reader structure"]
+        impl crate::Readable for BssidHighSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bssid_high::W`](W) writer structure"]
+        impl crate::Writable for BssidHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
+pub type WifiMacInterfaceAddress =
+    crate::Periph<wifi_mac_interface_address::RegisterBlock, 0x2010_405c>;
+impl core::fmt::Debug for WifiMacInterfaceAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInterfaceAddress").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four interface-address pairs consumed by MAC receive filtering."]
+pub mod wifi_mac_interface_address {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        address_low: (),
+        _reserved1: [u8; 0x04],
+        address_high: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+        #[inline(always)]
+        pub const fn address_low(&self, n: usize) -> &AddressLow {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+        #[inline(always)]
+        pub fn address_low_iter(&self) -> impl Iterator<Item = &AddressLow> {
+            (0..4)
+                .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
+        }
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+        #[inline(always)]
+        pub const fn address_high(&self, n: usize) -> &AddressHigh {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+        #[inline(always)]
+        pub fn address_high_iter(&self) -> impl Iterator<Item = &AddressHigh> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "ADDRESS_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_low`] module"]
+    #[doc(alias = "ADDRESS_LOW")]
+    pub type AddressLow = crate::Reg<address_low::AddressLowSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order."]
+    pub mod address_low {
+        #[doc = "Register `ADDRESS_LOW%s` reader"]
+        pub type R = crate::R<AddressLowSpec>;
+        #[doc = "Register `ADDRESS_LOW%s` writer"]
+        pub type W = crate::W<AddressLowSpec>;
+        #[doc = "Field `BYTES_0_3` reader - "]
+        pub type Bytes0_3R = crate::FieldReader<u32>;
+        #[doc = "Field `BYTES_0_3` writer - "]
+        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&self) -> Bytes0_3R {
+                Bytes0_3R::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&mut self) -> Bytes0_3W<'_, AddressLowSpec> {
+                Bytes0_3W::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Interface MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AddressLowSpec;
+        impl crate::RegisterSpec for AddressLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`address_low::R`](R) reader structure"]
+        impl crate::Readable for AddressLowSpec {}
+        #[doc = "`write(|w| ..)` method takes [`address_low::W`](W) writer structure"]
+        impl crate::Writable for AddressLowSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ADDRESS_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
+    #[doc(alias = "ADDRESS_HIGH")]
+    pub type AddressHigh = crate::Reg<address_high::AddressHighSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16."]
+    pub mod address_high {
+        #[doc = "Register `ADDRESS_HIGH%s` reader"]
+        pub type R = crate::R<AddressHighSpec>;
+        #[doc = "Register `ADDRESS_HIGH%s` writer"]
+        pub type W = crate::W<AddressHighSpec>;
+        #[doc = "Field `BYTES_4_5` reader - "]
+        pub type Bytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `BYTES_4_5` writer - "]
+        pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `RX_POLICY_ENABLE` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        pub type RxPolicyEnableR = crate::BitReader;
+        #[doc = "Field `RX_POLICY_ENABLE` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+        pub type RxPolicyEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_HIGH_UNKNOWN` reader - "]
+        pub type PolicyHighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `POLICY_HIGH_UNKNOWN` writer - "]
+        pub type PolicyHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bytes_4_5(&self) -> Bytes4_5R {
+                Bytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn rx_policy_enable(&self) -> RxPolicyEnableR {
+                RxPolicyEnableR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bits 17:31"]
+            #[inline(always)]
+            pub fn policy_high_unknown(&self) -> PolicyHighUnknownR {
+                PolicyHighUnknownR::new(((self.bits >> 17) & 0x7fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bytes_4_5(&mut self) -> Bytes4_5W<'_, AddressHighSpec> {
+                Bytes4_5W::new(self, 0)
+            }
+            #[doc = "Bit 16 - SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Set by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn rx_policy_enable(&mut self) -> RxPolicyEnableW<'_, AddressHighSpec> {
+                RxPolicyEnableW::new(self, 16)
+            }
+            #[doc = "Bits 17:31"]
+            #[inline(always)]
+            pub fn policy_high_unknown(&mut self) -> PolicyHighUnknownW<'_, AddressHighSpec> {
+                PolicyHighUnknownW::new(self, 17)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Interface MAC bytes 4..5 plus receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AddressHighSpec;
+        impl crate::RegisterSpec for AddressHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`address_high::R`](R) reader structure"]
+        impl crate::Readable for AddressHighSpec {}
+        #[doc = "`write(|w| ..)` method takes [`address_high::W`](W) writer structure"]
+        impl crate::Writable for AddressHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Partly decoded field names deliberately retain UNKNOWN semantics."]
+pub type WifiMacRxFilter = crate::Periph<wifi_mac_rx_filter::RegisterBlock, 0x2010_40d8>;
+impl core::fmt::Debug for WifiMacRxFilter {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRxFilter").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four receive-queue policy words. Partly decoded field names deliberately retain UNKNOWN semantics."]
+pub mod wifi_mac_rx_filter {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        policy: [Policy; 4],
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges."]
+        #[inline(always)]
+        pub const fn policy(&self, n: usize) -> &Policy {
+            &self.policy[n]
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges."]
+        #[inline(always)]
+        pub fn policy_iter(&self) -> impl Iterator<Item = &Policy> {
+            self.policy.iter()
+        }
+    }
+    #[doc = "POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@policy`] module"]
+    #[doc(alias = "POLICY")]
+    pub type Policy = crate::Reg<policy::PolicySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges."]
+    pub mod policy {
+        #[doc = "Register `POLICY%s` reader"]
+        pub type R = crate::R<PolicySpec>;
+        #[doc = "Register `POLICY%s` writer"]
+        pub type W = crate::W<PolicySpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::BitReader;
+        #[doc = "Field `LOW_UNKNOWN` writer - "]
+        pub type LowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UBSSID_CHECK_LOW_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+        pub type UbssidCheckLowUnknownR = crate::BitReader;
+        #[doc = "Field `UBSSID_CHECK_LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+        pub type UbssidCheckLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_3_2_UNKNOWN` reader - "]
+        pub type Policy3_2UnknownR = crate::FieldReader;
+        #[doc = "Field `POLICY_3_2_UNKNOWN` writer - "]
+        pub type Policy3_2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `MANAGEMENT_POLICY_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
+        pub type ManagementPolicyUnknownR = crate::BitReader;
+        #[doc = "Field `MANAGEMENT_POLICY_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
+        pub type ManagementPolicyUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_BIT_5_UNKNOWN` reader - "]
+        pub type PolicyBit5UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_5_UNKNOWN` writer - "]
+        pub type PolicyBit5UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_POLICY_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the reachable control-policy branch."]
+        pub type ControlPolicyUnknownR = crate::BitReader;
+        #[doc = "Field `CONTROL_POLICY_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the reachable control-policy branch."]
+        pub type ControlPolicyUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_BIT_7_UNKNOWN` reader - "]
+        pub type PolicyBit7UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_7_UNKNOWN` writer - "]
+        pub type PolicyBit7UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UBSSID_CHECK_HIGH_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+        pub type UbssidCheckHighUnknownR = crate::BitReader;
+        #[doc = "Field `UBSSID_CHECK_HIGH_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+        pub type UbssidCheckHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_BIT_9_UNKNOWN` reader - "]
+        pub type PolicyBit9UnknownR = crate::BitReader;
+        #[doc = "Field `POLICY_BIT_9_UNKNOWN` writer - "]
+        pub type PolicyBit9UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODE_POLICY_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared for receive-policy mode zero."]
+        pub type ModePolicyUnknownR = crate::BitReader;
+        #[doc = "Field `MODE_POLICY_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared for receive-policy mode zero."]
+        pub type ModePolicyUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 21, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+            #[inline(always)]
+            pub fn ubssid_check_low_unknown(&self) -> UbssidCheckLowUnknownR {
+                UbssidCheckLowUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn policy_3_2_unknown(&self) -> Policy3_2UnknownR {
+                Policy3_2UnknownR::new(((self.bits >> 2) & 3) as u8)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
+            #[inline(always)]
+            pub fn management_policy_unknown(&self) -> ManagementPolicyUnknownR {
+                ManagementPolicyUnknownR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn policy_bit_5_unknown(&self) -> PolicyBit5UnknownR {
+                PolicyBit5UnknownR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the reachable control-policy branch."]
+            #[inline(always)]
+            pub fn control_policy_unknown(&self) -> ControlPolicyUnknownR {
+                ControlPolicyUnknownR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn policy_bit_7_unknown(&self) -> PolicyBit7UnknownR {
+                PolicyBit7UnknownR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+            #[inline(always)]
+            pub fn ubssid_check_high_unknown(&self) -> UbssidCheckHighUnknownR {
+                UbssidCheckHighUnknownR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn policy_bit_9_unknown(&self) -> PolicyBit9UnknownR {
+                PolicyBit9UnknownR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared for receive-policy mode zero."]
+            #[inline(always)]
+            pub fn mode_policy_unknown(&self) -> ModePolicyUnknownR {
+                ModePolicyUnknownR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bits 11:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new((self.bits >> 11) & 0x001f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, PolicySpec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+            #[inline(always)]
+            pub fn ubssid_check_low_unknown(&mut self) -> UbssidCheckLowUnknownW<'_, PolicySpec> {
+                UbssidCheckLowUnknownW::new(self, 1)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn policy_3_2_unknown(&mut self) -> Policy3_2UnknownW<'_, PolicySpec> {
+                Policy3_2UnknownW::new(self, 2)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the associated-STA mode/control/management transaction."]
+            #[inline(always)]
+            pub fn management_policy_unknown(
+                &mut self,
+            ) -> ManagementPolicyUnknownW<'_, PolicySpec> {
+                ManagementPolicyUnknownW::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn policy_bit_5_unknown(&mut self) -> PolicyBit5UnknownW<'_, PolicySpec> {
+                PolicyBit5UnknownW::new(self, 5)
+            }
+            #[doc = "Bit 6 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared by the reachable control-policy branch."]
+            #[inline(always)]
+            pub fn control_policy_unknown(&mut self) -> ControlPolicyUnknownW<'_, PolicySpec> {
+                ControlPolicyUnknownW::new(self, 6)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn policy_bit_7_unknown(&mut self) -> PolicyBit7UnknownW<'_, PolicySpec> {
+                PolicyBit7UnknownW::new(self, 7)
+            }
+            #[doc = "Bit 8 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First bit cleared by hal_mac_set_rxq_policy(queue, false)."]
+            #[inline(always)]
+            pub fn ubssid_check_high_unknown(&mut self) -> UbssidCheckHighUnknownW<'_, PolicySpec> {
+                UbssidCheckHighUnknownW::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn policy_bit_9_unknown(&mut self) -> PolicyBit9UnknownW<'_, PolicySpec> {
+                PolicyBit9UnknownW::new(self, 9)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Cleared for receive-policy mode zero."]
+            #[inline(always)]
+            pub fn mode_policy_unknown(&mut self) -> ModePolicyUnknownW<'_, PolicySpec> {
+                ModePolicyUnknownW::new(self, 10)
+            }
+            #[doc = "Bits 11:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, PolicySpec> {
+                HighUnknownW::new(self, 11)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Queue filter policy updated through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PolicySpec;
+        impl crate::RegisterSpec for PolicySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`policy::R`](R) reader structure"]
+        impl crate::Readable for PolicySpec {}
+        #[doc = "`write(|w| ..)` method takes [`policy::W`](W) writer structure"]
+        impl crate::Writable for PolicySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-not-independently-hil\\]. Per-interface hardware-crypto controls, shared policy mask and key validity bitmap recovered from complete libpp hal_crypto leaves."]
 pub type WifiMacCryptoControl = crate::Periph<wifi_mac_crypto_control::RegisterBlock, 0x2010_4800>;
 impl core::fmt::Debug for WifiMacCryptoControl {
@@ -10551,6 +11037,12 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "WIFI_MAC_BSSID_POLICY"]
+    pub wifi_mac_bssid_policy: WifiMacBssidPolicy,
+    #[doc = "WIFI_MAC_INTERFACE_ADDRESS"]
+    pub wifi_mac_interface_address: WifiMacInterfaceAddress,
+    #[doc = "WIFI_MAC_RX_FILTER"]
+    pub wifi_mac_rx_filter: WifiMacRxFilter,
     #[doc = "WIFI_MAC_CRYPTO_CONTROL"]
     pub wifi_mac_crypto_control: WifiMacCryptoControl,
     #[doc = "WIFI_MAC_KEY_TABLE"]
@@ -10599,6 +11091,9 @@ impl Peripherals {
             phy_rx_dco_oracle: PhyRxDcoOracle::steal(),
             phy_cold_deadline_oracle: PhyColdDeadlineOracle::steal(),
             phy_clock_oracle: PhyClockOracle::steal(),
+            wifi_mac_bssid_policy: WifiMacBssidPolicy::steal(),
+            wifi_mac_interface_address: WifiMacInterfaceAddress::steal(),
+            wifi_mac_rx_filter: WifiMacRxFilter::steal(),
             wifi_mac_crypto_control: WifiMacCryptoControl::steal(),
             wifi_mac_key_table: WifiMacKeyTable::steal(),
             wifi_mac_tx_common: WifiMacTxCommon::steal(),

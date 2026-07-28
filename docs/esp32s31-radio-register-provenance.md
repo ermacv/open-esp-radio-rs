@@ -814,6 +814,23 @@ authentication and connected WPA2 HIL qualify queue zero; the other three
 ordinary banks remain instruction-exact but have not been independently
 exercised by the open driver.
 
+The scan-to-associated receive-policy edge is split according to its physical
+layout rather than grouped under a synthetic monolithic MAC peripheral:
+`WIFI_MAC_BSSID_POLICY` begins at `0x2010_4004`,
+`WIFI_MAC_INTERFACE_ADDRESS` at `0x2010_405c`, and
+`WIFI_MAC_RX_FILTER` at `0x2010_40d8`. Complete
+`libpp.a[hal_mac.o]::{hal_mac_rx_set_policy,hal_mac_set_rxq_policy}` bodies
+prove every address, mask and fresh-read RMW. The complete
+`libnet80211.a::wifi_set_rx_policy` parent identifies the reachable
+associated-STA policy-five arguments.
+
+The policy bit meanings are recorded only to their supported confidence:
+address-check and policy-enable follow the recovered branch behavior, while
+the remaining mode/control/management/UBSSID positions retain `UNKNOWN`
+suffixes where the hardware meaning is incomplete. Connected open STA
+scan/authentication/WPA2/DHCP HIL qualifies queue zero; no claim is made that
+all other queue/interface policy combinations have been exercised.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

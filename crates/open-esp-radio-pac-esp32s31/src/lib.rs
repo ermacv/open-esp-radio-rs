@@ -12,6 +12,7 @@ mod mac_block_ack;
 mod mac_crypto;
 mod mac_interrupt;
 mod mac_rx_dma;
+mod mac_rx_policy;
 mod mac_tx;
 pub mod pbus;
 pub mod phy;
@@ -367,6 +368,33 @@ mod tests {
         assert_eq!(vector.plcp1(0).as_ptr() as usize, 0x2010_5364);
         assert_eq!(completion.primary(3).as_ptr() as usize, 0x2010_553c);
         assert_eq!(completion.primary(0).as_ptr() as usize, 0x2010_53c8);
+    }
+
+    #[test]
+    fn generated_sta_rx_policy_registers_match_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_bssid_policy
+                .bssid_high(0)
+                .as_ptr() as usize,
+            0x2010_4004
+        );
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_interface_address
+                .address_high(0)
+                .as_ptr() as usize,
+            0x2010_4060
+        );
+        assert_eq!(
+            registers.peripherals.wifi_mac_rx_filter.policy(0).as_ptr() as usize,
+            0x2010_40d8
+        );
     }
 
     #[test]

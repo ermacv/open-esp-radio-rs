@@ -29,7 +29,160 @@ const fn txiq_second_mismatch_image(previous: u32, polarity: bool) -> u32 {
     (previous & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
 }
 
+const fn clear_power_detector_enable_field(field: u8, bit: u8) -> u8 {
+    field & !bit
+}
+
+const fn txdc_power_detector_images(table: u32, control: u32) -> (u8, u32, u32, u32) {
+    let saved_table_low = table as u8;
+    let saved_control_field = control & 0x0000_0ff0;
+    let next_table = (table & !0x0000_00ff) | 0x0000_00f0;
+    let next_control = (control & !0x0000_0ff0) | 0x0000_0780;
+    (
+        saved_table_low,
+        saved_control_field,
+        next_table,
+        next_control,
+    )
+}
+
 impl RadioRegisters {
+    /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
+    pub fn initialize_power_detector_registers(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        // SAFETY: these are complete full-word stores from the rev0 ROM body;
+        // they do not depend on an unknown reset image.
+        unsafe {
+            bb.power_detector_table_0_opaque()
+                .write_with_zero(|w| w.bits(0x0f0f_0fff));
+            bb.power_detector_table_1()
+                .write_with_zero(|w| w.bits(0x00ff_0f64));
+        }
+        bb.power_detector_control()
+            .modify(|_, w| unsafe { w.calibration_field_unknown().bits(0x50) });
+        // SAFETY: the complete ROM publishes a zero-extended full reference.
+        unsafe {
+            bb.power_detector_reference()
+                .write_with_zero(|w| w.reference_code().bits(0xaaaa));
+        }
+        bb.power_detector_control()
+            .modify(|_, w| unsafe { w.initialization_mode_unknown().bits(2) });
+    }
+
+    /// Apply the internal-MMIO portion of complete ROM `phy_en_pwdet`.
+    pub fn configure_power_detector_enabled(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        let control = bb.power_detector_control();
+        for bit in [2_u8, 1, 4] {
+            control.modify(|r, w| {
+                let field = clear_power_detector_enable_field(r.enable_clear_unknown().bits(), bit);
+                // SAFETY: `field` is derived from the three-bit reader by
+                // clearing one in-range bit.
+                unsafe { w.enable_clear_unknown().bits(field) }
+            });
+        }
+        bb.power_detector_sar_control_status()
+            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(3) });
+        bb.power_detector_sar_control_status()
+            .modify(|_, w| w.sar_config_clear_unknown().clear_bit());
+        // SAFETY: complete phy_pwdet_sar2_init publishes this full reference.
+        unsafe {
+            bb.power_detector_reference()
+                .write_with_zero(|w| w.reference_code().bits(0x016a));
+        }
+    }
+
+    /// Set the final background-control bit after PWDET enable.
+    pub fn enable_power_detector_background_control(&mut self) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .power_detector_control()
+            .modify(|_, w| w.background_control_enable_unknown().set_bit());
+    }
+
+    /// Capture and replace the two fields owned by TX-DC PWDET calibration.
+    pub fn capture_txdc_power_detector_fields(&mut self) -> (u8, u32) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        let table = bb.power_detector_table_1().read().bits();
+        let control = bb.power_detector_control().read().bits();
+        let (saved_table, saved_control, next_table, next_control) =
+            txdc_power_detector_images(table, control);
+        // SAFETY: each next image preserves every unowned bit from the
+        // preceding complete read and replaces only the SVD-described field.
+        unsafe {
+            bb.power_detector_table_1()
+                .write_with_zero(|w| w.bits(next_table));
+            bb.power_detector_control()
+                .write_with_zero(|w| w.bits(next_control));
+        }
+        (saved_table, saved_control)
+    }
+
+    /// Select TX-DC SAR mode one after the initial PBus setup.
+    pub fn configure_txdc_power_detector_sar(&mut self) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .power_detector_sar_control_status()
+            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(1) });
+    }
+
+    /// Restore the captured TX-DC fields and select final SAR mode three.
+    pub fn restore_txdc_power_detector_fields(
+        &mut self,
+        power_table_low: u8,
+        shifted_power_control_field: u32,
+    ) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.power_detector_table_1()
+            .modify(|_, w| unsafe { w.tx_dc_temporary_low_unknown().bits(power_table_low) });
+        bb.power_detector_control().modify(|_, w| unsafe {
+            w.calibration_field_unknown()
+                .bits((shifted_power_control_field >> 4) as u8)
+        });
+        bb.power_detector_sar_control_status()
+            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(3) });
+    }
+
+    /// Publish one zero-extended power-detector reference word.
+    pub fn write_power_detector_reference(&mut self, value: u16) {
+        // SAFETY: the complete callers publish a full word whose high half is
+        // zero; `value` exactly fills the SVD-described 16-bit field.
+        unsafe {
+            self.peripherals
+                .phy_baseband_config_oracle
+                .power_detector_reference()
+                .write_with_zero(|w| w.reference_code().bits(value));
+        }
+    }
+
+    /// Pulse the power-detector SAR trigger through two fresh RMW edges.
+    pub fn trigger_power_detector_sar(&mut self) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .power_detector_control();
+        control.modify(|_, w| w.sar_trigger().clear_bit());
+        control.modify(|_, w| w.sar_trigger().set_bit());
+    }
+
+    /// Read one complete power-detector readiness register image.
+    pub fn power_detector_ready_image(&mut self) -> u32 {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .power_detector_sar_control_status()
+            .read()
+            .bits()
+    }
+
+    /// Read one complete power-detector SAR result image.
+    pub fn power_detector_sar_image(&mut self) -> u32 {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .power_detector_sar_result()
+            .read()
+            .bits()
+    }
+
     fn clear_tx_gain_compensation(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         // SAFETY: both complete archive leaves publish a full zero word, so
@@ -430,7 +583,26 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{tone_path_image, txiq_first_mismatch_image, txiq_second_mismatch_image};
+    use super::{
+        clear_power_detector_enable_field, tone_path_image, txdc_power_detector_images,
+        txiq_first_mismatch_image, txiq_second_mismatch_image,
+    };
+
+    #[test]
+    fn power_detector_enable_clears_remain_three_distinct_images() {
+        let first = clear_power_detector_enable_field(0b111, 0b010);
+        let second = clear_power_detector_enable_field(first, 0b001);
+        let third = clear_power_detector_enable_field(second, 0b100);
+        assert_eq!([first, second, third], [0b101, 0b100, 0]);
+    }
+
+    #[test]
+    fn txdc_capture_images_replace_only_owned_fields() {
+        assert_eq!(
+            txdc_power_detector_images(0xa5a5_5a34, 0x5a5a_0ab5),
+            (0x34, 0x0000_0ab0, 0xa5a5_5af0, 0x5a5a_0785)
+        );
+    }
 
     #[test]
     fn calibration_tone_images_match_both_complete_archive_calls() {

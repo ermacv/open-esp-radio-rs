@@ -672,6 +672,23 @@ from every PHY target binding makes the entire upper PHY crate safe. The
 source-only audit rejects all seven physical tone literals, former wrapper
 signatures, and any future `unsafe` or raw volatile access in the PHY crate.
 
+## Native power-detector PAC operations
+
+The already described `POWER_DETECTOR_CONTROL`,
+`POWER_DETECTOR_SAR_CONTROL_STATUS`, table, reference and result registers no
+longer pass through the handwritten `Register32` facade. Their complete rev0
+ROM and pinned `libphy.a[phy_tx_cal.o]` sequences now execute directly on the
+generated register objects held by `RadioRegisters`.
+
+The native PAC preserves the three independently fresh enable-bit clears,
+the two independent TX-DC capture reads followed by full preserved-image
+writes, the clear/set SAR trigger edges, and all separately ordered field
+restores. Pure PAC tests retain the instruction-derived enable and TX-DC image
+checks that previously lived in a fake compatibility-register model.
+Platform-only LP-AON mode selection remains in the official PAC adapter and
+is sequenced by the thin HAL wrapper. The source audit rejects any return of
+`Register32`, `Field32` or compatibility read/write methods to this module.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

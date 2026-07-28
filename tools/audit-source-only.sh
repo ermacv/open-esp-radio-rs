@@ -45,15 +45,16 @@ then
     exit 1
 fi
 
-# These two central buses have completed their target migration. Their HAL
-# modules may sequence semantic operations but must not regress to the
-# Register32 compatibility facade.
+# These native generated-PAC slices have completed their target migration.
+# Their HAL modules may sequence semantic operations but must not regress to
+# the Register32 compatibility facade.
 if rg -n \
     '(Register32|Field32|read32|write32|modify32|power::(phy_i2c|phy_pbus))' \
     crates/open-esp-radio-hal-esp32s31/src/phy_i2c.rs \
-    crates/open-esp-radio-hal-esp32s31/src/pbus.rs
+    crates/open-esp-radio-hal-esp32s31/src/pbus.rs \
+    crates/open-esp-radio-hal-esp32s31/src/phy_power_detector.rs
 then
-    echo "PHY-I2C/PBus compatibility MMIO returned to the HAL" >&2
+    echo "native PHY-I2C/PBus/PWDET compatibility MMIO returned to the HAL" >&2
     exit 1
 fi
 

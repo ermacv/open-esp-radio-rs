@@ -214,5 +214,12 @@ are now safe `RadioRegisters` operations. The SVD cites the exact rev0 ROM
 leaves and `_oracles/libphy.a[phy_reg.o]` bodies; fields whose electrical
 meaning is not independently established remain explicitly `UNKNOWN`.
 
+The adjacent PWDET vertical slice has also left the `Register32` compatibility
+facade. Initialization, three ordered enable-bit clears, background enable,
+TX-DC field capture/restore, SAR mode/trigger, reference publication and
+ready/result sampling are native generated-PAC operations. The HAL module is
+now a thin coordinator for the official platform PAC mode selection; the
+audit prevents compatibility register access from returning there.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

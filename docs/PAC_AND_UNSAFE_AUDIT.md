@@ -226,5 +226,13 @@ retains the complete source's two fresh reads, returns only the encoded
 bits 23:22, and restore truncates its input back to that field. Its HAL module
 is now a two-function semantic facade with no register compatibility types.
 
+The DC/IQ estimator and SDM deadline sample now use the same native boundary.
+All three estimator configuration RMW operations, both enable phases,
+readiness/activity observations and signed accumulator reads execute on
+generated register objects. The PAC source preserves the two distinct ROM
+orders for RXIQ mismatch and signal-power sampling; HAL only constructs
+semantic result structures. The audit rejects compatibility register types in
+both estimator and cold-prelude modules.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

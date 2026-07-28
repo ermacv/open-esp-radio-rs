@@ -4,6 +4,7 @@ use core::ptr::{read_volatile, write_volatile};
 
 mod baseband;
 pub mod clock;
+mod iq_estimator;
 pub mod mac;
 pub mod pbus;
 pub mod phy;

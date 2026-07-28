@@ -402,6 +402,15 @@ readiness samples and every one-shot `phy_check_rx_sat` sample now require
 the caller's unique `&mut RadioRegisters` capability. The transition still
 owns the bounded 100-sample policy; the HAL performs exactly one finite read.
 
+The live implementation no longer reaches these identities through the
+handwritten `Register32`/`Field32` compatibility facade. Configuration,
+enable edges and observations are native generated-PAC operations. Their
+source retains the three separate configuration RMWs and the two distinct
+four-word ROM read orders; the HAL is limited to converting PAC tuples into
+named semantic snapshots. The SDM deadline counter used by the same cold
+prelude is likewise one generated-register read with no test-only duplicate
+register identity.
+
 ## Temperature-sensor PAC
 
 SVD v1.1 adds the two-register `PHY_TEMPERATURE_SENSOR_ORACLE` aperture and

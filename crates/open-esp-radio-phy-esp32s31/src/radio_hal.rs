@@ -299,16 +299,11 @@ fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: 
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) unsafe fn configure_phy_rx_gain_dc_registers(
-    registers: &mut RadioRegisters,
-    enabled: bool,
-) {
+pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut RadioRegisters, enabled: bool) {
     if enabled {
         registers.set_phy_calibration_clock(true);
-        set_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
-    } else {
-        clear_register_bits(PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4, 0x60);
     }
+    registers.set_rx_gain_dc_calibration(enabled);
 }
 
 /// Program the complete crystal-duty calibration tone without `g_phyFuns`.

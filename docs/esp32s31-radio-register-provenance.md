@@ -550,6 +550,31 @@ root-status and correction target bindings now require the same unique
 source-only audit now rejects both their names and raw `0x2010_0890` from the
 live PHY crate.
 
+## RX-gain DC calibration control
+
+SVD v2.5 localizes the remaining direct-register prefix and cleanup of
+`phy_set_rx_gain_cal_dc`. The primary source is complete rev0 ROM
+`phy_set_rx_gain_cal_dc` at `0x2f82_9858`, size `0x206`, from the pinned ROM
+ELF named above. Its prefix reads `0x2010_0424`, sets bits 6:5 with mask
+`0x60`, and writes the result before entering the bounded RX-gain DC
+calibration graph. The common cleanup tail performs a fresh read of the same
+word, clears `0x60`, and writes the result.
+
+The SVD therefore names the word `RX_GAIN_DC_CONTROL` and retains
+`CALIBRATION_ENABLE_UNKNOWN` for bits 6:5 because the instruction stream does
+not independently prove a narrower electrical meaning. It records only the
+two values actually established by the complete control flow: `ENABLED=3`
+and `DISABLED=0`. The PAC method performs exactly one fresh RMW per call.
+Calibration-clock enable remains a preceding, separately owned operation only
+on the prefix path, matching ROM order.
+
+This leaf is consumed directly through the generated `svd2rust` register API;
+it is deliberately absent from the handwritten `Register32` compatibility
+facade. The PHY wrapper is now safe and requires `&mut RadioRegisters`. The
+former `PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4` expression is deleted, and the
+source-only audit rejects that derived address, the raw literal, and an unsafe
+version of the wrapper.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

@@ -2,6 +2,7 @@
 
 use core::ptr::{read_volatile, write_volatile};
 
+mod baseband;
 pub mod clock;
 pub mod mac;
 pub mod pbus;

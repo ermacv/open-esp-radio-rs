@@ -4035,64 +4035,66 @@ pub mod phy_baseband_config_oracle {
     pub struct RegisterBlock {
         _reserved0: [u8; 0x0410],
         tx_gain_compensation: TxGainCompensation,
-        _reserved1: [u8; 0x24],
+        _reserved1: [u8; 0x10],
+        rx_gain_dc_control: RxGainDcControl,
+        _reserved2: [u8; 0x10],
         iq_correction_control: IqCorrectionControl,
-        _reserved2: [u8; 0x03cc],
+        _reserved3: [u8; 0x03cc],
         power_detector_control: PowerDetectorControl,
         power_detector_sar_control_status: PowerDetectorSarControlStatus,
         power_detector_table_0_opaque: PowerDetectorTable0Opaque,
         power_detector_table_1: PowerDetectorTable1,
         power_detector_reference: PowerDetectorReference,
         power_detector_sar_result: PowerDetectorSarResult,
-        _reserved8: [u8; 0x4c],
+        _reserved9: [u8; 0x4c],
         tx_pa_control_0: TxPaControl0,
         tx_pa_control_1: TxPaControl1,
-        _reserved10: [u8; 0x0398],
+        _reserved11: [u8; 0x0398],
         iq_correction_aux: IqCorrectionAux,
-        _reserved11: [u8; 0x387c],
+        _reserved12: [u8; 0x387c],
         i2c_tx_rate_control: I2cTxRateControl,
-        _reserved12: [u8; 0x2b88],
+        _reserved13: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved13: [u8; 0x03e4],
+        _reserved14: [u8; 0x03e4],
         baseband_init_7400: BasebandInit7400,
-        _reserved14: [u8; 0x24],
+        _reserved15: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved15: [u8; 0x10],
+        _reserved16: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved16: [u8; 0x14],
+        _reserved17: [u8; 0x14],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved20: [u8; 0x03a4],
+        _reserved21: [u8; 0x03a4],
         baseband_init_7808: BasebandInit7808,
-        _reserved21: [u8; 0x84],
+        _reserved22: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved22: [u8; 0x48],
+        _reserved23: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved23: [u8; 0x04],
+        _reserved24: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved24: [u8; 0x24],
+        _reserved25: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved25: [u8; 0x70],
+        _reserved26: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved26: [u8; 0xa4],
+        _reserved27: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved27: [u8; 0x01d4],
+        _reserved28: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved28: [u8; 0x2c],
+        _reserved29: [u8; 0x2c],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved29: [u8; 0x08],
+        _reserved30: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved32: [u8; 0x08],
+        _reserved33: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved33: [u8; 0x18],
+        _reserved34: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved34: [u8; 0x38],
+        _reserved35: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved35: [u8; 0x24],
+        _reserved36: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -4100,6 +4102,11 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn tx_gain_compensation(&self) -> &TxGainCompensation {
             &self.tx_gain_compensation
+        }
+        #[doc = "0x424 - SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved."]
+        #[inline(always)]
+        pub const fn rx_gain_dc_control(&self) -> &RxGainDcControl {
+            &self.rx_gain_dc_control
         }
         #[doc = "0x438 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-from-symbol\\]. Shared RX-IQ coefficient and correction-mode word."]
         #[inline(always)]
@@ -4363,6 +4370,104 @@ pub mod phy_baseband_config_oracle {
         impl crate::Readable for TxGainCompensationSpec {}
         #[doc = "`write(|w| ..)` method takes [`tx_gain_compensation::W`](W) writer structure"]
         impl crate::Writable for TxGainCompensationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_GAIN_DC_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_dc_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_dc_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_dc_control`] module"]
+    #[doc(alias = "RX_GAIN_DC_CONTROL")]
+    pub type RxGainDcControl = crate::Reg<rx_gain_dc_control::RxGainDcControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved."]
+    pub mod rx_gain_dc_control {
+        #[doc = "Register `RX_GAIN_DC_CONTROL` reader"]
+        pub type R = crate::R<RxGainDcControlSpec>;
+        #[doc = "Register `RX_GAIN_DC_CONTROL` writer"]
+        pub type W = crate::W<RxGainDcControlSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum CalibrationEnableUnknown {
+            #[doc = "0: Common phy_set_rx_gain_cal_dc cleanup value."]
+            Disabled = 0,
+            #[doc = "3: phy_set_rx_gain_cal_dc calibration-prefix value."]
+            Enabled = 3,
+        }
+        impl From<CalibrationEnableUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: CalibrationEnableUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for CalibrationEnableUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for CalibrationEnableUnknown {}
+        #[doc = "Field `CALIBRATION_ENABLE_UNKNOWN` reader - "]
+        pub type CalibrationEnableUnknownR = crate::FieldReader<CalibrationEnableUnknown>;
+        impl CalibrationEnableUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<CalibrationEnableUnknown> {
+                match self.bits {
+                    0 => Some(CalibrationEnableUnknown::Disabled),
+                    3 => Some(CalibrationEnableUnknown::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "Common phy_set_rx_gain_cal_dc cleanup value."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == CalibrationEnableUnknown::Disabled
+            }
+            #[doc = "phy_set_rx_gain_cal_dc calibration-prefix value."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == CalibrationEnableUnknown::Enabled
+            }
+        }
+        #[doc = "Field `CALIBRATION_ENABLE_UNKNOWN` writer - "]
+        pub type CalibrationEnableUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, CalibrationEnableUnknown>;
+        impl<'a, REG> CalibrationEnableUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Common phy_set_rx_gain_cal_dc cleanup value."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(CalibrationEnableUnknown::Disabled)
+            }
+            #[doc = "phy_set_rx_gain_cal_dc calibration-prefix value."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(CalibrationEnableUnknown::Enabled)
+            }
+        }
+        impl R {
+            #[doc = "Bits 5:6"]
+            #[inline(always)]
+            pub fn calibration_enable_unknown(&self) -> CalibrationEnableUnknownR {
+                CalibrationEnableUnknownR::new(((self.bits >> 5) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 5:6"]
+            #[inline(always)]
+            pub fn calibration_enable_unknown(
+                &mut self,
+            ) -> CalibrationEnableUnknownW<'_, RxGainDcControlSpec> {
+                CalibrationEnableUnknownW::new(self, 5)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_SET_RX_GAIN_CAL_DC\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete rev0 ROM phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206, sets bits 6:5 before the bounded RX-gain DC calibration graph and clears the same pair during the common cleanup tail. Their narrower electrical meaning is not independently proved.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_dc_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_dc_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxGainDcControlSpec;
+        impl crate::RegisterSpec for RxGainDcControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_gain_dc_control::R`](R) reader structure"]
+        impl crate::Readable for RxGainDcControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_gain_dc_control::W`](W) writer structure"]
+        impl crate::Writable for RxGainDcControlSpec {
             type Safety = crate::Unsafe;
         }
     }

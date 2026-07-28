@@ -84,6 +84,17 @@ then
     exit 1
 fi
 
+# RX-gain DC calibration is now a generated-PAC operation. Reject both the
+# physical literal and the former address arithmetic used to hide it behind
+# the adjacent tone-selector identity.
+if rg -n \
+    '0x2010_0424|PHY_TONE_SELECTOR_CONTROL_ADDRESS[[:space:]]*-[[:space:]]*4|unsafe[[:space:]]+fn[[:space:]]+configure_phy_rx_gain_dc_registers' \
+    crates/open-esp-radio-phy-esp32s31/src
+then
+    echo "raw RX-gain DC calibration access returned" >&2
+    exit 1
+fi
+
 # Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
 # DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
 # addresses have no remaining live raw consumer.

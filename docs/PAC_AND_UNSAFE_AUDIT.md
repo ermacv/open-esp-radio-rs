@@ -179,5 +179,12 @@ owner to a shared MMIO handle. The continuing removal target is `radio_hal`:
 describe every remaining register in the SVD, expose an ownership-bound PAC
 operation, pass the existing `RadioRegisters` borrow into each leaf, and
 delete the unused C-ABI compatibility functions.
+
+The RX-gain DC calibration prefix/cleanup word at `0x2010_0424` is the first
+baseband leaf moved directly to that final form without extending the
+`Register32` compatibility facade. Its two legal field images and source
+provenance live in the SVD; the generated writer is reachable only through the
+unique `RadioRegisters` owner. The former derived raw address and upper-layer
+`unsafe fn` are gone, and the source-only audit rejects both regressions.
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

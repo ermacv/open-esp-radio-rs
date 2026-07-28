@@ -554,6 +554,24 @@ mod tests {
     }
 
     #[test]
+    fn generated_mac_txrx_suffix_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let init = &registers.peripherals.wifi_mac_txrx_suffix;
+        assert_eq!(init.aux_enable().as_ptr() as usize, 0x2010_4308);
+        assert_eq!(init.control_edges().as_ptr() as usize, 0x2010_4c1c);
+        assert_eq!(init.default_image_a().as_ptr() as usize, 0x2010_4c20);
+        assert_eq!(init.default_image_b().as_ptr() as usize, 0x2010_4c24);
+        assert_eq!(init.gate_control().as_ptr() as usize, 0x2010_4c60);
+        assert_eq!(init.field_control().as_ptr() as usize, 0x2010_4ca8);
+        assert_eq!(
+            registers.peripherals.wifi_mac_rx_dma.rx_control().as_ptr() as usize,
+            0x2010_4080
+        );
+    }
+
+    #[test]
     fn indexed_mac_registers_are_bounded_and_aligned() {
         for group in [
             &mac::init::INTERFACE_ADDRESS_LOW[..],

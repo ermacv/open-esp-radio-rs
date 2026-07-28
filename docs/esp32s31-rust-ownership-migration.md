@@ -3517,14 +3517,18 @@ third RX/CSI enable RMW. Host tracing asserts the complete 24-operation
 sequence and the source audit prevents the register layout from returning to
 the upper module.
 
-## Semantic MAC TX/RX cold prefix
+## Semantic MAC TX/RX cold direct transactions
 
-The first call-free portion of `mac_txrx_init` is now exposed through
-`MacColdTxRxHardware`. Upper init requests one semantic operation; generated
-PAC code owns the eighteen register identities and their exact RMW order.
+Both call-free portions of `mac_txrx_init` are now exposed through
+`MacColdTxRxHardware`. Upper init requests two semantic operations; generated
+PAC code owns the register identities and exact RMW order of the eighteen-edge
+prefix and nine-edge suffix.
 
-The boundary deliberately stops at the first HE callback. This lets the
-source-owned driver correct the proven direct prefix now without folding the
-OSI-dependent `hal_he_set_mac_delay` behavior into a guessed register image.
-Host tracing asserts all 36 read/write operations, and the source audit keeps
-raw access out of `cold_txrx.rs`.
+The boundary deliberately leaves the three HE callbacks between those
+transactions. This lets the source-owned driver preserve the complete proven
+direct code without folding the OSI-dependent `hal_he_set_mac_delay` behavior
+into a guessed register image. The suffix also corrects two earlier
+value-equivalent collapses: bit 31 and bit 30 at `0x20104c1c`, and bits 30:16
+then bit 31 at `0x20104c60`, are separate fresh-read edges. Host tracing
+asserts all 54 read/write operations, and the source audit keeps raw access
+out of `cold_txrx.rs`.

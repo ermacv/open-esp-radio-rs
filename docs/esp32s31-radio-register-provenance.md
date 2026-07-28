@@ -909,7 +909,15 @@ This comparison found several earlier value-equivalent collapses: four
 updates of `0x20104c8c`, separate queue-zero/one bit-24 and bit-26 edges,
 separate bit-0 and bit-4 edges at `0x20104114`, and the bit-31 edge before the
 field replacement at `0x20104118`. The PAC now preserves all eighteen in blob
-order. Callback effects and the direct suffix are not claimed by this prefix.
+order.
+
+The complete direct suffix of the same function, offsets `0xee..0x16e`,
+contains nine more fresh-read RMW edges after the three callbacks. SVD v3.12
+records this as a separate generated-PAC transaction. In particular, bit 31
+and bit 30 at `0x20104c1c` are distinct edges, as are the bits-30:16 group and
+bit 31 at `0x20104c60`; the earlier Rust transcription combined each pair.
+The suffix then clears RX walker-enable at `0x20104080`. Callback effects are
+still not claimed by either direct transaction.
 
 ## Cross-chip comparison
 

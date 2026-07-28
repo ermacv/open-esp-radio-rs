@@ -360,6 +360,22 @@ impl MacColdTxRxHardware for MockMmio {
         modify(mac_init::R_4118, 0x0ff0_0000, 0x01b0_0000);
         modify(mac_init::R_4CA0, 0x3, 0x3);
     }
+
+    fn initialize_txrx_suffix(&mut self) {
+        let mut modify = |register: Register32, mask: u32, value: u32| {
+            let current = self.read32(register);
+            self.write32(register, (current & !mask) | (value & mask));
+        };
+        modify(mac_init::R_4C1C, 1 << 31, 1 << 31);
+        modify(mac_init::R_4C1C, 1 << 30, 1 << 30);
+        modify(mac_init::R_4C20, 0x0000_0fff, 0x0000_00f0);
+        modify(mac_init::R_4C24, 0x0000_0fff, 0x0000_00f0);
+        modify(mac_init::R_4CA8, 0x0000_00f0, 0x0000_0040);
+        modify(mac_init::R_4C60, 0x7fff_0000, 0x7fff_0000);
+        modify(mac_init::R_4C60, 1 << 31, 1 << 31);
+        modify(mac_init::R_4308, 1 << 1, 1 << 1);
+        modify(mac::RX_CONTROL, 1 << 31, 0);
+    }
 }
 
 impl MacLowRateHardware for MockMmio {
@@ -731,6 +747,24 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     ];
     assert!(mmio.operations().windows(36).any(|operations| {
         operations.chunks_exact(2).zip(expected_txrx_prefix).all(
+            |(operation, (register, value))| {
+                operation == [Operation::Read(register), Operation::Write(register, value)]
+            },
+        )
+    }));
+    let expected_txrx_suffix = [
+        (mac_init::R_4C1C, 0x8000_0000),
+        (mac_init::R_4C1C, 0xc000_0000),
+        (mac_init::R_4C20, 0x0000_00f0),
+        (mac_init::R_4C24, 0x0000_00f0),
+        (mac_init::R_4CA8, 0x0000_0040),
+        (mac_init::R_4C60, 0x7fff_0000),
+        (mac_init::R_4C60, 0xffff_0000),
+        (mac_init::R_4308, 0x0000_0002),
+        (mac::RX_CONTROL, 0),
+    ];
+    assert!(mmio.operations().windows(18).any(|operations| {
+        operations.chunks_exact(2).zip(expected_txrx_suffix).all(
             |(operation, (register, value))| {
                 operation == [Operation::Read(register), Operation::Write(register, value)]
             },

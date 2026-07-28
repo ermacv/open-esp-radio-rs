@@ -58,4 +58,33 @@ impl RadioRegisters {
         init.shared_enable_control()
             .modify(|_, w| unsafe { w.enable_group_unknown().bits(3) });
     }
+
+    /// Apply all nine direct RMW edges after the three HE callbacks.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::mac_txrx_init`,
+    /// offsets `0xee..0x16e`.
+    pub fn initialize_mac_txrx_suffix(&mut self) {
+        let init = &self.peripherals.wifi_mac_txrx_suffix;
+        init.control_edges()
+            .modify(|_, w| w.first_enable_unknown().set_bit());
+        init.control_edges()
+            .modify(|_, w| w.second_enable_unknown().set_bit());
+        // SAFETY: both values fit their complete generated fields.
+        init.default_image_a()
+            .modify(|_, w| unsafe { w.low_image_unknown().bits(0x0f0) });
+        init.default_image_b()
+            .modify(|_, w| unsafe { w.low_image_unknown().bits(0x0f0) });
+        init.field_control()
+            .modify(|_, w| unsafe { w.field_unknown().bits(4) });
+        init.gate_control()
+            .modify(|_, w| unsafe { w.low_gate_group_unknown().bits(0x7fff) });
+        init.gate_control()
+            .modify(|_, w| w.high_gate_unknown().set_bit());
+        init.aux_enable()
+            .modify(|_, w| w.enable_unknown().set_bit());
+        self.peripherals
+            .wifi_mac_rx_dma
+            .rx_control()
+            .modify(|_, w| w.walker_enable().clear_bit());
+    }
 }

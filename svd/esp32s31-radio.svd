@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.11</version>
+  <version>3.12</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1810,6 +1810,49 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_TXRX_SUFFIX</name>
+      <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-partial]. Nine direct fresh-read RMW edges after the three external HE callbacks in complete mac_txrx_init.</description>
+      <baseAddress>0x20104308</baseAddress>
+      <registers>
+        <register>
+          <name>AUX_ENABLE</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Penultimate direct suffix edge sets bit 1.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>ENABLE_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>30</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CONTROL_EDGES</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete suffix sets bit 31, then bit 30 through a second fresh-read RMW.</description>
+          <addressOffset>0x914</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field><field><name>SECOND_ENABLE_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field><field><name>FIRST_ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DEFAULT_IMAGE_A</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete suffix replaces the low twelve bits with 0x0f0.</description>
+          <addressOffset>0x918</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>20</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DEFAULT_IMAGE_B</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete suffix replaces the low twelve bits with 0x0f0.</description>
+          <addressOffset>0x91c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>20</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>GATE_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-group-semantics]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge.</description>
+          <addressOffset>0x958</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field><field><name>LOW_GATE_GROUP_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>15</bitWidth></field><field><name>HIGH_GATE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>FIELD_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Complete suffix replaces bits 7:4 with four.</description>
+          <addressOffset>0x9a0</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field><field><name>FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>24</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_RX_CSI_CONTROL</name>
       <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-semantics-partial]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init.</description>
       <baseAddress>0x20104098</baseAddress>
@@ -2205,6 +2248,7 @@
       <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>
       <source id="BLOB_LIBPP_MAC_LAST_RXBUF_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_last_rxbuf_init body, size 0xd2. It performs eighteen ordered full-word stores for six three-word entries at 0x20104124..0x20104170, then two separate fresh-read RMWs setting 0x3f00 and 0x007e at 0x20104120, followed by one fresh-read RMW setting bit 27 at 0x20104098.</source>
       <source id="BLOB_LIBPP_MAC_TXRX_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct prefix offsets 0x08..0xd0 before its first external call at 0xd2. It proves eighteen fresh-read RMW edges. The following hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls are deliberately outside this source entry.</source>
+      <source id="BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct suffix offsets 0xee..0x16e after the hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls. It proves nine fresh-read RMW edges ending with RX_CONTROL walker-disable bit 31 clear.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>

@@ -171,18 +171,8 @@ pub fn initialize_promiscuous_receive<
 
     // Direct `mac_txrx_init` prefix, stopping before its first HE callback.
     mmio.initialize_txrx_prefix();
-    modify(mmio, registers::R_4C1C, 0xc000_0000, 0xc000_0000);
-    for register in [registers::R_4C20, registers::R_4C24] {
-        modify(mmio, register, 0x0000_0fff, 0x0000_00f0);
-    }
-    modify(mmio, registers::R_4CA8, 0x0000_00f0, 0x0000_0040);
-    modify(mmio, registers::R_4C60, 0x7fff_0000, 0x7fff_0000);
-    // The following instruction in `mac_txrx_init` sets the remaining high
-    // bit in a second read/modify/write. RX happened to operate without it,
-    // but the complete common TX/RX gate is all ones in bits 16..=31.
-    modify(mmio, registers::R_4C60, 0x8000_0000, 0x8000_0000);
-    modify(mmio, registers::R_4308, 0x2, 0x2);
-    modify(mmio, mac::RX_CONTROL, 1 << 31, 0);
+    // The three intervening HE callbacks remain a separate migration frontier.
+    mmio.initialize_txrx_suffix();
 
     // Reset the four hardware RX queue policy words. The first three have
     // address/BSSID policy registers; queue three is intentionally policy-only.

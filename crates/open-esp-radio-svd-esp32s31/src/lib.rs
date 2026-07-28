@@ -10794,6 +10794,441 @@ pub mod wifi_mac_txrx_prefix {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Nine direct fresh-read RMW edges after the three external HE callbacks in complete mac_txrx_init."]
+pub type WifiMacTxrxSuffix = crate::Periph<wifi_mac_txrx_suffix::RegisterBlock, 0x2010_4308>;
+impl core::fmt::Debug for WifiMacTxrxSuffix {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxrxSuffix").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Nine direct fresh-read RMW edges after the three external HE callbacks in complete mac_txrx_init."]
+pub mod wifi_mac_txrx_suffix {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        aux_enable: AuxEnable,
+        _reserved1: [u8; 0x0910],
+        control_edges: ControlEdges,
+        default_image_a: DefaultImageA,
+        default_image_b: DefaultImageB,
+        _reserved4: [u8; 0x38],
+        gate_control: GateControl,
+        _reserved5: [u8; 0x44],
+        field_control: FieldControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1."]
+        #[inline(always)]
+        pub const fn aux_enable(&self) -> &AuxEnable {
+            &self.aux_enable
+        }
+        #[doc = "0x914 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete suffix sets bit 31, then bit 30 through a second fresh-read RMW."]
+        #[inline(always)]
+        pub const fn control_edges(&self) -> &ControlEdges {
+            &self.control_edges
+        }
+        #[doc = "0x918 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0."]
+        #[inline(always)]
+        pub const fn default_image_a(&self) -> &DefaultImageA {
+            &self.default_image_a
+        }
+        #[doc = "0x91c - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0."]
+        #[inline(always)]
+        pub const fn default_image_b(&self) -> &DefaultImageB {
+            &self.default_image_b
+        }
+        #[doc = "0x958 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge."]
+        #[inline(always)]
+        pub const fn gate_control(&self) -> &GateControl {
+            &self.gate_control
+        }
+        #[doc = "0x9a0 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces bits 7:4 with four."]
+        #[inline(always)]
+        pub const fn field_control(&self) -> &FieldControl {
+            &self.field_control
+        }
+    }
+    #[doc = "AUX_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_enable`] module"]
+    #[doc(alias = "AUX_ENABLE")]
+    pub type AuxEnable = crate::Reg<aux_enable::AuxEnableSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1."]
+    pub mod aux_enable {
+        #[doc = "Register `AUX_ENABLE` reader"]
+        pub type R = crate::R<AuxEnableSpec>;
+        #[doc = "Register `AUX_ENABLE` writer"]
+        pub type W = crate::W<AuxEnableSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::BitReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_UNKNOWN` reader - "]
+        pub type EnableUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_UNKNOWN` writer - "]
+        pub type EnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn enable_unknown(&self) -> EnableUnknownR {
+                EnableUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bits 2:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 2) & 0x3fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, AuxEnableSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn enable_unknown(&mut self) -> EnableUnknownW<'_, AuxEnableSpec> {
+                EnableUnknownW::new(self, 1)
+            }
+            #[doc = "Bits 2:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, AuxEnableSpec> {
+                HighPreservedUnknownW::new(self, 2)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AuxEnableSpec;
+        impl crate::RegisterSpec for AuxEnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`aux_enable::R`](R) reader structure"]
+        impl crate::Readable for AuxEnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`aux_enable::W`](W) writer structure"]
+        impl crate::Writable for AuxEnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CONTROL_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete suffix sets bit 31, then bit 30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_edges`] module"]
+    #[doc(alias = "CONTROL_EDGES")]
+    pub type ControlEdges = crate::Reg<control_edges::ControlEdgesSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete suffix sets bit 31, then bit 30 through a second fresh-read RMW."]
+    pub mod control_edges {
+        #[doc = "Register `CONTROL_EDGES` reader"]
+        pub type R = crate::R<ControlEdgesSpec>;
+        #[doc = "Register `CONTROL_EDGES` writer"]
+        pub type W = crate::W<ControlEdgesSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        #[doc = "Field `SECOND_ENABLE_UNKNOWN` reader - "]
+        pub type SecondEnableUnknownR = crate::BitReader;
+        #[doc = "Field `SECOND_ENABLE_UNKNOWN` writer - "]
+        pub type SecondEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FIRST_ENABLE_UNKNOWN` reader - "]
+        pub type FirstEnableUnknownR = crate::BitReader;
+        #[doc = "Field `FIRST_ENABLE_UNKNOWN` writer - "]
+        pub type FirstEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x3fff_ffff)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn second_enable_unknown(&self) -> SecondEnableUnknownR {
+                SecondEnableUnknownR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn first_enable_unknown(&self) -> FirstEnableUnknownR {
+                FirstEnableUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:29"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ControlEdgesSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn second_enable_unknown(&mut self) -> SecondEnableUnknownW<'_, ControlEdgesSpec> {
+                SecondEnableUnknownW::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn first_enable_unknown(&mut self) -> FirstEnableUnknownW<'_, ControlEdgesSpec> {
+                FirstEnableUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete suffix sets bit 31, then bit 30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlEdgesSpec;
+        impl crate::RegisterSpec for ControlEdgesSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control_edges::R`](R) reader structure"]
+        impl crate::Readable for ControlEdgesSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control_edges::W`](W) writer structure"]
+        impl crate::Writable for ControlEdgesSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DEFAULT_IMAGE_A (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_image_a::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_image_a::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@default_image_a`] module"]
+    #[doc(alias = "DEFAULT_IMAGE_A")]
+    pub type DefaultImageA = crate::Reg<default_image_a::DefaultImageASpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0."]
+    pub mod default_image_a {
+        #[doc = "Register `DEFAULT_IMAGE_A` reader"]
+        pub type R = crate::R<DefaultImageASpec>;
+        #[doc = "Register `DEFAULT_IMAGE_A` writer"]
+        pub type W = crate::W<DefaultImageASpec>;
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` reader - "]
+        pub type LowImageUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` writer - "]
+        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_image_unknown(&self) -> LowImageUnknownR {
+                LowImageUnknownR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 12) & 0x000f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_image_unknown(&mut self) -> LowImageUnknownW<'_, DefaultImageASpec> {
+                LowImageUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, DefaultImageASpec> {
+                HighPreservedUnknownW::new(self, 12)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_image_a::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_image_a::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DefaultImageASpec;
+        impl crate::RegisterSpec for DefaultImageASpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`default_image_a::R`](R) reader structure"]
+        impl crate::Readable for DefaultImageASpec {}
+        #[doc = "`write(|w| ..)` method takes [`default_image_a::W`](W) writer structure"]
+        impl crate::Writable for DefaultImageASpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DEFAULT_IMAGE_B (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_image_b::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_image_b::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@default_image_b`] module"]
+    #[doc(alias = "DEFAULT_IMAGE_B")]
+    pub type DefaultImageB = crate::Reg<default_image_b::DefaultImageBSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0."]
+    pub mod default_image_b {
+        #[doc = "Register `DEFAULT_IMAGE_B` reader"]
+        pub type R = crate::R<DefaultImageBSpec>;
+        #[doc = "Register `DEFAULT_IMAGE_B` writer"]
+        pub type W = crate::W<DefaultImageBSpec>;
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` reader - "]
+        pub type LowImageUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` writer - "]
+        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_image_unknown(&self) -> LowImageUnknownR {
+                LowImageUnknownR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 12) & 0x000f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn low_image_unknown(&mut self) -> LowImageUnknownW<'_, DefaultImageBSpec> {
+                LowImageUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 12:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, DefaultImageBSpec> {
+                HighPreservedUnknownW::new(self, 12)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces the low twelve bits with 0x0f0.\n\nYou can [`read`](crate::Reg::read) this register and get [`default_image_b::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`default_image_b::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DefaultImageBSpec;
+        impl crate::RegisterSpec for DefaultImageBSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`default_image_b::R`](R) reader structure"]
+        impl crate::Readable for DefaultImageBSpec {}
+        #[doc = "`write(|w| ..)` method takes [`default_image_b::W`](W) writer structure"]
+        impl crate::Writable for DefaultImageBSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "GATE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`gate_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gate_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gate_control`] module"]
+    #[doc(alias = "GATE_CONTROL")]
+    pub type GateControl = crate::Reg<gate_control::GateControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge."]
+    pub mod gate_control {
+        #[doc = "Register `GATE_CONTROL` reader"]
+        pub type R = crate::R<GateControlSpec>;
+        #[doc = "Register `GATE_CONTROL` writer"]
+        pub type W = crate::W<GateControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `LOW_GATE_GROUP_UNKNOWN` reader - "]
+        pub type LowGateGroupUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_GATE_GROUP_UNKNOWN` writer - "]
+        pub type LowGateGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        #[doc = "Field `HIGH_GATE_UNKNOWN` reader - "]
+        pub type HighGateUnknownR = crate::BitReader;
+        #[doc = "Field `HIGH_GATE_UNKNOWN` writer - "]
+        pub type HighGateUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:30"]
+            #[inline(always)]
+            pub fn low_gate_group_unknown(&self) -> LowGateGroupUnknownR {
+                LowGateGroupUnknownR::new(((self.bits >> 16) & 0x7fff) as u16)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn high_gate_unknown(&self) -> HighGateUnknownR {
+                HighGateUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, GateControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 16:30"]
+            #[inline(always)]
+            pub fn low_gate_group_unknown(&mut self) -> LowGateGroupUnknownW<'_, GateControlSpec> {
+                LowGateGroupUnknownW::new(self, 16)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn high_gate_unknown(&mut self) -> HighGateUnknownW<'_, GateControlSpec> {
+                HighGateUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`gate_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gate_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GateControlSpec;
+        impl crate::RegisterSpec for GateControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`gate_control::R`](R) reader structure"]
+        impl crate::Readable for GateControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`gate_control::W`](W) writer structure"]
+        impl crate::Writable for GateControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FIELD_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces bits 7:4 with four.\n\nYou can [`read`](crate::Reg::read) this register and get [`field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@field_control`] module"]
+    #[doc(alias = "FIELD_CONTROL")]
+    pub type FieldControl = crate::Reg<field_control::FieldControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces bits 7:4 with four."]
+    pub mod field_control {
+        #[doc = "Register `FIELD_CONTROL` reader"]
+        pub type R = crate::R<FieldControlSpec>;
+        #[doc = "Register `FIELD_CONTROL` writer"]
+        pub type W = crate::W<FieldControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `FIELD_UNKNOWN` reader - "]
+        pub type FieldUnknownR = crate::FieldReader;
+        #[doc = "Field `FIELD_UNKNOWN` writer - "]
+        pub type FieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn field_unknown(&self) -> FieldUnknownR {
+                FieldUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, FieldControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn field_unknown(&mut self) -> FieldUnknownW<'_, FieldControlSpec> {
+                FieldUnknownW::new(self, 4)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, FieldControlSpec> {
+                HighPreservedUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Complete suffix replaces bits 7:4 with four.\n\nYou can [`read`](crate::Reg::read) this register and get [`field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FieldControlSpec;
+        impl crate::RegisterSpec for FieldControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`field_control::R`](R) reader structure"]
+        impl crate::Readable for FieldControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`field_control::W`](W) writer structure"]
+        impl crate::Writable for FieldControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init."]
 pub type WifiMacRxCsiControl = crate::Periph<wifi_mac_rx_csi_control::RegisterBlock, 0x2010_4098>;
 impl core::fmt::Debug for WifiMacRxCsiControl {
@@ -12633,6 +13068,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_TXRX_PREFIX"]
     pub wifi_mac_txrx_prefix: WifiMacTxrxPrefix,
+    #[doc = "WIFI_MAC_TXRX_SUFFIX"]
+    pub wifi_mac_txrx_suffix: WifiMacTxrxSuffix,
     #[doc = "WIFI_MAC_RX_CSI_CONTROL"]
     pub wifi_mac_rx_csi_control: WifiMacRxCsiControl,
     #[doc = "WIFI_MAC_LAST_RX_BUFFER"]
@@ -12687,6 +13124,7 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),
+            wifi_mac_txrx_suffix: WifiMacTxrxSuffix::steal(),
             wifi_mac_rx_csi_control: WifiMacRxCsiControl::steal(),
             wifi_mac_last_rx_buffer: WifiMacLastRxBuffer::steal(),
             wifi_mac_core_enable: WifiMacCoreEnable::steal(),

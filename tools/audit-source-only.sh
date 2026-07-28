@@ -188,13 +188,13 @@ then
     exit 1
 fi
 
-# The direct mac_txrx_init prefix is an eighteen-edge PAC transaction. HE
-# callbacks and the direct suffix remain explicitly outside this boundary.
+# The direct mac_txrx_init prefix and suffix are PAC transactions. The three
+# intervening HE callbacks remain an explicit separate migration boundary.
 if rg -n \
     '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
     crates/open-esp-radio-mac-esp32s31/src/cold_txrx.rs
 then
-    echo "raw compatibility MMIO returned to cold MAC TX/RX prefix" >&2
+    echo "raw compatibility MMIO returned to cold MAC TX/RX init" >&2
     exit 1
 fi
 

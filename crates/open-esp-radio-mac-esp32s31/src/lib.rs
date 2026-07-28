@@ -10,6 +10,7 @@
 extern crate std;
 
 mod cold_crypto;
+mod cold_enable;
 mod cold_handshake;
 mod cold_rx_buffer;
 pub mod crypto;

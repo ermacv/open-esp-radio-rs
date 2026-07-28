@@ -178,6 +178,15 @@ then
     exit 1
 fi
 
+# Complete MAC enable is one PAC-owned gate-RMW plus interrupt-mask store.
+if rg -n \
+    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
+    crates/open-esp-radio-mac-esp32s31/src/cold_enable.rs
+then
+    echo "raw compatibility MMIO returned to cold MAC enable" >&2
+    exit 1
+fi
+
 # PHY target bindings may perform I2C/PBus work only through a borrowed
 # RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
 # wrapper API from quietly returning during later calibration work.

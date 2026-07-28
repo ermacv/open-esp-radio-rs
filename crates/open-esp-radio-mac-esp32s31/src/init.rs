@@ -11,6 +11,7 @@ use open_esp_radio_pac_esp32s31::{
 };
 
 pub use crate::cold_crypto::MacColdCryptoHardware;
+pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
 pub use crate::interface_address::MacInterfaceAddressHardware;
@@ -136,6 +137,7 @@ fn initialize_antenna_and_coex<M: Mmio>(mmio: &mut M) {
 pub fn initialize_promiscuous_receive<
     M: Mmio
         + MacColdCryptoHardware
+        + MacColdEnableHardware
         + MacColdHandshakeHardware
         + MacColdRxBufferHardware
         + MacInterfaceAddressHardware
@@ -261,17 +263,10 @@ pub fn initialize_promiscuous_receive<
 
     initialize_antenna_and_coex(mmio);
 
-    // `hal_enable_mac` starts the shared MAC timebase by clearing the four
-    // disable bits before it publishes the interrupt mask. The register can
-    // already read as zero after reset, but the ordered write is still the
-    // hardware start edge consumed by the EDCA scheduler.
-    modify(mmio, registers::R_4C00, 0x0000_00f0, 0);
-
-    // Common receive configuration at the tail of `hal_init`. This exact
-    // vendor cold-start mask is also a hardware RX gate on S31. Publishing it
-    // does not route the peripheral interrupt to a CPU; the platform interrupt
-    // owner remains responsible for installing that route and ISR.
-    mmio.write32(mac::INT_ENABLE, MAC_COLD_RX_INTERRUPT_MASK);
+    // Complete `hal_enable_mac`: clear the four common disable gates, then
+    // publish the interrupt mask. This does not route the peripheral interrupt
+    // to a CPU; the platform interrupt owner still installs that route and ISR.
+    mmio.enable_mac_interrupts(MAC_COLD_RX_INTERRUPT_MASK);
     modify(mmio, registers::R_4098, 0x0000_ffff, 0x0000_0101);
     modify(mmio, mac::RX_CONTROL, 0x0800_0000, 0x0800_0000);
 

@@ -9993,14 +9993,105 @@ pub mod wifi_mac_tx_completion {
         impl crate::Readable for AuxCSpec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Shared MAC enable gate recovered from the complete hal_enable_mac and hal_disable_mac leaves. The four individual disable-bit meanings are not independently known."]
+pub type WifiMacCoreEnable = crate::Periph<wifi_mac_core_enable::RegisterBlock, 0x2010_4c00>;
+impl core::fmt::Debug for WifiMacCoreEnable {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacCoreEnable").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Shared MAC enable gate recovered from the complete hal_enable_mac and hal_disable_mac leaves. The four individual disable-bit meanings are not independently known."]
+pub mod wifi_mac_core_enable {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `MAC_DISABLE_GATES_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
+        pub type MacDisableGatesUnknownR = crate::FieldReader;
+        #[doc = "Field `MAC_DISABLE_GATES_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
+        pub type MacDisableGatesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
+            #[inline(always)]
+            pub fn mac_disable_gates_unknown(&self) -> MacDisableGatesUnknownR {
+                MacDisableGatesUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, ControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 4:7 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
+            #[inline(always)]
+            pub fn mac_disable_gates_unknown(
+                &mut self,
+            ) -> MacDisableGatesUnknownW<'_, ControlSpec> {
+                MacDisableGatesUnknownW::new(self, 4)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, ControlSpec> {
+                HighPreservedUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x2010_4c40>;
 impl core::fmt::Debug for WifiMacInterrupt {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacInterrupt").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT, BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT, BLOB_LIBPP_WDEV_PROCESS_FIQ, BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-addresses-and-event-mapping\\]. Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
 pub mod wifi_mac_interrupt {
     #[repr(C)]
     #[doc = "Register block"]
@@ -10011,7 +10102,7 @@ pub mod wifi_mac_interrupt {
         clear: Clear,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
         #[inline(always)]
         pub const fn enable(&self) -> &Enable {
             &self.enable
@@ -10027,34 +10118,34 @@ pub mod wifi_mac_interrupt {
             &self.clear
         }
     }
-    #[doc = "ENABLE (rw) register accessor: SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc = "ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
     #[doc(alias = "ENABLE")]
     pub type Enable = crate::Reg<enable::EnableSpec>;
-    #[doc = "SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
     pub mod enable {
         #[doc = "Register `ENABLE` reader"]
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
-        #[doc = "Field `EVENT_MASK` reader - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+        #[doc = "Field `EVENT_MASK` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
         pub type EventMaskR = crate::FieldReader<u32>;
-        #[doc = "Field `EVENT_MASK` writer - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+        #[doc = "Field `EVENT_MASK` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
         pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
             #[inline(always)]
             pub fn event_mask(&self) -> EventMaskR {
                 EventMaskR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs\\]; CONFIDENCE\\[instruction-exact-mask-image\\]. One enable bit per MAC event; event identities are documented on STATUS."]
+            #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-argument-image\\]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS."]
             #[inline(always)]
             pub fn event_mask(&mut self) -> EventMaskW<'_, EnableSpec> {
                 EventMaskW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Enabled MAC event bitmap sampled with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact-transaction\\]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EnableSpec;
         impl crate::RegisterSpec for EnableSpec {
             type Ux = u32;
@@ -11413,6 +11504,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
+    #[doc = "WIFI_MAC_CORE_ENABLE"]
+    pub wifi_mac_core_enable: WifiMacCoreEnable,
     #[doc = "WIFI_MAC_INTERRUPT"]
     pub wifi_mac_interrupt: WifiMacInterrupt,
     #[doc = "WIFI_MAC_COLD_HANDSHAKE"]
@@ -11460,6 +11553,7 @@ impl Peripherals {
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
+            wifi_mac_core_enable: WifiMacCoreEnable::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
             wifi_mac_cold_handshake: WifiMacColdHandshake::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),

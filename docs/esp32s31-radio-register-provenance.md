@@ -870,6 +870,14 @@ the external `wDevCtrl` pointer into `RX_DESCRIPTOR_BASE`. In the open driver,
 `rx::publish_cold_ring` owns that descriptor pointer and the corresponding
 software-to-hardware lifetime edge.
 
+Complete pinned `libpp.a[hal_mac.o]::hal_enable_mac` proves the cold MAC
+enable transaction independently: one fresh-read RMW clears bits `7:4` at
+`0x20104c00`, then a full store publishes the function's event-mask argument
+at `INT_ENABLE` (`0x20104c40`). Complete `hal_disable_mac` sets the same four
+gate bits. SVD v3.8 therefore names the group `MAC_DISABLE_GATES_UNKNOWN`
+without guessing the individual gate meanings, and the generated PAC keeps
+the gate edge and interrupt publication adjacent.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

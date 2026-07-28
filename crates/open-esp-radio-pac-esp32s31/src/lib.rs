@@ -11,6 +11,7 @@ pub mod mac;
 mod mac_block_ack;
 mod mac_cold_start;
 mod mac_crypto;
+mod mac_enable;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_rx_dma;
@@ -465,6 +466,25 @@ mod tests {
         assert_eq!(
             dma.rx_descriptor_high_window().as_ptr() as usize,
             0x2010_4c70
+        );
+    }
+
+    #[test]
+    fn generated_mac_enable_gate_matches_complete_leaf() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_core_enable
+                .control()
+                .as_ptr() as usize,
+            0x2010_4c00
+        );
+        assert_eq!(
+            registers.peripherals.wifi_mac_interrupt.enable().as_ptr() as usize,
+            0x2010_4c40
         );
     }
 

@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.7</version>
+  <version>3.8</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1719,12 +1719,35 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_CORE_ENABLE</name>
+      <description>
+        SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC];
+        CONFIDENCE[instruction-exact-semantics-partial].
+        Shared MAC enable gate recovered from the complete hal_enable_mac and
+        hal_disable_mac leaves. The four individual disable-bit meanings are
+        not independently known.
+      </description>
+      <baseAddress>0x20104c00</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC]; CONFIDENCE[instruction-exact-semantics-partial]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MAC_DISABLE_GATES_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC]; CONFIDENCE[instruction-exact-group-semantics]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>24</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_INTERRUPT</name>
       <description>
         SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,
         BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,
         BLOB_LIBPP_WDEV_PROCESS_FIQ,
-        crates/open-esp-radio-mac-esp32s31/src/init.rs];
+        BLOB_LIBPP_HAL_ENABLE_MAC];
         CONFIDENCE[instruction-exact-addresses-and-event-mapping].
         Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture.
         The two complete hal_mac leaves independently prove the status and
@@ -1735,10 +1758,10 @@
       <registers>
         <register>
           <name>ENABLE</name>
-          <description>SOURCE[crates/open-esp-radio-mac-esp32s31/src/init.rs,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-transaction]. Enabled MAC event bitmap sampled with each interrupt status snapshot.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-transaction]. Complete hal_enable_mac publishes its argument as the full enabled-event bitmap after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>EVENT_MASK</name><description>SOURCE[crates/open-esp-radio-mac-esp32s31/src/init.rs]; CONFIDENCE[instruction-exact-mask-image]. One enable bit per MAC event; event identities are documented on STATUS.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+            <field><name>EVENT_MASK</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC]; CONFIDENCE[instruction-exact-argument-image]. One enable bit per MAC event; complete hal_enable_mac stores its full argument here and event identities are documented on STATUS.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -2030,6 +2053,7 @@
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_init body. It proves five ordered full-word stores at 0x20104800, 0x20104804, 0x20104808, 0x2010480c and 0x20104810 with images 0x00030000, 0x00030000, zero, zero and zero.</source>
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>
+      <source id="BLOB_LIBPP_HAL_ENABLE_MAC">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_mac body, size 0x18. It performs one fresh-read RMW clearing bits 7:4 at 0x20104c00, then stores its full event-mask argument at 0x20104c40. Complete hal_disable_mac independently sets the same four gate bits before clearing interrupt state.</source>
       <source id="BLOB_LIBPP_HAL_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores.</source>
       <source id="BLOB_LIBPP_HAL_SNIFFER_ENABLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_enable body. At queue-three word 0x201040e4 it proves seven ordered fresh-read RMWs: set bit 17; clear bits 0, 1, 2, 3 and 8 separately; then clear bits 7 and 9 together.</source>
       <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>

@@ -3481,3 +3481,15 @@ It consumes `wDevCtrl`, so in the open ownership model it belongs to
 borrowed for the hardware lifetime. Host tests assert the four prefix RMWs,
 and the source audit prevents raw access from returning to the upper prefix
 module.
+
+## Semantic cold MAC enable
+
+The complete `hal_enable_mac` leaf is PAC-owned. Upper MAC init can request
+only `enable_mac_interrupts(mask)`; the generated PAC owns both the
+fresh-read clearing of the four common disable gates and the immediately
+following full interrupt-mask store.
+
+This keeps the hardware gate and event policy as one lifecycle edge. CPU
+interrupt routing remains a separate platform capability, and the four
+individual gate meanings remain `UNKNOWN` until stronger S31-local evidence
+is available.

@@ -8,9 +8,9 @@ use open_esp_radio_mac_esp32s31::{
     },
     init::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
-        MacColdCryptoHardware, MacColdHandshakeHardware, MacColdRxBufferHardware,
-        MacColdStartError, MacColdStartOutcome, MacInterfaceAddressHardware, MacSnifferHardware,
-        StaLinkRxPolicyHardware,
+        MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
+        MacColdRxBufferHardware, MacColdStartError, MacColdStartOutcome,
+        MacInterfaceAddressHardware, MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -289,6 +289,14 @@ impl MacColdCryptoHardware for MockMmio {
         {
             self.write32(register, value);
         }
+    }
+}
+
+impl MacColdEnableHardware for MockMmio {
+    fn enable_mac_interrupts(&mut self, event_mask: u32) {
+        let current = self.read32(mac_init::R_4C00);
+        self.write32(mac_init::R_4C00, current & !0x0000_00f0);
+        self.write32(mac::INT_ENABLE, event_mask);
     }
 }
 
@@ -582,6 +590,14 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             ]
     }));
     assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
+    assert!(mmio.operations().windows(3).any(|operations| {
+        operations
+            == [
+                Operation::Read(mac_init::R_4C00),
+                Operation::Write(mac_init::R_4C00, 0),
+                Operation::Write(mac::INT_ENABLE, 0x19a8_79e0),
+            ]
+    }));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
     assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));

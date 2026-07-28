@@ -14,6 +14,7 @@ mod cold_enable;
 mod cold_handshake;
 mod cold_last_rx_buffer;
 mod cold_rx_buffer;
+mod cold_txrx;
 pub mod crypto;
 pub mod descriptor;
 pub mod init;

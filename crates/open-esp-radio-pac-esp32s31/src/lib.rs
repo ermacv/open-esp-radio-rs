@@ -19,6 +19,7 @@ mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_sniffer;
 mod mac_tx;
+mod mac_txrx_init;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
@@ -531,6 +532,25 @@ mod tests {
                 .as_ptr() as usize,
             0x2010_4098
         );
+    }
+
+    #[test]
+    fn generated_mac_txrx_prefix_matches_complete_leaf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let init = &registers.peripherals.wifi_mac_txrx_prefix;
+        for queue in 0..4 {
+            assert_eq!(
+                init.rx_queue_default(queue).as_ptr() as usize,
+                0x2010_40fc + queue * 4
+            );
+        }
+        assert_eq!(init.control_edges().as_ptr() as usize, 0x2010_4114);
+        assert_eq!(init.timing_control().as_ptr() as usize, 0x2010_4118);
+        assert_eq!(init.feature_edges().as_ptr() as usize, 0x2010_4c8c);
+        assert_eq!(init.mode_control().as_ptr() as usize, 0x2010_4c98);
+        assert_eq!(init.shared_enable_control().as_ptr() as usize, 0x2010_4ca0);
     }
 
     #[test]

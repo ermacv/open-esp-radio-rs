@@ -899,6 +899,18 @@ The former Rust transcription combined the two `0x4120` edges into one
 and the PAC preserves all eighteen stores plus the three distinct enable
 edges.
 
+The direct prefix of complete pinned
+`libpp.a[hal_mac.o]::mac_txrx_init`, offsets `0x08..0xd0`, contains eighteen
+fresh-read RMW edges before its first external HE callback. SVD v3.11 records
+that bounded prefix separately from `hal_he_set_mac_delay`,
+`hal_he_set_ack_rate` and `hal_he_set_bbrxhung_time`.
+
+This comparison found several earlier value-equivalent collapses: four
+updates of `0x20104c8c`, separate queue-zero/one bit-24 and bit-26 edges,
+separate bit-0 and bit-4 edges at `0x20104114`, and the bit-31 edge before the
+field replacement at `0x20104118`. The PAC now preserves all eighteen in blob
+order. Callback effects and the direct suffix are not claimed by this prefix.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.10</version>
+  <version>3.11</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1736,6 +1736,80 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_TXRX_PREFIX</name>
+      <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-partial]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init.</description>
+      <baseAddress>0x201040fc</baseAddress>
+      <registers>
+        <register>
+          <name>RX_QUEUE_DEFAULT%s</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Four queue words have their high half cleared independently; queue zero and one then receive separate bit-24 and bit-26 set edges.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields>
+            <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>HIGH_23_16_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>QUEUE_BIT_24_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>QUEUE_BIT_25_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>QUEUE_BIT_26_UNKNOWN</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HIGH_31_27_UNKNOWN</name><bitOffset>27</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CONTROL_EDGES</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete prefix sets bit 0, then bit 4 through a second fresh-read RMW.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>FIRST_ENABLE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MIDDLE_PRESERVED_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>SECOND_ENABLE_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>27</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>TIMING_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-partial]. Complete prefix sets bit 31, then replaces bits 27:20 with 0x1b in a separate RMW.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+            <field><name>TIMING_IMAGE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>FEATURE_EDGES</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Four separately ordered updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults.</description>
+          <addressOffset>0xb90</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>9</bitWidth></field>
+            <field><name>LATE_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRESERVED_11_10_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>SECOND_ENABLE_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FIRST_GROUP_BIT_13_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRESERVED_BIT_14_UNKNOWN</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FIRST_GROUP_BIT_15_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRESERVED_22_16_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>FIRST_GROUP_BIT_23_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRESERVED_27_24_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>THIRD_ENABLE_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRESERVED_30_29_UNKNOWN</name><bitOffset>29</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>FIRST_GROUP_BIT_31_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODE_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete prefix clears bit 3 through one fresh-read RMW.</description>
+          <addressOffset>0xb9c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>28</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SHARED_ENABLE_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Final prefix RMW sets bits 1:0 together immediately before the first HE callback.</description>
+          <addressOffset>0xba4</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>ENABLE_GROUP_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>30</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_RX_CSI_CONTROL</name>
       <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-semantics-partial]. Multifunction receive/CSI word whose bit 27 is the final enable edge of complete mac_last_rxbuf_init.</description>
       <baseAddress>0x20104098</baseAddress>
@@ -2130,6 +2204,7 @@
       <source id="BLOB_LIBPP_HAL_SNIFFER_ENABLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_sniffer.o hal_sniffer_enable body. At queue-three word 0x201040e4 it proves seven ordered fresh-read RMWs: set bit 17; clear bits 0, 1, 2, 3 and 8 separately; then clear bits 7 and 9 together.</source>
       <source id="BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_rxbuf_init body. Its first four RMWs touch 0x20104c68, 0x20104c6c, 0x20104c70 and 0x2010407c. The final store publishes the external wDevCtrl descriptor pointer at 0x20104084 and deliberately remains owned by the RX ring transaction rather than this prefix.</source>
       <source id="BLOB_LIBPP_MAC_LAST_RXBUF_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_last_rxbuf_init body, size 0xd2. It performs eighteen ordered full-word stores for six three-word entries at 0x20104124..0x20104170, then two separate fresh-read RMWs setting 0x3f00 and 0x007e at 0x20104120, followed by one fresh-read RMW setting bit 27 at 0x20104098.</source>
+      <source id="BLOB_LIBPP_MAC_TXRX_INIT_PREFIX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct prefix offsets 0x08..0xd0 before its first external call at 0xd2. It proves eighteen fresh-read RMW edges. The following hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls are deliberately outside this source entry.</source>
       <source id="BLOB_LIBPP_RX_POLICY">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_rx_set_policy and hal_mac_set_rxq_policy bodies plus if_hwctrl.o ic_set_rx_policy and ic_set_rx_policy_ubssid_check wrappers. The reachable queue-zero policy-five transaction was preserved in migration scan code and is HIL-qualified by the connected open STA path.</source>
       <source id="BLOB_LIBNET80211_WIFI_RX_POLICY">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete wifi_set_rx_policy parent, used to identify the associated-STA policy-five call sequence. Register masks and addresses come from the complete libpp HAL leaves.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_tx_config_timeout, hal_mac_tx_set_ppdu, hal_mac_tx_config_edca, hal_mac_txq_enable, hal_mac_txq_disable, hal_mac_get_txq_state, hal_mac_clr_txq_state and complete pp.o mac_tx_set_pti bodies plus the recovered completion reader.</source>

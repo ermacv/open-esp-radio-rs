@@ -10,8 +10,8 @@ use open_esp_radio_mac_esp32s31::{
         configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
         MacColdCryptoHardware, MacColdEnableHardware, MacColdHandshakeHardware,
         MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdStartError,
-        MacColdStartOutcome, MacInterfaceAddressHardware, MacLowRateHardware, MacSnifferHardware,
-        StaLinkRxPolicyHardware,
+        MacColdStartOutcome, MacColdTxRxHardware, MacInterfaceAddressHardware, MacLowRateHardware,
+        MacSnifferHardware, StaLinkRxPolicyHardware,
     },
     irq::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
@@ -333,6 +333,32 @@ impl MacColdLastRxBufferHardware for MockMmio {
             let current = self.read32(register);
             self.write32(register, current | mask);
         }
+    }
+}
+
+impl MacColdTxRxHardware for MockMmio {
+    fn initialize_txrx_prefix(&mut self) {
+        let mut modify = |register: Register32, mask: u32, value: u32| {
+            let current = self.read32(register);
+            self.write32(register, (current & !mask) | (value & mask));
+        };
+        modify(mac_init::R_4C8C, 0x8080_a000, 0x8080_a000);
+        modify(mac_init::R_4C8C, 1 << 12, 1 << 12);
+        modify(mac_init::R_4C8C, 1 << 28, 1 << 28);
+        modify(mac_init::R_4C98, 1 << 3, 0);
+        for register in mac_init::RX_QUEUE_DEFAULT {
+            modify(register, 0xffff_0000, 0);
+        }
+        modify(mac_init::RX_QUEUE_DEFAULT[0], 1 << 24, 1 << 24);
+        modify(mac_init::RX_QUEUE_DEFAULT[1], 1 << 24, 1 << 24);
+        modify(mac_init::RX_QUEUE_DEFAULT[0], 1 << 26, 1 << 26);
+        modify(mac_init::RX_QUEUE_DEFAULT[1], 1 << 26, 1 << 26);
+        modify(mac_init::R_4C8C, 1 << 9, 1 << 9);
+        modify(mac_init::R_4114, 1 << 0, 1 << 0);
+        modify(mac_init::R_4114, 1 << 4, 1 << 4);
+        modify(mac_init::R_4118, 1 << 31, 1 << 31);
+        modify(mac_init::R_4118, 0x0ff0_0000, 0x01b0_0000);
+        modify(mac_init::R_4CA0, 0x3, 0x3);
     }
 }
 
@@ -683,6 +709,33 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             ]
     }));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
+    let expected_txrx_prefix = [
+        (mac_init::R_4C8C, 0x8080_a000),
+        (mac_init::R_4C8C, 0x8080_b000),
+        (mac_init::R_4C8C, 0x9080_b000),
+        (mac_init::R_4C98, 0),
+        (mac_init::RX_QUEUE_DEFAULT[0], 0),
+        (mac_init::RX_QUEUE_DEFAULT[1], 0),
+        (mac_init::RX_QUEUE_DEFAULT[2], 0),
+        (mac_init::RX_QUEUE_DEFAULT[3], 0),
+        (mac_init::RX_QUEUE_DEFAULT[0], 0x0100_0000),
+        (mac_init::RX_QUEUE_DEFAULT[1], 0x0100_0000),
+        (mac_init::RX_QUEUE_DEFAULT[0], 0x0500_0000),
+        (mac_init::RX_QUEUE_DEFAULT[1], 0x0500_0000),
+        (mac_init::R_4C8C, 0x9080_b200),
+        (mac_init::R_4114, 0x0000_0001),
+        (mac_init::R_4114, 0x0000_0011),
+        (mac_init::R_4118, 0x8000_0000),
+        (mac_init::R_4118, 0x81b0_0000),
+        (mac_init::R_4CA0, 0x0000_0003),
+    ];
+    assert!(mmio.operations().windows(36).any(|operations| {
+        operations.chunks_exact(2).zip(expected_txrx_prefix).all(
+            |(operation, (register, value))| {
+                operation == [Operation::Read(register), Operation::Write(register, value)]
+            },
+        )
+    }));
     assert_eq!(mmio.words.get(&mac_init::R_4400), Some(&0x0002_0350));
     assert_eq!(mmio.words.get(&mac_init::R_4404), Some(&0x8080_8080));
     assert_eq!(mmio.words.get(&mac_init::R_4C7C), Some(&0x0000_0400));

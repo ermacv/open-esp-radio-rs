@@ -15,6 +15,7 @@ pub use crate::cold_enable::MacColdEnableHardware;
 pub use crate::cold_handshake::{MacColdHandshakeHardware, MacColdStartError, MacColdStartOutcome};
 pub use crate::cold_last_rx_buffer::MacColdLastRxBufferHardware;
 pub use crate::cold_rx_buffer::MacColdRxBufferHardware;
+pub use crate::cold_txrx::MacColdTxRxHardware;
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
@@ -143,6 +144,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdHandshakeHardware
         + MacColdLastRxBufferHardware
         + MacColdRxBufferHardware
+        + MacColdTxRxHardware
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSnifferHardware,
@@ -167,18 +169,8 @@ pub fn initialize_promiscuous_receive<
 
     let outcome = mmio.begin_cold_handshake(handshake_sample_limit)?;
 
-    // `mac_txrx_init`
-    modify(mmio, registers::R_4C8C, 0x9080_b200, 0x9080_b200);
-    modify(mmio, registers::R_4C98, 1 << 3, 0);
-    for register in registers::RX_QUEUE_DEFAULT {
-        modify(mmio, register, 0xffff_0000, 0);
-    }
-    for register in &registers::RX_QUEUE_DEFAULT[..2] {
-        modify(mmio, *register, 0x0500_0000, 0x0500_0000);
-    }
-    modify(mmio, registers::R_4114, 0x11, 0x11);
-    modify(mmio, registers::R_4118, 0x8ff0_0000, 0x81b0_0000);
-    modify(mmio, registers::R_4CA0, 0x3, 0x3);
+    // Direct `mac_txrx_init` prefix, stopping before its first HE callback.
+    mmio.initialize_txrx_prefix();
     modify(mmio, registers::R_4C1C, 0xc000_0000, 0xc000_0000);
     for register in [registers::R_4C20, registers::R_4C24] {
         modify(mmio, register, 0x0000_0fff, 0x0000_00f0);

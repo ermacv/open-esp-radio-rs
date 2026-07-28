@@ -247,5 +247,12 @@ fresh RMW remains separate, including the final PBus status clear; coefficient
 fields are preserved by generated field writers rather than a full-word mask
 model.
 
+The rest of `phy_baseband` is native generated PAC as well: fourteen TX-power
+tracking edges, TX-rate/gain compensation, watchdog, noise-floor, the complete
+six-edge PA-on leaf and all eighteen local `phy_bb_reg_init` edges. The latter
+remains split only around its existing NRX and official-platform calls. HAL is
+now a sequencing facade with no generic register, field or mask access, and
+the source audit enforces that boundary.
+
 Descriptor-memory unsafe is a separate ownership problem and must not be
 hidden inside the peripheral PAC.

@@ -653,6 +653,14 @@ The two PBus status publications and all eight correction-mode updates remain
 separate fresh-read edges exactly as in the complete pinned body; the former
 HAL mask model and its duplicated status-register identity are removed.
 
+All remaining baseband-configuration leaves now use the same native boundary:
+TX-power tracking, I²C TX rate and gain compensation, watchdog, automatic
+noise-floor control, PA-on setup and the complete local portion of
+`phy_bb_reg_init`. Generated field readers preserve the instruction-exact
+partial clears inside the two multi-bit initialization fields. The HAL module
+contains only the sequencing split around NRX and official-platform control;
+it no longer imports `Register32`, `Field32`, masks or compatibility MMIO.
+
 ## Calibration-tone ownership
 
 SVD v2.8 describes the complete tone cluster used by PWDET, TX-power, TX-DC,

@@ -179,6 +179,192 @@ pub struct RxPhyInfo {
     pub he_siga2: u16,
 }
 
+/// PHY format published in the S31 RX-control prefix.
+///
+/// SOURCE[ESP_WIFI_SYS_S31_RX_BB_FORMAT]: `esp-wifi-sys` commit
+/// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
+/// `c/headers/esp32s31/esp_wifi_he_types.h::wifi_rx_bb_format_t`.
+/// The explicit `Unknown` case preserves forward compatibility instead of
+/// interpreting a new hardware value as one of the currently named formats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxBasebandFormat {
+    Dot11b,
+    Ofdm,
+    Ht,
+    Vht,
+    HeSu,
+    HeMu,
+    HeExtendedRangeSu,
+    HeTriggerBased,
+    VhtMu,
+    Unknown(u8),
+}
+
+impl RxBasebandFormat {
+    pub const fn decode(raw: u8) -> Self {
+        match raw {
+            0 => Self::Dot11b,
+            1 => Self::Ofdm,
+            2 => Self::Ht,
+            3 => Self::Vht,
+            4 => Self::HeSu,
+            5 => Self::HeMu,
+            6 => Self::HeExtendedRangeSu,
+            7 => Self::HeTriggerBased,
+            11 => Self::VhtMu,
+            value => Self::Unknown(value),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        match self {
+            Self::Dot11b => 0,
+            Self::Ofdm => 1,
+            Self::Ht => 2,
+            Self::Vht => 3,
+            Self::HeSu => 4,
+            Self::HeMu => 5,
+            Self::HeExtendedRangeSu => 6,
+            Self::HeTriggerBased => 7,
+            Self::VhtMu => 11,
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeBandwidth {
+    Mhz20,
+    Mhz40,
+    Mhz80,
+    Mhz160Or80Plus80,
+}
+
+impl HeBandwidth {
+    const fn decode(raw: u8) -> Self {
+        match raw & 0x03 {
+            0 => Self::Mhz20,
+            1 => Self::Mhz40,
+            2 => Self::Mhz80,
+            _ => Self::Mhz160Or80Plus80,
+        }
+    }
+
+    pub const fn mhz(self) -> u16 {
+        match self {
+            Self::Mhz20 => 20,
+            Self::Mhz40 => 40,
+            Self::Mhz80 => 80,
+            Self::Mhz160Or80Plus80 => 160,
+        }
+    }
+}
+
+/// HE SU guard-interval and LTF encoding from HE-SIG-A1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeGuardIntervalAndLtf {
+    OneLtf800Ns,
+    TwoLtf800Ns,
+    TwoLtf1600Ns,
+    FourLtf3200Ns,
+}
+
+impl HeGuardIntervalAndLtf {
+    const fn decode(raw: u8) -> Self {
+        match raw & 0x03 {
+            0 => Self::OneLtf800Ns,
+            1 => Self::TwoLtf800Ns,
+            2 => Self::TwoLtf1600Ns,
+            _ => Self::FourLtf3200Ns,
+        }
+    }
+
+    pub const fn guard_interval_ns(self) -> u16 {
+        match self {
+            Self::OneLtf800Ns | Self::TwoLtf800Ns => 800,
+            Self::TwoLtf1600Ns => 1_600,
+            Self::FourLtf3200Ns => 3_200,
+        }
+    }
+
+    pub const fn ltf_count(self) -> u8 {
+        match self {
+            Self::OneLtf800Ns => 1,
+            Self::TwoLtf800Ns | Self::TwoLtf1600Ns => 2,
+            Self::FourLtf3200Ns => 4,
+        }
+    }
+}
+
+/// Typed HE SU signal fields captured from the S31 RX metadata.
+///
+/// SOURCE[ESP_WIFI_SYS_S31_HE_SU_SIG]: `esp-wifi-sys` commit
+/// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
+/// `c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h`: complete
+/// `esp_wifi_su_siga1_t` and packed `esp_wifi_su_siga2_t` layouts. The same
+/// MCS/BW/GI bit positions are independently used by the pinned vendor
+/// `libpp.a` `dbg_read_tx_sig` diagnostic and its Rust oracle in
+/// `esp32s31_rust/firmware/esp32s31/app/src/ethernet_bench.rs`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeSuSignal {
+    pub format: bool,
+    pub beam_change: bool,
+    pub uplink: bool,
+    pub mcs: u8,
+    pub dcm: bool,
+    pub bss_color: u8,
+    pub spatial_reuse: u8,
+    pub bandwidth: HeBandwidth,
+    pub guard_interval_and_ltf: HeGuardIntervalAndLtf,
+    pub spatial_streams_minus_one: u8,
+    pub txop: u8,
+    pub ldpc: bool,
+    pub ldpc_extra_symbol: bool,
+    pub stbc: bool,
+    pub beamformed: bool,
+    pub pre_fec_padding_factor: u8,
+    pub packet_extension_disambiguity: bool,
+    pub doppler: bool,
+}
+
+impl HeSuSignal {
+    pub const fn decode(siga1: u32, siga2: u16) -> Self {
+        Self {
+            format: siga1 & 1 != 0,
+            beam_change: siga1 & (1 << 1) != 0,
+            uplink: siga1 & (1 << 2) != 0,
+            mcs: ((siga1 >> 3) & 0x0f) as u8,
+            dcm: siga1 & (1 << 7) != 0,
+            bss_color: ((siga1 >> 8) & 0x3f) as u8,
+            spatial_reuse: ((siga1 >> 15) & 0x0f) as u8,
+            bandwidth: HeBandwidth::decode(((siga1 >> 19) & 0x03) as u8),
+            guard_interval_and_ltf: HeGuardIntervalAndLtf::decode(((siga1 >> 21) & 0x03) as u8),
+            spatial_streams_minus_one: ((siga1 >> 23) & 0x07) as u8,
+            txop: (siga2 & 0x7f) as u8,
+            ldpc: siga2 & (1 << 7) != 0,
+            ldpc_extra_symbol: siga2 & (1 << 8) != 0,
+            stbc: siga2 & (1 << 9) != 0,
+            beamformed: siga2 & (1 << 10) != 0,
+            pre_fec_padding_factor: ((siga2 >> 11) & 0x03) as u8,
+            packet_extension_disambiguity: siga2 & (1 << 13) != 0,
+            doppler: siga2 & (1 << 15) != 0,
+        }
+    }
+}
+
+impl RxPhyInfo {
+    pub const fn baseband_format(self) -> RxBasebandFormat {
+        RxBasebandFormat::decode(self.bb_format)
+    }
+
+    pub const fn he_su_signal(self) -> Option<HeSuSignal> {
+        match self.baseband_format() {
+            RxBasebandFormat::HeSu => Some(HeSuSignal::decode(self.he_siga1, self.he_siga2)),
+            _ => None,
+        }
+    }
+}
+
 /// Decode the finite PHY-rate view without interpreting the format-specific
 /// HE-SIG bitfields.
 pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {

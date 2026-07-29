@@ -1528,6 +1528,51 @@ SOURCE[HIL_OPEN_HT40_RX_2026_07_29]: ESP32-S31 rev0 serial records
 and `iw dev wlan0 station dump`; pinned `libnet80211.a[ieee80211_ht.o]`;
 promoted migration parent of `f233006`.
 
+## Open HT40 bidirectional qualification (2026-07-29)
+
+The raw A-MSDU/A-MPDU transmit benchmark originally bypassed the Embassy TX
+queue on every iteration. Incoming UDP benchmark frames were intentionally
+consumed at the post-CCMP driver boundary, but ARP requests still entered
+Embassy. Its generated ARP reply then remained queued forever because the raw
+branch always reached `continue` before `RadioRunner::receive_tx`. The Linux
+neighbor consequently changed from reachable to failed after the first
+traffic window. This was a control-plane scheduling defect, not an RX DMA or
+PHY loss.
+
+The raw loop now drains one stack-produced control frame before submitting its
+next synthetic aggregate. A fresh PSRAM/PSRAM run observed the 42-byte ARP
+reply at `raw-mac-control-tx`; the Linux neighbor remained valid across two
+separate downlink loads. The first pair of simultaneous five-second windows
+measured:
+
+| Window | Open uplink payload | Open downlink payload | Combined |
+| --- | ---: | ---: | ---: |
+| 1 | 68.899 Mbit/s | 10.502 Mbit/s | 79.401 Mbit/s |
+| 2 | 71.171 Mbit/s | 10.505 Mbit/s | 81.676 Mbit/s |
+
+The direct RX sink reported format 2 (HT), rate field 11, no software drops
+and no pairwise MIC failures. Over the complete run the Linux AP received
+306,432,070 additional bytes and transmitted 27,637,862 additional bytes. Its
+station counters added 94 TX retries and zero TX failures; the last observed
+rates were 135 Mbit/s MCS7 HT40 uplink and 150 Mbit/s MCS7 HT40 short-GI
+downlink. A second requested 25-Mbit/s downlink load was airtime/backpressure
+limited to approximately 9.55--10.71 Mbit/s while the synthetic uplink
+continued. That is a fairness/performance boundary, not a bidirectional
+correctness failure.
+
+The driver-level UDP observer also changed from an iperf-terminal-only result
+to deterministic five-second samples. It consumes the benchmark stream before
+the UDP socket by design, so it cannot return the iperf server report that
+normally terminates the stream. A negative iperf sequence still closes a short
+final sample when one arrives.
+
+SOURCE[HIL_OPEN_HT40_BIDIRECTIONAL_2026_07_29]: ESP32-S31 rev0,
+`psram-code-psram-data --open-radio-hil`, controlled Linux/mac80211 channel-11
+HT40-/WPA2 AP, serial `raw-mac-tx`, `raw-mac-control-tx`,
+`udp-rx-direct`, `udp-rx-phy` and `embassy-net-radio-rx-state` records,
+matching iperf2 output, Linux neighbor state and
+`iw dev wlan0 station dump`.
+
 ## Handshake RX-ring and controlled-port retry boundary (2026-07-29)
 
 The open STA handshake must retain one live RX-ring owner across each bounded

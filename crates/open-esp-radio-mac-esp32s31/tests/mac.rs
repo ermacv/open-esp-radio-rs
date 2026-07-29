@@ -32,9 +32,9 @@ use open_esp_radio_mac_esp32s31::{
     rx::{
         build_cold_ring, decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data,
         extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
-        publish_cold_ring, rearm_descriptor, RxDma, RxError, RxIngressConfig, RxPhyInfo,
-        RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
-        RX_BUFFER_SENTINEL,
+        publish_cold_ring, rearm_descriptor, HeBandwidth, HeGuardIntervalAndLtf, HeSuSignal,
+        RxBasebandFormat, RxDma, RxError, RxIngressConfig, RxPhyInfo, RxRingError, RxRingStopped,
+        RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
         ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HtAmpduTxConfig, HtChannelWidth,
@@ -2254,4 +2254,48 @@ fn rx_phy_info_matches_the_pinned_s31_public_metadata_layout() {
         })
     );
     assert_eq!(decode_rx_phy_info(&metadata[..0x25]), None);
+}
+
+#[test]
+fn rx_phy_info_decodes_the_qualified_he20_mcs9_signal() {
+    let phy = RxPhyInfo {
+        rate: 11,
+        bb_format: 4,
+        he_siga1: 0x0040_5b4b,
+        he_siga2: 0,
+    };
+    assert_eq!(phy.baseband_format(), RxBasebandFormat::HeSu);
+    assert_eq!(
+        phy.he_su_signal(),
+        Some(HeSuSignal {
+            format: true,
+            beam_change: true,
+            uplink: false,
+            mcs: 9,
+            dcm: false,
+            bss_color: 27,
+            spatial_reuse: 0,
+            bandwidth: HeBandwidth::Mhz20,
+            guard_interval_and_ltf: HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            spatial_streams_minus_one: 0,
+            txop: 0,
+            ldpc: false,
+            ldpc_extra_symbol: false,
+            stbc: false,
+            beamformed: false,
+            pre_fec_padding_factor: 0,
+            packet_extension_disambiguity: false,
+            doppler: false,
+        })
+    );
+    let signal = phy.he_su_signal().unwrap();
+    assert_eq!(signal.bandwidth.mhz(), 20);
+    assert_eq!(signal.guard_interval_and_ltf.guard_interval_ns(), 1_600);
+    assert_eq!(signal.guard_interval_and_ltf.ltf_count(), 2);
+}
+
+#[test]
+fn rx_baseband_format_preserves_unknown_hardware_values() {
+    assert_eq!(RxBasebandFormat::decode(9), RxBasebandFormat::Unknown(9));
+    assert_eq!(RxBasebandFormat::Unknown(9).raw(), 9);
 }

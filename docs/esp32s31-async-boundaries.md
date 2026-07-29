@@ -1506,8 +1506,26 @@ SOURCE[HIL_OPEN_HE20_MCS0_DCM_AMPDU_2026_07_29]: ESP32-S31 rev0,
 AX211 HE20 WPA2 AP on channel 11, typed BCC DCM MCS0 matrix and direct
 completion/BlockAck observations. The successful run first used a conservative
 3.5-ms payload policy; the checked-in regression now uses the exact zero-TXOP
-ROM APEP values and blob DCM branch. Reproducing the generated table for a
-nonzero EDCA TXOP remains a separate rate-control port.
+ROM APEP values and blob DCM branch.
+
+The subsequent source-owned port also reproduces complete
+`rx11AXRate2AMPDULimit_update` for every nonzero value admitted by the blob's
+eight-bit WMM state: four independently selected AC profiles, three GI rows
+and ten MCS columns. `HeEdcaTxopLimit` keeps the native 32-us unit explicit,
+and `HeRate::maximum_apep_bytes` evaluates one entry on demand instead of
+reserving the blob's 480-byte mutable SRAM table. A bounded WMM Parameter
+Element parser preserves all four AC records and the live HE benchmark now
+feeds the selected Best Effort TXOP into its exact delimiter/MPDU/MIC/FCS
+accumulator. The FRITZ association regression observed BE TXOP zero, retained
+the ROM policy, completed HE20 WPA2/DHCP, negotiated TID0 BlockAck window 32,
+and acknowledged the first three-subframe A-MPDU.
+
+SOURCE[HIL_OPEN_HE_WMM_APEP_2026_07_30]: ESP32-S31 rev0,
+`open-radio-phy-prelude-hil`, complete open PHY/MAC, FRITZ!Box 7530 FN on
+channel 6, scan-owned WMM Parameter Element, HE20 WPA2/CCMP, DHCP, AddBA and
+first A-MPDU completion. The observed Best Effort TXOP was zero; all nonzero
+producer entries are covered independently by instruction-shaped exhaustive
+host comparison over the blob's complete 0..255 input domain.
 
 ## Open HT40 receive qualification (2026-07-29)
 

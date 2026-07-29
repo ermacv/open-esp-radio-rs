@@ -10,6 +10,7 @@ use crate::{
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
+    wmm::{parse_wmm_parameter_element, WmmParameterSet},
 };
 
 const OPEN_AUTHENTICATION_FRAME_CONTROL: u16 = 0x00b0;
@@ -512,6 +513,7 @@ pub struct AssociationResponse {
     pub he_capability: bool,
     pub he_operation: bool,
     pub wmm: bool,
+    pub wmm_parameters: Option<WmmParameterSet>,
 }
 
 /// One unprotected 802.11 data MPDU sent by a station through its AP.
@@ -870,6 +872,7 @@ pub fn parse_association_response(
     let mut he_capability = false;
     let mut he_operation = false;
     let mut wmm = false;
+    let mut wmm_parameters = None;
     let mut offset = MANAGEMENT_HEADER_LEN + 6;
     while offset + 2 <= frame.len() {
         let id = frame[offset];
@@ -882,7 +885,11 @@ pub fn parse_association_response(
         ht_capability |= id == 45 && length == 26;
         he_capability |= id == 255 && value.first() == Some(&35);
         he_operation |= id == 255 && value.first() == Some(&36);
-        wmm |= id == 221 && length >= 6 && value.get(..4) == Some(&[0x00, 0x50, 0xf2, 0x02]);
+        let is_wmm = id == 221 && length >= 6 && value.get(..4) == Some(&[0x00, 0x50, 0xf2, 0x02]);
+        wmm |= is_wmm;
+        if is_wmm {
+            wmm_parameters = parse_wmm_parameter_element(&frame[offset..end]).or(wmm_parameters);
+        }
         offset = end;
     }
 
@@ -896,6 +903,7 @@ pub fn parse_association_response(
         // An AP that returned HT Capability accepted the WMM/QoS data path,
         // even if a bounded RX prefix omitted a later vendor WMM element.
         wmm: wmm || ht_capability || he_capability,
+        wmm_parameters,
     })
 }
 
@@ -1458,6 +1466,36 @@ mod tests {
         assert_eq!(response.association_id, 42);
         assert!(response.ht_capability);
         assert!(response.wmm);
+    }
+
+    #[test]
+    fn association_response_retains_complete_wmm_parameters() {
+        let mut frame = [0_u8; 56];
+        frame[0] = 0x10;
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[28..30].copy_from_slice(&7_u16.to_le_bytes());
+        frame[30..].copy_from_slice(&[
+            221, 24, 0x00, 0x50, 0xf2, 0x02, 1, 1, 3, 0, 0x03, 0xa4, 0, 0, 0x27, 0xa4, 0, 0, 0x42,
+            0x43, 94, 0, 0x62, 0x32, 47, 0,
+        ]);
+
+        let response = parse_association_response(&frame, LOCAL, BSSID).unwrap();
+        let parameters = response.wmm_parameters.unwrap();
+        assert_eq!(parameters.parameter_set_count, 3);
+        assert_eq!(
+            parameters
+                .access_category(crate::wmm::WmmAccessCategory::Video)
+                .txop_limit_units_32_us,
+            94
+        );
+        assert_eq!(
+            parameters
+                .access_category(crate::wmm::WmmAccessCategory::Voice)
+                .txop_limit_units_32_us,
+            47
+        );
     }
 
     #[test]

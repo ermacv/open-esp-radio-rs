@@ -673,6 +673,50 @@ impl HeBccDcmMcs {
     }
 }
 
+/// One EDCA TXOP limit in the 32-us units used by the 802.11 WMM parameter.
+///
+/// A raw value of zero selects the vendor's default HE PPDU-duration policy;
+/// a nonzero value bounds the exchange duration and therefore changes the
+/// maximum APEP independently for every MCS and GI/LTF combination. Keeping
+/// the raw unit in this type avoids accidentally passing microseconds to the
+/// recovered table producer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HeEdcaTxopLimit {
+    units_32_us: u8,
+}
+
+impl HeEdcaTxopLimit {
+    /// Vendor default used when the advertised EDCA TXOP field is zero.
+    pub const DEFAULT: Self = Self { units_32_us: 0 };
+    /// Largest value retained by the complete vendor WMM parser.
+    pub const MAXIMUM_SUPPORTED: Self = Self {
+        units_32_us: u8::MAX,
+    };
+
+    /// Admit a standard 16-bit WMM TXOP when the vendor data path can retain it.
+    ///
+    /// Complete `ieee80211_parse_wmeparams` stores only the low byte in its
+    /// seven-byte per-AC record. Returning `None` for a larger standard value
+    /// makes that implementation boundary explicit instead of truncating it.
+    pub const fn from_units_32_us(units_32_us: u16) -> Option<Self> {
+        if units_32_us <= u8::MAX as u16 {
+            Some(Self {
+                units_32_us: units_32_us as u8,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub const fn units_32_us(self) -> u8 {
+        self.units_32_us
+    }
+
+    pub const fn is_default(self) -> bool {
+        self.units_32_us == 0
+    }
+}
+
 /// Typed HE20 SU transmit rate for the single S31 spatial stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeRate {
@@ -829,6 +873,84 @@ impl HeRate {
             crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
         };
         let limit = row[self.mcs.index() as usize];
+        if self.dcm {
+            limit / 2
+        } else {
+            limit
+        }
+    }
+
+    /// Maximum APEP bytes for this rate and one EDCA TXOP limit.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::
+    /// rx11AXRate2AMPDULimit_update` (size `0x136`), complete
+    /// `_oracles/libpp.a[pp_he.o]::get_estimated_batime` (size `0x1a`), and
+    /// `_oracles/libpp.a[hal_mac_ctl.o]::{he_preamble_ersu,
+    /// he_time_per_sym,he_data_bits_per_sym}`.
+    ///
+    /// The blob generates one three-GI-by-ten-MCS `u32` table for each of the
+    /// four EDCA access categories. For a nonzero TXOP it subtracts 36 us,
+    /// the rate-dependent estimated BlockAck time, and the GI-dependent
+    /// preamble, converts the remaining time to symbols, performs one fused
+    /// `NDBPS * symbols - 22` operation, truncates toward zero, and divides by
+    /// eight. The `-22` term is the service/tail-bit allowance. The exact
+    /// recovered constants are:
+    ///
+    /// - BlockAck: 68 us for MCS0, 44 us for MCS1/2, 32 us for MCS3..9;
+    /// - preamble: 31.2, 32, or 40 us;
+    /// - symbol: 13.6, 14.4, or 16 us;
+    /// - RU242 NDBPS: 117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560.
+    ///
+    /// A zero limit retains the ROM table exposed by
+    /// [`Self::maximum_default_apep_bytes`]. Complete
+    /// `ppCheckTxHEAMPDUlength` applies the DCM divide-by-two after either
+    /// table lookup, which this method also reproduces.
+    pub const fn maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
+        if txop.is_default() {
+            return self.maximum_default_apep_bytes() as u32;
+        }
+
+        const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
+            [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
+        let mcs = self.mcs.index() as usize;
+        let estimated_block_ack_us = match self.mcs {
+            HeMcs::Mcs0 => 68,
+            HeMcs::Mcs1 | HeMcs::Mcs2 => 44,
+            HeMcs::Mcs3
+            | HeMcs::Mcs4
+            | HeMcs::Mcs5
+            | HeMcs::Mcs6
+            | HeMcs::Mcs7
+            | HeMcs::Mcs8
+            | HeMcs::Mcs9 => 32,
+        };
+        let exchange_budget_us = txop.units_32_us() as i64 * 32 - 36;
+        let data_bits_per_symbol = DATA_BITS_PER_SYMBOL_RU242[mcs] as i64;
+        let bytes = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => {
+                // ((budget - BA - 31.2) / 13.6 * NDBPS - 22) / 8
+                ((5 * (exchange_budget_us - estimated_block_ack_us) - 156) * data_bits_per_symbol
+                    - 22 * 68)
+                    / (68 * 8)
+            }
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => {
+                // ((budget - BA - 32) / 14.4 * NDBPS - 22) / 8
+                (5 * (exchange_budget_us - estimated_block_ack_us - 32) * data_bits_per_symbol
+                    - 22 * 72)
+                    / (72 * 8)
+            }
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => {
+                // ((budget - BA - 40) / 16 * NDBPS - 22) / 8
+                ((exchange_budget_us - estimated_block_ack_us - 40) * data_bits_per_symbol
+                    - 22 * 16)
+                    / (16 * 8)
+            }
+        };
+        // The exact rational form was exhaustively compared with the blob's
+        // f32 instruction sequence for all 256 values admitted by its WMM
+        // parser, all three rows, and all ten MCS values.
+        let limit = bytes as u32;
         if self.dcm {
             limit / 2
         } else {

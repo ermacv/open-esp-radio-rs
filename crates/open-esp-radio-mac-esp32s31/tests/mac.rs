@@ -39,10 +39,10 @@ use open_esp_radio_mac_esp32s31::{
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
-        HeAmpduTxConfig, HeBccDcmMcs, HeMcs, HeRate, HeSmpduTxConfig, HtAmpduDensity,
-        HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate,
-        HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate,
-        TxSlot, TxSlotState,
+        HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeMcs, HeRate, HeSmpduTxConfig,
+        HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
+        HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
+        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2348,6 +2348,126 @@ fn he_default_apep_limit_matches_rom_and_the_blob_dcm_branch() {
             .maximum_default_apep_bytes(),
         6_400
     );
+}
+
+#[test]
+fn he_nonzero_edca_txop_apep_limits_match_the_complete_blob_producer() {
+    // Complete rx11AXRate2AMPDULimit_update output for the standard WMM
+    // voice TXOP of 47 * 32 us. Rows are 0.8/1.6/3.2-us GI.
+    const VOICE_47: [[u32; 10]; 3] = [
+        [
+            1_469, 2_992, 4_490, 6_039, 9_061, 12_082, 13_593, 15_104, 18_125, 20_139,
+        ],
+        [
+            1_386, 2_824, 4_238, 5_701, 8_552, 11_404, 12_830, 14_256, 17_108, 19_009,
+        ],
+        [
+            1_240, 2_527, 3_792, 5_101, 7_653, 10_205, 11_481, 12_757, 15_309, 17_011,
+        ],
+    ];
+    // Complete producer output for the standard WMM video TXOP of 94 * 32 us.
+    const VIDEO_94: [[u32; 10]; 3] = [
+        [
+            3_086, 6_227, 9_342, 12_509, 18_765, 25_021, 28_149, 31_277, 37_533, 41_704,
+        ],
+        [
+            2_914, 5_879, 8_821, 11_811, 17_717, 23_624, 26_578, 29_531, 35_438, 39_376,
+        ],
+        [
+            2_615, 5_276, 7_916, 10_600, 15_901, 21_203, 23_854, 26_505, 31_806, 35_341,
+        ],
+    ];
+    let profiles = [
+        HeGuardIntervalAndLtf::TwoLtf800Ns,
+        HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        HeGuardIntervalAndLtf::FourLtf3200Ns,
+    ];
+
+    for (row, guard_interval_and_ltf) in profiles.into_iter().enumerate() {
+        for mcs_index in 0..10 {
+            let rate = HeRate::new(
+                HeMcs::from_index(mcs_index as u8).unwrap(),
+                guard_interval_and_ltf,
+            );
+            assert_eq!(
+                rate.maximum_apep_bytes(HeEdcaTxopLimit::from_units_32_us(47).unwrap()),
+                VOICE_47[row][mcs_index]
+            );
+            assert_eq!(
+                rate.maximum_apep_bytes(HeEdcaTxopLimit::from_units_32_us(94).unwrap()),
+                VIDEO_94[row][mcs_index]
+            );
+        }
+    }
+
+    // Both 0.8-us encodings select the first producer row.
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::OneLtf800Ns)
+            .maximum_apep_bytes(HeEdcaTxopLimit::from_units_32_us(47).unwrap()),
+        VOICE_47[0][9]
+    );
+    // Complete ppCheckTxHEAMPDUlength halves either generated table for DCM.
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::TwoLtf1600Ns)
+            .maximum_apep_bytes(HeEdcaTxopLimit::from_units_32_us(94).unwrap()),
+        VIDEO_94[1][3] / 2
+    );
+}
+
+#[test]
+fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
+    let profiles = [
+        (HeGuardIntervalAndLtf::TwoLtf800Ns, 31.2_f32, 13.6_f32),
+        (HeGuardIntervalAndLtf::TwoLtf1600Ns, 32.0_f32, 14.4_f32),
+        (HeGuardIntervalAndLtf::FourLtf3200Ns, 40.0_f32, 16.0_f32),
+    ];
+    let data_bits_per_symbol = [117_i32, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
+    let estimated_block_ack_us = [68_i32, 44, 44, 32, 32, 32, 32, 32, 32, 32];
+
+    for units_32_us in 1_u16..=u16::from(u8::MAX) {
+        let txop = HeEdcaTxopLimit::from_units_32_us(units_32_us).unwrap();
+        for (guard_interval_and_ltf, preamble_us, symbol_us) in profiles {
+            for mcs_index in 0..10 {
+                let data_symbols = (((i32::from(units_32_us) * 32 - 36)
+                    - estimated_block_ack_us[mcs_index])
+                    as f32
+                    - preamble_us)
+                    / symbol_us;
+                // This is the complete blob's fsub/fdiv/fmadd/fcvt/div
+                // instruction sequence used as the independent test oracle.
+                let expected = ((data_bits_per_symbol[mcs_index] as f32)
+                    .mul_add(data_symbols, -22.0_f32) as i32
+                    / 8) as u32;
+                let rate = HeRate::new(
+                    HeMcs::from_index(mcs_index as u8).unwrap(),
+                    guard_interval_and_ltf,
+                );
+                assert_eq!(rate.maximum_apep_bytes(txop), expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn zero_edca_txop_selects_the_rom_apep_table_for_every_he_rate() {
+    let profiles = [
+        HeGuardIntervalAndLtf::OneLtf800Ns,
+        HeGuardIntervalAndLtf::TwoLtf800Ns,
+        HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        HeGuardIntervalAndLtf::FourLtf3200Ns,
+    ];
+    for guard_interval_and_ltf in profiles {
+        for mcs_index in 0..10 {
+            let rate = HeRate::new(
+                HeMcs::from_index(mcs_index).unwrap(),
+                guard_interval_and_ltf,
+            );
+            assert_eq!(
+                rate.maximum_apep_bytes(HeEdcaTxopLimit::DEFAULT),
+                u32::from(rate.maximum_default_apep_bytes())
+            );
+        }
+    }
 }
 
 #[test]

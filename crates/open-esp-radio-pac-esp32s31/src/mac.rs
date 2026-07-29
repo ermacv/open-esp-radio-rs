@@ -166,7 +166,13 @@ pub const TX_Q0_PPDU_CONTROL: Register32 = Register32::new(0x2010_4d68);
 pub const TX_Q0_PROTECTION: Register32 = Register32::new(0x2010_4d64);
 pub const TX_Q0_PLCP1: Register32 = Register32::new(0x2010_54d8);
 pub const TX_Q0_PTI: Register32 = Register32::new(0x2010_54e0);
+/// SOURCE: generated `WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL3`.
+pub const TX_Q0_HT_SIGNAL: Register32 = Register32::new(0x2010_54e8);
 pub const TX_Q0_POWER: Register32 = Register32::new(0x2010_5500);
+/// SOURCE: generated `WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS3`.
+pub const TX_Q0_HT_DESCRIPTOR_COUNTS: Register32 = Register32::new(0x2010_5504);
+/// SOURCE: generated `WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH3`.
+pub const TX_Q0_DATA_LENGTH: Register32 = Register32::new(0x2010_550c);
 pub const TX_Q0_LENGTH_CONTROL: Register32 = Register32::new(0x2010_5510);
 
 /// The four ordinary EDCA hardware queues, indexed by the recovered PP queue
@@ -207,11 +213,29 @@ pub const TX_Q_PTI: [Register32; 4] = [
     Register32::new(0x2010_53e8),
     Register32::new(0x2010_536c),
 ];
+pub const TX_Q_HT_SIGNAL: [Register32; 4] = [
+    TX_Q0_HT_SIGNAL,
+    Register32::new(0x2010_546c),
+    Register32::new(0x2010_53f0),
+    Register32::new(0x2010_5374),
+];
 pub const TX_Q_POWER: [Register32; 4] = [
     TX_Q0_POWER,
     Register32::new(0x2010_5484),
     Register32::new(0x2010_5408),
     Register32::new(0x2010_538c),
+];
+pub const TX_Q_HT_DESCRIPTOR_COUNTS: [Register32; 4] = [
+    TX_Q0_HT_DESCRIPTOR_COUNTS,
+    Register32::new(0x2010_5488),
+    Register32::new(0x2010_540c),
+    Register32::new(0x2010_5390),
+];
+pub const TX_Q_DATA_LENGTH: [Register32; 4] = [
+    TX_Q0_DATA_LENGTH,
+    Register32::new(0x2010_5490),
+    Register32::new(0x2010_5414),
+    Register32::new(0x2010_5398),
 ];
 pub const TX_Q_LENGTH_CONTROL: [Register32; 4] = [
     TX_Q0_LENGTH_CONTROL,

@@ -14,7 +14,35 @@ pub struct MacLegacyTxProgram {
     pub power: u32,
     pub length_control: u32,
     pub timeout: u16,
-    pub priority: u8,
+    pub scheduler_priority: u8,
+    pub packet_priority: u8,
+    pub priority_count: u16,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub interface: u8,
+}
+
+/// Complete queue-vector image for one HT PPDU.
+///
+/// The MAC layer owns the meaning and construction of these whole words. This
+/// PAC layer only publishes them in the instruction-exact order recovered
+/// from `_oracles/libpp.a[hal_mac_tx.o]::{hal_mac_tx_set_ppdu,
+/// mac_tx_set_htsig,mac_tx_set_len}`. Single MPDUs and A-MPDUs use distinct
+/// MAC-layer formatters, but publish the same finite register set here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHtTxProgram {
+    pub plcp0: u32,
+    pub plcp1: u32,
+    pub ht_signal: u32,
+    pub data_length: u32,
+    pub power: u32,
+    pub length_control: u32,
+    pub descriptor_count_a: u8,
+    pub descriptor_count_b: u8,
+    pub protection_spacing: u16,
+    pub timeout: u16,
+    pub scheduler_priority: u8,
+    pub packet_priority: u8,
     pub priority_count: u16,
     pub aifsn: u8,
     pub contention_window: u16,
@@ -31,6 +59,16 @@ pub struct MacTxCompletionRegisters {
     pub trigger_flow: bool,
 }
 
+/// TX completion and BlockAck sampled before acknowledging the completion
+/// edge for one A-MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHtAmpduCompletionRegisters {
+    pub tx: MacTxCompletionRegisters,
+    pub block_ack_control_and_sequence: u32,
+    pub block_ack_bitmap_low: u32,
+    pub block_ack_bitmap_high: u32,
+}
+
 const fn physical_bank(queue: u8) -> usize {
     (ORDINARY_QUEUE_COUNT - 1 - queue) as usize
 }
@@ -43,7 +81,8 @@ impl RadioRegisters {
     pub fn prepare_legacy_mac_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         assert!(program.timeout <= 0x0fff);
-        assert!(program.priority <= 0x0f);
+        assert!(program.scheduler_priority <= 0x0f);
+        assert!(program.packet_priority <= 0x0f);
         assert!(program.priority_count <= 0x0fff);
         assert!(program.aifsn <= 0x0f);
         assert!(program.contention_window <= 0x03ff);
@@ -75,7 +114,7 @@ impl RadioRegisters {
             .modify(|_, w| w.legacy_clear_unknown().clear_bit());
         control_bank
             .protection(bank)
-            .modify(|_, w| w.protection_high_unknown().clear_bit());
+            .modify(|_, w| w.txop_descriptor_policy().clear_bit());
         // SAFETY: the complete hal_mac_tx_set_ppdu leaf stores whole words.
         unsafe {
             self.peripherals
@@ -88,16 +127,22 @@ impl RadioRegisters {
                 .write_with_zero(|w| w.bits(program.power));
         }
 
-        // SOURCE: complete mac_tx_set_pti. Each field is intentionally a
-        // separate fresh-read RMW and must not be coalesced.
+        // SOURCE: complete
+        // `_oracles/libpp.a[hal_mac.o]::mac_tx_set_pti` and
+        // `_oracles/libpp.a[hal_coex.o]::hal_set_tx_pti`. The scheduler
+        // priority in CONFIG is the unsigned minimum of the packet PTI and
+        // coexistence event-one PTI. The four packet lanes retain the original
+        // packet PTI, so these values must not be collapsed into one field.
+        // Each field is intentionally a separate fresh-read RMW and must not
+        // be coalesced.
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.priority().bits(program.priority) });
+            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
         let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| unsafe { w.pti_2().bits(program.priority) });
-        pti.modify(|_, w| unsafe { w.pti_1().bits(program.priority) });
-        pti.modify(|_, w| unsafe { w.pti_0().bits(program.priority) });
-        pti.modify(|_, w| unsafe { w.pti_3().bits(program.priority) });
+        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
         pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
 
         // SOURCE: complete hal_mac_tx_config_edca. Preserve three distinct
@@ -114,11 +159,137 @@ impl RadioRegisters {
         true
     }
 
+    /// Program one non-aggregate HT queue up to its final ENABLE|VALID edge.
+    ///
+    /// This is deliberately separate from the legacy routine: an HT PPDU has
+    /// two additional vector words and three descriptor-count RMW edges which
+    /// must not be silently omitted by a shared "mostly legacy" formatter.
+    pub fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        assert!(program.descriptor_count_a <= 0x7f);
+        assert!(program.descriptor_count_b <= 0x7f);
+        assert!(program.protection_spacing <= 0x03ff);
+        assert!(program.timeout <= 0x0fff);
+        assert!(program.scheduler_priority <= 0x0f);
+        assert!(program.packet_priority <= 0x0f);
+        assert!(program.priority_count <= 0x0fff);
+        assert!(program.aifsn <= 0x0f);
+        assert!(program.contention_window <= 0x03ff);
+        assert!(program.interface <= 3);
+
+        let bank = physical_bank(queue);
+        let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+        let control = control_bank.control(bank);
+        if control.read().bits() & ENABLE_VALID_MASK != 0 {
+            return false;
+        }
+
+        // SOURCE: complete hal_mac_tx_config_timeout, followed by the
+        // hal_mac_tx_set_ppdu non-HE HT branch.
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.timeout().bits(program.timeout) });
+        unsafe {
+            control.write_with_zero(|w| w.bits(program.plcp0));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .plcp1(bank)
+                .write_with_zero(|w| w.bits(program.plcp1));
+        }
+        control_bank
+            .ppdu_control(bank)
+            .modify(|_, w| w.legacy_clear_unknown().clear_bit());
+        control_bank
+            .protection(bank)
+            .modify(|_, w| w.txop_descriptor_policy().clear_bit());
+
+        // SOURCE: complete mac_tx_set_htsig writes HT-SIG first, then uses the
+        // separate vector word at 0x20105504-q*0x7c to copy descriptor byte
+        // 0x2a into count A and its second lane, and byte 0x2e into count B.
+        // Keep the three fresh-read hardware edges distinct. In particular,
+        // these fields do not belong to the 0x20104d64 protection word above.
+        unsafe {
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .ht_signal(bank)
+                .write_with_zero(|w| w.bits(program.ht_signal));
+        }
+        let descriptor_counts = self
+            .peripherals
+            .wifi_mac_tx_queue_vector
+            .ht_descriptor_counts(bank);
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_a().bits(program.descriptor_count_a) });
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_b().bits(program.descriptor_count_b) });
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_a_copy().bits(program.descriptor_count_a) });
+
+        // SOURCE: complete mac_tx_set_htsig offsets 0x1da..0x21a. The peer's
+        // finite spacing value from rcUpdateAMPDUParam is copied into three
+        // independent 10-bit fields through three fresh-read RMW edges.
+        // HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29 observed value 40 in all
+        // three fields (whole word 0x0280_a028) on a hardware-owned HT queue.
+        let protection = control_bank.protection(bank);
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_primary().bits(program.protection_spacing) });
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_secondary().bits(program.protection_spacing) });
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_tertiary().bits(program.protection_spacing) });
+
+        // SOURCE: complete mac_tx_set_len followed by the HT power branch in
+        // hal_mac_tx_set_ppdu.
+        unsafe {
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .length_control(bank)
+                .write_with_zero(|w| w.bits(program.length_control));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .data_length(bank)
+                .write_with_zero(|w| w.bits(program.data_length));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .power(bank)
+                .write_with_zero(|w| w.bits(program.power));
+        }
+
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
+        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
+
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.aifsn().bits(program.aifsn) });
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.contention_window().bits(program.contention_window) });
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.interface().bits(program.interface) });
+        true
+    }
+
     pub fn start_legacy_mac_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_prepared_mac_tx(queue, plcp0);
+    }
+
+    pub fn start_ht_mac_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_prepared_mac_tx(queue, plcp0);
+    }
+
+    fn start_prepared_mac_tx(&mut self, queue: u8, plcp0: u32) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         device_fence();
-        // SAFETY: prepare_legacy_mac_tx validated the selected queue and the
-        // recovered enable leaf publishes this complete ownership image.
+        // SAFETY: the corresponding prepare method validated the selected
+        // queue and the recovered enable leaf publishes this complete image.
         unsafe {
             self.peripherals
                 .wifi_mac_tx_queue_control
@@ -160,6 +331,39 @@ impl RadioRegisters {
             primary,
             alternate,
             trigger_flow,
+        })
+    }
+
+    /// Sample an A-MPDU's BlockAck before acknowledging its TX-complete edge.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// hal_mac_tx_get_blockack` and the recovered event-23 completion order.
+    /// The three BlockAck words belong to the completed queue and must be read
+    /// while that completion edge still owns the result registers.
+    pub fn take_mac_ht_ampdu_completion(
+        &mut self,
+        queue: u8,
+    ) -> Option<MacHtAmpduCompletionRegisters> {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let completion_mask = 1_u32 << queue;
+        if self
+            .peripherals
+            .wifi_mac_tx_common
+            .complete_state()
+            .read()
+            .bits()
+            & completion_mask
+            == 0
+        {
+            return None;
+        }
+        let block_ack = self.read_tx_block_ack_registers(queue)?;
+        let tx = self.take_mac_tx_completion(queue)?;
+        Some(MacHtAmpduCompletionRegisters {
+            tx,
+            block_ack_control_and_sequence: block_ack.control_and_sequence,
+            block_ack_bitmap_low: block_ack.bitmap_low,
+            block_ack_bitmap_high: block_ack.bitmap_high,
         })
     }
 

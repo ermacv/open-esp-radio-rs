@@ -30,16 +30,21 @@ use open_esp_radio_mac_esp32s31::{
         TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
-        build_cold_ring, disable_receive, enable_receive, extract_ccmp_data, extract_data,
-        extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
-        rearm_descriptor, RxDma, RxError, RxIngressConfig, RxRingError, RxRingStopped, RxSegment,
-        INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
+        build_cold_ring, decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data,
+        extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
+        publish_cold_ring, rearm_descriptor, RxDma, RxError, RxIngressConfig, RxPhyInfo,
+        RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
+        RX_BUFFER_SENTINEL,
     },
-    tx::{legacy_q0_image, LegacyTxConfig, TxError, TxHardware, TxSlot, TxSlotState},
+    tx::{
+        ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HtAmpduTxConfig, HtChannelWidth,
+        HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate,
+        LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+    },
 };
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as mac_init},
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, Register32,
+    MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, Register32,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -545,7 +550,7 @@ impl TxHardware for MockMmio {
         config = self.read32(mac::TX_Q_CONFIG[index]);
         self.write32(
             mac::TX_Q_CONFIG[index],
-            (config & 0x0fff_ffff) | (u32::from(program.priority) << 28),
+            (config & 0x0fff_ffff) | (u32::from(program.scheduler_priority) << 28),
         );
         for (mask, shift) in [
             (0xffff_0fff, 12),
@@ -556,7 +561,91 @@ impl TxHardware for MockMmio {
             let pti = self.read32(mac::TX_Q_PTI[index]);
             self.write32(
                 mac::TX_Q_PTI[index],
-                (pti & mask) | (u32::from(program.priority) << shift),
+                (pti & mask) | (u32::from(program.packet_priority) << shift),
+            );
+        }
+        let pti = self.read32(mac::TX_Q_PTI[index]);
+        self.write32(
+            mac::TX_Q_PTI[index],
+            (pti & 0x000f_ffff) | (u32::from(program.priority_count) << 20),
+        );
+
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xf0ff_ffff) | (u32::from(program.aifsn) << 24),
+        );
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xffc0_0fff) | (u32::from(program.contention_window) << 12),
+        );
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xff3f_ffff) | (u32::from(program.interface) << 22),
+        );
+        true
+    }
+
+    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+        let index = usize::from(queue);
+        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
+            return false;
+        }
+        let mut config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0xffff_f000) | u32::from(program.timeout),
+        );
+        self.write32(mac::TX_Q_CONTROL[index], program.plcp0);
+        self.write32(mac::TX_Q_PLCP1[index], program.plcp1);
+        let ppdu = self.read32(mac::TX_Q_PPDU_CONTROL[index]);
+        self.write32(mac::TX_Q_PPDU_CONTROL[index], ppdu & !0x08);
+        let protection = self.read32(mac::TX_Q_PROTECTION[index]);
+        self.write32(mac::TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
+        self.write32(mac::TX_Q_HT_SIGNAL[index], program.ht_signal);
+        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
+        self.write32(
+            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
+            (descriptor_counts & !0x7f) | u32::from(program.descriptor_count_a),
+        );
+        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
+        self.write32(
+            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
+            (descriptor_counts & !(0x7f << 7)) | (u32::from(program.descriptor_count_b) << 7),
+        );
+        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
+        self.write32(
+            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
+            (descriptor_counts & !(0x7f << 14)) | (u32::from(program.descriptor_count_a) << 14),
+        );
+        for shift in [0, 10, 20] {
+            let protection = self.read32(mac::TX_Q_PROTECTION[index]);
+            self.write32(
+                mac::TX_Q_PROTECTION[index],
+                (protection & !(0x3ff << shift)) | (u32::from(program.protection_spacing) << shift),
+            );
+        }
+        self.write32(mac::TX_Q_LENGTH_CONTROL[index], program.length_control);
+        self.write32(mac::TX_Q_DATA_LENGTH[index], program.data_length);
+        self.write32(mac::TX_Q_POWER[index], program.power);
+
+        config = self.read32(mac::TX_Q_CONFIG[index]);
+        self.write32(
+            mac::TX_Q_CONFIG[index],
+            (config & 0x0fff_ffff) | (u32::from(program.scheduler_priority) << 28),
+        );
+        for (mask, shift) in [
+            (0xffff_0fff, 12),
+            (0xffff_f0ff, 8),
+            (0xffff_ff0f, 4),
+            (0xfff0_ffff, 16),
+        ] {
+            let pti = self.read32(mac::TX_Q_PTI[index]);
+            self.write32(
+                mac::TX_Q_PTI[index],
+                (pti & mask) | (u32::from(program.packet_priority) << shift),
             );
         }
         let pti = self.read32(mac::TX_Q_PTI[index]);
@@ -584,6 +673,15 @@ impl TxHardware for MockMmio {
     }
 
     fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
+        Mmio::fence(self);
+        self.write32(
+            mac::TX_Q_CONTROL[usize::from(queue)],
+            plcp0 | TX_Q_ENABLE_VALID,
+        );
+        Mmio::fence(self);
+    }
+
+    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
         Mmio::fence(self);
         self.write32(
             mac::TX_Q_CONTROL[usize::from(queue)],
@@ -1261,6 +1359,9 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     mmio.set(RX_CONTROL, RX_ENABLE);
     mmio.set(RX_NEXT_DESCRIPTOR, 0);
     mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    live.finish_pending_reload(&mut mmio).unwrap();
+    assert_eq!(live.accepted_tail(), 3);
+    assert!(!live.reload_pending());
     recycled.clear();
     let second = live
         .recycle_completed_half(&mut mmio, |index| {
@@ -1885,6 +1986,227 @@ fn legacy_q0_image_reproduces_the_recovered_management_profile() {
     assert_eq!(image.power, 0x0808_0008);
     assert_eq!(image.length_control, 0x0040_0004);
     assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 0x03ff);
+    assert_eq!(LegacyTxConfig::management_1m(0x40).scheduler_priority, 1);
+    assert_eq!(LegacyTxConfig::management_1m(0x40).pti, 1);
+    assert_eq!(LegacyTxConfig::management_1m(0x40).pti_count, 1);
+}
+
+#[test]
+fn legacy_rate_codes_preserve_the_non_monotonic_hardware_encoding() {
+    assert_eq!(LegacyRate::Dsss1MLong.code(), 0x00);
+    assert_eq!(LegacyRate::Ofdm48M.code(), 0x08);
+    assert_eq!(LegacyRate::Ofdm6M.code(), 0x0b);
+    assert_eq!(LegacyRate::Ofdm54M.code(), 0x0c);
+    assert_eq!(LegacyRate::Ofdm9M.code(), 0x0f);
+    assert_eq!(LegacyRate::Ofdm54M.nominal_kbps(), 54_000);
+}
+
+#[test]
+fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
+    let lgi = HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Long800Ns,
+        HtChannelWidth::Mhz40,
+    );
+    let sgi = HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Short400Ns,
+        HtChannelWidth::Mhz40,
+    );
+    assert_eq!(lgi.code(), 23);
+    assert_eq!(sgi.code(), 33);
+    assert_eq!(lgi.power_lookup_code(), 23);
+    assert_eq!(sgi.power_lookup_code(), 23);
+    assert_eq!(lgi.nominal_kbps(), 135_000);
+    assert_eq!(sgi.nominal_kbps(), 150_000);
+    assert_eq!(sgi.vendor_rts_rate(), LegacyRate::Ofdm24M);
+    assert_eq!(sgi.vendor_retry_rate(0), Some(TxPhyRate::Ht(sgi)));
+    assert_eq!(
+        sgi.vendor_retry_rate(2),
+        Some(TxPhyRate::Ht(HtRate::new(
+            HtMcs::Mcs6,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz40,
+        ))),
+    );
+    assert_eq!(
+        sgi.vendor_retry_rate(4),
+        Some(TxPhyRate::Legacy(LegacyRate::Ofdm6M)),
+    );
+
+    assert_eq!(
+        HtRate::new(
+            HtMcs::Mcs0,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz20,
+        )
+        .vendor_rts_rate(),
+        LegacyRate::Ofdm6M,
+    );
+    assert_eq!(
+        HtRate::new(
+            HtMcs::Mcs2,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        )
+        .vendor_rts_rate(),
+        LegacyRate::Ofdm12M,
+    );
+}
+
+#[test]
+fn ht_single_mpdu_image_matches_complete_blob_word_formulas() {
+    let rate = HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Short400Ns,
+        HtChannelWidth::Mhz40,
+    );
+    let mut config = HtTxConfig::single_mpdu(rate, 0x0117, 8).unwrap();
+    assert_eq!(config.length, 0x0123);
+    config.data_power_primary = 1;
+    config.data_power_alternate = 2;
+    config.rts_power_primary = 3;
+    config.rts_power_alternate = 4;
+    config.hardware_key_selector = 4;
+    config.protection_spacing = HtProtectionSpacing::Density5;
+
+    let image = ht_q0_image(0x2f00_5000, config).unwrap();
+    assert_eq!(image.plcp0, 0x0160_5000);
+    assert_eq!(image.plcp1, 0x0208_1000);
+    assert_eq!(image.ht_signal, 0x8701_2387);
+    assert_eq!(image.data_length, 0x7000_0123);
+    assert_eq!(image.power, 0x0403_0201);
+    assert_eq!(image.length_control, 0x0000_0244);
+    assert_eq!(image.descriptor_count_a, 1);
+    assert_eq!(image.descriptor_count_b, 1);
+    assert_eq!(image.protection_spacing, 40);
+}
+
+#[test]
+fn ht_ampdu_image_matches_the_two_mpdu_vendor_oracle() {
+    let rate = HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Short400Ns,
+        HtChannelWidth::Mhz20,
+    );
+    let mut config = HtAmpduTxConfig::new(rate, 0x0c2e, 2).unwrap();
+    config.data_power_primary = 1;
+    config.data_power_alternate = 2;
+    config.rts_power_primary = 3;
+    config.rts_power_alternate = 4;
+    config.hardware_key_selector = 4;
+    config.protection_spacing = HtProtectionSpacing::Density5;
+
+    let image = ht_ampdu_q0_image(0x2f00_5000, config).unwrap();
+    assert_eq!(image.plcp0, 0x0260_5000);
+    assert_eq!(image.plcp1, 0x0208_1000);
+    assert_eq!(image.ht_signal, 0x8f0c_2e07);
+    assert_eq!(image.data_length, 0x7040_0c2e);
+    assert_eq!(image.power, 0x0403_0201);
+    assert_eq!(image.length_control, 0x0040_0244);
+    assert_eq!(image.descriptor_count_a, 2);
+    assert_eq!(image.descriptor_count_b, 2);
+    assert_eq!(image.protection_spacing, 40);
+}
+
+#[test]
+fn ht_single_and_ampdu_formatters_cover_every_mcs_width_and_gi() {
+    for mcs in 0..=7 {
+        let mcs = HtMcs::from_index(mcs).unwrap();
+        for width in [HtChannelWidth::Mhz20, HtChannelWidth::Mhz40] {
+            for gi in [HtGuardInterval::Long800Ns, HtGuardInterval::Short400Ns] {
+                let rate = HtRate::new(mcs, gi, width);
+                let single =
+                    ht_q0_image(0x2f00_5000, HtTxConfig::single_mpdu(rate, 100, 8).unwrap())
+                        .unwrap();
+                let aggregate =
+                    ht_ampdu_q0_image(0x2f00_5000, HtAmpduTxConfig::new(rate, 312, 2).unwrap())
+                        .unwrap();
+
+                assert_eq!((single.plcp0 >> 24) & 7, 1);
+                assert_eq!((aggregate.plcp0 >> 24) & 7, 2);
+                assert_eq!((single.ht_signal >> 27) & 1, 0);
+                assert_eq!((aggregate.ht_signal >> 27) & 1, 1);
+                assert_eq!(single.data_length & 0x00c0_0000, 0);
+                assert_eq!(aggregate.data_length & 0x00c0_0000, 0x0040_0000);
+                assert_eq!(single.length_control & 0x00c0_0000, 0);
+                assert_eq!(aggregate.length_control & 0x00c0_0000, 0x0040_0000);
+                assert_eq!(
+                    (single.ht_signal >> 7) & 1,
+                    (width == HtChannelWidth::Mhz40) as u32
+                );
+                assert_eq!(
+                    (aggregate.ht_signal >> 7) & 1,
+                    (width == HtChannelWidth::Mhz40) as u32
+                );
+                assert_eq!(single.plcp1 & 0x2000_0000 != 0, false);
+                assert_eq!(aggregate.plcp1 & 0x2000_0000 != 0, false);
+            }
+        }
+    }
+}
+
+#[test]
+fn ht_peer_ampdu_density_maps_to_the_complete_blob_spacing_values() {
+    let expected = [20, 20, 20, 20, 20, 40, 76, 148];
+    for (density, expected) in expected.into_iter().enumerate() {
+        assert_eq!(
+            HtProtectionSpacing::from_ampdu_parameters((density as u8) << 2).hardware_value(),
+            expected,
+        );
+    }
+    assert_eq!(
+        HtProtectionSpacing::from_ampdu_parameters(0xf7),
+        HtProtectionSpacing::Density5,
+    );
+}
+
+#[test]
+fn legacy_rts_rates_match_the_complete_vendor_selector() {
+    let cases = [
+        (LegacyRate::Dsss1MLong, LegacyRate::Dsss1MLong),
+        (LegacyRate::Dsss2MLong, LegacyRate::Dsss2MLong),
+        (LegacyRate::Cck5M5Long, LegacyRate::Dsss2MLong),
+        (LegacyRate::Cck11MLong, LegacyRate::Dsss2MLong),
+        (LegacyRate::Dsss2MShort, LegacyRate::Dsss2MShort),
+        (LegacyRate::Cck5M5Short, LegacyRate::Dsss2MShort),
+        (LegacyRate::Cck11MShort, LegacyRate::Dsss2MShort),
+        (LegacyRate::Ofdm48M, LegacyRate::Ofdm24M),
+        (LegacyRate::Ofdm24M, LegacyRate::Ofdm24M),
+        (LegacyRate::Ofdm12M, LegacyRate::Ofdm12M),
+        (LegacyRate::Ofdm6M, LegacyRate::Ofdm6M),
+        (LegacyRate::Ofdm54M, LegacyRate::Ofdm24M),
+        (LegacyRate::Ofdm36M, LegacyRate::Ofdm24M),
+        (LegacyRate::Ofdm18M, LegacyRate::Ofdm12M),
+        (LegacyRate::Ofdm9M, LegacyRate::Ofdm6M),
+    ];
+    for (data, expected) in cases {
+        assert_eq!(data.vendor_rts_rate(), expected);
+    }
+}
+
+#[test]
+fn legacy_54m_image_publishes_the_vendor_24m_basic_rate() {
+    let mut config = LegacyTxConfig::management_1m(0x0064);
+    config.rate = LegacyRate::Ofdm54M;
+    config.rts_rate = config.rate.vendor_rts_rate();
+    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+
+    assert_eq!(image.plcp1, 0x0000_c064);
+    assert_eq!(image.length_control, 0x0040_0244);
+}
+
+#[test]
+fn data_queue_priorities_match_the_complete_blob_event_mapping() {
+    for (queue, expected) in [
+        (LegacyTxQueue::Voice, 3),
+        (LegacyTxQueue::Video, 2),
+        (LegacyTxQueue::BestEffort, 1),
+        (LegacyTxQueue::Background, 1),
+    ] {
+        assert_eq!(queue.vendor_data_packet_priority(), expected);
+        assert_eq!(queue.vendor_data_scheduler_priority(), expected);
+    }
 }
 
 #[test]
@@ -1913,4 +2235,23 @@ fn legacy_q0_image_derives_the_recovered_format_from_receiver_class() {
     config.group_receiver = true;
     let image = legacy_q0_image(0x2f00_0100, config).unwrap();
     assert_eq!(image.plcp0, 0x0060_0100);
+}
+
+#[test]
+fn rx_phy_info_matches_the_pinned_s31_public_metadata_layout() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[1] = 0xe9;
+    metadata[4..8].copy_from_slice(&0x1234_5678_u32.to_le_bytes());
+    metadata[9..11].copy_from_slice(&0x9abc_u16.to_le_bytes());
+    metadata[0x25] = 0x4f;
+    assert_eq!(
+        decode_rx_phy_info(&metadata),
+        Some(RxPhyInfo {
+            rate: 9,
+            bb_format: 4,
+            he_siga1: 0x1234_5678,
+            he_siga2: 0x9abc,
+        })
+    );
+    assert_eq!(decode_rx_phy_info(&metadata[..0x25]), None);
 }

@@ -814,6 +814,97 @@ authentication and connected WPA2 HIL qualify queue zero; the other three
 ordinary banks remain instruction-exact but have not been independently
 exercised by the open driver.
 
+The complete management-TX chain proves that the queue scheduler priority and
+the packet PTI are separate values. Complete
+`libnet80211.a[ieee80211_output.o]::ieee80211_send_probereq` assigns active
+Probe Request event 5. Complete `ieee80211_send_mgmt` assigns Authentication
+and Association event 6 through `ieee80211_set_tx_pti`, then submits through
+`ieee80211_mgmt_output`. Complete
+`libcoexist.a[coexist_core.o]::coex_pti_tab` maps both events 5 and 6 to packet
+PTI 1 and event 1 to PTI 5. Complete
+`libpp.a[hal_mac.o,hal_coex.o]::{mac_tx_set_pti,hal_set_tx_pti}` retains the
+original packet value 1 in all four vector lanes, selects the independent
+queue scheduler value as unsigned `min(1, 5) = 1`, and publishes count 1.
+The `bltu packet_pti,event_one_pti` branch at complete `mac_tx_set_pti+0x44`
+is the decisive instruction: it skips replacement when the packet value is
+already smaller.
+
+The earlier open program incorrectly wrote one value into both locations.
+SVD v3.23 names bits 31:28 of the queue configuration
+`SCHEDULER_PRIORITY`, while the vector register retains the four `PTI_n`
+fields. The MAC/PAC boundary now represents the two values independently. On
+connected ESP32-S31 rev0 HIL, open Authentication read back queue
+configuration `0x520013ff` and PTI vector `0x00111110`, then completed
+Association, WPA2 and DHCP. The scheduler value five in that run was an open
+experiment based on the earlier reversed interpretation of the comparison,
+not a vendor snapshot. Five reset-to-DHCP repetitions all connected, but only
+two of five received the first Authentication response under the former
+100-ms diagnostic timeout. SVD v3.23 records the corrected instruction-exact
+unsigned-minimum rule; the value-five experiment remains evidence that raising
+the scheduler did not cure the first-response loss.
+
+The corrected open HIL then programmed scheduler 1 and packet PTI 1 for active
+Probe Request, Authentication and Association. Active scan received the
+directed Probe Response. Authentication read back configuration
+`0x120003ff..0x120033ff` as contention backoff varied, with PTI vector fixed at
+`0x00111110`. Five reset-to-connect repetitions all completed Association,
+WPA2, protected ARP and IP setup; one received the first Authentication
+response and four succeeded on attempt two after a full 1,000-ms first wait.
+Thus SVD v3.23 is both instruction-exact and HIL-qualified, while PTI remains
+excluded as the cause of the intermittent first-response loss.
+
+Ordinary data has a separate instruction-exact event mapping. Complete
+`libnet80211.a[ieee80211_output.o]::ieee80211_encap_esfbuf` maps IEEE user
+priorities to the four EDCA queues and selects coexistence events 10, 11, 12
+and 13 for Voice, Video, Best Effort and Background respectively. The complete
+48-byte `libcoexist.a[coexist_core.o]::coex_pti_tab` maps those events to
+packet PTI 3, 2, 1 and 1. Because each value is below event-one PTI 5,
+complete `mac_tx_set_pti` retains the same value in the scheduler field.
+`LegacyTxQueue::{vendor_data_packet_priority,
+vendor_data_scheduler_priority}` now owns this finite mapping; upper data and
+EAPOL paths no longer publish the unevidenced `0/0` pair.
+
+An open PSRAM/PSRAM HIL run with this exact data mapping completed
+Authentication, Association, WPA2, protected ARP and IP setup. It still
+observed status-five unicast retries, and three connected 100-packet ICMP
+series lost 31%, 25% and 33% with approximately 3-ms mean RTT. The mapping is
+therefore retained as blob fidelity, not claimed as a repair for the remaining
+ordinary-TX loss. Descriptor and queue-policy differences after PTI selection
+remain the next comparison boundary.
+
+Complete `libpp.a[hal_mac_tx.o]::mac_tx_get_rts_rate` closes a separate
+rate-dependent gap in that standalone legacy path. Its exhaustive `0x96`-byte
+body maps OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M
+to 6M. Complete `mac_tx_set_len` publishes that result in
+`TX_Q_LENGTH_CONTROL` for every legacy PPDU, whether or not explicit RTS/CTS
+protection is requested. The promoted migration had already reconstructed the
+same selector in `tx_rate.rs`; the standalone HIL had incorrectly mirrored
+the data rate into this field. `LegacyRate::vendor_rts_rate` now owns the
+instruction-exact table, and the upper path selects the RTS power bytes
+independently using the returned basic rate.
+
+The controlled HIL rate sweep held the PSRAM/PSRAM image, channel 11 HT40-,
+WPA2 peer, queue, power limit and packet interval fixed. At 6 and 24 Mbit/s,
+both 200-packet samples had zero loss; 48 Mbit/s delivered 199/200. The
+incorrect 54-Mbit/s image had repeatedly lost 25 to 39 percent. After restoring
+the vendor 24-Mbit/s basic-rate field and its independent power selection,
+54 Mbit/s delivered 197/200 and then 495/500, with 1.975-ms and 2.353-ms mean
+RTT. Linux simultaneously decoded the station at exactly 54.0 Mbit/s. SVD
+v3.24 records both the instruction-exact selector and this HIL qualification.
+Rare ACK retries remain visible and are not claimed to be eliminated.
+
+The remaining retry tail exposed a second, independent rate-control omission.
+Complete `_oracles/libpp.a[trc.o]::rcGetRate` accumulates the attempt counts
+from four `(rate, count)` pairs in the selected 12-byte schedule record; the
+promoted migration `lmac.rs::select_basic_retry_rate` is instruction-equivalent.
+For the 54-Mbit/s 802.11g record the exact ladder is `54M x2, 48M x2, 6M x3,
+5.5M x25`. The standalone path instead repeated 54M for all four long-retry
+attempts. `rate_schedule::schedule_rate_after_failures` and
+`LegacyRate::vendor_retry_rate` now expose the existing Rust-owned schedule
+through a safe value API. This finding describes TX policy rather than a new
+MMIO field, so it belongs in source/provenance and does not manufacture an SVD
+register.
+
 The scan-to-associated receive-policy edge is split according to its physical
 layout rather than grouped under a synthetic monolithic MAC peripheral:
 `WIFI_MAC_BSSID_POLICY` begins at `0x2010_4004`,

@@ -13,6 +13,8 @@
 //! and both directions apply explicit bounded backpressure.
 
 use core::{
+    mem::MaybeUninit,
+    ptr,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
@@ -149,6 +151,30 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
             rx: Channel::new(),
             tx: Channel::new(),
             link: SharedLinkState::new(),
+        }
+    }
+
+    /// Initializes the queue storage directly in its final memory location.
+    ///
+    /// This is equivalent to [`Self::new`], but avoids passing the complete
+    /// `Resources` value through the caller's stack. With 32 1600-byte frames
+    /// per direction that temporary exceeds 100 KiB.
+    ///
+    /// Each field is constructed with its normal public constructor. This
+    /// deliberately does not assume that an all-zero byte pattern is a valid
+    /// `embassy-sync` channel representation.
+    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
+        let storage = storage.as_mut_ptr();
+
+        // SAFETY: `storage` is exclusively borrowed, correctly aligned
+        // uninitialized memory. The three field writes initialize every field
+        // before the reference is formed. `addr_of_mut!` does not create an
+        // intermediate reference to the uninitialized `Resources`.
+        unsafe {
+            ptr::addr_of_mut!((*storage).rx).write(Channel::new());
+            ptr::addr_of_mut!((*storage).tx).write(Channel::new());
+            ptr::addr_of_mut!((*storage).link).write(SharedLinkState::new());
+            &mut *storage
         }
     }
 

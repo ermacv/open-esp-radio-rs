@@ -37,7 +37,11 @@ fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
 /// replacement; the Rust transition owns phase order and both timers.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_force_txrx(registers: &mut RadioRegisters, enabled: bool, phase: u8) {
-    debug_assert!(registers.set_pbus_force_txrx_mode(force_txrx_mode(enabled, phase)));
+    let written = registers.set_pbus_force_txrx_mode(force_txrx_mode(enabled, phase));
+    // Do not place the MMIO call itself in `debug_assert!`: release builds
+    // remove the complete assertion expression. SOURCE: rev0 ROM
+    // `phy_force_txrx_off` at 0x2f82_7bb0 performs this write in production.
+    debug_assert!(written);
 }
 
 /// Enter the PBus debug mode used before force-test transactions.
@@ -90,7 +94,10 @@ pub fn try_start_force_test(
     if path > 3 {
         return Err(PbusError::PathOutOfRange);
     }
-    debug_assert!(registers.publish_pbus_force_test(selector, path, test_value));
+    let published = registers.publish_pbus_force_test(selector, path, test_value);
+    // The publication is the hardware edge, not a debug-only validation.
+    // SOURCE: rev0 ROM `phy_pbus_force_test` at 0x2f82_4228.
+    debug_assert!(published);
     Ok(())
 }
 

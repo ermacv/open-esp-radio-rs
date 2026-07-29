@@ -54,6 +54,29 @@ pub struct DataDecapPlan {
     pub ethernet_length: usize,
 }
 
+/// One Ethernet MSDU borrowed from a validated 802.11 A-MSDU payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmsduSubframe<'a> {
+    pub destination: [u8; 6],
+    pub source: [u8; 6],
+    pub ether_type: u16,
+    pub payload: &'a [u8],
+}
+
+/// Allocation-free iterator over the subframes of one received A-MSDU.
+///
+/// SOURCE: IEEE 802.11 A-MSDU subframe format (DA, SA, big-endian MSDU
+/// length, LLC/SNAP MSDU and four-byte padding). The need for this path was
+/// confirmed by the promoted migration implementation at the parent of
+/// `f233006`, `migration/esp32s31-hybrid-runtime/src/wdev.rs`, whose
+/// `indicate_multi_received_frame` joins a received MPDU split across Wi-Fi
+/// DMA descriptors before handing it to the upper data path.
+#[derive(Clone, Debug)]
+pub struct AmsduSubframes<'a> {
+    remaining: &'a [u8],
+    failed: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataDecapError {
     Truncated,
@@ -63,6 +86,65 @@ pub enum DataDecapError {
     AmsduUnsupported,
     InvalidLlcSnap,
     OutputTooSmall { required: usize },
+}
+
+impl<'a> Iterator for AmsduSubframes<'a> {
+    type Item = Result<AmsduSubframe<'a>, DataDecapError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.failed || self.remaining.is_empty() {
+            return None;
+        }
+        if self.remaining.len() < ETHERNET_HEADER_LEN {
+            self.failed = true;
+            return Some(Err(DataDecapError::Truncated));
+        }
+        let msdu_length = usize::from(u16::from_be_bytes([self.remaining[12], self.remaining[13]]));
+        let subframe_length = match ETHERNET_HEADER_LEN.checked_add(msdu_length) {
+            Some(length)
+                if msdu_length >= LLC_SNAP_HEADER_LEN && length <= self.remaining.len() =>
+            {
+                length
+            }
+            _ => {
+                self.failed = true;
+                return Some(Err(DataDecapError::Truncated));
+            }
+        };
+        let llc = &self.remaining[ETHERNET_HEADER_LEN..ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN];
+        if llc[..RFC1042_LLC_SNAP_PREFIX.len()] != RFC1042_LLC_SNAP_PREFIX {
+            self.failed = true;
+            return Some(Err(DataDecapError::InvalidLlcSnap));
+        }
+        let mut destination = [0; 6];
+        destination.copy_from_slice(&self.remaining[..6]);
+        let mut source = [0; 6];
+        source.copy_from_slice(&self.remaining[6..12]);
+        let subframe = AmsduSubframe {
+            destination,
+            source,
+            ether_type: u16::from_be_bytes([llc[6], llc[7]]),
+            payload: &self.remaining[ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN..subframe_length],
+        };
+
+        if subframe_length == self.remaining.len() {
+            self.remaining = &[];
+        } else {
+            let padded_length = match subframe_length.checked_add(3) {
+                Some(length) => length & !3,
+                None => {
+                    self.failed = true;
+                    return Some(Err(DataDecapError::Truncated));
+                }
+            };
+            if padded_length > self.remaining.len() {
+                self.failed = true;
+                return Some(Err(DataDecapError::Truncated));
+            }
+            self.remaining = &self.remaining[padded_length..];
+        }
+        Some(Ok(subframe))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -251,7 +333,78 @@ pub fn plan_data_decapsulation(
     })
 }
 
+/// Validate the outer QoS data frame and borrow its complete A-MSDU payload.
+pub fn amsdu_subframes<'a>(
+    role: DataInterfaceRole,
+    mpdu: &'a [u8],
+    payload_offset: usize,
+    payload_length: usize,
+) -> Result<AmsduSubframes<'a>, DataDecapError> {
+    if mpdu.len() < IEEE80211_QOS_DATA_HEADER_LEN {
+        return Err(DataDecapError::Truncated);
+    }
+    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
+    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
+        return Err(DataDecapError::NotData);
+    }
+    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
+        return Err(DataDecapError::Fragmented);
+    }
+    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
+    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
+    if !matches!(
+        (role, to_ds, from_ds),
+        (DataInterfaceRole::Station, false, true) | (DataInterfaceRole::AccessPoint, true, false)
+    ) {
+        return Err(DataDecapError::RoleMismatch);
+    }
+    if mpdu[0] & 0x80 == 0 || mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT == 0 {
+        return Err(DataDecapError::AmsduUnsupported);
+    }
+    let payload_end = payload_offset
+        .checked_add(payload_length)
+        .ok_or(DataDecapError::Truncated)?;
+    if payload_offset < IEEE80211_QOS_DATA_HEADER_LEN
+        || payload_length < ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN
+        || payload_end > mpdu.len()
+    {
+        return Err(DataDecapError::Truncated);
+    }
+    Ok(AmsduSubframes {
+        remaining: &mpdu[payload_offset..payload_end],
+        failed: false,
+    })
+}
+
+/// Copy one validated A-MSDU subframe into ordinary Ethernet-II storage.
+pub fn decapsulate_amsdu_subframe(
+    subframe: AmsduSubframe<'_>,
+    ethernet: &mut [u8],
+) -> Result<usize, DataDecapError> {
+    let required = ETHERNET_HEADER_LEN
+        .checked_add(subframe.payload.len())
+        .ok_or(DataDecapError::Truncated)?;
+    if ethernet.len() < required {
+        return Err(DataDecapError::OutputTooSmall { required });
+    }
+    ethernet[..6].copy_from_slice(&subframe.destination);
+    ethernet[6..12].copy_from_slice(&subframe.source);
+    ethernet[12..14].copy_from_slice(&subframe.ether_type.to_be_bytes());
+    ethernet[14..required].copy_from_slice(subframe.payload);
+    Ok(required)
+}
+
 /// Copy one validated MSDU into caller-owned Ethernet storage.
+///
+/// This finite copy/validation leaf is SRAM-resident on S31 PSRAM-code
+/// builds. SOURCE[HIL_OPEN_HE20_RX_RING_STARVATION_2026_07_29]: the complete
+/// post-CCMP receive path executed from PSRAM plateaued at 63.1..65.3 Mbit/s
+/// while the MAC reported an additional raw interrupt bit under load.
+#[inline(never)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".rwtext.open_radio_rx_hot")
+)]
 pub fn decapsulate_data(
     role: DataInterfaceRole,
     mpdu: &[u8],
@@ -432,6 +585,53 @@ mod tests {
         assert_eq!(&output[..6], &DESTINATION);
         assert_eq!(&output[6..12], &SOURCE);
         assert_eq!(&output[14..decoded.ethernet_length], &payload);
+    }
+
+    #[test]
+    fn station_amsdu_iterator_removes_subframe_length_llc_and_padding() {
+        let mut mpdu = [0_u8; 96];
+        mpdu[0] = IEEE80211_QOS_DATA;
+        mpdu[1] = IEEE80211_FROM_DS;
+        mpdu[24] = IEEE80211_QOS_AMSDU_PRESENT;
+        let mut offset = IEEE80211_QOS_DATA_HEADER_LEN;
+
+        mpdu[offset..offset + 6].copy_from_slice(&DESTINATION);
+        mpdu[offset + 6..offset + 12].copy_from_slice(&SOURCE);
+        mpdu[offset + 12..offset + 14].copy_from_slice(&10_u16.to_be_bytes());
+        mpdu[offset + 14..offset + 22].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+        mpdu[offset + 22..offset + 24].copy_from_slice(&[1, 2]);
+        offset += 24;
+
+        mpdu[offset..offset + 6].copy_from_slice(&[0xff; 6]);
+        mpdu[offset + 6..offset + 12].copy_from_slice(&SOURCE);
+        mpdu[offset + 12..offset + 14].copy_from_slice(&11_u16.to_be_bytes());
+        mpdu[offset + 14..offset + 22].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+        mpdu[offset + 22..offset + 25].copy_from_slice(&[3, 4, 5]);
+        offset += 25;
+
+        let mut subframes = amsdu_subframes(
+            DataInterfaceRole::Station,
+            &mpdu[..offset],
+            IEEE80211_QOS_DATA_HEADER_LEN,
+            offset - IEEE80211_QOS_DATA_HEADER_LEN,
+        )
+        .unwrap();
+        let first = subframes.next().unwrap().unwrap();
+        assert_eq!(first.destination, DESTINATION);
+        assert_eq!(first.source, SOURCE);
+        assert_eq!(first.ether_type, 0x0800);
+        assert_eq!(first.payload, &[1, 2]);
+        let second = subframes.next().unwrap().unwrap();
+        assert_eq!(second.destination, [0xff; 6]);
+        assert_eq!(second.ether_type, 0x0806);
+        assert_eq!(second.payload, &[3, 4, 5]);
+        assert!(subframes.next().is_none());
+
+        let mut output = [0; 32];
+        let length = decapsulate_amsdu_subframe(second, &mut output).unwrap();
+        assert_eq!(length, 17);
+        assert_eq!(&output[..6], &[0xff; 6]);
+        assert_eq!(&output[12..17], &[0x08, 0x06, 3, 4, 5]);
     }
 
     #[test]

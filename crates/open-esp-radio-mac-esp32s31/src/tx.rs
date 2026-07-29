@@ -2,15 +2,38 @@
 
 use core::pin::Pin;
 
-use open_esp_radio_pac_esp32s31::{MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters};
+use open_esp_radio_pac_esp32s31::{
+    MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
+};
 
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
-    tx_plcp::{basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word},
+    rate_control::dot11g_schedule_for_legacy_rate,
+    rate_schedule::{schedule_rate_after_failures, RateScheduleKind, RateScheduleRef},
+    tx_plcp::{
+        apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
+        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, ht_htsig_word,
+    },
 };
 
 const EXT_ALT_SELECT: u32 = 0x0010_0000;
 const LEGACY_FCS_LENGTH: u16 = 4;
+// SOURCE: HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29. Interposing the
+// pp_wdev_funcs PPDU callback immediately after the complete vendor formatter
+// returned captured descriptor flags 0x0000_3009 for a synchronous, non-A-MPDU
+// HT20 MCS0 data frame. Its queue image used PLCP format one and entry-class
+// zero. The earlier active MCS7 image was an A-MPDU and must not supply the
+// direct single-MPDU flags. HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29 then
+// qualified this formatter at both MCS0/HT20/LGI and MCS7/HT40/SGI.
+const HT_SINGLE_DESCRIPTOR_FLAGS: u32 = 0x0000_3009;
+const HT_SINGLE_ENTRY_FLAGS: u8 = 0;
+// SOURCE: HIL_VENDOR_HT_AMPDU_PPDU. The complete vendor two-MPDU formatter
+// captured first-descriptor flags 0x004c_2009 after ppAssembleAMPDU, PLCP
+// format two, HT-SIG aggregate bit one, and entry class one in both length
+// words. These constants deliberately remain separate from the single-MPDU
+// formatter above.
+const HT_AMPDU_DESCRIPTOR_FLAGS: u32 = 0x004c_2009;
+const HT_AMPDU_ENTRY_FLAGS: u8 = 1;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
 ///
@@ -27,8 +50,32 @@ pub enum LegacyTxQueue {
 }
 
 impl LegacyTxQueue {
-    const fn index(self) -> u8 {
+    pub(crate) const fn index(self) -> u8 {
         self as u8
+    }
+
+    /// Packet PTI assigned by complete vendor data encapsulation.
+    ///
+    /// Complete `_oracles/libnet80211.a[ieee80211_output.o]::
+    /// ieee80211_encap_esfbuf` maps voice/video/best-effort/background to
+    /// coexistence events 10/11/12/13. The complete pinned
+    /// `libcoexist.a[coexist_core.o]::coex_pti_tab` maps those events to
+    /// 3/2/1/1.
+    pub const fn vendor_data_packet_priority(self) -> u8 {
+        match self {
+            Self::Voice => 3,
+            Self::Video => 2,
+            Self::BestEffort | Self::Background => 1,
+        }
+    }
+
+    /// Queue scheduler PTI selected by complete vendor data encapsulation.
+    ///
+    /// Complete `_oracles/libpp.a[hal_mac.o]::mac_tx_set_pti` takes the
+    /// unsigned minimum of the packet PTI and coexistence event-one PTI 5.
+    /// Every ordinary data priority is below five, so it is retained.
+    pub const fn vendor_data_scheduler_priority(self) -> u8 {
+        self.vendor_data_packet_priority()
     }
 }
 
@@ -36,6 +83,8 @@ impl LegacyTxQueue {
 pub trait TxHardware {
     fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool;
     fn start_legacy_tx(&mut self, queue: u8, plcp0: u32);
+    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool;
+    fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
@@ -49,6 +98,14 @@ impl TxHardware for RadioRegisters {
 
     fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_legacy_mac_tx(queue, plcp0);
+    }
+
+    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+        self.prepare_ht_mac_tx(queue, program)
+    }
+
+    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_ht_mac_tx(queue, plcp0);
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
@@ -102,6 +159,31 @@ pub struct TxCompletion {
     pub alternate_word: u32,
 }
 
+pub(crate) fn decode_tx_completion(
+    cookie: TxCookie,
+    registers: MacTxCompletionRegisters,
+) -> TxCompletion {
+    let ext_word0 = ((registers.aux_a & 0x000f_0000) << 12)
+        | (registers.aux_b & 0x001f_e000)
+        | (((registers.aux_b >> 25) & 0x7f) << 21);
+    let _ext_word1 = ((registers.aux_a >> 20) & 0x03) | ((registers.aux_c >> 5) & 0x1fc);
+    let primary = registers.primary;
+    let alternate = registers.alternate;
+    let used_alternate = ext_word0 & EXT_ALT_SELECT != 0;
+    let selected = if used_alternate { alternate } else { primary };
+    TxCompletion {
+        cookie,
+        status: ((selected >> 12) & 0x0f) as u8,
+        trigger_flow: registers.trigger_flow,
+        used_alternate,
+        auxiliary_a_word: registers.aux_a,
+        auxiliary_b_word: registers.aux_b,
+        auxiliary_c_word: registers.aux_c,
+        primary_word: primary,
+        alternate_word: alternate,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxError {
     Busy,
@@ -113,16 +195,367 @@ pub enum TxError {
     ResetRequired,
 }
 
+/// Hardware encoding of an ESP32-S31 non-HT transmit rate.
+///
+/// These values are not ordered by bitrate.  They are the exact indices used
+/// by the MAC PLCP formatter and by the PHY target-power table.
+///
+/// SOURCE: sibling oracle
+/// `../esp-wifi-sys/esp-wifi-sys-esp32s31/src/include.rs`, generated from
+/// Espressif's `esp_wifi_types_generic.h` (`wifi_phy_rate_t`), cross-checked
+/// against `_oracles/libpp.a` rate schedules and the recovered
+/// `phy_rate_to_index` ROM routine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LegacyRate {
+    #[default]
+    Dsss1MLong = 0x00,
+    Dsss2MLong = 0x01,
+    Cck5M5Long = 0x02,
+    Cck11MLong = 0x03,
+    Dsss2MShort = 0x05,
+    Cck5M5Short = 0x06,
+    Cck11MShort = 0x07,
+    Ofdm48M = 0x08,
+    Ofdm24M = 0x09,
+    Ofdm12M = 0x0a,
+    Ofdm6M = 0x0b,
+    Ofdm54M = 0x0c,
+    Ofdm36M = 0x0d,
+    Ofdm18M = 0x0e,
+    Ofdm9M = 0x0f,
+}
+
+impl LegacyRate {
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0x00 => Some(Self::Dsss1MLong),
+            0x01 => Some(Self::Dsss2MLong),
+            0x02 => Some(Self::Cck5M5Long),
+            0x03 => Some(Self::Cck11MLong),
+            0x05 => Some(Self::Dsss2MShort),
+            0x06 => Some(Self::Cck5M5Short),
+            0x07 => Some(Self::Cck11MShort),
+            0x08 => Some(Self::Ofdm48M),
+            0x09 => Some(Self::Ofdm24M),
+            0x0a => Some(Self::Ofdm12M),
+            0x0b => Some(Self::Ofdm6M),
+            0x0c => Some(Self::Ofdm54M),
+            0x0d => Some(Self::Ofdm36M),
+            0x0e => Some(Self::Ofdm18M),
+            0x0f => Some(Self::Ofdm9M),
+            _ => None,
+        }
+    }
+
+    /// Select this rate's vendor 802.11g retry-ladder entry.
+    ///
+    /// `failed_attempts` is the number of ACK/CTS failures already observed
+    /// for the same MPDU. The first transmission therefore passes zero. The
+    /// complete 54M ladder is `54M x2, 48M x2, 6M x3, 5.5M x25`; the other
+    /// legacy rates use their corresponding records. `None` reports that the
+    /// record's complete retry budget has been consumed.
+    ///
+    /// SOURCE: `_oracles/libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}` and the
+    /// exact Rust-owned schedule arenas in [`crate::rate_schedule`],
+    /// cross-checked against the promoted migration
+    /// `lmac.rs::select_basic_retry_rate`.
+    pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<Self> {
+        let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
+        Self::from_code(schedule_rate_after_failures(schedule, failed_attempts)?)
+    }
+
+    /// Return the basic protection rate selected by the vendor MAC.
+    ///
+    /// Despite the vendor symbol name, `mac_tx_get_rts_rate`, the result is
+    /// always published by `mac_tx_set_len` in `TX_Q_LENGTH_CONTROL`; it is
+    /// therefore part of every legacy PPDU image, not only frames which
+    /// request explicit RTS/CTS protection.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// mac_tx_get_rts_rate` (size `0x96`) and the identical exhaustive
+    /// `migration/esp32s31-hybrid-runtime/src/tx_rate.rs::
+    /// basic_non_he_rts_rate` reconstruction.
+    pub const fn vendor_rts_rate(self) -> Self {
+        match self {
+            Self::Dsss1MLong => Self::Dsss1MLong,
+            Self::Dsss2MLong | Self::Cck5M5Long | Self::Cck11MLong => Self::Dsss2MLong,
+            Self::Dsss2MShort | Self::Cck5M5Short | Self::Cck11MShort => Self::Dsss2MShort,
+            Self::Ofdm48M | Self::Ofdm24M | Self::Ofdm54M | Self::Ofdm36M => Self::Ofdm24M,
+            Self::Ofdm12M | Self::Ofdm18M => Self::Ofdm12M,
+            Self::Ofdm6M | Self::Ofdm9M => Self::Ofdm6M,
+        }
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        match self {
+            Self::Dsss1MLong => 1_000,
+            Self::Dsss2MLong | Self::Dsss2MShort => 2_000,
+            Self::Cck5M5Long | Self::Cck5M5Short => 5_500,
+            Self::Cck11MLong | Self::Cck11MShort => 11_000,
+            Self::Ofdm6M => 6_000,
+            Self::Ofdm9M => 9_000,
+            Self::Ofdm12M => 12_000,
+            Self::Ofdm18M => 18_000,
+            Self::Ofdm24M => 24_000,
+            Self::Ofdm36M => 36_000,
+            Self::Ofdm48M => 48_000,
+            Self::Ofdm54M => 54_000,
+        }
+    }
+}
+
+/// One-spatial-stream 802.11n modulation and coding scheme.
+///
+/// The ESP32-S31 is 1T1R, so the open HT path intentionally exposes only the
+/// standard single-stream MCS0..MCS7 set. MCS8..MCS31 describe additional
+/// spatial streams and cannot be made valid by passing an unchecked integer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HtMcs {
+    #[default]
+    Mcs0 = 0,
+    Mcs1 = 1,
+    Mcs2 = 2,
+    Mcs3 = 3,
+    Mcs4 = 4,
+    Mcs5 = 5,
+    Mcs6 = 6,
+    Mcs7 = 7,
+}
+
+impl HtMcs {
+    pub const fn index(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::Mcs0),
+            1 => Some(Self::Mcs1),
+            2 => Some(Self::Mcs2),
+            3 => Some(Self::Mcs3),
+            4 => Some(Self::Mcs4),
+            5 => Some(Self::Mcs5),
+            6 => Some(Self::Mcs6),
+            7 => Some(Self::Mcs7),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HtGuardInterval {
+    #[default]
+    Long800Ns,
+    Short400Ns,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HtChannelWidth {
+    #[default]
+    Mhz20,
+    Mhz40,
+}
+
+/// Finite S31 encoding derived from the peer's HT minimum MPDU start spacing.
+///
+/// These values are not microseconds. They are the hardware-domain values
+/// stored at peer-state offset `0x82` by the complete vendor
+/// `rcUpdateAMPDUParam`, then copied three times into the queue protection
+/// word by the complete `mac_tx_set_htsig`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u16)]
+pub enum HtProtectionSpacing {
+    /// IEEE HT A-MPDU Parameters spacing codes zero through four.
+    #[default]
+    Density0To4 = 20,
+    /// IEEE HT A-MPDU Parameters spacing code five.
+    Density5 = 40,
+    /// IEEE HT A-MPDU Parameters spacing code six.
+    Density6 = 76,
+    /// IEEE HT A-MPDU Parameters spacing code seven.
+    Density7 = 148,
+}
+
+impl HtProtectionSpacing {
+    /// Derive the exact finite hardware value from a complete HT A-MPDU
+    /// Parameters byte (HT Capabilities IE payload byte two).
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcUpdateAMPDUParam`,
+    /// size `0xde`, cross-checked against a coherent hardware-owned vendor HT
+    /// queue containing three copies of value 40 (`0x0280_a028`).
+    pub const fn from_ampdu_parameters(parameters: u8) -> Self {
+        match (parameters >> 2) & 0x07 {
+            0..=4 => Self::Density0To4,
+            5 => Self::Density5,
+            6 => Self::Density6,
+            _ => Self::Density7,
+        }
+    }
+
+    pub const fn hardware_value(self) -> u16 {
+        self as u16
+    }
+}
+
+/// Complete typed HT PHY rate selected for one transmit attempt.
+///
+/// Channel width is both a PHY channel-engine precondition and part of the
+/// queue vector. The same numeric rate code is used for HT20 and HT40, while
+/// HT-SIG1 bit 7 and PLCP1 bit 29 publish CBW for the selected PPDU.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HtRate {
+    pub mcs: HtMcs,
+    pub guard_interval: HtGuardInterval,
+    pub channel_width: HtChannelWidth,
+}
+
+impl HtRate {
+    pub const fn new(
+        mcs: HtMcs,
+        guard_interval: HtGuardInterval,
+        channel_width: HtChannelWidth,
+    ) -> Self {
+        Self {
+            mcs,
+            guard_interval,
+            channel_width,
+        }
+    }
+
+    /// Exact S31 non-HE MAC rate code.
+    ///
+    /// SOURCE: sibling S31 `wifi_phy_rate_t`, complete
+    /// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_htsig`, and the recovered
+    /// Dot11N rate schedules. Long-GI MCS0 starts at 16; short-GI MCS0 starts
+    /// at 26.
+    pub const fn code(self) -> u8 {
+        let base = match self.guard_interval {
+            HtGuardInterval::Long800Ns => 16,
+            HtGuardInterval::Short400Ns => 26,
+        };
+        base + self.mcs.index()
+    }
+
+    /// Rate code used for target-power lookup.
+    ///
+    /// `hal_mac_tx_set_ppdu` subtracts ten from an SGI rate before loading the
+    /// power pair, so LGI and SGI of the same MCS share one calibrated entry.
+    pub const fn power_lookup_code(self) -> u8 {
+        16 + self.mcs.index()
+    }
+
+    /// Legacy basic rate used by the protection/length vector.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// mac_tx_get_rts_rate` (size 0x96). Both GI code ranges select 6M for
+    /// MCS0, 12M for MCS1/2 and 24M for MCS3..7.
+    pub const fn vendor_rts_rate(self) -> LegacyRate {
+        match self.mcs {
+            HtMcs::Mcs0 => LegacyRate::Ofdm6M,
+            HtMcs::Mcs1 | HtMcs::Mcs2 => LegacyRate::Ofdm12M,
+            HtMcs::Mcs3 | HtMcs::Mcs4 | HtMcs::Mcs5 | HtMcs::Mcs6 | HtMcs::Mcs7 => {
+                LegacyRate::Ofdm24M
+            }
+        }
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        const HT20_LGI: [u32; 8] = [
+            6_500, 13_000, 19_500, 26_000, 39_000, 52_000, 58_500, 65_000,
+        ];
+        const HT20_SGI: [u32; 8] = [
+            7_200, 14_400, 21_700, 28_900, 43_300, 57_800, 65_000, 72_200,
+        ];
+        const HT40_LGI: [u32; 8] = [
+            13_500, 27_000, 40_500, 54_000, 81_000, 108_000, 121_500, 135_000,
+        ];
+        const HT40_SGI: [u32; 8] = [
+            15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 135_000, 150_000,
+        ];
+        let table = match (self.channel_width, self.guard_interval) {
+            (HtChannelWidth::Mhz20, HtGuardInterval::Long800Ns) => &HT20_LGI,
+            (HtChannelWidth::Mhz20, HtGuardInterval::Short400Ns) => &HT20_SGI,
+            (HtChannelWidth::Mhz40, HtGuardInterval::Long800Ns) => &HT40_LGI,
+            (HtChannelWidth::Mhz40, HtGuardInterval::Short400Ns) => &HT40_SGI,
+        };
+        table[self.mcs.index() as usize]
+    }
+
+    /// Select one exact vendor Dot11N retry-ladder attempt.
+    ///
+    /// The recovered table has explicit records for every LGI MCS0..7 and for
+    /// SGI MCS7, the vendor maximum-throughput starting point. Other fixed SGI
+    /// MCS values are valid queue rates but have no independent record in the
+    /// complete `rcUpdatePhyMode` mapping and therefore return `None` here
+    /// instead of inventing a fallback policy.
+    pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<TxPhyRate> {
+        let schedule_index = match self.guard_interval {
+            HtGuardInterval::Long800Ns => 8 - self.mcs.index(),
+            HtGuardInterval::Short400Ns if self.mcs == HtMcs::Mcs7 => 0,
+            HtGuardInterval::Short400Ns => return None,
+        };
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11N, schedule_index)?;
+        let code = schedule_rate_after_failures(schedule, failed_attempts)?;
+        TxPhyRate::from_code(code, self.channel_width)
+    }
+}
+
+/// One finite legacy or single-stream HT rate returned by retry control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxPhyRate {
+    Legacy(LegacyRate),
+    Ht(HtRate),
+}
+
+impl TxPhyRate {
+    pub const fn from_code(code: u8, ht_width: HtChannelWidth) -> Option<Self> {
+        if let Some(rate) = LegacyRate::from_code(code) {
+            return Some(Self::Legacy(rate));
+        }
+        let (mcs, guard_interval) = if code >= 16 && code <= 23 {
+            (code - 16, HtGuardInterval::Long800Ns)
+        } else if code >= 26 && code <= 33 {
+            (code - 26, HtGuardInterval::Short400Ns)
+        } else {
+            return None;
+        };
+        let Some(mcs) = HtMcs::from_index(mcs) else {
+            return None;
+        };
+        Some(Self::Ht(HtRate::new(mcs, guard_interval, ht_width)))
+    }
+
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Legacy(rate) => rate.code(),
+            Self::Ht(rate) => rate.code(),
+        }
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        match self {
+            Self::Legacy(rate) => rate.nominal_kbps(),
+            Self::Ht(rate) => rate.nominal_kbps(),
+        }
+    }
+}
+
 /// Inputs for one finite non-HE q0 attempt.
 ///
-/// `rate` is the recovered S31 legacy-rate index `0..=15`. For the direct raw
-/// q0 management path, `signal` is the transmitted `MPDU + FCS` byte length
-/// written to `TX_Q_PLCP1`; it is not a vendor descriptor snapshot. Power
-/// values are indices in the PHY gain table, not dBm.
+/// For the direct raw q0 management path, `signal` is the transmitted
+/// `MPDU + FCS` byte length written to `TX_Q_PLCP1`; it is not a vendor
+/// descriptor snapshot. Power values are indices in the PHY gain table, not
+/// dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyTxConfig {
-    pub rate: u8,
-    pub rts_rate: u8,
+    pub rate: LegacyRate,
+    pub rts_rate: LegacyRate,
     pub signal: u16,
     pub data_power: u8,
     pub rts_power_low: u8,
@@ -131,6 +564,12 @@ pub struct LegacyTxConfig {
     pub contention_window: u16,
     pub timeout: u16,
     pub interface: u8,
+    /// Priority written to the ordinary queue scheduler field.
+    ///
+    /// This can differ from [`Self::pti`]: the pinned vendor
+    /// `mac_tx_set_pti` raises it to at least coexistence event one's PTI
+    /// while retaining the original packet PTI in the four vector lanes.
+    pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
     /// Whether address one is a group address.
@@ -149,18 +588,162 @@ pub struct LegacyTxConfig {
     pub hardware_key_selector: u8,
 }
 
+/// Inputs for one finite, non-aggregate HT MPDU attempt.
+///
+/// `length` is the complete on-air PSDU byte count produced by hardware:
+/// encoded MPDU plus any hardware-generated security MIC and the four-byte
+/// FCS. Power bytes are calibrated PHY gain-table indices, not dBm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtTxConfig {
+    pub rate: HtRate,
+    pub protection_spacing: HtProtectionSpacing,
+    pub length: u16,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub timeout: u16,
+    pub interface: u8,
+    pub scheduler_priority: u8,
+    pub pti: u8,
+    pub pti_count: u16,
+    pub hardware_key_selector: u8,
+}
+
+impl HtTxConfig {
+    /// Construct a single-MPDU HT profile from the encoded MPDU length.
+    pub const fn single_mpdu(
+        rate: HtRate,
+        mpdu_length: u16,
+        hardware_mic_length: u8,
+    ) -> Option<Self> {
+        let Some(length) = mpdu_length.checked_add(hardware_mic_length as u16) else {
+            return None;
+        };
+        let Some(length) = length.checked_add(LEGACY_FCS_LENGTH) else {
+            return None;
+        };
+        if length == 0 {
+            return None;
+        }
+        Some(Self {
+            rate,
+            protection_spacing: HtProtectionSpacing::Density0To4,
+            length,
+            data_power_primary: 0,
+            data_power_alternate: 0,
+            rts_power_primary: 0,
+            rts_power_alternate: 0,
+            aifsn: 2,
+            contention_window: 0,
+            timeout: 0x03ff,
+            interface: 0,
+            scheduler_priority: 1,
+            pti: 1,
+            pti_count: 1,
+            hardware_key_selector: 0,
+        })
+    }
+
+    const fn valid(self) -> bool {
+        self.length != 0
+            && self.aifsn <= 0x0f
+            && self.contention_window <= 0x03ff
+            && self.timeout <= 0x0fff
+            && self.interface <= 3
+            && self.scheduler_priority <= 0x0f
+            && self.pti <= 0x0f
+            && self.pti_count <= 0x0fff
+    }
+}
+
+/// Inputs for one basic-HT A-MPDU PPDU.
+///
+/// Unlike [`HtTxConfig`], `aggregate_length` is the already assembled A-MPDU
+/// byte count, including each delimiter and all non-final alignment/empty
+/// delimiters. It must come from the bounded aggregate ownership path; this
+/// type never adds a second FCS or guesses delimiter padding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtAmpduTxConfig {
+    pub rate: HtRate,
+    pub protection_spacing: HtProtectionSpacing,
+    pub aggregate_length: u16,
+    pub subframes: u8,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub timeout: u16,
+    pub interface: u8,
+    pub scheduler_priority: u8,
+    pub pti: u8,
+    pub pti_count: u16,
+    pub hardware_key_selector: u8,
+}
+
+impl HtAmpduTxConfig {
+    /// Construct an aggregate PPDU profile from an already validated length.
+    ///
+    /// `subframes` is retained as a finite 1..=32 value because hardware and
+    /// the vendor formatter can represent a one-subframe A-MPDU, even though
+    /// the ordinary batching policy normally waits for at least two frames.
+    pub const fn new(rate: HtRate, aggregate_length: u16, subframes: u8) -> Option<Self> {
+        if aggregate_length == 0 || subframes == 0 || subframes > 32 {
+            return None;
+        }
+        Some(Self {
+            rate,
+            protection_spacing: HtProtectionSpacing::Density0To4,
+            aggregate_length,
+            subframes,
+            data_power_primary: 0,
+            data_power_alternate: 0,
+            rts_power_primary: 0,
+            rts_power_alternate: 0,
+            aifsn: 2,
+            contention_window: 0,
+            timeout: 0x03ff,
+            interface: 0,
+            scheduler_priority: 1,
+            pti: 1,
+            pti_count: 1,
+            hardware_key_selector: 0,
+        })
+    }
+
+    const fn valid(self) -> bool {
+        self.aggregate_length != 0
+            && self.subframes != 0
+            && self.subframes <= 32
+            && self.aifsn <= 0x0f
+            && self.contention_window <= 0x03ff
+            && self.timeout <= 0x0fff
+            && self.interface <= 3
+            && self.scheduler_priority <= 0x0f
+            && self.pti <= 0x0f
+            && self.pti_count <= 0x0fff
+    }
+}
+
 impl LegacyTxConfig {
     /// Conservative 1-Mbit/s management-frame profile used by the first HIL.
     ///
     /// The timeout is the exact q0 image observed while the pinned vendor
-    /// driver submitted an open-authentication MPDU on ESP32-S31 rev0:
-    /// `TX_Q0_CONFIG = 0x0200_03ff` (`timeout=0x3ff`, `AIFSN=2`, `CW=0`).
-    /// SOURCE: live `wifi-sta-auth-probe` HIL plus
-    /// `_oracles/libpp.a[hal_mac_tx.o]::hal_mac_tx_config_timeout`.
+    /// driver submitted an open-authentication MPDU on ESP32-S31 rev0. The
+    /// no-backoff base image is `TX_Q0_CONFIG = 0x1200_03ff`
+    /// (`scheduler=1`, `timeout=0x3ff`, `AIFSN=2`, `CW=0`) and
+    /// `TX_Q0_PTI = 0x0011_1110` (`count=1`, four packet-PTI lanes at 1).
+    /// SOURCE: live `wifi-sta-auth-probe` HIL plus complete
+    /// `_oracles/libpp.a[hal_mac_tx.o,hal_mac.o,hal_coex.o]` and
+    /// `_oracles/libcoexist.a[coexist_core.o]`.
     pub const fn management_1m(signal: u16) -> Self {
         Self {
-            rate: 0,
-            rts_rate: 0,
+            rate: LegacyRate::Dsss1MLong,
+            rts_rate: LegacyRate::Dsss1MLong,
             signal,
             data_power: 8,
             rts_power_low: 8,
@@ -169,8 +752,11 @@ impl LegacyTxConfig {
             contention_window: 0,
             timeout: 0x03ff,
             interface: 0,
+            // Complete libpp.a[hal_mac.o,hal_coex.o] selects the unsigned
+            // minimum of packet PTI 1 and coexistence event-one PTI 5.
+            scheduler_priority: 1,
             pti: 1,
-            pti_count: 0,
+            pti_count: 1,
             group_receiver: false,
             hardware_key_selector: 0,
         }
@@ -193,13 +779,12 @@ impl LegacyTxConfig {
     }
 
     const fn valid(self) -> bool {
-        self.rate <= 15
-            && self.rts_rate <= 15
-            && self.signal <= 0x0fff
+        self.signal <= 0x0fff
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
     }
@@ -214,6 +799,129 @@ pub struct LegacyQ0Image {
     pub length_control: u32,
 }
 
+/// Pure register image for one HT PPDU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtQ0Image {
+    pub plcp0: u32,
+    pub plcp1: u32,
+    pub ht_signal: u32,
+    pub data_length: u32,
+    pub power: u32,
+    pub length_control: u32,
+    pub descriptor_count_a: u8,
+    pub descriptor_count_b: u8,
+    pub protection_spacing: u16,
+}
+
+/// Build the instruction-exact basic HT queue image without touching MMIO.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
+/// mac_tx_set_plcp1,mac_tx_set_htsig,mac_tx_set_len,hal_mac_tx_set_ppdu}`.
+/// The direct slot represents exactly one descriptor, hence both recovered
+/// descriptor-count lanes contain one. A-MPDU has a separate ownership path
+/// and must not reuse this single-MPDU constructor.
+pub const fn ht_q0_image(descriptor_address: u32, config: HtTxConfig) -> Option<HtQ0Image> {
+    if !descriptor_address_valid(descriptor_address) || !config.valid() {
+        return None;
+    }
+    let rate = config.rate.code();
+    let rts_rate = config.rate.vendor_rts_rate();
+    let channel_width_40 = match config.rate.channel_width {
+        HtChannelWidth::Mhz20 => false,
+        HtChannelWidth::Mhz40 => true,
+    };
+    // Complete mac_tx_set_htsig and mac_tx_set_plcp1 both consume descriptor
+    // word1 bit 15 as the HT40 selector. The direct Rust-owned descriptor does
+    // not carry the vendor metadata word, so construct its exact finite image
+    // from the typed channel width.
+    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
+    Some(HtQ0Image {
+        // SOURCE: HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29. The exact
+        // synchronous formatter result retains bit 22 in PLCP0. The separate
+        // mac_tx_set_txop_q policy edge is not reached between lmacSetTxFrame
+        // and queue publication for this vendor single-MPDU path.
+        plcp0: basic_plcp0_word(descriptor_address as usize, HT_SINGLE_DESCRIPTOR_FLAGS),
+        plcp1: basic_non_he_plcp1_word(
+            rate,
+            HT_SINGLE_DESCRIPTOR_FLAGS,
+            config.hardware_key_selector,
+            descriptor_word1,
+            0,
+        ),
+        ht_signal: basic_htsig_word(rate, channel_width_40, config.length as u32),
+        data_length: basic_data_length_word(rate, config.length as u32, HT_SINGLE_ENTRY_FLAGS),
+        power: config.data_power_primary as u32
+            | ((config.data_power_alternate as u32) << 8)
+            | ((config.rts_power_primary as u32) << 16)
+            | ((config.rts_power_alternate as u32) << 24),
+        length_control: basic_length_control_word(
+            rts_rate.code(),
+            HT_SINGLE_ENTRY_FLAGS,
+            config.hardware_key_selector as u32,
+        ),
+        descriptor_count_a: 1,
+        descriptor_count_b: 1,
+        protection_spacing: config.protection_spacing.hardware_value(),
+    })
+}
+
+/// Build the instruction-exact basic-HT A-MPDU queue image without MMIO.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
+/// mac_tx_set_plcp1,mac_tx_set_htsig,mac_tx_set_len,hal_mac_tx_set_ppdu}` and
+/// `HIL_VENDOR_HT_AMPDU_PPDU`. The latter synchronously captured a two-MPDU
+/// MCS7/SGI aggregate with length 0x0c2e:
+/// HT-SIG=0x8f0c2e07, DATA_LENGTH=0x70400c2e and
+/// LENGTH_CONTROL=0x00400244.
+pub const fn ht_ampdu_q0_image(
+    dma_head_address: u32,
+    config: HtAmpduTxConfig,
+) -> Option<HtQ0Image> {
+    if !descriptor_address_valid(dma_head_address) || !config.valid() {
+        return None;
+    }
+    let rate = config.rate.code();
+    let rts_rate = config.rate.vendor_rts_rate();
+    let channel_width_40 = match config.rate.channel_width {
+        HtChannelWidth::Mhz20 => false,
+        HtChannelWidth::Mhz40 => true,
+    };
+    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
+    Some(HtQ0Image {
+        // SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+        // mac_tx_set_plcp0` as reached from the A-MPDU submit branch. Its
+        // address input is `frame+0x04`, the first 12-byte DMA buffer
+        // descriptor. The PP descriptor at `frame+0x34` supplies flags and
+        // rate metadata but is not the hardware walker head.
+        plcp0: basic_plcp0_word(dma_head_address as usize, HT_AMPDU_DESCRIPTOR_FLAGS),
+        plcp1: basic_non_he_plcp1_word(
+            rate,
+            HT_AMPDU_DESCRIPTOR_FLAGS,
+            config.hardware_key_selector,
+            descriptor_word1,
+            0,
+        ),
+        ht_signal: ht_htsig_word(rate, channel_width_40, config.aggregate_length as u32, true),
+        data_length: basic_data_length_word(
+            rate,
+            config.aggregate_length as u32,
+            HT_AMPDU_ENTRY_FLAGS,
+        ),
+        power: config.data_power_primary as u32
+            | ((config.data_power_alternate as u32) << 8)
+            | ((config.rts_power_primary as u32) << 16)
+            | ((config.rts_power_alternate as u32) << 24),
+        length_control: basic_length_control_word(
+            rts_rate.code(),
+            HT_AMPDU_ENTRY_FLAGS,
+            config.hardware_key_selector as u32,
+        ),
+        descriptor_count_a: config.subframes,
+        descriptor_count_b: config.subframes,
+        protection_spacing: config.protection_spacing.hardware_value(),
+    })
+}
+
 pub const fn legacy_q0_image(
     descriptor_address: u32,
     config: LegacyTxConfig,
@@ -221,20 +929,30 @@ pub const fn legacy_q0_image(
     if !descriptor_address_valid(descriptor_address) || !config.valid() {
         return None;
     }
+    // Complete `_oracles/libpp.a[pp.o]::ppTxFragmentProc` reaches its common
+    // legacy setup at offsets 0x8e..0xa8 for the CCMP selector-three branch
+    // at 0x22a and sets descriptor bit seven before the LMAC formatter. The
+    // receiver-class bit is added independently by ppTxProtoProc.
+    let descriptor_flags = 0x0000_0080
+        | if config.group_receiver {
+            0x0000_0002
+        } else {
+            0
+        };
     Some(LegacyQ0Image {
         // The complete recovered formatter consumes many descriptor states.
         // This direct profile admits only its two plain legacy roots: zero for
         // an individual receiver and bit one for a group receiver.
-        plcp0: basic_plcp0_word(
-            descriptor_address as usize,
-            if config.group_receiver {
-                0x0000_0002
-            } else {
-                0
-            },
+        //
+        // Complete mac_tx_set_txop_q runs after mac_tx_set_plcp0. The ordinary
+        // descriptor class above retains control bit 22; keeping the second
+        // edge explicit prevents the upper path from guessing its value.
+        plcp0: apply_basic_txop_control_word(
+            basic_plcp0_word(descriptor_address as usize, descriptor_flags),
+            descriptor_flags,
         ),
         plcp1: basic_non_he_plcp1_word(
-            config.rate,
+            config.rate.code(),
             0,
             config.hardware_key_selector,
             0,
@@ -244,7 +962,7 @@ pub const fn legacy_q0_image(
             | ((config.rts_power_low as u32) << 16)
             | ((config.rts_power_high as u32) << 24),
         length_control: basic_length_control_word(
-            config.rts_rate,
+            config.rts_rate.code(),
             1,
             config.hardware_key_selector as u32,
         ),
@@ -349,7 +1067,8 @@ impl TxSlot {
             power: image.power,
             length_control: image.length_control,
             timeout: config.timeout,
-            priority: config.pti,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
             priority_count: config.pti_count,
             aifsn: config.aifsn,
             contention_window: config.contention_window,
@@ -364,6 +1083,59 @@ impl TxSlot {
         slot.queue = queue;
         slot.state = TxSlotState::HardwareOwned;
         hardware.start_legacy_tx(index, image.plcp0);
+        Ok(())
+    }
+
+    /// Programs and starts one non-aggregate HT MPDU.
+    ///
+    /// The caller must also have configured the PHY channel engine for
+    /// `config.rate.channel_width` during association. This method publishes
+    /// the matching HT-SIG/PLCP CBW bits, while the channel engine still owns
+    /// secondary-channel placement.
+    pub fn submit_ht<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HtTxConfig,
+    ) -> Result<(), TxError> {
+        // SAFETY: the method never moves the pinned slot; it changes only
+        // scalar ownership fields and the device-owned descriptor words.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
+        if actual_address != slot.descriptor_address {
+            return Err(TxError::Invalid);
+        }
+        let image = ht_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
+        let index = queue.index();
+        let program = MacHtTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            ht_signal: image.ht_signal,
+            data_length: image.data_length,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        if !hardware.prepare_ht_tx(index, program) {
+            return Err(TxError::QueueActive);
+        }
+
+        slot.queue = queue;
+        slot.state = TxSlotState::HardwareOwned;
+        hardware.start_ht_tx(index, image.plcp0);
         Ok(())
     }
 
@@ -399,32 +1171,12 @@ impl TxSlot {
             return Ok(None);
         };
 
-        let ext_word0 = ((registers.aux_a & 0x000f_0000) << 12)
-            | (registers.aux_b & 0x001f_e000)
-            | (((registers.aux_b >> 25) & 0x7f) << 21);
-        let _ext_word1 = ((registers.aux_a >> 20) & 0x03) | ((registers.aux_c >> 5) & 0x1fc);
-        let primary = registers.primary;
-        let alternate = registers.alternate;
-        let used_alternate = ext_word0 & EXT_ALT_SELECT != 0;
-        let selected = if used_alternate { alternate } else { primary };
-        let status = ((selected >> 12) & 0x0f) as u8;
-
         if self.state != TxSlotState::HardwareOwned {
             self.state = TxSlotState::ResetRequired;
             return Err(TxError::Stale);
         }
         self.state = TxSlotState::Completed;
-        Ok(Some(TxCompletion {
-            cookie: self.active,
-            status,
-            trigger_flow: registers.trigger_flow,
-            used_alternate,
-            auxiliary_a_word: registers.aux_a,
-            auxiliary_b_word: registers.aux_b,
-            auxiliary_c_word: registers.aux_c,
-            primary_word: primary,
-            alternate_word: alternate,
-        }))
+        Ok(Some(decode_tx_completion(self.active, registers)))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.

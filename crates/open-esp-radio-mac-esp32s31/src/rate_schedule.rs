@@ -264,9 +264,55 @@ pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
     }
 }
 
+/// Select the rate byte for a non-aggregate retry counter.
+///
+/// Each vendor record starts with four `(rate, attempt_count)` pairs.
+/// `rcGetRate` accumulates the four counts and selects the first rate for which
+/// `failed_attempts < cumulative_count`. Returning `None` means that the
+/// record's complete retry budget has been consumed.
+///
+/// SOURCE: complete `_oracles/libpp.a[trc.o]::rcGetRate` (`0xd0` bytes),
+/// especially the bounded four-iteration loop at offsets `0x7c..0xce`;
+/// cross-checked against the promoted
+/// `migration/esp32s31-hybrid-runtime/src/lmac.rs::
+/// select_basic_retry_rate`.
+pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {
+    let record = schedule_pointer(schedule);
+    let mut cumulative = 0_u8;
+    for index in 0..4 {
+        // The arena is initialized before radio ownership begins and is then
+        // immutable. Copy only the two scalar bytes needed by this safe API.
+        let (rate, count) = unsafe {
+            (
+                record.add(index * 2).read(),
+                record.add(index * 2 + 1).read(),
+            )
+        };
+        cumulative = cumulative.wrapping_add(count);
+        if failed_attempts < cumulative {
+            return Some(rate);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dot11g_54m_record_has_the_vendor_retry_ladder() {
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11G, 0).unwrap();
+        assert_eq!(schedule_rate_after_failures(schedule, 0), Some(0x0c));
+        assert_eq!(schedule_rate_after_failures(schedule, 1), Some(0x0c));
+        assert_eq!(schedule_rate_after_failures(schedule, 2), Some(0x08));
+        assert_eq!(schedule_rate_after_failures(schedule, 3), Some(0x08));
+        assert_eq!(schedule_rate_after_failures(schedule, 4), Some(0x0b));
+        assert_eq!(schedule_rate_after_failures(schedule, 6), Some(0x0b));
+        assert_eq!(schedule_rate_after_failures(schedule, 7), Some(0x06));
+        assert_eq!(schedule_rate_after_failures(schedule, 31), Some(0x06));
+        assert_eq!(schedule_rate_after_failures(schedule, 32), None);
+    }
 
     #[test]
     fn post_attach_indices_are_materialized_in_every_arena() {

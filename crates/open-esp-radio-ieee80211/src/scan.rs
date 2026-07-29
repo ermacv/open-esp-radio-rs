@@ -20,6 +20,12 @@ pub const WMM_IE_CAPACITY: usize = 26;
 const HE_CAPABILITIES_EXTENSION_ID: u8 = 35;
 const HE_OPERATION_EXTENSION_ID: u8 = 36;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtSecondaryChannel {
+    Above,
+    Below,
+}
+
 /// Recover the Default PE Duration advertised in an HE Operation IE.
 ///
 /// A stored extension IE includes `[element_id, length, extension_id]`
@@ -141,6 +147,35 @@ impl ScanRecord {
     pub fn ht_operation_ie_bytes(&self) -> Option<&[u8; HT_OPERATION_IE_LEN]> {
         self.ht_operation_ie_present
             .then_some(&self.ht_operation_ie)
+    }
+
+    /// Return the AP's usable 40-MHz secondary-channel geometry.
+    ///
+    /// The HT Capabilities Supported Channel Width bit must be present, the
+    /// HT Operation primary channel must match this record, and the operation
+    /// must permit any channel width. The secondary offset uses IEEE 802.11
+    /// values one (above) and three (below).
+    ///
+    /// SOURCE: the complete IEs copied by this module from Beacon/Probe
+    /// Response frames; the ESP32-S31 mapping from above/below to CBW 2/3 is
+    /// independently recovered in
+    /// `open-esp-radio-pac-esp32s31/src/frequency.rs::bss_tx_offset` from the
+    /// complete rev0 ROM `phy_bb_bss_cbw40`.
+    pub fn ht40_secondary_channel(&self) -> Option<HtSecondaryChannel> {
+        let capability = self.ht_capability_ie_bytes()?;
+        let operation = self.ht_operation_ie_bytes()?;
+        let capability_info = u16::from_le_bytes([capability[2], capability[3]]);
+        if capability_info & (1 << 1) == 0
+            || operation[2] != self.channel
+            || operation[3] & (1 << 2) == 0
+        {
+            return None;
+        }
+        match operation[3] & 0x03 {
+            1 if self.channel <= 9 => Some(HtSecondaryChannel::Above),
+            3 if self.channel >= 5 => Some(HtSecondaryChannel::Below),
+            _ => None,
+        }
     }
 
     pub fn he_capability_ie_bytes(&self) -> &[u8] {
@@ -385,8 +420,8 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
 mod tests {
     use super::{
         best_matching_ssid, he_default_packet_extension_duration,
-        he_extended_range_single_user_enabled, parse_management, ScanObservation, ScanRecord,
-        ScanTable,
+        he_extended_range_single_user_enabled, parse_management, HtSecondaryChannel,
+        ScanObservation, ScanRecord, ScanTable,
     };
 
     #[test]
@@ -434,6 +469,30 @@ mod tests {
         assert_eq!(record.rssi, -42);
         assert!(record.privacy);
         assert!(record.rsn);
+    }
+
+    #[test]
+    fn ht40_geometry_requires_matching_capability_and_operation() {
+        let mut record = ScanRecord {
+            channel: 6,
+            ht_capability_ie_present: true,
+            ht_operation_ie_present: true,
+            ..ScanRecord::EMPTY
+        };
+        record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 0x02, 0]);
+        record.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
+        assert_eq!(
+            record.ht40_secondary_channel(),
+            Some(HtSecondaryChannel::Above)
+        );
+
+        record.ht_operation_ie[3] = 0x07;
+        assert_eq!(
+            record.ht40_secondary_channel(),
+            Some(HtSecondaryChannel::Below)
+        );
+        record.ht_capability_ie[2] = 0;
+        assert_eq!(record.ht40_secondary_channel(), None);
     }
 
     #[test]

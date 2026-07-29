@@ -15,6 +15,26 @@ pub const fn basic_plcp0_word(metadata_address: usize, flags: u32) -> u32 {
     word
 }
 
+/// Apply the ordinary non-TXOP descriptor policy to the PLCP0/control word.
+///
+/// This is a separate formatter edge from [`basic_plcp0_word`]. Complete
+/// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_txop_q`, offsets
+/// `0x86..0xaa`, sets queue-control bit 22 only when descriptor flag bits
+/// `7:6` equal binary `10`, and clears bit 22 for every other value. The
+/// complete `ppTxFragmentProc` common legacy setup supplies bit seven for the
+/// bounded direct CCMP path, while the receiver class independently supplies
+/// zero or bit one. Both therefore select the set branch.
+///
+/// The electrical meaning of bit 22 is not inferred from the function name;
+/// only the instruction-exact descriptor-to-register mapping is exposed.
+pub const fn apply_basic_txop_control_word(word: u32, flags: u32) -> u32 {
+    if flags & 0x0000_00c0 == 0x0000_0080 {
+        word | 0x0040_0000
+    } else {
+        word & !0x0040_0000
+    }
+}
+
 /// Build the queue PLCP1 word for a rate already guarded to the finite legacy
 /// or HT non-HE range 0..=35.
 pub const fn basic_non_he_plcp1_word(
@@ -43,15 +63,21 @@ pub const fn basic_non_he_plcp1_word(
     word
 }
 
-pub const fn ht_htsig_word(rate: u8, extension: bool, length: u32, aggregate: bool) -> u32 {
+/// Build the packed HT-SIG word for one S31 non-HE queue vector.
+///
+/// `channel_width_40` becomes HT-SIG1 bit 7. Complete
+/// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_htsig` copies descriptor word1
+/// bit 15 to this exact bit; its standard 802.11n meaning is CBW (zero for
+/// 20 MHz, one for 40 MHz).
+pub const fn ht_htsig_word(rate: u8, channel_width_40: bool, length: u32, aggregate: bool) -> u32 {
     let mcs = if rate <= 25 { rate - 16 } else { rate - 26 };
-    let low = mcs | ((extension as u8) << 7);
+    let low = mcs | ((channel_width_40 as u8) << 7);
     let high = 0x07 | ((aggregate as u8) << 3) | (((rate >= 26) as u8) << 7);
     u32::from_le_bytes([low, length as u8, (length >> 8) as u8, high])
 }
 
-pub const fn basic_htsig_word(rate: u8, extension: bool, length: u32) -> u32 {
-    ht_htsig_word(rate, extension, length, false)
+pub const fn basic_htsig_word(rate: u8, channel_width_40: bool, length: u32) -> u32 {
+    ht_htsig_word(rate, channel_width_40, length, false)
 }
 
 pub const fn basic_length_control_word(rts_rate: u8, entry_flags: u8, queue_word: u32) -> u32 {
@@ -70,8 +96,8 @@ pub const fn basic_data_length_word(rate: u8, length: u32, entry_flags: u8) -> u
 #[cfg(test)]
 mod tests {
     use super::{
-        basic_data_length_word, basic_htsig_word, basic_length_control_word,
-        basic_non_he_plcp1_word, basic_plcp0_word, ht_htsig_word,
+        apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
+        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, ht_htsig_word,
     };
 
     const ADDRESS: usize = 0x2f12_3456;
@@ -89,6 +115,23 @@ mod tests {
         assert_eq!(basic_plcp0_word(ADDRESS, 0), BASE | 0x0100_0000);
         assert_eq!(basic_plcp0_word(ADDRESS, 0x0008_0000), BASE | 0x0200_0000);
         assert_eq!(basic_plcp0_word(ADDRESS, 0x0010_0000), BASE | 0x0300_0000);
+    }
+
+    #[test]
+    fn applies_the_complete_txop_queue_bit_22_mapping() {
+        assert_eq!(apply_basic_txop_control_word(0x0162_3456, 0), 0x0122_3456);
+        assert_eq!(
+            apply_basic_txop_control_word(0x0162_3456, 0x0000_0040),
+            0x0122_3456
+        );
+        assert_eq!(
+            apply_basic_txop_control_word(0x0122_3456, 0x0000_0080),
+            0x0162_3456
+        );
+        assert_eq!(
+            apply_basic_txop_control_word(0x0162_3456, 0x0000_00c0),
+            0x0122_3456
+        );
     }
 
     #[test]
@@ -137,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn reproduces_htsig_rate_class_extension_and_length() {
+    fn reproduces_htsig_rate_class_cbw_and_length() {
         assert_eq!(basic_htsig_word(16, false, 0x1234), 0x0712_3400);
         assert_eq!(basic_htsig_word(25, true, 0x3fff), 0x073f_ff89);
         assert_eq!(basic_htsig_word(26, false, 0x0201), 0x8702_0100);

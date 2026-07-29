@@ -18,6 +18,7 @@ mod mac_enable;
 mod mac_hal_init_tail;
 mod mac_he_init;
 mod mac_he_init_suffix;
+mod mac_he_peer;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
@@ -35,8 +36,11 @@ pub mod power;
 mod table_memory;
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
+pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_interrupt::MacInterruptRegisters;
-pub use mac_tx::{MacLegacyTxProgram, MacTxCompletionRegisters};
+pub use mac_tx::{
+    MacHtAmpduCompletionRegisters, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
+};
 pub use mac_tx_power_init::{MacTxPowerPair, MacTxPowerTable, MAC_TX_POWER_RATE_COUNT};
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};

@@ -6,12 +6,14 @@
 
 use crate::{
     ccmp::CCMP_HEADER_LEN,
-    data::{plan_data_encapsulation, DataInterfaceRole, ETHERNET_HEADER_LEN},
+    data::{plan_data_encapsulation, DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN},
+    he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
 };
 
 const OPEN_AUTHENTICATION_FRAME_CONTROL: u16 = 0x00b0;
+const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 const ASSOCIATION_REQUEST_FRAME_CONTROL: u16 = 0x0000;
 const ASSOCIATION_RESPONSE_FRAME_CONTROL: u16 = 0x0010;
 const OPEN_SYSTEM_ALGORITHM: u16 = 0;
@@ -25,6 +27,69 @@ const RSN_OUI: [u8; 3] = [0x00, 0x0f, 0xac];
 const RSN_CIPHER_CCMP: u8 = 4;
 const RSN_AKM_PSK: u8 = 2;
 const RSN_CAPABILITY_MFPR: u16 = 1 << 6;
+// One-stream HT20 with short guard interval. Channel-width, STBC, LDPC,
+// large A-MSDU and 40-MHz claims remain disabled until their matching
+// Rust-owned paths are enabled.
+//
+// SOURCE: promoted migration
+// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::HT20_CAPABILITY_IE`,
+// originally qualified by the strict ESP32-S31 STA WPA2/ADDBA throughput HIL.
+const HT20_CAPABILITY_IE: [u8; 28] = [
+    45, 26, 0x20, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
+];
+// One-stream HT40 with short guard intervals for both 20 and 40 MHz and
+// spatial multiplexing power save disabled. Although the S31 has one receive
+// stream, advertising static SMPS (`0x0062`) made the controlled Linux HT40 AP
+// accept authentication but discard the association request. The vendor
+// builder preserves the interface's SMPS bits and ordinary ESP STA requests
+// use the disabled value (`bits 2..3 = 0b11`), giving `0x006e`.
+//
+// SOURCE: `_oracles/libnet80211.a[ieee80211_ht.o]::
+// ieee80211_add_htcap_body` reads the base capability at node offset `0x14c`,
+// adds Supported Channel Width at `+0x4e`, SGI20 at `+0x8e`, and SGI40 at
+// `+0xaa` without replacing the base SMPS bits. IEEE 802.11 HT Capabilities
+// Info defines bits 2..3 value `0b11` as SMPS disabled. Selection remains
+// gated by the complete AP HT Capabilities/Operation IEs through
+// `ScanRecord::ht40_secondary_channel`; hardware CBW support is the complete
+// rev0 ROM `phy_bb_bss_cbw40` implementation promoted into the S31 PAC/HAL.
+const HT40_CAPABILITY_IE: [u8; 28] = [
+    45, 26, 0x6e, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
+];
+// Exact one-stream HE20 MCS0-9 capability captured from the vendor
+// association request and qualified by the old strict HE association HIL.
+// This must not be relabelled HE40: complete
+// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` writes zero to
+// complete IE byte nine (the first HE PHY Capabilities byte / Channel Width
+// Set) on both its STA branches. The chip's vendor path advertises 40 MHz
+// separately through HT Capabilities, as represented by HT40_CAPABILITY_IE.
+//
+// SOURCE: promoted migration
+// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::
+// HE20_MCS9_CAPABILITY_IE`, originally compared with the request constructed
+// by pinned `_oracles/libnet80211.a`.
+const HE20_MCS9_CAPABILITY_IE: [u8; 24] = [
+    255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
+    0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
+];
+// WMM Information, version one, U-APSD disabled.
+//
+// SOURCE: the same promoted `sta_link.rs::WMM_INFORMATION_IE`, cross-checked
+// against `_oracles/libnet80211.a` association-request construction.
+const WMM_INFORMATION_IE: [u8; 9] = [221, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00];
+/// Baseline HT A-MSDU limit selected when HT Capabilities Info bit 11 is
+/// clear. The 7,935-byte extension remains deliberately unadvertised.
+const HT_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
+const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
+/// Bytes added when one Ethernet-II frame is encoded as a protected QoS data
+/// MPDU, excluding the hardware-owned CCMP MIC and FCS.
+///
+/// The Ethernet DA/SA/EtherType header is replaced by the 26-byte QoS MAC
+/// header, the eight-byte CCMP header and the eight-byte LLC/SNAP header.
+pub const STA_PROTECTED_QOS_ETHERNET_OVERHEAD: usize =
+    crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN + LLC_SNAP_HEADER_LEN
+        - ETHERNET_HEADER_LEN;
 
 /// Monotonic twelve-bit sequence-number owner for one STA transmit session.
 ///
@@ -93,6 +158,11 @@ impl StaRxDuplicateFilter {
     /// `tid` is `None` for the legacy/non-QoS sequence space and `0..=15` for
     /// a QoS data TID. An invalid TID is treated as a new non-QoS frame so a
     /// malformed caller value cannot poison a valid QoS history slot.
+    #[inline(never)]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".rwtext.open_radio_rx_hot")
+    )]
     pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
         let index = match tid {
             Some(tid @ 0..=15) => usize::from(tid) + 1,
@@ -121,6 +191,9 @@ pub enum StationFrameError {
     SsidTooLong,
     NoSupportedRates,
     TooManySupportedRates,
+    NoAmsduFrames,
+    EthernetFrameTooShort,
+    AmsduTooLong { length: usize, maximum: usize },
     SequenceNumberOutOfRange,
     UserPriorityOutOfRange,
     OutputTooSmall { required: usize },
@@ -191,6 +264,52 @@ pub struct OpenAuthenticationResponse {
     pub status_code: u16,
 }
 
+/// One unprotected STA-originated Action management frame.
+///
+/// BlockAck negotiation uses this common 24-byte management header followed
+/// by the nine-byte action body owned by the MAC BlockAck state machine.
+///
+/// SOURCE: promoted migration
+/// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::send_addba_response`,
+/// where the same header was constructed around
+/// `rx_ampdu::write_successful_addba_response`; the frame-control subtype is
+/// the IEEE 802.11 Action management subtype also parsed by
+/// `_oracles/libnet80211.a`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaActionFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub sequence_number: u16,
+    pub body: &'a [u8],
+}
+
+impl StaActionFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
+            StationFrameError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+
+        let frame = &mut output[..required];
+        frame.fill(0);
+        write_management_header(
+            frame,
+            ACTION_FRAME_CONTROL,
+            self.bssid,
+            self.source,
+            self.bssid,
+            self.sequence_number,
+        );
+        frame[MANAGEMENT_HEADER_LEN..].copy_from_slice(self.body);
+        Ok(required)
+    }
+}
+
 /// Parse a response addressed to this station and BSSID.
 ///
 /// `None` means that the frame is valid input but belongs to another
@@ -217,11 +336,20 @@ pub fn parse_open_authentication_response(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationPhy {
+    Legacy,
+    Ht20,
+    Ht40,
+    He20,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssociationRequest<'a> {
     pub source: [u8; 6],
     pub access_point: &'a ScanRecord,
     pub sequence_number: u16,
     pub listen_interval: u16,
+    pub phy: StaAssociationPhy,
 }
 
 impl AssociationRequest<'_> {
@@ -251,6 +379,39 @@ impl AssociationRequest<'_> {
         let extended_rates_len = rates_len - first_rates_len;
         let selected_rsn =
             select_wpa2_psk_rsn(self.access_point).map_err(AssociationRequestError::Security)?;
+        let (ht_capability, he_capability) = match self.phy {
+            StaAssociationPhy::Legacy => (None, None),
+            StaAssociationPhy::Ht20 if self.access_point.ht_capability_ie_present => {
+                (Some(&HT20_CAPABILITY_IE), None)
+            }
+            StaAssociationPhy::Ht20 => {
+                return Err(AssociationRequestError::HtUnsupportedByAccessPoint);
+            }
+            StaAssociationPhy::Ht40 if self.access_point.ht40_secondary_channel().is_some() => {
+                (Some(&HT40_CAPABILITY_IE), None)
+            }
+            StaAssociationPhy::Ht40 => {
+                return Err(AssociationRequestError::Ht40UnsupportedByAccessPoint);
+            }
+            StaAssociationPhy::He20
+                if self.access_point.ht_capability_ie_present
+                    && parse_he20_capabilities(self.access_point.he_capability_ie_bytes())
+                        .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
+                    && parse_he20_operation(self.access_point.he_operation_ie_bytes()).is_ok() =>
+            {
+                (Some(&HT20_CAPABILITY_IE), Some(&HE20_MCS9_CAPABILITY_IE))
+            }
+            StaAssociationPhy::He20 => {
+                return Err(AssociationRequestError::He20UnsupportedByAccessPoint);
+            }
+        };
+        let phy_information_len = if let Some(capability) = ht_capability {
+            capability.len()
+                + he_capability.map_or(0, |capability| capability.len())
+                + WMM_INFORMATION_IE.len()
+        } else {
+            0
+        };
         let required = MANAGEMENT_HEADER_LEN
             + ASSOCIATION_FIXED_BODY_LEN
             + 2
@@ -258,7 +419,8 @@ impl AssociationRequest<'_> {
             + 2
             + first_rates_len
             + usize::from(extended_rates_len != 0) * (2 + extended_rates_len)
-            + selected_rsn.as_bytes().len();
+            + selected_rsn.as_bytes().len()
+            + phy_information_len;
         if output.len() < required {
             return Err(AssociationRequestError::Frame(
                 StationFrameError::OutputTooSmall { required },
@@ -307,6 +469,16 @@ impl AssociationRequest<'_> {
         let rsn = selected_rsn.as_bytes();
         frame[offset..offset + rsn.len()].copy_from_slice(rsn);
         offset += rsn.len();
+        if let Some(capability) = ht_capability {
+            frame[offset..offset + capability.len()].copy_from_slice(capability);
+            offset += capability.len();
+            if let Some(capability) = he_capability {
+                frame[offset..offset + capability.len()].copy_from_slice(capability);
+                offset += capability.len();
+            }
+            frame[offset..offset + WMM_INFORMATION_IE.len()].copy_from_slice(&WMM_INFORMATION_IE);
+            offset += WMM_INFORMATION_IE.len();
+        }
         debug_assert_eq!(offset, required);
         Ok(required)
     }
@@ -316,6 +488,9 @@ impl AssociationRequest<'_> {
 pub enum AssociationRequestError {
     Frame(StationFrameError),
     Security(StaSecurityError),
+    HtUnsupportedByAccessPoint,
+    Ht40UnsupportedByAccessPoint,
+    He20UnsupportedByAccessPoint,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -324,6 +499,8 @@ pub struct AssociationResponse {
     pub status_code: u16,
     pub association_id: u16,
     pub ht_capability: bool,
+    pub he_capability: bool,
+    pub he_operation: bool,
     pub wmm: bool,
 }
 
@@ -442,6 +619,160 @@ impl StaProtectedDataFrame<'_> {
     }
 }
 
+/// One protected QoS A-MSDU prepared for S31 hardware CCMP encryption.
+///
+/// Every borrowed element is a complete Ethernet-II frame. The encoder emits
+/// one outer To-DS QoS MPDU and converts each Ethernet frame to the IEEE
+/// 802.11 A-MSDU subframe form (DA, SA, big-endian MSDU length, RFC1042
+/// LLC/SNAP body and non-final four-byte padding). The returned length stops
+/// before the hardware-owned CCMP MIC and FCS, exactly like
+/// [`StaProtectedDataFrame`].
+///
+/// SOURCE: IEEE 802.11 A-MSDU wire format, cross-checked against the inverse
+/// iterator in `data::AmsduSubframes`. The 3,839-byte ceiling is the baseline
+/// Max A-MSDU Length selected by the clear bit 11 in `HT40_CAPABILITY_IE`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaProtectedAmsduFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub sequence_number: u16,
+    pub user_priority: u8,
+    pub ccmp_header: [u8; CCMP_HEADER_LEN],
+    pub ethernet_frames: &'a [&'a [u8]],
+}
+
+/// Returns the encoded protected QoS MPDU length for an A-MSDU.
+///
+/// The result excludes the hardware-owned CCMP MIC and FCS, matching
+/// [`StaProtectedAmsduFrame::encode`]. Keeping this calculation beside the
+/// encoder lets a bounded A-MPDU owner check its negotiated byte ceiling
+/// before consuming a sequence number or CCMP packet number.
+pub fn sta_protected_amsdu_frame_length(
+    ethernet_frames: &[&[u8]],
+) -> Result<usize, StationFrameError> {
+    if ethernet_frames.is_empty() {
+        return Err(StationFrameError::NoAmsduFrames);
+    }
+
+    let mut amsdu_length = 0_usize;
+    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
+        if ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        }
+        let msdu_length = LLC_SNAP_HEADER_LEN
+            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
+            .ok_or(StationFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: HT_AMSDU_BASELINE_MAX_LEN,
+            })?;
+        if msdu_length > usize::from(u16::MAX) {
+            return Err(StationFrameError::AmsduTooLong {
+                length: msdu_length,
+                maximum: HT_AMSDU_BASELINE_MAX_LEN,
+            });
+        }
+        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
+            StationFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: HT_AMSDU_BASELINE_MAX_LEN,
+            },
+        )?;
+        amsdu_length =
+            amsdu_length
+                .checked_add(subframe_length)
+                .ok_or(StationFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: HT_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        if index + 1 != ethernet_frames.len() {
+            amsdu_length = amsdu_length
+                .checked_add((4 - (subframe_length & 3)) & 3)
+                .ok_or(StationFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: HT_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        }
+    }
+    if amsdu_length > HT_AMSDU_BASELINE_MAX_LEN {
+        return Err(StationFrameError::AmsduTooLong {
+            length: amsdu_length,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        });
+    }
+
+    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        .checked_add(CCMP_HEADER_LEN)
+        .and_then(|length| length.checked_add(amsdu_length))
+        .ok_or(StationFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        })
+}
+
+impl StaProtectedAmsduFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        if self.user_priority > 7 {
+            return Err(StationFrameError::UserPriorityOutOfRange);
+        }
+        let Some(first) = self.ethernet_frames.first().copied() else {
+            return Err(StationFrameError::NoAmsduFrames);
+        };
+        if first.len() < ETHERNET_HEADER_LEN {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        }
+        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
+            .try_into()
+            .expect("length checked above");
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::Station,
+            self.bssid,
+            self.source,
+            first_header,
+            self.user_priority,
+            true,
+            false,
+        )
+        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        plan.header[1] |= 0x40;
+        plan.header[24] |= 0x80;
+
+        let header_len = usize::from(plan.header_len);
+        debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
+        let required = sta_protected_amsdu_frame_length(self.ethernet_frames)?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+
+        let frame = &mut output[..required];
+        frame.fill(0);
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let mut offset = header_len;
+        frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
+        offset += CCMP_HEADER_LEN;
+        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
+            let payload = &ethernet[ETHERNET_HEADER_LEN..];
+            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
+            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
+            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
+            offset += AMSDU_SUBFRAME_HEADER_LEN;
+            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
+            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
+            offset += LLC_SNAP_HEADER_LEN;
+            frame[offset..offset + payload.len()].copy_from_slice(payload);
+            offset += payload.len();
+            if index + 1 != self.ethernet_frames.len() {
+                let subframe_length =
+                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
+                offset += (4 - (subframe_length & 3)) & 3;
+            }
+        }
+        debug_assert_eq!(offset, required);
+        Ok(required)
+    }
+}
+
 const fn ethernet_header(
     destination: [u8; 6],
     source: [u8; 6],
@@ -480,6 +811,8 @@ pub fn parse_association_response(
     }
 
     let mut ht_capability = false;
+    let mut he_capability = false;
+    let mut he_operation = false;
     let mut wmm = false;
     let mut offset = MANAGEMENT_HEADER_LEN + 6;
     while offset + 2 <= frame.len() {
@@ -491,6 +824,8 @@ pub fn parse_association_response(
         }
         let value = &frame[offset + 2..end];
         ht_capability |= id == 45 && length == 26;
+        he_capability |= id == 255 && value.first() == Some(&35);
+        he_operation |= id == 255 && value.first() == Some(&36);
         wmm |= id == 221 && length >= 6 && value.get(..4) == Some(&[0x00, 0x50, 0xf2, 0x02]);
         offset = end;
     }
@@ -500,9 +835,11 @@ pub fn parse_association_response(
         status_code: read_u16(frame, 26)?,
         association_id: read_u16(frame, 28)? & 0x3fff,
         ht_capability,
+        he_capability,
+        he_operation,
         // An AP that returned HT Capability accepted the WMM/QoS data path,
         // even if a bounded RX prefix omitted a later vendor WMM element.
-        wmm: wmm || ht_capability,
+        wmm: wmm || ht_capability || he_capability,
     })
 }
 
@@ -710,6 +1047,28 @@ mod tests {
     }
 
     #[test]
+    fn encodes_sta_action_frame_around_owned_body() {
+        let body = [3, 1, 7, 0, 0, 0x02, 0x04, 0, 0];
+        let mut output = [0xa5; 40];
+        let length = StaActionFrame {
+            source: LOCAL,
+            bssid: BSSID,
+            sequence_number: 0x123,
+            body: &body,
+        }
+        .encode(&mut output)
+        .unwrap();
+        assert_eq!(length, 33);
+        assert_eq!(&output[0..2], &[0xd0, 0]);
+        assert_eq!(&output[4..10], &BSSID);
+        assert_eq!(&output[10..16], &LOCAL);
+        assert_eq!(&output[16..22], &BSSID);
+        assert_eq!(&output[22..24], &[0x30, 0x12]);
+        assert_eq!(&output[24..33], &body);
+        assert_eq!(output[33], 0xa5);
+    }
+
+    #[test]
     fn parses_only_matching_open_authentication_response() {
         let mut frame = [0_u8; 30];
         frame[0] = 0xb0;
@@ -756,6 +1115,7 @@ mod tests {
             access_point: &record,
             sequence_number: 2,
             listen_interval: 1,
+            phy: StaAssociationPhy::Legacy,
         }
         .encode(&mut output)
         .unwrap();
@@ -769,6 +1129,69 @@ mod tests {
                 0,
             ]
         );
+    }
+
+    #[test]
+    fn ht20_association_request_reproduces_the_migration_capabilities() {
+        let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        record.ht_capability_ie_present = true;
+        let mut output = [0; 160];
+        let length = AssociationRequest {
+            source: LOCAL,
+            access_point: &record,
+            sequence_number: 2,
+            listen_interval: 1,
+            phy: StaAssociationPhy::Ht20,
+        }
+        .encode(&mut output)
+        .unwrap();
+        let phy_start = length - HT20_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
+        assert_eq!(
+            &output[phy_start..phy_start + HT20_CAPABILITY_IE.len()],
+            &HT20_CAPABILITY_IE
+        );
+        assert_eq!(
+            &output[phy_start + HT20_CAPABILITY_IE.len()..length],
+            &WMM_INFORMATION_IE
+        );
+    }
+
+    #[test]
+    fn ht20_request_fails_closed_when_the_ap_did_not_advertise_ht() {
+        let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        assert_eq!(
+            AssociationRequest {
+                source: LOCAL,
+                access_point: &record,
+                sequence_number: 2,
+                listen_interval: 1,
+                phy: StaAssociationPhy::Ht20,
+            }
+            .encode(&mut [0; 160]),
+            Err(AssociationRequestError::HtUnsupportedByAccessPoint)
+        );
+    }
+
+    #[test]
+    fn ht40_request_claims_width_short_gi_and_disabled_smps() {
+        let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        record.channel = 6;
+        record.ht_capability_ie_present = true;
+        record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 0x02, 0]);
+        record.ht_operation_ie_present = true;
+        record.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
+        let mut output = [0; 160];
+        let length = AssociationRequest {
+            source: LOCAL,
+            access_point: &record,
+            sequence_number: 2,
+            listen_interval: 1,
+            phy: StaAssociationPhy::Ht40,
+        }
+        .encode(&mut output)
+        .unwrap();
+        let phy_start = length - HT40_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
+        assert_eq!(&output[phy_start..phy_start + 4], &[45, 26, 0x6e, 0]);
     }
 
     #[test]
@@ -826,6 +1249,87 @@ mod tests {
         assert_eq!(&output[24..32], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
         assert_eq!(&output[32..40], &[0xaa, 0xaa, 3, 0, 0, 0, 0x88, 0x8e]);
         assert_eq!(&output[40..len], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn protected_amsdu_encodes_two_ethernet_frames_and_round_trips() {
+        let first = [
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 2, 3, 4, 5, 6, 7, 0x08, 0x00, 1, 2, 3,
+        ];
+        let second = [
+            0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 8, 9, 10, 11, 12, 13, 0x88, 0xb5, 4, 5, 6,
+        ];
+        let ethernet_frames: [&[u8]; 2] = [&first, &second];
+        let mut output = [0_u8; 96];
+        assert_eq!(sta_protected_amsdu_frame_length(&ethernet_frames), Ok(87));
+        let length = StaProtectedAmsduFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            sequence_number: 0x123,
+            user_priority: 7,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ethernet_frames: &ethernet_frames,
+        }
+        .encode(&mut output)
+        .unwrap();
+
+        assert_eq!(length, 87);
+        assert_eq!(&output[..2], &[0x88, 0x41]);
+        assert_eq!(&output[24..26], &[0x87, 0]);
+        assert_eq!(&output[26..34], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        assert_eq!(&output[34..40], &first[..6]);
+        assert_eq!(&output[40..46], &first[6..12]);
+        assert_eq!(&output[46..48], &[0, 11]);
+        assert_eq!(&output[48..56], &[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00]);
+        assert_eq!(&output[56..59], &[1, 2, 3]);
+        assert_eq!(&output[59..62], &[0, 0, 0]);
+
+        let mut subframes = crate::data::amsdu_subframes(
+            DataInterfaceRole::AccessPoint,
+            &output[..length],
+            34,
+            length - 34,
+        )
+        .unwrap();
+        let first_decoded = subframes.next().unwrap().unwrap();
+        assert_eq!(first_decoded.destination, first[..6]);
+        assert_eq!(first_decoded.source, first[6..12]);
+        assert_eq!(first_decoded.ether_type, 0x0800);
+        assert_eq!(first_decoded.payload, &[1, 2, 3]);
+        let second_decoded = subframes.next().unwrap().unwrap();
+        assert_eq!(second_decoded.destination, second[..6]);
+        assert_eq!(second_decoded.source, second[6..12]);
+        assert_eq!(second_decoded.ether_type, 0x88b5);
+        assert_eq!(second_decoded.payload, &[4, 5, 6]);
+        assert_eq!(subframes.next(), None);
+    }
+
+    #[test]
+    fn protected_amsdu_rejects_the_unadvertised_large_class() {
+        let ethernet = [0_u8; 2_000];
+        let frames: [&[u8]; 2] = [&ethernet, &ethernet];
+        assert_eq!(
+            sta_protected_amsdu_frame_length(&frames),
+            Err(StationFrameError::AmsduTooLong {
+                length: 4_016,
+                maximum: HT_AMSDU_BASELINE_MAX_LEN,
+            })
+        );
+        assert_eq!(
+            StaProtectedAmsduFrame {
+                source: [2, 3, 4, 5, 6, 7],
+                bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+                sequence_number: 1,
+                user_priority: 0,
+                ccmp_header: [0; CCMP_HEADER_LEN],
+                ethernet_frames: &frames,
+            }
+            .encode(&mut [0_u8; 4_096]),
+            Err(StationFrameError::AmsduTooLong {
+                length: 4_016,
+                maximum: HT_AMSDU_BASELINE_MAX_LEN,
+            })
+        );
     }
 
     #[test]

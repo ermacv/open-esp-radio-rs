@@ -92,6 +92,11 @@ pub const PREFIX_RXEND_STATE_OFFSET: usize = 0x08;
 pub const TAIL_STATE_OFFSET: usize = 0x04;
 pub const TAIL_INTERNAL_OFFSET: usize = 0x05;
 
+const RX_PHY_RATE_OFFSET: usize = 0x01;
+const RX_PHY_HE_SIGA1_OFFSET: usize = 0x04;
+const RX_PHY_HE_SIGA2_OFFSET: usize = 0x09;
+const RX_PHY_BB_FORMAT_OFFSET: usize = 0x25;
+
 const CSI_LENGTH_LOW_OFFSET: usize = 0x26;
 const CSI_LENGTH_FLAGS_OFFSET: usize = 0x27;
 const OPTION_LENGTH_HINT_OFFSET: usize = 0x2a;
@@ -104,6 +109,7 @@ const SUBTYPE_ASSOC_RESPONSE: u8 = 0x10;
 const SUBTYPE_REASSOC_RESPONSE: u8 = 0x30;
 const SUBTYPE_AUTH: u8 = 0xb0;
 const RX_DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+const RX_DESCRIPTOR_RELOAD_POLL_LIMIT: usize = 0x0001_86a1;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RxSegment<'a> {
@@ -154,6 +160,44 @@ pub struct RxFirstSegmentLayout {
     pub rx_state: u8,
     pub internal_state: u8,
     pub dump_length_matches: bool,
+}
+
+/// Stable radio fields from the public 64-byte ESP32-S31 RX-control prefix.
+///
+/// SOURCE: esp-wifi-sys commit
+/// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
+/// `esp-wifi-sys-esp32s31/src/include.rs` sha256
+/// `de6ecd8853cc1925389f89e768a8a865ad58db6025f94a63584096eb8ad5f1dc`,
+/// generated `esp_wifi_rxctrl_t`. The packed ABI places the five-bit `rate`
+/// at byte 1, HE-SIGA1 at bytes 4..8, HE-SIGA2 at bytes 9..11 and the
+/// four-bit `cur_bb_format` in the high nibble of byte 37.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxPhyInfo {
+    pub rate: u8,
+    pub bb_format: u8,
+    pub he_siga1: u32,
+    pub he_siga2: u16,
+}
+
+/// Decode the finite PHY-rate view without interpreting the format-specific
+/// HE-SIG bitfields.
+pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {
+    Some(RxPhyInfo {
+        rate: *buffer.get(RX_PHY_RATE_OFFSET)? & 0x1f,
+        bb_format: *buffer.get(RX_PHY_BB_FORMAT_OFFSET)? >> 4,
+        he_siga1: u32::from_le_bytes(
+            buffer
+                .get(RX_PHY_HE_SIGA1_OFFSET..RX_PHY_HE_SIGA1_OFFSET + 4)?
+                .try_into()
+                .ok()?,
+        ),
+        he_siga2: u16::from_le_bytes(
+            buffer
+                .get(RX_PHY_HE_SIGA2_OFFSET..RX_PHY_HE_SIGA2_OFFSET + 2)?
+                .try_into()
+                .ok()?,
+        ),
+    })
 }
 
 pub type RxManagementFrame = RxMpduFrame;
@@ -355,6 +399,16 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
 
 impl<const COUNT: usize> RxRingLive<'_, COUNT> {
     /// Takes one newly completed descriptor exactly once for this ring epoch.
+    ///
+    /// Kept in internal SRAM for PSRAM-code profiles: this is invoked once for
+    /// every descriptor slot on every receive poll. HIL at HE20 showed that
+    /// executing the complete poll/copy path from PSRAM capped useful UDP RX
+    /// near 65 Mbit/s.
+    #[inline(never)]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".rwtext.open_radio_rx_hot")
+    )]
     pub fn take_completed(&mut self, index: usize) -> Option<RxCompletedDescriptor> {
         if index >= COUNT {
             return None;
@@ -385,6 +439,11 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
     /// RX_CONTROL bit 0 self-clears. If the walker exhausted the old frontier
     /// during reload, the exact ROM base-repair rule is applied before the new
     /// tail becomes accepted.
+    #[inline(never)]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".rwtext.open_radio_rx_hot")
+    )]
     pub fn recycle_completed_half<M, F>(
         &mut self,
         mmio: &mut M,
@@ -468,6 +527,29 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 
     pub const fn reload_pending(&self) -> bool {
         self.pending_tail.is_some()
+    }
+
+    /// Complete one live-append doorbell before returning to frame processing.
+    ///
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
+    /// `0x2f83_8a7e` spins on `RX_CONTROL.APPEND_DESCRIPTOR_RELOAD` with the
+    /// exact `0x186a1` bound, then immediately samples `RX_NEXT_DESCRIPTOR`
+    /// and repairs `RX_DESCRIPTOR_BASE` from `last->next` when the old
+    /// frontier was exhausted. Deferring this suffix until after another RX
+    /// processing pass is observably unsafe: the appended half can itself
+    /// reach the terminal descriptor first, making `RX_LAST_DESCRIPTOR`
+    /// indistinguishable from the no-repair case.
+    pub fn finish_pending_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
+        if self.pending_tail.is_none() {
+            return Ok(());
+        }
+        for _ in 0..RX_DESCRIPTOR_RELOAD_POLL_LIMIT {
+            if !mmio.reload_pending() {
+                return self.settle_reload(mmio);
+            }
+            core::hint::spin_loop();
+        }
+        Err(RxRingError::Busy)
     }
 
     fn settle_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
@@ -822,6 +904,11 @@ pub fn first_segment_layout(
     })
 }
 
+#[inline(never)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".rwtext.open_radio_rx_hot")
+)]
 fn extract_mpdu_allowing_consumed_trailer(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
@@ -989,6 +1076,11 @@ pub fn extract_data(
 /// describes the complete on-air MPDU. This reproduces the migration
 /// `ccmp_decap` invariant: only bytes after the logical payload boundary may
 /// be absent. Unprotected extraction remains strict.
+#[inline(never)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".rwtext.open_radio_rx_hot")
+)]
 pub fn extract_ccmp_data(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,

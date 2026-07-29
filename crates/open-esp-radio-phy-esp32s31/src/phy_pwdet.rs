@@ -2,7 +2,7 @@
 //!
 //! The required root is rev0 ROM `phy_pwdet_code_cal` at `0x2f82_b432`,
 //! size 76 bytes. Its complete child graph enters PBus debug mode, configures
-//! the TX calibration path, takes two two-sample SAR measurements, restores
+//! the TX calibration path, takes two four-sample SAR measurements, restores
 //! the radio, stores two signed reference codes, and sets one calibrated bit
 //! through the global `phy_param` pointer.
 //!
@@ -29,7 +29,11 @@ pub const PHY_PWDET_SAR_SAMPLE_ADDRESS: usize =
     open_esp_radio_hal_esp32s31::radio_registers::phy_baseband_config_oracle::
         POWER_DETECTOR_SAR_RESULT
         .address();
-pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 2;
+// Complete rev0 ROM `phy_pwdet_ref_code+0x24` and `+0x50` load `a0 = 4`
+// before calling the runtime-table `phy_get_tone_sar_dout_` leaf. That leaf
+// repeats `phy_pwdet_tone_start`/`phy_read_sar_dout` exactly `a0` times and
+// returns the unsigned average.
+pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 4;
 
 const ENTER_PBUS_COUNT: u8 = 15;
 const EXIT_PBUS_COUNT: u8 = 7;
@@ -355,7 +359,11 @@ pub const fn sar_signal_reference(sample: u16, reference_codes: [i16; 2]) -> [i1
     ]
 }
 
-/// Reproduce `phy_get_power_db(4)` after the two SAR samples are averaged.
+/// Reproduce the separate ROM `phy_get_power_db` transform.
+///
+/// This transform is consumed by later TX calibration code. Complete rev0
+/// ROM `phy_pwdet_ref_code` does not call it: that root stores the raw
+/// four-sample averages returned by `phy_get_tone_sar_dout_`.
 pub fn calculate_pwdet_reference(sample_average: u16, reference_codes: [i16; 2]) -> i16 {
     let signal = sar_signal_reference(sample_average, reference_codes);
     phy_linear_to_db(i32::from(signal[0]), 3)
@@ -690,8 +698,10 @@ impl PhyPwdetTransition {
                     }
                 } else {
                     let average = (sample_sum / u32::from(PHY_PWDET_SAMPLES_PER_REFERENCE)) as u16;
-                    self.reference_codes[measurement_index as usize] =
-                        calculate_pwdet_reference(average, self.reference_codes);
+                    // Complete rev0 ROM `phy_pwdet_ref_code+0x26` and `+0x52`
+                    // store the raw `phy_get_tone_sar_dout_(4)` return value
+                    // directly at `phy_param[0x1a]` and `[0x1c]`.
+                    self.reference_codes[measurement_index as usize] = average as i16;
                     if measurement_index == 0 {
                         PhyPwdetStep::WriteReferenceControl {
                             measurement_index: 1,
@@ -1351,21 +1361,16 @@ mod tests {
             transition
                 .advance(PhyPwdetCompletion::ReferenceControlWritten { value: control })
                 .unwrap();
-            complete_sample(
-                &mut transition,
-                measurement_index,
-                0,
-                100 + measurement_index as u16,
-            );
-            complete_sample(
-                &mut transition,
-                measurement_index,
-                1,
-                102 + measurement_index as u16,
-            );
-            let average = 101 + measurement_index as u16;
-            expected_references[measurement_index as usize] =
-                calculate_pwdet_reference(average, expected_references);
+            for sample_index in 0..PHY_PWDET_SAMPLES_PER_REFERENCE {
+                complete_sample(
+                    &mut transition,
+                    measurement_index,
+                    sample_index,
+                    100 + u16::from(measurement_index) + u16::from(sample_index) * 2,
+                );
+            }
+            let average = 103 + measurement_index as u16;
+            expected_references[measurement_index as usize] = average as i16;
         }
         assert_eq!(
             transition.action(),

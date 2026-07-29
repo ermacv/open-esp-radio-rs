@@ -1361,3 +1361,276 @@ through Rust with zero vendor or indication fallback. The complete taskless
 WPA2/network stress completed 4,096/4,096 UDP datagrams and 4/4 HTTP transfers
 at 30.332 Mbit/s, balanced all 4,787 TX owners, and retained zero allocation,
 ESF rejection, blocking, task-delay, and direct-delay observations.
+
+## Open standalone legacy performance baseline (2026-07-29)
+
+The fully open `open-radio-phy-prelude-hil` path now has a deliberately narrow
+performance control before HT is enabled. `LegacyRate` owns the exact
+non-monotonic S31 hardware codes recovered from the sibling esp-wifi-sys
+header, `_oracles/libpp.a`, and the ROM `phy_rate_to_index` routine. The HIL
+accepts `OPEN_RADIO_LEGACY_RATE_MBIT=6|9|12|18|24|36|48|54`; the default is
+legacy OFDM 54 Mbit/s. Management and EAPOL remain at 1 Mbit/s. HT MCS values
+cannot enter this descriptor path accidentally.
+
+The first live run used `psram-code-psram-data --open-radio-hil`, channel 6,
+20 MHz, WPA2, and the nearby FRITZ access point. Scan observed both HT and HE,
+but the intentionally legacy association negotiated neither HT nor WMM. Open
+PHY initialization, scan, authentication, association, WPA2, protected ARP,
+DHCP, and the Embassy UDP sink all completed without vendor Wi-Fi code. DHCP
+assigned `192.168.178.138`.
+
+The UDP RX sink on port 4323 measured these preliminary host-to-device samples
+with 1,400-byte datagrams:
+
+| Host offered | Open sink payload | Socket errors | Network queue drops |
+| ---: | ---: | ---: | ---: |
+| 10.5 Mbit/s | 10.511 Mbit/s | 0 | 0 |
+| 21.0 Mbit/s | 18.273 Mbit/s | 0 | 0 |
+| 31.5 Mbit/s | 17.952 Mbit/s | 0 | 0 |
+
+SOURCE: live serial records
+`OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx` and the matching iperf2 client
+summaries from the 2026-07-29 ESP32-S31 rev0 HIL. These figures establish a
+legacy single-MPDU baseline, not an HT capability claim. The plateau occurs
+with `dropped=0`, so the next comparison must sweep OFDM rates and inspect the
+RX MAC/PHY duplicate/retry boundary before enabling the already recovered HT
+PLCP and A-MPDU machinery.
+
+That controlled OFDM sweep exposed a concrete standalone-TX transcription
+error. With the same PSRAM/PSRAM image, channel-11 HT40- WPA2 peer, power
+limit and 20-Hz ICMP load, fixed 6M and 24M each delivered 200/200 packets and
+48M delivered 199/200. The former 54M image repeatedly lost 25 to 39 percent.
+Complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_get_rts_rate,
+mac_tx_set_len}` and the promoted migration `tx_rate.rs` prove that
+`LENGTH_CONTROL` must carry basic rate 24M for both 48M and 54M; the standalone
+path had incorrectly copied the data rate instead. After restoring the exact
+selector and deriving the RTS power bytes from that basic rate, 54M delivered
+197/200 and then 495/500 with 1.975-ms and 2.353-ms mean RTT. Linux decoded the
+station at 54.0 Mbit/s. This removes the large legacy loss but does not hide
+the remaining approximately one-percent retry/loss tail.
+
+That tail led to the next complete-blob boundary. `libpp.a[trc.o]::rcGetRate`
+does not repeat the selected data rate after every ACK timeout: it walks four
+`(rate, count)` pairs using the descriptor's accumulated retry counters. The
+54M 802.11g record sends `54M x2, 48M x2, 6M x3, 5.5M x25`. The promoted
+migration had the same bounded four-entry selector, while the standalone app
+reused 54M on all four permitted long-retry attempts. The app now asks the
+driver's safe Rust schedule projection for each attempt; the original encoded
+MPDU, Sequence Control and CCMP packet number remain owned and reused across
+those retries. Hardware qualification of this correction follows separately.
+
+## Open HE20 receive-rate boundary (2026-07-29)
+
+The promoted vendor-exact one-stream HE capability negotiates successfully
+with the same FRITZ peer. Hardware RX-control, decoded from the pinned
+`esp_wifi_rxctrl_t` layout, reported format 4 (HE SU), rate field 11 and
+HE-SIGA1 `0x00405b4b`. The HE-SIGA1 standard fields decode to MCS9, 20 MHz,
+BSS color 27 and the longer GI/LTF selection. A direct post-CCMP,
+post-decapsulation sink measured 61.230 to 65.450 Mbit/s with 1,200-byte UDP
+payloads. Moving the descriptor, extraction, decapsulation and benchmark
+leaves into internal SRAM removed `MAC_INT_RAW` bit `0x200` under load but did
+not change that PHY-limited plateau.
+
+One destructive capability experiment changed only the NSS1 RX/TX map from
+MCS0-9 (`0xfffd`) to MCS0-11 (`0xfffe`). The AP accepted association and WPA2
+messages 1 through 4, but after key installation the station received no
+addressed protected frame (`addressed_protected=0`) and timed out. The
+experimental claim was therefore removed; the vendor MCS9 image remains the
+only qualified HE20 capability.
+
+SOURCE[HIL_OPEN_HE20_RX_RATE_2026_07_29]: ESP32-S31 rev0,
+`psram-code-psram-data --open-radio-hil`, serial `udp-rx-direct`,
+RX-control histogram and WPA2 protected-RX counters. The old migration source
+at commit parent of `f233006`,
+`migration/esp32s31-hybrid-runtime/src/sta_link.rs`, independently labels the
+captured vendor map as one-stream MCS0-9. Reaching 100–120 Mbit/s of useful
+traffic therefore requires a qualified 40-MHz peer/channel (or a new
+A-MSDU-capable receive path); it must not be obtained by claiming MCS11.
+
+The subsequent all-channel active scan observed four 2.4-GHz BSSs. Every
+record decoded to `ht40=None`, including the target FRITZ BSS on channel 6.
+Its complete HT Operation IE begins `3d 16 06 08`: the secondary-channel
+offset is zero and STA channel-width permission is clear, so selecting CBW40
+against that BSS would violate its advertised operation. This is an
+infrastructure boundary, not evidence that the recovered S31 CBW40 routine is
+wrong.
+
+The vendor HE constructor also confirms that HE40 is not the route used by
+this firmware. Complete
+`_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` writes zero to
+complete HE Capabilities IE byte 9 (first HE PHY Capabilities byte, Channel
+Width Set) on both its STA branches: instructions `0x86` and `0xb2` in the
+special branch, and `0x200` in the ordinary branch. The same ordinary branch
+builds the captured MCS0-9 map at complete bytes 20 through 23. Consequently,
+the open performance policy prefers the separately recovered HT40/short-GI
+capability (150-Mbit/s one-stream PHY) whenever the peer's HT Capabilities and
+HT Operation IEs permit a secondary channel; otherwise it retains the
+qualified HE20/MCS9 mode.
+
+SOURCE[HIL_OPEN_40MHZ_AVAILABILITY_2026_07_29]: complete 13-channel open scan
+on ESP32-S31 rev0, plus instruction-exact disassembly of the pinned
+`ieee80211_add_hecap` object and the IEEE-defined HT/HE capability fields.
+
+## Open HT40 receive qualification (2026-07-29)
+
+A controlled Linux/mac80211 AP supplied the missing 40-MHz peer boundary:
+primary channel 11, secondary channel below, WPA2-PSK/CCMP and WMM. The open
+scan decoded the complete HT Operation geometry as
+`ht40=Some(Below)`. The channel transition consequently selected center
+frequency 2452 MHz and S31 CBW value 3. Authentication, association, the
+four-way handshake, pairwise/group hardware-key installation, protected ARP,
+and the connected receive loop all ran without vendor Wi-Fi initialization or
+vendor MAC/PHY calls.
+
+The association capability needed one correction beyond the promoted HT20
+image. Capability `0x0062` advertises static SMPS and was not accepted by the
+controlled HT40 AP. The vendor constructor does not manufacture static SMPS:
+complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+ieee80211_add_htcap_body` preserves the base capability at node offset
+`0x14c`, then independently adds supported channel width (`+0x4e`), SGI20
+(`+0x8e`) and SGI40 (`+0xaa`). Advertising SMPS disabled with capability
+`0x006e` produced a status-zero association and WMM negotiation. WPA message
+3 additionally required the RSNXE saved by the open scan to be passed into
+GTK key-data validation; no empty synthetic RSNXE is used.
+
+The qualified `psram-code-psram-data --open-radio-hil` run used 4,608-byte RX
+DMA buffers, large enough for the negotiated 3,839-byte A-MSDU class plus the
+S31 public header and trailer. The AP's RX A-MPDU request was accepted with a
+16-frame hardware window. An iperf2 sender offered 180 Mbit/s in 1,472-byte
+UDP datagrams; the host radio actually delivered 86,240 datagrams in
+10.0055 seconds. The open direct sink received 86,238 datagrams and
+126,942,336 payload bytes in 10.008449 seconds:
+
+| Measurement | Result |
+| --- | ---: |
+| Open sink payload | 101.468 Mbit/s |
+| Datagrams received/sent | 86,238 / 86,240 |
+| Linux AP negotiated TX rate | 150.0 Mbit/s, MCS7, 40 MHz, short GI |
+| Linux AP TX retries / failures | 2 / 0 |
+| S31 RX control | format 2, rate 11 (maximum 11) |
+
+This qualifies the requested 100–120-Mbit/s useful receive regime for the
+fully open driver. The result is a direct post-CCMP/post-decapsulation sink;
+it does not claim that the full Embassy socket path or device-to-host TX path
+has the same ceiling.
+
+The larger buffer is not a substitute for a general chained-unit owner. The
+pre-promotion migration implementation at the parent of commit `f233006`,
+`migration/esp32s31-hybrid-runtime/src/wdev.rs::process_rx_success`, records
+that descriptor word-0 bit 30 marks the final descriptor of a complete RX
+unit and that one unit can span multiple descriptors. The live ring must
+retain this invariant if a future capability or buffer profile again permits
+split units.
+
+SOURCE[HIL_OPEN_HT40_RX_2026_07_29]: ESP32-S31 rev0 serial records
+`sta-channel-select`, `sta-assoc-response`, `wpa2-protected-rx`,
+`rx-addba-active`, `udp-rx-direct`, and `udp-rx-phy`; matching iperf2 output
+and `iw dev wlan0 station dump`; pinned `libnet80211.a[ieee80211_ht.o]`;
+promoted migration parent of `f233006`.
+
+## Handshake RX-ring and controlled-port retry boundary (2026-07-29)
+
+The open STA handshake must retain one live RX-ring owner across each bounded
+wait. Repeatedly preparing a cold zero-terminated list at descriptor zero is
+not a valid rearm operation after the walker has consumed a list:
+`RX_LAST_DESCRIPTOR` retains the accepted tail. Before the correction,
+authentication and association waits repeatedly stopped after exactly 64 or
+32 received descriptors. With `RxRingLive::recycle_completed_half`, one
+authentication wait processed 132 frames before its protocol retry, and an
+association response was accepted at frame 33. Those observations cross both
+old terminal frontiers and therefore distinguish a live append from a lucky
+cold restart.
+
+The recovered implementation matches complete rev0 ROM
+`wDev_AppendRxBlocks`: detach a CPU-owned completed half, repair its
+descriptor/buffer sentinel state, rotate the next head beyond the retained
+tail, publish the accepted last descriptor and ring the RX reload doorbell.
+The Rust ownership boundary is
+`open-esp-radio-mac-esp32s31::rx::{RxRingStopped,RxRingLive}`; the application
+only binds its static descriptor and buffer storage to that owner.
+
+EAPOL M4 TX completion is also not the controlled-port boundary. It proves
+that the AP acknowledged the EAPOL MPDU, while the promoted vendor STA path
+delivers its connected event separately from the EAPOL callback. A 10-ms
+post-M4 settling interval removed the observed burst of four immediate
+status-5 protected-ARP transmissions.
+
+Loss of the subsequent ordinary ARP transaction must not roll the WPA state
+machine back to message 2. A bounded ARP retry now allocates a new 802.11
+sequence number and a new CCMP packet number while retaining the installed
+PTK/GTK. Five consecutive cold resets all reached IP-ready. The fifth run
+exercised the retry boundary: ARP attempt 1 returned MAC status 5, attempt 2
+returned status 0, its protected response was accepted, and no EAPOL message
+2 was retransmitted.
+
+SOURCE[HIL_OPEN_STA_HANDSHAKE_LIVE_RING_2026_07_29]: ESP32-S31 rev0,
+`psram-code-psram-data --open-radio-hil`, five cold-reset serial records;
+`crates/open-esp-radio-mac-esp32s31/src/rx.rs`; complete rev0 ROM
+`wDev_AppendRxBlocks` and `hal_mac_rx_set_last_desc`; promoted migration
+parent of `f233006`,
+`migration/esp32s31-hybrid-runtime/src/wdev.rs::{prepare_rx_recycle_chain,
+wDev_AppendRxBlocks}` and the separate STA EAPOL/connected callbacks; Linux
+hostapd authorization state and `iw dev wlan0 station dump`.
+
+The remaining authentication retry is before parsing or WPA. On a failed
+first attempt, the directed request completes with hardware status zero, but
+no addressed Authentication frame exists even in the raw DMA buffers. On the
+following protocol attempt the response is the first completed descriptor,
+with word zero `0xc0181200`, frame control `0x00b0`, and zero RX/internal
+status bytes. Three destructive A/B checks did not change this boundary:
+adding 100 us after RX enable, running an otherwise empty RX stop/rearm epoch,
+and selecting genuinely different initial 12-bit transmit sequences. The
+latter used seeds `1228`, `1558`, `1118`, `1062`, and `2689`; all five runs
+still required the second Authentication request.
+
+The unlocalized hardware difference is therefore retained as
+`UNKNOWN[first-directed-TX-to-RX-turnaround]`, not assigned to a speculative
+register. The open state machine performs the IEEE-level retry. An earlier
+diagnostic policy bounded the first wait to 100 ms and later attempts to the
+migration default of 500 ms. Five cold resets with that policy all reached
+IP-ready, and the image retained 102.143 Mbit/s of useful HT40 UDP receive
+throughput (86,805 of 86,807 offered 1,472-byte datagrams). These durations
+were useful experiments, but they are not the vendor STA policy.
+
+Complete pinned
+`_oracles/libnet80211.a[ieee80211_sta.o]::ieee80211_sta_new_state` resolves
+the production timer exactly. The ordinary non-mesh Authentication branch and
+the Association branch each arm `0x3e8`, or 1,000 ms. Complete
+`_oracles/libnet80211.a[wl_chm.o]::chm_phy_change_channel` performs
+`pm_wake_up`, `ic_mac_deinit`, `phy_change_channel(channel, 1, 0, cbw)`,
+`hal_mac_set_csi_cbw`, `ic_mac_init`, and `pm_wake_done`; neither this path
+nor the complete Authentication-output path waits for a beacon before sending
+the request. The open state machine now uses the exact 1,000-ms response
+timeout.
+
+Five reset-to-DHCP HIL repetitions with the exact timeout all reached
+IP-ready, while only one of five received the first Authentication response.
+This series also used the complete blob PTI rule: active Probe Request event 5
+and Authentication/Association event 6 each map to packet PTI 1, while
+`mac_tx_set_pti` selects unsigned `min(packet_pti, event_one_pti)`, producing
+scheduler 1, PTI vector `0x00111110`, and Authentication queue configurations
+`0x120003ff..0x120033ff`. In the other four runs, the first TX completion
+reported status zero, the live RX ring received 92 to 142 unrelated frames
+during the full second, and no raw Authentication response was present;
+attempt two then succeeded. This rules out a merely late response, a stopped
+RX walker, and the former PTI mismatch. It does not yet distinguish an
+immediate TX-to-RX turnaround loss from the AP declining to produce the first
+response.
+
+The same A/B exposed an independent entropy error in the application
+composition root. Plain `esp_hal::rng::Rng` produced the same cold-reset
+stream, so it was unsuitable for the WPA supplicant nonce. The HIL binary and
+the relocated runtime now retain the unique ESP32-S31 `RNG` peripheral in an
+LP `TrngSource` owner and pass an entropy-qualified `Trng` capability into the
+radio workload. The driver crates do not acquire an unrelated RNG peripheral;
+nonce construction remains an explicit application dependency.
+
+SOURCE[HIL_OPEN_STA_AUTH_TURNAROUND_AND_TRNG_2026_07_29]: raw and decoded
+ESP32-S31 RX-descriptor serial records; five-run fixed-sequence,
+TRNG-sequence, RX-prime, and 100-us RX-settle A/B series; five-run
+100-ms-retry series and matching iperf2/`udp-rx-direct` record; five-run exact
+1,000-ms Authentication-timeout series; complete pinned
+`libnet80211.a[ieee80211_sta.o,wl_chm.o,ieee80211_output.o]`; promoted
+`sta_link.rs::{authenticate_open,initialize_static_node}` experimental
+three-by-500-ms policy; `esp-hal/src/rng/{mod.rs,trng.rs}` and the existing
+ESP32-S31 `trng_kat` ownership qualification.

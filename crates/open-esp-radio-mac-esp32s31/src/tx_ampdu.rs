@@ -6,7 +6,17 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
+
+use open_esp_radio_pac_esp32s31::{MacHtAmpduCompletionRegisters, MacHtTxProgram, RadioRegisters};
+
+use crate::{
+    descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
+    tx::{
+        decode_tx_completion, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion,
+        TxCookie, TxHardware, TxSlotState,
+    },
+};
 
 pub const BLOCK_ACK_CATEGORY: u8 = 3;
 pub const ADDBA_REQUEST_ACTION: u8 = 0;
@@ -15,6 +25,9 @@ pub const DELBA_ACTION: u8 = 2;
 pub const ADDBA_ACTION_BODY_LEN: usize = 9;
 pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
+pub const TX_AMPDU_METADATA_SIZE: usize = 8;
+const TX_FCS_SIZE: u16 = 4;
+const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
 const BASIC_HT_RATE_MIN: u8 = 16;
 const BASIC_HT_RATE_MAX: u8 = 35;
 const TX_DESCRIPTOR_HE_BIT: u32 = 0x8000_0000;
@@ -187,6 +200,748 @@ impl HtAmpduLengthAccumulator {
     }
 }
 
+/// Hardware authority needed specifically by an aggregate completion.
+///
+/// A normal [`TxHardware`] completion may acknowledge the edge immediately.
+/// A-MPDU must first sample the queue's three BlockAck words, so the ordering
+/// is a separate trait operation and cannot accidentally be replaced with
+/// the single-MPDU completion method.
+pub trait HtAmpduHardware: TxHardware {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters>;
+}
+
+impl HtAmpduHardware for RadioRegisters {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+        self.take_mac_ht_ampdu_completion(queue)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtAmpduTxError {
+    Busy,
+    Stale,
+    InvalidGeometry,
+    FrameTooLong,
+    TooFewFrames,
+    AggregateFull,
+    Length(HtAmpduLengthError),
+    RegisterImageMismatch,
+    QueueActive,
+    DetachFailed,
+    TimeoutNotPending,
+    ResetRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtAmpduTxCompletion {
+    pub tx: TxCompletion,
+    pub block_ack: HtBlockAckRegisters,
+}
+
+impl HtAmpduTxCompletion {
+    /// Return whether a completed A-MPDU positively acknowledges one MPDU.
+    ///
+    /// A nonzero TX status means no valid BlockAck was received. The hardware
+    /// result registers are not cleared as a separate transaction and may
+    /// still contain the preceding successful bitmap, so those bits must not
+    /// suppress an individual retry.
+    ///
+    /// SOURCE[HIL_OPEN_HT_AMPDU_PARTIAL_2026_07_29]: live HT40 MCS7 SGI
+    /// four-stream TX load produced successful partial BlockAck completions
+    /// and status-five completions with stale nonzero bitmap words.
+    pub const fn acknowledges(self, sequence: u16) -> bool {
+        self.tx.status == 0 && self.block_ack.block_ack.acknowledges(sequence)
+    }
+}
+
+#[repr(C, align(16))]
+struct HtAmpduDmaBuffer<const BUFFER_SIZE: usize>(UnsafeCell<[u8; BUFFER_SIZE]>);
+
+impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
+    const fn new() -> Self {
+        Self(UnsafeCell::new([0; BUFFER_SIZE]))
+    }
+}
+
+// The storage owner serializes CPU access with the hardware-owned phase.
+// Moving the enclosing pool after pinning is prevented by `PhantomPinned`.
+unsafe impl<const BUFFER_SIZE: usize> Send for HtAmpduDmaBuffer<BUFFER_SIZE> {}
+
+/// Statically owned direct-DMA pool for one basic-HT A-MPDU.
+///
+/// This is deliberately a sibling of the single-frame [`crate::tx::TxSlot`].
+/// It owns a distinct descriptor and buffer for every MPDU, links the exact
+/// 12-byte Wi-Fi DMA descriptors, and retains the entire pool until the
+/// BlockAck and queue-detach edges complete. It does not use the vendor PP
+/// scheduler, allocate, or expose raw pointers to the application.
+///
+/// SOURCE[HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]: ESP32-S31 rev0,
+/// psram-code-psram-data, open PHY/MAC, HT40 MCS7 SGI. Four observed
+/// two-MPDU submissions from this pool each returned a BlockAck bitmap ending
+/// in `0x000f`, with no aggregate hardware timeout.
+pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
+    descriptors: [Descriptor; SLOTS],
+    buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
+    frame_lengths: [u16; SLOTS],
+    hardware_mic_lengths: [u8; SLOTS],
+    psdu_lengths: [u16; SLOTS],
+    empty_delimiters: [u8; SLOTS],
+    descriptor_capacities: [u16; SLOTS],
+    state: TxSlotState,
+    generation_cursor: u32,
+    active: TxCookie,
+    queue: LegacyTxQueue,
+    count: u8,
+    prepared_length: u16,
+    aggregate_length: u16,
+    max_aggregate_bytes: u16,
+    detached: bool,
+    _pin: PhantomPinned,
+}
+
+impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
+    pub const fn new() -> Self {
+        Self {
+            descriptors: [const { Descriptor::new() }; SLOTS],
+            buffers: [const { HtAmpduDmaBuffer::new() }; SLOTS],
+            frame_lengths: [0; SLOTS],
+            hardware_mic_lengths: [0; SLOTS],
+            psdu_lengths: [0; SLOTS],
+            empty_delimiters: [0; SLOTS],
+            descriptor_capacities: [0; SLOTS],
+            state: TxSlotState::Free,
+            generation_cursor: 0,
+            active: TxCookie(0),
+            queue: LegacyTxQueue::BestEffort,
+            count: 0,
+            prepared_length: 0,
+            aggregate_length: 0,
+            // Conservative HT A-MPDU exponent zero until the peer capability
+            // is installed by the association owner.
+            max_aggregate_bytes: TX_AMPDU_DEFAULT_MAX_BYTES,
+            detached: false,
+            _pin: PhantomPinned,
+        }
+    }
+
+    /// Initialize a large DMA pool directly in its final static allocation.
+    ///
+    /// Passing [`Self::new`] to `StaticCell::init` materializes the whole pool
+    /// on the embedded stack before moving it. A 32 x 1,700-byte pool therefore
+    /// consumed more than 55 KiB of stack in HIL. This method never creates a
+    /// complete by-value temporary.
+    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
+        let storage = storage.as_mut_ptr();
+
+        // SAFETY: `storage` is exclusively borrowed, correctly aligned
+        // uninitialized memory. Descriptor words, DMA byte buffers, length
+        // arrays, counters, cookies and `false` all accept zero. The two enum
+        // fields and the pin marker are written with valid Rust values before
+        // a reference to the complete object is formed.
+        unsafe {
+            storage
+                .cast::<u8>()
+                .write_bytes(0, core::mem::size_of::<Self>());
+            ptr::addr_of_mut!((*storage).state).write(TxSlotState::Free);
+            ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::BestEffort);
+            ptr::addr_of_mut!((*storage).max_aggregate_bytes).write(TX_AMPDU_DEFAULT_MAX_BYTES);
+            ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
+            &mut *storage
+        }
+    }
+
+    /// Consume a unique static owner and permanently pin its DMA addresses.
+    pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
+        // SAFETY: the unique `&'static mut` is consumed by the returned
+        // `'static` pin. `PhantomPinned` prevents safe extraction or movement
+        // for the remainder of the program.
+        unsafe { Pin::new_unchecked(storage) }
+    }
+
+    pub const fn state(&self) -> TxSlotState {
+        self.state
+    }
+
+    pub const fn frame_count(&self) -> u8 {
+        self.count
+    }
+
+    pub const fn aggregate_length(&self) -> u16 {
+        self.aggregate_length
+    }
+
+    /// Installs the peer-advertised maximum A-MPDU byte length.
+    ///
+    /// This must be done while software owns an idle pool. The four HT values
+    /// are 0x1fff, 0x3fff, 0x7fff and 0xffff for capability exponents 0..=3.
+    pub fn configure_max_aggregate_bytes(
+        self: Pin<&mut Self>,
+        max_aggregate_bytes: u16,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: this changes only scalar policy state and does not move any
+        // pinned descriptor or DMA buffer.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Free {
+            return Err(HtAmpduTxError::Busy);
+        }
+        if max_aggregate_bytes == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits));
+        }
+        storage.max_aggregate_bytes = max_aggregate_bytes;
+        Ok(())
+    }
+
+    /// Calculate the exact A-MPDU byte count for the committed software-owned
+    /// prefix, before any DMA address is published.
+    pub fn prepared_aggregate(&self, cookie: TxCookie) -> Result<HtAmpduLength, HtAmpduTxError> {
+        if self.state != TxSlotState::Reserved || self.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if self.count < 2 {
+            return Err(HtAmpduTxError::TooFewFrames);
+        }
+        self.calculate_aggregate()
+    }
+
+    /// Borrow one detached, completed encoded MPDU for an individual retry.
+    ///
+    /// The returned slice excludes the private eight-byte DMA metadata prefix
+    /// and the hardware-generated MIC/FCS trailer. Sequence Control and CCMP
+    /// header are retained exactly as originally submitted.
+    pub fn completed_frame(
+        &self,
+        cookie: TxCookie,
+        index: u8,
+    ) -> Result<(&[u8], u8), HtAmpduTxError> {
+        if self.state != TxSlotState::Completed || self.active != cookie || !self.detached {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let index = usize::from(index);
+        if index >= usize::from(self.count) {
+            return Err(HtAmpduTxError::InvalidGeometry);
+        }
+        let frame_length = usize::from(self.frame_lengths[index]);
+        // SAFETY: the completed state has returned DMA ownership to this
+        // unique pool owner. The slice is immutable and remains bounded to the
+        // initialized encoded frame, excluding hardware trailer bytes.
+        let buffer = unsafe { &*self.buffers[index].0.get() };
+        Ok((
+            &buffer[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + frame_length],
+            self.hardware_mic_lengths[index],
+        ))
+    }
+
+    /// Retain only selected completed MPDUs for another A-MPDU attempt.
+    ///
+    /// Bit `n` of `retry_mask` selects completed slot `n`. Selected frames are
+    /// compacted toward slot zero, keep their Sequence Control and CCMP PN,
+    /// and gain only the IEEE 802.11 Retry bit. This is the owned-array form
+    /// of the finite mutation observed in
+    /// `_oracles/libpp.a[pp.o]::ppResortTxAMPDU`: its partial-BlockAck path
+    /// detached the old links, preserved the encoded missing MPDU, set
+    /// Frame Control.Retry, and placed it at the head of a new aggregate.
+    ///
+    /// The queue must already be detached, so hardware cannot observe the
+    /// compaction. A mask with fewer than two frames is rejected because that
+    /// case belongs to the separate single-MPDU retry owner.
+    pub fn retain_for_ampdu_retry(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        retry_mask: u32,
+    ) -> Result<HtAmpduLength, HtAmpduTxError> {
+        // SAFETY: the detached completion state proves exclusive CPU
+        // ownership. The pinned allocations themselves are not moved; bytes
+        // are copied between their fixed buffers and descriptors are rebuilt
+        // by the next `submit`.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
+        {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let old_count = usize::from(storage.count);
+        let valid_mask = if old_count == 32 {
+            u32::MAX
+        } else {
+            (1_u32 << old_count) - 1
+        };
+        if retry_mask & !valid_mask != 0 || retry_mask.count_ones() < 2 {
+            return Err(HtAmpduTxError::InvalidGeometry);
+        }
+        for source in 0..old_count {
+            if retry_mask & (1_u32 << source) != 0 && storage.frame_lengths[source] < 2 {
+                return Err(HtAmpduTxError::InvalidGeometry);
+            }
+        }
+
+        let mut destination = 0_usize;
+        for source in 0..old_count {
+            if retry_mask & (1_u32 << source) == 0 {
+                continue;
+            }
+            if destination != source {
+                let bytes = usize::from(storage.descriptor_capacities[source]);
+                // SAFETY: every committed descriptor capacity was validated
+                // against BUFFER_SIZE. Source and destination are distinct
+                // fixed array elements and therefore do not overlap.
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        storage.buffers[source].0.get().cast::<u8>(),
+                        storage.buffers[destination].0.get().cast::<u8>(),
+                        bytes,
+                    );
+                }
+                storage.frame_lengths[destination] = storage.frame_lengths[source];
+                storage.hardware_mic_lengths[destination] = storage.hardware_mic_lengths[source];
+                storage.psdu_lengths[destination] = storage.psdu_lengths[source];
+                storage.empty_delimiters[destination] = storage.empty_delimiters[source];
+                storage.descriptor_capacities[destination] = storage.descriptor_capacities[source];
+            }
+            // Frame Control byte one starts after the private metadata prefix;
+            // bit three is IEEE 802.11 Retry.
+            let buffer = unsafe { &mut *storage.buffers[destination].0.get() };
+            buffer[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+            destination += 1;
+        }
+        storage.count = u8::try_from(destination).map_err(|_| HtAmpduTxError::InvalidGeometry)?;
+        storage.prepared_length = 0;
+        storage.aggregate_length = 0;
+        storage.detached = false;
+        storage.state = TxSlotState::Reserved;
+        storage.recalculate_prepared_length()
+    }
+
+    /// Begin constructing one aggregate in the software-owned pool.
+    pub fn begin(self: Pin<&mut Self>) -> Result<TxCookie, HtAmpduTxError> {
+        // SAFETY: scalar mutation and buffer preparation do not move the
+        // pinned descriptors or buffers.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Free {
+            return Err(HtAmpduTxError::Busy);
+        }
+        if SLOTS < 2
+            || SLOTS > TX_AMPDU_SLOT_CAPACITY
+            || BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE + TX_FCS_SIZE as usize
+        {
+            return Err(HtAmpduTxError::InvalidGeometry);
+        }
+        let generation = storage
+            .generation_cursor
+            .checked_add(1)
+            .ok_or(HtAmpduTxError::ResetRequired)?;
+        storage.generation_cursor = generation;
+        storage.active = TxCookie(generation);
+        storage.count = 0;
+        storage.prepared_length = 0;
+        storage.aggregate_length = 0;
+        storage.detached = false;
+        storage.state = TxSlotState::Reserved;
+        Ok(storage.active)
+    }
+
+    /// Return the payload area for the next MPDU while software owns it.
+    ///
+    /// The eight-byte S31 TX metadata prefix remains private and is published
+    /// by [`commit_frame`](Self::commit_frame).
+    pub fn next_frame_buffer(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+    ) -> Result<&mut [u8], HtAmpduTxError> {
+        // SAFETY: the state check below proves hardware cannot access this
+        // buffer, and the unique pinned borrow prevents a second CPU owner.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let index = usize::from(storage.count);
+        if index >= SLOTS {
+            return Err(HtAmpduTxError::Busy);
+        }
+        let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+        Ok(&mut buffer[TX_AMPDU_METADATA_SIZE..])
+    }
+
+    /// Check whether one more encoded MPDU fits both its static slot and the
+    /// peer-advertised aggregate-byte ceiling.
+    ///
+    /// This does not reserve a slot or mutate the batch. A scheduler can
+    /// therefore stop at the byte limit without consuming a CCMP PN or
+    /// Sequence Control value for a frame that belongs in the next PPDU.
+    pub fn can_commit_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        _empty_delimiters: u8,
+    ) -> Result<bool, HtAmpduTxError> {
+        if self.state != TxSlotState::Reserved || self.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if usize::from(self.count) >= SLOTS {
+            return Ok(false);
+        }
+        let Some(psdu_length) = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+        else {
+            return Err(HtAmpduTxError::FrameTooLong);
+        };
+        let Some(descriptor_capacity) = TX_AMPDU_METADATA_SIZE
+            .checked_add(usize::from(psdu_length))
+            .and_then(|length| length.checked_add(3))
+            .map(|length| length & !3)
+        else {
+            return Err(HtAmpduTxError::FrameTooLong);
+        };
+        if descriptor_capacity > BUFFER_SIZE {
+            return Err(HtAmpduTxError::FrameTooLong);
+        }
+
+        match self.length_after_append(psdu_length) {
+            Ok(_) => Ok(true),
+            Err(HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(_))) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Commit the next encoded MPDU and its hardware-generated trailer.
+    ///
+    /// `frame_length` is the encoded 802.11 MPDU before the hardware MIC and
+    /// FCS. The resulting metadata length is the complete PSDU length used by
+    /// the recovered `ppCalTxAMPDULength` accounting.
+    pub fn commit_frame(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: no address-bearing field is moved.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if !storage.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
+        let index = usize::from(storage.count);
+        if index >= SLOTS {
+            return Err(HtAmpduTxError::Busy);
+        }
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let transfer_length = TX_AMPDU_METADATA_SIZE
+            .checked_add(usize::from(psdu_length))
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let descriptor_capacity = transfer_length
+            .checked_add(3)
+            .map(|length| length & !3)
+            .filter(|length| *length <= BUFFER_SIZE)
+            .and_then(|length| u16::try_from(length).ok())
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+
+        let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+        buffer[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
+        buffer[4] = empty_delimiters;
+        buffer[5..TX_AMPDU_METADATA_SIZE].fill(0);
+        let trailer_start = TX_AMPDU_METADATA_SIZE + frame_length;
+        buffer[trailer_start..transfer_length].fill(0);
+        buffer[transfer_length..usize::from(descriptor_capacity)].fill(0);
+        storage.frame_lengths[index] =
+            u16::try_from(frame_length).map_err(|_| HtAmpduTxError::FrameTooLong)?;
+        storage.hardware_mic_lengths[index] = hardware_mic_length;
+        storage.psdu_lengths[index] = psdu_length;
+        storage.empty_delimiters[index] = empty_delimiters;
+        storage.descriptor_capacities[index] = descriptor_capacity;
+        storage.prepared_length = storage.length_after_append(psdu_length)?;
+        storage.count += 1;
+        Ok(())
+    }
+
+    /// Discard a software-owned partial batch.
+    pub fn cancel(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the Reserved state has not published any descriptor.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        storage.release();
+        Ok(())
+    }
+
+    /// Publish and start one A-MPDU while retaining every backing allocation.
+    pub fn submit<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HtAmpduTxConfig,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
+        // through completion and only scalar ownership fields are mutated.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if storage.count < 2 {
+            return Err(HtAmpduTxError::TooFewFrames);
+        }
+
+        let aggregate = storage.calculate_aggregate()?;
+        let count = usize::from(storage.count);
+        if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
+            return Err(HtAmpduTxError::RegisterImageMismatch);
+        }
+
+        let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        for index in 0..count {
+            let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
+            let buffer_address = storage.buffers[index].0.get().addr() as u32;
+            let capacity = u32::from(storage.descriptor_capacities[index]);
+            let transfer_length =
+                (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
+            if !descriptor_address_valid(descriptor_address)
+                || !dma_range_valid(buffer_address, capacity)
+            {
+                return Err(HtAmpduTxError::InvalidGeometry);
+            }
+            let next_address = if index + 1 < count {
+                core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
+            } else {
+                0
+            };
+            let mut word0 =
+                tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+            if index + 1 < count {
+                word0 &= !BIT_30;
+            }
+            storage.descriptors[index].publish(word0, buffer_address, next_address);
+        }
+
+        let image = crate::tx::ht_ampdu_q0_image(first_descriptor, config)
+            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let program = MacHtTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            ht_signal: image.ht_signal,
+            data_length: image.data_length,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        let queue_index = queue.index();
+        if !hardware.prepare_ht_tx(queue_index, program) {
+            return Err(HtAmpduTxError::QueueActive);
+        }
+        storage.queue = queue;
+        storage.aggregate_length = aggregate.bytes;
+        storage.detached = false;
+        storage.state = TxSlotState::HardwareOwned;
+        hardware.start_ht_tx(queue_index, image.plcp0);
+        Ok(())
+    }
+
+    /// Sample BlockAck and transfer a completed aggregate back to software.
+    pub fn acknowledge_completion<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+    ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
+        // SAFETY: no pinned allocation is moved.
+        let storage = unsafe { self.get_unchecked_mut() };
+        let Some(registers) = hardware.take_ht_ampdu_completion(storage.queue.index()) else {
+            return Ok(None);
+        };
+        if storage.state != TxSlotState::HardwareOwned {
+            storage.state = TxSlotState::ResetRequired;
+            return Err(HtAmpduTxError::Stale);
+        }
+        storage.state = TxSlotState::Completed;
+        Ok(Some(HtAmpduTxCompletion {
+            tx: decode_tx_completion(storage.active, registers.tx),
+            block_ack: decode_ht_block_ack_registers(
+                registers.block_ack_control_and_sequence,
+                registers.block_ack_bitmap_low,
+                registers.block_ack_bitmap_high,
+            ),
+        }))
+    }
+
+    pub fn begin_timeout_abort<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+    ) -> Result<bool, HtAmpduTxError> {
+        // SAFETY: scalar state only.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        Ok(hardware.begin_tx_timeout_abort(storage.queue.index()))
+    }
+
+    pub fn finish_timeout_abort<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: scalar state only; hardware has stopped walking the pool.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let Some(detached) = hardware.finish_tx_timeout_abort(storage.queue.index()) else {
+            return Err(HtAmpduTxError::TimeoutNotPending);
+        };
+        if !detached {
+            storage.state = TxSlotState::ResetRequired;
+            return Err(HtAmpduTxError::DetachFailed);
+        }
+        storage.release();
+        Ok(())
+    }
+
+    pub fn detach_completed<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the completion edge returned the pool to software; the
+        // detach readback proves the queue no longer references its head.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Completed || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if !hardware.detach_completed_tx(storage.queue.index()) {
+            storage.state = TxSlotState::ResetRequired;
+            return Err(HtAmpduTxError::DetachFailed);
+        }
+        // Keep the completed MPDUs and their lengths alive. BlockAck handling
+        // may now copy any missing MPDU into the single-frame TX owner without
+        // reconstructing Sequence Control or the CCMP PN. `release_completed`
+        // is the explicit final ownership edge.
+        storage.detached = true;
+        Ok(())
+    }
+
+    /// Release a detached completed batch after BlockAck processing and any
+    /// individual retries have copied the retained MPDUs.
+    pub fn release_completed(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the queue has already been detached and this only clears
+        // scalar ownership metadata. Pinned descriptor and buffer addresses
+        // remain in place for the next reservation.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
+        {
+            return Err(HtAmpduTxError::Stale);
+        }
+        storage.release();
+        Ok(())
+    }
+
+    fn release(&mut self) {
+        self.active = TxCookie(0);
+        self.count = 0;
+        self.prepared_length = 0;
+        self.aggregate_length = 0;
+        self.detached = false;
+        self.state = TxSlotState::Free;
+    }
+
+    /// Return the final A-MPDU length after appending one PSDU.
+    ///
+    /// The previous final MPDU gains its four-byte alignment and requested
+    /// empty delimiters only when another MPDU follows it. The new final MPDU
+    /// contributes one delimiter and its exact PSDU length. Keeping this
+    /// prefix total makes each append O(1); the former validation replayed all
+    /// preceding lengths on every `commit_frame`, making a 32-MPDU build
+    /// O(n²).
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[pp.o]::{ppCalSubFrameLength,
+    /// ppCalTxAMPDULength}` and the equivalent finite rules in
+    /// [`HtAmpduLengthAccumulator`].
+    fn length_after_append(&self, psdu_length: u16) -> Result<u16, HtAmpduTxError> {
+        if psdu_length == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
+        }
+        let mut next = u32::from(self.prepared_length);
+        if self.count != 0 {
+            let previous = usize::from(self.count - 1);
+            let previous_length = u32::from(self.psdu_lengths[previous]);
+            next = next
+                .checked_add((4 - (previous_length & 3)) & 3)
+                .and_then(|length| {
+                    length.checked_add(u32::from(self.empty_delimiters[previous]) * 4)
+                })
+                .ok_or(HtAmpduTxError::Length(
+                    HtAmpduLengthError::AggregateTooLong(u32::MAX),
+                ))?;
+        }
+        next = next
+            .checked_add(4 + u32::from(psdu_length))
+            .ok_or(HtAmpduTxError::Length(
+                HtAmpduLengthError::AggregateTooLong(u32::MAX),
+            ))?;
+        if next > u32::from(self.max_aggregate_bytes) {
+            return Err(HtAmpduTxError::Length(
+                HtAmpduLengthError::AggregateTooLong(next),
+            ));
+        }
+        u16::try_from(next)
+            .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(next)))
+    }
+
+    fn recalculate_prepared_length(&mut self) -> Result<HtAmpduLength, HtAmpduTxError> {
+        let mut length = HtAmpduLengthAccumulator::new(self.count, self.max_aggregate_bytes)
+            .map_err(HtAmpduTxError::Length)?;
+        for index in 0..usize::from(self.count) {
+            length
+                .push(
+                    u32::from(self.psdu_lengths[index]),
+                    self.empty_delimiters[index],
+                )
+                .map_err(HtAmpduTxError::Length)?;
+        }
+        let aggregate = length.finish().map_err(HtAmpduTxError::Length)?;
+        self.prepared_length = aggregate.bytes;
+        Ok(aggregate)
+    }
+
+    fn calculate_aggregate(&self) -> Result<HtAmpduLength, HtAmpduTxError> {
+        if self.count == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::Empty));
+        }
+        if self.prepared_length == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
+        }
+        Ok(HtAmpduLength {
+            bytes: self.prepared_length,
+            subframes: self.count,
+        })
+    }
+}
+
+impl<const SLOTS: usize, const BUFFER_SIZE: usize> Default
+    for HtAmpduTxStorage<SLOTS, BUFFER_SIZE>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BasicHtAmpduAssemblyError {
     AggregateShorterThanHeader,
@@ -356,12 +1111,7 @@ pub enum BasicHtAmpduRestoreError {
 /// Bits 2..=4 encode the IEEE 802.11 minimum MPDU start spacing. The hardware
 /// consumes the recovered finite value in all three 10-bit protection fields.
 pub(crate) const fn basic_ht_ampdu_protection_spacing(parameters: u8) -> u16 {
-    match (parameters >> 2) & 0x07 {
-        0..=4 => 20,
-        5 => 40,
-        6 => 76,
-        _ => 148,
-    }
+    HtProtectionSpacing::from_ampdu_parameters(parameters).hardware_value()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1652,6 +2402,177 @@ mod tests {
         negotiation_timeout_us: 100_000,
         amsdu: true,
     };
+
+    #[test]
+    fn owned_dma_pool_builds_two_mpdu_length_without_publishing_hardware() {
+        let mut storage = HtAmpduTxStorage::<4, 256>::new();
+        // SAFETY: the local is not moved until the pin is dropped at the end
+        // of this test, and no hardware ownership is published.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..100].fill(0xa5);
+        storage.as_mut().commit_frame(cookie, 100, 8, 0).unwrap();
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..101].fill(0x5a);
+        storage.as_mut().commit_frame(cookie, 101, 8, 0).unwrap();
+
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                // First PSDU: delimiter 4 + length 112. Final PSDU:
+                // delimiter 4 + length 113, with its three padding bytes
+                // removed by the recovered tail rule.
+                bytes: 233,
+                subframes: 2,
+            }
+        );
+        assert_eq!(storage.frame_count(), 2);
+        assert_eq!(storage.state(), TxSlotState::Reserved);
+        storage.as_mut().cancel(cookie).unwrap();
+        assert_eq!(storage.state(), TxSlotState::Free);
+    }
+
+    #[test]
+    fn incremental_pool_length_matches_blob_accumulator_for_full_window() {
+        let mut storage = HtAmpduTxStorage::<32, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        storage
+            .as_mut()
+            .configure_max_aggregate_bytes(u16::MAX)
+            .unwrap();
+        let cookie = storage.as_mut().begin().unwrap();
+        let mut oracle = HtAmpduLengthAccumulator::new(32, u16::MAX).unwrap();
+
+        for index in 0..32_u8 {
+            let frame_length = 100 + usize::from(index % 7);
+            let empty_delimiters = index % 3;
+            storage.as_mut().next_frame_buffer(cookie).unwrap()[..frame_length].fill(index);
+            storage
+                .as_mut()
+                .commit_frame(cookie, frame_length, 8, empty_delimiters)
+                .unwrap();
+            oracle
+                .push(
+                    (frame_length + 8 + usize::from(TX_FCS_SIZE)) as u32,
+                    empty_delimiters,
+                )
+                .unwrap();
+            if index != 0 {
+                assert_eq!(
+                    storage.prepared_aggregate(cookie).unwrap(),
+                    oracle.finish().unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn completed_pool_retains_mpdu_until_explicit_release() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: the local is not moved while this pin exists and this test
+        // does not publish an address to hardware.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..32].fill(0x5a);
+        storage.as_mut().commit_frame(cookie, 32, 8, 0).unwrap();
+
+        // Model the two hardware ownership edges independently: completion
+        // alone must not expose a buffer that the queue still references.
+        unsafe { storage.as_mut().get_unchecked_mut() }.state = TxSlotState::Completed;
+        assert_eq!(
+            storage.completed_frame(cookie, 0),
+            Err(HtAmpduTxError::Stale)
+        );
+        unsafe { storage.as_mut().get_unchecked_mut() }.detached = true;
+        let (frame, mic_length) = storage.completed_frame(cookie, 0).unwrap();
+        assert_eq!(frame, &[0x5a; 32]);
+        assert_eq!(mic_length, 8);
+
+        storage.as_mut().release_completed(cookie).unwrap();
+        assert_eq!(storage.state(), TxSlotState::Free);
+        assert_eq!(
+            storage.completed_frame(cookie, 0),
+            Err(HtAmpduTxError::Stale)
+        );
+    }
+
+    #[test]
+    fn detached_pool_compacts_only_missing_frames_for_ampdu_retry() {
+        let mut storage = HtAmpduTxStorage::<4, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        for index in 0..4_u8 {
+            let frame = storage.as_mut().next_frame_buffer(cookie).unwrap();
+            frame[..32].fill(index);
+            frame[1] = 0x41;
+            storage.as_mut().commit_frame(cookie, 32, 8, 0).unwrap();
+        }
+        unsafe {
+            let storage = storage.as_mut().get_unchecked_mut();
+            storage.state = TxSlotState::Completed;
+            storage.detached = true;
+        }
+
+        let aggregate = storage
+            .as_mut()
+            .retain_for_ampdu_retry(cookie, 0b1010)
+            .unwrap();
+        assert_eq!(aggregate.subframes, 2);
+        assert_eq!(storage.frame_count(), 2);
+        assert_eq!(storage.state(), TxSlotState::Reserved);
+        unsafe {
+            let storage = storage.as_ref().get_ref();
+            let first = &*storage.buffers[0].0.get();
+            let second = &*storage.buffers[1].0.get();
+            assert_eq!(first[TX_AMPDU_METADATA_SIZE], 1);
+            assert_eq!(second[TX_AMPDU_METADATA_SIZE], 3);
+            assert_eq!(first[TX_AMPDU_METADATA_SIZE + 1], 0x49);
+            assert_eq!(second[TX_AMPDU_METADATA_SIZE + 1], 0x49);
+        }
+        storage.as_mut().cancel(cookie).unwrap();
+    }
+
+    #[test]
+    fn full_window_and_byte_ceiling_are_independent() {
+        let mut storage = HtAmpduTxStorage::<32, 1700>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // the pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        storage
+            .as_mut()
+            .configure_max_aggregate_bytes(0x7fff)
+            .unwrap();
+        let cookie = storage.as_mut().begin().unwrap();
+        for _ in 0..20 {
+            assert!(storage.can_commit_frame(cookie, 1600, 8, 0).unwrap());
+            storage.as_mut().commit_frame(cookie, 1600, 8, 0).unwrap();
+        }
+        assert_eq!(storage.frame_count(), 20);
+        assert!(!storage.can_commit_frame(cookie, 1600, 8, 0).unwrap());
+        assert_eq!(
+            storage.as_mut().commit_frame(cookie, 1600, 8, 0),
+            Err(HtAmpduTxError::AggregateFull)
+        );
+        assert_eq!(storage.frame_count(), 20);
+        storage.as_mut().cancel(cookie).unwrap();
+
+        storage
+            .as_mut()
+            .configure_max_aggregate_bytes(0x1fff)
+            .unwrap();
+        let cookie = storage.as_mut().begin().unwrap();
+        for _ in 0..32 {
+            assert!(storage.can_commit_frame(cookie, 100, 8, 0).unwrap());
+            storage.as_mut().commit_frame(cookie, 100, 8, 0).unwrap();
+        }
+        assert_eq!(storage.frame_count(), 32);
+        assert!(!storage.can_commit_frame(cookie, 100, 8, 0).unwrap());
+        storage.as_mut().cancel(cookie).unwrap();
+    }
 
     #[test]
     fn parses_block_ack_action_bodies_without_state() {

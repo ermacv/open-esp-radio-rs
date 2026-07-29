@@ -712,6 +712,10 @@ impl PhyTxDcMmioBinding {
         }
     }
 
+    pub const fn action(&self) -> PhyTxDcAction {
+        self.action
+    }
+
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,

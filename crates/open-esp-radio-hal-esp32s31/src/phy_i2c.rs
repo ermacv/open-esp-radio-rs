@@ -162,7 +162,11 @@ pub fn configure_clock_selection(platform: &mut impl PhyI2cMasterControl, select
 /// `0x22`. It writes `MASTER_CONTROL.REGISTER_MODE = 2`, then sets
 /// `REGISTER_ENABLE`, using a fresh read for each update.
 pub fn configure_master_registers(platform: &mut impl PhyI2cMasterControl) {
-    debug_assert!(platform.set_phy_i2c_register_mode(2));
+    let mode_written = platform.set_phy_i2c_register_mode(2);
+    // The write is part of the production sequence. Keeping it inside
+    // `debug_assert!` would erase it in release builds. SOURCE: rev0 ROM
+    // `phy_i2cmst_reg_init` at 0x2f82_76c4.
+    debug_assert!(mode_written);
     platform.enable_phy_i2c_register_mode();
 }
 

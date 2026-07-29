@@ -22,6 +22,7 @@ mod cold_rx_policy;
 mod cold_txrx;
 pub mod crypto;
 pub mod descriptor;
+pub mod he;
 pub mod init;
 mod interface_address;
 pub mod irq;

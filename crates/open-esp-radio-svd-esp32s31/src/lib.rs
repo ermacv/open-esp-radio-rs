@@ -9504,7 +9504,7 @@ pub mod wifi_mac_tx_queue_control {
         control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub const fn protection(&self, n: usize) -> &Protection {
             #[allow(clippy::no_effect)]
@@ -9512,7 +9512,7 @@ pub mod wifi_mac_tx_queue_control {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub fn protection_iter(&self) -> impl Iterator<Item = &Protection> {
             (0..4).map(move |n| unsafe {
@@ -9544,7 +9544,7 @@ pub mod wifi_mac_tx_queue_control {
                     .cast()
             })
         }
-        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank."]
         #[inline(always)]
         pub const fn config(&self, n: usize) -> &Config {
             #[allow(clippy::no_effect)]
@@ -9558,7 +9558,7 @@ pub mod wifi_mac_tx_queue_control {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank."]
         #[inline(always)]
         pub fn config_iter(&self) -> impl Iterator<Item = &Config> {
             (0..4).map(move |n| unsafe {
@@ -9569,7 +9569,7 @@ pub mod wifi_mac_tx_queue_control {
                     .cast()
             })
         }
-        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
         #[inline(always)]
         pub const fn control(&self, n: usize) -> &Control {
             #[allow(clippy::no_effect)]
@@ -9583,7 +9583,7 @@ pub mod wifi_mac_tx_queue_control {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
         #[inline(always)]
         pub fn control_iter(&self) -> impl Iterator<Item = &Control> {
             (0..4).map(move |n| unsafe {
@@ -9595,50 +9595,92 @@ pub mod wifi_mac_tx_queue_control {
             })
         }
     }
-    #[doc = "PROTECTION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
+    #[doc = "PROTECTION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
     #[doc(alias = "PROTECTION")]
     pub type Protection = crate::Reg<protection::ProtectionSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
     pub mod protection {
         #[doc = "Register `PROTECTION%s` reader"]
         pub type R = crate::R<ProtectionSpec>;
         #[doc = "Register `PROTECTION%s` writer"]
         pub type W = crate::W<ProtectionSpec>;
-        #[doc = "Field `POLICY_LOW_UNKNOWN` reader - "]
-        pub type PolicyLowUnknownR = crate::FieldReader<u32>;
-        #[doc = "Field `POLICY_LOW_UNKNOWN` writer - "]
-        pub type PolicyLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
-        #[doc = "Field `PROTECTION_HIGH_UNKNOWN` reader - "]
-        pub type ProtectionHighUnknownR = crate::BitReader;
-        #[doc = "Field `PROTECTION_HIGH_UNKNOWN` writer - "]
-        pub type ProtectionHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HT_SPACING_PRIMARY` reader - First copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingPrimaryR = crate::FieldReader<u16>;
+        #[doc = "Field `HT_SPACING_PRIMARY` writer - First copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingPrimaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `HT_SPACING_SECONDARY` reader - Second copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingSecondaryR = crate::FieldReader<u16>;
+        #[doc = "Field `HT_SPACING_SECONDARY` writer - Second copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingSecondaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `HT_SPACING_TERTIARY` reader - Third copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingTertiaryR = crate::FieldReader<u16>;
+        #[doc = "Field `HT_SPACING_TERTIARY` writer - Third copy of the peer-derived HT protection/response spacing value."]
+        pub type HtSpacingTertiaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `PROTECTION_MODE_UNKNOWN` reader - "]
+        pub type ProtectionModeUnknownR = crate::BitReader;
+        #[doc = "Field `PROTECTION_MODE_UNKNOWN` writer - "]
+        pub type ProtectionModeUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TXOP_DESCRIPTOR_POLICY` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise."]
+        pub type TxopDescriptorPolicyR = crate::BitReader;
+        #[doc = "Field `TXOP_DESCRIPTOR_POLICY` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise."]
+        pub type TxopDescriptorPolicyW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:30"]
+            #[doc = "Bits 0:9 - First copy of the peer-derived HT protection/response spacing value."]
             #[inline(always)]
-            pub fn policy_low_unknown(&self) -> PolicyLowUnknownR {
-                PolicyLowUnknownR::new(self.bits & 0x7fff_ffff)
+            pub fn ht_spacing_primary(&self) -> HtSpacingPrimaryR {
+                HtSpacingPrimaryR::new((self.bits & 0x03ff) as u16)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bits 10:19 - Second copy of the peer-derived HT protection/response spacing value."]
             #[inline(always)]
-            pub fn protection_high_unknown(&self) -> ProtectionHighUnknownR {
-                ProtectionHighUnknownR::new(((self.bits >> 31) & 1) != 0)
+            pub fn ht_spacing_secondary(&self) -> HtSpacingSecondaryR {
+                HtSpacingSecondaryR::new(((self.bits >> 10) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 20:29 - Third copy of the peer-derived HT protection/response spacing value."]
+            #[inline(always)]
+            pub fn ht_spacing_tertiary(&self) -> HtSpacingTertiaryR {
+                HtSpacingTertiaryR::new(((self.bits >> 20) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn protection_mode_unknown(&self) -> ProtectionModeUnknownR {
+                ProtectionModeUnknownR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise."]
+            #[inline(always)]
+            pub fn txop_descriptor_policy(&self) -> TxopDescriptorPolicyR {
+                TxopDescriptorPolicyR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:30"]
+            #[doc = "Bits 0:9 - First copy of the peer-derived HT protection/response spacing value."]
             #[inline(always)]
-            pub fn policy_low_unknown(&mut self) -> PolicyLowUnknownW<'_, ProtectionSpec> {
-                PolicyLowUnknownW::new(self, 0)
+            pub fn ht_spacing_primary(&mut self) -> HtSpacingPrimaryW<'_, ProtectionSpec> {
+                HtSpacingPrimaryW::new(self, 0)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bits 10:19 - Second copy of the peer-derived HT protection/response spacing value."]
             #[inline(always)]
-            pub fn protection_high_unknown(
+            pub fn ht_spacing_secondary(&mut self) -> HtSpacingSecondaryW<'_, ProtectionSpec> {
+                HtSpacingSecondaryW::new(self, 10)
+            }
+            #[doc = "Bits 20:29 - Third copy of the peer-derived HT protection/response spacing value."]
+            #[inline(always)]
+            pub fn ht_spacing_tertiary(&mut self) -> HtSpacingTertiaryW<'_, ProtectionSpec> {
+                HtSpacingTertiaryW::new(self, 20)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn protection_mode_unknown(
                 &mut self,
-            ) -> ProtectionHighUnknownW<'_, ProtectionSpec> {
-                ProtectionHighUnknownW::new(self, 31)
+            ) -> ProtectionModeUnknownW<'_, ProtectionSpec> {
+                ProtectionModeUnknownW::new(self, 30)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise."]
+            #[inline(always)]
+            pub fn txop_descriptor_policy(&mut self) -> TxopDescriptorPolicyW<'_, ProtectionSpec> {
+                TxopDescriptorPolicyW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-multifunction\\]. Per-queue protection policy; open legacy formatting clears bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ProtectionSpec;
         impl crate::RegisterSpec for ProtectionSpec {
             type Ux = u32;
@@ -9717,10 +9759,10 @@ pub mod wifi_mac_tx_queue_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config`] module"]
+    #[doc = "CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config`] module"]
     #[doc(alias = "CONFIG")]
     pub type Config = crate::Reg<config::ConfigSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank."]
     pub mod config {
         #[doc = "Register `CONFIG%s` reader"]
         pub type R = crate::R<ConfigSpec>;
@@ -9742,10 +9784,10 @@ pub mod wifi_mac_tx_queue_control {
         pub type AifsnR = crate::FieldReader;
         #[doc = "Field `AIFSN` writer - "]
         pub type AifsnW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `PRIORITY` reader - "]
-        pub type PriorityR = crate::FieldReader;
-        #[doc = "Field `PRIORITY` writer - "]
-        pub type PriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `SCHEDULER_PRIORITY` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+        pub type SchedulerPriorityR = crate::FieldReader;
+        #[doc = "Field `SCHEDULER_PRIORITY` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+        pub type SchedulerPriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -9767,10 +9809,10 @@ pub mod wifi_mac_tx_queue_control {
             pub fn aifsn(&self) -> AifsnR {
                 AifsnR::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bits 28:31"]
+            #[doc = "Bits 28:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
             #[inline(always)]
-            pub fn priority(&self) -> PriorityR {
-                PriorityR::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn scheduler_priority(&self) -> SchedulerPriorityR {
+                SchedulerPriorityR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
@@ -9794,13 +9836,13 @@ pub mod wifi_mac_tx_queue_control {
             pub fn aifsn(&mut self) -> AifsnW<'_, ConfigSpec> {
                 AifsnW::new(self, 24)
             }
-            #[doc = "Bits 28:31"]
+            #[doc = "Bits 28:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
             #[inline(always)]
-            pub fn priority(&mut self) -> PriorityW<'_, ConfigSpec> {
-                PriorityW::new(self, 28)
+            pub fn scheduler_priority(&mut self) -> SchedulerPriorityW<'_, ConfigSpec> {
+                SchedulerPriorityW::new(self, 28)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Timeout, contention window, interface, AIFSN and priority fields configured as distinct recovered RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ConfigSpec;
         impl crate::RegisterSpec for ConfigSpec {
             type Ux = u32;
@@ -9812,10 +9854,10 @@ pub mod wifi_mac_tx_queue_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership."]
     pub mod control {
         #[doc = "Register `CONTROL%s` reader"]
         pub type R = crate::R<ControlSpec>;
@@ -9825,13 +9867,21 @@ pub mod wifi_mac_tx_queue_control {
         pub type DescriptorAddressLowR = crate::FieldReader<u32>;
         #[doc = "Field `DESCRIPTOR_ADDRESS_LOW` writer - SOURCE\\[MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits."]
         pub type DescriptorAddressLowW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `CONTROL_23_20_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; the ordinary direct legacy path writes 0x6 in bits 23:20."]
-        pub type Control23_20UnknownR = crate::FieldReader;
-        #[doc = "Field `CONTROL_23_20_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; the ordinary direct legacy path writes 0x6 in bits 23:20."]
-        pub type Control23_20UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `PLCP_FORMAT` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Formats two and three have instruction-exact descriptor branches, but their higher-level meaning remains open. Repeated format-one open STA runs completed authentication, association, WPA2 and DHCP. A later single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+        #[doc = "Field `CONTROL_21_20_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+        pub type Control21_20UnknownR = crate::FieldReader;
+        #[doc = "Field `CONTROL_21_20_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+        pub type Control21_20UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `TXOP_DESCRIPTOR_CLASS_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified-mapping-semantics-unknown\\]. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+        pub type TxopDescriptorClassUnknownR = crate::BitReader;
+        #[doc = "Field `TXOP_DESCRIPTOR_CLASS_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified-mapping-semantics-unknown\\]. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+        pub type TxopDescriptorClassUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_23_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+        pub type Control23UnknownR = crate::BitReader;
+        #[doc = "Field `CONTROL_23_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+        pub type Control23UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PLCP_FORMAT` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. The exact vendor callback image for one synchronous non-A-MPDU HT20 MCS0 data frame also selected format one; an independently captured active MCS7 A-MPDU selected format two, so the aggregate image does not define the single-MPDU class. Open single-MPDU format one is hardware-qualified at both HT20 MCS0 LGI and HT40 MCS7 SGI. The independently owned direct-DMA A-MPDU path subsequently qualified format two at HT40 MCS7 SGI with complete two-MPDU BlockAck bitmaps. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
         pub type PlcpFormatR = crate::FieldReader;
-        #[doc = "Field `PLCP_FORMAT` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Formats two and three have instruction-exact descriptor branches, but their higher-level meaning remains open. Repeated format-one open STA runs completed authentication, association, WPA2 and DHCP. A later single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+        #[doc = "Field `PLCP_FORMAT` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. The exact vendor callback image for one synchronous non-A-MPDU HT20 MCS0 data frame also selected format one; an independently captured active MCS7 A-MPDU selected format two, so the aggregate image does not define the single-MPDU class. Open single-MPDU format one is hardware-qualified at both HT20 MCS0 LGI and HT40 MCS7 SGI. The independently owned direct-DMA A-MPDU path subsequently qualified format two at HT40 MCS7 SGI with complete two-MPDU BlockAck bitmaps. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
         pub type PlcpFormatW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `CONTROL_29_27_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Remaining low control bits before ownership publication."]
         pub type Control29_27UnknownR = crate::FieldReader;
@@ -9851,12 +9901,22 @@ pub mod wifi_mac_tx_queue_control {
             pub fn descriptor_address_low(&self) -> DescriptorAddressLowR {
                 DescriptorAddressLowR::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:23 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; the ordinary direct legacy path writes 0x6 in bits 23:20."]
+            #[doc = "Bits 20:21 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
             #[inline(always)]
-            pub fn control_23_20_unknown(&self) -> Control23_20UnknownR {
-                Control23_20UnknownR::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn control_21_20_unknown(&self) -> Control21_20UnknownR {
+                Control21_20UnknownR::new(((self.bits >> 20) & 3) as u8)
             }
-            #[doc = "Bits 24:26 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Formats two and three have instruction-exact descriptor branches, but their higher-level meaning remains open. Repeated format-one open STA runs completed authentication, association, WPA2 and DHCP. A later single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified-mapping-semantics-unknown\\]. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+            #[inline(always)]
+            pub fn txop_descriptor_class_unknown(&self) -> TxopDescriptorClassUnknownR {
+                TxopDescriptorClassUnknownR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+            #[inline(always)]
+            pub fn control_23_unknown(&self) -> Control23UnknownR {
+                Control23UnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bits 24:26 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. The exact vendor callback image for one synchronous non-A-MPDU HT20 MCS0 data frame also selected format one; an independently captured active MCS7 A-MPDU selected format two, so the aggregate image does not define the single-MPDU class. Open single-MPDU format one is hardware-qualified at both HT20 MCS0 LGI and HT40 MCS7 SGI. The independently owned direct-DMA A-MPDU path subsequently qualified format two at HT40 MCS7 SGI with complete two-MPDU BlockAck bitmaps. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
             #[inline(always)]
             pub fn plcp_format(&self) -> PlcpFormatR {
                 PlcpFormatR::new(((self.bits >> 24) & 7) as u8)
@@ -9883,12 +9943,24 @@ pub mod wifi_mac_tx_queue_control {
             pub fn descriptor_address_low(&mut self) -> DescriptorAddressLowW<'_, ControlSpec> {
                 DescriptorAddressLowW::new(self, 0)
             }
-            #[doc = "Bits 20:23 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; the ordinary direct legacy path writes 0x6 in bits 23:20."]
+            #[doc = "Bits 20:21 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
             #[inline(always)]
-            pub fn control_23_20_unknown(&mut self) -> Control23_20UnknownW<'_, ControlSpec> {
-                Control23_20UnknownW::new(self, 20)
+            pub fn control_21_20_unknown(&mut self) -> Control21_20UnknownW<'_, ControlSpec> {
+                Control21_20UnknownW::new(self, 20)
             }
-            #[doc = "Bits 24:26 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Formats two and three have instruction-exact descriptor branches, but their higher-level meaning remains open. Repeated format-one open STA runs completed authentication, association, WPA2 and DHCP. A later single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified-mapping-semantics-unknown\\]. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+            #[inline(always)]
+            pub fn txop_descriptor_class_unknown(
+                &mut self,
+            ) -> TxopDescriptorClassUnknownW<'_, ControlSpec> {
+                TxopDescriptorClassUnknownW::new(self, 22)
+            }
+            #[doc = "Bit 23 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+            #[inline(always)]
+            pub fn control_23_unknown(&mut self) -> Control23UnknownW<'_, ControlSpec> {
+                Control23UnknownW::new(self, 23)
+            }
+            #[doc = "Bits 24:26 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. The exact vendor callback image for one synchronous non-A-MPDU HT20 MCS0 data frame also selected format one; an independently captured active MCS7 A-MPDU selected format two, so the aggregate image does not define the single-MPDU class. Open single-MPDU format one is hardware-qualified at both HT20 MCS0 LGI and HT40 MCS7 SGI. The independently owned direct-DMA A-MPDU path subsequently qualified format two at HT40 MCS7 SGI with complete two-MPDU BlockAck bitmaps. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
             #[inline(always)]
             pub fn plcp_format(&mut self) -> PlcpFormatW<'_, ControlSpec> {
                 PlcpFormatW::new(self, 24)
@@ -9909,7 +9981,7 @@ pub mod wifi_mac_tx_queue_control {
                 EnableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -9935,15 +10007,23 @@ pub mod wifi_mac_tx_queue_vector {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         plcp1: (),
-        _reserved1: [u8; 0x08],
+        _reserved1: [u8; 0x04],
+        he_rts_control: (),
+        _reserved2: [u8; 0x04],
         pti: (),
-        _reserved2: [u8; 0x20],
+        _reserved3: [u8; 0x08],
+        ht_signal: (),
+        _reserved4: [u8; 0x18],
         power: (),
-        _reserved3: [u8; 0x10],
+        _reserved5: [u8; 0x04],
+        ht_descriptor_counts: (),
+        _reserved6: [u8; 0x08],
+        data_length: (),
+        _reserved7: [u8; 0x04],
         length_control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW."]
         #[inline(always)]
         pub const fn plcp1(&self, n: usize) -> &Plcp1 {
             #[allow(clippy::no_effect)]
@@ -9951,14 +10031,39 @@ pub mod wifi_mac_tx_queue_vector {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW."]
         #[inline(always)]
         pub fn plcp1_iter(&self) -> impl Iterator<Item = &Plcp1> {
             (0..4).map(move |n| unsafe {
                 &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast()
             })
         }
-        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+        #[inline(always)]
+        pub const fn he_rts_control(&self, n: usize) -> &HeRtsControl {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x14 - SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+        #[inline(always)]
+        pub fn he_rts_control_iter(&self) -> impl Iterator<Item = &HeRtsControl> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
         #[inline(always)]
         pub const fn pti(&self, n: usize) -> &Pti {
             #[allow(clippy::no_effect)]
@@ -9972,13 +10077,38 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+        #[doc = "0x08..0x18 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
         #[inline(always)]
         pub fn pti_iter(&self) -> impl Iterator<Item = &Pti> {
             (0..4).map(move |n| unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(8)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+        #[inline(always)]
+        pub const fn ht_signal(&self, n: usize) -> &HtSignal {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+        #[inline(always)]
+        pub fn ht_signal_iter(&self) -> impl Iterator<Item = &HtSignal> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
                     .add(124 * n)
                     .cast()
             })
@@ -10008,7 +10138,57 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+        #[doc = "0x2c..0x3c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+        #[inline(always)]
+        pub const fn ht_descriptor_counts(&self, n: usize) -> &HtDescriptorCounts {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(44)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x2c..0x3c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+        #[inline(always)]
+        pub fn ht_descriptor_counts_iter(&self) -> impl Iterator<Item = &HtDescriptorCounts> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(44)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[inline(always)]
+        pub const fn data_length(&self, n: usize) -> &DataLength {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(52)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[inline(always)]
+        pub fn data_length_iter(&self) -> impl Iterator<Item = &DataLength> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(52)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered non-HE length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. The open direct-DMA A-MPDU HIL qualified this aggregate image through complete BlockAck results. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub const fn length_control(&self, n: usize) -> &LengthControl {
             #[allow(clippy::no_effect)]
@@ -10022,7 +10202,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered non-HE length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. The open direct-DMA A-MPDU HIL qualified this aggregate image through complete BlockAck results. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub fn length_control_iter(&self) -> impl Iterator<Item = &LengthControl> {
             (0..4).map(move |n| unsafe {
@@ -10034,10 +10214,10 @@ pub mod wifi_mac_tx_queue_vector {
             })
         }
     }
-    #[doc = "PLCP1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
+    #[doc = "PLCP1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
     #[doc(alias = "PLCP1")]
     pub type Plcp1 = crate::Reg<plcp1::Plcp1Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW."]
     pub mod plcp1 {
         #[doc = "Register `PLCP1%s` reader"]
         pub type R = crate::R<Plcp1Spec>;
@@ -10061,7 +10241,7 @@ pub mod wifi_mac_tx_queue_vector {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue second PLCP/vector word.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Plcp1Spec;
         impl crate::RegisterSpec for Plcp1Spec {
             type Ux = u32;
@@ -10073,10 +10253,79 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PTI (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
+    #[doc = "HE_RTS_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_rts_control`] module"]
+    #[doc(alias = "HE_RTS_CONTROL")]
+    pub type HeRtsControl = crate::Reg<he_rts_control::HeRtsControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+    pub mod he_rts_control {
+        #[doc = "Register `HE_RTS_CONTROL%s` reader"]
+        pub type R = crate::R<HeRtsControlSpec>;
+        #[doc = "Register `HE_RTS_CONTROL%s` writer"]
+        pub type W = crate::W<HeRtsControlSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        #[doc = "Field `HE_RTS_DISABLED` reader - "]
+        pub type HeRtsDisabledR = crate::BitReader;
+        #[doc = "Field `HE_RTS_DISABLED` writer - "]
+        pub type HeRtsDisabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        impl R {
+            #[doc = "Bits 0:16"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new(self.bits & 0x0001_ffff)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn he_rts_disabled(&self) -> HeRtsDisabledR {
+                HeRtsDisabledR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 18) & 0x3fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:16"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, HeRtsControlSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn he_rts_disabled(&mut self) -> HeRtsDisabledW<'_, HeRtsControlSpec> {
+                HeRtsDisabledW::new(self, 17)
+            }
+            #[doc = "Bits 18:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, HeRtsControlSpec> {
+                HighPreservedUnknownW::new(self, 18)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeRtsControlSpec;
+        impl crate::RegisterSpec for HeRtsControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_rts_control::R`](R) reader structure"]
+        impl crate::Readable for HeRtsControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_rts_control::W`](W) writer structure"]
+        impl crate::Writable for HeRtsControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PTI (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
     #[doc(alias = "PTI")]
     pub type Pti = crate::Reg<pti::PtiSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
     pub mod pti {
         #[doc = "Register `PTI%s` reader"]
         pub type R = crate::R<PtiSpec>;
@@ -10102,9 +10351,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type Pti3R = crate::FieldReader;
         #[doc = "Field `PTI_3` writer - "]
         pub type Pti3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `COUNT` reader - "]
+        #[doc = "Field `COUNT` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
         pub type CountR = crate::FieldReader<u16>;
-        #[doc = "Field `COUNT` writer - "]
+        #[doc = "Field `COUNT` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
         pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl R {
             #[doc = "Bits 0:3"]
@@ -10132,7 +10381,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn pti_3(&self) -> Pti3R {
                 Pti3R::new(((self.bits >> 16) & 0x0f) as u8)
             }
-            #[doc = "Bits 20:31"]
+            #[doc = "Bits 20:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
             #[inline(always)]
             pub fn count(&self) -> CountR {
                 CountR::new(((self.bits >> 20) & 0x0fff) as u16)
@@ -10164,13 +10413,13 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn pti_3(&mut self) -> Pti3W<'_, PtiSpec> {
                 Pti3W::new(self, 16)
             }
-            #[doc = "Bits 20:31"]
+            #[doc = "Bits 20:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
             #[inline(always)]
             pub fn count(&mut self) -> CountW<'_, PtiSpec> {
                 CountW::new(self, 20)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Five separately published priority/count fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PtiSpec;
         impl crate::RegisterSpec for PtiSpec {
             type Ux = u32;
@@ -10179,6 +10428,45 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for PtiSpec {}
         #[doc = "`write(|w| ..)` method takes [`pti::W`](W) writer structure"]
         impl crate::Writable for PtiSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HT_SIGNAL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
+    #[doc(alias = "HT_SIGNAL")]
+    pub type HtSignal = crate::Reg<ht_signal::HtSignalSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+    pub mod ht_signal {
+        #[doc = "Register `HT_SIGNAL%s` reader"]
+        pub type R = crate::R<HtSignalSpec>;
+        #[doc = "Register `HT_SIGNAL%s` writer"]
+        pub type W = crate::W<HtSignalSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, HtSignalSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HtSignalSpec;
+        impl crate::RegisterSpec for HtSignalSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ht_signal::R`](R) reader structure"]
+        impl crate::Readable for HtSignalSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ht_signal::W`](W) writer structure"]
+        impl crate::Writable for HtSignalSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -10221,10 +10509,132 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "LENGTH_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
+    #[doc = "HT_DESCRIPTOR_COUNTS (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_descriptor_counts`] module"]
+    #[doc(alias = "HT_DESCRIPTOR_COUNTS")]
+    pub type HtDescriptorCounts = crate::Reg<ht_descriptor_counts::HtDescriptorCountsSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+    pub mod ht_descriptor_counts {
+        #[doc = "Register `HT_DESCRIPTOR_COUNTS%s` reader"]
+        pub type R = crate::R<HtDescriptorCountsSpec>;
+        #[doc = "Register `HT_DESCRIPTOR_COUNTS%s` writer"]
+        pub type W = crate::W<HtDescriptorCountsSpec>;
+        #[doc = "Field `DESCRIPTOR_COUNT_A` reader - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+        pub type DescriptorCountAR = crate::FieldReader;
+        #[doc = "Field `DESCRIPTOR_COUNT_A` writer - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+        pub type DescriptorCountAW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `DESCRIPTOR_COUNT_B` reader - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+        pub type DescriptorCountBR = crate::FieldReader;
+        #[doc = "Field `DESCRIPTOR_COUNT_B` writer - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+        pub type DescriptorCountBW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` reader - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+        pub type DescriptorCountACopyR = crate::FieldReader;
+        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` writer - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+        pub type DescriptorCountACopyW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        impl R {
+            #[doc = "Bits 0:6 - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_a(&self) -> DescriptorCountAR {
+                DescriptorCountAR::new((self.bits & 0x7f) as u8)
+            }
+            #[doc = "Bits 7:13 - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_b(&self) -> DescriptorCountBR {
+                DescriptorCountBR::new(((self.bits >> 7) & 0x7f) as u8)
+            }
+            #[doc = "Bits 14:20 - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_a_copy(&self) -> DescriptorCountACopyR {
+                DescriptorCountACopyR::new(((self.bits >> 14) & 0x7f) as u8)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:6 - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_a(&mut self) -> DescriptorCountAW<'_, HtDescriptorCountsSpec> {
+                DescriptorCountAW::new(self, 0)
+            }
+            #[doc = "Bits 7:13 - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_b(&mut self) -> DescriptorCountBW<'_, HtDescriptorCountsSpec> {
+                DescriptorCountBW::new(self, 7)
+            }
+            #[doc = "Bits 14:20 - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+            #[inline(always)]
+            pub fn descriptor_count_a_copy(
+                &mut self,
+            ) -> DescriptorCountACopyW<'_, HtDescriptorCountsSpec> {
+                DescriptorCountACopyW::new(self, 14)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, HtDescriptorCountsSpec> {
+                HighUnknownW::new(self, 21)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HtDescriptorCountsSpec;
+        impl crate::RegisterSpec for HtDescriptorCountsSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ht_descriptor_counts::R`](R) reader structure"]
+        impl crate::Readable for HtDescriptorCountsSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ht_descriptor_counts::W`](W) writer structure"]
+        impl crate::Writable for HtDescriptorCountsSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DATA_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_length`] module"]
+    #[doc(alias = "DATA_LENGTH")]
+    pub type DataLength = crate::Reg<data_length::DataLengthSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+    pub mod data_length {
+        #[doc = "Register `DATA_LENGTH%s` reader"]
+        pub type R = crate::R<DataLengthSpec>;
+        #[doc = "Register `DATA_LENGTH%s` writer"]
+        pub type W = crate::W<DataLengthSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, DataLengthSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DataLengthSpec;
+        impl crate::RegisterSpec for DataLengthSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`data_length::R`](R) reader structure"]
+        impl crate::Readable for DataLengthSpec {}
+        #[doc = "`write(|w| ..)` method takes [`data_length::W`](W) writer structure"]
+        impl crate::Writable for DataLengthSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "LENGTH_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered non-HE length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. The open direct-DMA A-MPDU HIL qualified this aggregate image through complete BlockAck results. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
     #[doc(alias = "LENGTH_CONTROL")]
     pub type LengthControl = crate::Reg<length_control::LengthControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered non-HE length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. The open direct-DMA A-MPDU HIL qualified this aggregate image through complete BlockAck results. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
     pub mod length_control {
         #[doc = "Register `LENGTH_CONTROL%s` reader"]
         pub type R = crate::R<LengthControlSpec>;
@@ -10248,7 +10658,7 @@ pub mod wifi_mac_tx_queue_vector {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Recovered non-HE length/rate/key-selector image.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered non-HE length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. The open direct-DMA A-MPDU HIL qualified this aggregate image through complete BlockAck results. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct LengthControlSpec;
         impl crate::RegisterSpec for LengthControlSpec {
             type Ux = u32;
@@ -12010,6 +12420,113 @@ pub mod wifi_mac_tx_power_init {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Finite interface-zero HE association state installed after a successful Association Response."]
+pub type WifiMacHeStaAssoc = crate::Periph<wifi_mac_he_sta_assoc::RegisterBlock, 0x2010_4004>;
+impl core::fmt::Debug for WifiMacHeStaAssoc {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacHeStaAssoc").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Finite interface-zero HE association state installed after a successful Association Response."]
+pub mod wifi_mac_he_sta_assoc {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        station_config: StationConfig,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Minimum MPDU start spacing and the eleven-bit association identifier."]
+        #[inline(always)]
+        pub const fn station_config(&self) -> &StationConfig {
+            &self.station_config
+        }
+    }
+    #[doc = "STATION_CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Minimum MPDU start spacing and the eleven-bit association identifier.\n\nYou can [`read`](crate::Reg::read) this register and get [`station_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`station_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@station_config`] module"]
+    #[doc(alias = "STATION_CONFIG")]
+    pub type StationConfig = crate::Reg<station_config::StationConfigSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Minimum MPDU start spacing and the eleven-bit association identifier."]
+    pub mod station_config {
+        #[doc = "Register `STATION_CONFIG` reader"]
+        pub type R = crate::R<StationConfigSpec>;
+        #[doc = "Register `STATION_CONFIG` writer"]
+        pub type W = crate::W<StationConfigSpec>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
+        pub type LowPreservedUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
+        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `ASSOCIATION_ID` reader - "]
+        pub type AssociationIdR = crate::FieldReader<u16>;
+        #[doc = "Field `ASSOCIATION_ID` writer - "]
+        pub type AssociationIdW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        #[doc = "Field `MINIMUM_MPDU_START_SPACING` reader - "]
+        pub type MinimumMpduStartSpacingR = crate::FieldReader;
+        #[doc = "Field `MINIMUM_MPDU_START_SPACING` writer - "]
+        pub type MinimumMpduStartSpacingW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
+        pub type HighPreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
+                LowPreservedUnknownR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:26"]
+            #[inline(always)]
+            pub fn association_id(&self) -> AssociationIdR {
+                AssociationIdR::new(((self.bits >> 16) & 0x07ff) as u16)
+            }
+            #[doc = "Bits 27:29"]
+            #[inline(always)]
+            pub fn minimum_mpdu_start_spacing(&self) -> MinimumMpduStartSpacingR {
+                MinimumMpduStartSpacingR::new(((self.bits >> 27) & 7) as u8)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
+                HighPreservedUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, StationConfigSpec> {
+                LowPreservedUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 16:26"]
+            #[inline(always)]
+            pub fn association_id(&mut self) -> AssociationIdW<'_, StationConfigSpec> {
+                AssociationIdW::new(self, 16)
+            }
+            #[doc = "Bits 27:29"]
+            #[inline(always)]
+            pub fn minimum_mpdu_start_spacing(
+                &mut self,
+            ) -> MinimumMpduStartSpacingW<'_, StationConfigSpec> {
+                MinimumMpduStartSpacingW::new(self, 27)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_preserved_unknown(
+                &mut self,
+            ) -> HighPreservedUnknownW<'_, StationConfigSpec> {
+                HighPreservedUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact-fields\\]. Minimum MPDU start spacing and the eleven-bit association identifier.\n\nYou can [`read`](crate::Reg::read) this register and get [`station_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`station_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StationConfigSpec;
+        impl crate::RegisterSpec for StationConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`station_config::R`](R) reader structure"]
+        impl crate::Readable for StationConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`station_config::W`](W) writer structure"]
+        impl crate::Writable for StationConfigSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hardware-visible hal_he_init suffix after dbg_read_tx_power, including all reached leaves. It contains 163 ordered writes/RMWs plus the two multi-BSSID guard reads."]
 pub type WifiMacHeInitSuffix = crate::Periph<wifi_mac_he_init_suffix::RegisterBlock, 0x2010_4020>;
 impl core::fmt::Debug for WifiMacHeInitSuffix {
@@ -12028,27 +12545,31 @@ pub mod wifi_mac_he_init_suffix {
         _reserved2: [u8; 0x0c],
         broadcast_ru_low: BroadcastRuLow,
         broadcast_ru_high: BroadcastRuHigh,
-        _reserved4: [u8; 0xcc],
+        _reserved4: [u8; 0x08],
+        bss_color_bitmap_control: BssColorBitmapControl,
+        _reserved5: [u8; 0xc0],
         dump_complete_hesigb: DumpCompleteHesigb,
-        _reserved5: [u8; 0x01a8],
+        _reserved6: [u8; 0x01a8],
         tx_mode_control: TxModeControl,
-        _reserved6: [u8; 0x0144],
+        _reserved7: [u8; 0x0144],
         common_power_control: CommonPowerControl,
         ersu_ack_rate: ErsuAckRate,
-        _reserved8: [u8; 0x0874],
+        _reserved9: [u8; 0x0874],
         ersu_and_vht_control: ErsuAndVhtControl,
         he_default_control: HeDefaultControl,
         uora_control: UoraControl,
         feature_edges: FeatureEdges,
-        _reserved12: [u8; 0x0c],
+        _reserved13: [u8; 0x04],
+        he_packet_padding: HePacketPadding,
+        _reserved14: [u8; 0x04],
         mode_control: ModeControl,
-        _reserved13: [u8; 0x24],
+        _reserved15: [u8; 0x24],
         shared_enable_control: SharedEnableControl,
-        _reserved14: [u8; 0x34],
+        _reserved16: [u8; 0x34],
         queue_control: (),
-        _reserved15: [u8; 0x3c],
+        _reserved17: [u8; 0x3c],
         protection: (),
-        _reserved16: [u8; 0x08bc],
+        _reserved18: [u8; 0x08bc],
         he_scratch: [HeScratch; 120],
     }
     impl RegisterBlock {
@@ -12071,6 +12592,11 @@ pub mod wifi_mac_he_init_suffix {
         #[inline(always)]
         pub const fn broadcast_ru_high(&self) -> &BroadcastRuHigh {
             &self.broadcast_ru_high
+        }
+        #[doc = "0x28 - SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-bit-semantics-partial\\]. Setting bit zero clears the accumulated BSS-color collision bitmap after collision reporting is disabled."]
+        #[inline(always)]
+        pub const fn bss_color_bitmap_control(&self) -> &BssColorBitmapControl {
+            &self.bss_color_bitmap_control
         }
         #[doc = "0xec - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-bit\\]. Complete disable leaf clears bit zero."]
         #[inline(always)]
@@ -12111,6 +12637,11 @@ pub mod wifi_mac_he_init_suffix {
         #[inline(always)]
         pub const fn feature_edges(&self) -> &FeatureEdges {
             &self.feature_edges
+        }
+        #[doc = "0xc70 - SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HECAP,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Five repeated five-bit packet-padding durations derived from the peer HE capability."]
+        #[inline(always)]
+        pub const fn he_packet_padding(&self) -> &HePacketPadding {
+            &self.he_packet_padding
         }
         #[doc = "0xc78 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-bit-semantics-unknown\\]. Parent sets bit two."]
         #[inline(always)]
@@ -12351,6 +12882,62 @@ pub mod wifi_mac_he_init_suffix {
         impl crate::Readable for MultiBssidHighSpec {}
         #[doc = "`write(|w| ..)` method takes [`multi_bssid_high::W`](W) writer structure"]
         impl crate::Writable for MultiBssidHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BSS_COLOR_BITMAP_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-bit-semantics-partial\\]. Setting bit zero clears the accumulated BSS-color collision bitmap after collision reporting is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bss_color_bitmap_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bss_color_bitmap_control`] module"]
+    #[doc(alias = "BSS_COLOR_BITMAP_CONTROL")]
+    pub type BssColorBitmapControl =
+        crate::Reg<bss_color_bitmap_control::BssColorBitmapControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-bit-semantics-partial\\]. Setting bit zero clears the accumulated BSS-color collision bitmap after collision reporting is disabled."]
+    pub mod bss_color_bitmap_control {
+        #[doc = "Register `BSS_COLOR_BITMAP_CONTROL` reader"]
+        pub type R = crate::R<BssColorBitmapControlSpec>;
+        #[doc = "Register `BSS_COLOR_BITMAP_CONTROL` writer"]
+        pub type W = crate::W<BssColorBitmapControlSpec>;
+        #[doc = "Field `CLEAR` reader - "]
+        pub type ClearR = crate::BitReader;
+        #[doc = "Field `CLEAR` writer - "]
+        pub type ClearW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PRESERVED_UNKNOWN` reader - "]
+        pub type PreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `PRESERVED_UNKNOWN` writer - "]
+        pub type PreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn clear(&self) -> ClearR {
+                ClearR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(&self) -> PreservedUnknownR {
+                PreservedUnknownR::new((self.bits >> 1) & 0x7fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn clear(&mut self) -> ClearW<'_, BssColorBitmapControlSpec> {
+                ClearW::new(self, 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(
+                &mut self,
+            ) -> PreservedUnknownW<'_, BssColorBitmapControlSpec> {
+                PreservedUnknownW::new(self, 1)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-bit-semantics-partial\\]. Setting bit zero clears the accumulated BSS-color collision bitmap after collision reporting is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bss_color_bitmap_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssColorBitmapControlSpec;
+        impl crate::RegisterSpec for BssColorBitmapControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bss_color_bitmap_control::R`](R) reader structure"]
+        impl crate::Readable for BssColorBitmapControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bss_color_bitmap_control::W`](W) writer structure"]
+        impl crate::Writable for BssColorBitmapControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -13058,6 +13645,59 @@ pub mod wifi_mac_he_init_suffix {
         impl crate::Readable for ErsuAndVhtControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`ersu_and_vht_control::W`](W) writer structure"]
         impl crate::Writable for ErsuAndVhtControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_PACKET_PADDING (rw) register accessor: SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HECAP,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Five repeated five-bit packet-padding durations derived from the peer HE capability.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_packet_padding::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_packet_padding::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_packet_padding`] module"]
+    #[doc(alias = "HE_PACKET_PADDING")]
+    pub type HePacketPadding = crate::Reg<he_packet_padding::HePacketPaddingSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HECAP,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Five repeated five-bit packet-padding durations derived from the peer HE capability."]
+    pub mod he_packet_padding {
+        #[doc = "Register `HE_PACKET_PADDING` reader"]
+        pub type R = crate::R<HePacketPaddingSpec>;
+        #[doc = "Register `HE_PACKET_PADDING` writer"]
+        pub type W = crate::W<HePacketPaddingSpec>;
+        #[doc = "Field `REPEATED_DURATION` reader - "]
+        pub type RepeatedDurationR = crate::FieldReader<u32>;
+        #[doc = "Field `REPEATED_DURATION` writer - "]
+        pub type RepeatedDurationW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32>;
+        #[doc = "Field `PRESERVED_UNKNOWN` reader - "]
+        pub type PreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `PRESERVED_UNKNOWN` writer - "]
+        pub type PreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        impl R {
+            #[doc = "Bits 0:24"]
+            #[inline(always)]
+            pub fn repeated_duration(&self) -> RepeatedDurationR {
+                RepeatedDurationR::new(self.bits & 0x01ff_ffff)
+            }
+            #[doc = "Bits 25:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(&self) -> PreservedUnknownR {
+                PreservedUnknownR::new(((self.bits >> 25) & 0x7f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:24"]
+            #[inline(always)]
+            pub fn repeated_duration(&mut self) -> RepeatedDurationW<'_, HePacketPaddingSpec> {
+                RepeatedDurationW::new(self, 0)
+            }
+            #[doc = "Bits 25:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(&mut self) -> PreservedUnknownW<'_, HePacketPaddingSpec> {
+                PreservedUnknownW::new(self, 25)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBNET80211_IEEE80211_PARSE_HECAP,MIGRATION_HE20_PEER\\]; CONFIDENCE\\[instruction-exact-packed-fields\\]. Five repeated five-bit packet-padding durations derived from the peer HE capability.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_packet_padding::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_packet_padding::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HePacketPaddingSpec;
+        impl crate::RegisterSpec for HePacketPaddingSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_packet_padding::R`](R) reader structure"]
+        impl crate::Readable for HePacketPaddingSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_packet_padding::W`](W) writer structure"]
+        impl crate::Writable for HePacketPaddingSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -16978,17 +17618,17 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_block_ack_control_sequence_q1(&self) -> &TxBlockAckControlSequenceQ1 {
             &self.tx_block_ack_control_sequence_q1
         }
-        #[doc = "0x1528 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 0."]
+        #[doc = "0x1528 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q0(&self) -> &TxBlockAckBitmapHighQ0 {
             &self.tx_block_ack_bitmap_high_q0
         }
-        #[doc = "0x152c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 0."]
+        #[doc = "0x152c - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_low_q0(&self) -> &TxBlockAckBitmapLowQ0 {
             &self.tx_block_ack_bitmap_low_q0
         }
-        #[doc = "0x1530 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0."]
+        #[doc = "0x1530 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0, sampled before acknowledging the completion edge."]
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q0(&self) -> &TxBlockAckControlSequenceQ0 {
             &self.tx_block_ack_control_sequence_q0
@@ -17546,11 +18186,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q1::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckControlSequenceQ1Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q0`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q0`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q0")]
     pub type TxBlockAckBitmapHighQ0 =
         crate::Reg<tx_block_ack_bitmap_high_q0::TxBlockAckBitmapHighQ0Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 0."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge."]
     pub mod tx_block_ack_bitmap_high_q0 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q0` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ0Spec>;
@@ -17559,7 +18199,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapHighQ0Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapHighQ0Spec {
             type Ux = u32;
@@ -17567,11 +18207,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q0::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapHighQ0Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q0`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q0`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q0")]
     pub type TxBlockAckBitmapLowQ0 =
         crate::Reg<tx_block_ack_bitmap_low_q0::TxBlockAckBitmapLowQ0Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 0."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge."]
     pub mod tx_block_ack_bitmap_low_q0 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q0` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ0Spec>;
@@ -17580,7 +18220,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapLowQ0Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapLowQ0Spec {
             type Ux = u32;
@@ -17588,11 +18228,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q0::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapLowQ0Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q0`] module"]
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q0`] module"]
     #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0")]
     pub type TxBlockAckControlSequenceQ0 =
         crate::Reg<tx_block_ack_control_sequence_q0::TxBlockAckControlSequenceQ0Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0, sampled before acknowledging the completion edge."]
     pub mod tx_block_ack_control_sequence_q0 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ0Spec>;
@@ -17612,7 +18252,7 @@ pub mod wifi_mac_rx_dma {
                 ControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckControlSequenceQ0Spec;
         impl crate::RegisterSpec for TxBlockAckControlSequenceQ0Spec {
             type Ux = u32;
@@ -18012,6 +18652,8 @@ pub struct Peripherals {
     pub wifi_mac_he_init_prefix: WifiMacHeInitPrefix,
     #[doc = "WIFI_MAC_TX_POWER_INIT"]
     pub wifi_mac_tx_power_init: WifiMacTxPowerInit,
+    #[doc = "WIFI_MAC_HE_STA_ASSOC"]
+    pub wifi_mac_he_sta_assoc: WifiMacHeStaAssoc,
     #[doc = "WIFI_MAC_HE_INIT_SUFFIX"]
     pub wifi_mac_he_init_suffix: WifiMacHeInitSuffix,
     #[doc = "WIFI_MAC_COEX_INIT"]
@@ -18083,6 +18725,7 @@ impl Peripherals {
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_he_init_prefix: WifiMacHeInitPrefix::steal(),
             wifi_mac_tx_power_init: WifiMacTxPowerInit::steal(),
+            wifi_mac_he_sta_assoc: WifiMacHeStaAssoc::steal(),
             wifi_mac_he_init_suffix: WifiMacHeInitSuffix::steal(),
             wifi_mac_coex_init: WifiMacCoexInit::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),

@@ -522,6 +522,21 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
     }
 }
 
+/// Locate the complete vendor 802.11g retry record for a legacy rate code.
+///
+/// SOURCE: `_oracles/libpp.a[trc.o]` callback table used by
+/// `rcUpdatePhyMode`, recovered above as the `RateIndexMap::Dot11G` branch;
+/// the pointed-to record bytes come from `_oracles/libpp.a` rate-schedule
+/// arenas in [`crate::rate_schedule`].
+pub(crate) const fn dot11g_schedule_for_legacy_rate(rate: u8) -> Option<RateScheduleRef> {
+    let index = rate_to_schedule_index(RateIndexMap::Dot11G, rate);
+    if index == 0xff {
+        None
+    } else {
+        RateScheduleRef::new(RateScheduleKind::Dot11G, index)
+    }
+}
+
 /// Exact fixed table behind the vendor `rx11NRate2AMPDULimit` leaf.
 pub(crate) const fn ampdu_limit_for_rate(rate: u8) -> u16 {
     const LIMITS: [u16; 18] = [

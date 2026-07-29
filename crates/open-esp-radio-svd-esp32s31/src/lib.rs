@@ -10549,9 +10549,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type McsR = crate::FieldReader;
         #[doc = "Field `MCS` writer - "]
         pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `DCM` reader - "]
+        #[doc = "Field `DCM` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_HE_DCM,IEEE80211_HE_PHY_CAP_DCM\\]; CONFIDENCE\\[instruction-exact-host-qualified-hil-pending\\]. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The current nearby FRITZ peer advertises DCM RX NotSupported, so the formatter is host-qualified but deliberately not claimed as over-air-qualified."]
         pub type DcmR = crate::BitReader;
-        #[doc = "Field `DCM` writer - "]
+        #[doc = "Field `DCM` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_HE_DCM,IEEE80211_HE_PHY_CAP_DCM\\]; CONFIDENCE\\[instruction-exact-host-qualified-hil-pending\\]. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The current nearby FRITZ peer advertises DCM RX NotSupported, so the formatter is host-qualified but deliberately not claimed as over-air-qualified."]
         pub type DcmW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BSS_COLOR` reader - "]
         pub type BssColorR = crate::FieldReader;
@@ -10602,7 +10602,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn mcs(&self) -> McsR {
                 McsR::new(((self.bits >> 3) & 0x0f) as u8)
             }
-            #[doc = "Bit 7"]
+            #[doc = "Bit 7 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_HE_DCM,IEEE80211_HE_PHY_CAP_DCM\\]; CONFIDENCE\\[instruction-exact-host-qualified-hil-pending\\]. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The current nearby FRITZ peer advertises DCM RX NotSupported, so the formatter is host-qualified but deliberately not claimed as over-air-qualified."]
             #[inline(always)]
             pub fn dcm(&self) -> DcmR {
                 DcmR::new(((self.bits >> 7) & 1) != 0)
@@ -10664,7 +10664,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn mcs(&mut self) -> McsW<'_, HeSuSignalA1Spec> {
                 McsW::new(self, 3)
             }
-            #[doc = "Bit 7"]
+            #[doc = "Bit 7 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_HE_DCM,IEEE80211_HE_PHY_CAP_DCM\\]; CONFIDENCE\\[instruction-exact-host-qualified-hil-pending\\]. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The current nearby FRITZ peer advertises DCM RX NotSupported, so the formatter is host-qualified but deliberately not claimed as over-air-qualified."]
             #[inline(always)]
             pub fn dcm(&mut self) -> DcmW<'_, HeSuSignalA1Spec> {
                 DcmW::new(self, 7)

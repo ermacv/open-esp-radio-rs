@@ -33,6 +33,44 @@ impl HeMcsNssSupport {
     }
 }
 
+/// Maximum modulation constellation advertised for HE DCM.
+///
+/// The values are the two-bit HE PHY capability encoding, not an S31-private
+/// enum. Keeping `NotSupported` distinct is important: a HE peer is not
+/// necessarily able to receive DCM merely because it supports ordinary HE SU.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(u8)]
+pub enum HeDcmConstellation {
+    #[default]
+    NotSupported = 0,
+    Bpsk = 1,
+    Qpsk = 2,
+    Qam16 = 3,
+}
+
+impl HeDcmConstellation {
+    const fn from_encoding(encoding: u8) -> Self {
+        match encoding & 0x03 {
+            0 => Self::NotSupported,
+            1 => Self::Bpsk,
+            2 => Self::Qpsk,
+            _ => Self::Qam16,
+        }
+    }
+
+    pub const fn supports_bpsk(self) -> bool {
+        !matches!(self, Self::NotSupported)
+    }
+
+    pub const fn supports_qpsk(self) -> bool {
+        matches!(self, Self::Qpsk | Self::Qam16)
+    }
+
+    pub const fn supports_16qam(self) -> bool {
+        matches!(self, Self::Qam16)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20Capabilities {
     pub receive_mcs_map: u16,
@@ -48,6 +86,19 @@ pub struct He20Capabilities {
     /// peer with this bit clear rejected selector zero for MCS0 through MCS9
     /// and accepted selectors one through three.
     pub one_ltf_800ns_gi: bool,
+    /// Maximum DCM constellation the peer can transmit.
+    ///
+    /// HE PHY capability byte 3 bits 1:0. This is useful for the open RX
+    /// policy, but is deliberately separate from [`Self::dcm_receive`].
+    pub dcm_transmit: HeDcmConstellation,
+    /// Maximum DCM constellation the peer can receive.
+    ///
+    /// SOURCE[LINUX_IEEE80211_HE_PHY_CAP3_DCM_2026_07_29]: Linux
+    /// `include/linux/ieee80211-he.h` names HE PHY capability byte 3 bits
+    /// 4:3 `DCM_MAX_CONST_RX`. `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate`
+    /// independently maps the same four capability levels to disabled,
+    /// BPSK/MCS0, QPSK/MCS1 and 16-QAM/MCS3 for the vendor BCC path.
+    pub dcm_receive: HeDcmConstellation,
 }
 
 impl He20Capabilities {
@@ -57,6 +108,10 @@ impl He20Capabilities {
 
     pub const fn supports_one_ltf_800ns_gi(self) -> bool {
         self.one_ltf_800ns_gi
+    }
+
+    pub const fn dcm_receive_constellation(self) -> HeDcmConstellation {
+        self.dcm_receive
     }
 }
 
@@ -124,6 +179,8 @@ pub fn parse_he20_capabilities(element: &[u8]) -> Result<He20Capabilities, HeEle
         receive_nss1: HeMcsNssSupport::from_map(receive_mcs_map, 1),
         transmit_nss1: HeMcsNssSupport::from_map(transmit_mcs_map, 1),
         one_ltf_800ns_gi: element[10] & 0x40 != 0,
+        dcm_transmit: HeDcmConstellation::from_encoding(element[12]),
+        dcm_receive: HeDcmConstellation::from_encoding(element[12] >> 3),
     })
 }
 
@@ -207,6 +264,10 @@ mod tests {
         assert_eq!(capability.transmit_nss1, HeMcsNssSupport::Mcs0To9);
         assert!(capability.supports_bidirectional_mcs9());
         assert!(!capability.supports_one_ltf_800ns_gi());
+        assert_eq!(
+            capability.dcm_receive_constellation(),
+            HeDcmConstellation::NotSupported
+        );
     }
 
     #[test]
@@ -217,6 +278,21 @@ mod tests {
         assert!(parse_he20_capabilities(&element)
             .unwrap()
             .supports_one_ltf_800ns_gi());
+    }
+
+    #[test]
+    fn parses_independent_dcm_transmit_and_receive_constellations() {
+        let mut element = [0_u8; 24];
+        element[..3].copy_from_slice(&[255, 22, 35]);
+        // Peer TX: QPSK (bits 1:0 = 2); peer RX: 16-QAM
+        // (bits 4:3 = 3). NSS stays one when bits 2 and 5 are clear.
+        element[12] = 0x1a;
+        let capability = parse_he20_capabilities(&element).unwrap();
+        assert_eq!(capability.dcm_transmit, HeDcmConstellation::Qpsk);
+        assert_eq!(capability.dcm_receive, HeDcmConstellation::Qam16);
+        assert!(capability.dcm_receive.supports_bpsk());
+        assert!(capability.dcm_receive.supports_qpsk());
+        assert!(capability.dcm_receive.supports_16qam());
     }
 
     #[test]
@@ -245,5 +321,11 @@ mod tests {
         assert!(!parse_he20_capabilities(&capability)
             .unwrap()
             .supports_one_ltf_800ns_gi());
+        assert_eq!(
+            parse_he20_capabilities(&capability)
+                .unwrap()
+                .dcm_receive_constellation(),
+            HeDcmConstellation::NotSupported
+        );
     }
 }

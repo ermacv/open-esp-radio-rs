@@ -28,7 +28,7 @@ Status meanings:
 | Uplink and downlink OFDMA | oracle only | Trigger/MU scheduling symbols and MMIO leaves exist in the pinned oracle. No owned trigger parser, RU allocation, HE-TB TX, or OFDMA RX path is complete. |
 | Downlink MU-MIMO | oracle only | MU/beamforming leaves exist in the pinned oracle. No open MU receive qualification exists. |
 | 0.8, 1.6 and 3.2 us GI | **HIL TX** | HE SU MCS0..9 passed with 2xLTF/0.8 us, 2xLTF/1.6 us and 4xLTF/3.2 us. The peer did not advertise the optional 1xLTF/0.8-us capability, and the vendor `ppSelectTxFormat`/`ppCertSetRate` producers do not emit selector zero. |
-| DCM up to 16-QAM | oracle only | Rate-control DCM symbols and fields are known. Typed HE-SIG configuration, valid MCS combinations, RX interpretation and HIL are missing. |
+| DCM up to 16-QAM | implemented for BCC TX; HIL pending capable peer | Peer TX/RX constellation capabilities are parsed independently. The typed HE-SU BCC path admits only DCM MCS0/1/3, programs HE-SIG-A1 DCM bit 7, uses the recovered RU242 rate tables for all three qualified GI/LTF selectors, and reproduces the blob's minimum-subframe-length calculation. Host tests and the opt-in HIL matrix pass compilation. The nearby FRITZ peer advertises DCM RX `NotSupported`, so over-air DCM is deliberately skipped rather than misreported as a TX failure. MCS4 belongs to the still-unowned LDPC profile; DCM RX and injection of extra empty delimiters for short MPDUs remain. |
 | Single-user/multi-user beamformee | oracle only | Capability and report-rate leaves are known. Sounding, feedback ownership, compressed report generation and HIL are missing. |
 | CQI | oracle only | Capability bits and trigger-related oracle leaves are known. Report generation and HIL are missing. |
 | RX STBC, one spatial stream | not implemented | Capability parsing, RX-vector interpretation and controlled downlink STBC HIL are missing. |
@@ -46,10 +46,11 @@ Status meanings:
 ## Current next order
 
 1. Keep HE SU MCS9/three-GI regression green with zero final retry failures.
-2. Add typed DCM configuration and the valid MCS0/1/3/4 combinations, then
-   compare HE-SIG and length calculations with `libpp.a` and ROM.
-3. Add RX STBC and CQI capability/vector ownership.
-4. Build the trigger/RU boundary required for HE-TB uplink OFDMA.
-5. Add downlink OFDMA, SU/MU beamformee feedback, then DL MU-MIMO.
-6. Add HT duplicate-mode MCS32 and complete the HT rate/width/GI HIL matrix.
-
+2. Qualify the typed BCC DCM MCS0/1/3 matrix against a peer that advertises
+   DCM RX; wire the recovered minimum length into empty-delimiter injection
+   before small-frame HIL.
+3. Add the separate LDPC profile required for DCM MCS4, then add DCM RX.
+4. Add RX STBC and CQI capability/vector ownership.
+5. Build the trigger/RU boundary required for HE-TB uplink OFDMA.
+6. Add downlink OFDMA, SU/MU beamformee feedback, then DL MU-MIMO.
+7. Add HT duplicate-mode MCS32 and complete the HT rate/width/GI HIL matrix.

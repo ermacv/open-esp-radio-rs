@@ -565,11 +565,39 @@ impl HeMcs {
     }
 }
 
+/// HE DCM MCS values valid in the currently owned BCC SU profile.
+///
+/// This intentionally does not expose an unchecked integer. The pinned
+/// `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` selects exactly descriptor
+/// rates `0x10`, `0x11`, and `0x13` for BPSK, QPSK, and 16-QAM DCM. Its
+/// RU242 DCM table additionally contains MCS4, but that requires the
+/// still-unowned LDPC profile and therefore must not be combined with the
+/// current `HE_SU_A2_CONTROL_BCC` image.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HeBccDcmMcs {
+    #[default]
+    Mcs0 = 0,
+    Mcs1 = 1,
+    Mcs3 = 3,
+}
+
+impl HeBccDcmMcs {
+    pub const fn mcs(self) -> HeMcs {
+        match self {
+            Self::Mcs0 => HeMcs::Mcs0,
+            Self::Mcs1 => HeMcs::Mcs1,
+            Self::Mcs3 => HeMcs::Mcs3,
+        }
+    }
+}
+
 /// Typed HE20 SU transmit rate for the single S31 spatial stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeRate {
-    pub mcs: HeMcs,
-    pub guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    mcs: HeMcs,
+    guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    dcm: bool,
 }
 
 impl HeRate {
@@ -577,7 +605,36 @@ impl HeRate {
         Self {
             mcs,
             guard_interval_and_ltf,
+            dcm: false,
         }
+    }
+
+    /// Construct one standard-valid HE SU BCC+DCM rate.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::{rcGetDCMMaxRate,
+    /// he_get_min_subframe_len_dcm}`, the RU242 DCM rate table, and complete
+    /// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_hesig`.
+    pub const fn bcc_dcm(
+        mcs: HeBccDcmMcs,
+        guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Self {
+        Self {
+            mcs: mcs.mcs(),
+            guard_interval_and_ltf,
+            dcm: true,
+        }
+    }
+
+    pub const fn mcs(self) -> HeMcs {
+        self.mcs
+    }
+
+    pub const fn guard_interval_and_ltf(self) -> crate::rx::HeGuardIntervalAndLtf {
+        self.guard_interval_and_ltf
+    }
+
+    pub const fn is_dcm(self) -> bool {
+        self.dcm
     }
 
     /// Canonical S31 HE descriptor rate code.
@@ -622,13 +679,43 @@ impl HeRate {
         const GI_3200: [u32; 10] = [
             7_300, 14_600, 21_900, 29_300, 43_900, 58_500, 65_800, 73_100, 87_800, 97_500,
         ];
-        let table = match self.guard_interval_and_ltf {
-            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
-            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => &GI_800,
-            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => &GI_1600,
-            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
+        const DCM_GI_800: [u32; 10] = [4_300, 8_600, 0, 17_200, 0, 0, 0, 0, 0, 0];
+        const DCM_GI_1600: [u32; 10] = [4_000, 8_100, 0, 16_300, 0, 0, 0, 0, 0, 0];
+        const DCM_GI_3200: [u32; 10] = [3_600, 7_300, 0, 14_600, 0, 0, 0, 0, 0, 0];
+        let table = match (self.dcm, self.guard_interval_and_ltf) {
+            (true, crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns)
+            | (true, crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns) => &DCM_GI_800,
+            (true, crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns) => &DCM_GI_1600,
+            (true, crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns) => &DCM_GI_3200,
+            (false, crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns)
+            | (false, crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns) => &GI_800,
+            (false, crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns) => &GI_1600,
+            (false, crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns) => &GI_3200,
         };
         table[self.mcs.index() as usize]
+    }
+
+    /// Minimum DCM A-MPDU subframe length for a negotiated density.
+    ///
+    /// This reproduces complete
+    /// `_oracles/libpp.a[trc.o]::he_get_min_subframe_len_dcm`: select the
+    /// RU242 DCM rate in 100-kbit/s units, multiply by the density in
+    /// microseconds, truncate by eight, then round that intermediate value up
+    /// to a multiple of ten. Returning `None` for an ordinary HE rate keeps
+    /// DCM delimiter padding from leaking into the non-DCM formatter.
+    ///
+    /// The value is the required complete A-MPDU subframe length in bytes.
+    /// The caller still owns the distinction between MPDU bytes, the
+    /// four-byte delimiter, four-byte alignment, and any extra empty
+    /// delimiters.
+    pub const fn dcm_minimum_ampdu_subframe_bytes(self, density_us: u8) -> Option<u16> {
+        if !self.dcm {
+            return None;
+        }
+        let rate_100_kbps = self.nominal_kbps() / 100;
+        let truncated_byte_rate = rate_100_kbps * density_us as u32 / 8;
+        let bytes = truncated_byte_rate / 10 + (truncated_byte_rate % 10 != 0) as u32;
+        Some(bytes as u16)
     }
 }
 
@@ -860,10 +947,9 @@ impl HtAmpduTxConfig {
 
 /// Inputs for one bounded HE20 SU A-MPDU PPDU.
 ///
-/// This first HE owner deliberately models only the live-qualified 1T1R SU,
-/// BCC, non-STBC, non-beamformed profile. MCS and GI/LTF are typed; DCM,
-/// OFDMA and beamforming will enter as separate finite profiles after their
-/// own blob and HIL qualification.
+/// This HE owner models the 1T1R SU, BCC, non-STBC, non-beamformed profile.
+/// Ordinary and DCM MCS choices plus GI/LTF are finite typed values. OFDMA,
+/// LDPC and beamforming remain separate future profiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeAmpduTxConfig {
     pub rate: HeRate,
@@ -1166,6 +1252,7 @@ pub const fn he_ampdu_q0_image(
     let rts_rate = config.rate.vendor_rts_rate();
     let he_signal_a1 = 0xfc00_4007
         | ((config.rate.mcs.index() as u32) << 3)
+        | ((config.rate.is_dcm() as u32) << 7)
         | ((config.bss_color as u32) << 8)
         | ((config.spatial_reuse as u32) << 15)
         | ((config.rate.guard_interval_and_ltf.encoding() as u32) << 21);

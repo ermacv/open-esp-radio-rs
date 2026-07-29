@@ -37,10 +37,10 @@ use open_esp_radio_mac_esp32s31::{
         RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
-        he_ampdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HeAmpduTxConfig, HeMcs,
-        HeRate, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing,
-        HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware,
-        TxPhyRate, TxSlot, TxSlotState,
+        he_ampdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HeAmpduTxConfig,
+        HeBccDcmMcs, HeMcs, HeRate, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
+        HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
+        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2171,6 +2171,51 @@ fn he20_formatter_covers_mcs0_through_mcs9_and_every_gi_ltf() {
             assert_eq!((image.he_signal_a2_length >> 11) & 0xffff, 312);
         }
     }
+}
+
+#[test]
+fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
+    for (mcs, expected_index, expected_kbps) in [
+        (HeBccDcmMcs::Mcs0, 0, 4_300),
+        (HeBccDcmMcs::Mcs1, 1, 8_600),
+        (HeBccDcmMcs::Mcs3, 3, 17_200),
+    ] {
+        let rate = HeRate::bcc_dcm(mcs, HeGuardIntervalAndLtf::TwoLtf800Ns);
+        assert!(rate.is_dcm());
+        assert_eq!(rate.mcs().index(), expected_index);
+        assert_eq!(rate.nominal_kbps(), expected_kbps);
+        assert_eq!(
+            rate.dcm_minimum_ampdu_subframe_bytes(8),
+            Some(expected_kbps.div_ceil(1_000) as u16)
+        );
+        let config = HeAmpduTxConfig::new(rate, 27, 312, 2).unwrap();
+        let image = he_ampdu_q0_image(0x2f00_5000, config).unwrap();
+        assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(expected_index));
+        assert_ne!(image.he_signal_a1 & (1 << 7), 0);
+        // DCM does not change the bounded BCC coding/STBC A2 control image.
+        assert_eq!(image.he_signal_a2_length & 0x7ff, 0x105);
+    }
+
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::TwoLtf1600Ns).nominal_kbps(),
+        16_300
+    );
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::FourLtf3200Ns).nominal_kbps(),
+        14_600
+    );
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs3, HeGuardIntervalAndLtf::TwoLtf800Ns)
+            .dcm_minimum_ampdu_subframe_bytes(8),
+        None
+    );
+    // Preserve the blob's two-stage integer truncation instead of replacing
+    // it with a superficially equivalent ceil(rate*density/80).
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs1, HeGuardIntervalAndLtf::TwoLtf1600Ns)
+            .dcm_minimum_ampdu_subframe_bytes(1),
+        Some(1)
+    );
 }
 
 #[test]

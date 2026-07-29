@@ -3,7 +3,7 @@
 use core::pin::Pin;
 
 use open_esp_radio_pac_esp32s31::{
-    MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
+    MacHeTxProgram, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
 };
 
 use crate::{
@@ -12,7 +12,8 @@ use crate::{
     rate_schedule::{schedule_rate_after_failures, RateScheduleKind, RateScheduleRef},
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
-        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, ht_htsig_word,
+        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
+        he_plcp1_word, ht_htsig_word,
     },
 };
 
@@ -34,6 +35,11 @@ const HT_SINGLE_ENTRY_FLAGS: u8 = 0;
 // formatter above.
 const HT_AMPDU_DESCRIPTOR_FLAGS: u32 = 0x004c_2009;
 const HT_AMPDU_ENTRY_FLAGS: u8 = 1;
+// SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
+// A-MPDU formatter captures used descriptor flags 0xc0403009, entry class one
+// and the bounded BCC/non-STBC A2 low control image 0x105.
+const HE_AMPDU_ENTRY_FLAGS: u8 = 1;
+const HE_SU_A2_CONTROL_BCC: u16 = 0x0105;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
 ///
@@ -85,6 +91,8 @@ pub trait TxHardware {
     fn start_legacy_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool;
     fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
+    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool;
+    fn start_he_tx(&mut self, queue: u8, plcp0: u32);
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
@@ -106,6 +114,14 @@ impl TxHardware for RadioRegisters {
 
     fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_ht_mac_tx(queue, plcp0);
+    }
+
+    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
+        self.prepare_he_mac_tx(queue, program)
+    }
+
+    fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_he_mac_tx(queue, plcp0);
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
@@ -506,11 +522,122 @@ impl HtRate {
     }
 }
 
-/// One finite legacy or single-stream HT rate returned by retry control.
+/// One-spatial-stream 802.11ax modulation and coding scheme.
+///
+/// The ESP32-S31 is 1T1R. HE SU therefore admits MCS0..MCS9 for this first
+/// bounded formatter; unchecked integers cannot request a second spatial
+/// stream or the still-unqualified MCS10/11 modes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HeMcs {
+    #[default]
+    Mcs0 = 0,
+    Mcs1 = 1,
+    Mcs2 = 2,
+    Mcs3 = 3,
+    Mcs4 = 4,
+    Mcs5 = 5,
+    Mcs6 = 6,
+    Mcs7 = 7,
+    Mcs8 = 8,
+    Mcs9 = 9,
+}
+
+impl HeMcs {
+    pub const fn index(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::Mcs0),
+            1 => Some(Self::Mcs1),
+            2 => Some(Self::Mcs2),
+            3 => Some(Self::Mcs3),
+            4 => Some(Self::Mcs4),
+            5 => Some(Self::Mcs5),
+            6 => Some(Self::Mcs6),
+            7 => Some(Self::Mcs7),
+            8 => Some(Self::Mcs8),
+            9 => Some(Self::Mcs9),
+            _ => None,
+        }
+    }
+}
+
+/// Typed HE20 SU transmit rate for the single S31 spatial stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeRate {
+    pub mcs: HeMcs,
+    pub guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+}
+
+impl HeRate {
+    pub const fn new(mcs: HeMcs, guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf) -> Self {
+        Self {
+            mcs,
+            guard_interval_and_ltf,
+        }
+    }
+
+    /// Canonical S31 HE descriptor rate code.
+    ///
+    /// Both complete `mac_tx_set_hesig` code ranges encode MCS0..9, but GI/LTF
+    /// is carried independently in HE-SIG-A1. The open formatter therefore
+    /// uses the live-qualified range 26..35; MCS9 is exactly descriptor rate
+    /// 35 in `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`.
+    pub const fn code(self) -> u8 {
+        26 + self.mcs.index()
+    }
+
+    /// HE and HT use the same MCS-indexed calibrated power pair.
+    ///
+    /// Complete `hal_mac_tx_set_ppdu` subtracts ten from HE codes 26..35
+    /// before indexing the 43-pair MAC power table.
+    pub const fn power_lookup_code(self) -> u8 {
+        16 + self.mcs.index()
+    }
+
+    pub const fn vendor_rts_rate(self) -> LegacyRate {
+        match self.mcs {
+            HeMcs::Mcs0 => LegacyRate::Ofdm6M,
+            HeMcs::Mcs1 | HeMcs::Mcs2 => LegacyRate::Ofdm12M,
+            HeMcs::Mcs3
+            | HeMcs::Mcs4
+            | HeMcs::Mcs5
+            | HeMcs::Mcs6
+            | HeMcs::Mcs7
+            | HeMcs::Mcs8
+            | HeMcs::Mcs9 => LegacyRate::Ofdm24M,
+        }
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        const GI_800: [u32; 10] = [
+            8_600, 17_200, 25_800, 34_400, 51_600, 68_800, 77_400, 86_000, 103_200, 114_700,
+        ];
+        const GI_1600: [u32; 10] = [
+            8_100, 16_300, 24_400, 32_500, 48_800, 65_000, 73_100, 81_300, 97_500, 108_300,
+        ];
+        const GI_3200: [u32; 10] = [
+            7_300, 14_600, 21_900, 29_300, 43_900, 58_500, 65_800, 73_100, 87_800, 97_500,
+        ];
+        let table = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => &GI_800,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => &GI_1600,
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
+        };
+        table[self.mcs.index() as usize]
+    }
+}
+
+/// One finite legacy, HT, or HE SU rate used by the open transmit path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxPhyRate {
     Legacy(LegacyRate),
     Ht(HtRate),
+    He(HeRate),
 }
 
 impl TxPhyRate {
@@ -535,6 +662,7 @@ impl TxPhyRate {
         match self {
             Self::Legacy(rate) => rate.code(),
             Self::Ht(rate) => rate.code(),
+            Self::He(rate) => rate.code(),
         }
     }
 
@@ -542,6 +670,7 @@ impl TxPhyRate {
         match self {
             Self::Legacy(rate) => rate.nominal_kbps(),
             Self::Ht(rate) => rate.nominal_kbps(),
+            Self::He(rate) => rate.nominal_kbps(),
         }
     }
 }
@@ -729,6 +858,90 @@ impl HtAmpduTxConfig {
     }
 }
 
+/// Inputs for one bounded HE20 SU A-MPDU PPDU.
+///
+/// This first HE owner deliberately models only the live-qualified 1T1R SU,
+/// BCC, non-STBC, non-beamformed profile. MCS and GI/LTF are typed; DCM,
+/// OFDMA and beamforming will enter as separate finite profiles after their
+/// own blob and HIL qualification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeAmpduTxConfig {
+    pub rate: HeRate,
+    pub bss_color: u8,
+    pub spatial_reuse: u8,
+    /// Three repeated ten-bit descriptor-derived timing values.
+    ///
+    /// The complete formatter proves the mapping. Its higher-level vendor
+    /// state producer is not yet promoted, so callers must retain the
+    /// negotiated/qualified finite value explicitly.
+    pub protection_spacing: u16,
+    pub aggregate_length: u16,
+    pub subframes: u8,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub timeout: u16,
+    pub interface: u8,
+    pub scheduler_priority: u8,
+    pub pti: u8,
+    pub pti_count: u16,
+    pub hardware_key_selector: u8,
+}
+
+impl HeAmpduTxConfig {
+    pub const fn new(
+        rate: HeRate,
+        bss_color: u8,
+        aggregate_length: u16,
+        subframes: u8,
+    ) -> Option<Self> {
+        if bss_color > 0x3f || aggregate_length == 0 || subframes == 0 || subframes > 32 {
+            return None;
+        }
+        Some(Self {
+            rate,
+            bss_color,
+            spatial_reuse: 0,
+            // One synchronous MCS9 vendor image used 0x31; retaining this
+            // bounded oracle value is explicit until its producer is moved.
+            protection_spacing: 0x31,
+            aggregate_length,
+            subframes,
+            data_power_primary: 0,
+            data_power_alternate: 0,
+            rts_power_primary: 0,
+            rts_power_alternate: 0,
+            aifsn: 2,
+            contention_window: 0,
+            timeout: 0x03ff,
+            interface: 0,
+            scheduler_priority: 1,
+            pti: 1,
+            pti_count: 1,
+            hardware_key_selector: 0,
+        })
+    }
+
+    const fn valid(self) -> bool {
+        self.bss_color <= 0x3f
+            && self.spatial_reuse <= 0x0f
+            && self.protection_spacing <= 0x03ff
+            && self.aggregate_length != 0
+            && self.subframes != 0
+            && self.subframes <= 32
+            && self.aifsn <= 0x0f
+            && self.contention_window <= 0x03ff
+            && self.timeout <= 0x0fff
+            && self.interface <= 3
+            && self.scheduler_priority <= 0x0f
+            && self.pti <= 0x0f
+            && self.pti_count <= 0x0fff
+    }
+}
+
 impl LegacyTxConfig {
     /// Conservative 1-Mbit/s management-frame profile used by the first HIL.
     ///
@@ -806,6 +1019,20 @@ pub struct HtQ0Image {
     pub plcp1: u32,
     pub ht_signal: u32,
     pub data_length: u32,
+    pub power: u32,
+    pub length_control: u32,
+    pub descriptor_count_a: u8,
+    pub descriptor_count_b: u8,
+    pub protection_spacing: u16,
+}
+
+/// Pure register image for one HE20 SU A-MPDU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeQ0Image {
+    pub plcp0: u32,
+    pub plcp1: u32,
+    pub he_signal_a1: u32,
+    pub he_signal_a2_length: u32,
     pub power: u32,
     pub length_control: u32,
     pub descriptor_count_a: u8,
@@ -919,6 +1146,48 @@ pub const fn ht_ampdu_q0_image(
         descriptor_count_a: config.subframes,
         descriptor_count_b: config.subframes,
         protection_spacing: config.protection_spacing.hardware_value(),
+    })
+}
+
+/// Build the instruction-exact bounded HE20 SU A-MPDU queue image.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
+/// mac_tx_set_plcp1,mac_tx_set_hesig,mac_tx_set_len,
+/// hal_mac_tx_set_ppdu}`, complete `pp_he.o::ppCalTxHEAMPDULength`, and
+/// `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`.
+pub const fn he_ampdu_q0_image(
+    dma_head_address: u32,
+    config: HeAmpduTxConfig,
+) -> Option<HeQ0Image> {
+    if !descriptor_address_valid(dma_head_address) || !config.valid() {
+        return None;
+    }
+    let rate = config.rate.code();
+    let rts_rate = config.rate.vendor_rts_rate();
+    let he_signal_a1 = 0xfc00_4007
+        | ((config.rate.mcs.index() as u32) << 3)
+        | ((config.bss_color as u32) << 8)
+        | ((config.spatial_reuse as u32) << 15)
+        | ((config.rate.guard_interval_and_ltf.encoding() as u32) << 21);
+    Some(HeQ0Image {
+        plcp0: he_ampdu_plcp0_word(dma_head_address as usize),
+        plcp1: he_plcp1_word(rate, config.hardware_key_selector),
+        he_signal_a1,
+        he_signal_a2_length: (HE_SU_A2_CONTROL_BCC as u32)
+            | ((config.aggregate_length as u32) << 11)
+            | 0x1000_0000,
+        power: config.data_power_primary as u32
+            | ((config.data_power_alternate as u32) << 8)
+            | ((config.rts_power_primary as u32) << 16)
+            | ((config.rts_power_alternate as u32) << 24),
+        length_control: basic_length_control_word(
+            rts_rate.code(),
+            HE_AMPDU_ENTRY_FLAGS,
+            config.hardware_key_selector as u32,
+        ),
+        descriptor_count_a: config.subframes,
+        descriptor_count_b: config.subframes,
+        protection_spacing: config.protection_spacing,
     })
 }
 

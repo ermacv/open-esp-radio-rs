@@ -9994,14 +9994,14 @@ pub mod wifi_mac_tx_queue_control {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
 pub type WifiMacTxQueueVector = crate::Periph<wifi_mac_tx_queue_vector::RegisterBlock, 0x2010_5364>;
 impl core::fmt::Debug for WifiMacTxQueueVector {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxQueueVector").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
 pub mod wifi_mac_tx_queue_vector {
     #[repr(C)]
     #[doc = "Register block"]
@@ -10013,13 +10013,17 @@ pub mod wifi_mac_tx_queue_vector {
         pti: (),
         _reserved3: [u8; 0x08],
         ht_signal: (),
-        _reserved4: [u8; 0x18],
-        power: (),
+        _reserved4: [u8; 0x0c],
+        he_su_signal_a1: (),
         _reserved5: [u8; 0x04],
-        ht_descriptor_counts: (),
+        he_su_signal_a2_length: (),
         _reserved6: [u8; 0x08],
-        data_length: (),
+        power: (),
         _reserved7: [u8; 0x04],
+        ht_descriptor_counts: (),
+        _reserved8: [u8; 0x08],
+        data_length: (),
+        _reserved9: [u8; 0x04],
         length_control: (),
     }
     impl RegisterBlock {
@@ -10109,6 +10113,56 @@ pub mod wifi_mac_tx_queue_vector {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(16)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x1c..0x2c - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG\\]; CONFIDENCE\\[instruction-exact-hil-qualified-standard-fields\\]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. Replaying the selector-one image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+        #[inline(always)]
+        pub const fn he_su_signal_a1(&self, n: usize) -> &HeSuSignalA1 {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x1c..0x2c - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG\\]; CONFIDENCE\\[instruction-exact-hil-qualified-standard-fields\\]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. Replaying the selector-one image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+        #[inline(always)]
+        pub fn he_su_signal_a1_iter(&self) -> impl Iterator<Item = &HeSuSignalA1> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE A-MPDU byte length shifted by eleven and a frame-class bit copied to bit 28. Synchronous length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105."]
+        #[inline(always)]
+        pub const fn he_su_signal_a2_length(&self, n: usize) -> &HeSuSignalA2Length {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(32)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE A-MPDU byte length shifted by eleven and a frame-class bit copied to bit 28. Synchronous length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105."]
+        #[inline(always)]
+        pub fn he_su_signal_a2_length_iter(&self) -> impl Iterator<Item = &HeSuSignalA2Length> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(32)
                     .add(124 * n)
                     .cast()
             })
@@ -10467,6 +10521,282 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for HtSignalSpec {}
         #[doc = "`write(|w| ..)` method takes [`ht_signal::W`](W) writer structure"]
         impl crate::Writable for HtSignalSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_SU_SIGNAL_A1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG\\]; CONFIDENCE\\[instruction-exact-hil-qualified-standard-fields\\]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. Replaying the selector-one image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a1`] module"]
+    #[doc(alias = "HE_SU_SIGNAL_A1")]
+    pub type HeSuSignalA1 = crate::Reg<he_su_signal_a1::HeSuSignalA1Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG\\]; CONFIDENCE\\[instruction-exact-hil-qualified-standard-fields\\]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. Replaying the selector-one image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+    pub mod he_su_signal_a1 {
+        #[doc = "Register `HE_SU_SIGNAL_A1%s` reader"]
+        pub type R = crate::R<HeSuSignalA1Spec>;
+        #[doc = "Register `HE_SU_SIGNAL_A1%s` writer"]
+        pub type W = crate::W<HeSuSignalA1Spec>;
+        #[doc = "Field `FORMAT` reader - "]
+        pub type FormatR = crate::BitReader;
+        #[doc = "Field `FORMAT` writer - "]
+        pub type FormatW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BEAM_CHANGE` reader - "]
+        pub type BeamChangeR = crate::BitReader;
+        #[doc = "Field `BEAM_CHANGE` writer - "]
+        pub type BeamChangeW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UPLINK` reader - "]
+        pub type UplinkR = crate::BitReader;
+        #[doc = "Field `UPLINK` writer - "]
+        pub type UplinkW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MCS` reader - "]
+        pub type McsR = crate::FieldReader;
+        #[doc = "Field `MCS` writer - "]
+        pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `DCM` reader - "]
+        pub type DcmR = crate::BitReader;
+        #[doc = "Field `DCM` writer - "]
+        pub type DcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BSS_COLOR` reader - "]
+        pub type BssColorR = crate::FieldReader;
+        #[doc = "Field `BSS_COLOR` writer - "]
+        pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `VECTOR_REQUIRED_14` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+        pub type VectorRequired14R = crate::BitReader;
+        #[doc = "Field `VECTOR_REQUIRED_14` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+        pub type VectorRequired14W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SPATIAL_REUSE` reader - "]
+        pub type SpatialReuseR = crate::FieldReader;
+        #[doc = "Field `SPATIAL_REUSE` writer - "]
+        pub type SpatialReuseW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BANDWIDTH` reader - "]
+        pub type BandwidthR = crate::FieldReader;
+        #[doc = "Field `BANDWIDTH` writer - "]
+        pub type BandwidthW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `GI_LTF` reader - "]
+        pub type GiLtfR = crate::FieldReader;
+        #[doc = "Field `GI_LTF` writer - "]
+        pub type GiLtfW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `NSS_MINUS_ONE` reader - "]
+        pub type NssMinusOneR = crate::FieldReader;
+        #[doc = "Field `NSS_MINUS_ONE` writer - "]
+        pub type NssMinusOneW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `VECTOR_REQUIRED_HIGH` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
+        pub type VectorRequiredHighR = crate::FieldReader;
+        #[doc = "Field `VECTOR_REQUIRED_HIGH` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
+        pub type VectorRequiredHighW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn format(&self) -> FormatR {
+                FormatR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn beam_change(&self) -> BeamChangeR {
+                BeamChangeR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn uplink(&self) -> UplinkR {
+                UplinkR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bits 3:6"]
+            #[inline(always)]
+            pub fn mcs(&self) -> McsR {
+                McsR::new(((self.bits >> 3) & 0x0f) as u8)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn dcm(&self) -> DcmR {
+                DcmR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:13"]
+            #[inline(always)]
+            pub fn bss_color(&self) -> BssColorR {
+                BssColorR::new(((self.bits >> 8) & 0x3f) as u8)
+            }
+            #[doc = "Bit 14 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+            #[inline(always)]
+            pub fn vector_required_14(&self) -> VectorRequired14R {
+                VectorRequired14R::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bits 15:18"]
+            #[inline(always)]
+            pub fn spatial_reuse(&self) -> SpatialReuseR {
+                SpatialReuseR::new(((self.bits >> 15) & 0x0f) as u8)
+            }
+            #[doc = "Bits 19:20"]
+            #[inline(always)]
+            pub fn bandwidth(&self) -> BandwidthR {
+                BandwidthR::new(((self.bits >> 19) & 3) as u8)
+            }
+            #[doc = "Bits 21:22"]
+            #[inline(always)]
+            pub fn gi_ltf(&self) -> GiLtfR {
+                GiLtfR::new(((self.bits >> 21) & 3) as u8)
+            }
+            #[doc = "Bits 23:25"]
+            #[inline(always)]
+            pub fn nss_minus_one(&self) -> NssMinusOneR {
+                NssMinusOneR::new(((self.bits >> 23) & 7) as u8)
+            }
+            #[doc = "Bits 26:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
+            #[inline(always)]
+            pub fn vector_required_high(&self) -> VectorRequiredHighR {
+                VectorRequiredHighR::new(((self.bits >> 26) & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn format(&mut self) -> FormatW<'_, HeSuSignalA1Spec> {
+                FormatW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn beam_change(&mut self) -> BeamChangeW<'_, HeSuSignalA1Spec> {
+                BeamChangeW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn uplink(&mut self) -> UplinkW<'_, HeSuSignalA1Spec> {
+                UplinkW::new(self, 2)
+            }
+            #[doc = "Bits 3:6"]
+            #[inline(always)]
+            pub fn mcs(&mut self) -> McsW<'_, HeSuSignalA1Spec> {
+                McsW::new(self, 3)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn dcm(&mut self) -> DcmW<'_, HeSuSignalA1Spec> {
+                DcmW::new(self, 7)
+            }
+            #[doc = "Bits 8:13"]
+            #[inline(always)]
+            pub fn bss_color(&mut self) -> BssColorW<'_, HeSuSignalA1Spec> {
+                BssColorW::new(self, 8)
+            }
+            #[doc = "Bit 14 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+            #[inline(always)]
+            pub fn vector_required_14(&mut self) -> VectorRequired14W<'_, HeSuSignalA1Spec> {
+                VectorRequired14W::new(self, 14)
+            }
+            #[doc = "Bits 15:18"]
+            #[inline(always)]
+            pub fn spatial_reuse(&mut self) -> SpatialReuseW<'_, HeSuSignalA1Spec> {
+                SpatialReuseW::new(self, 15)
+            }
+            #[doc = "Bits 19:20"]
+            #[inline(always)]
+            pub fn bandwidth(&mut self) -> BandwidthW<'_, HeSuSignalA1Spec> {
+                BandwidthW::new(self, 19)
+            }
+            #[doc = "Bits 21:22"]
+            #[inline(always)]
+            pub fn gi_ltf(&mut self) -> GiLtfW<'_, HeSuSignalA1Spec> {
+                GiLtfW::new(self, 21)
+            }
+            #[doc = "Bits 23:25"]
+            #[inline(always)]
+            pub fn nss_minus_one(&mut self) -> NssMinusOneW<'_, HeSuSignalA1Spec> {
+                NssMinusOneW::new(self, 23)
+            }
+            #[doc = "Bits 26:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-unknown\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
+            #[inline(always)]
+            pub fn vector_required_high(&mut self) -> VectorRequiredHighW<'_, HeSuSignalA1Spec> {
+                VectorRequiredHighW::new(self, 26)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG\\]; CONFIDENCE\\[instruction-exact-hil-qualified-standard-fields\\]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. Replaying the selector-one image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeSuSignalA1Spec;
+        impl crate::RegisterSpec for HeSuSignalA1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_su_signal_a1::R`](R) reader structure"]
+        impl crate::Readable for HeSuSignalA1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`he_su_signal_a1::W`](W) writer structure"]
+        impl crate::Writable for HeSuSignalA1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_SU_SIGNAL_A2_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE A-MPDU byte length shifted by eleven and a frame-class bit copied to bit 28. Synchronous length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a2_length`] module"]
+    #[doc(alias = "HE_SU_SIGNAL_A2_LENGTH")]
+    pub type HeSuSignalA2Length = crate::Reg<he_su_signal_a2_length::HeSuSignalA2LengthSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE A-MPDU byte length shifted by eleven and a frame-class bit copied to bit 28. Synchronous length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105."]
+    pub mod he_su_signal_a2_length {
+        #[doc = "Register `HE_SU_SIGNAL_A2_LENGTH%s` reader"]
+        pub type R = crate::R<HeSuSignalA2LengthSpec>;
+        #[doc = "Register `HE_SU_SIGNAL_A2_LENGTH%s` writer"]
+        pub type W = crate::W<HeSuSignalA2LengthSpec>;
+        #[doc = "Field `CONTROL_LOW` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+        pub type ControlLowR = crate::FieldReader<u16>;
+        #[doc = "Field `CONTROL_LOW` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+        pub type ControlLowW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `DESCRIPTOR_CLASS_MATCH` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
+        pub type DescriptorClassMatchR = crate::BitReader;
+        #[doc = "Field `DESCRIPTOR_CLASS_MATCH` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
+        pub type DescriptorClassMatchW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `APEP_LENGTH` reader - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics\\]. Sixteen-bit assembled HE A-MPDU byte count produced by ppCalTxHEAMPDULength and copied by mac_tx_set_hesig."]
+        pub type ApepLengthR = crate::FieldReader<u16>;
+        #[doc = "Field `APEP_LENGTH` writer - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics\\]. Sixteen-bit assembled HE A-MPDU byte count produced by ppCalTxHEAMPDULength and copied by mac_tx_set_hesig."]
+        pub type ApepLengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `AMPDU_LENGTH_VALID` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-from-control-flow\\]. Copy of frame-state bit 12; set in both live HE A-MPDU images."]
+        pub type AmpduLengthValidR = crate::BitReader;
+        #[doc = "Field `AMPDU_LENGTH_VALID` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-from-control-flow\\]. Copy of frame-state bit 12; set in both live HE A-MPDU images."]
+        pub type AmpduLengthValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:9 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+            #[inline(always)]
+            pub fn control_low(&self) -> ControlLowR {
+                ControlLowR::new((self.bits & 0x03ff) as u16)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
+            #[inline(always)]
+            pub fn descriptor_class_match(&self) -> DescriptorClassMatchR {
+                DescriptorClassMatchR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics\\]. Sixteen-bit assembled HE A-MPDU byte count produced by ppCalTxHEAMPDULength and copied by mac_tx_set_hesig."]
+            #[inline(always)]
+            pub fn apep_length(&self) -> ApepLengthR {
+                ApepLengthR::new(((self.bits >> 11) & 0xffff) as u16)
+            }
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-from-control-flow\\]. Copy of frame-state bit 12; set in both live HE A-MPDU images."]
+            #[inline(always)]
+            pub fn ampdu_length_valid(&self) -> AmpduLengthValidR {
+                AmpduLengthValidR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+            #[inline(always)]
+            pub fn control_low(&mut self) -> ControlLowW<'_, HeSuSignalA2LengthSpec> {
+                ControlLowW::new(self, 0)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
+            #[inline(always)]
+            pub fn descriptor_class_match(
+                &mut self,
+            ) -> DescriptorClassMatchW<'_, HeSuSignalA2LengthSpec> {
+                DescriptorClassMatchW::new(self, 10)
+            }
+            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics\\]. Sixteen-bit assembled HE A-MPDU byte count produced by ppCalTxHEAMPDULength and copied by mac_tx_set_hesig."]
+            #[inline(always)]
+            pub fn apep_length(&mut self) -> ApepLengthW<'_, HeSuSignalA2LengthSpec> {
+                ApepLengthW::new(self, 11)
+            }
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-from-control-flow\\]. Copy of frame-state bit 12; set in both live HE A-MPDU images."]
+            #[inline(always)]
+            pub fn ampdu_length_valid(&mut self) -> AmpduLengthValidW<'_, HeSuSignalA2LengthSpec> {
+                AmpduLengthValidW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified-semantics-partial\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE A-MPDU byte length shifted by eleven and a frame-class bit copied to bit 28. Synchronous length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeSuSignalA2LengthSpec;
+        impl crate::RegisterSpec for HeSuSignalA2LengthSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_su_signal_a2_length::R`](R) reader structure"]
+        impl crate::Readable for HeSuSignalA2LengthSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_su_signal_a2_length::W`](W) writer structure"]
+        impl crate::Writable for HeSuSignalA2LengthSpec {
             type Safety = crate::Unsafe;
         }
     }

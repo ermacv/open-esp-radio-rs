@@ -49,6 +49,33 @@ pub struct MacHtTxProgram {
     pub interface: u8,
 }
 
+/// Complete bounded queue-vector image for one HE SU A-MPDU.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{
+/// hal_mac_tx_set_ppdu,mac_tx_set_hesig,mac_tx_set_len}` and
+/// `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`. The MAC layer constructs the
+/// standard-semantic fields; this PAC layer owns only their ordered MMIO
+/// publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTxProgram {
+    pub plcp0: u32,
+    pub plcp1: u32,
+    pub he_signal_a1: u32,
+    pub he_signal_a2_length: u32,
+    pub power: u32,
+    pub length_control: u32,
+    pub descriptor_count_a: u8,
+    pub descriptor_count_b: u8,
+    pub protection_spacing: u16,
+    pub timeout: u16,
+    pub scheduler_priority: u8,
+    pub packet_priority: u8,
+    pub priority_count: u16,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub interface: u8,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacTxCompletionRegisters {
     pub aux_a: u32,
@@ -277,11 +304,124 @@ impl RadioRegisters {
         true
     }
 
+    /// Program one HE SU A-MPDU up to its final ENABLE|VALID edge.
+    ///
+    /// This is separate from HT because HE publishes two different vector
+    /// words and deliberately does not write the non-HE DATA_LENGTH word.
+    pub fn prepare_he_mac_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        assert!(program.descriptor_count_a <= 0x7f);
+        assert!(program.descriptor_count_b <= 0x7f);
+        assert!(program.protection_spacing <= 0x03ff);
+        assert!(program.timeout <= 0x0fff);
+        assert!(program.scheduler_priority <= 0x0f);
+        assert!(program.packet_priority <= 0x0f);
+        assert!(program.priority_count <= 0x0fff);
+        assert!(program.aifsn <= 0x0f);
+        assert!(program.contention_window <= 0x03ff);
+        assert!(program.interface <= 3);
+
+        let bank = physical_bank(queue);
+        let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+        let control = control_bank.control(bank);
+        if control.read().bits() & ENABLE_VALID_MASK != 0 {
+            return false;
+        }
+
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.timeout().bits(program.timeout) });
+        // SAFETY: the complete vendor formatter publishes both whole words.
+        unsafe {
+            control.write_with_zero(|w| w.bits(program.plcp0));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .plcp1(bank)
+                .write_with_zero(|w| w.bits(program.plcp1));
+        }
+        control_bank
+            .ppdu_control(bank)
+            .modify(|_, w| w.legacy_clear_unknown().clear_bit());
+
+        // SOURCE: complete mac_tx_set_plcp0/hal_he_set_tx_protection followed
+        // by mac_tx_set_hesig. The bounded SU profile clears the protection
+        // high bit, then replaces the three finite ten-bit spacing lanes.
+        let protection = control_bank.protection(bank);
+        protection.modify(|_, w| w.txop_descriptor_policy().clear_bit());
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_primary().bits(program.protection_spacing) });
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_secondary().bits(program.protection_spacing) });
+        protection
+            .modify(|_, w| unsafe { w.ht_spacing_tertiary().bits(program.protection_spacing) });
+
+        // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
+        // publishing the same three descriptor-count edges used by HT.
+        unsafe {
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .he_su_signal_a1(bank)
+                .write_with_zero(|w| w.bits(program.he_signal_a1));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .he_su_signal_a2_length(bank)
+                .write_with_zero(|w| w.bits(program.he_signal_a2_length));
+        }
+        let descriptor_counts = self
+            .peripherals
+            .wifi_mac_tx_queue_vector
+            .ht_descriptor_counts(bank);
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_a().bits(program.descriptor_count_a) });
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_b().bits(program.descriptor_count_b) });
+        descriptor_counts
+            .modify(|_, w| unsafe { w.descriptor_count_a_copy().bits(program.descriptor_count_a) });
+
+        // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
+        // branch intentionally skips the non-HE DATA_LENGTH register.
+        unsafe {
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .length_control(bank)
+                .write_with_zero(|w| w.bits(program.length_control));
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .power(bank)
+                .write_with_zero(|w| w.bits(program.power));
+        }
+
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
+        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
+        pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
+
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.aifsn().bits(program.aifsn) });
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.contention_window().bits(program.contention_window) });
+        control_bank
+            .config(bank)
+            .modify(|_, w| unsafe { w.interface().bits(program.interface) });
+        true
+    }
+
     pub fn start_legacy_mac_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_prepared_mac_tx(queue, plcp0);
     }
 
     pub fn start_ht_mac_tx(&mut self, queue: u8, plcp0: u32) {
+        self.start_prepared_mac_tx(queue, plcp0);
+    }
+
+    pub fn start_he_mac_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_prepared_mac_tx(queue, plcp0);
     }
 

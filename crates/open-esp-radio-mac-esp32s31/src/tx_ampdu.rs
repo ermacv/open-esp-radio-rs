@@ -8,13 +8,15 @@
 
 use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
-use open_esp_radio_pac_esp32s31::{MacHtAmpduCompletionRegisters, MacHtTxProgram, RadioRegisters};
+use open_esp_radio_pac_esp32s31::{
+    MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram, RadioRegisters,
+};
 
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
     tx::{
-        decode_tx_completion, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion,
-        TxCookie, TxHardware, TxSlotState,
+        decode_tx_completion, HeAmpduTxConfig, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue,
+        TxCompletion, TxCookie, TxHardware, TxSlotState,
     },
 };
 
@@ -752,6 +754,88 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.detached = false;
         storage.state = TxSlotState::HardwareOwned;
         hardware.start_ht_tx(queue_index, image.plcp0);
+        Ok(())
+    }
+
+    /// Publish and start one HE20 SU A-MPDU with the same pinned ownership
+    /// and completion/BlockAck ordering as [`Self::submit`].
+    pub fn submit_he<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HeAmpduTxConfig,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
+        // through completion and only scalar ownership fields are mutated.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if storage.count < 2 {
+            return Err(HtAmpduTxError::TooFewFrames);
+        }
+
+        let aggregate = storage.calculate_aggregate()?;
+        let count = usize::from(storage.count);
+        if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
+            return Err(HtAmpduTxError::RegisterImageMismatch);
+        }
+
+        let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        for index in 0..count {
+            let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
+            let buffer_address = storage.buffers[index].0.get().addr() as u32;
+            let capacity = u32::from(storage.descriptor_capacities[index]);
+            let transfer_length =
+                (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
+            if !descriptor_address_valid(descriptor_address)
+                || !dma_range_valid(buffer_address, capacity)
+            {
+                return Err(HtAmpduTxError::InvalidGeometry);
+            }
+            let next_address = if index + 1 < count {
+                core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
+            } else {
+                0
+            };
+            let mut word0 =
+                tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+            if index + 1 < count {
+                word0 &= !BIT_30;
+            }
+            storage.descriptors[index].publish(word0, buffer_address, next_address);
+        }
+
+        let image = crate::tx::he_ampdu_q0_image(first_descriptor, config)
+            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let program = MacHeTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            he_signal_a1: image.he_signal_a1,
+            he_signal_a2_length: image.he_signal_a2_length,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        let queue_index = queue.index();
+        if !hardware.prepare_he_tx(queue_index, program) {
+            return Err(HtAmpduTxError::QueueActive);
+        }
+        storage.queue = queue;
+        storage.aggregate_length = aggregate.bytes;
+        storage.detached = false;
+        storage.state = TxSlotState::HardwareOwned;
+        hardware.start_he_tx(queue_index, image.plcp0);
         Ok(())
     }
 

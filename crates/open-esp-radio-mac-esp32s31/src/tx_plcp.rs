@@ -15,6 +15,25 @@ pub const fn basic_plcp0_word(metadata_address: usize, flags: u32) -> u32 {
     word
 }
 
+/// Build the bounded HE SU A-MPDU PLCP0/control image.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_plcp0` and
+/// `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`. Descriptor flags `0xc0403009`
+/// select queue format five; the address remains the direct DMA-chain head.
+pub const fn he_ampdu_plcp0_word(descriptor_address: usize) -> u32 {
+    (descriptor_address as u32 & 0x000f_ffff) | 0x0560_0000
+}
+
+/// Build the HE PLCP1/vector word for one canonical rate code.
+///
+/// The HE branch uses format image `0x04000000`; its low five rate bits and
+/// descriptor control byte use the same positions as complete
+/// `mac_tx_set_plcp1`. Live MCS9 with control byte four produced
+/// `0x04083000`.
+pub const fn he_plcp1_word(rate: u8, descriptor_control: u8) -> u32 {
+    0x0400_0000 | ((descriptor_control as u32) << 17) | (((rate & 0x1f) as u32) << 12)
+}
+
 /// Apply the ordinary non-TXOP descriptor policy to the PLCP0/control word.
 ///
 /// This is a separate formatter edge from [`basic_plcp0_word`]. Complete
@@ -97,7 +116,8 @@ pub const fn basic_data_length_word(rate: u8, length: u32, entry_flags: u8) -> u
 mod tests {
     use super::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
-        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, ht_htsig_word,
+        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
+        he_plcp1_word, ht_htsig_word,
     };
 
     const ADDRESS: usize = 0x2f12_3456;
@@ -115,6 +135,12 @@ mod tests {
         assert_eq!(basic_plcp0_word(ADDRESS, 0), BASE | 0x0100_0000);
         assert_eq!(basic_plcp0_word(ADDRESS, 0x0008_0000), BASE | 0x0200_0000);
         assert_eq!(basic_plcp0_word(ADDRESS, 0x0010_0000), BASE | 0x0300_0000);
+    }
+
+    #[test]
+    fn reproduces_the_vendor_he_mcs9_plcp_prefix() {
+        assert_eq!(he_ampdu_plcp0_word(0x2f03_1638), 0x0563_1638);
+        assert_eq!(he_plcp1_word(35, 4), 0x0408_3000);
     }
 
     #[test]

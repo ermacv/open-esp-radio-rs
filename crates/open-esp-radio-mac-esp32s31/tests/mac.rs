@@ -37,14 +37,16 @@ use open_esp_radio_mac_esp32s31::{
         RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
-        ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HtAmpduTxConfig, HtChannelWidth,
-        HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate,
-        LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        he_ampdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HeAmpduTxConfig, HeMcs,
+        HeRate, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing,
+        HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware,
+        TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
     mac::{self, init as mac_init},
-    MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, Register32,
+    MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
+    MacTxCompletionRegisters, Register32,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -689,6 +691,12 @@ impl TxHardware for MockMmio {
         );
         Mmio::fence(self);
     }
+
+    fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
+        false
+    }
+
+    fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
         let index = usize::from(queue);
@@ -2107,6 +2115,62 @@ fn ht_ampdu_image_matches_the_two_mpdu_vendor_oracle() {
     assert_eq!(image.descriptor_count_a, 2);
     assert_eq!(image.descriptor_count_b, 2);
     assert_eq!(image.protection_spacing, 40);
+}
+
+#[test]
+fn he20_mcs9_image_matches_the_synchronous_vendor_oracle() {
+    let rate = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    let mut config = HeAmpduTxConfig::new(rate, 27, 0x76, 1).unwrap();
+    config.data_power_primary = 5;
+    config.data_power_alternate = 5;
+    config.rts_power_primary = 5;
+    config.rts_power_alternate = 5;
+    config.hardware_key_selector = 4;
+
+    let image = he_ampdu_q0_image(0x2f03_1638, config).unwrap();
+    assert_eq!(rate.code(), 35);
+    assert_eq!(rate.power_lookup_code(), 25);
+    assert_eq!(rate.nominal_kbps(), 114_700);
+    assert_eq!(image.plcp0, 0x0563_1638);
+    assert_eq!(image.plcp1, 0x0408_3000);
+    assert_eq!(image.he_signal_a1, 0xfc20_5b4f);
+    assert_eq!(image.he_signal_a2_length, 0x1003_b105);
+    assert_eq!(image.power, 0x0505_0505);
+    assert_eq!(image.length_control, 0x0040_0244);
+    assert_eq!(image.descriptor_count_a, 1);
+    assert_eq!(image.descriptor_count_b, 1);
+    assert_eq!(image.protection_spacing, 0x31);
+
+    config.rate = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::FourLtf3200Ns);
+    assert_eq!(
+        he_ampdu_q0_image(0x2f03_1638, config).unwrap().he_signal_a1,
+        0xfc60_5b4f,
+    );
+}
+
+#[test]
+fn he20_formatter_covers_mcs0_through_mcs9_and_every_gi_ltf() {
+    for mcs in 0..=9 {
+        let mcs = HeMcs::from_index(mcs).unwrap();
+        for gi_ltf in [
+            HeGuardIntervalAndLtf::OneLtf800Ns,
+            HeGuardIntervalAndLtf::TwoLtf800Ns,
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            HeGuardIntervalAndLtf::FourLtf3200Ns,
+        ] {
+            let rate = HeRate::new(mcs, gi_ltf);
+            let image =
+                he_ampdu_q0_image(0x2f00_5000, HeAmpduTxConfig::new(rate, 27, 312, 2).unwrap())
+                    .unwrap();
+            assert_eq!((image.plcp0 >> 24) & 7, 5);
+            assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(mcs.index()));
+            assert_eq!(
+                (image.he_signal_a1 >> 21) & 0x03,
+                u32::from(gi_ltf.encoding()),
+            );
+            assert_eq!((image.he_signal_a2_length >> 11) & 0xffff, 312);
+        }
+    }
 }
 
 #[test]

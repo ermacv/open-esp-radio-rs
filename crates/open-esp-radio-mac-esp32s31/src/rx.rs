@@ -294,6 +294,17 @@ impl HeGuardIntervalAndLtf {
             Self::FourLtf3200Ns => 4,
         }
     }
+
+    /// Two-bit IEEE HE-SIG-A1 GI/LTF encoding used by both RX metadata and
+    /// the typed HE SU TX formatter.
+    pub const fn encoding(self) -> u8 {
+        match self {
+            Self::OneLtf800Ns => 0,
+            Self::TwoLtf800Ns => 1,
+            Self::TwoLtf1600Ns => 2,
+            Self::FourLtf3200Ns => 3,
+        }
+    }
 }
 
 /// Typed HE SU signal fields captured from the S31 RX metadata.

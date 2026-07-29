@@ -9504,7 +9504,7 @@ pub mod wifi_mac_tx_queue_control {
         control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub const fn protection(&self, n: usize) -> &Protection {
             #[allow(clippy::no_effect)]
@@ -9512,7 +9512,7 @@ pub mod wifi_mac_tx_queue_control {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub fn protection_iter(&self) -> impl Iterator<Item = &Protection> {
             (0..4).map(move |n| unsafe {
@@ -9595,26 +9595,26 @@ pub mod wifi_mac_tx_queue_control {
             })
         }
     }
-    #[doc = "PROTECTION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
+    #[doc = "PROTECTION (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
     #[doc(alias = "PROTECTION")]
     pub type Protection = crate::Reg<protection::ProtectionSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
     pub mod protection {
         #[doc = "Register `PROTECTION%s` reader"]
         pub type R = crate::R<ProtectionSpec>;
         #[doc = "Register `PROTECTION%s` writer"]
         pub type W = crate::W<ProtectionSpec>;
-        #[doc = "Field `HT_SPACING_PRIMARY` reader - First copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_PRIMARY` reader - First copy of the HT peer-derived or HE rate/density-derived protection spacing value; the historical HT name is retained for API stability."]
         pub type HtSpacingPrimaryR = crate::FieldReader<u16>;
-        #[doc = "Field `HT_SPACING_PRIMARY` writer - First copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_PRIMARY` writer - First copy of the HT peer-derived or HE rate/density-derived protection spacing value; the historical HT name is retained for API stability."]
         pub type HtSpacingPrimaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
-        #[doc = "Field `HT_SPACING_SECONDARY` reader - Second copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_SECONDARY` reader - Second copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
         pub type HtSpacingSecondaryR = crate::FieldReader<u16>;
-        #[doc = "Field `HT_SPACING_SECONDARY` writer - Second copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_SECONDARY` writer - Second copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
         pub type HtSpacingSecondaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
-        #[doc = "Field `HT_SPACING_TERTIARY` reader - Third copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_TERTIARY` reader - Third copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
         pub type HtSpacingTertiaryR = crate::FieldReader<u16>;
-        #[doc = "Field `HT_SPACING_TERTIARY` writer - Third copy of the peer-derived HT protection/response spacing value."]
+        #[doc = "Field `HT_SPACING_TERTIARY` writer - Third copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
         pub type HtSpacingTertiaryW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
         #[doc = "Field `PROTECTION_MODE_UNKNOWN` reader - "]
         pub type ProtectionModeUnknownR = crate::BitReader;
@@ -9625,17 +9625,17 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `TXOP_DESCRIPTOR_POLICY` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise."]
         pub type TxopDescriptorPolicyW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:9 - First copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 0:9 - First copy of the HT peer-derived or HE rate/density-derived protection spacing value; the historical HT name is retained for API stability."]
             #[inline(always)]
             pub fn ht_spacing_primary(&self) -> HtSpacingPrimaryR {
                 HtSpacingPrimaryR::new((self.bits & 0x03ff) as u16)
             }
-            #[doc = "Bits 10:19 - Second copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 10:19 - Second copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
             #[inline(always)]
             pub fn ht_spacing_secondary(&self) -> HtSpacingSecondaryR {
                 HtSpacingSecondaryR::new(((self.bits >> 10) & 0x03ff) as u16)
             }
-            #[doc = "Bits 20:29 - Third copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 20:29 - Third copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
             #[inline(always)]
             pub fn ht_spacing_tertiary(&self) -> HtSpacingTertiaryR {
                 HtSpacingTertiaryR::new(((self.bits >> 20) & 0x03ff) as u16)
@@ -9652,17 +9652,17 @@ pub mod wifi_mac_tx_queue_control {
             }
         }
         impl W {
-            #[doc = "Bits 0:9 - First copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 0:9 - First copy of the HT peer-derived or HE rate/density-derived protection spacing value; the historical HT name is retained for API stability."]
             #[inline(always)]
             pub fn ht_spacing_primary(&mut self) -> HtSpacingPrimaryW<'_, ProtectionSpec> {
                 HtSpacingPrimaryW::new(self, 0)
             }
-            #[doc = "Bits 10:19 - Second copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 10:19 - Second copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
             #[inline(always)]
             pub fn ht_spacing_secondary(&mut self) -> HtSpacingSecondaryW<'_, ProtectionSpec> {
                 HtSpacingSecondaryW::new(self, 10)
             }
-            #[doc = "Bits 20:29 - Third copy of the peer-derived HT protection/response spacing value."]
+            #[doc = "Bits 20:29 - Third copy of the HT peer-derived or HE rate/density-derived protection spacing value."]
             #[inline(always)]
             pub fn ht_spacing_tertiary(&mut self) -> HtSpacingTertiaryW<'_, ProtectionSpec> {
                 HtSpacingTertiaryW::new(self, 20)
@@ -9680,7 +9680,7 @@ pub mod wifi_mac_tx_queue_control {
                 TxopDescriptorPolicyW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue non-HE response/protection timing. Complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields through three fresh-read RMW edges while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. Complete mac_tx_set_txop_q independently updates bit 31. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of the negotiated value 40. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ProtectionSpec;
         impl crate::RegisterSpec for ProtectionSpec {
             type Ux = u32;

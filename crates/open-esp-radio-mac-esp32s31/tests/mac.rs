@@ -38,10 +38,10 @@ use open_esp_radio_mac_esp32s31::{
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
-        HeAmpduTxConfig, HeBccDcmMcs, HeMcs, HeRate, HeSmpduTxConfig, HtAmpduTxConfig,
-        HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig,
-        LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot,
-        TxSlotState,
+        HeAmpduTxConfig, HeBccDcmMcs, HeMcs, HeRate, HeSmpduTxConfig, HtAmpduDensity,
+        HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate,
+        HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate,
+        TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2119,9 +2119,10 @@ fn ht_ampdu_image_matches_the_two_mpdu_vendor_oracle() {
 }
 
 #[test]
-fn he20_mcs9_image_matches_the_synchronous_vendor_oracle() {
+fn he20_mcs9_image_matches_the_vendor_vector_and_blob_derived_spacing() {
     let rate = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
-    let mut config = HeAmpduTxConfig::new(rate, 27, 0x76, 1).unwrap();
+    let density = HtAmpduDensity::SixteenMicroseconds;
+    let mut config = HeAmpduTxConfig::new(rate, 27, 0x76, 1, density).unwrap();
     config.data_power_primary = 5;
     config.data_power_alternate = 5;
     config.rts_power_primary = 5;
@@ -2140,9 +2141,19 @@ fn he20_mcs9_image_matches_the_synchronous_vendor_oracle() {
     assert_eq!(image.length_control, 0x0040_0244);
     assert_eq!(image.descriptor_count_a, 1);
     assert_eq!(image.descriptor_count_b, 1);
-    assert_eq!(image.protection_spacing, 0x31);
+    assert_eq!(image.protection_spacing, 230);
+    assert_eq!(config.rate(), rate);
+    assert_eq!(config.ampdu_density(), density);
+    assert_eq!(config.protection_spacing(), 230);
 
-    config.rate = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::FourLtf3200Ns);
+    config = HeAmpduTxConfig::new(
+        HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::FourLtf3200Ns),
+        27,
+        0x76,
+        1,
+        density,
+    )
+    .unwrap();
     assert_eq!(
         he_ampdu_q0_image(0x2f03_1638, config).unwrap().he_signal_a1,
         0xfc60_5b4f,
@@ -2182,9 +2193,11 @@ fn he20_formatter_covers_mcs0_through_mcs9_and_every_gi_ltf() {
             HeGuardIntervalAndLtf::FourLtf3200Ns,
         ] {
             let rate = HeRate::new(mcs, gi_ltf);
-            let image =
-                he_ampdu_q0_image(0x2f00_5000, HeAmpduTxConfig::new(rate, 27, 312, 2).unwrap())
-                    .unwrap();
+            let image = he_ampdu_q0_image(
+                0x2f00_5000,
+                HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
+            )
+            .unwrap();
             assert_eq!((image.plcp0 >> 24) & 7, 5);
             assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(mcs.index()));
             assert_eq!(
@@ -2214,10 +2227,11 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
         assert_eq!(rate.power_lookup_code(), 0x10 + expected_index);
         assert_eq!(rate.nominal_kbps(), expected_kbps);
         assert_eq!(
-            rate.dcm_minimum_ampdu_subframe_bytes(8),
-            Some(expected_kbps.div_ceil(1_000) as u16)
+            rate.minimum_ampdu_subframe_bytes(HtAmpduDensity::EightMicroseconds),
+            expected_kbps.div_ceil(1_000) as u16
         );
-        let config = HeAmpduTxConfig::new(rate, 27, 312, 2).unwrap();
+        let config =
+            HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap();
         let image = he_ampdu_q0_image(0x2f00_5000, config).unwrap();
         assert_eq!((image.plcp1 >> 12) & 0x1f, u32::from(0x1a + expected_index));
         assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(expected_index));
@@ -2234,17 +2248,50 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
         HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::FourLtf3200Ns).nominal_kbps(),
         14_600
     );
-    assert_eq!(
-        HeRate::new(HeMcs::Mcs3, HeGuardIntervalAndLtf::TwoLtf800Ns)
-            .dcm_minimum_ampdu_subframe_bytes(8),
-        None
-    );
     // Preserve the blob's two-stage integer truncation instead of replacing
     // it with a superficially equivalent ceil(rate*density/80).
     assert_eq!(
         HeRate::bcc_dcm(HeBccDcmMcs::Mcs1, HeGuardIntervalAndLtf::TwoLtf1600Ns)
-            .dcm_minimum_ampdu_subframe_bytes(1),
+            .minimum_ampdu_subframe_bytes(HtAmpduDensity::QuarterMicrosecond),
+        1
+    );
+}
+
+#[test]
+fn he_ampdu_density_and_empty_delimiters_match_complete_blob_integer_policy() {
+    let expected_microseconds = [0, 1, 1, 1, 2, 4, 8, 16];
+    for (encoding, expected) in expected_microseconds.into_iter().enumerate() {
+        let density = HtAmpduDensity::from_ampdu_parameters((encoding as u8) << 2);
+        assert_eq!(density.encoding(), encoding as u8);
+        assert_eq!(density.vendor_integer_microseconds(), expected);
+    }
+
+    let ordinary = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    assert_eq!(
+        ordinary.minimum_ampdu_subframe_bytes(HtAmpduDensity::SixteenMicroseconds),
+        230
+    );
+    assert_eq!(
+        ordinary.ampdu_empty_delimiters(28, HtAmpduDensity::SixteenMicroseconds),
+        Some(50)
+    );
+    assert_eq!(
+        ordinary.ampdu_empty_delimiters(28, HtAmpduDensity::NoRestriction),
+        Some(0)
+    );
+
+    let dcm = HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    assert_eq!(
+        dcm.minimum_ampdu_subframe_bytes(HtAmpduDensity::SixteenMicroseconds),
+        35
+    );
+    assert_eq!(
+        dcm.ampdu_empty_delimiters(28, HtAmpduDensity::SixteenMicroseconds),
         Some(1)
+    );
+    assert_eq!(
+        dcm.ampdu_empty_delimiters(0, HtAmpduDensity::SixteenMicroseconds),
+        None
     );
 }
 

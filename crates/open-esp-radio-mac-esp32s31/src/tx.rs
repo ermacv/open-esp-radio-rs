@@ -424,7 +424,11 @@ impl HtProtectionSpacing {
     /// size `0xde`, cross-checked against a coherent hardware-owned vendor HT
     /// queue containing three copies of value 40 (`0x0280_a028`).
     pub const fn from_ampdu_parameters(parameters: u8) -> Self {
-        match (parameters >> 2) & 0x07 {
+        Self::from_density(HtAmpduDensity::from_ampdu_parameters(parameters))
+    }
+
+    pub const fn from_density(density: HtAmpduDensity) -> Self {
+        match density.encoding() {
             0..=4 => Self::Density0To4,
             5 => Self::Density5,
             6 => Self::Density6,
@@ -434,6 +438,65 @@ impl HtProtectionSpacing {
 
     pub const fn hardware_value(self) -> u16 {
         self as u16
+    }
+}
+
+/// Peer-advertised HT minimum MPDU start spacing.
+///
+/// The enum retains all eight IEEE encodings even though the S31 queue's
+/// [`HtProtectionSpacing`] field collapses encodings zero through four.
+/// HE delimiter construction needs the original encoding: the complete
+/// vendor `rcUpdateAMPDUParam` converts it through the integer-microsecond
+/// table `[0, 1, 1, 1, 2, 4, 8, 16]` before regenerating the HE minimum
+/// subframe tables.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HtAmpduDensity {
+    #[default]
+    NoRestriction = 0,
+    QuarterMicrosecond = 1,
+    HalfMicrosecond = 2,
+    OneMicrosecond = 3,
+    TwoMicroseconds = 4,
+    FourMicroseconds = 5,
+    EightMicroseconds = 6,
+    SixteenMicroseconds = 7,
+}
+
+impl HtAmpduDensity {
+    /// Decode bits 4:2 of the complete HT A-MPDU Parameters byte.
+    pub const fn from_ampdu_parameters(parameters: u8) -> Self {
+        match (parameters >> 2) & 0x07 {
+            0 => Self::NoRestriction,
+            1 => Self::QuarterMicrosecond,
+            2 => Self::HalfMicrosecond,
+            3 => Self::OneMicrosecond,
+            4 => Self::TwoMicroseconds,
+            5 => Self::FourMicroseconds,
+            6 => Self::EightMicroseconds,
+            _ => Self::SixteenMicroseconds,
+        }
+    }
+
+    pub const fn encoding(self) -> u8 {
+        self as u8
+    }
+
+    /// Integer-microsecond value consumed by the pinned PP blob.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcUpdateAMPDUParam`.
+    /// Its two stack constants form the exact byte table
+    /// `[0, 1, 1, 1, 2, 4, 8, 16]`; the selected byte is stored in ROM global
+    /// `s_ht_ampdu_density_us` before `he_get_min_subframe_len[_dcm]` uses it.
+    pub const fn vendor_integer_microseconds(self) -> u8 {
+        match self {
+            Self::NoRestriction => 0,
+            Self::QuarterMicrosecond | Self::HalfMicrosecond | Self::OneMicrosecond => 1,
+            Self::TwoMicroseconds => 2,
+            Self::FourMicroseconds => 4,
+            Self::EightMicroseconds => 8,
+            Self::SixteenMicroseconds => 16,
+        }
     }
 }
 
@@ -773,27 +836,53 @@ impl HeRate {
         }
     }
 
-    /// Minimum DCM A-MPDU subframe length for a negotiated density.
+    /// Minimum HE A-MPDU subframe length for a negotiated density.
     ///
-    /// This reproduces complete
-    /// `_oracles/libpp.a[trc.o]::he_get_min_subframe_len_dcm`: select the
-    /// RU242 DCM rate in 100-kbit/s units, multiply by the density in
-    /// microseconds, truncate by eight, then round that intermediate value up
-    /// to a multiple of ten. Returning `None` for an ordinary HE rate keeps
-    /// DCM delimiter padding from leaking into the non-DCM formatter.
+    /// This reproduces complete `_oracles/libpp.a[trc.o]::
+    /// {he_get_min_subframe_len,he_get_min_subframe_len_dcm}`: select the
+    /// ordinary or DCM RU242 rate in 100-kbit/s units, multiply by the blob's
+    /// integer-microsecond density, truncate by eight, then divide by ten and
+    /// round up when a remainder remains.
     ///
     /// The value is the required complete A-MPDU subframe length in bytes.
     /// The caller still owns the distinction between MPDU bytes, the
     /// four-byte delimiter, four-byte alignment, and any extra empty
     /// delimiters.
-    pub const fn dcm_minimum_ampdu_subframe_bytes(self, density_us: u8) -> Option<u16> {
-        if !self.dcm {
-            return None;
-        }
+    pub const fn minimum_ampdu_subframe_bytes(self, density: HtAmpduDensity) -> u16 {
+        let density_us = density.vendor_integer_microseconds();
         let rate_100_kbps = self.nominal_kbps() / 100;
         let truncated_byte_rate = rate_100_kbps * density_us as u32 / 8;
         let bytes = truncated_byte_rate / 10 + (truncated_byte_rate % 10 != 0) as u32;
-        Some(bytes as u16)
+        bytes as u16
+    }
+
+    /// Empty four-byte delimiters required after one HE A-MPDU PSDU.
+    ///
+    /// `psdu_length` includes the hardware MIC and FCS. Complete
+    /// `_oracles/libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength` passes
+    /// `round_up(psdu_length + 4, 4)` to `ppCalDeliNum`; with the owned
+    /// metadata profile this is `round_up(psdu_length, 4) + 4`.
+    /// `ppCalDeliNum` writes `ceil((minimum-current)/4)` to metadata byte
+    /// four when the subframe is short and zero otherwise.
+    pub const fn ampdu_empty_delimiters(
+        self,
+        psdu_length: u16,
+        density: HtAmpduDensity,
+    ) -> Option<u8> {
+        if psdu_length == 0 || psdu_length > 0x3fff {
+            return None;
+        }
+        let current = ((psdu_length as u32 + 3) & !3) + 4;
+        let minimum = self.minimum_ampdu_subframe_bytes(density) as u32;
+        if current >= minimum {
+            return Some(0);
+        }
+        let delimiters = (minimum - current + 3) / 4;
+        if delimiters > u8::MAX as u32 {
+            None
+        } else {
+            Some(delimiters as u8)
+        }
     }
 }
 
@@ -1119,7 +1208,8 @@ impl HtAmpduTxConfig {
 /// LDPC and beamforming remain separate future profiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeAmpduTxConfig {
-    pub rate: HeRate,
+    rate: HeRate,
+    ampdu_density: HtAmpduDensity,
     pub bss_color: u8,
     pub spatial_reuse: u8,
     /// Three repeated ten-bit descriptor-derived timing values.
@@ -1127,7 +1217,7 @@ pub struct HeAmpduTxConfig {
     /// The complete formatter proves the mapping. Its higher-level vendor
     /// state producer is not yet promoted, so callers must retain the
     /// negotiated/qualified finite value explicitly.
-    pub protection_spacing: u16,
+    protection_spacing: u16,
     pub aggregate_length: u16,
     pub subframes: u8,
     pub data_power_primary: u8,
@@ -1150,17 +1240,25 @@ impl HeAmpduTxConfig {
         bss_color: u8,
         aggregate_length: u16,
         subframes: u8,
+        ampdu_density: HtAmpduDensity,
     ) -> Option<Self> {
         if bss_color > 0x3f || aggregate_length == 0 || subframes == 0 || subframes > 32 {
             return None;
         }
         Some(Self {
             rate,
+            ampdu_density,
             bss_color,
             spatial_reuse: 0,
-            // One synchronous MCS9 vendor image used 0x31; retaining this
-            // bounded oracle value is explicit until its producer is moved.
-            protection_spacing: 0x31,
+            // SOURCE: complete `_oracles/libpp.a[pp_he.o]::ppCalDeliNum`
+            // writes he_get_min_subframe_len_static's result to descriptor
+            // offset +0x28. Complete `_oracles/libpp.a[hal_mac_tx.o]::
+            // mac_tx_set_hesig` later copies that halfword into all three
+            // queue PROTECTION spacing lanes. Keeping rate, density and this
+            // derived value in one constructor prevents a metadata/MMIO
+            // mismatch like the fixed-0x31 failure qualified by
+            // HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29.
+            protection_spacing: rate.minimum_ampdu_subframe_bytes(ampdu_density),
             aggregate_length,
             subframes,
             data_power_primary: 0,
@@ -1176,6 +1274,18 @@ impl HeAmpduTxConfig {
             pti_count: 1,
             hardware_key_selector: 0,
         })
+    }
+
+    pub const fn rate(self) -> HeRate {
+        self.rate
+    }
+
+    pub const fn ampdu_density(self) -> HtAmpduDensity {
+        self.ampdu_density
+    }
+
+    pub const fn protection_spacing(self) -> u16 {
+        self.protection_spacing
     }
 
     const fn valid(self) -> bool {

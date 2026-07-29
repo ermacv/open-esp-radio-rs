@@ -15,8 +15,9 @@ use open_esp_radio_pac_esp32s31::{
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
     tx::{
-        decode_tx_completion, HeAmpduTxConfig, HeSmpduTxConfig, HtAmpduTxConfig,
-        HtProtectionSpacing, LegacyTxQueue, TxCompletion, TxCookie, TxHardware, TxSlotState,
+        decode_tx_completion, HeAmpduTxConfig, HeRate, HeSmpduTxConfig, HtAmpduDensity,
+        HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion, TxCookie, TxHardware,
+        TxSlotState,
     },
 };
 
@@ -410,6 +411,26 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self.calculate_aggregate()
     }
 
+    /// Read the committed metadata-byte-four value while software still owns
+    /// the aggregate.
+    ///
+    /// This bounded observation is intended for formatter validation and HIL
+    /// reporting. It does not expose the DMA buffer or permit mutation.
+    pub fn prepared_empty_delimiters(
+        &self,
+        cookie: TxCookie,
+        index: u8,
+    ) -> Result<u8, HtAmpduTxError> {
+        if self.state != TxSlotState::Reserved || self.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let index = usize::from(index);
+        if index >= usize::from(self.count) {
+            return Err(HtAmpduTxError::InvalidGeometry);
+        }
+        Ok(self.empty_delimiters[index])
+    }
+
     /// Borrow one detached, completed encoded MPDU for an individual retry.
     ///
     /// The returned slice excludes the private eight-byte DMA metadata prefix
@@ -612,6 +633,30 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
     }
 
+    /// Check one HE frame using the blob-derived delimiter padding policy.
+    ///
+    /// Unlike [`Self::can_commit_frame`], the caller cannot accidentally
+    /// publish an HE short subframe with a guessed metadata-byte-four value.
+    pub fn can_commit_he_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<bool, HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
+    }
+
     /// Commit the next encoded MPDU and its hardware-generated trailer.
     ///
     /// `frame_length` is the encoded 802.11 MPDU before the hardware MIC and
@@ -668,6 +713,27 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.prepared_length = storage.length_after_append(psdu_length)?;
         storage.count += 1;
         Ok(())
+    }
+
+    /// Commit one HE MPDU with exact PP-blob delimiter padding.
+    pub fn commit_he_frame(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<(), HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        self.commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
     }
 
     /// Discard a software-owned partial batch.
@@ -2665,6 +2731,46 @@ mod tests {
                 subframes: 1,
             }
         );
+    }
+
+    #[test]
+    fn owned_he_commit_derives_empty_delimiters_from_rate_and_peer_density() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let rate = HeRate::bcc_dcm(
+            crate::tx::HeBccDcmMcs::Mcs3,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..16].fill(0xa5);
+        storage
+            .as_mut()
+            .commit_he_frame(cookie, 16, 8, rate, HtAmpduDensity::SixteenMicroseconds)
+            .unwrap();
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..16].fill(0x5a);
+        storage
+            .as_mut()
+            .commit_he_frame(cookie, 16, 8, rate, HtAmpduDensity::SixteenMicroseconds)
+            .unwrap();
+
+        // frame + MIC + FCS is 28 bytes. At DCM MCS3/GI800 and 16 us the
+        // blob minimum is 35 bytes, so ppCalDeliNum requests one empty
+        // delimiter. The trailing delimiter of the final MPDU is omitted
+        // from aggregate length exactly as ppEmptyDelimiterLength requires.
+        assert_eq!(storage.empty_delimiters[..2], [1, 1]);
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                bytes: 68,
+                subframes: 2,
+            }
+        );
+        // SAFETY: Reserved state proves hardware has not observed the buffer.
+        let first = unsafe { &*storage.buffers[0].0.get() };
+        assert_eq!(first[4], 1);
     }
 
     #[test]

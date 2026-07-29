@@ -63,7 +63,10 @@ pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters,
 };
-pub use mac_tx_power_init::{MacTxPowerPair, MacTxPowerTable, MAC_TX_POWER_RATE_COUNT};
+pub use mac_tx_power_init::{
+    MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair, MacTxPowerTable,
+    MAC_TX_POWER_RATE_COUNT,
+};
 pub use open_esp_radio_svd_esp32s31 as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 

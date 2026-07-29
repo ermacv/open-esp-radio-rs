@@ -8,7 +8,7 @@ use open_esp_radio_ieee80211::trigger::{
 };
 use open_esp_radio_pac_esp32s31::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
-    MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
+    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters, RadioRegisters,
 };
 
 use crate::{
@@ -1161,6 +1161,7 @@ pub struct HeTriggerScheduledRate {
     pub resource_unit: HeResourceUnit,
     pub resource_unit_index: u8,
     pub resource_unit_region: bool,
+    pub partial_ru_power_selector: MacPartialRuPowerSelector,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1216,6 +1217,15 @@ impl HeTriggerScheduledRate {
         else {
             return Err(HeTriggerScheduledRateError::UnsupportedResourceUnit);
         };
+        // Complete hal_mac_{get,set}_tb_max_pwr provides the hardware's
+        // narrower HE20 admission oracle. In particular ru2str can diagnose
+        // raw allocation 62 as a second RU242, but the runtime power jump
+        // tables reject it; a 20-MHz 1T1R station must not schedule it.
+        let Some(partial_ru_power_selector) =
+            MacPartialRuPowerSelector::from_trigger_encoding(user.ru_allocation)
+        else {
+            return Err(HeTriggerScheduledRateError::UnsupportedResourceUnit);
+        };
         let Some(mcs) = HeMcs::from_index(user.mcs) else {
             return Err(HeTriggerScheduledRateError::UnsupportedMcs);
         };
@@ -1245,6 +1255,7 @@ impl HeTriggerScheduledRate {
             resource_unit,
             resource_unit_index: one_based_index,
             resource_unit_region: user.ru_allocation_region,
+            partial_ru_power_selector,
         })
     }
 

@@ -1566,6 +1566,30 @@ value from a write-side latch that is not reflected by the read path. The SVD
 records the observation but does not change access semantics or invent a
 reset value.
 
+## SVD v3.37: runtime partial-RU power selection
+
+The complete `libnet80211.a` public/internal path proves that the first
+argument to `esp_wifi_internal_{get,set}_partial_ru_max_tx_pwr` is the raw
+seven-bit Trigger RU allocation rather than a rate index. Both API wrappers
+copy that byte unchanged into an IOCTL object; the complete process leaves
+pass it unchanged to `hal_mac_{get,set}_tb_max_pwr`.
+
+The two relocation-complete `libpp.a` HAL jump tables accept exactly
+`0..=8`, `37..=40`, `53`, `54` and `61`. These are nine RU26 positions, four
+RU52 positions, two RU106 positions and the sole HE20 RU242 position. Every
+accepted value selects one six-bit PHY gain-table index in
+`0x2010443c..0x20104448`; every gap takes the blob's
+`the ru_alloc_num is not correct` log path. In particular, diagnostic
+`ru2str` can name raw selector 62 as a second RU242 view, but the complete
+runtime power HAL rejects it, so the owned HE20 scheduled-user admission now
+rejects it as well.
+
+The PAC exposes a validated `MacPartialRuPowerSelector` and bounded
+`MacTxPowerIndex`. Safe upper layers can therefore read or replace one
+partial-RU limit without manufacturing a raw selector, truncating an arbitrary
+byte into six bits, or touching adjacent packed fields. These values remain
+PHY gain-table indices, not dBm.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

@@ -5,6 +5,57 @@ use super::RadioRegisters;
 /// Number of two-byte rate entries produced by complete `hal_init_tx_pwr`.
 pub const MAC_TX_POWER_RATE_COUNT: usize = 43;
 
+/// One six-bit PHY gain-table index stored by the MAC.
+///
+/// This is not dBm. The private field prevents safe upper layers from
+/// truncating an arbitrary byte into a six-bit MMIO field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacTxPowerIndex(u8);
+
+impl MacTxPowerIndex {
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= 0x3f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
+/// A Trigger RU allocation for which the S31 exposes runtime TX-power state.
+///
+/// The encoding is the seven-bit RU allocation carried in Trigger User Info.
+/// It is deliberately a validated newtype rather than an enum with invented
+/// register-oriented names: callers retain the over-air value while invalid
+/// gaps cannot reach MMIO.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacPartialRuPowerSelector(u8);
+
+impl MacPartialRuPowerSelector {
+    /// Admit exactly the selector set accepted by the complete vendor HAL.
+    ///
+    /// SOURCE: `_oracles/libnet80211.a[ieee80211_api.o]` complete
+    /// `esp_wifi_internal_{get,set}_partial_ru_max_tx_pwr` and
+    /// `[ieee80211_ioctl.o]` process leaves pass this byte unchanged to
+    /// complete `_oracles/libpp.a[hal_mac_ctl.o]::
+    /// hal_mac_{get,set}_tb_max_pwr`. Both relocation-complete jump tables
+    /// accept 0..=8, 37..=40, 53, 54 and 61 and reject every other value.
+    pub const fn from_trigger_encoding(value: u8) -> Option<Self> {
+        match value {
+            0..=8 | 37..=40 | 53 | 54 | 61 => Some(Self(value)),
+            _ => None,
+        }
+    }
+
+    pub const fn trigger_encoding(self) -> u8 {
+        self.0
+    }
+}
+
 /// Calibrated PHY gain-table indices for one MAC rate.
 ///
 /// These values are signed indices after the ROM divides its quarter-unit
@@ -63,7 +114,96 @@ fn relative_index(base: u8, floor: u8) -> u8 {
     base.max(floor).wrapping_sub(floor) & 0x3f
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PartialRuPowerSlot {
+    Packed { word: usize, lane: u8 },
+    Tail,
+}
+
+const fn partial_ru_power_slot(selector: MacPartialRuPowerSelector) -> PartialRuPowerSlot {
+    match selector.trigger_encoding() {
+        raw @ 0..=4 => PartialRuPowerSlot::Packed { word: 0, lane: raw },
+        raw @ 5..=8 => PartialRuPowerSlot::Packed {
+            word: 1,
+            lane: raw - 5,
+        },
+        37 => PartialRuPowerSlot::Packed { word: 1, lane: 4 },
+        raw @ 38..=40 => PartialRuPowerSlot::Packed {
+            word: 2,
+            lane: raw - 38,
+        },
+        53 => PartialRuPowerSlot::Packed { word: 2, lane: 3 },
+        54 => PartialRuPowerSlot::Packed { word: 2, lane: 4 },
+        61 => PartialRuPowerSlot::Tail,
+        // The selector constructor makes this arm unreachable.
+        _ => unreachable!(),
+    }
+}
+
 impl RadioRegisters {
+    /// Read the runtime maximum TX-power index for one partial RU.
+    ///
+    /// SOURCE: complete `hal_mac_get_tb_max_pwr` including both relocation
+    /// jump tables. The returned six-bit value is a PHY gain-table index, not
+    /// a radiated dBm value.
+    pub fn partial_ru_max_tx_power(&self, selector: MacPartialRuPowerSelector) -> MacTxPowerIndex {
+        let init = &self.peripherals.wifi_mac_tx_power_init;
+        let value = match partial_ru_power_slot(selector) {
+            PartialRuPowerSlot::Packed { word, lane } => {
+                let register = init.tb_ru_power(word).read();
+                match lane {
+                    0 => register.power_0().bits(),
+                    1 => register.power_1().bits(),
+                    2 => register.power_2().bits(),
+                    3 => register.power_3().bits(),
+                    4 => register.power_4().bits(),
+                    _ => unreachable!(),
+                }
+            }
+            PartialRuPowerSlot::Tail => init.tb_ru_power_tail().read().power_index().bits(),
+        };
+        // Every generated field reader above is exactly six bits wide.
+        MacTxPowerIndex(value)
+    }
+
+    /// Replace the runtime maximum TX-power index for one partial RU.
+    ///
+    /// SOURCE: complete `hal_mac_set_tb_max_pwr` including both relocation
+    /// jump tables. It performs one fresh-read RMW of the selected six-bit
+    /// field and preserves all adjacent RU values.
+    pub fn set_partial_ru_max_tx_power(
+        &mut self,
+        selector: MacPartialRuPowerSelector,
+        power: MacTxPowerIndex,
+    ) {
+        let init = &self.peripherals.wifi_mac_tx_power_init;
+        match partial_ru_power_slot(selector) {
+            PartialRuPowerSlot::Packed { word, lane } => {
+                let register = init.tb_ru_power(word);
+                match lane {
+                    // SAFETY: MacTxPowerIndex proves the value fits each
+                    // generated six-bit field.
+                    0 => register.modify(|_, w| unsafe { w.power_0().bits(power.value()) }),
+                    // SAFETY: same six-bit invariant.
+                    1 => register.modify(|_, w| unsafe { w.power_1().bits(power.value()) }),
+                    // SAFETY: same six-bit invariant.
+                    2 => register.modify(|_, w| unsafe { w.power_2().bits(power.value()) }),
+                    // SAFETY: same six-bit invariant.
+                    3 => register.modify(|_, w| unsafe { w.power_3().bits(power.value()) }),
+                    // SAFETY: same six-bit invariant.
+                    4 => register.modify(|_, w| unsafe { w.power_4().bits(power.value()) }),
+                    _ => unreachable!(),
+                };
+            }
+            PartialRuPowerSlot::Tail => {
+                // SAFETY: MacTxPowerIndex proves the value fits the generated
+                // six-bit field.
+                init.tb_ru_power_tail()
+                    .modify(|_, w| unsafe { w.power_index().bits(power.value()) });
+            }
+        }
+    }
+
     /// Publish the complete TB, immediate-response and TB-RU power tables.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a` functions recorded as
@@ -177,5 +317,44 @@ mod tests {
         assert_eq!(relative_index(10, 10), 0);
         assert_eq!(relative_index(21, 10), 11);
         assert_eq!(relative_index(0x80, 10), 54);
+    }
+
+    #[test]
+    fn partial_ru_power_selector_matches_complete_hal_jump_tables() {
+        let expected = [0, 1, 2, 3, 4, 5, 6, 7, 8, 37, 38, 39, 40, 53, 54, 61];
+        let mut admitted = [0_u8; 16];
+        let mut count = 0;
+        for raw in 0..=u8::MAX {
+            if let Some(selector) = MacPartialRuPowerSelector::from_trigger_encoding(raw) {
+                admitted[count] = selector.trigger_encoding();
+                count += 1;
+            }
+        }
+        assert_eq!(count, expected.len());
+        assert_eq!(admitted, expected);
+        assert_eq!(
+            partial_ru_power_slot(MacPartialRuPowerSelector::from_trigger_encoding(0).unwrap()),
+            PartialRuPowerSlot::Packed { word: 0, lane: 0 }
+        );
+        assert_eq!(
+            partial_ru_power_slot(MacPartialRuPowerSelector::from_trigger_encoding(37).unwrap()),
+            PartialRuPowerSlot::Packed { word: 1, lane: 4 }
+        );
+        assert_eq!(
+            partial_ru_power_slot(MacPartialRuPowerSelector::from_trigger_encoding(53).unwrap()),
+            PartialRuPowerSlot::Packed { word: 2, lane: 3 }
+        );
+        assert_eq!(
+            partial_ru_power_slot(MacPartialRuPowerSelector::from_trigger_encoding(61).unwrap()),
+            PartialRuPowerSlot::Tail
+        );
+        assert!(MacPartialRuPowerSelector::from_trigger_encoding(62).is_none());
+    }
+
+    #[test]
+    fn runtime_power_index_is_bounded_to_six_bits() {
+        assert_eq!(MacTxPowerIndex::new(0).unwrap().value(), 0);
+        assert_eq!(MacTxPowerIndex::new(63).unwrap().value(), 63);
+        assert!(MacTxPowerIndex::new(64).is_none());
     }
 }

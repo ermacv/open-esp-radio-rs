@@ -2383,6 +2383,7 @@ fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
     let scheduled = HeTriggerScheduledRate::new(common, user, 0x234).unwrap();
     assert_eq!(scheduled.resource_unit, HeResourceUnit::Ru106);
     assert_eq!(scheduled.resource_unit_index, 1);
+    assert_eq!(scheduled.partial_ru_power_selector.trigger_encoding(), 53);
     assert_eq!(scheduled.rate.mcs(), HeMcs::Mcs4);
     assert!(scheduled.rate.is_ldpc());
     assert!(scheduled.rate.is_dcm());
@@ -2411,7 +2412,7 @@ fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
         Err(HeTriggerScheduledRateError::UnsupportedSpatialStreams)
     );
 
-    for ru_allocation in [9, 69] {
+    for ru_allocation in [9, 62, 69] {
         let unsupported_ru_bytes =
             scheduled_trigger_user(0x234, ru_allocation, false, 0, false, 0, 0);
         let unsupported_ru = parse_trigger_user_spatial_stream(&unsupported_ru_bytes).unwrap();

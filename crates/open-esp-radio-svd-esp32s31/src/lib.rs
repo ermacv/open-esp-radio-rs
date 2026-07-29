@@ -16657,14 +16657,14 @@ pub mod wifi_mac_he_obss_narrow_band_ru {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Runtime partial-RU get/set APIs select the same packed fields by the raw Trigger RU allocation. Values are PHY gain-table indices, not dBm."]
 pub type WifiMacTxPowerInit = crate::Periph<wifi_mac_tx_power_init::RegisterBlock, 0x2010_4408>;
 impl core::fmt::Debug for WifiMacTxPowerInit {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxPowerInit").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Runtime partial-RU get/set APIs select the same packed fields by the raw Trigger RU allocation. Values are PHY gain-table indices, not dBm."]
 pub mod wifi_mac_tx_power_init {
     #[repr(C)]
     #[doc = "Register block"]
@@ -16697,18 +16697,18 @@ pub mod wifi_mac_tx_power_init {
         pub fn tb_power_iter(&self) -> impl Iterator<Item = &TbPower> {
             self.tb_power.iter()
         }
-        #[doc = "0x34 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61."]
+        #[doc = "0x34 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at raw Trigger RU selector 61. Complete runtime get/set leaves address this same six-bit field; selector 62 is rejected."]
         #[inline(always)]
         pub const fn tb_ru_power_tail(&self) -> &TbRuPowerTail {
             &self.tb_ru_power_tail
         }
-        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL."]
         #[inline(always)]
         pub const fn tb_ru_power(&self, n: usize) -> &TbRuPower {
             &self.tb_ru_power[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+        #[doc = "0x38..0x44 - SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL."]
         #[inline(always)]
         pub fn tb_ru_power_iter(&self) -> impl Iterator<Item = &TbRuPower> {
             self.tb_ru_power.iter()
@@ -16862,10 +16862,10 @@ pub mod wifi_mac_tx_power_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TB_RU_POWER_TAIL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power_tail`] module"]
+    #[doc = "TB_RU_POWER_TAIL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at raw Trigger RU selector 61. Complete runtime get/set leaves address this same six-bit field; selector 62 is rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power_tail`] module"]
     #[doc(alias = "TB_RU_POWER_TAIL")]
     pub type TbRuPowerTail = crate::Reg<tb_ru_power_tail::TbRuPowerTailSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at raw Trigger RU selector 61. Complete runtime get/set leaves address this same six-bit field; selector 62 is rejected."]
     pub mod tb_ru_power_tail {
         #[doc = "Register `TB_RU_POWER_TAIL` reader"]
         pub type R = crate::R<TbRuPowerTailSpec>;
@@ -16889,7 +16889,7 @@ pub mod wifi_mac_tx_power_init {
                 PowerIndexW::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at selector 61.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at raw Trigger RU selector 61. Complete runtime get/set leaves address this same six-bit field; selector 62 is rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TbRuPowerTailSpec;
         impl crate::RegisterSpec for TbRuPowerTailSpec {
             type Ux = u32;
@@ -16901,10 +16901,10 @@ pub mod wifi_mac_tx_power_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TB_RU_POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power`] module"]
+    #[doc = "TB_RU_POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_ru_power`] module"]
     #[doc(alias = "TB_RU_POWER")]
     pub type TbRuPower = crate::Reg<tb_ru_power::TbRuPowerSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL."]
     pub mod tb_ru_power {
         #[doc = "Register `TB_RU_POWER%s` reader"]
         pub type R = crate::R<TbRuPowerSpec>;
@@ -16984,7 +16984,7 @@ pub mod wifi_mac_tx_power_init {
                 Power4W::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER\\]; CONFIDENCE\\[instruction-exact\\]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_ru_power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tb_ru_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TbRuPowerSpec;
         impl crate::RegisterSpec for TbRuPowerSpec {
             type Ux = u32;

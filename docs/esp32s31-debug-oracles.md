@@ -84,6 +84,15 @@ retains the padding sentinel for diagnostics. The blob test deliberately
 traps on Groupcast MU-BAR and does not bound reserved layouts, so the Rust
 iterator returns `UnsupportedUserLayout` for them instead of guessing.
 
+Complete `_oracles/libpp.a[hal_utilities.o]::ru2str` (size `0x8c`) closes
+the next wire-to-scheduler boundary. Its positive one-based index domains are
+raw allocations 0..8 for RU26, 37..40 for RU52, 53..54 for RU106 and 61..62
+for RU242. Values 69 and above are labeled `484 OFDM`; they are retained as a
+distinct unsupported-wide class because ESP32-S31 non-AP operation is
+20-MHz-only. Gap encodings do not produce a fresh valid index in the blob and
+the Rust classifier returns `None` rather than inheriting its mutable string
+buffer.
+
 Exact Trigger encodings recovered from the complete functions are:
 
 | Oracle | Recovered byte/bit boundary |

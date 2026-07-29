@@ -79,6 +79,71 @@ impl TriggerGiLtf {
     }
 }
 
+/// HE resource-unit widths represented by the S31 narrow-RU tables.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HeResourceUnit {
+    Ru26,
+    Ru52,
+    Ru106,
+    #[default]
+    Ru242,
+}
+
+/// One raw Trigger RU allocation classified by the complete blob helper.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TriggerRuAllocation {
+    /// A supported narrow RU and its one-based index in the printed group.
+    Narrow {
+        resource_unit: HeResourceUnit,
+        one_based_index: u8,
+    },
+    /// The blob labels every encoding at or above 69 as `484 OFDM`.
+    ///
+    /// This is retained for diagnostics but is outside the ESP32-S31
+    /// 20-MHz-only non-AP transmit profile.
+    WiderThan242,
+}
+
+impl TriggerRuAllocation {
+    /// Classify the seven-bit Trigger RU allocation without guessing gaps.
+    ///
+    /// SOURCE[BLOB_LIBPP_HAL_UTILITIES_RU2STR]: complete
+    /// `_oracles/libpp.a[hal_utilities.o]::ru2str` (size `0x8c`) formats
+    /// 0..8 as 26-tone index `raw+1`, 37..40 as 52-tone index `raw-36`,
+    /// 53..54 as 106-tone index `raw-52`, 61..62 as 242-tone index
+    /// `raw-60`, and values at least 69 as `484 OFDM`. The intervening
+    /// encodings do not produce a fresh valid index and remain `None`.
+    pub const fn from_encoding(raw: u8) -> Option<Self> {
+        match raw {
+            0..=8 => Some(Self::Narrow {
+                resource_unit: HeResourceUnit::Ru26,
+                one_based_index: raw + 1,
+            }),
+            37..=40 => Some(Self::Narrow {
+                resource_unit: HeResourceUnit::Ru52,
+                one_based_index: raw - 36,
+            }),
+            53..=54 => Some(Self::Narrow {
+                resource_unit: HeResourceUnit::Ru106,
+                one_based_index: raw - 52,
+            }),
+            61..=62 => Some(Self::Narrow {
+                resource_unit: HeResourceUnit::Ru242,
+                one_based_index: raw - 60,
+            }),
+            69..=0x7f => Some(Self::WiderThan242),
+            _ => None,
+        }
+    }
+
+    pub const fn resource_unit(self) -> Option<HeResourceUnit> {
+        match self {
+            Self::Narrow { resource_unit, .. } => Some(resource_unit),
+            Self::WiderThan242 => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TriggerTargetRssi {
     Dbm(i8),
@@ -192,6 +257,10 @@ impl TriggerUserField<'_> {
 
     pub const fn ru_allocation(&self) -> u8 {
         (self.user_info[1] >> 5) | ((self.user_info[2] & 0x0f) << 3)
+    }
+
+    pub const fn classified_ru_allocation(&self) -> Option<TriggerRuAllocation> {
+        TriggerRuAllocation::from_encoding(self.ru_allocation())
     }
 }
 
@@ -718,6 +787,54 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(only.dependent_info.is_empty());
+    }
+
+    #[test]
+    fn classifies_only_the_ru_groups_with_valid_blob_indices() {
+        for (raw, resource_unit, one_based_index) in [
+            (0, HeResourceUnit::Ru26, 1),
+            (8, HeResourceUnit::Ru26, 9),
+            (37, HeResourceUnit::Ru52, 1),
+            (40, HeResourceUnit::Ru52, 4),
+            (53, HeResourceUnit::Ru106, 1),
+            (54, HeResourceUnit::Ru106, 2),
+            (61, HeResourceUnit::Ru242, 1),
+            (62, HeResourceUnit::Ru242, 2),
+        ] {
+            assert_eq!(
+                TriggerRuAllocation::from_encoding(raw),
+                Some(TriggerRuAllocation::Narrow {
+                    resource_unit,
+                    one_based_index,
+                })
+            );
+        }
+        for raw in [9, 36, 41, 52, 55, 60, 63, 68] {
+            assert_eq!(TriggerRuAllocation::from_encoding(raw), None);
+        }
+        assert_eq!(
+            TriggerRuAllocation::from_encoding(69),
+            Some(TriggerRuAllocation::WiderThan242)
+        );
+        assert_eq!(
+            TriggerRuAllocation::from_encoding(127),
+            Some(TriggerRuAllocation::WiderThan242)
+        );
+        assert_eq!(TriggerRuAllocation::from_encoding(128), None);
+
+        let bytes = [0x34, 0xa2, 0x06, 0x00, 0x01];
+        let field = TriggerUserField {
+            user_info: &bytes,
+            dependent_info: &[],
+        };
+        assert_eq!(field.ru_allocation(), 53);
+        assert_eq!(
+            field.classified_ru_allocation(),
+            Some(TriggerRuAllocation::Narrow {
+                resource_unit: HeResourceUnit::Ru106,
+                one_based_index: 1,
+            })
+        );
     }
 
     #[test]

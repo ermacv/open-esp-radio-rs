@@ -2,6 +2,7 @@
 
 use core::pin::Pin;
 
+pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_pac_esp32s31::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
@@ -718,25 +719,6 @@ impl HeLdpcDcmMcs {
     }
 }
 
-/// HE resource-unit widths supported by the S31 20-MHz rate tables.
-///
-/// SOURCE: complete `_oracles/libpp.a[trc.o]` objects
-/// `he_rates_ru_{26,52,106,242}` and `he_rates_dcm_ru_{26,52,106,242}`,
-/// independently present in the rev0 ROM ELF at
-/// `0x2f07f5cc/0x2f07f644/0x2f07f4dc/0x2f07f554` and
-/// `0x2f84e0b8/0x2f84e0f4/0x2f84e040/0x2f84e07c`, respectively.
-/// Keeping the RU width typed is important for Trigger-based TX: RU26 MCS9
-/// is 11.8 Mbit/s, while the same MCS/GI over the full RU242 is
-/// 114.7 Mbit/s.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum HeResourceUnit {
-    Ru26,
-    Ru52,
-    Ru106,
-    #[default]
-    Ru242,
-}
-
 /// One EDCA TXOP limit in the 32-us units used by the 802.11 WMM parameter.
 ///
 /// A raw value of zero selects the vendor's default HE PPDU-duration policy;
@@ -927,6 +909,14 @@ impl HeRate {
     }
 
     /// Return the exact blob/ROM nominal rate for one HE resource unit.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]` objects
+    /// `he_rates_ru_{26,52,106,242}` and
+    /// `he_rates_dcm_ru_{26,52,106,242}`, independently present in the rev0
+    /// ROM ELF at `0x2f07f5cc/0x2f07f644/0x2f07f4dc/0x2f07f554` and
+    /// `0x2f84e0b8/0x2f84e0f4/0x2f84e040/0x2f84e07c`, respectively.
+    /// Keeping the RU width typed prevents a Trigger scheduler from using
+    /// the 114.7-Mbit/s RU242 MCS9 rate for an 11.8-Mbit/s RU26 allocation.
     ///
     /// Tables are stored in 100-kbit/s units by the oracle and converted to
     /// kbit/s here. DCM constructors exclude every unsupported MCS, including

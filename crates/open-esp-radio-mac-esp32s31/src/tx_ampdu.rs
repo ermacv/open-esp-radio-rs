@@ -9,7 +9,9 @@
 use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
 use open_esp_radio_pac_esp32s31::{
-    MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram, RadioRegisters,
+    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
+    RadioRegisters,
 };
 
 use crate::{
@@ -212,11 +214,68 @@ impl HtAmpduLengthAccumulator {
 /// the single-MPDU completion method.
 pub trait HtAmpduHardware: TxHardware {
     fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters>;
+
+    /// Prepare one queue for a future AP Trigger before publishing TX enable.
+    ///
+    /// Implementations must validate every fallible input before the first
+    /// hardware write so an error cannot leave a partially published queue.
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        policy: MacHeTbTidLimit,
+        reservation: MacHeTbLinkReservation,
+        tid: MacHeTid,
+        mpdu_lengths: &[u16],
+        queued_msdu_bytes: u32,
+    ) -> Result<(), MacHeTbProgramError>;
+
+    /// Remove Trigger eligibility only after DMA ownership has returned.
+    fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation);
+
+    /// Read back a live Trigger queue while the aggregate owner still retains
+    /// the reservation. Test doubles may return `None`.
+    fn he_trigger_based_queue_snapshot(
+        &self,
+        _reservation: MacHeTbLinkReservation,
+    ) -> Option<MacHeTriggerTxQueueSnapshot> {
+        None
+    }
 }
 
 impl HtAmpduHardware for RadioRegisters {
     fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
         self.take_mac_ht_ampdu_completion(queue)
+    }
+
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        policy: MacHeTbTidLimit,
+        reservation: MacHeTbLinkReservation,
+        tid: MacHeTid,
+        mpdu_lengths: &[u16],
+        queued_msdu_bytes: u32,
+    ) -> Result<(), MacHeTbProgramError> {
+        RadioRegisters::prepare_he_trigger_based_queue(
+            self,
+            policy,
+            reservation,
+            tid,
+            mpdu_lengths,
+            queued_msdu_bytes,
+        )
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
+        RadioRegisters::clear_he_trigger_based_queue(self, reservation);
+    }
+
+    fn he_trigger_based_queue_snapshot(
+        &self,
+        reservation: MacHeTbLinkReservation,
+    ) -> Option<MacHeTriggerTxQueueSnapshot> {
+        Some(RadioRegisters::he_trigger_based_queue_snapshot(
+            self,
+            reservation,
+        ))
     }
 }
 
@@ -231,6 +290,8 @@ pub enum HtAmpduTxError {
     Length(HtAmpduLengthError),
     RegisterImageMismatch,
     QueueActive,
+    TriggerMsduLengthUnavailable,
+    TriggerBased(MacHeTbProgramError),
     DetachFailed,
     TimeoutNotPending,
     ResetRequired,
@@ -240,6 +301,14 @@ pub enum HtAmpduTxError {
 pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,
     pub block_ack: HtBlockAckRegisters,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreparedHeTrigger {
+    policy: MacHeTbTidLimit,
+    reservation: MacHeTbLinkReservation,
+    tid: MacHeTid,
+    queued_msdu_bytes: u32,
 }
 
 impl HtAmpduTxCompletion {
@@ -288,6 +357,11 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
     frame_lengths: [u16; SLOTS],
     hardware_mic_lengths: [u8; SLOTS],
+    /// Original MSDU length corresponding to each encoded MPDU.
+    ///
+    /// Zero means the upper MAC did not supply this vendor-visible value and
+    /// therefore the frame cannot be published as Trigger-eligible.
+    msdu_lengths: [u16; SLOTS],
     psdu_lengths: [u16; SLOTS],
     empty_delimiters: [u8; SLOTS],
     descriptor_capacities: [u16; SLOTS],
@@ -299,6 +373,7 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     prepared_length: u16,
     aggregate_length: u16,
     max_aggregate_bytes: u16,
+    trigger_reservation: Option<MacHeTbLinkReservation>,
     detached: bool,
     _pin: PhantomPinned,
 }
@@ -310,6 +385,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             buffers: [const { HtAmpduDmaBuffer::new() }; SLOTS],
             frame_lengths: [0; SLOTS],
             hardware_mic_lengths: [0; SLOTS],
+            msdu_lengths: [0; SLOTS],
             psdu_lengths: [0; SLOTS],
             empty_delimiters: [0; SLOTS],
             descriptor_capacities: [0; SLOTS],
@@ -323,6 +399,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             // Conservative HT A-MPDU exponent zero until the peer capability
             // is installed by the association owner.
             max_aggregate_bytes: TX_AMPDU_DEFAULT_MAX_BYTES,
+            trigger_reservation: None,
             detached: false,
             _pin: PhantomPinned,
         }
@@ -340,8 +417,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // SAFETY: `storage` is exclusively borrowed, correctly aligned
         // uninitialized memory. Descriptor words, DMA byte buffers, length
         // arrays, counters, cookies and `false` all accept zero. The two enum
-        // fields and the pin marker are written with valid Rust values before
-        // a reference to the complete object is formed.
+        // fields, optional reservation and pin marker are written with valid
+        // Rust values before a reference to the complete object is formed.
         unsafe {
             storage
                 .cast::<u8>()
@@ -349,6 +426,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             ptr::addr_of_mut!((*storage).state).write(TxSlotState::Free);
             ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::BestEffort);
             ptr::addr_of_mut!((*storage).max_aggregate_bytes).write(TX_AMPDU_DEFAULT_MAX_BYTES);
+            ptr::addr_of_mut!((*storage).trigger_reservation).write(None);
             ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
             &mut *storage
         }
@@ -520,6 +598,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 }
                 storage.frame_lengths[destination] = storage.frame_lengths[source];
                 storage.hardware_mic_lengths[destination] = storage.hardware_mic_lengths[source];
+                storage.msdu_lengths[destination] = storage.msdu_lengths[source];
                 storage.psdu_lengths[destination] = storage.psdu_lengths[source];
                 storage.empty_delimiters[destination] = storage.empty_delimiters[source];
                 storage.descriptor_capacities[destination] = storage.descriptor_capacities[source];
@@ -533,6 +612,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.count = u8::try_from(destination).map_err(|_| HtAmpduTxError::InvalidGeometry)?;
         storage.prepared_length = 0;
         storage.aggregate_length = 0;
+        storage.trigger_reservation = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
         storage.recalculate_prepared_length()
@@ -561,6 +641,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.count = 0;
         storage.prepared_length = 0;
         storage.aggregate_length = 0;
+        storage.trigger_reservation = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
         Ok(storage.active)
@@ -707,6 +788,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.frame_lengths[index] =
             u16::try_from(frame_length).map_err(|_| HtAmpduTxError::FrameTooLong)?;
         storage.hardware_mic_lengths[index] = hardware_mic_length;
+        // The generic MPDU API does not know the pre-encapsulation MSDU
+        // length. Clear a possibly retained value from the previous
+        // generation so Trigger publication fails closed.
+        storage.msdu_lengths[index] = 0;
         storage.psdu_lengths[index] = psdu_length;
         storage.empty_delimiters[index] = empty_delimiters;
         storage.descriptor_capacities[index] = descriptor_capacity;
@@ -734,6 +819,37 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
         self.commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
+    }
+
+    /// Commit one HE MPDU together with its original MSDU byte count.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_read_tx_ppdu`
+    /// names frame-state halfword `+0x22` `msdu_len`; complete
+    /// `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_tb` sums that halfword
+    /// across the linked aggregate and publishes it to `WDEVTXQBSR_SW`.
+    /// Keeping the value beside the owned encoded MPDU prevents the Trigger
+    /// path from substituting the larger 802.11 frame or PSDU length.
+    pub fn commit_he_msdu_frame(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        msdu_length: usize,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<(), HtAmpduTxError> {
+        let msdu_length = u16::try_from(msdu_length)
+            .ok()
+            .filter(|length| *length != 0)
+            .ok_or(HtAmpduTxError::TriggerMsduLengthUnavailable)?;
+        let index = usize::from(self.count);
+        self.as_mut()
+            .commit_he_frame(cookie, frame_length, hardware_mic_length, rate, density)?;
+        // SAFETY: commit succeeded in Reserved state and incremented count
+        // exactly once. The pinned object's address-bearing fields do not
+        // move; this writes only the just-committed slot's scalar metadata.
+        unsafe { self.get_unchecked_mut() }.msdu_lengths[index] = msdu_length;
+        Ok(())
     }
 
     /// Discard a software-owned partial batch.
@@ -770,7 +886,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
             return Err(HtAmpduTxError::RegisterImageMismatch);
         }
-
         let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
         for index in 0..count {
             let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
@@ -858,6 +973,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
             return Err(HtAmpduTxError::RegisterImageMismatch);
         }
+        let trigger = storage.prepared_he_trigger(queue, config)?;
 
         let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
         for index in 0..count {
@@ -907,6 +1023,18 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let queue_index = queue.index();
         if !hardware.prepare_he_tx(queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
+        }
+        if let Some(trigger) = trigger {
+            hardware
+                .prepare_he_trigger_based_queue(
+                    trigger.policy,
+                    trigger.reservation,
+                    trigger.tid,
+                    &storage.psdu_lengths[..count],
+                    trigger.queued_msdu_bytes,
+                )
+                .map_err(HtAmpduTxError::TriggerBased)?;
+            storage.trigger_reservation = Some(trigger.reservation);
         }
         storage.queue = queue;
         storage.aggregate_length = aggregate.bytes;
@@ -1017,6 +1145,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::Stale);
         }
+        if let Some(reservation) = storage.trigger_reservation.take() {
+            hardware.clear_he_trigger_based_queue(reservation);
+        }
         storage.state = TxSlotState::Completed;
         Ok(Some(HtAmpduTxCompletion {
             tx: decode_tx_completion(storage.active, registers.tx),
@@ -1026,6 +1157,21 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 registers.block_ack_bitmap_high,
             ),
         }))
+    }
+
+    /// Read back the live Trigger queue before completion cleanup.
+    pub fn he_trigger_based_snapshot<H: HtAmpduHardware>(
+        self: Pin<&Self>,
+        hardware: &H,
+        cookie: TxCookie,
+    ) -> Result<Option<MacHeTriggerTxQueueSnapshot>, HtAmpduTxError> {
+        let storage = self.get_ref();
+        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        Ok(storage
+            .trigger_reservation
+            .and_then(|reservation| hardware.he_trigger_based_queue_snapshot(reservation)))
     }
 
     /// Transfer one HE S-MPDU ACK completion back to software.
@@ -1080,6 +1226,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::DetachFailed);
         }
+        if let Some(reservation) = storage.trigger_reservation.take() {
+            hardware.clear_he_trigger_based_queue(reservation);
+        }
         storage.release();
         Ok(())
     }
@@ -1127,6 +1276,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self.count = 0;
         self.prepared_length = 0;
         self.aggregate_length = 0;
+        self.trigger_reservation = None;
         self.detached = false;
         self.state = TxSlotState::Free;
     }
@@ -1201,6 +1351,50 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             bytes: self.prepared_length,
             subframes: self.count,
         })
+    }
+
+    fn prepared_he_trigger(
+        &self,
+        queue: LegacyTxQueue,
+        config: HeAmpduTxConfig,
+    ) -> Result<Option<PreparedHeTrigger>, HtAmpduTxError> {
+        let Some(trigger) = config.trigger_based() else {
+            return Ok(None);
+        };
+        let count = self.count;
+        let reservation =
+            MacHeTbLinkReservation::for_queue(trigger.tid_limit(), queue.index(), count)
+                .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        if self.psdu_lengths[..usize::from(count)]
+            .iter()
+            .any(|length| *length == 0 || *length > 0x3fff)
+        {
+            return Err(HtAmpduTxError::TriggerBased(
+                MacHeTbProgramError::InvalidMpduLength,
+            ));
+        }
+        let mut queued_msdu_bytes = 0_u32;
+        for msdu_length in &self.msdu_lengths[..usize::from(count)] {
+            if *msdu_length == 0 {
+                return Err(HtAmpduTxError::TriggerMsduLengthUnavailable);
+            }
+            queued_msdu_bytes = queued_msdu_bytes
+                .checked_add(u32::from(*msdu_length))
+                .ok_or(HtAmpduTxError::TriggerBased(
+                    MacHeTbProgramError::QueuedBytesTooLarge,
+                ))?;
+        }
+        if queued_msdu_bytes > 0x000f_ffff {
+            return Err(HtAmpduTxError::TriggerBased(
+                MacHeTbProgramError::QueuedBytesTooLarge,
+            ));
+        }
+        Ok(Some(PreparedHeTrigger {
+            policy: trigger.tid_limit(),
+            reservation,
+            tid: trigger.tid(),
+            queued_msdu_bytes,
+        }))
     }
 }
 
@@ -2674,6 +2868,83 @@ const fn next_dialog_token(current: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_esp_radio_pac_esp32s31::{
+        MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters,
+    };
+
+    struct CompletionHardware {
+        completion: Option<MacHtAmpduCompletionRegisters>,
+        cleared: Option<MacHeTbLinkReservation>,
+        trigger_snapshot: Option<MacHeTriggerTxQueueSnapshot>,
+    }
+
+    impl TxHardware for CompletionHardware {
+        fn prepare_legacy_tx(&mut self, _: u8, _: MacLegacyTxProgram) -> bool {
+            false
+        }
+
+        fn start_legacy_tx(&mut self, _: u8, _: u32) {}
+
+        fn prepare_ht_tx(&mut self, _: u8, _: MacHtTxProgram) -> bool {
+            false
+        }
+
+        fn start_ht_tx(&mut self, _: u8, _: u32) {}
+
+        fn prepare_he_tx(&mut self, _: u8, _: MacHeTxProgram) -> bool {
+            false
+        }
+
+        fn start_he_tx(&mut self, _: u8, _: u32) {}
+
+        fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
+            None
+        }
+
+        fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionRegisters> {
+            None
+        }
+
+        fn begin_tx_timeout_abort(&mut self, _: u8) -> bool {
+            false
+        }
+
+        fn finish_tx_timeout_abort(&mut self, _: u8) -> Option<bool> {
+            None
+        }
+
+        fn detach_completed_tx(&mut self, _: u8) -> bool {
+            false
+        }
+    }
+
+    impl HtAmpduHardware for CompletionHardware {
+        fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionRegisters> {
+            self.completion.take()
+        }
+
+        fn prepare_he_trigger_based_queue(
+            &mut self,
+            _: MacHeTbTidLimit,
+            _: MacHeTbLinkReservation,
+            _: MacHeTid,
+            _: &[u16],
+            _: u32,
+        ) -> Result<(), MacHeTbProgramError> {
+            Ok(())
+        }
+
+        fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
+            self.cleared = Some(reservation);
+        }
+
+        fn he_trigger_based_queue_snapshot(
+            &self,
+            _: MacHeTbLinkReservation,
+        ) -> Option<MacHeTriggerTxQueueSnapshot> {
+            self.trigger_snapshot
+        }
+    }
 
     const CONFIG: TxBlockAckConfig = TxBlockAckConfig {
         tid: 7,
@@ -2771,6 +3042,163 @@ mod tests {
         // SAFETY: Reserved state proves hardware has not observed the buffer.
         let first = unsafe { &*storage.buffers[0].0.get() };
         assert_eq!(first[4], 1);
+    }
+
+    #[test]
+    fn he_trigger_preparation_uses_original_msdu_lengths_and_exact_link_range() {
+        let mut storage = HtAmpduTxStorage::<4, 256>::new();
+        // SAFETY: no address is published and the local remains pinned for
+        // the duration of the test.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let rate = HeRate::new(
+            crate::tx::HeMcs::Mcs9,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        for (frame_length, msdu_length) in [(100, 80), (101, 81)] {
+            storage.as_mut().next_frame_buffer(cookie).unwrap()[..frame_length].fill(0xa5);
+            storage
+                .as_mut()
+                .commit_he_msdu_frame(
+                    cookie,
+                    frame_length,
+                    8,
+                    msdu_length,
+                    rate,
+                    HtAmpduDensity::NoRestriction,
+                )
+                .unwrap();
+        }
+        let aggregate = storage.prepared_aggregate(cookie).unwrap();
+        let trigger = crate::tx::HeTriggerBasedTxConfig::new(
+            MacHeTbTidLimit::Three,
+            MacHeTid::new(0).unwrap(),
+        )
+        .unwrap();
+        let config = HeAmpduTxConfig::new(
+            rate,
+            0,
+            aggregate.bytes,
+            aggregate.subframes,
+            HtAmpduDensity::NoRestriction,
+        )
+        .unwrap()
+        .with_trigger_based(trigger);
+        let prepared = storage
+            .prepared_he_trigger(LegacyTxQueue::BestEffort, config)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(prepared.policy, MacHeTbTidLimit::Three);
+        assert_eq!(prepared.tid, MacHeTid::new(0).unwrap());
+        assert_eq!(prepared.reservation.queue(), 2);
+        assert_eq!(prepared.reservation.first(), 0);
+        assert_eq!(prepared.reservation.count(), 2);
+        assert_eq!(prepared.queued_msdu_bytes, 161);
+        assert_eq!(storage.psdu_lengths[..2], [112, 113]);
+    }
+
+    #[test]
+    fn he_trigger_preparation_fails_closed_without_original_msdu_length() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: no address is published and the local remains pinned for
+        // the duration of the test.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let rate = HeRate::new(
+            crate::tx::HeMcs::Mcs0,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..64].fill(0x5a);
+        storage
+            .as_mut()
+            .commit_he_frame(cookie, 64, 8, rate, HtAmpduDensity::NoRestriction)
+            .unwrap();
+        let aggregate = storage.prepared_aggregate(cookie).unwrap();
+        let trigger = crate::tx::HeTriggerBasedTxConfig::new(
+            MacHeTbTidLimit::Three,
+            MacHeTid::new(0).unwrap(),
+        )
+        .unwrap();
+        let config = HeAmpduTxConfig::new(
+            rate,
+            0,
+            aggregate.bytes,
+            aggregate.subframes,
+            HtAmpduDensity::NoRestriction,
+        )
+        .unwrap()
+        .with_trigger_based(trigger);
+
+        assert_eq!(
+            storage.prepared_he_trigger(LegacyTxQueue::BestEffort, config),
+            Err(HtAmpduTxError::TriggerMsduLengthUnavailable)
+        );
+    }
+
+    #[test]
+    fn completion_exposes_live_trigger_snapshot_then_clears_tb_enable() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: this test models hardware ownership without publishing the
+        // host address, and never moves the pinned local.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let reservation = MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, 2, 2).unwrap();
+        unsafe {
+            let storage = storage.as_mut().get_unchecked_mut();
+            storage.state = TxSlotState::HardwareOwned;
+            storage.queue = LegacyTxQueue::BestEffort;
+            storage.trigger_reservation = Some(reservation);
+        }
+        let snapshot = MacHeTriggerTxQueueSnapshot {
+            logical_queue: 2,
+            tid: 0,
+            trigger_based_enabled: true,
+            mu_edca_timer_select: 2,
+            mu_edca_timer_enabled: true,
+            first_link: 0,
+            first_mpdu_length: 112,
+            first_next_link: 1,
+            tail_link: 1,
+            queued_msdu_bytes: 161,
+            queue_valid: true,
+        };
+        let mut hardware = CompletionHardware {
+            completion: Some(MacHtAmpduCompletionRegisters {
+                tx: MacTxCompletionRegisters {
+                    aux_a: 0,
+                    aux_b: 0,
+                    aux_c: 0,
+                    primary: 0,
+                    alternate: 0,
+                    trigger_flow: false,
+                },
+                block_ack_control_and_sequence: 0,
+                block_ack_bitmap_low: 0,
+                block_ack_bitmap_high: 0,
+            }),
+            cleared: None,
+            trigger_snapshot: Some(snapshot),
+        };
+
+        assert_eq!(
+            storage
+                .as_ref()
+                .he_trigger_based_snapshot(&hardware, cookie),
+            Ok(Some(snapshot))
+        );
+        assert!(storage
+            .as_mut()
+            .acknowledge_completion(&mut hardware)
+            .unwrap()
+            .is_some());
+        assert_eq!(hardware.cleared, Some(reservation));
+        assert_eq!(
+            storage
+                .as_ref()
+                .he_trigger_based_snapshot(&hardware, cookie),
+            Err(HtAmpduTxError::Stale)
+        );
     }
 
     #[test]

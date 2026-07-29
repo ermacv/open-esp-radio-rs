@@ -50,7 +50,7 @@ pub use mac_he_ofdma::{
     MacHeCustomReceiveType, MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot,
     MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot, MacHeRxPowerSaveSnapshot,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
+    MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics, MacHeTriggerTxQueueSnapshot,
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};

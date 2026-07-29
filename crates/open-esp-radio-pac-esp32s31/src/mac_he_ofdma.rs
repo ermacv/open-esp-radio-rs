@@ -154,6 +154,26 @@ pub enum MacHeTbProgramError {
     QueuedBytesTooLarge,
 }
 
+/// Coherent-enough readback of one just-published Trigger-eligible TX queue.
+///
+/// The caller must still own the corresponding live reservation. Reading
+/// after completion/cleanup can legitimately observe hardware-updated state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTriggerTxQueueSnapshot {
+    pub logical_queue: u8,
+    pub tid: u8,
+    pub trigger_based_enabled: bool,
+    pub mu_edca_timer_select: u8,
+    pub mu_edca_timer_enabled: bool,
+    pub first_link: u8,
+    pub first_mpdu_length: u16,
+    pub first_next_link: u8,
+    pub tail_link: u8,
+    /// Low-twenty-bit sum of original frame-state `msdu_len` values.
+    pub queued_msdu_bytes: u32,
+    pub queue_valid: bool,
+}
+
 /// One non-latched view of all hardware-visible HE Buffer Status Reports.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHeBufferStatusSnapshot {
@@ -465,6 +485,56 @@ impl RadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(physical_queue)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
+    }
+
+    /// Read back the exact queue-control, MPLEN and BSR state just published
+    /// by [`Self::prepare_he_trigger_based_queue`].
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_tb,
+    /// mac_tx_set_mplen}`, `hal_debug.o::{dbg_read_txq_conf1,
+    /// dbg_read_tx_mplen,dbg_read_bsr_info,dbg_read_muedca_timer}` and their
+    /// rev0 ROM equivalents. The reservation supplies the only indices; no
+    /// raw address or unchecked queue number escapes this API.
+    pub fn he_trigger_based_queue_snapshot(
+        &self,
+        reservation: MacHeTbLinkReservation,
+    ) -> MacHeTriggerTxQueueSnapshot {
+        let queue = reservation.queue;
+        let physical_queue = 7 - usize::from(queue);
+        let vector_bank = 3 - usize::from(queue);
+        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let queue_control = suffix.queue_control(physical_queue).read();
+        let timer = self
+            .peripherals
+            .wifi_mac_he_mu_edca_timer
+            .timer(usize::from(queue))
+            .read();
+        let first = suffix.he_scratch(usize::from(reservation.first)).read();
+        let tail = self
+            .peripherals
+            .wifi_mac_tx_queue_vector
+            .he_mpdu_length_tail(vector_bank)
+            .read();
+        let bsr = self
+            .peripherals
+            .wifi_mac_he_buffer_status
+            .software_bsr(usize::from(queue))
+            .read();
+        let control = self.peripherals.wifi_mac_he_buffer_status.control().read();
+
+        MacHeTriggerTxQueueSnapshot {
+            logical_queue: queue,
+            tid: queue_control.tid().bits(),
+            trigger_based_enabled: queue_control.trigger_based_enable().bit(),
+            mu_edca_timer_select: queue_control.mu_edca_timer_select().bits(),
+            mu_edca_timer_enabled: timer.enable().bit(),
+            first_link: queue_control.mpdu_length_link_address().bits(),
+            first_mpdu_length: first.mpdu_length().bits(),
+            first_next_link: first.next_link().bits(),
+            tail_link: tail.link_index().bits(),
+            queued_msdu_bytes: bsr.value().bits(),
+            queue_valid: control.valid_bitmap().bits() & (1 << queue) != 0,
+        }
     }
 
     /// Select whether one TID participates in HE trigger-based BSR handling.

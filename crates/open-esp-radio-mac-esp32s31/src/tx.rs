@@ -3,8 +3,8 @@
 use core::pin::Pin;
 
 use open_esp_radio_pac_esp32s31::{
-    MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram, MacLegacyTxProgram,
-    MacTxCompletionRegisters, RadioRegisters,
+    MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
+    MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
 };
 
 use crate::{
@@ -1201,15 +1201,51 @@ impl HtAmpduTxConfig {
     }
 }
 
+/// Optional Trigger-based eligibility for an owned HE A-MPDU queue.
+///
+/// This prepares the exact queue/MPLEN/BSR state consumed by an AP Trigger;
+/// it does not change the immediately submitted HE-SU PPDU into a TB PPDU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeTriggerBasedTxConfig {
+    tid_limit: MacHeTbTidLimit,
+    tid: MacHeTid,
+}
+
+impl HeTriggerBasedTxConfig {
+    /// Select one QoS TID admitted by the exact vendor eligibility table.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[if_hecfg.o]::
+    /// wifi_he_get_hetb_tid_bitmap`. Keeping the validation here prevents a
+    /// later MMIO transaction from silently doing nothing for an ineligible
+    /// TID, as the complete `mac_tx_set_tb` body does.
+    pub const fn new(tid_limit: MacHeTbTidLimit, tid: MacHeTid) -> Option<Self> {
+        if tid_limit.contains(tid) {
+            Some(Self { tid_limit, tid })
+        } else {
+            None
+        }
+    }
+
+    pub const fn tid_limit(self) -> MacHeTbTidLimit {
+        self.tid_limit
+    }
+
+    pub const fn tid(self) -> MacHeTid {
+        self.tid
+    }
+}
+
 /// Inputs for one bounded HE20 SU A-MPDU PPDU.
 ///
-/// This HE owner models the 1T1R SU, BCC, non-STBC, non-beamformed profile.
-/// Ordinary and DCM MCS choices plus GI/LTF are finite typed values. OFDMA,
-/// LDPC and beamforming remain separate future profiles.
+/// Trigger eligibility is optional and remains separate from the ordinary
+/// HE-SU vector. Enabling it does not turn an SU transmission into a TB PPDU;
+/// it prepares the owned queue and BSR/MPLEN state needed if the AP later
+/// sends a matching Trigger frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeAmpduTxConfig {
     rate: HeRate,
     ampdu_density: HtAmpduDensity,
+    trigger_based: Option<HeTriggerBasedTxConfig>,
     pub bss_color: u8,
     pub spatial_reuse: u8,
     /// Three repeated ten-bit descriptor-derived timing values.
@@ -1248,6 +1284,7 @@ impl HeAmpduTxConfig {
         Some(Self {
             rate,
             ampdu_density,
+            trigger_based: None,
             bss_color,
             spatial_reuse: 0,
             // SOURCE: complete `_oracles/libpp.a[pp_he.o]::ppCalDeliNum`
@@ -1286,6 +1323,15 @@ impl HeAmpduTxConfig {
 
     pub const fn protection_spacing(self) -> u16 {
         self.protection_spacing
+    }
+
+    pub const fn with_trigger_based(mut self, trigger_based: HeTriggerBasedTxConfig) -> Self {
+        self.trigger_based = Some(trigger_based);
+        self
+    }
+
+    pub const fn trigger_based(self) -> Option<HeTriggerBasedTxConfig> {
+        self.trigger_based
     }
 
     const fn valid(self) -> bool {

@@ -1471,6 +1471,39 @@ SOURCE[HIL_OPEN_40MHZ_AVAILABILITY_2026_07_29]: complete 13-channel open scan
 on ESP32-S31 rev0, plus instruction-exact disassembly of the pinned
 `ieee80211_add_hecap` object and the IEEE-defined HT/HE capability fields.
 
+## Open HE20 BPSK DCM A-MPDU boundary (2026-07-29)
+
+The first open DCM aggregate experiment always forced at least two 1,472-byte
+Ethernet payloads. Its status-five/no-BlockAck result was not a failure of the
+DCM PHY image: the independently qualified DCM S-MPDU used the same rate,
+HE-SIG words, power and length-control class and received an ordinary ACK.
+
+Complete `_oracles/libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength` calls
+`rx11AXRate2AMPDULimit` before retaining another candidate subframe. Complete
+`_oracles/libpp.a[trc.o]::rx11AXRate2AMPDULimit` indexes a generated
+four-profile by three-GI by ten-MCS table. Its complete
+`rx11AXRate2AMPDULimit_update` producer derives those 120 entries from HE
+preamble time, time per symbol, data bits per symbol and estimated BlockAck
+time. This is a rate/GI/profile PPDU-duration limit, independently of the
+negotiated maximum A-MPDU byte exponent.
+
+The bounded Rust owner now permits the blob-valid one-subframe HE A-MPDU
+representation; the separate HT batching policy still requires at least two.
+Removing the HIL's artificial minimum of two reduced MCS0 DCM to one full-size
+MPDU. The first aggregate completed with status zero and BlockAck bitmap
+`0x0000000000000007`. Repeated matrix rounds then passed MCS0 at
+2xLTF/0.8 us, 2xLTF/1.6 us and 4xLTF/3.2 us with 64 aggregate attempts per
+profile, zero final retry failures and approximately 2.8--3.4 Mbit/s payload
+throughput. The controlled AX211 AP advertises only BPSK DCM RX, so these
+results do not qualify MCS1/QPSK or MCS3/16-QAM.
+
+SOURCE[HIL_OPEN_HE20_MCS0_DCM_AMPDU_2026_07_29]: ESP32-S31 rev0,
+`psram-code-psram-data --open-radio-hil`, complete open PHY/MAC, controlled
+AX211 HE20 WPA2 AP on channel 11, typed BCC DCM MCS0 matrix and direct
+completion/BlockAck observations. The test used a conservative 3.5-ms payload
+airtime policy; reproducing the exact generated blob table remains a separate
+rate-control port.
+
 ## Open HT40 receive qualification (2026-07-29)
 
 A controlled Linux/mac80211 AP supplied the missing 40-MHz peer boundary:

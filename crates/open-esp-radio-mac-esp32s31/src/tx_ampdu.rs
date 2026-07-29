@@ -400,7 +400,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if self.state != TxSlotState::Reserved || self.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        if self.count < 2 {
+        // The byte-accounting contract is also used by the HE owner, whose
+        // rate-dependent duration limit can deliberately retain a
+        // one-subframe A-MPDU. The ordinary HT submit method still enforces
+        // its separate minimum-two batching policy.
+        if self.count == 0 {
             return Err(HtAmpduTxError::TooFewFrames);
         }
         self.calculate_aggregate()
@@ -773,7 +777,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        if storage.count < 2 {
+        // Unlike the ordinary HT batching policy, HE may intentionally use a
+        // one-subframe A-MPDU. Complete `ppCalTxHEAMPDULength` and
+        // `ppCheckTxHEAMPDUlength` retain this representation when the
+        // rate-dependent APEP/duration limit admits only one MPDU. This is
+        // required at the lowest DCM rates, where forcing two full-size MPDUs
+        // can exceed the HE PPDU-duration limit.
+        if storage.count == 0 {
             return Err(HtAmpduTxError::TooFewFrames);
         }
 
@@ -2634,6 +2644,27 @@ mod tests {
         assert_eq!(storage.state(), TxSlotState::Reserved);
         storage.as_mut().cancel(cookie).unwrap();
         assert_eq!(storage.state(), TxSlotState::Free);
+    }
+
+    #[test]
+    fn owned_dma_pool_preserves_one_subframe_he_ampdu_length() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..100].fill(0xa5);
+        storage.as_mut().commit_frame(cookie, 100, 8, 0).unwrap();
+
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                // One delimiter plus MPDU, hardware MIC and FCS. The 112-byte
+                // PSDU is already aligned, so the tail rule removes nothing.
+                bytes: 116,
+                subframes: 1,
+            }
+        );
     }
 
     #[test]

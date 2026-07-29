@@ -28,6 +28,7 @@ pub const HE_CONTROL_INFO_LEN: usize = 4;
 pub enum TriggerParseError {
     Truncated { required: usize },
     NotTriggerFrame,
+    UnsupportedUserLayout { trigger_type: TriggerType },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -153,11 +154,137 @@ pub struct TriggerFrame<'a> {
     pub transmitter_address: [u8; 6],
     pub common: TriggerCommonInfo,
     /// User Info fields and any trailing padding.
-    ///
-    /// The Common Info Trigger Type selects the five-byte user interpretation
-    /// and the dependent-field size. Padding ownership is deliberately left
-    /// with the caller until an instruction-exact vendor iterator is found.
     pub user_info_and_padding: &'a [u8],
+}
+
+impl<'a> TriggerFrame<'a> {
+    /// Iterate over bounded User Info fields without allocation.
+    ///
+    /// SOURCE[BLOB_LIBNET80211_TEST_RX_PARSE_TRIG]: complete
+    /// `_oracles/libnet80211.a[test_rx_trig.o]::esp_test_rx_parse_trig`
+    /// (size `0x1d6`) advances Basic users by six bytes, MU-BAR users by
+    /// nine, BFRP/MU-RTS/BSRP/BQRP users by five and treats NFRP as one
+    /// terminal five-byte user. Its instruction-exact padding test requires
+    /// both AID12 `0xfff` and RU allocation `0x7f`.
+    ///
+    /// The vendor test traps for Groupcast MU-BAR and has no bounded layout
+    /// for reserved Trigger types. This iterator reports those layouts as an
+    /// error instead of guessing or reproducing the trap.
+    pub const fn users(&self) -> TriggerUserIterator<'a> {
+        TriggerUserIterator::new(self.common.trigger_type, self.user_info_and_padding)
+    }
+}
+
+/// One borrowed Trigger User Info field and its type-dependent suffix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TriggerUserField<'a> {
+    /// The common five-byte User Info field.
+    pub user_info: &'a [u8],
+    /// Basic contributes one byte and MU-BAR contributes four; other
+    /// instruction-proven layouts expose an empty slice.
+    pub dependent_info: &'a [u8],
+}
+
+impl TriggerUserField<'_> {
+    pub const fn aid12(&self) -> u16 {
+        u16::from_le_bytes([self.user_info[0], self.user_info[1] & 0x0f])
+    }
+
+    pub const fn ru_allocation(&self) -> u8 {
+        (self.user_info[1] >> 5) | ((self.user_info[2] & 0x0f) << 3)
+    }
+}
+
+/// Allocation-free, fail-closed iterator over Trigger User Info fields.
+#[derive(Clone, Debug)]
+pub struct TriggerUserIterator<'a> {
+    trigger_type: TriggerType,
+    remaining: &'a [u8],
+    padding: &'a [u8],
+    finished: bool,
+}
+
+impl<'a> TriggerUserIterator<'a> {
+    const fn new(trigger_type: TriggerType, bytes: &'a [u8]) -> Self {
+        Self {
+            trigger_type,
+            remaining: bytes,
+            padding: &[],
+            finished: false,
+        }
+    }
+
+    /// Return the padding sentinel and bytes after it once iteration stops.
+    ///
+    /// Before the iterator reaches the sentinel this is an empty slice.
+    pub const fn padding(&self) -> &'a [u8] {
+        self.padding
+    }
+
+    fn fail(
+        &mut self,
+        error: TriggerParseError,
+    ) -> Option<Result<TriggerUserField<'a>, TriggerParseError>> {
+        self.finished = true;
+        Some(Err(error))
+    }
+}
+
+impl<'a> Iterator for TriggerUserIterator<'a> {
+    type Item = Result<TriggerUserField<'a>, TriggerParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished || self.remaining.is_empty() {
+            return None;
+        }
+        if self.remaining.len() < TRIGGER_USER_INFO_LEN {
+            return self.fail(TriggerParseError::Truncated {
+                required: TRIGGER_USER_INFO_LEN,
+            });
+        }
+
+        let aid12 = u16::from(self.remaining[0]) | (u16::from(self.remaining[1] & 0x0f) << 8);
+        let ru_allocation = (self.remaining[1] >> 5) | ((self.remaining[2] & 0x0f) << 3);
+        if aid12 == 0x0fff && ru_allocation == 0x7f {
+            self.padding = self.remaining;
+            self.remaining = &[];
+            self.finished = true;
+            return None;
+        }
+
+        let (dependent_len, terminal) = match self.trigger_type {
+            TriggerType::Basic => (TRIGGER_BASIC_DEPENDENT_LEN, false),
+            TriggerType::BeamformingReportPoll
+            | TriggerType::MultiUserRequestToSend
+            | TriggerType::BufferStatusReportPoll
+            | TriggerType::BandwidthQueryReportPoll => (0, false),
+            TriggerType::MultiUserBlockAckRequest => (TRIGGER_MU_BAR_DEPENDENT_LEN, false),
+            TriggerType::NgpaFeedbackReportPoll => (0, true),
+            TriggerType::GroupcastMultiUserBlockAckRequest | TriggerType::Reserved(_) => {
+                return self.fail(TriggerParseError::UnsupportedUserLayout {
+                    trigger_type: self.trigger_type,
+                });
+            }
+        };
+        let required = TRIGGER_USER_INFO_LEN + dependent_len;
+        if self.remaining.len() < required {
+            return self.fail(TriggerParseError::Truncated { required });
+        }
+
+        let (field, rest) = self.remaining.split_at(required);
+        let user = TriggerUserField {
+            user_info: &field[..TRIGGER_USER_INFO_LEN],
+            dependent_info: &field[TRIGGER_USER_INFO_LEN..],
+        };
+        if terminal {
+            self.padding = rest;
+            self.remaining = &[];
+            self.finished = true;
+        } else {
+            self.remaining = rest;
+        }
+        Some(Ok(user))
+    }
 }
 
 /// Admit a complete Trigger control MPDU whose FCS has already been removed.
@@ -545,6 +672,83 @@ mod tests {
             TriggerType::BeamformingReportPoll
         );
         assert_eq!(trigger.user_info_and_padding, [13, 14, 15, 16, 17]);
+    }
+
+    #[test]
+    fn iterates_basic_users_and_stops_at_the_exact_blob_padding_marker() {
+        let bytes = [
+            0x34, 0x02, 0x00, 0x00, 0x01, 0xa5, // AID 0x234 + Basic suffix
+            0x56, 0x04, 0x00, 0x00, 0x02, 0x5a, // AID 0x456 + Basic suffix
+            0xff, 0xef, 0x0f, 0x00, 0x00, // AID 0xfff + RU allocation 0x7f
+            0xaa, 0xbb,
+        ];
+        let mut users = TriggerUserIterator::new(TriggerType::Basic, &bytes);
+
+        let first = users.next().unwrap().unwrap();
+        assert_eq!(first.aid12(), 0x234);
+        assert_eq!(first.user_info.len(), TRIGGER_USER_INFO_LEN);
+        assert_eq!(first.dependent_info, [0xa5]);
+
+        let second = users.next().unwrap().unwrap();
+        assert_eq!(second.aid12(), 0x456);
+        assert_eq!(second.dependent_info, [0x5a]);
+
+        assert_eq!(users.next(), None);
+        assert_eq!(users.padding(), &bytes[12..]);
+    }
+
+    #[test]
+    fn applies_the_instruction_proven_user_strides() {
+        let mu_bar = [
+            0x34, 0x02, 0x00, 0x00, 0x01, 0x05, 0xa0, 0x30, 0x12, 0x56, 0x04, 0x00, 0x00, 0x02,
+            0x01, 0xb0, 0x40, 0x23,
+        ];
+        let mut users = TriggerUserIterator::new(TriggerType::MultiUserBlockAckRequest, &mu_bar);
+        let first = users.next().unwrap().unwrap();
+        assert_eq!(first.aid12(), 0x234);
+        assert_eq!(first.dependent_info, [0x05, 0xa0, 0x30, 0x12]);
+        let second = users.next().unwrap().unwrap();
+        assert_eq!(second.aid12(), 0x456);
+        assert_eq!(second.dependent_info, [0x01, 0xb0, 0x40, 0x23]);
+        assert_eq!(users.next(), None);
+
+        let bfrp = [0x34, 0x02, 0x00, 0x00, 0x01];
+        let only = TriggerUserIterator::new(TriggerType::BeamformingReportPoll, &bfrp)
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(only.dependent_info.is_empty());
+    }
+
+    #[test]
+    fn nfrp_is_one_terminal_user_and_retains_following_padding() {
+        let bytes = [0x34, 0x02, 0x00, 0x00, 0x01, 0xaa, 0xbb];
+        let mut users = TriggerUserIterator::new(TriggerType::NgpaFeedbackReportPoll, &bytes);
+        assert_eq!(users.next().unwrap().unwrap().aid12(), 0x234);
+        assert_eq!(users.next(), None);
+        assert_eq!(users.padding(), [0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn unsupported_and_truncated_user_layouts_fail_closed() {
+        let user = [0_u8; TRIGGER_USER_INFO_LEN];
+        let mut unsupported =
+            TriggerUserIterator::new(TriggerType::GroupcastMultiUserBlockAckRequest, &user);
+        assert_eq!(
+            unsupported.next(),
+            Some(Err(TriggerParseError::UnsupportedUserLayout {
+                trigger_type: TriggerType::GroupcastMultiUserBlockAckRequest,
+            }))
+        );
+        assert_eq!(unsupported.next(), None);
+
+        let mut truncated =
+            TriggerUserIterator::new(TriggerType::Basic, &[0; TRIGGER_USER_INFO_LEN]);
+        assert_eq!(
+            truncated.next(),
+            Some(Err(TriggerParseError::Truncated { required: 6 }))
+        );
+        assert_eq!(truncated.next(), None);
     }
 
     #[test]

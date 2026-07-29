@@ -8,6 +8,8 @@ The audited binary source is `_oracles/libpp.a`, SHA-256
 particularly the complete `hal_debug.o` member and its function-local format
 strings. Addresses and fields are accepted into the SVD only when the loads,
 shifts and masks agree with those strings.
+The Trigger iterator additionally uses `_oracles/libnet80211.a`, SHA-256
+`92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40`.
 
 ## Direct MMIO decoders
 
@@ -71,6 +73,16 @@ live in `open-esp-radio-ieee80211::trigger`. The same module owns the fields
 printed by `dbg_dump_trs_control` and `dbg_dump_uph_control`. These functions
 therefore restore the 802.11ax wire format, but do not expand the MMIO address
 map.
+
+The complete `_oracles/libnet80211.a[test_rx_trig.o]::
+esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is
+`0x1d6` bytes and advances Basic users by 5+1 bytes, MU-BAR users by 5+4,
+BFRP/MU-RTS/BSRP/BQRP users by five, and NFRP as one terminal five-byte user.
+It stops only when both AID12 is `0xfff` and RU allocation is `0x7f`.
+`TriggerUserIterator` reproduces those finite strides without allocation and
+retains the padding sentinel for diagnostics. The blob test deliberately
+traps on Groupcast MU-BAR and does not bound reserved layouts, so the Rust
+iterator returns `UnsupportedUserLayout` for them instead of guessing.
 
 Exact Trigger encodings recovered from the complete functions are:
 

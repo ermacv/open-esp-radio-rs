@@ -718,6 +718,25 @@ impl HeLdpcDcmMcs {
     }
 }
 
+/// HE resource-unit widths supported by the S31 20-MHz rate tables.
+///
+/// SOURCE: complete `_oracles/libpp.a[trc.o]` objects
+/// `he_rates_ru_{26,52,106,242}` and `he_rates_dcm_ru_{26,52,106,242}`,
+/// independently present in the rev0 ROM ELF at
+/// `0x2f07f5cc/0x2f07f644/0x2f07f4dc/0x2f07f554` and
+/// `0x2f84e0b8/0x2f84e0f4/0x2f84e040/0x2f84e07c`, respectively.
+/// Keeping the RU width typed is important for Trigger-based TX: RU26 MCS9
+/// is 11.8 Mbit/s, while the same MCS/GI over the full RU242 is
+/// 114.7 Mbit/s.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HeResourceUnit {
+    Ru26,
+    Ru52,
+    Ru106,
+    #[default]
+    Ru242,
+}
+
 /// One EDCA TXOP limit in the 32-us units used by the 802.11 WMM parameter.
 ///
 /// A raw value of zero selects the vendor's default HE PPDU-duration policy;
@@ -904,30 +923,75 @@ impl HeRate {
     }
 
     pub const fn nominal_kbps(self) -> u32 {
-        const GI_800: [u32; 10] = [
-            8_600, 17_200, 25_800, 34_400, 51_600, 68_800, 77_400, 86_000, 103_200, 114_700,
+        self.nominal_kbps_for_resource_unit(HeResourceUnit::Ru242)
+    }
+
+    /// Return the exact blob/ROM nominal rate for one HE resource unit.
+    ///
+    /// Tables are stored in 100-kbit/s units by the oracle and converted to
+    /// kbit/s here. DCM constructors exclude every unsupported MCS, including
+    /// the anomalous nonzero RU106/MCS2 table cell that no typed rate can
+    /// select.
+    pub const fn nominal_kbps_for_resource_unit(self, resource_unit: HeResourceUnit) -> u32 {
+        const RU26: [[u16; 10]; 3] = [
+            [9, 18, 26, 35, 53, 71, 79, 88, 106, 118],
+            [8, 17, 25, 33, 50, 67, 75, 83, 100, 111],
+            [8, 15, 23, 30, 45, 60, 68, 75, 90, 100],
         ];
-        const GI_1600: [u32; 10] = [
-            8_100, 16_300, 24_400, 32_500, 48_800, 65_000, 73_100, 81_300, 97_500, 108_300,
+        const RU52: [[u16; 10]; 3] = [
+            [18, 35, 53, 71, 106, 141, 159, 176, 212, 235],
+            [17, 33, 50, 67, 100, 133, 150, 167, 200, 222],
+            [15, 30, 45, 60, 90, 120, 135, 150, 180, 200],
         ];
-        const GI_3200: [u32; 10] = [
-            7_300, 14_600, 21_900, 29_300, 43_900, 58_500, 65_800, 73_100, 87_800, 97_500,
+        const RU106: [[u16; 10]; 3] = [
+            [38, 75, 113, 150, 225, 300, 338, 375, 450, 500],
+            [35, 71, 106, 142, 213, 283, 319, 354, 425, 472],
+            [32, 64, 96, 128, 191, 255, 287, 319, 383, 425],
         ];
-        // SOURCE: ROM rev0 he_rates_dcm_ru_242 at 0x2f84e07c.
-        const DCM_GI_800: [u32; 10] = [4_300, 8_600, 0, 17_200, 25_800, 0, 0, 0, 0, 0];
-        const DCM_GI_1600: [u32; 10] = [4_000, 8_100, 0, 16_300, 24_400, 0, 0, 0, 0, 0];
-        const DCM_GI_3200: [u32; 10] = [3_600, 7_300, 0, 14_600, 21_900, 0, 0, 0, 0, 0];
-        let table = match (self.dcm, self.guard_interval_and_ltf) {
-            (true, crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns)
-            | (true, crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns) => &DCM_GI_800,
-            (true, crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns) => &DCM_GI_1600,
-            (true, crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns) => &DCM_GI_3200,
-            (false, crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns)
-            | (false, crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns) => &GI_800,
-            (false, crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns) => &GI_1600,
-            (false, crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns) => &GI_3200,
+        const RU242: [[u16; 10]; 3] = [
+            [86, 172, 258, 344, 516, 688, 774, 860, 1_032, 1_147],
+            [81, 163, 244, 325, 488, 650, 731, 813, 975, 1_083],
+            [73, 146, 219, 293, 439, 585, 658, 731, 878, 975],
+        ];
+        const DCM_RU26: [[u16; 5]; 3] = [[4, 9, 0, 18, 26], [4, 8, 0, 17, 25], [4, 8, 0, 15, 23]];
+        const DCM_RU52: [[u16; 5]; 3] =
+            [[9, 18, 0, 35, 53], [8, 17, 0, 33, 50], [8, 15, 0, 30, 45]];
+        // The complete blob and ROM both contain 113 in the RU106/MCS2
+        // cells. MCS2 is not exposed by either typed DCM constructor.
+        const DCM_RU106: [[u16; 5]; 3] = [
+            [18, 38, 113, 75, 113],
+            [17, 35, 106, 71, 106],
+            [16, 32, 96, 64, 96],
+        ];
+        const DCM_RU242: [[u16; 5]; 3] = [
+            [43, 86, 0, 172, 258],
+            [40, 81, 0, 163, 244],
+            [36, 73, 0, 146, 219],
+        ];
+
+        let gi = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => 0,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => 1,
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => 2,
         };
-        table[self.mcs.index() as usize]
+        let mcs = self.mcs.index() as usize;
+        let units_100_kbps = if self.dcm {
+            match resource_unit {
+                HeResourceUnit::Ru26 => DCM_RU26[gi][mcs],
+                HeResourceUnit::Ru52 => DCM_RU52[gi][mcs],
+                HeResourceUnit::Ru106 => DCM_RU106[gi][mcs],
+                HeResourceUnit::Ru242 => DCM_RU242[gi][mcs],
+            }
+        } else {
+            match resource_unit {
+                HeResourceUnit::Ru26 => RU26[gi][mcs],
+                HeResourceUnit::Ru52 => RU52[gi][mcs],
+                HeResourceUnit::Ru106 => RU106[gi][mcs],
+                HeResourceUnit::Ru242 => RU242[gi][mcs],
+            }
+        };
+        (units_100_kbps as u32) * 100
     }
 
     /// Maximum APEP bytes for the vendor's zero-TXOP HE SU policy.

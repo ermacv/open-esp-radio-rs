@@ -40,9 +40,9 @@ use open_esp_radio_mac_esp32s31::{
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
         HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs, HeMcs, HeRate,
-        HeSmpduTxConfig, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
-        HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
-        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        HeResourceUnit, HeSmpduTxConfig, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth,
+        HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate,
+        LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2318,6 +2318,34 @@ fn he_ldpc_profile_owns_coding_control_and_the_dcm_mcs4_rom_column() {
         assert_eq!((image.he_signal_a1 >> 3) & 0x0f, 4);
         assert_ne!(image.he_signal_a1 & (1 << 7), 0);
         assert_eq!(image.he_signal_a2_length & 0x7ff, 0x107);
+    }
+}
+
+#[test]
+fn he_resource_unit_rates_match_all_complete_blob_table_endpoints() {
+    let mcs0 = HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    let mcs9 = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    for (ru, mcs0_kbps, mcs9_kbps) in [
+        (HeResourceUnit::Ru26, 900, 11_800),
+        (HeResourceUnit::Ru52, 1_800, 23_500),
+        (HeResourceUnit::Ru106, 3_800, 50_000),
+        (HeResourceUnit::Ru242, 8_600, 114_700),
+    ] {
+        assert_eq!(mcs0.nominal_kbps_for_resource_unit(ru), mcs0_kbps);
+        assert_eq!(mcs9.nominal_kbps_for_resource_unit(ru), mcs9_kbps);
+    }
+    assert_eq!(mcs9.nominal_kbps(), 114_700);
+
+    let dcm_mcs3 = HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::FourLtf3200Ns);
+    let dcm_mcs4 = HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs4, HeGuardIntervalAndLtf::TwoLtf1600Ns);
+    for (ru, mcs3_kbps, mcs4_kbps) in [
+        (HeResourceUnit::Ru26, 1_500, 2_500),
+        (HeResourceUnit::Ru52, 3_000, 5_000),
+        (HeResourceUnit::Ru106, 6_400, 10_600),
+        (HeResourceUnit::Ru242, 14_600, 24_400),
+    ] {
+        assert_eq!(dcm_mcs3.nominal_kbps_for_resource_unit(ru), mcs3_kbps);
+        assert_eq!(dcm_mcs4.nominal_kbps_for_resource_unit(ru), mcs4_kbps);
     }
 }
 

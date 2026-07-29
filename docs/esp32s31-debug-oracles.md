@@ -31,6 +31,8 @@ shifts and masks agree with those strings.
 | `dbg_read_tx_mplen` | 120-entry linked MPDU-length table | complete aperture with MPDU length and next-link fields decoded |
 | `dbg_read_tx_sig` | active TX queue PLCP/SIG vectors | major queue words mapped; residual diagnostic fields pending |
 | `dbg_dump_txq_txinfo` | per-queue ACK/BlockAck and trigger-based TX result | complete two-word field decode |
+| `dbg_lmac_hw_statis_dump` | RX/TX interrupt, Trigger and hang/panic hardware counters | complete address/name map; opaque full-width values retained where no mask exists |
+| `dbg_lmac_diag_statis_dump` | sparse `diag0..diag12` and `diagsel` bank | complete address/name map; higher-level meanings pending |
 
 `dbg_read_nav_misc` is a two-byte `ret` and contains no register evidence.
 `dbg_read_tx_power` is not a passive decoder: it calls PHY maximum-power
@@ -100,14 +102,20 @@ is promoted only after the complete body and all reachable leaves are bounded.
 
 ## Other archives and ROM
 
-The first cross-object scan found additional direct-MMIO candidates in
-`libpp.a[pp_debug.o]`: `dbg_lmac_rxtx_statis_dump` reaches `0x20104388`,
-`dbg_lmac_hw_statis_dump` reaches `0x2010435c` and `0x20104e08`, and
-`dbg_lmac_diag_statis_dump` reaches `0x201043b4` and `0x20104e50`. Their
-complete field-name/width audit is still pending, so these addresses are not
-yet promoted to the SVD. `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` also reads
-`0x20104028`, but mixes that observation with an RX object and needs the same
-boundary audit.
+The cross-object `pp_debug.o` audit is now complete. Its RX statistics mostly
+independently confirm the already decoded `0x2010435c..0x2010439c` window.
+The newly useful observations are `CTS_INTERRUPT` at `0x20104384`,
+`TRIGGER` at `0x2010439c`, the four-word TX statistics bank
+`0x20104e08..0x20104e14`, and the sparse diagnostic bank spanning
+`0x201043b4..0x20104e64`. The complete functions apply no masks, so the SVD
+uses the blob's exact labels while retaining opaque 32-bit values.
+`dbg_lmac_rxtx_statis_dump` itself primarily reads software counters and adds
+no fixed MMIO address.
+
+`test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
+observation with an RX object and test-only parser state. It remains useful for
+HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field
+until that boundary is independently established.
 
 By contrast, `hal_he_common.o::dbg_hal_check_set_mplen_bitmap` and
 `dbg_hal_check_clr_mplen_bitmap` traverse software-owned allocation bitmaps;

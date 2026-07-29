@@ -1361,6 +1361,36 @@ bits 13:0 are `MPDU_LEN`, bits 20:14 are `NEXT`, and bits 31:21 remain
 unnamed. Generated fields and an allocation-free typed reader now own this
 map.
 
+SVD v3.31 extends the audit beyond `hal_debug.o` into complete
+`libpp.a[pp_debug.o]` bodies. `dbg_lmac_hw_statis_dump` independently
+cross-checks the existing RX statistics aperture and adds `cts_int` at
+`0x20104384`, `trigger` at `0x2010439c`, plus `txrts`, `txcts`, `track` and
+`trcts` at `0x20104e08..0x20104e14`. It also reads the already canonical
+combined hang/panic words at `0x20104e18/1c` under the shorter
+`txhung`/`panic` labels. Because this function loads complete words without
+masks, the SVD records exact address/name associations but does not invent
+counter widths or expand the abbreviated `trcts` label.
+
+Complete `dbg_lmac_diag_statis_dump` establishes the sparse diagnostic map:
+`diag4..diag7` at `0x201043b4..c0`, `diag8..diag10` and `diag12` at
+`0x201044e0..ec`, and `diag0..diag3` plus `diagsel` at
+`0x20104e50..64`. The missing `diag11` is absent from the complete body and is
+therefore not synthesized. These words are mapped as opaque observations
+until a selector experiment or another complete hardware leaf proves their
+higher-level meanings.
+
+`HIL_OPEN_TX_BLOCK_ACK_DIAGNOSTIC_2026_07_29` qualified the v3.30 TX result
+map under a real HE20 MCS0..9 A-MPDU matrix. After TID0 AddBA with window 32,
+logical queue two reported BlockAck, bitmap `0x00000000ffffffff`, and
+transmitter address `70:15:fb:a8:48:f0`; the standalone TXBA result reported
+the same bitmap and address words. The queue result simultaneously reported
+`LAST_TX_IS_TB=0` and `TB_PACK_SENT=0`, while both decoded HE Trigger RX and
+TB TX counters remained zero. Thus the capture separates a working HE-SU
+A-MPDU/BlockAck path from the still-unobserved UL-OFDMA transition. The blob's
+four-bit `ACK_TID` field read as eight even though the negotiated and
+standalone TXBA TID was zero; its source name and bit geometry remain exact,
+but software must not yet treat that diagnostic value as the negotiated TID.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

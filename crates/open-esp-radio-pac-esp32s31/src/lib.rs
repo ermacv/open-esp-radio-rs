@@ -763,15 +763,27 @@ mod tests {
             statistics.nrx_he_sig_b_error().as_ptr() as usize,
             0x2010_4348
         );
+        assert_eq!(statistics.cts_interrupt().as_ptr() as usize, 0x2010_4384);
         assert_eq!(
             statistics.last_unmatched_error().as_ptr() as usize,
             0x2010_4398
         );
+        assert_eq!(statistics.trigger().as_ptr() as usize, 0x2010_439c);
 
         let hangs = &registers.peripherals.wifi_mac_rx_hang_statistics;
         assert_eq!(hangs.hang().as_ptr() as usize, 0x2010_4c64);
         assert_eq!(hangs.rx_tx_hang().as_ptr() as usize, 0x2010_4e18);
         assert_eq!(hangs.rx_tx_panic().as_ptr() as usize, 0x2010_4e1c);
+
+        let tx = &registers.peripherals.wifi_mac_tx_statistics;
+        assert_eq!(tx.tx_rts().as_ptr() as usize, 0x2010_4e08);
+        assert_eq!(tx.trcts().as_ptr() as usize, 0x2010_4e14);
+
+        let diagnostic = &registers.peripherals.wifi_mac_diagnostic_statistics;
+        assert_eq!(diagnostic.diag4().as_ptr() as usize, 0x2010_43b4);
+        assert_eq!(diagnostic.diag8().as_ptr() as usize, 0x2010_44e0);
+        assert_eq!(diagnostic.diag0().as_ptr() as usize, 0x2010_4e50);
+        assert_eq!(diagnostic.diag_select().as_ptr() as usize, 0x2010_4e64);
     }
 
     #[test]

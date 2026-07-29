@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.30</version>
+  <version>3.31</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -113,11 +113,44 @@
         <register><name>SAME_BM_ERROR</name><addressOffset>0x6c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>ACK_INTERRUPT</name><addressOffset>0x70</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>RTS_INTERRUPT</name><addressOffset>0x74</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>CTS_INTERRUPT</name><description>SOURCE[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS]; CONFIDENCE[instruction-exact-whole-register-name]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x20104384 as cts_int. Its internal field width is not inferred.</description><addressOffset>0x78</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
         <register><name>DATA_SUCCESS</name><addressOffset>0x7c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>END</name><addressOffset>0x80</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>BT_BLOCK_ERROR</name><addressOffset>0x84</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>FREQUENCY_HOP_ERROR</name><addressOffset>0x88</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
         <register><name>LAST_UNMATCHED_ERROR</name><addressOffset>0x8c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>TRIGGER</name><description>SOURCE[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS]; CONFIDENCE[instruction-exact-whole-register-name]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x2010439c as trigger. This is a separate hardware-statistics observation from the decoded HE Trigger RX counter at 0x20104dbc.</description><addressOffset>0x90</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TX_STATISTICS</name>
+      <description>SOURCE[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS]; CONFIDENCE[instruction-exact-whole-register-names]. Complete libpp.a[pp_debug.o]::dbg_lmac_hw_statis_dump reads these four consecutive words and prints them as txrts, txcts, track and trcts. It then reads the already canonical RX_TX_HANG/PANIC words at 0x20104e18/1c under its shorter txhung/panic labels. The blob applies no masks; the SVD therefore preserves each word without inventing subfields.</description>
+      <baseAddress>0x20104e08</baseAddress>
+      <registers>
+        <register><name>TX_RTS</name><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>TX_CTS</name><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>TRACK</name><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>TRCTS</name><description>The abbreviated blob label is retained verbatim; its expansion is not yet proven.</description><addressOffset>0x0c</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_DIAGNOSTIC_STATISTICS</name>
+      <description>SOURCE[BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS]; CONFIDENCE[instruction-exact-whole-register-names]. Complete libpp.a[pp_debug.o]::dbg_lmac_diag_statis_dump ties the blob's diag0 through diag12 and diagsel labels to these sparse MMIO words. The non-contiguous geometry and absence of diag11 are properties of the complete body. Higher-level meanings and internal bit widths remain unknown.</description>
+      <baseAddress>0x201043b4</baseAddress>
+      <registers>
+        <register><name>DIAG4</name><addressOffset>0x0000</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG5</name><addressOffset>0x0004</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG6</name><addressOffset>0x0008</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG7</name><addressOffset>0x000c</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG8</name><addressOffset>0x012c</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG9</name><addressOffset>0x0130</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG10</name><addressOffset>0x0134</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG12</name><addressOffset>0x0138</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG0</name><addressOffset>0x0a9c</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG1</name><addressOffset>0x0aa0</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG2</name><addressOffset>0x0aa4</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG3</name><addressOffset>0x0aac</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>DIAG_SELECT</name><addressOffset>0x0ab0</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
       </registers>
     </peripheral>
     <peripheral>
@@ -126,8 +159,8 @@
       <baseAddress>0x20104c64</baseAddress>
       <registers>
         <register><name>HANG</name><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field><field><name>TX_COUNT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>RX_COUNT</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields></register>
-        <register><name>RX_TX_HANG</name><addressOffset>0x1b4</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>RX_TX_PANIC</name><addressOffset>0x1b8</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>RX_TX_HANG</name><description>Complete dbg_read_rx_count names the combined counter RX_TX_HANG; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter txhung label.</description><addressOffset>0x1b4</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>RX_TX_PANIC</name><description>Complete dbg_read_rx_count names the combined counter RX_TX_PANIC; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter panic label.</description><addressOffset>0x1b8</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
       </registers>
     </peripheral>
     <peripheral>

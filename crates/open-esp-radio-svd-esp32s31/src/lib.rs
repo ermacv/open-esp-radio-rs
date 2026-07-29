@@ -1641,12 +1641,13 @@ pub mod wifi_mac_rx_statistics {
         same_bm_error: SameBmError,
         ack_interrupt: AckInterrupt,
         rts_interrupt: RtsInterrupt,
-        _reserved28: [u8; 0x04],
+        cts_interrupt: CtsInterrupt,
         data_success: DataSuccess,
         end: End,
         bt_block_error: BtBlockError,
         frequency_hop_error: FrequencyHopError,
         last_unmatched_error: LastUnmatchedError,
+        trigger: Trigger,
     }
     impl RegisterBlock {
         #[doc = "0x00 - WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO."]
@@ -1789,6 +1790,11 @@ pub mod wifi_mac_rx_statistics {
         pub const fn rts_interrupt(&self) -> &RtsInterrupt {
             &self.rts_interrupt
         }
+        #[doc = "0x78 - SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x20104384 as cts_int. Its internal field width is not inferred."]
+        #[inline(always)]
+        pub const fn cts_interrupt(&self) -> &CtsInterrupt {
+            &self.cts_interrupt
+        }
         #[doc = "0x7c - "]
         #[inline(always)]
         pub const fn data_success(&self) -> &DataSuccess {
@@ -1813,6 +1819,11 @@ pub mod wifi_mac_rx_statistics {
         #[inline(always)]
         pub const fn last_unmatched_error(&self) -> &LastUnmatchedError {
             &self.last_unmatched_error
+        }
+        #[doc = "0x90 - SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x2010439c as trigger. This is a separate hardware-statistics observation from the decoded HE Trigger RX counter at 0x20104dbc."]
+        #[inline(always)]
+        pub const fn trigger(&self) -> &Trigger {
+            &self.trigger
         }
     }
     #[doc = "MPDU_AND_CFO (r) register accessor: WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO.\n\nYou can [`read`](crate::Reg::read) this register and get [`mpdu_and_cfo::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mpdu_and_cfo`] module"]
@@ -2501,6 +2512,30 @@ pub mod wifi_mac_rx_statistics {
         #[doc = "`read()` method returns [`rts_interrupt::R`](R) reader structure"]
         impl crate::Readable for RtsInterruptSpec {}
     }
+    #[doc = "CTS_INTERRUPT (r) register accessor: SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x20104384 as cts_int. Its internal field width is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`cts_interrupt::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cts_interrupt`] module"]
+    #[doc(alias = "CTS_INTERRUPT")]
+    pub type CtsInterrupt = crate::Reg<cts_interrupt::CtsInterruptSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x20104384 as cts_int. Its internal field width is not inferred."]
+    pub mod cts_interrupt {
+        #[doc = "Register `CTS_INTERRUPT` reader"]
+        pub type R = crate::R<CtsInterruptSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x20104384 as cts_int. Its internal field width is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`cts_interrupt::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CtsInterruptSpec;
+        impl crate::RegisterSpec for CtsInterruptSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cts_interrupt::R`](R) reader structure"]
+        impl crate::Readable for CtsInterruptSpec {}
+    }
     #[doc = "DATA_SUCCESS (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`data_success::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_success`] module"]
     #[doc(alias = "DATA_SUCCESS")]
     pub type DataSuccess = crate::Reg<data_success::DataSuccessSpec>;
@@ -2621,6 +2656,576 @@ pub mod wifi_mac_rx_statistics {
         #[doc = "`read()` method returns [`last_unmatched_error::R`](R) reader structure"]
         impl crate::Readable for LastUnmatchedErrorSpec {}
     }
+    #[doc = "TRIGGER (r) register accessor: SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x2010439c as trigger. This is a separate hardware-statistics observation from the decoded HE Trigger RX counter at 0x20104dbc.\n\nYou can [`read`](crate::Reg::read) this register and get [`trigger::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@trigger`] module"]
+    #[doc(alias = "TRIGGER")]
+    pub type Trigger = crate::Reg<trigger::TriggerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x2010439c as trigger. This is a separate hardware-statistics observation from the decoded HE Trigger RX counter at 0x20104dbc."]
+    pub mod trigger {
+        #[doc = "Register `TRIGGER` reader"]
+        pub type R = crate::R<TriggerSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-name\\]. Complete dbg_lmac_hw_statis_dump prints the full word at 0x2010439c as trigger. This is a separate hardware-statistics observation from the decoded HE Trigger RX counter at 0x20104dbc.\n\nYou can [`read`](crate::Reg::read) this register and get [`trigger::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TriggerSpec;
+        impl crate::RegisterSpec for TriggerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`trigger::R`](R) reader structure"]
+        impl crate::Readable for TriggerSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-names\\]. Complete libpp.a\\[pp_debug.o\\]::dbg_lmac_hw_statis_dump reads these four consecutive words and prints them as txrts, txcts, track and trcts. It then reads the already canonical RX_TX_HANG/PANIC words at 0x20104e18/1c under its shorter txhung/panic labels. The blob applies no masks; the SVD therefore preserves each word without inventing subfields."]
+pub type WifiMacTxStatistics = crate::Periph<wifi_mac_tx_statistics::RegisterBlock, 0x2010_4e08>;
+impl core::fmt::Debug for WifiMacTxStatistics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxStatistics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_HW_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-names\\]. Complete libpp.a\\[pp_debug.o\\]::dbg_lmac_hw_statis_dump reads these four consecutive words and prints them as txrts, txcts, track and trcts. It then reads the already canonical RX_TX_HANG/PANIC words at 0x20104e18/1c under its shorter txhung/panic labels. The blob applies no masks; the SVD therefore preserves each word without inventing subfields."]
+pub mod wifi_mac_tx_statistics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        tx_rts: TxRts,
+        tx_cts: TxCts,
+        track: Track,
+        trcts: Trcts,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - "]
+        #[inline(always)]
+        pub const fn tx_rts(&self) -> &TxRts {
+            &self.tx_rts
+        }
+        #[doc = "0x04 - "]
+        #[inline(always)]
+        pub const fn tx_cts(&self) -> &TxCts {
+            &self.tx_cts
+        }
+        #[doc = "0x08 - "]
+        #[inline(always)]
+        pub const fn track(&self) -> &Track {
+            &self.track
+        }
+        #[doc = "0x0c - The abbreviated blob label is retained verbatim; its expansion is not yet proven."]
+        #[inline(always)]
+        pub const fn trcts(&self) -> &Trcts {
+            &self.trcts
+        }
+    }
+    #[doc = "TX_RTS (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rts::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_rts`] module"]
+    #[doc(alias = "TX_RTS")]
+    pub type TxRts = crate::Reg<tx_rts::TxRtsSpec>;
+    #[doc = ""]
+    pub mod tx_rts {
+        #[doc = "Register `TX_RTS` reader"]
+        pub type R = crate::R<TxRtsSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rts::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxRtsSpec;
+        impl crate::RegisterSpec for TxRtsSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_rts::R`](R) reader structure"]
+        impl crate::Readable for TxRtsSpec {}
+    }
+    #[doc = "TX_CTS (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`tx_cts::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_cts`] module"]
+    #[doc(alias = "TX_CTS")]
+    pub type TxCts = crate::Reg<tx_cts::TxCtsSpec>;
+    #[doc = ""]
+    pub mod tx_cts {
+        #[doc = "Register `TX_CTS` reader"]
+        pub type R = crate::R<TxCtsSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_cts::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxCtsSpec;
+        impl crate::RegisterSpec for TxCtsSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_cts::R`](R) reader structure"]
+        impl crate::Readable for TxCtsSpec {}
+    }
+    #[doc = "TRACK (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`track::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@track`] module"]
+    #[doc(alias = "TRACK")]
+    pub type Track = crate::Reg<track::TrackSpec>;
+    #[doc = ""]
+    pub mod track {
+        #[doc = "Register `TRACK` reader"]
+        pub type R = crate::R<TrackSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`track::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TrackSpec;
+        impl crate::RegisterSpec for TrackSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`track::R`](R) reader structure"]
+        impl crate::Readable for TrackSpec {}
+    }
+    #[doc = "TRCTS (r) register accessor: The abbreviated blob label is retained verbatim; its expansion is not yet proven.\n\nYou can [`read`](crate::Reg::read) this register and get [`trcts::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@trcts`] module"]
+    #[doc(alias = "TRCTS")]
+    pub type Trcts = crate::Reg<trcts::TrctsSpec>;
+    #[doc = "The abbreviated blob label is retained verbatim; its expansion is not yet proven."]
+    pub mod trcts {
+        #[doc = "Register `TRCTS` reader"]
+        pub type R = crate::R<TrctsSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "The abbreviated blob label is retained verbatim; its expansion is not yet proven.\n\nYou can [`read`](crate::Reg::read) this register and get [`trcts::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TrctsSpec;
+        impl crate::RegisterSpec for TrctsSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`trcts::R`](R) reader structure"]
+        impl crate::Readable for TrctsSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-names\\]. Complete libpp.a\\[pp_debug.o\\]::dbg_lmac_diag_statis_dump ties the blob's diag0 through diag12 and diagsel labels to these sparse MMIO words. The non-contiguous geometry and absence of diag11 are properties of the complete body. Higher-level meanings and internal bit widths remain unknown."]
+pub type WifiMacDiagnosticStatistics =
+    crate::Periph<wifi_mac_diagnostic_statistics::RegisterBlock, 0x2010_43b4>;
+impl core::fmt::Debug for WifiMacDiagnosticStatistics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacDiagnosticStatistics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS\\]; CONFIDENCE\\[instruction-exact-whole-register-names\\]. Complete libpp.a\\[pp_debug.o\\]::dbg_lmac_diag_statis_dump ties the blob's diag0 through diag12 and diagsel labels to these sparse MMIO words. The non-contiguous geometry and absence of diag11 are properties of the complete body. Higher-level meanings and internal bit widths remain unknown."]
+pub mod wifi_mac_diagnostic_statistics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        diag4: Diag4,
+        diag5: Diag5,
+        diag6: Diag6,
+        diag7: Diag7,
+        _reserved4: [u8; 0x011c],
+        diag8: Diag8,
+        diag9: Diag9,
+        diag10: Diag10,
+        diag12: Diag12,
+        _reserved8: [u8; 0x0960],
+        diag0: Diag0,
+        diag1: Diag1,
+        diag2: Diag2,
+        _reserved11: [u8; 0x04],
+        diag3: Diag3,
+        diag_select: DiagSelect,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - "]
+        #[inline(always)]
+        pub const fn diag4(&self) -> &Diag4 {
+            &self.diag4
+        }
+        #[doc = "0x04 - "]
+        #[inline(always)]
+        pub const fn diag5(&self) -> &Diag5 {
+            &self.diag5
+        }
+        #[doc = "0x08 - "]
+        #[inline(always)]
+        pub const fn diag6(&self) -> &Diag6 {
+            &self.diag6
+        }
+        #[doc = "0x0c - "]
+        #[inline(always)]
+        pub const fn diag7(&self) -> &Diag7 {
+            &self.diag7
+        }
+        #[doc = "0x12c - "]
+        #[inline(always)]
+        pub const fn diag8(&self) -> &Diag8 {
+            &self.diag8
+        }
+        #[doc = "0x130 - "]
+        #[inline(always)]
+        pub const fn diag9(&self) -> &Diag9 {
+            &self.diag9
+        }
+        #[doc = "0x134 - "]
+        #[inline(always)]
+        pub const fn diag10(&self) -> &Diag10 {
+            &self.diag10
+        }
+        #[doc = "0x138 - "]
+        #[inline(always)]
+        pub const fn diag12(&self) -> &Diag12 {
+            &self.diag12
+        }
+        #[doc = "0xa9c - "]
+        #[inline(always)]
+        pub const fn diag0(&self) -> &Diag0 {
+            &self.diag0
+        }
+        #[doc = "0xaa0 - "]
+        #[inline(always)]
+        pub const fn diag1(&self) -> &Diag1 {
+            &self.diag1
+        }
+        #[doc = "0xaa4 - "]
+        #[inline(always)]
+        pub const fn diag2(&self) -> &Diag2 {
+            &self.diag2
+        }
+        #[doc = "0xaac - "]
+        #[inline(always)]
+        pub const fn diag3(&self) -> &Diag3 {
+            &self.diag3
+        }
+        #[doc = "0xab0 - "]
+        #[inline(always)]
+        pub const fn diag_select(&self) -> &DiagSelect {
+            &self.diag_select
+        }
+    }
+    #[doc = "DIAG4 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag4`] module"]
+    #[doc(alias = "DIAG4")]
+    pub type Diag4 = crate::Reg<diag4::Diag4Spec>;
+    #[doc = ""]
+    pub mod diag4 {
+        #[doc = "Register `DIAG4` reader"]
+        pub type R = crate::R<Diag4Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag4Spec;
+        impl crate::RegisterSpec for Diag4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag4::R`](R) reader structure"]
+        impl crate::Readable for Diag4Spec {}
+    }
+    #[doc = "DIAG5 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag5`] module"]
+    #[doc(alias = "DIAG5")]
+    pub type Diag5 = crate::Reg<diag5::Diag5Spec>;
+    #[doc = ""]
+    pub mod diag5 {
+        #[doc = "Register `DIAG5` reader"]
+        pub type R = crate::R<Diag5Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag5Spec;
+        impl crate::RegisterSpec for Diag5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag5::R`](R) reader structure"]
+        impl crate::Readable for Diag5Spec {}
+    }
+    #[doc = "DIAG6 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag6`] module"]
+    #[doc(alias = "DIAG6")]
+    pub type Diag6 = crate::Reg<diag6::Diag6Spec>;
+    #[doc = ""]
+    pub mod diag6 {
+        #[doc = "Register `DIAG6` reader"]
+        pub type R = crate::R<Diag6Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag6Spec;
+        impl crate::RegisterSpec for Diag6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag6::R`](R) reader structure"]
+        impl crate::Readable for Diag6Spec {}
+    }
+    #[doc = "DIAG7 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag7`] module"]
+    #[doc(alias = "DIAG7")]
+    pub type Diag7 = crate::Reg<diag7::Diag7Spec>;
+    #[doc = ""]
+    pub mod diag7 {
+        #[doc = "Register `DIAG7` reader"]
+        pub type R = crate::R<Diag7Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag7Spec;
+        impl crate::RegisterSpec for Diag7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag7::R`](R) reader structure"]
+        impl crate::Readable for Diag7Spec {}
+    }
+    #[doc = "DIAG8 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag8::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag8`] module"]
+    #[doc(alias = "DIAG8")]
+    pub type Diag8 = crate::Reg<diag8::Diag8Spec>;
+    #[doc = ""]
+    pub mod diag8 {
+        #[doc = "Register `DIAG8` reader"]
+        pub type R = crate::R<Diag8Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag8::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag8Spec;
+        impl crate::RegisterSpec for Diag8Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag8::R`](R) reader structure"]
+        impl crate::Readable for Diag8Spec {}
+    }
+    #[doc = "DIAG9 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag9::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag9`] module"]
+    #[doc(alias = "DIAG9")]
+    pub type Diag9 = crate::Reg<diag9::Diag9Spec>;
+    #[doc = ""]
+    pub mod diag9 {
+        #[doc = "Register `DIAG9` reader"]
+        pub type R = crate::R<Diag9Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag9::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag9Spec;
+        impl crate::RegisterSpec for Diag9Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag9::R`](R) reader structure"]
+        impl crate::Readable for Diag9Spec {}
+    }
+    #[doc = "DIAG10 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag10::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag10`] module"]
+    #[doc(alias = "DIAG10")]
+    pub type Diag10 = crate::Reg<diag10::Diag10Spec>;
+    #[doc = ""]
+    pub mod diag10 {
+        #[doc = "Register `DIAG10` reader"]
+        pub type R = crate::R<Diag10Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag10::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag10Spec;
+        impl crate::RegisterSpec for Diag10Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag10::R`](R) reader structure"]
+        impl crate::Readable for Diag10Spec {}
+    }
+    #[doc = "DIAG12 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag12::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag12`] module"]
+    #[doc(alias = "DIAG12")]
+    pub type Diag12 = crate::Reg<diag12::Diag12Spec>;
+    #[doc = ""]
+    pub mod diag12 {
+        #[doc = "Register `DIAG12` reader"]
+        pub type R = crate::R<Diag12Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag12::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag12Spec;
+        impl crate::RegisterSpec for Diag12Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag12::R`](R) reader structure"]
+        impl crate::Readable for Diag12Spec {}
+    }
+    #[doc = "DIAG0 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag0`] module"]
+    #[doc(alias = "DIAG0")]
+    pub type Diag0 = crate::Reg<diag0::Diag0Spec>;
+    #[doc = ""]
+    pub mod diag0 {
+        #[doc = "Register `DIAG0` reader"]
+        pub type R = crate::R<Diag0Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag0Spec;
+        impl crate::RegisterSpec for Diag0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag0::R`](R) reader structure"]
+        impl crate::Readable for Diag0Spec {}
+    }
+    #[doc = "DIAG1 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag1`] module"]
+    #[doc(alias = "DIAG1")]
+    pub type Diag1 = crate::Reg<diag1::Diag1Spec>;
+    #[doc = ""]
+    pub mod diag1 {
+        #[doc = "Register `DIAG1` reader"]
+        pub type R = crate::R<Diag1Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag1Spec;
+        impl crate::RegisterSpec for Diag1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag1::R`](R) reader structure"]
+        impl crate::Readable for Diag1Spec {}
+    }
+    #[doc = "DIAG2 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag2`] module"]
+    #[doc(alias = "DIAG2")]
+    pub type Diag2 = crate::Reg<diag2::Diag2Spec>;
+    #[doc = ""]
+    pub mod diag2 {
+        #[doc = "Register `DIAG2` reader"]
+        pub type R = crate::R<Diag2Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag2Spec;
+        impl crate::RegisterSpec for Diag2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag2::R`](R) reader structure"]
+        impl crate::Readable for Diag2Spec {}
+    }
+    #[doc = "DIAG3 (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag3`] module"]
+    #[doc(alias = "DIAG3")]
+    pub type Diag3 = crate::Reg<diag3::Diag3Spec>;
+    #[doc = ""]
+    pub mod diag3 {
+        #[doc = "Register `DIAG3` reader"]
+        pub type R = crate::R<Diag3Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Diag3Spec;
+        impl crate::RegisterSpec for Diag3Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag3::R`](R) reader structure"]
+        impl crate::Readable for Diag3Spec {}
+    }
+    #[doc = "DIAG_SELECT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`diag_select::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@diag_select`] module"]
+    #[doc(alias = "DIAG_SELECT")]
+    pub type DiagSelect = crate::Reg<diag_select::DiagSelectSpec>;
+    #[doc = ""]
+    pub mod diag_select {
+        #[doc = "Register `DIAG_SELECT` reader"]
+        pub type R = crate::R<DiagSelectSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`diag_select::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DiagSelectSpec;
+        impl crate::RegisterSpec for DiagSelectSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`diag_select::R`](R) reader structure"]
+        impl crate::Readable for DiagSelectSpec {}
+    }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-fields-from-debug-symbol-hil-observed\\]. Complete dbg_read_rx_count decodes two eight-bit hang counters and two full-width combined hang/panic counters. All four remained zero during the connected open HE matrix baseline."]
 pub type WifiMacRxHangStatistics =
@@ -2646,12 +3251,12 @@ pub mod wifi_mac_rx_hang_statistics {
         pub const fn hang(&self) -> &Hang {
             &self.hang
         }
-        #[doc = "0x1b4 - "]
+        #[doc = "0x1b4 - Complete dbg_read_rx_count names the combined counter RX_TX_HANG; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter txhung label."]
         #[inline(always)]
         pub const fn rx_tx_hang(&self) -> &RxTxHang {
             &self.rx_tx_hang
         }
-        #[doc = "0x1b8 - "]
+        #[doc = "0x1b8 - Complete dbg_read_rx_count names the combined counter RX_TX_PANIC; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter panic label."]
         #[inline(always)]
         pub const fn rx_tx_panic(&self) -> &RxTxPanic {
             &self.rx_tx_panic
@@ -2695,10 +3300,10 @@ pub mod wifi_mac_rx_hang_statistics {
         #[doc = "`read()` method returns [`hang::R`](R) reader structure"]
         impl crate::Readable for HangSpec {}
     }
-    #[doc = "RX_TX_HANG (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_hang`] module"]
+    #[doc = "RX_TX_HANG (r) register accessor: Complete dbg_read_rx_count names the combined counter RX_TX_HANG; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter txhung label.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_hang`] module"]
     #[doc(alias = "RX_TX_HANG")]
     pub type RxTxHang = crate::Reg<rx_tx_hang::RxTxHangSpec>;
-    #[doc = ""]
+    #[doc = "Complete dbg_read_rx_count names the combined counter RX_TX_HANG; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter txhung label."]
     pub mod rx_tx_hang {
         #[doc = "Register `RX_TX_HANG` reader"]
         pub type R = crate::R<RxTxHangSpec>;
@@ -2711,7 +3316,7 @@ pub mod wifi_mac_rx_hang_statistics {
                 CountR::new(self.bits)
             }
         }
-        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete dbg_read_rx_count names the combined counter RX_TX_HANG; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter txhung label.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxTxHangSpec;
         impl crate::RegisterSpec for RxTxHangSpec {
             type Ux = u32;
@@ -2719,10 +3324,10 @@ pub mod wifi_mac_rx_hang_statistics {
         #[doc = "`read()` method returns [`rx_tx_hang::R`](R) reader structure"]
         impl crate::Readable for RxTxHangSpec {}
     }
-    #[doc = "RX_TX_PANIC (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_panic`] module"]
+    #[doc = "RX_TX_PANIC (r) register accessor: Complete dbg_read_rx_count names the combined counter RX_TX_PANIC; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter panic label.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_panic`] module"]
     #[doc(alias = "RX_TX_PANIC")]
     pub type RxTxPanic = crate::Reg<rx_tx_panic::RxTxPanicSpec>;
-    #[doc = ""]
+    #[doc = "Complete dbg_read_rx_count names the combined counter RX_TX_PANIC; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter panic label."]
     pub mod rx_tx_panic {
         #[doc = "Register `RX_TX_PANIC` reader"]
         pub type R = crate::R<RxTxPanicSpec>;
@@ -2735,7 +3340,7 @@ pub mod wifi_mac_rx_hang_statistics {
                 CountR::new(self.bits)
             }
         }
-        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete dbg_read_rx_count names the combined counter RX_TX_PANIC; complete pp_debug.o::dbg_lmac_hw_statis_dump independently reads the same full word under the shorter panic label.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxTxPanicSpec;
         impl crate::RegisterSpec for RxTxPanicSpec {
             type Ux = u32;
@@ -25050,6 +25655,10 @@ pub struct Peripherals {
     pub wifi_mac_rx_custom_type: WifiMacRxCustomType,
     #[doc = "WIFI_MAC_RX_STATISTICS"]
     pub wifi_mac_rx_statistics: WifiMacRxStatistics,
+    #[doc = "WIFI_MAC_TX_STATISTICS"]
+    pub wifi_mac_tx_statistics: WifiMacTxStatistics,
+    #[doc = "WIFI_MAC_DIAGNOSTIC_STATISTICS"]
+    pub wifi_mac_diagnostic_statistics: WifiMacDiagnosticStatistics,
     #[doc = "WIFI_MAC_RX_HANG_STATISTICS"]
     pub wifi_mac_rx_hang_statistics: WifiMacRxHangStatistics,
     #[doc = "PHY_MEMORY"]
@@ -25166,6 +25775,8 @@ impl Peripherals {
             wifi_mac_rx_bssid_list: WifiMacRxBssidList::steal(),
             wifi_mac_rx_custom_type: WifiMacRxCustomType::steal(),
             wifi_mac_rx_statistics: WifiMacRxStatistics::steal(),
+            wifi_mac_tx_statistics: WifiMacTxStatistics::steal(),
+            wifi_mac_diagnostic_statistics: WifiMacDiagnosticStatistics::steal(),
             wifi_mac_rx_hang_statistics: WifiMacRxHangStatistics::steal(),
             phy_memory: PhyMemory::steal(),
             phy_frequency_channel_oracle: PhyFrequencyChannelOracle::steal(),

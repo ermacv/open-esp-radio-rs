@@ -1391,6 +1391,32 @@ four-bit `ACK_TID` field read as eight even though the negotiated and
 standalone TXBA TID was zero; its source name and bit geometry remain exact,
 but software must not yet treat that diagnostic value as the negotiated TID.
 
+`HIL_OPEN_HE_FRITZ_TRIGGER_BASELINE_2026_07_29` repeated the complete
+MCS0..MCS9 by three-GI HE-SU A-MPDU matrix against a nearby FRITZ!Box 7530 on
+channel 6. Authentication, association, WPA2, protected RX/TX, DHCP and TID0
+AddBA completed on the first attempt. Queue two continuously reported
+BlockAck and up to 32 acknowledged subframes; MCS9/0.8-us-GI reached
+79.9 Mbit/s of generated Ethernet payload. The peer advertised triggered SU
+feedback and triggered CQI, but more than seven complete matrix rounds still
+left the decoded frame counter, `RX_TRIGGER`, `TB_TX`, `LAST_TX_IS_TB` and
+`TB_PACK_SENT` at zero. Capability advertisement is therefore not evidence
+that an AP scheduler will issue an uplink Trigger.
+
+`HIL_OPEN_HE_ANDROID_SOFTAP_TRIGGER_BASELINE_2026_07_29` used a OnePlus
+CPH2653 running Android 16 as a second independent AP. Android `dumpsys wifi`
+reported `config_wifiSoftapIeee80211axSupported=true`,
+`config_wifiSoftapHeSuBeamformerSupported=true`,
+`config_wifiSoftapHeSuBeamformeeSupported=true`, and
+`config_wifiSoftapHeMuBeamformerSupported=false`; the user-visible Wi-Fi 6
+switch was enabled for the 2.4-GHz SoftAP. The open station completed WPA2,
+hardware CCMP RX/TX, ARP, DHCP, TID0 AddBA and repeated clean 30-profile
+HE-SU matrices after the HIL used the SoftAP's actual `10.123.67.90/24`
+subnet. The association response exposed BPSK DCM but no triggered SU/MU
+feedback or triggered CQI. Trigger reception and TB transmission remained
+zero and every queue retained `TB_ENA=0`. This device qualifies HE-SU and
+CCMP interoperability, but its own capability/configuration evidence makes it
+unsuitable as a UL-OFDMA or MU-beamforming oracle.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

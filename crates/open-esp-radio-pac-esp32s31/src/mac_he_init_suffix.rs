@@ -16,12 +16,12 @@ impl RadioRegisters {
         let control = init.ersu_and_vht_control();
         control.modify(|_, w| w.bsr_enable().set_bit());
         init.he_default_control()
-            .modify(|_, w| w.bsr_init_enable().set_bit());
-        control.modify(|_, w| w.bsr_init_enable_8().set_bit());
-        control.modify(|_, w| w.bsr_init_enable_7().set_bit());
-        control.modify(|_, w| w.bsr_init_enable_6().set_bit());
-        control.modify(|_, w| w.bsr_init_clear_5().clear_bit());
-        control.modify(|_, w| w.bsr_init_clear_4().clear_bit());
+            .modify(|_, w| w.bsr_update_enable().set_bit());
+        control.modify(|_, w| w.ignore_valid_edca().set_bit());
+        control.modify(|_, w| w.ignore_valid_tb().set_bit());
+        control.modify(|_, w| w.qos_data_update_bsr().set_bit());
+        control.modify(|_, w| w.preac_no_resource_enable_bsr().clear_bit());
+        control.modify(|_, w| w.ac_empty_single_bsr().clear_bit());
         control.modify(|_, w| unsafe { w.bsr_aci_high_comparison_method().bits(1) });
     }
 

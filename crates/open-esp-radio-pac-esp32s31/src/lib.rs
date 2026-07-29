@@ -19,6 +19,7 @@ mod mac_hal_init_tail;
 mod mac_he_beamforming;
 mod mac_he_init;
 mod mac_he_init_suffix;
+mod mac_he_ofdma;
 mod mac_he_peer;
 mod mac_he_tb;
 mod mac_interface_address;
@@ -39,6 +40,7 @@ mod table_memory;
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
+pub use mac_he_ofdma::{MacHeBufferStatusSnapshot, MacHeTid, MacHeTriggerRxDiagnostics};
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::MacInterruptRegisters;
@@ -650,6 +652,36 @@ mod tests {
         assert_eq!(diagnostics.psdu().as_ptr() as usize, 0x2010_44f8);
         assert_eq!(diagnostics.trigger().as_ptr() as usize, 0x2010_44fc);
         assert_eq!(diagnostics.user().as_ptr() as usize, 0x2010_4500);
+    }
+
+    #[test]
+    fn generated_mac_he_ofdma_diagnostics_match_complete_blob_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let bsr = &registers.peripherals.wifi_mac_he_buffer_status;
+        for tid in 0..8 {
+            assert_eq!(
+                bsr.hardware_bsr(tid).as_ptr() as usize,
+                0x2010_4d74 + tid * 8
+            );
+            assert_eq!(
+                bsr.software_bsr(tid).as_ptr() as usize,
+                0x2010_4d78 + tid * 8
+            );
+        }
+        assert_eq!(bsr.control().as_ptr() as usize, 0x2010_4db8);
+
+        let trigger = &registers.peripherals.wifi_mac_he_trigger_rx_diagnostics;
+        assert_eq!(trigger.state().as_ptr() as usize, 0x2010_4508);
+        assert_eq!(trigger.basic_user().as_ptr() as usize, 0x2010_451c);
+        assert_eq!(trigger.common_phy().as_ptr() as usize, 0x2010_4520);
+        assert_eq!(trigger.common_trigger().as_ptr() as usize, 0x2010_4524);
+        assert_eq!(trigger.packet_counts().as_ptr() as usize, 0x2010_452c);
+
+        let obss = &registers.peripherals.wifi_mac_he_obss_narrow_band_ru;
+        assert_eq!(obss.disable_bitmap().as_ptr() as usize, 0x2010_4e9c);
+        assert_eq!(obss.control().as_ptr() as usize, 0x2010_4ea0);
     }
 
     #[test]

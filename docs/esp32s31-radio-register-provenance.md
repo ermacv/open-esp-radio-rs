@@ -1197,6 +1197,52 @@ register but has additional mode-dependent branches that the open path does
 not claim. The PAC now owns the complete store/RMW/fence sequence, leaving the
 upper cold-init function with semantic capability calls only.
 
+SVD v3.26 starts a systematic audit of the pinned debug decoders. The archive
+exports 43 complete `dbg_*` functions from `hal_debug.o`; these are unusually
+strong sources because their instruction-level masks are paired with the
+blob's own field-name format strings. They are not all register decoders:
+`dbg_dump_trig_*`, `dbg_dump_rx_ppdu`, `dbg_dump_tx_link` and related helpers
+primarily decode packet, descriptor or in-memory structures. The highest-value
+remaining MMIO decoders are:
+
+- `dbg_read_ax_diag` and `dbg_read_axtb_diag` for received Trigger and
+  trigger-based TX results;
+- `dbg_read_bsr_info`, `dbg_read_muedca_timer` and
+  `dbg_read_txq_conf1/2` for BSR, TID, MU-EDCA and per-queue TB policy;
+- `dbg_read_rx_misc`, `dbg_read_color_collision` and `dbg_read_rx_count` for
+  HE BSS matching, beamforming, color collision and RX failure counters;
+- `dbg_read_tx_sig`, `dbg_read_tx_ppdu`, `dbg_read_tx_mplen`,
+  `dbg_read_ack_rate`, `dbg_read_cts_rate` and `dbg_read_bfr_rate` for TX
+  vector and response-rate cross-checks;
+- `dbg_read_internal_txba`, `dbg_read_rx_ba` and `dbg_read_key_entry` for
+  BlockAck and crypto-table geometry.
+
+This version fully decodes `dbg_read_bsr_info`, including the eight
+interleaved WDEVTXQBSR hardware/software values, validity bits, TID bitmap and
+the named WDEVAXOPTIONS fields. It also decodes all ten `WDEVAXDIAG` words at
+`0x20104508..0x2010452c`: matched AID, RU, UL MCS/DCM/FEC, GI/LTF, bandwidth,
+spatial reuse and Trigger common fields are now generated PAC fields. The
+blob explicitly warns that a following RX frame can overwrite this diagnostic
+block, so Rust exposes it as a best-effort snapshot rather than protocol
+state.
+
+Complete `dbg_tb_ignore_cca_enable` proves the polarity of
+`0x20104c7c[12]`: one means trigger-based TX respects CCA and NAV, zero enables
+the debug ignore mode. Complete `hal_he_disable_obss_narrow_bw_ru` adds the
+two-word `0x20104e9c..0x20104ea0` boundary. Its aggregate enable/disable
+meaning and update order are exact, while the individual twenty-bit bitmap
+and five-bit class identities remain explicitly approximate.
+
+The same audit exposed one missing runtime edge. Complete HE AddBA response
+and DELBA paths call `hal_he_set_tid_bitmap`/`hal_he_clr_tid_bitmap`; the open
+software BlockAck session had not mirrored this hardware-visible BSR state.
+The connected HE HIL now performs the update only at the owned
+`Operational`/DELBA transitions. After successful TID0 AddBA with window 32,
+two snapshots read `TID_BITMAP=0x01`; hardware/software BSR values remained
+zero because the controlled AX211 AP emitted no Trigger frames. Twenty-four
+complete DCM A-MPDU matrix rounds remained clean. This qualifies the lifecycle
+write, but not OFDMA scheduling.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

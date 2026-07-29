@@ -1513,6 +1513,38 @@ names frame-state halfword `+0x22` as `msdu_len`; complete blob and ROM
 Trigger-based owner must therefore retain original MSDU lengths separately
 from its larger encoded MPDU/PSDU lengths.
 
+SVD v3.35 removes the temporary address-alias allowlist. The 28 duplicate
+physical addresses were audited against their cited complete ROM/blob bodies;
+none required a mode-dependent register identity. Each was a partial view of
+one multifunction word, so its independently proven fields now live under one
+canonical register. This includes the PBus/front-end word, BSSID/HE station
+word, HE color control, queue/protection/vector banks, completion diagnostics
+and antenna/vector fields. The resulting recovered map has no duplicate
+physical register address. A future genuinely mode-dependent view must be in
+the same peripheral and register scope and must declare `alternateRegister` or
+`alternateGroup`; creating another peripheral singleton at the same address is
+rejected.
+
+The generator now expands peripheral, cluster, register and field arrays
+before checking physical identities. It rejects unmarked or access-inconsistent
+alternate views, overlapping register byte ranges, duplicate expanded names,
+misalignment, short array strides, out-of-range or overlapping fields, filler
+`PRESERVED*` fields, undefined `SOURCE` identifiers and values outside the
+five-value `CONFIDENCE` vocabulary. Eighty-eight filler fields and the four
+remaining `PRESERVED_[0-3]` power-word gaps were removed; `svd2rust` RMW
+writers preserve those omitted bits. Instruction-proven `*_UNKNOWN` fields
+remain because vendor code actually changes them.
+
+Access effects are encoded only where the cited instructions or HIL prove
+them. `WIFI_MAC_INTERRUPT.CLEAR` is W1C,
+`RX_CONTROL.APPEND_DESCRIPTOR_RELOAD` is a hardware-cleared append doorbell,
+and mixed control/status registers expose proven ready/comparator fields as
+read-only. Software-generated set/delay/clear and commit/latch edges remain
+ordinary RW fields because the sources explicitly write both edges; they are
+not falsely described as hardware-self-clearing. There are no inferred
+`resetValue` entries. Reset images remain deferred until an HIL snapshot names
+the silicon revision and power/reset domain.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

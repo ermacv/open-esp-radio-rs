@@ -108,7 +108,9 @@ impl RadioRegisters {
         ack.modify(|_, w| unsafe { w.rate_3().bits(0x80) });
 
         // Complete hal_set_tx_min_pwr(-11), then the parent field update.
-        init.common_power_control()
+        self.peripherals
+            .phy_frequency_channel_oracle
+            .channel_tx_offset_control()
             .modify(|_, w| unsafe { w.minimum_power_index().bits(0x35) });
         init.he_default_control()
             .modify(|_, w| unsafe { w.mpdu_length_offset().bits(0x17c) });
@@ -125,12 +127,16 @@ impl RadioRegisters {
 
         // Physical protection words are traversed high-to-low.
         for physical in (0..4).rev() {
-            init.protection(physical)
-                .modify(|_, w| unsafe { w.mode_unknown().bits(0) });
+            self.peripherals
+                .wifi_mac_tx_queue_control
+                .protection(physical)
+                .modify(|_, w| w.software_rts().clear_bit().software_cts().clear_bit());
         }
 
-        init.mode_control()
-            .modify(|_, w| w.enable_unknown().set_bit());
+        self.peripherals
+            .wifi_mac_txrx_prefix
+            .mode_control()
+            .modify(|_, w| w.he_enable_unknown().set_bit());
         init.shared_enable_control()
             .modify(|_, w| w.enable_unknown().set_bit());
         init.feature_edges().modify(|_, w| w.enable_1().set_bit());
@@ -153,8 +159,10 @@ impl RadioRegisters {
         uora.modify(|_, w| unsafe { w.low_window().bits(7) });
         uora.modify(|_, w| unsafe { w.high_window().bits(31) });
 
-        init.common_power_control()
-            .modify(|_, w| w.parent_enable_unknown().set_bit());
+        self.peripherals
+            .phy_frequency_channel_oracle
+            .channel_tx_offset_control()
+            .modify(|_, w| w.he_parent_enable_unknown().set_bit());
         init.dump_complete_hesigb()
             .modify(|_, w| w.enable().clear_bit());
         init.ersu_and_vht_control()

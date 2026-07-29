@@ -13,45 +13,56 @@ use svd2rust::{
     config::{Config, RustEdition},
     Target,
 };
-use svd_parser::svd::{MaybeArray, RegisterCluster, RegisterProperties};
+use svd_parser::svd::{Access, MaybeArray, RegisterCluster, RegisterProperties};
 
 const USAGE: &str = "usage: cargo pac-gen [--check]";
-const INTENTIONAL_REGISTER_ALIAS_ADDRESSES: &[u64] = &[
-    0x2010_0894,
-    0x2010_4004,
-    0x2010_4048,
-    0x2010_4110,
-    0x2010_4400,
-    0x2010_4c1c,
-    0x2010_4c98,
-    0x2010_4d34,
-    0x2010_4d38,
-    0x2010_4d44,
-    0x2010_4d48,
-    0x2010_4d54,
-    0x2010_4d58,
-    0x2010_4d64,
-    0x2010_4d68,
-    0x2010_539c,
-    0x2010_53b0,
-    0x2010_53c0,
-    0x2010_5418,
-    0x2010_542c,
-    0x2010_543c,
-    0x2010_5494,
-    0x2010_54a8,
-    0x2010_54b8,
-    0x2010_5510,
-    0x2010_5524,
-    0x2010_5534,
-    0x2010_7128,
+const ALLOWED_CONFIDENCE_VALUES: &[&str] = &[
+    "hil-observed",
+    "instruction-exact",
+    "instruction-exact-hil-qualified",
+    "instruction-exact-partial",
+    "instruction-exact-semantics-unknown",
 ];
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct MmioWindow {
     name: String,
     start: u64,
     end_exclusive: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ExpandedRegister {
+    identity: String,
+    peripheral: String,
+    scope: String,
+    name: String,
+    size_bits: u32,
+    access: Option<Access>,
+    alternate_group: Option<String>,
+    alternate_register: Option<String>,
+}
+
+const fn inherited_properties(
+    parent: RegisterProperties,
+    child: RegisterProperties,
+) -> RegisterProperties {
+    let mut properties = parent;
+    if child.size.is_some() {
+        properties.size = child.size;
+    }
+    if child.access.is_some() {
+        properties.access = child.access;
+    }
+    if child.protection.is_some() {
+        properties.protection = child.protection;
+    }
+    if child.reset_value.is_some() {
+        properties.reset_value = child.reset_value;
+    }
+    if child.reset_mask.is_some() {
+        properties.reset_mask = child.reset_mask;
+    }
+    properties
 }
 
 fn repository_root() -> PathBuf {
@@ -269,6 +280,17 @@ fn child_text<'a>(node: Node<'a, 'a>, name: &str) -> Result<&'a str, Box<dyn Err
         .ok_or_else(|| format!("{} has no {name}", node.tag_name().name()).into())
 }
 
+fn optional_child_text<'a>(node: Node<'a, 'a>, name: &str) -> Option<&'a str> {
+    node.children()
+        .find(|child| child.is_element() && child.tag_name().name() == name)
+        .and_then(|child| child.text())
+}
+
+fn inherited_child_text<'a>(node: Node<'a, 'a>, name: &str) -> Option<&'a str> {
+    node.ancestors()
+        .find_map(|ancestor| optional_child_text(ancestor, name))
+}
+
 fn parse_mmio_windows(document: &Document<'_>) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     let container = document
         .descendants()
@@ -373,23 +395,73 @@ fn validate_dimension_order(document: &Document<'_>) -> Result<(), Box<dyn Error
     Ok(())
 }
 
-fn validate_field_overlaps(document: &Document<'_>) -> Result<(), Box<dyn Error>> {
+fn validate_register_layout(document: &Document<'_>) -> Result<(), Box<dyn Error>> {
     for register in document
         .descendants()
         .filter(|node| node.has_tag_name("register"))
     {
+        let register_name = child_text(register, "name")?;
+        let size_bits = parse_u64(
+            inherited_child_text(register, "size")
+                .ok_or_else(|| format!("register {register_name} has no inherited size"))?,
+            "register size",
+        )?;
+        if size_bits == 0 || size_bits > 128 {
+            return Err(
+                format!("register {register_name} has unsupported size {size_bits}").into(),
+            );
+        }
+        let size_bytes = size_bits.div_ceil(8);
+        let address_offset = parse_u64(
+            child_text(register, "addressOffset")?,
+            "register addressOffset",
+        )?;
+        if address_offset % size_bytes != 0 {
+            return Err(format!(
+                "register {register_name} offset 0x{address_offset:x} is not aligned to {size_bytes} bytes"
+            )
+            .into());
+        }
+        if let Some(increment) = optional_child_text(register, "dimIncrement") {
+            let increment = parse_u64(increment, "register dimIncrement")?;
+            if increment < size_bytes {
+                return Err(format!(
+                    "register array {register_name} has dimIncrement {increment}, smaller than its {size_bytes}-byte element"
+                )
+                .into());
+            }
+            if increment % size_bytes != 0 {
+                return Err(format!(
+                    "register array {register_name} has unaligned dimIncrement {increment} for its {size_bytes}-byte element"
+                )
+                .into());
+            }
+        }
+
         let Some(fields) = register.children().find(|node| node.has_tag_name("fields")) else {
             continue;
         };
         let mut occupied = 0_u128;
+        let mut field_names = BTreeSet::new();
         for field in fields.children().filter(|node| node.has_tag_name("field")) {
+            let field_name = child_text(field, "name")?;
+            if field_name.contains("PRESERVED") {
+                return Err(format!(
+                    "register {register_name} exposes filler field {field_name}; omit preserved/reserved bits instead"
+                )
+                .into());
+            }
+            if !field_names.insert(field_name) {
+                return Err(format!(
+                    "register {register_name} contains duplicate field name {field_name}"
+                )
+                .into());
+            }
             let offset = parse_u64(child_text(field, "bitOffset")?, "field bitOffset")?;
             let width = parse_u64(child_text(field, "bitWidth")?, "field bitWidth")?;
-            if width == 0 || offset.checked_add(width).is_none_or(|end| end > 128) {
+            if width == 0 || offset.checked_add(width).is_none_or(|end| end > size_bits) {
                 return Err(format!(
-                    "register {} field {} has invalid bit range {offset}+{width}",
-                    child_text(register, "name")?,
-                    child_text(field, "name")?
+                    "register {register_name} field {field_name} has invalid bit range {offset}+{width} for a {size_bits}-bit register"
                 )
                 .into());
             }
@@ -400,9 +472,7 @@ fn validate_field_overlaps(document: &Document<'_>) -> Result<(), Box<dyn Error>
             };
             if occupied & mask != 0 {
                 return Err(format!(
-                    "register {} field {} overlaps another field",
-                    child_text(register, "name")?,
-                    child_text(field, "name")?
+                    "register {register_name} field {field_name} overlaps another field"
                 )
                 .into());
             }
@@ -412,14 +482,54 @@ fn validate_field_overlaps(document: &Document<'_>) -> Result<(), Box<dyn Error>
     Ok(())
 }
 
-fn source_references(text: &str) -> BTreeSet<&str> {
+fn validate_names(document: &Document<'_>) -> Result<(), Box<dyn Error>> {
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut peripheral_names = BTreeSet::new();
+    for peripheral in peripherals
+        .children()
+        .filter(|node| node.has_tag_name("peripheral"))
+    {
+        let name = child_text(peripheral, "name")?;
+        if !peripheral_names.insert(name) {
+            return Err(format!("duplicate peripheral name {name}").into());
+        }
+    }
+
+    for scope in document
+        .descendants()
+        .filter(|node| node.has_tag_name("registers") || node.has_tag_name("cluster"))
+    {
+        let mut names = BTreeSet::new();
+        for child in scope
+            .children()
+            .filter(|node| node.has_tag_name("register") || node.has_tag_name("cluster"))
+        {
+            let name = child_text(child, "name")?;
+            if !names.insert(name) {
+                return Err(
+                    format!("duplicate register/cluster name {name} in one SVD scope").into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn annotation_references<'a>(
+    text: &'a str,
+    annotation: &str,
+) -> Result<Vec<&'a str>, Box<dyn Error>> {
+    let prefix = format!("{annotation}[");
     let mut references = BTreeSet::new();
     let mut remaining = text;
-    while let Some(start) = remaining.find("SOURCE[") {
-        remaining = &remaining[start + "SOURCE[".len()..];
-        let Some(end) = remaining.find(']') else {
-            break;
-        };
+    while let Some(start) = remaining.find(&prefix) {
+        remaining = &remaining[start + prefix.len()..];
+        let end = remaining
+            .find(']')
+            .ok_or_else(|| format!("unterminated {annotation} annotation"))?;
         for source in remaining[..end].split(',').map(str::trim) {
             if !source.is_empty() {
                 references.insert(source);
@@ -427,7 +537,7 @@ fn source_references(text: &str) -> BTreeSet<&str> {
         }
         remaining = &remaining[end + 1..];
     }
-    references
+    Ok(references.into_iter().collect())
 }
 
 fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<dyn Error>> {
@@ -446,7 +556,7 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             return Err(format!("provenance source {id} has no description").into());
         }
     }
-    for reference in source_references(input) {
+    for reference in annotation_references(input, "SOURCE")? {
         if !definitions.contains(reference) {
             return Err(format!("SOURCE references undefined provenance id {reference}").into());
         }
@@ -464,54 +574,136 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
     Ok(())
 }
 
+fn validate_confidence(input: &str) -> Result<(), Box<dyn Error>> {
+    let allowed = ALLOWED_CONFIDENCE_VALUES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for value in annotation_references(input, "CONFIDENCE")? {
+        if !allowed.contains(value) {
+            return Err(format!(
+                "CONFIDENCE references unsupported value {value}; allowed values are {allowed:?}"
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
 fn expanded_register_addresses(
     peripheral_name: &str,
     peripheral_base: u64,
     parent_offset: u64,
+    scope: &str,
     children: &[RegisterCluster],
-    addresses: &mut BTreeMap<u64, Vec<String>>,
+    inherited: RegisterProperties,
+    addresses: &mut BTreeMap<u64, Vec<ExpandedRegister>>,
 ) -> Result<(), Box<dyn Error>> {
     for child in children {
         match child {
             RegisterCluster::Register(register) => {
-                let (info, dim) = match register {
-                    MaybeArray::Single(info) => (info, None),
-                    MaybeArray::Array(info, dim) => (info, Some(dim)),
+                let instances = match register {
+                    MaybeArray::Single(info) => vec![info.clone()],
+                    MaybeArray::Array(info, dim) => {
+                        svd_parser::svd::register::expand(info, dim).collect()
+                    }
                 };
-                let count = dim.map_or(1, |dim| dim.dim);
-                let increment = dim.map_or(0, |dim| dim.dim_increment);
-                for index in 0..count {
-                    let offset = info
-                        .address_offset
-                        .checked_add(index.saturating_mul(increment))
-                        .ok_or("SVD register-array offset overflow")?;
+                for info in instances {
+                    let properties = inherited_properties(inherited, info.properties);
+                    let size_bits = properties
+                        .size
+                        .ok_or_else(|| format!("register {} has no inherited size", info.name))?;
+                    if let Some(fields) = &info.fields {
+                        let mut names = BTreeSet::new();
+                        let mut occupied = 0_u128;
+                        for field in fields {
+                            let instances = match field {
+                                MaybeArray::Single(info) => vec![info.clone()],
+                                MaybeArray::Array(info, dim) => {
+                                    svd_parser::svd::field::expand(info, dim).collect()
+                                }
+                            };
+                            for field in instances {
+                                if !names.insert(field.name.clone()) {
+                                    return Err(format!(
+                                        "register {} contains duplicate expanded field name {}",
+                                        info.name, field.name
+                                    )
+                                    .into());
+                                }
+                                let offset = field.bit_offset();
+                                let width = field.bit_width();
+                                if width == 0
+                                    || offset.checked_add(width).is_none_or(|end| end > size_bits)
+                                {
+                                    return Err(format!(
+                                        "register {} field {} has invalid expanded bit range {offset}+{width} for a {size_bits}-bit register",
+                                        info.name, field.name
+                                    )
+                                    .into());
+                                }
+                                let mask = if width == 128 {
+                                    u128::MAX
+                                } else {
+                                    ((1_u128 << width) - 1) << offset
+                                };
+                                if occupied & mask != 0 {
+                                    return Err(format!(
+                                        "register {} field {} overlaps another expanded field",
+                                        info.name, field.name
+                                    )
+                                    .into());
+                                }
+                                occupied |= mask;
+                            }
+                        }
+                    }
                     let address = peripheral_base
                         .checked_add(parent_offset)
-                        .and_then(|base| base.checked_add(u64::from(offset)))
+                        .and_then(|base| base.checked_add(u64::from(info.address_offset)))
                         .ok_or("SVD register address overflow")?;
+                    let identity = if scope.is_empty() {
+                        format!("{peripheral_name}.{}", info.name)
+                    } else {
+                        format!("{peripheral_name}.{scope}.{}", info.name)
+                    };
                     addresses
                         .entry(address)
                         .or_default()
-                        .push(format!("{peripheral_name}.{}[{index}]", info.name));
+                        .push(ExpandedRegister {
+                            identity,
+                            peripheral: peripheral_name.to_owned(),
+                            scope: scope.to_owned(),
+                            name: info.name.clone(),
+                            size_bits,
+                            access: properties.access,
+                            alternate_group: info.alternate_group.clone(),
+                            alternate_register: info.alternate_register.clone(),
+                        });
                 }
             }
             RegisterCluster::Cluster(cluster) => {
-                let (info, dim) = match cluster {
-                    MaybeArray::Single(info) => (info, None),
-                    MaybeArray::Array(info, dim) => (info, Some(dim)),
+                let instances = match cluster {
+                    MaybeArray::Single(info) => vec![info.clone()],
+                    MaybeArray::Array(info, dim) => {
+                        svd_parser::svd::cluster::expand(info, dim).collect()
+                    }
                 };
-                let count = dim.map_or(1, |dim| dim.dim);
-                let increment = dim.map_or(0, |dim| dim.dim_increment);
-                for index in 0..count {
-                    let offset = info
-                        .address_offset
-                        .checked_add(index.saturating_mul(increment))
-                        .ok_or("SVD cluster-array offset overflow")?;
+                for info in instances {
+                    let properties =
+                        inherited_properties(inherited, info.default_register_properties);
+                    let child_scope = if scope.is_empty() {
+                        info.name.clone()
+                    } else {
+                        format!("{scope}.{}", info.name)
+                    };
                     expanded_register_addresses(
                         peripheral_name,
                         peripheral_base,
-                        parent_offset + u64::from(offset),
+                        parent_offset + u64::from(info.address_offset),
+                        &child_scope,
                         &info.children,
+                        properties,
                         addresses,
                     )?;
                 }
@@ -521,61 +713,147 @@ fn expanded_register_addresses(
     Ok(())
 }
 
+fn explicitly_alternate(registers: &[ExpandedRegister]) -> bool {
+    if registers.len() < 2 {
+        return false;
+    }
+    let first = &registers[0];
+    if registers
+        .iter()
+        .any(|register| register.peripheral != first.peripheral || register.scope != first.scope)
+    {
+        return false;
+    }
+    let same_group = first.alternate_group.as_ref().is_some_and(|group| {
+        registers
+            .iter()
+            .all(|register| register.alternate_group.as_ref() == Some(group))
+    });
+    let direct_reference = registers.iter().any(|canonical| {
+        canonical.alternate_register.is_none()
+            && registers.iter().all(|register| {
+                register.name == canonical.name
+                    || register.alternate_register.as_deref() == Some(canonical.name.as_str())
+            })
+    });
+    same_group || direct_reference
+}
+
+fn validate_alias_group(
+    address: u64,
+    registers: &[ExpandedRegister],
+) -> Result<(), Box<dyn Error>> {
+    if registers.len() == 1 {
+        if registers[0].alternate_group.is_some() || registers[0].alternate_register.is_some() {
+            return Err(format!(
+                "register {} declares an alternate view without another register at 0x{address:08x}",
+                registers[0].identity
+            )
+            .into());
+        }
+        return Ok(());
+    }
+    if !explicitly_alternate(registers) {
+        return Err(format!(
+            "physical register address 0x{address:08x} has unmarked aliases: {registers:?}"
+        )
+        .into());
+    }
+    let canonical = &registers[0];
+    if registers
+        .iter()
+        .any(|register| register.size_bits != canonical.size_bits)
+    {
+        return Err(
+            format!("register aliases at 0x{address:08x} disagree on size: {registers:?}").into(),
+        );
+    }
+    if registers
+        .iter()
+        .any(|register| register.access != canonical.access)
+    {
+        return Err(format!(
+            "register aliases at 0x{address:08x} disagree on access: {registers:?}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
     let device = svd_parser::parse(input)?;
     let mut addresses = BTreeMap::new();
     for peripheral in &device.peripherals {
-        let validate_instance = |base_address: u64,
-                                 addresses: &mut BTreeMap<u64, Vec<String>>|
+        let instances = match peripheral {
+            MaybeArray::Single(info) => vec![info.clone()],
+            MaybeArray::Array(info, dim) => {
+                svd_parser::svd::peripheral::expand(info, dim).collect()
+            }
+        };
+        let validate_instance = |peripheral: &svd_parser::svd::PeripheralInfo,
+                                 addresses: &mut BTreeMap<u64, Vec<ExpandedRegister>>|
          -> Result<(), Box<dyn Error>> {
+            let properties = inherited_properties(
+                device.default_register_properties,
+                peripheral.default_register_properties,
+            );
             if let Some(registers) = &peripheral.registers {
                 expanded_register_addresses(
                     &peripheral.name,
-                    base_address,
+                    peripheral.base_address,
                     0,
+                    "",
                     registers,
+                    properties,
                     addresses,
                 )?;
             }
             Ok(())
         };
-        match peripheral {
-            MaybeArray::Single(info) => validate_instance(info.base_address, &mut addresses)?,
-            MaybeArray::Array(info, dim) => {
-                for index in 0..dim.dim {
-                    validate_instance(
-                        info.base_address + u64::from(index.saturating_mul(dim.dim_increment)),
-                        &mut addresses,
-                    )?;
-                }
+        for instance in &instances {
+            validate_instance(instance, &mut addresses)?;
+        }
+    }
+    let mut identities = BTreeSet::new();
+    let mut previous_range: Option<(u64, u64, String)> = None;
+    for (address, registers) in addresses {
+        for register in &registers {
+            if !identities.insert(register.identity.clone()) {
+                return Err(
+                    format!("duplicate expanded register name {}", register.identity).into(),
+                );
+            }
+            let size_bytes = u64::from(register.size_bits).div_ceil(8);
+            if address % size_bytes != 0 {
+                return Err(format!(
+                    "register {} at 0x{address:08x} is not aligned to {size_bytes} bytes",
+                    register.identity
+                )
+                .into());
             }
         }
-    }
-    let actual = addresses
-        .iter()
-        .filter_map(|(address, names)| (names.len() > 1).then_some(*address))
-        .collect::<BTreeSet<_>>();
-    let allowed = INTENTIONAL_REGISTER_ALIAS_ADDRESSES
-        .iter()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    if actual != allowed {
-        let unexpected = actual.difference(&allowed).copied().collect::<Vec<_>>();
-        let stale = allowed.difference(&actual).copied().collect::<Vec<_>>();
-        return Err(format!(
-            "register alias set changed; unexpected={unexpected:#x?}, stale={stale:#x?}"
-        )
-        .into());
-    }
-    for address in &allowed {
-        let names = &addresses[address];
-        if names.len() != 2 {
-            return Err(format!(
-                "intentional register alias 0x{address:08x} has {} identities, expected exactly 2: {names:?}",
-                names.len()
+        let end = address
+            .checked_add(
+                registers
+                    .iter()
+                    .map(|register| u64::from(register.size_bits).div_ceil(8))
+                    .max()
+                    .expect("address map entries are nonempty"),
             )
-            .into());
+            .ok_or("SVD register end address overflow")?;
+        if let Some((previous_start, previous_end, previous_identity)) = &previous_range {
+            if address < *previous_end && address != *previous_start {
+                return Err(format!(
+                    "physical register ranges overlap: {previous_identity} at \
+                     0x{previous_start:08x}..0x{previous_end:08x} and {} at \
+                     0x{address:08x}..0x{end:08x}",
+                    registers[0].identity
+                )
+                .into());
+            }
         }
+        previous_range = Some((address, end, registers[0].identity.clone()));
+        validate_alias_group(address, &registers)?;
     }
     Ok(())
 }
@@ -583,8 +861,10 @@ fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
 fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     let document = Document::parse(input)?;
     validate_dimension_order(&document)?;
-    validate_field_overlaps(&document)?;
+    validate_register_layout(&document)?;
+    validate_names(&document)?;
     validate_provenance(&document, input)?;
+    validate_confidence(input)?;
     let windows = parse_mmio_windows(&document)?;
     validate_register_aliases(input)?;
     Ok(windows)
@@ -645,10 +925,12 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        mmio_window, parse_mmio_windows, validate_dimension_order, validate_field_overlaps,
-        validate_provenance, MmioWindow,
+        explicitly_alternate, mmio_window, parse_mmio_windows, validate_alias_group,
+        validate_confidence, validate_dimension_order, validate_names, validate_provenance,
+        validate_register_aliases, validate_register_layout, ExpandedRegister, MmioWindow,
     };
     use roxmltree::Document;
+    use svd_parser::svd::Access;
 
     fn windows() -> [MmioWindow; 1] {
         [MmioWindow {
@@ -691,13 +973,47 @@ mod tests {
     #[test]
     fn rejects_overlapping_register_fields() {
         let document = Document::parse(
-            "<root><register><name>CONTROL</name><fields>\
+            "<root><register><name>CONTROL</name><addressOffset>0</addressOffset><size>32</size><fields>\
              <field><name>A</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>\
              <field><name>B</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>\
              </fields></register></root>",
         )
         .unwrap();
-        assert!(validate_field_overlaps(&document).is_err());
+        assert!(validate_register_layout(&document).is_err());
+    }
+
+    #[test]
+    fn rejects_field_outside_register_and_short_array_stride() {
+        let document = Document::parse(
+            "<root><register><dim>2</dim><dimIncrement>1</dimIncrement>\
+             <name>CONTROL%s</name><addressOffset>0</addressOffset><size>16</size><fields>\
+             <field><name>A</name><bitOffset>15</bitOffset><bitWidth>2</bitWidth></field>\
+             </fields></register></root>",
+        )
+        .unwrap();
+        assert!(validate_register_layout(&document).is_err());
+    }
+
+    #[test]
+    fn rejects_filler_fields() {
+        let document = Document::parse(
+            "<root><register><name>CONTROL</name><addressOffset>0</addressOffset><size>32</size><fields>\
+             <field><name>PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>\
+             </fields></register></root>",
+        )
+        .unwrap();
+        assert!(validate_register_layout(&document).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_names_in_one_scope() {
+        let document = Document::parse(
+            "<root><peripherals><peripheral><name>P</name><registers>\
+             <register><name>A</name></register><register><name>A</name></register>\
+             </registers></peripheral></peripherals></root>",
+        )
+        .unwrap();
+        assert!(validate_names(&document).is_err());
     }
 
     #[test]
@@ -707,6 +1023,63 @@ mod tests {
                      <openEspRadioAddressWindows source=\"WINDOWS\"/></root>";
         let document = Document::parse(input).unwrap();
         assert!(validate_provenance(&document, input).is_err());
+    }
+
+    #[test]
+    fn rejects_confidence_outside_the_fixed_vocabulary() {
+        assert!(validate_confidence("CONFIDENCE[instruction-exatc]").is_err());
+        assert!(validate_confidence("CONFIDENCE[instruction-exact]").is_ok());
+    }
+
+    #[test]
+    fn alternate_register_must_share_physical_scope() {
+        let canonical = ExpandedRegister {
+            identity: "RADIO.CONTROL".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            scope: String::new(),
+            name: "CONTROL".to_owned(),
+            size_bits: 32,
+            access: Some(Access::ReadWrite),
+            alternate_group: None,
+            alternate_register: None,
+        };
+        let mut alternate = canonical.clone();
+        alternate.identity = "RADIO.STATUS_VIEW".to_owned();
+        alternate.name = "STATUS_VIEW".to_owned();
+        alternate.alternate_register = Some("CONTROL".to_owned());
+        assert!(explicitly_alternate(&[
+            canonical.clone(),
+            alternate.clone()
+        ]));
+        assert!(validate_alias_group(0x2010_0000, &[canonical.clone(), alternate.clone()]).is_ok());
+        alternate.access = Some(Access::ReadOnly);
+        assert!(
+            validate_alias_group(0x2010_0000, &[canonical.clone(), alternate.clone()]).is_err()
+        );
+        alternate.access = canonical.access;
+        alternate.alternate_register = None;
+        assert!(
+            validate_alias_group(0x2010_0000, &[canonical.clone(), alternate.clone()]).is_err()
+        );
+        alternate.peripheral = "ANOTHER_SINGLETON".to_owned();
+        assert!(!explicitly_alternate(&[canonical, alternate]));
+    }
+
+    #[test]
+    fn rejects_duplicate_names_after_dimension_expansion() {
+        let input = "\
+            <device schemaVersion=\"1.3\">\
+              <name>TEST</name><version>1</version><description>test</description>\
+              <addressUnitBits>8</addressUnitBits><width>32</width>\
+              <peripherals><peripheral><name>P</name><description>test</description>\
+                <baseAddress>0x20100000</baseAddress><registers>\
+                  <register><dim>2</dim><dimIncrement>4</dimIncrement><dimIndex>0,0</dimIndex>\
+                    <name>R%s</name><description>test</description>\
+                    <addressOffset>0</addressOffset><size>32</size><access>read-write</access>\
+                  </register>\
+                </registers></peripheral></peripherals>\
+            </device>";
+        assert!(validate_register_aliases(input).is_err());
     }
 
     #[test]

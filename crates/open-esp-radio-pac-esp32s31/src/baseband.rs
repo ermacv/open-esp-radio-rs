@@ -755,9 +755,11 @@ impl RadioRegisters {
     /// `0x2f82_7740`, size `0xf6`. The table-memory edge remains between this
     /// method and [`Self::initialize_front_end_suffix`].
     pub fn initialize_front_end_prefix(&mut self) {
+        self.peripherals
+            .phy_pbus
+            .read_result_0()
+            .modify(|_, w| w.fe_init_enable_unknown().set_bit());
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.front_end_init_0894()
-            .modify(|_, w| w.init_enable_unknown().set_bit());
         bb.front_end_init_0c08()
             .modify(|_, w| w.init_first_unknown().set_bit());
         bb.front_end_init_0c08()

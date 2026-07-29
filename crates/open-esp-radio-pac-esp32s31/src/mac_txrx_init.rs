@@ -118,11 +118,14 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::mac_txrx_init`,
     /// offsets `0xee..0x16e`.
     pub fn initialize_mac_txrx_suffix(&mut self) {
+        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        callbacks
+            .bb_rx_hang_control()
+            .modify(|_, w| w.txrx_suffix_first_enable_unknown().set_bit());
+        callbacks
+            .bb_rx_hang_control()
+            .modify(|_, w| w.txrx_suffix_second_enable_unknown().set_bit());
         let init = &self.peripherals.wifi_mac_txrx_suffix;
-        init.control_edges()
-            .modify(|_, w| w.first_enable_unknown().set_bit());
-        init.control_edges()
-            .modify(|_, w| w.second_enable_unknown().set_bit());
         // SAFETY: both values fit their complete generated fields.
         init.default_image_a()
             .modify(|_, w| unsafe { w.low_image_unknown().bits(0x0f0) });

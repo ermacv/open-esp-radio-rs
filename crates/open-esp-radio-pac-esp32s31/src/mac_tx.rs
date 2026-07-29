@@ -200,9 +200,10 @@ impl RadioRegisters {
                 .plcp1(bank)
                 .write_with_zero(|w| w.bits(program.plcp1));
         }
-        control_bank
-            .ppdu_control(bank)
-            .modify(|_, w| w.legacy_clear_unknown().clear_bit());
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .queue_control(4 + bank)
+            .modify(|_, w| w.trigger_based_enable().clear_bit());
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
@@ -287,9 +288,10 @@ impl RadioRegisters {
                 .plcp1(bank)
                 .write_with_zero(|w| w.bits(program.plcp1));
         }
-        control_bank
-            .ppdu_control(bank)
-            .modify(|_, w| w.legacy_clear_unknown().clear_bit());
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .queue_control(4 + bank)
+            .modify(|_, w| w.trigger_based_enable().clear_bit());
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
@@ -410,9 +412,10 @@ impl RadioRegisters {
                 .plcp1(bank)
                 .write_with_zero(|w| w.bits(program.plcp1));
         }
-        control_bank
-            .ppdu_control(bank)
-            .modify(|_, w| w.legacy_clear_unknown().clear_bit());
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .queue_control(4 + bank)
+            .modify(|_, w| w.trigger_based_enable().clear_bit());
 
         // SOURCE: complete mac_tx_set_plcp0/hal_he_set_tx_protection followed
         // by mac_tx_set_hesig. The bounded SU profile clears software CTS,
@@ -526,8 +529,38 @@ impl RadioRegisters {
 
         let bank = physical_bank(queue);
         let completion = &self.peripherals.wifi_mac_tx_completion;
-        let aux_a = completion.aux_a(bank).read().bits();
-        let aux_b = completion.aux_b(bank).read().bits();
+        let tx_results = &self.peripherals.wifi_mac_rx_dma;
+        let (aux_a, aux_b) = match queue {
+            0 => (
+                tx_results
+                    .tx_block_ack_transmitter_address_high_q0()
+                    .read()
+                    .bits(),
+                tx_results.tx_queue_information_q0().read().bits(),
+            ),
+            1 => (
+                tx_results
+                    .tx_block_ack_transmitter_address_high_q1()
+                    .read()
+                    .bits(),
+                tx_results.tx_queue_information_q1().read().bits(),
+            ),
+            2 => (
+                tx_results
+                    .tx_block_ack_transmitter_address_high_q2()
+                    .read()
+                    .bits(),
+                tx_results.tx_queue_information_q2().read().bits(),
+            ),
+            3 => (
+                tx_results
+                    .tx_block_ack_transmitter_address_high_q3()
+                    .read()
+                    .bits(),
+                tx_results.tx_queue_information_q3().read().bits(),
+            ),
+            _ => unreachable!(),
+        };
         let aux_c = completion.aux_c(bank).read().bits();
         let primary = completion.primary(bank).read().bits();
         let alternate = completion.alternate(bank).read().bits();

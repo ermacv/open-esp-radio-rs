@@ -64,8 +64,10 @@ impl RadioRegisters {
             unsafe { register.write_with_zero(|w| w.bits(image)) };
         }
 
-        init.bss_color_bitmap_control()
-            .modify(|_, w| w.clear().set_bit());
+        self.peripherals
+            .wifi_mac_he_init_prefix
+            .rx_field_control()
+            .modify(|r, w| unsafe { w.bitmap_control().bits(r.bitmap_control().bits() | 1) });
         init.he_default_control().modify(|_, w| unsafe {
             w.default_pe_duration()
                 .bits((config.operation_parameters & 0x07) as u8)
@@ -121,8 +123,8 @@ impl RadioRegisters {
         }
 
         self.peripherals
-            .wifi_mac_he_sta_assoc
-            .station_config()
+            .wifi_mac_bssid_policy
+            .bssid_high(0)
             .modify(|_, w| unsafe {
                 w.minimum_mpdu_start_spacing()
                     .bits(minimum_mpdu_start_spacing & 0x07)

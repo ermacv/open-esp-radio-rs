@@ -651,13 +651,22 @@ mod tests {
         let registers = unsafe { RadioRegisters::steal() };
         let init = &registers.peripherals.wifi_mac_antenna_init;
         assert_eq!(init.common_control().as_ptr() as usize, 0x2010_42b0);
-        for physical_bank in 0..8 {
+        for physical_bank in 0..4 {
             assert_eq!(
                 init.bank_control(physical_bank).as_ptr() as usize,
                 0x2010_51ac + physical_bank * 0x7c
             );
         }
-        assert_eq!(init.bank_control(7).as_ptr() as usize, 0x2010_5510);
+        for physical_bank in 4..8 {
+            assert_eq!(
+                registers
+                    .peripherals
+                    .wifi_mac_tx_queue_vector
+                    .length_control(physical_bank - 4)
+                    .as_ptr() as usize,
+                0x2010_51ac + physical_bank * 0x7c
+            );
+        }
     }
 
     #[test]
@@ -685,7 +694,14 @@ mod tests {
         assert_eq!(init.bf_report_rate().as_ptr() as usize, 0x2010_4464);
         assert_eq!(init.bf_timing_control().as_ptr() as usize, 0x2010_4c78);
         assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
-        assert_eq!(init.bf_sync_status_unknown().as_ptr() as usize, 0x2010_7128);
+        assert_eq!(
+            registers
+                .peripherals
+                .phy_agc_oracle
+                .agc_init_high_control()
+                .as_ptr() as usize,
+            0x2010_7128
+        );
     }
 
     #[test]
@@ -851,7 +867,14 @@ mod tests {
         assert_eq!(init.multi_bssid_control().as_ptr() as usize, 0x2010_4020);
         assert_eq!(init.broadcast_ru_low().as_ptr() as usize, 0x2010_4038);
         assert_eq!(init.tx_mode_control().as_ptr() as usize, 0x2010_42b8);
-        assert_eq!(init.common_power_control().as_ptr() as usize, 0x2010_4400);
+        assert_eq!(
+            registers
+                .peripherals
+                .phy_frequency_channel_oracle
+                .channel_tx_offset_control()
+                .as_ptr() as usize,
+            0x2010_4400
+        );
         assert_eq!(init.ersu_ack_rate().as_ptr() as usize, 0x2010_4404);
         assert_eq!(init.ersu_and_vht_control().as_ptr() as usize, 0x2010_4c7c);
         assert_eq!(init.he_default_control().as_ptr() as usize, 0x2010_4c80);
@@ -863,7 +886,11 @@ mod tests {
         }
         for physical in 0..4 {
             assert_eq!(
-                init.protection(physical).as_ptr() as usize,
+                registers
+                    .peripherals
+                    .wifi_mac_tx_queue_control
+                    .protection(physical)
+                    .as_ptr() as usize,
                 0x2010_4d34 + physical * 0x10
             );
         }
@@ -976,7 +1003,14 @@ mod tests {
         let registers = unsafe { RadioRegisters::steal() };
         let init = &registers.peripherals.wifi_mac_txrx_suffix;
         assert_eq!(init.aux_enable().as_ptr() as usize, 0x2010_4308);
-        assert_eq!(init.control_edges().as_ptr() as usize, 0x2010_4c1c);
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_txrx_callbacks
+                .bb_rx_hang_control()
+                .as_ptr() as usize,
+            0x2010_4c1c
+        );
         assert_eq!(init.default_image_a().as_ptr() as usize, 0x2010_4c20);
         assert_eq!(init.default_image_b().as_ptr() as usize, 0x2010_4c24);
         assert_eq!(init.gate_control().as_ptr() as usize, 0x2010_4c60);

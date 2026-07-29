@@ -87,10 +87,17 @@ impl RadioRegisters {
         // The complete leaf performs this read after all BF writes even though
         // its value is unused. Preserve it because MMIO reads may acknowledge
         // or synchronize hardware state.
-        let _ = init.bf_sync_status_unknown().read().bits();
+        let _ = self
+            .peripherals
+            .phy_agc_oracle
+            .agc_init_high_control()
+            .read()
+            .bits();
 
-        init.he_queue_mode()
-            .modify(|_, w| unsafe { w.mode_unknown().bits(2) });
+        self.peripherals
+            .wifi_mac_rx_bssid_list
+            .control()
+            .modify(|_, w| unsafe { w.rx_control_9_bssid_position().bits(2) });
         init.rx_field_control()
             .modify(|_, w| unsafe { w.timeout_seconds().bits(0x3c) });
         init.parent_enable()

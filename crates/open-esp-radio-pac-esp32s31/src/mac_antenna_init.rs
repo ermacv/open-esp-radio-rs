@@ -11,16 +11,28 @@ impl RadioRegisters {
     /// `0x201051ac` with a `0x7c` stride.
     pub fn initialize_mac_antenna(&mut self) {
         let init = &self.peripherals.wifi_mac_antenna_init;
+        let vectors = &self.peripherals.wifi_mac_tx_queue_vector;
 
         // First complete reverse traversal: one fresh-read edge per word.
-        for physical_bank in (0..8).rev() {
+        for physical_bank in (4..8).rev() {
+            vectors
+                .length_control(physical_bank - 4)
+                .modify(|_, w| w.txrx_queue_antenna_enable().clear_bit());
+        }
+        for physical_bank in (0..4).rev() {
             init.bank_control(physical_bank)
                 .modify(|_, w| w.first_clear_unknown().clear_bit());
         }
 
         // Second complete reverse traversal: the blob deliberately samples
         // each word again before every one of these three updates.
-        for physical_bank in (0..8).rev() {
+        for physical_bank in (4..8).rev() {
+            let control = vectors.length_control(physical_bank - 4);
+            control.modify(|_, w| w.tx_queue_antenna_last().clear_bit());
+            control.modify(|_, w| w.tx_queue_antenna_enable().set_bit());
+            control.modify(|_, w| w.tx_queue_antenna_value().clear_bit());
+        }
+        for physical_bank in (0..4).rev() {
             let control = init.bank_control(physical_bank);
             control.modify(|_, w| w.second_clear_unknown().clear_bit());
             control.modify(|_, w| w.bank_enable_unknown().set_bit());

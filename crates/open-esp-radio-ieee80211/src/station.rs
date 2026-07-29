@@ -710,7 +710,7 @@ pub fn sta_protected_amsdu_frame_length(
 }
 
 impl StaProtectedAmsduFrame<'_> {
-    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+    fn plan(&self) -> Result<(crate::data::DataEncapPlan, usize), StationFrameError> {
         validate_peer(self.bssid, self.sequence_number)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
@@ -736,21 +736,60 @@ impl StaProtectedAmsduFrame<'_> {
         .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
+        let required = sta_protected_amsdu_frame_length(self.ethernet_frames)?;
+        Ok((plan, required))
+    }
 
+    fn write_header(
+        &self,
+        plan: crate::data::DataEncapPlan,
+        required: usize,
+        output: &mut [u8],
+    ) -> Result<usize, StationFrameError> {
         let header_len = usize::from(plan.header_len);
         debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
-        let required = sta_protected_amsdu_frame_length(self.ethernet_frames)?;
         if output.len() < required {
             return Err(StationFrameError::OutputTooSmall { required });
         }
 
         let frame = &mut output[..required];
-        frame.fill(0);
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
         frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
-        let mut offset = header_len;
+        let offset = header_len;
         frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
-        offset += CCMP_HEADER_LEN;
+        Ok(required)
+    }
+
+    /// Refresh the MAC and CCMP header of an already encoded A-MSDU.
+    ///
+    /// The caller must retain the body produced by [`Self::encode`] for the
+    /// same `ethernet_frames`, source and BSSID. This bounded operation is
+    /// intended for a statically owned TX slot whose plaintext body was not
+    /// changed by on-the-fly hardware CCMP. It owns no DMA pointer and cannot
+    /// change the encoded length.
+    ///
+    /// SOURCE: `_oracles/libpp.a[pp.o]::ppResortTxAMPDU` retains the complete
+    /// CCMP-ready MPDU across a missing BlockAck bit and changes only retry
+    /// metadata.
+    ///
+    /// SOURCE[HIL_OPEN_HT40_AMSDU_BODY_REUSE_2026_07_29]:
+    /// `esp32s31_rust` commit
+    /// `8d69a294a5ab0f40f55313a292ca1d0fc1c4a853`,
+    /// `firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs`. The
+    /// production PSRAM/PSRAM image reused the body for more than 8,300
+    /// accepted WPA2 HT40 MCS7 SGI aggregates; preparation fell from 768 us
+    /// to 167 us and five-second samples sustained 102.8..109.7 Mbit/s.
+    pub fn refresh_header(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        let (plan, required) = self.plan()?;
+        self.write_header(plan, required, output)
+    }
+
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        let (plan, required) = self.plan()?;
+        self.write_header(plan, required, output)?;
+
+        let frame = &mut output[..required];
+        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN;
         for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
             let payload = &ethernet[ETHERNET_HEADER_LEN..];
             let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
@@ -765,7 +804,14 @@ impl StaProtectedAmsduFrame<'_> {
             if index + 1 != self.ethernet_frames.len() {
                 let subframe_length =
                     AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
-                offset += (4 - (subframe_length & 3)) & 3;
+                let padding = (4 - (subframe_length & 3)) & 3;
+                // Only A-MSDU alignment padding is not overwritten by the
+                // header/payload copies above. Clear exactly these bytes so a
+                // reused SRAM slot cannot expose an older MPDU, without
+                // performing a redundant full-frame memset before every
+                // aggregate build.
+                frame[offset..offset + padding].fill(0);
+                offset += padding;
             }
         }
         debug_assert_eq!(offset, required);
@@ -1302,6 +1348,58 @@ mod tests {
         assert_eq!(second_decoded.ether_type, 0x88b5);
         assert_eq!(second_decoded.payload, &[4, 5, 6]);
         assert_eq!(subframes.next(), None);
+    }
+
+    #[test]
+    fn protected_amsdu_fully_overwrites_a_reused_output_slot() {
+        let first = [
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 2, 3, 4, 5, 6, 7, 0x08, 0x00, 1, 2, 3,
+        ];
+        let second = [
+            0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 8, 9, 10, 11, 12, 13, 0x88, 0xb5, 4, 5, 6,
+        ];
+        let ethernet_frames: [&[u8]; 2] = [&first, &second];
+        let encoded = StaProtectedAmsduFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            sequence_number: 0x123,
+            user_priority: 7,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ethernet_frames: &ethernet_frames,
+        };
+        let mut zeroed = [0_u8; 96];
+        let mut reused = [0xa5_u8; 96];
+        let zeroed_length = encoded.encode(&mut zeroed).unwrap();
+        let reused_length = encoded.encode(&mut reused).unwrap();
+
+        assert_eq!(zeroed_length, reused_length);
+        assert_eq!(
+            &zeroed[..zeroed_length],
+            &reused[..reused_length],
+            "every returned byte, including A-MSDU padding, must be initialized"
+        );
+        assert_eq!(&reused[59..62], &[0, 0, 0]);
+        assert!(
+            reused[reused_length..].iter().all(|byte| *byte == 0xa5),
+            "the encoder must not touch capacity beyond the returned frame"
+        );
+
+        let previous = reused;
+        let refreshed_length = StaProtectedAmsduFrame {
+            sequence_number: 0x456,
+            ccmp_header: [9, 0, 0, 0x20, 0, 0, 0, 0],
+            ..encoded
+        }
+        .refresh_header(&mut reused)
+        .unwrap();
+        assert_eq!(refreshed_length, reused_length);
+        assert_eq!(&reused[22..24], &(0x456_u16 << 4).to_le_bytes());
+        assert_eq!(&reused[26..34], &[9, 0, 0, 0x20, 0, 0, 0, 0]);
+        assert_eq!(
+            &reused[34..reused_length],
+            &previous[34..reused_length],
+            "refresh must retain the already encoded A-MSDU body"
+        );
     }
 
     #[test]

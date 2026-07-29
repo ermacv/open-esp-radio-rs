@@ -69,6 +69,16 @@ const HT40_CAPABILITY_IE: [u8; 28] = [
 // `migration/esp32s31-hybrid-runtime/src/sta_link.rs::
 // HE20_MCS9_CAPABILITY_IE`, originally compared with the request constructed
 // by pinned `_oracles/libnet80211.a`.
+//
+// FIELD AUDIT: complete
+// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` proves that
+// byte 11 bit 3 is the S31 `g_phy_cap_rx_stbc` advertisement. Bytes 15 bits
+// 2..4 and 18 bit 1 advertise triggered SU/MU beamforming feedback, triggered
+// CQI and non-triggered CQI. The open RX metadata path already decodes the
+// HE-SIG-A2 STBC bit, but controlled STBC downlink HIL is still pending and
+// the CQI report producer is not yet owned. Preserving the vendor request here
+// is an oracle-compatibility choice, not a claim that those feedback paths are
+// qualified.
 const HE20_MCS9_CAPABILITY_IE: [u8; 24] = [
     255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
     0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,

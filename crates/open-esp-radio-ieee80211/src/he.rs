@@ -86,6 +86,20 @@ pub struct He20Capabilities {
     /// peer with this bit clear rejected selector zero for MCS0 through MCS9
     /// and accepted selectors one through three.
     pub one_ltf_800ns_gi: bool,
+    /// The peer can transmit HE STBC below 80 MHz.
+    ///
+    /// HE PHY capability byte 2 bit 2. For the S31 non-AP role this is the
+    /// peer capability required before attempting a controlled downlink RX
+    /// STBC qualification.
+    pub stbc_transmit_under_80_mhz: bool,
+    /// The peer can receive HE STBC below 80 MHz.
+    ///
+    /// SOURCE[BLOB_LIBNET80211_HE_CAP_STBC]: complete
+    /// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` copies
+    /// `g_phy_cap_rx_stbc` into HE PHY capability byte 2 bit 3. Complete
+    /// `esp_wifi_enable_rx_stbc` owns that one-byte capability flag and the
+    /// corresponding interface-state bits.
+    pub stbc_receive_under_80_mhz: bool,
     /// Maximum DCM constellation the peer can transmit.
     ///
     /// HE PHY capability byte 3 bits 1:0. This is useful for the open RX
@@ -99,6 +113,19 @@ pub struct He20Capabilities {
     /// independently maps the same four capability levels to disabled,
     /// BPSK/MCS0, QPSK/MCS1 and 16-QAM/MCS3 for the vendor BCC path.
     pub dcm_receive: HeDcmConstellation,
+    /// The peer can send SU beamforming feedback in a Trigger frame response.
+    pub triggered_su_beamforming_feedback: bool,
+    /// The peer can send partial-bandwidth MU feedback in a Trigger response.
+    pub triggered_mu_beamforming_partial_bandwidth_feedback: bool,
+    /// The peer can send CQI feedback in a Trigger frame response.
+    ///
+    /// HE PHY capability byte 6 bit 4. This is distinct from
+    /// [`Self::non_triggered_cqi_feedback`].
+    pub triggered_cqi_feedback: bool,
+    /// The peer can send CQI feedback without a Trigger frame.
+    ///
+    /// HE PHY capability byte 9 bit 1.
+    pub non_triggered_cqi_feedback: bool,
 }
 
 impl He20Capabilities {
@@ -179,8 +206,14 @@ pub fn parse_he20_capabilities(element: &[u8]) -> Result<He20Capabilities, HeEle
         receive_nss1: HeMcsNssSupport::from_map(receive_mcs_map, 1),
         transmit_nss1: HeMcsNssSupport::from_map(transmit_mcs_map, 1),
         one_ltf_800ns_gi: element[10] & 0x40 != 0,
+        stbc_transmit_under_80_mhz: element[11] & 0x04 != 0,
+        stbc_receive_under_80_mhz: element[11] & 0x08 != 0,
         dcm_transmit: HeDcmConstellation::from_encoding(element[12]),
         dcm_receive: HeDcmConstellation::from_encoding(element[12] >> 3),
+        triggered_su_beamforming_feedback: element[15] & 0x04 != 0,
+        triggered_mu_beamforming_partial_bandwidth_feedback: element[15] & 0x08 != 0,
+        triggered_cqi_feedback: element[15] & 0x10 != 0,
+        non_triggered_cqi_feedback: element[18] & 0x02 != 0,
     })
 }
 
@@ -293,6 +326,39 @@ mod tests {
         assert!(capability.dcm_receive.supports_bpsk());
         assert!(capability.dcm_receive.supports_qpsk());
         assert!(capability.dcm_receive.supports_16qam());
+    }
+
+    #[test]
+    fn parses_stbc_and_independent_cqi_feedback_capabilities() {
+        let mut element = [0_u8; 24];
+        element[..3].copy_from_slice(&[255, 22, 35]);
+        element[11] = 0x0c;
+        element[15] = 0x1c;
+        element[18] = 0x02;
+        let capability = parse_he20_capabilities(&element).unwrap();
+        assert!(capability.stbc_transmit_under_80_mhz);
+        assert!(capability.stbc_receive_under_80_mhz);
+        assert!(capability.triggered_su_beamforming_feedback);
+        assert!(capability.triggered_mu_beamforming_partial_bandwidth_feedback);
+        assert!(capability.triggered_cqi_feedback);
+        assert!(capability.non_triggered_cqi_feedback);
+    }
+
+    #[test]
+    fn decodes_the_vendor_s31_sta_stbc_and_cqi_advertisement() {
+        let capability = [
+            0xff, 0x16, 0x23, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d,
+            0xc0, 0x1f, 0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
+        ];
+        let capability = parse_he20_capabilities(&capability).unwrap();
+        assert!(!capability.stbc_transmit_under_80_mhz);
+        assert!(capability.stbc_receive_under_80_mhz);
+        assert_eq!(capability.dcm_transmit, HeDcmConstellation::Qam16);
+        assert_eq!(capability.dcm_receive, HeDcmConstellation::Qam16);
+        assert!(capability.triggered_su_beamforming_feedback);
+        assert!(capability.triggered_mu_beamforming_partial_bandwidth_feedback);
+        assert!(capability.triggered_cqi_feedback);
+        assert!(capability.non_triggered_cqi_feedback);
     }
 
     #[test]

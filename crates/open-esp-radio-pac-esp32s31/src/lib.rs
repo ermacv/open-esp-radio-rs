@@ -27,6 +27,7 @@ mod mac_interrupt;
 mod mac_last_rx_buffer;
 mod mac_rx_dma;
 mod mac_rx_policy;
+mod mac_rx_statistics;
 mod mac_sniffer;
 mod mac_tsf;
 mod mac_tx;
@@ -48,6 +49,10 @@ pub use mac_he_ofdma::{
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::MacInterruptRegisters;
+pub use mac_rx_statistics::{
+    MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
+    MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
+};
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters,
@@ -694,6 +699,39 @@ mod tests {
                 0x2010_4dbc + index * 4
             );
         }
+    }
+
+    #[test]
+    fn generated_mac_rx_statistics_match_complete_blob_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let colors = &registers.peripherals.wifi_mac_he_color_collision;
+        assert_eq!(colors.bss_color_bitmap_low().as_ptr() as usize, 0x2010_4040);
+        assert_eq!(
+            colors.bss_color_bitmap_high().as_ptr() as usize,
+            0x2010_4044
+        );
+
+        let statistics = &registers.peripherals.wifi_mac_rx_statistics;
+        assert_eq!(statistics.mpdu_and_cfo().as_ptr() as usize, 0x2010_430c);
+        assert_eq!(
+            statistics.nrx_error_power_drop().as_ptr() as usize,
+            0x2010_432c
+        );
+        assert_eq!(
+            statistics.nrx_he_sig_b_error().as_ptr() as usize,
+            0x2010_4348
+        );
+        assert_eq!(
+            statistics.last_unmatched_error().as_ptr() as usize,
+            0x2010_4398
+        );
+
+        let hangs = &registers.peripherals.wifi_mac_rx_hang_statistics;
+        assert_eq!(hangs.hang().as_ptr() as usize, 0x2010_4c64);
+        assert_eq!(hangs.rx_tx_hang().as_ptr() as usize, 0x2010_4e18);
+        assert_eq!(hangs.rx_tx_panic().as_ptr() as usize, 0x2010_4e1c);
     }
 
     #[test]

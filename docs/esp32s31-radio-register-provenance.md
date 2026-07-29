@@ -1269,6 +1269,31 @@ TB QoS Null counters remained zero. This qualifies register geometry, logical
 queue ordering and the ordinary HE-SU idle baseline; it does not qualify an
 OFDMA scheduling transition because the AX211 AP emitted no Trigger frame.
 
+SVD v3.28 decodes two more complete `hal_debug.o` bodies.
+`dbg_read_color_collision` proves the low/high HE BSS-color bitmap words at
+`0x20104040/44` and names the overlapping bitmap/clear control, timeout and
+collision-threshold fields in the already-canonical `0x20104048` HE-init
+register. The SVD deliberately does not create a second alias for that control
+word.
+
+Complete `dbg_read_rx_count` proves 39 named statistics across
+`0x2010430c..0x20104398`, `0x20104c64` and `0x20104e18..0x20104e1c`.
+The generated PAC preserves its ten-bit and sixteen-bit masks. In particular,
+the blob does not read CFO from a separate register: it sign-extends the upper
+half of the `WDEVRX_MPDU` word and multiplies it by 40. The typed snapshot
+performs that same finite transform and groups ordinary RX, decoder-error and
+hang/panic counters without exposing raw addresses.
+
+`HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29` then qualified the read path after
+HE association, WPA2, TID0 AddBA and one complete 30-profile matrix round.
+The coherent snapshot contained MPDU 6216, end 6197, data-success 286, FCS 42,
+power-drop 42, HT-SIG error 8, HE-SIG-A CRC 1, ACK interrupt 25 and RTS
+interrupt 6. FIFO overflow, buffer full, TKIP, abort and all hang/panic
+counters were zero. The color bitmap contained bit 25 with threshold one and
+timeout 60 seconds. Four following 30-profile HE rounds remained clean. These
+are cumulative diagnostic values, not packet-loss ratios; later performance
+experiments must use before/after deltas around the measured workload.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

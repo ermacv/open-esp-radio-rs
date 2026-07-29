@@ -873,6 +873,1227 @@ pub mod generic {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-from-debug-symbol-hil-observed\\]. Complete dbg_read_color_collision reads the 64-bit observed BSS-color bitmap. Its adjacent control word is the canonical WIFI_MAC_HE_INIT_PREFIX.RX_FIELD_CONTROL register. Open HE HIL observed color bit 25, threshold one and timeout 60 seconds."]
+pub type WifiMacHeColorCollision =
+    crate::Periph<wifi_mac_he_color_collision::RegisterBlock, 0x2010_4040>;
+impl core::fmt::Debug for WifiMacHeColorCollision {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacHeColorCollision").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-from-debug-symbol-hil-observed\\]. Complete dbg_read_color_collision reads the 64-bit observed BSS-color bitmap. Its adjacent control word is the canonical WIFI_MAC_HE_INIT_PREFIX.RX_FIELD_CONTROL register. Open HE HIL observed color bit 25, threshold one and timeout 60 seconds."]
+pub mod wifi_mac_he_color_collision {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        bss_color_bitmap_low: BssColorBitmapLow,
+        bss_color_bitmap_high: BssColorBitmapHigh,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - RX_HE_BSS_COLOR_MAPLO."]
+        #[inline(always)]
+        pub const fn bss_color_bitmap_low(&self) -> &BssColorBitmapLow {
+            &self.bss_color_bitmap_low
+        }
+        #[doc = "0x04 - RX_HE_BSS_COLOR_MAPHI."]
+        #[inline(always)]
+        pub const fn bss_color_bitmap_high(&self) -> &BssColorBitmapHigh {
+            &self.bss_color_bitmap_high
+        }
+    }
+    #[doc = "BSS_COLOR_BITMAP_LOW (r) register accessor: RX_HE_BSS_COLOR_MAPLO.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bss_color_bitmap_low`] module"]
+    #[doc(alias = "BSS_COLOR_BITMAP_LOW")]
+    pub type BssColorBitmapLow = crate::Reg<bss_color_bitmap_low::BssColorBitmapLowSpec>;
+    #[doc = "RX_HE_BSS_COLOR_MAPLO."]
+    pub mod bss_color_bitmap_low {
+        #[doc = "Register `BSS_COLOR_BITMAP_LOW` reader"]
+        pub type R = crate::R<BssColorBitmapLowSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "RX_HE_BSS_COLOR_MAPLO.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssColorBitmapLowSpec;
+        impl crate::RegisterSpec for BssColorBitmapLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bss_color_bitmap_low::R`](R) reader structure"]
+        impl crate::Readable for BssColorBitmapLowSpec {}
+    }
+    #[doc = "BSS_COLOR_BITMAP_HIGH (r) register accessor: RX_HE_BSS_COLOR_MAPHI.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bss_color_bitmap_high`] module"]
+    #[doc(alias = "BSS_COLOR_BITMAP_HIGH")]
+    pub type BssColorBitmapHigh = crate::Reg<bss_color_bitmap_high::BssColorBitmapHighSpec>;
+    #[doc = "RX_HE_BSS_COLOR_MAPHI."]
+    pub mod bss_color_bitmap_high {
+        #[doc = "Register `BSS_COLOR_BITMAP_HIGH` reader"]
+        pub type R = crate::R<BssColorBitmapHighSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "RX_HE_BSS_COLOR_MAPHI.\n\nYou can [`read`](crate::Reg::read) this register and get [`bss_color_bitmap_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssColorBitmapHighSpec;
+        impl crate::RegisterSpec for BssColorBitmapHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bss_color_bitmap_high::R`](R) reader structure"]
+        impl crate::Readable for BssColorBitmapHighSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-fields-and-transform-from-debug-symbol-hil-observed\\]. Sparse RX hardware statistics decoded by complete dbg_read_rx_count. Ten-bit and sixteen-bit masks, the signed CFO transform and every register address below follow the complete instruction body and its pinned format string. Open HE HIL observed coherent MPDU/end/data, CFO, FCS, power-drop, HT-SIG, HE-SIG-A and interrupt counts while all buffer/FIFO/TKIP counters remained zero."]
+pub type WifiMacRxStatistics = crate::Periph<wifi_mac_rx_statistics::RegisterBlock, 0x2010_430c>;
+impl core::fmt::Debug for WifiMacRxStatistics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRxStatistics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-fields-and-transform-from-debug-symbol-hil-observed\\]. Sparse RX hardware statistics decoded by complete dbg_read_rx_count. Ten-bit and sixteen-bit masks, the signed CFO transform and every register address below follow the complete instruction body and its pinned format string. Open HE HIL observed coherent MPDU/end/data, CFO, FCS, power-drop, HT-SIG, HE-SIG-A and interrupt counts while all buffer/FIFO/TKIP counters remained zero."]
+pub mod wifi_mac_rx_statistics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        mpdu_and_cfo: MpduAndCfo,
+        brx_error_agc: BrxErrorAgc,
+        brx_error: BrxError,
+        nrx_error: NrxError,
+        nrx_error_abort: NrxErrorAbort,
+        nrx_error_agc_exit: NrxErrorAgcExit,
+        nrx_error_baseband_off: NrxErrorBasebandOff,
+        nrx_error_fdm_watchdog: NrxErrorFdmWatchdog,
+        nrx_error_power_drop: NrxErrorPowerDrop,
+        nrx_error_restart: NrxErrorRestart,
+        nrx_error_service: NrxErrorService,
+        nrx_error_tx_over: NrxErrorTxOver,
+        nrx_he_unsupported: NrxHeUnsupported,
+        nrx_he_sig_a_crc: NrxHeSigACrc,
+        nrx_he_format: NrxHeFormat,
+        nrx_he_sig_b_error: NrxHeSigBError,
+        nrx_ht_sig_error: NrxHtSigError,
+        nrx_unsupported: NrxUnsupported,
+        _reserved18: [u8; 0x08],
+        signal_field: SignalField,
+        abort: Abort,
+        fcs_error: FcsError,
+        fifo_overflow: FifoOverflow,
+        buffer_full: BufferFull,
+        other_unicast: OtherUnicast,
+        tkip_error: TkipError,
+        same_bm_error: SameBmError,
+        ack_interrupt: AckInterrupt,
+        rts_interrupt: RtsInterrupt,
+        _reserved28: [u8; 0x04],
+        data_success: DataSuccess,
+        end: End,
+        bt_block_error: BtBlockError,
+        frequency_hop_error: FrequencyHopError,
+        last_unmatched_error: LastUnmatchedError,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO."]
+        #[inline(always)]
+        pub const fn mpdu_and_cfo(&self) -> &MpduAndCfo {
+            &self.mpdu_and_cfo
+        }
+        #[doc = "0x04 - "]
+        #[inline(always)]
+        pub const fn brx_error_agc(&self) -> &BrxErrorAgc {
+            &self.brx_error_agc
+        }
+        #[doc = "0x08 - "]
+        #[inline(always)]
+        pub const fn brx_error(&self) -> &BrxError {
+            &self.brx_error
+        }
+        #[doc = "0x0c - "]
+        #[inline(always)]
+        pub const fn nrx_error(&self) -> &NrxError {
+            &self.nrx_error
+        }
+        #[doc = "0x10 - "]
+        #[inline(always)]
+        pub const fn nrx_error_abort(&self) -> &NrxErrorAbort {
+            &self.nrx_error_abort
+        }
+        #[doc = "0x14 - "]
+        #[inline(always)]
+        pub const fn nrx_error_agc_exit(&self) -> &NrxErrorAgcExit {
+            &self.nrx_error_agc_exit
+        }
+        #[doc = "0x18 - "]
+        #[inline(always)]
+        pub const fn nrx_error_baseband_off(&self) -> &NrxErrorBasebandOff {
+            &self.nrx_error_baseband_off
+        }
+        #[doc = "0x1c - "]
+        #[inline(always)]
+        pub const fn nrx_error_fdm_watchdog(&self) -> &NrxErrorFdmWatchdog {
+            &self.nrx_error_fdm_watchdog
+        }
+        #[doc = "0x20 - "]
+        #[inline(always)]
+        pub const fn nrx_error_power_drop(&self) -> &NrxErrorPowerDrop {
+            &self.nrx_error_power_drop
+        }
+        #[doc = "0x24 - "]
+        #[inline(always)]
+        pub const fn nrx_error_restart(&self) -> &NrxErrorRestart {
+            &self.nrx_error_restart
+        }
+        #[doc = "0x28 - "]
+        #[inline(always)]
+        pub const fn nrx_error_service(&self) -> &NrxErrorService {
+            &self.nrx_error_service
+        }
+        #[doc = "0x2c - "]
+        #[inline(always)]
+        pub const fn nrx_error_tx_over(&self) -> &NrxErrorTxOver {
+            &self.nrx_error_tx_over
+        }
+        #[doc = "0x30 - "]
+        #[inline(always)]
+        pub const fn nrx_he_unsupported(&self) -> &NrxHeUnsupported {
+            &self.nrx_he_unsupported
+        }
+        #[doc = "0x34 - "]
+        #[inline(always)]
+        pub const fn nrx_he_sig_a_crc(&self) -> &NrxHeSigACrc {
+            &self.nrx_he_sig_a_crc
+        }
+        #[doc = "0x38 - "]
+        #[inline(always)]
+        pub const fn nrx_he_format(&self) -> &NrxHeFormat {
+            &self.nrx_he_format
+        }
+        #[doc = "0x3c - "]
+        #[inline(always)]
+        pub const fn nrx_he_sig_b_error(&self) -> &NrxHeSigBError {
+            &self.nrx_he_sig_b_error
+        }
+        #[doc = "0x40 - "]
+        #[inline(always)]
+        pub const fn nrx_ht_sig_error(&self) -> &NrxHtSigError {
+            &self.nrx_ht_sig_error
+        }
+        #[doc = "0x44 - "]
+        #[inline(always)]
+        pub const fn nrx_unsupported(&self) -> &NrxUnsupported {
+            &self.nrx_unsupported
+        }
+        #[doc = "0x50 - WDEVRX_SF."]
+        #[inline(always)]
+        pub const fn signal_field(&self) -> &SignalField {
+            &self.signal_field
+        }
+        #[doc = "0x54 - "]
+        #[inline(always)]
+        pub const fn abort(&self) -> &Abort {
+            &self.abort
+        }
+        #[doc = "0x58 - "]
+        #[inline(always)]
+        pub const fn fcs_error(&self) -> &FcsError {
+            &self.fcs_error
+        }
+        #[doc = "0x5c - "]
+        #[inline(always)]
+        pub const fn fifo_overflow(&self) -> &FifoOverflow {
+            &self.fifo_overflow
+        }
+        #[doc = "0x60 - "]
+        #[inline(always)]
+        pub const fn buffer_full(&self) -> &BufferFull {
+            &self.buffer_full
+        }
+        #[doc = "0x64 - "]
+        #[inline(always)]
+        pub const fn other_unicast(&self) -> &OtherUnicast {
+            &self.other_unicast
+        }
+        #[doc = "0x68 - "]
+        #[inline(always)]
+        pub const fn tkip_error(&self) -> &TkipError {
+            &self.tkip_error
+        }
+        #[doc = "0x6c - "]
+        #[inline(always)]
+        pub const fn same_bm_error(&self) -> &SameBmError {
+            &self.same_bm_error
+        }
+        #[doc = "0x70 - "]
+        #[inline(always)]
+        pub const fn ack_interrupt(&self) -> &AckInterrupt {
+            &self.ack_interrupt
+        }
+        #[doc = "0x74 - "]
+        #[inline(always)]
+        pub const fn rts_interrupt(&self) -> &RtsInterrupt {
+            &self.rts_interrupt
+        }
+        #[doc = "0x7c - "]
+        #[inline(always)]
+        pub const fn data_success(&self) -> &DataSuccess {
+            &self.data_success
+        }
+        #[doc = "0x80 - "]
+        #[inline(always)]
+        pub const fn end(&self) -> &End {
+            &self.end
+        }
+        #[doc = "0x84 - "]
+        #[inline(always)]
+        pub const fn bt_block_error(&self) -> &BtBlockError {
+            &self.bt_block_error
+        }
+        #[doc = "0x88 - "]
+        #[inline(always)]
+        pub const fn frequency_hop_error(&self) -> &FrequencyHopError {
+            &self.frequency_hop_error
+        }
+        #[doc = "0x8c - "]
+        #[inline(always)]
+        pub const fn last_unmatched_error(&self) -> &LastUnmatchedError {
+            &self.last_unmatched_error
+        }
+    }
+    #[doc = "MPDU_AND_CFO (r) register accessor: WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO.\n\nYou can [`read`](crate::Reg::read) this register and get [`mpdu_and_cfo::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mpdu_and_cfo`] module"]
+    #[doc(alias = "MPDU_AND_CFO")]
+    pub type MpduAndCfo = crate::Reg<mpdu_and_cfo::MpduAndCfoSpec>;
+    #[doc = "WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO."]
+    pub mod mpdu_and_cfo {
+        #[doc = "Register `MPDU_AND_CFO` reader"]
+        pub type R = crate::R<MpduAndCfoSpec>;
+        #[doc = "Field `MPDU_COUNT` reader - "]
+        pub type MpduCountR = crate::FieldReader<u16>;
+        #[doc = "Field `CFO_ACCUMULATOR` reader - "]
+        pub type CfoAccumulatorR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn mpdu_count(&self) -> MpduCountR {
+                MpduCountR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn cfo_accumulator(&self) -> CfoAccumulatorR {
+                CfoAccumulatorR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        #[doc = "WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO.\n\nYou can [`read`](crate::Reg::read) this register and get [`mpdu_and_cfo::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct MpduAndCfoSpec;
+        impl crate::RegisterSpec for MpduAndCfoSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`mpdu_and_cfo::R`](R) reader structure"]
+        impl crate::Readable for MpduAndCfoSpec {}
+    }
+    #[doc = "BRX_ERROR_AGC (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`brx_error_agc::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@brx_error_agc`] module"]
+    #[doc(alias = "BRX_ERROR_AGC")]
+    pub type BrxErrorAgc = crate::Reg<brx_error_agc::BrxErrorAgcSpec>;
+    #[doc = ""]
+    pub mod brx_error_agc {
+        #[doc = "Register `BRX_ERROR_AGC` reader"]
+        pub type R = crate::R<BrxErrorAgcSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`brx_error_agc::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BrxErrorAgcSpec;
+        impl crate::RegisterSpec for BrxErrorAgcSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`brx_error_agc::R`](R) reader structure"]
+        impl crate::Readable for BrxErrorAgcSpec {}
+    }
+    #[doc = "BRX_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`brx_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@brx_error`] module"]
+    #[doc(alias = "BRX_ERROR")]
+    pub type BrxError = crate::Reg<brx_error::BrxErrorSpec>;
+    #[doc = ""]
+    pub mod brx_error {
+        #[doc = "Register `BRX_ERROR` reader"]
+        pub type R = crate::R<BrxErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`brx_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BrxErrorSpec;
+        impl crate::RegisterSpec for BrxErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`brx_error::R`](R) reader structure"]
+        impl crate::Readable for BrxErrorSpec {}
+    }
+    #[doc = "NRX_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error`] module"]
+    #[doc(alias = "NRX_ERROR")]
+    pub type NrxError = crate::Reg<nrx_error::NrxErrorSpec>;
+    #[doc = ""]
+    pub mod nrx_error {
+        #[doc = "Register `NRX_ERROR` reader"]
+        pub type R = crate::R<NrxErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorSpec;
+        impl crate::RegisterSpec for NrxErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorSpec {}
+    }
+    #[doc = "NRX_ERROR_ABORT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_abort::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_abort`] module"]
+    #[doc(alias = "NRX_ERROR_ABORT")]
+    pub type NrxErrorAbort = crate::Reg<nrx_error_abort::NrxErrorAbortSpec>;
+    #[doc = ""]
+    pub mod nrx_error_abort {
+        #[doc = "Register `NRX_ERROR_ABORT` reader"]
+        pub type R = crate::R<NrxErrorAbortSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_abort::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorAbortSpec;
+        impl crate::RegisterSpec for NrxErrorAbortSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_abort::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorAbortSpec {}
+    }
+    #[doc = "NRX_ERROR_AGC_EXIT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_agc_exit::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_agc_exit`] module"]
+    #[doc(alias = "NRX_ERROR_AGC_EXIT")]
+    pub type NrxErrorAgcExit = crate::Reg<nrx_error_agc_exit::NrxErrorAgcExitSpec>;
+    #[doc = ""]
+    pub mod nrx_error_agc_exit {
+        #[doc = "Register `NRX_ERROR_AGC_EXIT` reader"]
+        pub type R = crate::R<NrxErrorAgcExitSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_agc_exit::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorAgcExitSpec;
+        impl crate::RegisterSpec for NrxErrorAgcExitSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_agc_exit::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorAgcExitSpec {}
+    }
+    #[doc = "NRX_ERROR_BASEBAND_OFF (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_baseband_off::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_baseband_off`] module"]
+    #[doc(alias = "NRX_ERROR_BASEBAND_OFF")]
+    pub type NrxErrorBasebandOff = crate::Reg<nrx_error_baseband_off::NrxErrorBasebandOffSpec>;
+    #[doc = ""]
+    pub mod nrx_error_baseband_off {
+        #[doc = "Register `NRX_ERROR_BASEBAND_OFF` reader"]
+        pub type R = crate::R<NrxErrorBasebandOffSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_baseband_off::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorBasebandOffSpec;
+        impl crate::RegisterSpec for NrxErrorBasebandOffSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_baseband_off::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorBasebandOffSpec {}
+    }
+    #[doc = "NRX_ERROR_FDM_WATCHDOG (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_fdm_watchdog::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_fdm_watchdog`] module"]
+    #[doc(alias = "NRX_ERROR_FDM_WATCHDOG")]
+    pub type NrxErrorFdmWatchdog = crate::Reg<nrx_error_fdm_watchdog::NrxErrorFdmWatchdogSpec>;
+    #[doc = ""]
+    pub mod nrx_error_fdm_watchdog {
+        #[doc = "Register `NRX_ERROR_FDM_WATCHDOG` reader"]
+        pub type R = crate::R<NrxErrorFdmWatchdogSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_fdm_watchdog::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorFdmWatchdogSpec;
+        impl crate::RegisterSpec for NrxErrorFdmWatchdogSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_fdm_watchdog::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorFdmWatchdogSpec {}
+    }
+    #[doc = "NRX_ERROR_POWER_DROP (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_power_drop::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_power_drop`] module"]
+    #[doc(alias = "NRX_ERROR_POWER_DROP")]
+    pub type NrxErrorPowerDrop = crate::Reg<nrx_error_power_drop::NrxErrorPowerDropSpec>;
+    #[doc = ""]
+    pub mod nrx_error_power_drop {
+        #[doc = "Register `NRX_ERROR_POWER_DROP` reader"]
+        pub type R = crate::R<NrxErrorPowerDropSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_power_drop::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorPowerDropSpec;
+        impl crate::RegisterSpec for NrxErrorPowerDropSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_power_drop::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorPowerDropSpec {}
+    }
+    #[doc = "NRX_ERROR_RESTART (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_restart::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_restart`] module"]
+    #[doc(alias = "NRX_ERROR_RESTART")]
+    pub type NrxErrorRestart = crate::Reg<nrx_error_restart::NrxErrorRestartSpec>;
+    #[doc = ""]
+    pub mod nrx_error_restart {
+        #[doc = "Register `NRX_ERROR_RESTART` reader"]
+        pub type R = crate::R<NrxErrorRestartSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_restart::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorRestartSpec;
+        impl crate::RegisterSpec for NrxErrorRestartSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_restart::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorRestartSpec {}
+    }
+    #[doc = "NRX_ERROR_SERVICE (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_service::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_service`] module"]
+    #[doc(alias = "NRX_ERROR_SERVICE")]
+    pub type NrxErrorService = crate::Reg<nrx_error_service::NrxErrorServiceSpec>;
+    #[doc = ""]
+    pub mod nrx_error_service {
+        #[doc = "Register `NRX_ERROR_SERVICE` reader"]
+        pub type R = crate::R<NrxErrorServiceSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_service::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorServiceSpec;
+        impl crate::RegisterSpec for NrxErrorServiceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_service::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorServiceSpec {}
+    }
+    #[doc = "NRX_ERROR_TX_OVER (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_tx_over::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_error_tx_over`] module"]
+    #[doc(alias = "NRX_ERROR_TX_OVER")]
+    pub type NrxErrorTxOver = crate::Reg<nrx_error_tx_over::NrxErrorTxOverSpec>;
+    #[doc = ""]
+    pub mod nrx_error_tx_over {
+        #[doc = "Register `NRX_ERROR_TX_OVER` reader"]
+        pub type R = crate::R<NrxErrorTxOverSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_error_tx_over::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxErrorTxOverSpec;
+        impl crate::RegisterSpec for NrxErrorTxOverSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_error_tx_over::R`](R) reader structure"]
+        impl crate::Readable for NrxErrorTxOverSpec {}
+    }
+    #[doc = "NRX_HE_UNSUPPORTED (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_unsupported::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_he_unsupported`] module"]
+    #[doc(alias = "NRX_HE_UNSUPPORTED")]
+    pub type NrxHeUnsupported = crate::Reg<nrx_he_unsupported::NrxHeUnsupportedSpec>;
+    #[doc = ""]
+    pub mod nrx_he_unsupported {
+        #[doc = "Register `NRX_HE_UNSUPPORTED` reader"]
+        pub type R = crate::R<NrxHeUnsupportedSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_unsupported::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxHeUnsupportedSpec;
+        impl crate::RegisterSpec for NrxHeUnsupportedSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_he_unsupported::R`](R) reader structure"]
+        impl crate::Readable for NrxHeUnsupportedSpec {}
+    }
+    #[doc = "NRX_HE_SIG_A_CRC (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_sig_a_crc::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_he_sig_a_crc`] module"]
+    #[doc(alias = "NRX_HE_SIG_A_CRC")]
+    pub type NrxHeSigACrc = crate::Reg<nrx_he_sig_a_crc::NrxHeSigACrcSpec>;
+    #[doc = ""]
+    pub mod nrx_he_sig_a_crc {
+        #[doc = "Register `NRX_HE_SIG_A_CRC` reader"]
+        pub type R = crate::R<NrxHeSigACrcSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_sig_a_crc::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxHeSigACrcSpec;
+        impl crate::RegisterSpec for NrxHeSigACrcSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_he_sig_a_crc::R`](R) reader structure"]
+        impl crate::Readable for NrxHeSigACrcSpec {}
+    }
+    #[doc = "NRX_HE_FORMAT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_format::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_he_format`] module"]
+    #[doc(alias = "NRX_HE_FORMAT")]
+    pub type NrxHeFormat = crate::Reg<nrx_he_format::NrxHeFormatSpec>;
+    #[doc = ""]
+    pub mod nrx_he_format {
+        #[doc = "Register `NRX_HE_FORMAT` reader"]
+        pub type R = crate::R<NrxHeFormatSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_format::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxHeFormatSpec;
+        impl crate::RegisterSpec for NrxHeFormatSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_he_format::R`](R) reader structure"]
+        impl crate::Readable for NrxHeFormatSpec {}
+    }
+    #[doc = "NRX_HE_SIG_B_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_sig_b_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_he_sig_b_error`] module"]
+    #[doc(alias = "NRX_HE_SIG_B_ERROR")]
+    pub type NrxHeSigBError = crate::Reg<nrx_he_sig_b_error::NrxHeSigBErrorSpec>;
+    #[doc = ""]
+    pub mod nrx_he_sig_b_error {
+        #[doc = "Register `NRX_HE_SIG_B_ERROR` reader"]
+        pub type R = crate::R<NrxHeSigBErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_he_sig_b_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxHeSigBErrorSpec;
+        impl crate::RegisterSpec for NrxHeSigBErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_he_sig_b_error::R`](R) reader structure"]
+        impl crate::Readable for NrxHeSigBErrorSpec {}
+    }
+    #[doc = "NRX_HT_SIG_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_ht_sig_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_ht_sig_error`] module"]
+    #[doc(alias = "NRX_HT_SIG_ERROR")]
+    pub type NrxHtSigError = crate::Reg<nrx_ht_sig_error::NrxHtSigErrorSpec>;
+    #[doc = ""]
+    pub mod nrx_ht_sig_error {
+        #[doc = "Register `NRX_HT_SIG_ERROR` reader"]
+        pub type R = crate::R<NrxHtSigErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_ht_sig_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxHtSigErrorSpec;
+        impl crate::RegisterSpec for NrxHtSigErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_ht_sig_error::R`](R) reader structure"]
+        impl crate::Readable for NrxHtSigErrorSpec {}
+    }
+    #[doc = "NRX_UNSUPPORTED (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_unsupported::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_unsupported`] module"]
+    #[doc(alias = "NRX_UNSUPPORTED")]
+    pub type NrxUnsupported = crate::Reg<nrx_unsupported::NrxUnsupportedSpec>;
+    #[doc = ""]
+    pub mod nrx_unsupported {
+        #[doc = "Register `NRX_UNSUPPORTED` reader"]
+        pub type R = crate::R<NrxUnsupportedSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:9"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_unsupported::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NrxUnsupportedSpec;
+        impl crate::RegisterSpec for NrxUnsupportedSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nrx_unsupported::R`](R) reader structure"]
+        impl crate::Readable for NrxUnsupportedSpec {}
+    }
+    #[doc = "SIGNAL_FIELD (r) register accessor: WDEVRX_SF.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_field::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@signal_field`] module"]
+    #[doc(alias = "SIGNAL_FIELD")]
+    pub type SignalField = crate::Reg<signal_field::SignalFieldSpec>;
+    #[doc = "WDEVRX_SF."]
+    pub mod signal_field {
+        #[doc = "Register `SIGNAL_FIELD` reader"]
+        pub type R = crate::R<SignalFieldSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "WDEVRX_SF.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_field::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SignalFieldSpec;
+        impl crate::RegisterSpec for SignalFieldSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`signal_field::R`](R) reader structure"]
+        impl crate::Readable for SignalFieldSpec {}
+    }
+    #[doc = "ABORT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`abort::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@abort`] module"]
+    #[doc(alias = "ABORT")]
+    pub type Abort = crate::Reg<abort::AbortSpec>;
+    #[doc = ""]
+    pub mod abort {
+        #[doc = "Register `ABORT` reader"]
+        pub type R = crate::R<AbortSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        #[doc = "Field `FCS_PASS_COUNT` reader - "]
+        pub type FcsPassCountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn fcs_pass_count(&self) -> FcsPassCountR {
+                FcsPassCountR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`abort::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AbortSpec;
+        impl crate::RegisterSpec for AbortSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`abort::R`](R) reader structure"]
+        impl crate::Readable for AbortSpec {}
+    }
+    #[doc = "FCS_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`fcs_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fcs_error`] module"]
+    #[doc(alias = "FCS_ERROR")]
+    pub type FcsError = crate::Reg<fcs_error::FcsErrorSpec>;
+    #[doc = ""]
+    pub mod fcs_error {
+        #[doc = "Register `FCS_ERROR` reader"]
+        pub type R = crate::R<FcsErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`fcs_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FcsErrorSpec;
+        impl crate::RegisterSpec for FcsErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`fcs_error::R`](R) reader structure"]
+        impl crate::Readable for FcsErrorSpec {}
+    }
+    #[doc = "FIFO_OVERFLOW (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`fifo_overflow::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fifo_overflow`] module"]
+    #[doc(alias = "FIFO_OVERFLOW")]
+    pub type FifoOverflow = crate::Reg<fifo_overflow::FifoOverflowSpec>;
+    #[doc = ""]
+    pub mod fifo_overflow {
+        #[doc = "Register `FIFO_OVERFLOW` reader"]
+        pub type R = crate::R<FifoOverflowSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`fifo_overflow::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FifoOverflowSpec;
+        impl crate::RegisterSpec for FifoOverflowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`fifo_overflow::R`](R) reader structure"]
+        impl crate::Readable for FifoOverflowSpec {}
+    }
+    #[doc = "BUFFER_FULL (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_full::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@buffer_full`] module"]
+    #[doc(alias = "BUFFER_FULL")]
+    pub type BufferFull = crate::Reg<buffer_full::BufferFullSpec>;
+    #[doc = ""]
+    pub mod buffer_full {
+        #[doc = "Register `BUFFER_FULL` reader"]
+        pub type R = crate::R<BufferFullSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_full::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BufferFullSpec;
+        impl crate::RegisterSpec for BufferFullSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`buffer_full::R`](R) reader structure"]
+        impl crate::Readable for BufferFullSpec {}
+    }
+    #[doc = "OTHER_UNICAST (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`other_unicast::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@other_unicast`] module"]
+    #[doc(alias = "OTHER_UNICAST")]
+    pub type OtherUnicast = crate::Reg<other_unicast::OtherUnicastSpec>;
+    #[doc = ""]
+    pub mod other_unicast {
+        #[doc = "Register `OTHER_UNICAST` reader"]
+        pub type R = crate::R<OtherUnicastSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`other_unicast::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct OtherUnicastSpec;
+        impl crate::RegisterSpec for OtherUnicastSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`other_unicast::R`](R) reader structure"]
+        impl crate::Readable for OtherUnicastSpec {}
+    }
+    #[doc = "TKIP_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`tkip_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tkip_error`] module"]
+    #[doc(alias = "TKIP_ERROR")]
+    pub type TkipError = crate::Reg<tkip_error::TkipErrorSpec>;
+    #[doc = ""]
+    pub mod tkip_error {
+        #[doc = "Register `TKIP_ERROR` reader"]
+        pub type R = crate::R<TkipErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`tkip_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TkipErrorSpec;
+        impl crate::RegisterSpec for TkipErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tkip_error::R`](R) reader structure"]
+        impl crate::Readable for TkipErrorSpec {}
+    }
+    #[doc = "SAME_BM_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`same_bm_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@same_bm_error`] module"]
+    #[doc(alias = "SAME_BM_ERROR")]
+    pub type SameBmError = crate::Reg<same_bm_error::SameBmErrorSpec>;
+    #[doc = ""]
+    pub mod same_bm_error {
+        #[doc = "Register `SAME_BM_ERROR` reader"]
+        pub type R = crate::R<SameBmErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`same_bm_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SameBmErrorSpec;
+        impl crate::RegisterSpec for SameBmErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`same_bm_error::R`](R) reader structure"]
+        impl crate::Readable for SameBmErrorSpec {}
+    }
+    #[doc = "ACK_INTERRUPT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`ack_interrupt::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ack_interrupt`] module"]
+    #[doc(alias = "ACK_INTERRUPT")]
+    pub type AckInterrupt = crate::Reg<ack_interrupt::AckInterruptSpec>;
+    #[doc = ""]
+    pub mod ack_interrupt {
+        #[doc = "Register `ACK_INTERRUPT` reader"]
+        pub type R = crate::R<AckInterruptSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`ack_interrupt::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AckInterruptSpec;
+        impl crate::RegisterSpec for AckInterruptSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ack_interrupt::R`](R) reader structure"]
+        impl crate::Readable for AckInterruptSpec {}
+    }
+    #[doc = "RTS_INTERRUPT (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`rts_interrupt::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rts_interrupt`] module"]
+    #[doc(alias = "RTS_INTERRUPT")]
+    pub type RtsInterrupt = crate::Reg<rts_interrupt::RtsInterruptSpec>;
+    #[doc = ""]
+    pub mod rts_interrupt {
+        #[doc = "Register `RTS_INTERRUPT` reader"]
+        pub type R = crate::R<RtsInterruptSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`rts_interrupt::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RtsInterruptSpec;
+        impl crate::RegisterSpec for RtsInterruptSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rts_interrupt::R`](R) reader structure"]
+        impl crate::Readable for RtsInterruptSpec {}
+    }
+    #[doc = "DATA_SUCCESS (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`data_success::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_success`] module"]
+    #[doc(alias = "DATA_SUCCESS")]
+    pub type DataSuccess = crate::Reg<data_success::DataSuccessSpec>;
+    #[doc = ""]
+    pub mod data_success {
+        #[doc = "Register `DATA_SUCCESS` reader"]
+        pub type R = crate::R<DataSuccessSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`data_success::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DataSuccessSpec;
+        impl crate::RegisterSpec for DataSuccessSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`data_success::R`](R) reader structure"]
+        impl crate::Readable for DataSuccessSpec {}
+    }
+    #[doc = "END (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`end::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@end`] module"]
+    #[doc(alias = "END")]
+    pub type End = crate::Reg<end::EndSpec>;
+    #[doc = ""]
+    pub mod end {
+        #[doc = "Register `END` reader"]
+        pub type R = crate::R<EndSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`end::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EndSpec;
+        impl crate::RegisterSpec for EndSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`end::R`](R) reader structure"]
+        impl crate::Readable for EndSpec {}
+    }
+    #[doc = "BT_BLOCK_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`bt_block_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bt_block_error`] module"]
+    #[doc(alias = "BT_BLOCK_ERROR")]
+    pub type BtBlockError = crate::Reg<bt_block_error::BtBlockErrorSpec>;
+    #[doc = ""]
+    pub mod bt_block_error {
+        #[doc = "Register `BT_BLOCK_ERROR` reader"]
+        pub type R = crate::R<BtBlockErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`bt_block_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtBlockErrorSpec;
+        impl crate::RegisterSpec for BtBlockErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bt_block_error::R`](R) reader structure"]
+        impl crate::Readable for BtBlockErrorSpec {}
+    }
+    #[doc = "FREQUENCY_HOP_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_hop_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_hop_error`] module"]
+    #[doc(alias = "FREQUENCY_HOP_ERROR")]
+    pub type FrequencyHopError = crate::Reg<frequency_hop_error::FrequencyHopErrorSpec>;
+    #[doc = ""]
+    pub mod frequency_hop_error {
+        #[doc = "Register `FREQUENCY_HOP_ERROR` reader"]
+        pub type R = crate::R<FrequencyHopErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_hop_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyHopErrorSpec;
+        impl crate::RegisterSpec for FrequencyHopErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_hop_error::R`](R) reader structure"]
+        impl crate::Readable for FrequencyHopErrorSpec {}
+    }
+    #[doc = "LAST_UNMATCHED_ERROR (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`last_unmatched_error::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@last_unmatched_error`] module"]
+    #[doc(alias = "LAST_UNMATCHED_ERROR")]
+    pub type LastUnmatchedError = crate::Reg<last_unmatched_error::LastUnmatchedErrorSpec>;
+    #[doc = ""]
+    pub mod last_unmatched_error {
+        #[doc = "Register `LAST_UNMATCHED_ERROR` reader"]
+        pub type R = crate::R<LastUnmatchedErrorSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`last_unmatched_error::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct LastUnmatchedErrorSpec;
+        impl crate::RegisterSpec for LastUnmatchedErrorSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`last_unmatched_error::R`](R) reader structure"]
+        impl crate::Readable for LastUnmatchedErrorSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-fields-from-debug-symbol-hil-observed\\]. Complete dbg_read_rx_count decodes two eight-bit hang counters and two full-width combined hang/panic counters. All four remained zero during the connected open HE matrix baseline."]
+pub type WifiMacRxHangStatistics =
+    crate::Periph<wifi_mac_rx_hang_statistics::RegisterBlock, 0x2010_4c64>;
+impl core::fmt::Debug for WifiMacRxHangStatistics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRxHangStatistics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-fields-from-debug-symbol-hil-observed\\]. Complete dbg_read_rx_count decodes two eight-bit hang counters and two full-width combined hang/panic counters. All four remained zero during the connected open HE matrix baseline."]
+pub mod wifi_mac_rx_hang_statistics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        hang: Hang,
+        _reserved1: [u8; 0x01b0],
+        rx_tx_hang: RxTxHang,
+        rx_tx_panic: RxTxPanic,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - "]
+        #[inline(always)]
+        pub const fn hang(&self) -> &Hang {
+            &self.hang
+        }
+        #[doc = "0x1b4 - "]
+        #[inline(always)]
+        pub const fn rx_tx_hang(&self) -> &RxTxHang {
+            &self.rx_tx_hang
+        }
+        #[doc = "0x1b8 - "]
+        #[inline(always)]
+        pub const fn rx_tx_panic(&self) -> &RxTxPanic {
+            &self.rx_tx_panic
+        }
+    }
+    #[doc = "HANG (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`hang::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hang`] module"]
+    #[doc(alias = "HANG")]
+    pub type Hang = crate::Reg<hang::HangSpec>;
+    #[doc = ""]
+    pub mod hang {
+        #[doc = "Register `HANG` reader"]
+        pub type R = crate::R<HangSpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TX_COUNT` reader - "]
+        pub type TxCountR = crate::FieldReader;
+        #[doc = "Field `RX_COUNT` reader - "]
+        pub type RxCountR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn tx_count(&self) -> TxCountR {
+                TxCountR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn rx_count(&self) -> RxCountR {
+                RxCountR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`hang::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HangSpec;
+        impl crate::RegisterSpec for HangSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hang::R`](R) reader structure"]
+        impl crate::Readable for HangSpec {}
+    }
+    #[doc = "RX_TX_HANG (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_hang`] module"]
+    #[doc(alias = "RX_TX_HANG")]
+    pub type RxTxHang = crate::Reg<rx_tx_hang::RxTxHangSpec>;
+    #[doc = ""]
+    pub mod rx_tx_hang {
+        #[doc = "Register `RX_TX_HANG` reader"]
+        pub type R = crate::R<RxTxHangSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_hang::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxTxHangSpec;
+        impl crate::RegisterSpec for RxTxHangSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_tx_hang::R`](R) reader structure"]
+        impl crate::Readable for RxTxHangSpec {}
+    }
+    #[doc = "RX_TX_PANIC (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_tx_panic`] module"]
+    #[doc(alias = "RX_TX_PANIC")]
+    pub type RxTxPanic = crate::Reg<rx_tx_panic::RxTxPanicSpec>;
+    #[doc = ""]
+    pub mod rx_tx_panic {
+        #[doc = "Register `RX_TX_PANIC` reader"]
+        pub type R = crate::R<RxTxPanicSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new(self.bits)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_tx_panic::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxTxPanicSpec;
+        impl crate::RegisterSpec for RxTxPanicSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_tx_panic::R`](R) reader structure"]
+        impl crate::Readable for RxTxPanicSpec {}
+    }
+}
 #[doc = "SOURCE\\[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-multifunction-aperture\\]. Shared PHY table-memory command, data and PBUS group-boundary aperture. The same command/data words have mode-dependent PBUS-memory, TX-CFR and gain-memory meanings; fields are named only where the complete bodies prove a common or mode-independent identity."]
 pub type PhyMemory = crate::Periph<phy_memory::RegisterBlock, 0x2010_0800>;
 impl core::fmt::Debug for PhyMemory {
@@ -11301,7 +12522,7 @@ pub mod wifi_mac_he_init_prefix {
         bf_sync_status_unknown: BfSyncStatusUnknown,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-debug-symbol\\]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c."]
         #[inline(always)]
         pub const fn rx_field_control(&self) -> &RxFieldControl {
             &self.rx_field_control
@@ -11362,66 +12583,106 @@ pub mod wifi_mac_he_init_prefix {
             &self.bf_sync_status_unknown
         }
     }
-    #[doc = "RX_FIELD_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_field_control`] module"]
+    #[doc = "RX_FIELD_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-debug-symbol\\]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_field_control`] module"]
     #[doc(alias = "RX_FIELD_CONTROL")]
     pub type RxFieldControl = crate::Reg<rx_field_control::RxFieldControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-debug-symbol\\]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c."]
     pub mod rx_field_control {
         #[doc = "Register `RX_FIELD_CONTROL` reader"]
         pub type R = crate::R<RxFieldControlSpec>;
         #[doc = "Register `RX_FIELD_CONTROL` writer"]
         pub type W = crate::W<RxFieldControlSpec>;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
-        pub type LowPreservedUnknownR = crate::FieldReader;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
-        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
-        #[doc = "Field `IMAGE_UNKNOWN` reader - "]
-        pub type ImageUnknownR = crate::FieldReader;
-        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `COLOR_BITMAP_CLEAR` reader - Blob decoder's COLOR_BITMAP_CLR alias."]
+        pub type ColorBitmapClearR = crate::BitReader;
+        #[doc = "Field `COLOR_BITMAP_CLEAR` writer - Blob decoder's COLOR_BITMAP_CLR alias."]
+        pub type ColorBitmapClearW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BITMAP_CONTROL` reader - Blob decoder's overlapping two-bit BITMAP value."]
+        pub type BitmapControlR = crate::FieldReader;
+        #[doc = "Field `BITMAP_CONTROL` writer - Blob decoder's overlapping two-bit BITMAP value."]
+        pub type BitmapControlW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `PRESERVED_UNKNOWN_2` reader - "]
+        pub type PreservedUnknown2R = crate::BitReader;
+        #[doc = "Field `PRESERVED_UNKNOWN_2` writer - "]
+        pub type PreservedUnknown2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TIMEOUT_SECONDS` reader - "]
+        pub type TimeoutSecondsR = crate::FieldReader;
+        #[doc = "Field `TIMEOUT_SECONDS` writer - "]
+        pub type TimeoutSecondsW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `COLLISION_THRESHOLD` reader - "]
+        pub type CollisionThresholdR = crate::FieldReader;
+        #[doc = "Field `COLLISION_THRESHOLD` writer - "]
+        pub type CollisionThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
         pub type HighPreservedUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
-        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 23, u32>;
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
         impl R {
-            #[doc = "Bits 0:2"]
+            #[doc = "Bit 0 - Blob decoder's COLOR_BITMAP_CLR alias."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
-                LowPreservedUnknownR::new((self.bits & 7) as u8)
+            pub fn color_bitmap_clear(&self) -> ColorBitmapClearR {
+                ColorBitmapClearR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 0:1 - Blob decoder's overlapping two-bit BITMAP value."]
+            #[inline(always)]
+            pub fn bitmap_control(&self) -> BitmapControlR {
+                BitmapControlR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn preserved_unknown_2(&self) -> PreservedUnknown2R {
+                PreservedUnknown2R::new(((self.bits >> 2) & 1) != 0)
             }
             #[doc = "Bits 3:8"]
             #[inline(always)]
-            pub fn image_unknown(&self) -> ImageUnknownR {
-                ImageUnknownR::new(((self.bits >> 3) & 0x3f) as u8)
+            pub fn timeout_seconds(&self) -> TimeoutSecondsR {
+                TimeoutSecondsR::new(((self.bits >> 3) & 0x3f) as u8)
             }
-            #[doc = "Bits 9:31"]
+            #[doc = "Bits 9:12"]
+            #[inline(always)]
+            pub fn collision_threshold(&self) -> CollisionThresholdR {
+                CollisionThresholdR::new(((self.bits >> 9) & 0x0f) as u8)
+            }
+            #[doc = "Bits 13:31"]
             #[inline(always)]
             pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
-                HighPreservedUnknownR::new((self.bits >> 9) & 0x007f_ffff)
+                HighPreservedUnknownR::new((self.bits >> 13) & 0x0007_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:2"]
+            #[doc = "Bit 0 - Blob decoder's COLOR_BITMAP_CLR alias."]
             #[inline(always)]
-            pub fn low_preserved_unknown(
-                &mut self,
-            ) -> LowPreservedUnknownW<'_, RxFieldControlSpec> {
-                LowPreservedUnknownW::new(self, 0)
+            pub fn color_bitmap_clear(&mut self) -> ColorBitmapClearW<'_, RxFieldControlSpec> {
+                ColorBitmapClearW::new(self, 0)
+            }
+            #[doc = "Bits 0:1 - Blob decoder's overlapping two-bit BITMAP value."]
+            #[inline(always)]
+            pub fn bitmap_control(&mut self) -> BitmapControlW<'_, RxFieldControlSpec> {
+                BitmapControlW::new(self, 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn preserved_unknown_2(&mut self) -> PreservedUnknown2W<'_, RxFieldControlSpec> {
+                PreservedUnknown2W::new(self, 2)
             }
             #[doc = "Bits 3:8"]
             #[inline(always)]
-            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, RxFieldControlSpec> {
-                ImageUnknownW::new(self, 3)
+            pub fn timeout_seconds(&mut self) -> TimeoutSecondsW<'_, RxFieldControlSpec> {
+                TimeoutSecondsW::new(self, 3)
             }
-            #[doc = "Bits 9:31"]
+            #[doc = "Bits 9:12"]
+            #[inline(always)]
+            pub fn collision_threshold(&mut self) -> CollisionThresholdW<'_, RxFieldControlSpec> {
+                CollisionThresholdW::new(self, 9)
+            }
+            #[doc = "Bits 13:31"]
             #[inline(always)]
             pub fn high_preserved_unknown(
                 &mut self,
             ) -> HighPreservedUnknownW<'_, RxFieldControlSpec> {
-                HighPreservedUnknownW::new(self, 9)
+                HighPreservedUnknownW::new(self, 13)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-value-semantics-unknown\\]. Parent replaces bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-debug-symbol\\]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxFieldControlSpec;
         impl crate::RegisterSpec for RxFieldControlSpec {
             type Ux = u32;
@@ -20894,6 +22155,12 @@ static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
 #[allow(non_snake_case)]
 pub struct Peripherals {
+    #[doc = "WIFI_MAC_HE_COLOR_COLLISION"]
+    pub wifi_mac_he_color_collision: WifiMacHeColorCollision,
+    #[doc = "WIFI_MAC_RX_STATISTICS"]
+    pub wifi_mac_rx_statistics: WifiMacRxStatistics,
+    #[doc = "WIFI_MAC_RX_HANG_STATISTICS"]
+    pub wifi_mac_rx_hang_statistics: WifiMacRxHangStatistics,
     #[doc = "PHY_MEMORY"]
     pub phy_memory: PhyMemory,
     #[doc = "PHY_FREQUENCY_CHANNEL_ORACLE"]
@@ -21002,6 +22269,9 @@ impl Peripherals {
     pub unsafe fn steal() -> Self {
         DEVICE_PERIPHERALS = true;
         Peripherals {
+            wifi_mac_he_color_collision: WifiMacHeColorCollision::steal(),
+            wifi_mac_rx_statistics: WifiMacRxStatistics::steal(),
+            wifi_mac_rx_hang_statistics: WifiMacRxHangStatistics::steal(),
             phy_memory: PhyMemory::steal(),
             phy_frequency_channel_oracle: PhyFrequencyChannelOracle::steal(),
             phy_pbus: PhyPbus::steal(),

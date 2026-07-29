@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.27</version>
+  <version>3.28</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -23,6 +23,65 @@
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <peripherals>
+    <peripheral>
+      <name>WIFI_MAC_HE_COLOR_COLLISION</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-registers-from-debug-symbol-hil-observed]. Complete dbg_read_color_collision reads the 64-bit observed BSS-color bitmap. Its adjacent control word is the canonical WIFI_MAC_HE_INIT_PREFIX.RX_FIELD_CONTROL register. Open HE HIL observed color bit 25, threshold one and timeout 60 seconds.</description>
+      <baseAddress>0x20104040</baseAddress>
+      <registers>
+        <register><name>BSS_COLOR_BITMAP_LOW</name><description>RX_HE_BSS_COLOR_MAPLO.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>BSS_COLOR_BITMAP_HIGH</name><description>RX_HE_BSS_COLOR_MAPHI.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_RX_STATISTICS</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-registers-fields-and-transform-from-debug-symbol-hil-observed]. Sparse RX hardware statistics decoded by complete dbg_read_rx_count. Ten-bit and sixteen-bit masks, the signed CFO transform and every register address below follow the complete instruction body and its pinned format string. Open HE HIL observed coherent MPDU/end/data, CFO, FCS, power-drop, HT-SIG, HE-SIG-A and interrupt counts while all buffer/FIFO/TKIP counters remained zero.</description>
+      <baseAddress>0x2010430c</baseAddress>
+      <registers>
+        <register><name>MPDU_AND_CFO</name><description>WDEVRX_MPDU in bits 15:0. The blob sign-extends bits 31:16 and multiplies by 40 to print WDEVRX_CFO.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>MPDU_COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field><field><name>CFO_ACCUMULATOR</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>BRX_ERROR_AGC</name><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>BRX_ERROR</name><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR</name><addressOffset>0x0c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_ABORT</name><addressOffset>0x10</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_AGC_EXIT</name><addressOffset>0x14</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_BASEBAND_OFF</name><addressOffset>0x18</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_FDM_WATCHDOG</name><addressOffset>0x1c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_POWER_DROP</name><addressOffset>0x20</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_RESTART</name><addressOffset>0x24</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_SERVICE</name><addressOffset>0x28</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_ERROR_TX_OVER</name><addressOffset>0x2c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_HE_UNSUPPORTED</name><addressOffset>0x30</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_HE_SIG_A_CRC</name><addressOffset>0x34</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_HE_FORMAT</name><addressOffset>0x38</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_HE_SIG_B_ERROR</name><addressOffset>0x3c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>NRX_HT_SIG_ERROR</name><addressOffset>0x40</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>NRX_UNSUPPORTED</name><addressOffset>0x44</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field></fields></register>
+        <register><name>SIGNAL_FIELD</name><description>WDEVRX_SF.</description><addressOffset>0x50</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>ABORT</name><addressOffset>0x54</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field><field><name>FCS_PASS_COUNT</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>FCS_ERROR</name><addressOffset>0x58</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>FIFO_OVERFLOW</name><addressOffset>0x5c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>BUFFER_FULL</name><addressOffset>0x60</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>OTHER_UNICAST</name><addressOffset>0x64</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>TKIP_ERROR</name><addressOffset>0x68</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>SAME_BM_ERROR</name><addressOffset>0x6c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>ACK_INTERRUPT</name><addressOffset>0x70</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>RTS_INTERRUPT</name><addressOffset>0x74</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>DATA_SUCCESS</name><addressOffset>0x7c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>END</name><addressOffset>0x80</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>BT_BLOCK_ERROR</name><addressOffset>0x84</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>FREQUENCY_HOP_ERROR</name><addressOffset>0x88</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+        <register><name>LAST_UNMATCHED_ERROR</name><addressOffset>0x8c</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_RX_HANG_STATISTICS</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-registers-fields-from-debug-symbol-hil-observed]. Complete dbg_read_rx_count decodes two eight-bit hang counters and two full-width combined hang/panic counters. All four remained zero during the connected open HE matrix baseline.</description>
+      <baseAddress>0x20104c64</baseAddress>
+      <registers>
+        <register><name>HANG</name><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field><field><name>TX_COUNT</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>RX_COUNT</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields></register>
+        <register><name>RX_TX_HANG</name><addressOffset>0x1b4</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>RX_TX_PANIC</name><addressOffset>0x1b8</addressOffset><size>32</size><access>read-only</access><fields><field><name>COUNT</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
     <peripheral>
       <name>PHY_MEMORY</name>
       <description>
@@ -1859,9 +1918,9 @@
       <registers>
         <register>
           <name>RX_FIELD_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX]; CONFIDENCE[instruction-exact-value-semantics-unknown]. Parent replaces bits 8:3 with 0x3c.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field><field><name>IMAGE_UNKNOWN</name><bitOffset>3</bitOffset><bitWidth>6</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>23</bitWidth></field></fields>
+          <fields><field><name>COLOR_BITMAP_CLEAR</name><description>Blob decoder's COLOR_BITMAP_CLR alias.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>BITMAP_CONTROL</name><description>Blob decoder's overlapping two-bit BITMAP value.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>PRESERVED_UNKNOWN_2</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TIMEOUT_SECONDS</name><bitOffset>3</bitOffset><bitWidth>6</bitWidth></field><field><name>COLLISION_THRESHOLD</name><bitOffset>9</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>19</bitWidth></field></fields>
         </register>
         <register>
           <name>BF_MODE_CONTROL</name>
@@ -3031,6 +3090,8 @@
       <source id="BLOB_LIBPP_HAL_HE_UL_MU_OMC">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e, complete hal_mac_ctl.o hal_he_set_ul_mu size 0x3a; _oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40, complete ieee80211_he.o wifi_htc_omc_txcb size 0x108 and its pinned format string. The callback extracts HT-Control bit 11 as ul_mu_disable and bit 17 as ul_mu_data_disable. The HAL leaf independently copies those arguments to 0x20104c80 bits 31 and 30 respectively through two fresh-read RMWs.</source>
       <source id="BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_get_rx_trigger_cnt size 0x0e, hal_he_get_tb_times_cnt size 0x0e and hal_he_get_tb_qosnull_cnt size 0x0c; complete hal_debug.o get_txtb_sym_num size 0x10, get_txtb_psdu_len size 0x0e, get_txtb_min_subframe size 0x10, get_txtb_time_pe size 0x0c, dbg_read_axtb_diag size 0x102 and esp_test_get_hw_tb_statistics size 0x56. Field semantics and spellings for 0x201044f4..0x20104500 come from the complete debug function's own WDEVAXTBDIAG0..3 format strings and matching instruction-exact shifts/masks.</source>
       <source id="BLOB_LIBPP_HAL_BF_CONFIG">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_init_bf size 0xd4 and hal_he_set_bf_report_rate size 0x7c, complete hal_debug.o dbg_read_rx_misc WDEVBEAMFORMCONF decode at offsets 0x3c0..0x418 and dbg_read_bfr_rate size 0x148 with its QAM16/QPSK/BPSK format strings, and complete trc.o trc_set_bf_report_rate size 0x52. The decoder proves 0x20104c78 bits 0 through 22. The report-rate decoder proves three 9-bit profiles at 0x20104464, high to low as QAM16, QPSK and BPSK; the setter and trc policy prove each profile packs normalized rate bits 4:0, signal mode bits 6:5, DCM bit 7 and ER-SU bit 8.</source>
+      <source id="BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o dbg_read_color_collision size 0x64 and dbg_read_rx_count size 0x21a, including their pinned format strings. The former proves the BSS-color bitmap words at 0x20104040/44 and RX_HE_BSS_COLOR_CONF fields at 0x20104048. The latter proves 39 named RX statistics, their sparse addresses and widths, including signed high-halfword CFO multiplied by 40 and the hang/panic words at 0x20104c64 and 0x20104e18/1c.</source>
+      <source id="HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, standard psram-code-psram-data profile, complete open PHY and MAC, controlled AX211 HE20 WPA2 AP on channel 11, 2026-07-29. After HE association, WPA2, successful TID0 AddBA window 32 and one complete 30-profile HE matrix round, the typed snapshot observed MPDU 6216, end 6197, data-success 286, FCS 42, power-drop 42, HT-SIG error 8, HE-SIG-A CRC 1, ACK interrupt 25 and RTS interrupt 6. FIFO overflow, buffer full, TKIP, abort and all four hang/panic counters were zero. The color bitmap had bit 25 set, threshold one and timeout 60 seconds. Four subsequent 30-profile matrix rounds remained clean.</source>
       <source id="HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29">../esp32s31_rust open-radio-phy-prelude-hil on ESP32-S31 rev0 against the controlled Linux AX211 HE20 AP, 2026-07-29. After HE association, WPA2/CCMP setup and more than nineteen complete three-profile DCM A-MPDU rounds, two independent ten-second snapshots both reported RX_TRIGGER_COUNT=0, TB_TRANSMISSION_COUNT=0 and TB_QOS_NULL_COUNT=0. WDEVAXTBDIAG0..3 also remained all zero. This proves the typed read path and a no-Trigger baseline; it does not qualify OFDMA because this ordinary AP configuration did not schedule uplink Trigger frames.</source>
       <source id="HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29">../esp32s31_rust open-radio-phy-prelude-hil on ESP32-S31 rev0 against the controlled Linux AX211 HE20 AP, 2026-07-29. The fully open STA completed HE association, WPA2/CCMP and a TID0 AddBA response with window 32. Applying the complete vendor TID-bitmap edge at the transition to Operational produced two independent snapshots with WDEVTXQBSR_CTRL TID_BITMAP=0x01. Hardware/software BSR values and validity bits remained zero because the AP sent no Trigger frames. Twenty-four complete three-profile DCM A-MPDU rounds reported zero failures, qualifying the TID0 lifecycle write without an HE SU regression; this does not qualify OFDMA scheduling.</source>
       <source id="BLOB_LIBPP_HAL_TX_POWER_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_init_tx_pwr size 0x50 and hal_get_tx_pwr size 0x1a; complete hal_mac_ctl.o hal_init_tb_power size 0x1a0, hal_init_imrsp_power size 0x2f8, hal_mac_set_tb_max_pwr size 0x160 including both complete relocation jump tables, and hal_init_tb_ru_power size 0xba. The parent queries rates 0 through 42 in order into 43 adjacent two-byte entries. Its three children publish 56 separate fresh-read RMW edges at 0x20104408..0x20104448. Migration source is the Git parent of promotion commit f233006, migration/esp32s31-hybrid-runtime/src/lmac.rs: it consumed this same exported 86-byte s_phy_get_max_pwr table for open legacy and HT TX but did not reproduce its builder.</source>

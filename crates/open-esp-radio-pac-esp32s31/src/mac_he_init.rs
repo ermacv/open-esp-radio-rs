@@ -89,7 +89,7 @@ impl RadioRegisters {
         init.he_queue_mode()
             .modify(|_, w| unsafe { w.mode_unknown().bits(2) });
         init.rx_field_control()
-            .modify(|_, w| unsafe { w.image_unknown().bits(0x3c) });
+            .modify(|_, w| unsafe { w.timeout_seconds().bits(0x3c) });
         init.parent_enable()
             .modify(|_, w| w.enable_unknown().set_bit());
         init.tb_tx_control().modify(|_, w| w.clear_15().clear_bit());

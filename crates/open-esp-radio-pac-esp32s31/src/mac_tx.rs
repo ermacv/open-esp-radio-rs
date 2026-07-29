@@ -76,6 +76,22 @@ pub struct MacHeTxProgram {
     pub interface: u8,
 }
 
+/// HE queue-vector words sampled from one physical queue bank.
+///
+/// This read-only snapshot exists for formatter HIL: it lets the caller copy
+/// the vector immediately after the final submit edge and defer logging until
+/// hardware ownership has ended. In particular, a later non-HE retry may
+/// legitimately replace PLCP1 while leaving the HE-SIG words unchanged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTxVectorSnapshot {
+    pub plcp0: u32,
+    pub plcp1: u32,
+    pub he_signal_a1: u32,
+    pub he_signal_a2_length: u32,
+    pub power: u32,
+    pub length_control: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacTxCompletionRegisters {
     pub aux_a: u32,
@@ -101,6 +117,54 @@ const fn physical_bank(queue: u8) -> usize {
 }
 
 impl RadioRegisters {
+    /// Sample the complete HE vector for one ordinary logical queue.
+    ///
+    /// SOURCE: the same generated-PAC identities and logical-to-physical
+    /// queue mapping used by [`Self::prepare_he_mac_tx`]. This method performs
+    /// no ownership transition and does not acknowledge a completion.
+    pub fn he_mac_tx_vector_snapshot(&self, queue: u8) -> MacHeTxVectorSnapshot {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let bank = physical_bank(queue);
+        MacHeTxVectorSnapshot {
+            plcp0: self
+                .peripherals
+                .wifi_mac_tx_queue_control
+                .control(bank)
+                .read()
+                .bits(),
+            plcp1: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .plcp1(bank)
+                .read()
+                .bits(),
+            he_signal_a1: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .he_su_signal_a1(bank)
+                .read()
+                .bits(),
+            he_signal_a2_length: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .he_su_signal_a2_length(bank)
+                .read()
+                .bits(),
+            power: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .power(bank)
+                .read()
+                .bits(),
+            length_control: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .length_control(bank)
+                .read()
+                .bits(),
+        }
+    }
+
     /// Program one ordinary queue up to, but excluding, its ENABLE|VALID edge.
     ///
     /// Keeping the final edge separate lets the MAC publish its software

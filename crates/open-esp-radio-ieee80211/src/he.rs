@@ -145,7 +145,29 @@ impl He20Capabilities {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20Operation {
     pub bss_color: u8,
+    pub bss_color_enabled: bool,
+    pub partial_bss_color: bool,
     pub basic_mcs_nss_map: u16,
+}
+
+impl He20Operation {
+    /// Return the BSS color published in an HE-SIG-A1 transmit vector.
+    ///
+    /// SOURCE: complete `_oracles/libnet80211.a[ieee80211_he.o]::
+    /// ieee80211_parse_heopr` passes HE Operation byte-six bit seven inverted
+    /// as the enable argument, bit six as the partial-color argument and bits
+    /// 5:0 as the color to `hal_he_set_bss_color`. Complete
+    /// `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_get_bss_color` returns zero
+    /// whenever that enable bit is clear. Keeping the advertised numeric
+    /// color separate from this effective transmit value prevents a disabled
+    /// BSS color such as `0xae` from becoming active color 46.
+    pub const fn effective_bss_color(self) -> u8 {
+        if self.bss_color_enabled {
+            self.bss_color
+        } else {
+            0
+        }
+    }
 }
 
 /// Bounded HE20 peer state consumed by a chip-specific register backend.
@@ -219,8 +241,11 @@ pub fn parse_he20_capabilities(element: &[u8]) -> Result<He20Capabilities, HeEle
 
 pub fn parse_he20_operation(element: &[u8]) -> Result<He20Operation, HeElementError> {
     let element = validate_extension(element, HE_OPERATION_EXTENSION_ID, HE_OPERATION_IE_MIN_LEN)?;
+    let bss_color_information = element[6];
     Ok(He20Operation {
-        bss_color: element[6] & 0x3f,
+        bss_color: bss_color_information & 0x3f,
+        bss_color_enabled: bss_color_information & 0x80 == 0,
+        partial_bss_color: bss_color_information & 0x40 != 0,
         basic_mcs_nss_map: u16::from_le_bytes([element[7], element[8]]),
     })
 }
@@ -362,11 +387,24 @@ mod tests {
     }
 
     #[test]
-    fn parses_mandatory_operation_prefix_and_masks_bss_color() {
+    fn parses_disabled_partial_bss_color() {
         let element = [255, 7, 36, 0, 0, 0, 0xc5, 0xfd, 0xff];
         let operation = parse_he20_operation(&element).unwrap();
         assert_eq!(operation.bss_color, 5);
+        assert!(!operation.bss_color_enabled);
+        assert!(operation.partial_bss_color);
+        assert_eq!(operation.effective_bss_color(), 0);
         assert_eq!(operation.basic_mcs_nss_map, 0xfffd);
+    }
+
+    #[test]
+    fn disabled_color_matches_vendor_effective_tx_color() {
+        let element = [255, 7, 36, 0, 0, 0, 0xae, 0xfd, 0xff];
+        let operation = parse_he20_operation(&element).unwrap();
+        assert_eq!(operation.bss_color, 46);
+        assert!(!operation.bss_color_enabled);
+        assert!(!operation.partial_bss_color);
+        assert_eq!(operation.effective_bss_color(), 0);
     }
 
     #[test]

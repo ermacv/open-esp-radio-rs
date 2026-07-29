@@ -3,7 +3,8 @@
 use core::pin::Pin;
 
 use open_esp_radio_pac_esp32s31::{
-    MacHeTxProgram, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
+    MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram, MacLegacyTxProgram,
+    MacTxCompletionRegisters, RadioRegisters,
 };
 
 use crate::{
@@ -39,6 +40,13 @@ const HT_AMPDU_ENTRY_FLAGS: u8 = 1;
 // A-MPDU formatter captures used descriptor flags 0xc0403009, entry class one
 // and the bounded BCC/non-STBC A2 low control image 0x105.
 const HE_AMPDU_ENTRY_FLAGS: u8 = 1;
+// SOURCE: complete `_oracles/libpp.a[pp_he.o]::ppCalTxHESMPDULength`
+// selects one descriptor/MPDU and leaves HE-SIG-A2 bit 28 clear. The
+// synchronous 24-byte vendor raw DCM oracle nevertheless published
+// LENGTH_CONTROL 0x0040_02c4, proving that queue length entry class one is
+// independent of the on-air A-MPDU selector.
+const HE_SMPDU_ENTRY_FLAGS: u8 = 1;
+const HE_SMPDU_DESCRIPTOR_FLAGS: u32 = 0xc040_7008;
 const HE_SU_A2_CONTROL_BCC: u16 = 0x0105;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
@@ -93,6 +101,12 @@ pub trait TxHardware {
     fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool;
     fn start_he_tx(&mut self, queue: u8, plcp0: u32);
+    /// Copy a submitted HE vector when the backend exposes typed readback.
+    ///
+    /// Pure software test backends may leave this unsupported.
+    fn he_tx_vector_snapshot(&self, _queue: u8) -> Option<MacHeTxVectorSnapshot> {
+        None
+    }
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
@@ -122,6 +136,10 @@ impl TxHardware for RadioRegisters {
 
     fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_he_mac_tx(queue, plcp0);
+    }
+
+    fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
+        Some(self.he_mac_tx_vector_snapshot(queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
@@ -568,11 +586,11 @@ impl HeMcs {
 /// HE DCM MCS values valid in the currently owned BCC SU profile.
 ///
 /// This intentionally does not expose an unchecked integer. The pinned
-/// `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` selects exactly descriptor
-/// rates `0x10`, `0x11`, and `0x13` for BPSK, QPSK, and 16-QAM DCM. Its
-/// RU242 DCM table additionally contains MCS4, but that requires the
-/// still-unowned LDPC profile and therefore must not be combined with the
-/// current `HE_SU_A2_CONTROL_BCC` image.
+/// `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` selects exactly the internal
+/// rate-control fallback codes `0x10`, `0x11`, and `0x13` for BPSK, QPSK,
+/// and 16-QAM DCM. Its RU242 DCM table additionally contains MCS4, but that
+/// requires the still-unowned LDPC profile and therefore must not be combined
+/// with the current `HE_SU_A2_CONTROL_BCC` image.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HeBccDcmMcs {
@@ -639,12 +657,33 @@ impl HeRate {
 
     /// Canonical S31 HE descriptor rate code.
     ///
-    /// Both complete `mac_tx_set_hesig` code ranges encode MCS0..9, but GI/LTF
-    /// is carried independently in HE-SIG-A1. The open formatter therefore
-    /// uses the live-qualified range 26..35; MCS9 is exactly descriptor rate
-    /// 35 in `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`.
+    /// Explicit DCM and non-DCM HE submissions both use `0x1a + MCS`; DCM is
+    /// carried independently in descriptor-state bit 15 and HE-SIG-A1 bit 7.
+    /// `HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29` qualified descriptor rate
+    /// `0x1a`, PLCP1 `0x0401a000`, and HE-SIG-A1 `0xfc204087`.
+    ///
+    /// Do not confuse this with [`Self::rate_control_dcm_fallback_code`].
+    /// Complete `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` can rewrite the
+    /// descriptor to a separate `0x10 + MCS` domain when its internal
+    /// rate-control state requests a DCM fallback.
     pub const fn code(self) -> u8 {
-        26 + self.mcs.index()
+        0x1a + self.mcs.index()
+    }
+
+    /// Internal vendor rate-control fallback code for an explicit DCM rate.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate`. That
+    /// function first requires descriptor-state word bit 21, selects the
+    /// peer-bounded DCM constellation from bits 1:0, then stores exactly
+    /// `0x10`, `0x11`, or `0x13` and sets descriptor byte `+0x31` bit 7.
+    /// This is exposed for a future owned rate-control port; the direct queue
+    /// formatter must continue to use [`Self::code`].
+    pub const fn rate_control_dcm_fallback_code(self) -> Option<u8> {
+        if self.dcm {
+            Some(0x10 + self.mcs.index())
+        } else {
+            None
+        }
     }
 
     /// HE and HT use the same MCS-indexed calibrated power pair.
@@ -872,6 +911,95 @@ impl HtTxConfig {
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
+    }
+}
+
+/// Inputs for one HE20 SU S-MPDU PPDU.
+///
+/// An HE single MPDU is not the direct non-aggregate HT layout. IEEE 802.11ax
+/// carries it in an S-MPDU container, and the pinned PP implementation adds a
+/// delimiter around an MPDU length which already includes the FCS before
+/// publishing APEP length.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeSmpduTxConfig {
+    pub rate: HeRate,
+    pub bss_color: u8,
+    pub spatial_reuse: u8,
+    /// Encoded 802.11 MPDU bytes before the hardware-generated FCS.
+    pub mpdu_length: u16,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub timeout: u16,
+    pub interface: u8,
+    pub scheduler_priority: u8,
+    pub pti: u8,
+    pub pti_count: u16,
+    pub hardware_key_selector: u8,
+    pub protection_spacing: u16,
+}
+
+impl HeSmpduTxConfig {
+    /// Construct the exact bounded vendor S-MPDU profile.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[pp_he.o]::
+    /// ppCalTxHESMPDULength` (`0x58` bytes) first rounds the descriptor
+    /// payload length to four, calls `ppCalDeliNum` and
+    /// `ppCalSubFrameLength`, then sets descriptor byte `+0x32` bit two,
+    /// frame byte `+0x26` to one and descriptor byte `+0x2a` to one.
+    /// Complete `ppCalSubFrameLength` (`0x3e` bytes) adds the mandatory
+    /// four-byte delimiter. The live vendor raw oracle independently captured
+    /// metadata word `0x0100_001c`: payload length 28 is the 24-byte encoded
+    /// MPDU plus hardware FCS, metadata bit 24 is set, and metadata byte seven
+    /// (the optional extra four-byte term) is zero. Therefore APEP is
+    /// `round_up(mpdu + FCS, 4) + delimiter`, equivalent to
+    /// `round_up(mpdu, 4) + 8`.
+    pub const fn new(rate: HeRate, bss_color: u8, mpdu_length: u16) -> Option<Self> {
+        if bss_color > 0x3f || mpdu_length == 0 || mpdu_length > 0x3ff7 {
+            return None;
+        }
+        Some(Self {
+            rate,
+            bss_color,
+            spatial_reuse: 0,
+            mpdu_length,
+            data_power_primary: 0,
+            data_power_alternate: 0,
+            rts_power_primary: 0,
+            rts_power_alternate: 0,
+            aifsn: 2,
+            contention_window: 0,
+            timeout: 0x03ff,
+            interface: 0,
+            scheduler_priority: 1,
+            pti: 1,
+            pti_count: 1,
+            hardware_key_selector: 0,
+            protection_spacing: 0x31,
+        })
+    }
+
+    /// Complete HE S-MPDU APEP length written to HE-SIG-A2.
+    pub const fn apep_length(self) -> u16 {
+        ((self.mpdu_length + 3) & !3) + 8
+    }
+
+    const fn valid(self) -> bool {
+        self.bss_color <= 0x3f
+            && self.spatial_reuse <= 0x0f
+            && self.mpdu_length != 0
+            && self.mpdu_length <= 0x3ff7
+            && self.aifsn <= 0x0f
+            && self.contention_window <= 0x03ff
+            && self.timeout <= 0x0fff
+            && self.interface <= 3
+            && self.scheduler_priority <= 0x0f
+            && self.pti <= 0x0f
+            && self.pti_count <= 0x0fff
+            && self.protection_spacing <= 0x03ff
     }
 }
 
@@ -1126,6 +1254,55 @@ pub struct HeQ0Image {
     pub protection_spacing: u16,
 }
 
+const fn he_su_signal_a1(rate: HeRate, bss_color: u8, spatial_reuse: u8) -> u32 {
+    0xfc00_4007
+        | ((rate.mcs.index() as u32) << 3)
+        | ((rate.is_dcm() as u32) << 7)
+        | ((bss_color as u32) << 8)
+        | ((spatial_reuse as u32) << 15)
+        | ((rate.guard_interval_and_ltf.encoding() as u32) << 21)
+}
+
+/// Build the instruction-exact bounded HE20 SU S-MPDU queue image.
+///
+/// SOURCE: complete `_oracles/libpp.a[pp_he.o]::ppCalTxHESMPDULength`,
+/// complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
+/// mac_tx_set_plcp1,mac_tx_set_hesig,mac_tx_set_len,
+/// hal_mac_tx_set_ppdu}`, and
+/// `HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29`.
+pub const fn he_smpdu_q0_image(
+    dma_head_address: u32,
+    config: HeSmpduTxConfig,
+) -> Option<HeQ0Image> {
+    if !descriptor_address_valid(dma_head_address) || !config.valid() {
+        return None;
+    }
+    let rate = config.rate.code();
+    let rts_rate = config.rate.vendor_rts_rate();
+    Some(HeQ0Image {
+        // The live single-MPDU descriptor flags 0xc040_7008 select basic
+        // PLCP0 format one. HE A-MPDU's separate formatter selects format
+        // five and must not be reused here.
+        plcp0: basic_plcp0_word(dma_head_address as usize, HE_SMPDU_DESCRIPTOR_FLAGS),
+        plcp1: he_plcp1_word(rate, config.hardware_key_selector),
+        he_signal_a1: he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse),
+        // S-MPDU leaves the A-MPDU selector at bit 28 clear.
+        he_signal_a2_length: (HE_SU_A2_CONTROL_BCC as u32) | ((config.apep_length() as u32) << 11),
+        power: config.data_power_primary as u32
+            | ((config.data_power_alternate as u32) << 8)
+            | ((config.rts_power_primary as u32) << 16)
+            | ((config.rts_power_alternate as u32) << 24),
+        length_control: basic_length_control_word(
+            rts_rate.code(),
+            HE_SMPDU_ENTRY_FLAGS,
+            config.hardware_key_selector as u32,
+        ),
+        descriptor_count_a: 1,
+        descriptor_count_b: 1,
+        protection_spacing: config.protection_spacing,
+    })
+}
+
 /// Build the instruction-exact basic HT queue image without touching MMIO.
 ///
 /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
@@ -1250,12 +1427,7 @@ pub const fn he_ampdu_q0_image(
     }
     let rate = config.rate.code();
     let rts_rate = config.rate.vendor_rts_rate();
-    let he_signal_a1 = 0xfc00_4007
-        | ((config.rate.mcs.index() as u32) << 3)
-        | ((config.rate.is_dcm() as u32) << 7)
-        | ((config.bss_color as u32) << 8)
-        | ((config.spatial_reuse as u32) << 15)
-        | ((config.rate.guard_interval_and_ltf.encoding() as u32) << 21);
+    let he_signal_a1 = he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse);
     Some(HeQ0Image {
         plcp0: he_ampdu_plcp0_word(dma_head_address as usize),
         plcp1: he_plcp1_word(rate, config.hardware_key_selector),

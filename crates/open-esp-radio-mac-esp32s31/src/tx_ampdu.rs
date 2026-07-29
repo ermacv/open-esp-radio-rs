@@ -15,8 +15,8 @@ use open_esp_radio_pac_esp32s31::{
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
     tx::{
-        decode_tx_completion, HeAmpduTxConfig, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue,
-        TxCompletion, TxCookie, TxHardware, TxSlotState,
+        decode_tx_completion, HeAmpduTxConfig, HeSmpduTxConfig, HtAmpduTxConfig,
+        HtProtectionSpacing, LegacyTxQueue, TxCompletion, TxCookie, TxHardware, TxSlotState,
     },
 };
 
@@ -29,6 +29,7 @@ pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
 pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
+const HE_SMPDU_VENDOR_DMA_CAPACITY: u32 = 64;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
 const BASIC_HT_RATE_MIN: u8 = 16;
 const BASIC_HT_RATE_MAX: u8 = 35;
@@ -839,6 +840,93 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         Ok(())
     }
 
+    /// Publish and start one HE20 SU S-MPDU.
+    ///
+    /// This deliberately has a separate entry point from [`Self::submit_he`].
+    /// The PP blob gives HE single MPDU its own DMA-metadata and HE-SIG-A2
+    /// layout, even though both paths reuse the same pinned descriptor and
+    /// eight-byte private metadata storage.
+    pub fn submit_he_smpdu<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HeSmpduTxConfig,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
+        // through completion and only scalar ownership fields are mutated.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if storage.count != 1
+            || storage.frame_lengths[0] != config.mpdu_length
+            || storage.hardware_mic_lengths[0] != 0
+        {
+            return Err(HtAmpduTxError::RegisterImageMismatch);
+        }
+
+        let descriptor_address = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        let buffer_address = storage.buffers[0].0.get().addr() as u32;
+        // HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29 captured the complete
+        // vendor DMA word c0090040: capacity 64 and used length 36. Preserve
+        // that bounded single-MPDU allocation geometry even though the
+        // statically owned Rust buffer is larger.
+        let capacity =
+            u32::from(storage.descriptor_capacities[0]).max(HE_SMPDU_VENDOR_DMA_CAPACITY);
+        let transfer_length = (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[0]);
+        if !descriptor_address_valid(descriptor_address)
+            || !dma_range_valid(buffer_address, capacity)
+        {
+            return Err(HtAmpduTxError::InvalidGeometry);
+        }
+
+        // `commit_frame` already wrote MPDU+FCS length and reserved the four
+        // trailing hardware-FCS bytes. The live vendor S-MPDU buffer started
+        // with 0x0100_001c for a 24-byte frame: retain length 28, set metadata
+        // bit 24, keep empty delimiters and byte-seven's optional term zero.
+        let buffer = unsafe { &mut *storage.buffers[0].0.get() };
+        let metadata_length = u32::from(storage.psdu_lengths[0]);
+        buffer[..4].copy_from_slice(&(metadata_length | 0x0100_0000).to_le_bytes());
+        buffer[4] = 0;
+        buffer[7] = 0;
+
+        let word0 =
+            tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+        storage.descriptors[0].publish(word0, buffer_address, 0);
+
+        let image = crate::tx::he_smpdu_q0_image(descriptor_address, config)
+            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let program = MacHeTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            he_signal_a1: image.he_signal_a1,
+            he_signal_a2_length: image.he_signal_a2_length,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        let queue_index = queue.index();
+        if !hardware.prepare_he_tx(queue_index, program) {
+            return Err(HtAmpduTxError::QueueActive);
+        }
+        storage.queue = queue;
+        storage.aggregate_length = config.apep_length();
+        storage.detached = false;
+        storage.state = TxSlotState::HardwareOwned;
+        hardware.start_he_tx(queue_index, image.plcp0);
+        Ok(())
+    }
+
     /// Sample BlockAck and transfer a completed aggregate back to software.
     pub fn acknowledge_completion<H: HtAmpduHardware>(
         self: Pin<&mut Self>,
@@ -862,6 +950,28 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 registers.block_ack_bitmap_high,
             ),
         }))
+    }
+
+    /// Transfer one HE S-MPDU ACK completion back to software.
+    ///
+    /// Unlike A-MPDU, this path intentionally does not sample BlockAck words.
+    /// Its success criterion is the ordinary per-queue ACK status, matching
+    /// the vendor raw-TX completion callback.
+    pub fn acknowledge_he_smpdu_completion<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+    ) -> Result<Option<TxCompletion>, HtAmpduTxError> {
+        // SAFETY: no pinned allocation is moved.
+        let storage = unsafe { self.get_unchecked_mut() };
+        let Some(registers) = hardware.take_tx_completion(storage.queue.index()) else {
+            return Ok(None);
+        };
+        if storage.state != TxSlotState::HardwareOwned || storage.count != 1 {
+            storage.state = TxSlotState::ResetRequired;
+            return Err(HtAmpduTxError::Stale);
+        }
+        storage.state = TxSlotState::Completed;
+        Ok(Some(decode_tx_completion(storage.active, registers)))
     }
 
     pub fn begin_timeout_abort<H: HtAmpduHardware>(
@@ -2372,7 +2482,17 @@ impl TxBlockAckSession {
     }
 
     pub fn on_response(&mut self, body: &[u8]) -> Result<TxBlockAckResponse, TxBlockAckError> {
-        if body.len() != ADDBA_ACTION_BODY_LEN
+        // The nine-byte ADDBA response is a fixed prefix, not the complete
+        // action-body length. An HE peer may append an ADDBA Extension IE
+        // (element 159). Linux `net/mac80211/agg-rx.c`::
+        // `ieee80211_send_addba_resp` does exactly that after the fixed
+        // response fields. The controlled AX211 HE20 HIL reached
+        // `parse_block_ack_action(AddbaResponse)` and then failed only this
+        // former exact-length check. We deliberately consume only the fixed
+        // prefix here: the negotiated low ten-bit window remains bounded by
+        // `self.config.window` and `TX_BLOCK_ACK_MAX_WINDOW`; a future owner
+        // of extended (>1024) windows must parse the IE separately.
+        if body.len() < ADDBA_ACTION_BODY_LEN
             || body[0] != BLOCK_ACK_CATEGORY
             || body[1] != ADDBA_RESPONSE_ACTION
         {
@@ -2927,6 +3047,36 @@ mod tests {
             })
         );
         assert!(!session.on_alarm(request.alarm));
+    }
+
+    #[test]
+    fn matching_he_response_accepts_an_addba_extension_ie() {
+        let mut session = TxBlockAckSession::new(CONFIG).unwrap();
+        let request = session.begin(0x123, 0).unwrap();
+        let response = [
+            3,
+            1,
+            request.dialog_token,
+            0,
+            0,
+            0x1f,
+            0x08,
+            0,
+            0,
+            159,
+            1,
+            0,
+        ];
+        assert_eq!(
+            session.on_response(&response),
+            Ok(TxBlockAckResponse::Operational(OperationalTxBlockAck {
+                tid: 7,
+                window: 32,
+                timeout_tu: 0,
+                starting_sequence: 0x123,
+                amsdu: true,
+            }))
+        );
     }
 
     #[test]

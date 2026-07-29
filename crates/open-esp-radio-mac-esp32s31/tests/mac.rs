@@ -37,10 +37,11 @@ use open_esp_radio_mac_esp32s31::{
         RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
-        he_ampdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image, HeAmpduTxConfig,
-        HeBccDcmMcs, HeMcs, HeRate, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
-        HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
-        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
+        HeAmpduTxConfig, HeBccDcmMcs, HeMcs, HeRate, HeSmpduTxConfig, HtAmpduTxConfig,
+        HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig,
+        LegacyRate, LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot,
+        TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2149,6 +2150,28 @@ fn he20_mcs9_image_matches_the_synchronous_vendor_oracle() {
 }
 
 #[test]
+fn he20_dcm_smpdu_image_matches_the_synchronous_vendor_oracle() {
+    let rate = HeRate::bcc_dcm(HeBccDcmMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    let mut config = HeSmpduTxConfig::new(rate, 0, 24).unwrap();
+    config.data_power_primary = 5;
+    config.data_power_alternate = 5;
+    config.rts_power_primary = 5;
+    config.rts_power_alternate = 5;
+
+    let image = he_smpdu_q0_image(0x2f03_1638, config).unwrap();
+    assert_eq!(config.apep_length(), 32);
+    assert_eq!(image.plcp0, 0x0163_1638);
+    assert_eq!(image.plcp1, 0x0401_a000);
+    assert_eq!(image.he_signal_a1, 0xfc20_4087);
+    assert_eq!(image.he_signal_a2_length, 0x0001_0105);
+    assert_eq!(image.power, 0x0505_0505);
+    assert_eq!(image.length_control, 0x0040_02c4);
+    assert_eq!(image.descriptor_count_a, 1);
+    assert_eq!(image.descriptor_count_b, 1);
+    assert_eq!(image.protection_spacing, 0x31);
+}
+
+#[test]
 fn he20_formatter_covers_mcs0_through_mcs9_and_every_gi_ltf() {
     for mcs in 0..=9 {
         let mcs = HeMcs::from_index(mcs).unwrap();
@@ -2183,6 +2206,12 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
         let rate = HeRate::bcc_dcm(mcs, HeGuardIntervalAndLtf::TwoLtf800Ns);
         assert!(rate.is_dcm());
         assert_eq!(rate.mcs().index(), expected_index);
+        assert_eq!(rate.code(), 0x1a + expected_index);
+        assert_eq!(
+            rate.rate_control_dcm_fallback_code(),
+            Some(0x10 + expected_index)
+        );
+        assert_eq!(rate.power_lookup_code(), 0x10 + expected_index);
         assert_eq!(rate.nominal_kbps(), expected_kbps);
         assert_eq!(
             rate.dcm_minimum_ampdu_subframe_bytes(8),
@@ -2190,6 +2219,7 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
         );
         let config = HeAmpduTxConfig::new(rate, 27, 312, 2).unwrap();
         let image = he_ampdu_q0_image(0x2f00_5000, config).unwrap();
+        assert_eq!((image.plcp1 >> 12) & 0x1f, u32::from(0x1a + expected_index));
         assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(expected_index));
         assert_ne!(image.he_signal_a1 & (1 << 7), 0);
         // DCM does not change the bounded BCC coding/STBC A2 control image.

@@ -71,9 +71,19 @@ impl RadioRegisters {
                 .bits((config.operation_parameters & 0x07) as u8)
         });
 
-        let repeated = repeated_packet_padding(config.packet_padding_eight_us);
-        init.he_packet_padding()
-            .modify(|_, w| unsafe { w.repeated_duration().bits(repeated) });
+        let duration = (config.packet_padding_eight_us << 3) & 0x1f;
+        init.he_packet_padding().modify(|_, w| unsafe {
+            w.bpsk_duration()
+                .bits(duration)
+                .qpsk_duration()
+                .bits(duration)
+                .qam16_duration()
+                .bits(duration)
+                .qam64_duration()
+                .bits(duration)
+                .qam256_duration()
+                .bits(duration)
+        });
 
         let queues = &self.peripherals.wifi_mac_tx_queue_vector;
         for physical in 0..4 {
@@ -82,8 +92,10 @@ impl RadioRegisters {
                 .modify(|_, w| w.he_rts_disabled().set_bit());
         }
 
-        init.ersu_and_vht_control()
-            .modify(|_, w| w.ersu_disabled().bit(!config.extended_range_single_user));
+        init.ersu_and_vht_control().modify(|_, w| {
+            w.auto_ack_allow_ersu()
+                .bit(!config.extended_range_single_user)
+        });
         if !config.extended_range_single_user {
             // The complete disabled leaf writes all four legacy ACK-rate
             // bytes to 0x80.

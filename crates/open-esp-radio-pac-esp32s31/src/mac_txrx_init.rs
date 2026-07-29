@@ -77,7 +77,7 @@ impl RadioRegisters {
         // bounds follow from the checked vendor slot range above.
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.middle_delay_unknown().bits(0x3b9) });
+            .modify(|_, w| unsafe { w.rx_cck_delay().bits(0x3b9) });
         callbacks
             .delay_primary()
             .modify(|_, w| unsafe { w.low_delay_unknown().bits(0xf5 + u16::from(delay_slot)) });
@@ -89,23 +89,23 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.high_delay_unknown().bits(0xfa + u16::from(delay_slot)) });
         callbacks
             .delay_secondary()
-            .modify(|_, w| unsafe { w.middle_delay_unknown().bits(0x276) });
+            .modify(|_, w| unsafe { w.tx_cck_delay().bits(0x276) });
 
         // SAFETY: each callback performs a complete full-word store; no reset
         // value or unread field is used to construct these exact blob images.
         unsafe {
             callbacks
-                .ack_rate_primary()
-                .write_with_zero(|w| w.image_unknown().bits(0x0009_0a0b));
+                .ack_rate_table()
+                .write_with_zero(|w| w.bits(0x0009_0a0b));
             callbacks
-                .ack_rate_secondary()
-                .write_with_zero(|w| w.image_unknown().bits(0x0009_0a0b));
+                .cts_rate_table()
+                .write_with_zero(|w| w.bits(0x0009_0a0b));
             callbacks
-                .ack_policy_primary()
-                .write_with_zero(|w| w.image_unknown().bits(0x0005_0100));
+                .ack_cck_rate_table()
+                .write_with_zero(|w| w.bits(0x0005_0100));
             callbacks
-                .ack_policy_secondary()
-                .write_with_zero(|w| w.image_unknown().bits(0x0005_0100));
+                .cts_cck_rate_table()
+                .write_with_zero(|w| w.bits(0x0005_0100));
         }
         callbacks
             .bb_rx_hang_control()

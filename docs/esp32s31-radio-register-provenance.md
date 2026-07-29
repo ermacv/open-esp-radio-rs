@@ -1294,6 +1294,40 @@ timeout 60 seconds. Four following 30-profile HE rounds remained clean. These
 are cumulative diagnostic values, not packet-loss ratios; later performance
 experiments must use before/after deltas around the measured workload.
 
+SVD v3.29 completes the field-level `dbg_read_rx_misc` audit. It names all
+twenty low RX-filter policy bits, the interface BSSID AID/MMSS/SoftAP fields,
+the HE BSS-color and multi-BSSID controls, WDEVAXOPTIONS1/2, five nominal
+packet-padding lanes, RX power-save timing, three custom receive-type/ACK
+profiles, BSSID-list position and beamforming timing/control. Duplicate
+descriptions of `0x20104c80` were removed in favor of one canonical
+WDEVAXOPTIONS2 register.
+
+The same debug-symbol sweep found two previously under-described areas.
+Complete `dbg_read_wdevdelay` names `0x20104c54[20:10]` as
+`WDEV_TXCCK_DELAY` and `0x20104c58[20:10]` as `WDEV_RXCCK_DELAY`. Complete
+`dbg_read_ack_rate` and `dbg_read_cts_rate` prove that the response-rate area
+is six consecutive words, not four anonymous images:
+`ACK_TAB0`, `ACK_TAB1`, `ACK_SCCKTAB`, `CTS_TAB0`, `CTS_TAB1` and
+`CTS_SCCKTAB` at `0x2010444c..0x20104460`. Their OFDM, CCK and SCCK byte lanes
+now have generated field names while the cold setter retains its original
+four full-word writes.
+
+The PAC exposes one allocation-free `he_receive_configuration_snapshot` for
+the recovered HE BSSID, UL-MU disable, NFRP, TRS, packet-padding, RX
+power-save, custom-type and beamforming fields. The complete inventory and
+MMIO-versus-descriptor classification of the remaining debug functions is in
+`docs/esp32s31-debug-oracles.md`.
+
+`HIL_OPEN_HE_RX_CONFIGURATION_BASELINE_2026_07_29` exercised that snapshot
+after HE association, WPA2, TID0 AddBA and a clean 30-profile matrix round.
+The active ordinary-AP image had MPDU-length offset 380, NFRP threshold 8,
+hardware TXOP, BSR update, TB stop, TRS, UL-MU and UL-MU data enabled, and HE
+response ACK enabled. HE beamforming was enabled with BFRP time 16, NDP time
+113 and hardware-sequence selector 5. RX power-save itself and all three
+custom receive types were disabled. Trigger/TB and all hang/panic counters
+remained zero. This qualifies the read path and idle configuration, not an
+actual OFDMA or beamforming exchange.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

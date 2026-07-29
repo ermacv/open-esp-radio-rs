@@ -21,16 +21,16 @@ impl RadioRegisters {
         let control = filter.policy(3);
         // Every line below is a separate fresh-read RMW in the complete
         // hal_sniffer_enable leaf.
-        control.modify(|_, w| w.sniffer_enable().set_bit());
-        control.modify(|_, w| w.low_unknown().clear_bit());
-        control.modify(|_, w| w.ubssid_check_low_unknown().clear_bit());
-        control.modify(|_, w| w.policy_bit_2_unknown().clear_bit());
-        control.modify(|_, w| w.policy_bit_3_unknown().clear_bit());
-        control.modify(|_, w| w.ubssid_check_high_unknown().clear_bit());
+        control.modify(|_, w| w.auto_ack_disable().set_bit());
+        control.modify(|_, w| w.dump_unicast_check_da().clear_bit());
+        control.modify(|_, w| w.dump_unicast_check_bssid().clear_bit());
+        control.modify(|_, w| w.dump_broadcast_check_bssid().clear_bit());
+        control.modify(|_, w| w.abort_group().clear_bit());
+        control.modify(|_, w| w.receive_unicast_check_bssid().clear_bit());
         control.modify(|_, w| {
-            w.policy_bit_7_unknown()
+            w.receive_broadcast_check_bssid()
                 .clear_bit()
-                .policy_bit_9_unknown()
+                .receive_unicast_check_da()
                 .clear_bit()
         });
 

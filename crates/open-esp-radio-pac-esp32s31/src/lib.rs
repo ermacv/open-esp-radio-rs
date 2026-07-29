@@ -42,9 +42,10 @@ pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
 pub use mac_he_ofdma::{
-    MacHeBufferStatusSnapshot, MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot,
-    MacHeQueueSchedulingSnapshot, MacHeTid, MacHeTriggerQueueConfiguration,
-    MacHeTriggerRxDiagnostics,
+    MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot, MacHeCustomReceiveType,
+    MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot,
+    MacHeReceiveConfigurationSnapshot, MacHeRxPowerSaveSnapshot, MacHeTid,
+    MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
@@ -642,7 +643,6 @@ mod tests {
         assert_eq!(init.rx_field_control().as_ptr() as usize, 0x2010_4048);
         assert_eq!(init.bf_report_rate().as_ptr() as usize, 0x2010_4464);
         assert_eq!(init.bf_timing_control().as_ptr() as usize, 0x2010_4c78);
-        assert_eq!(init.parent_control_edges().as_ptr() as usize, 0x2010_4c80);
         assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
         assert_eq!(init.bf_sync_status_unknown().as_ptr() as usize, 0x2010_7128);
     }
@@ -735,6 +735,37 @@ mod tests {
     }
 
     #[test]
+    fn generated_mac_rx_misc_matches_complete_blob_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_power_save
+                .control()
+                .as_ptr() as usize,
+            0x2010_40a0
+        );
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_bssid_list
+                .control()
+                .as_ptr() as usize,
+            0x2010_4110
+        );
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_custom_type
+                .control()
+                .as_ptr() as usize,
+            0x2010_4ca4
+        );
+    }
+
+    #[test]
     fn generated_mac_he_suffix_matches_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.
@@ -746,6 +777,7 @@ mod tests {
         assert_eq!(init.common_power_control().as_ptr() as usize, 0x2010_4400);
         assert_eq!(init.ersu_ack_rate().as_ptr() as usize, 0x2010_4404);
         assert_eq!(init.ersu_and_vht_control().as_ptr() as usize, 0x2010_4c7c);
+        assert_eq!(init.he_default_control().as_ptr() as usize, 0x2010_4c80);
         for physical in 0..8 {
             assert_eq!(
                 init.queue_control(physical).as_ptr() as usize,
@@ -825,18 +857,23 @@ mod tests {
         // performs no volatile access.
         let registers = unsafe { RadioRegisters::steal() };
         let callbacks = &registers.peripherals.wifi_mac_txrx_callbacks;
-        assert_eq!(callbacks.ack_rate_primary().as_ptr() as usize, 0x2010_444c);
+        assert_eq!(callbacks.ack_rate_table().as_ptr() as usize, 0x2010_444c);
         assert_eq!(
-            callbacks.ack_policy_primary().as_ptr() as usize,
+            callbacks.ack_cck_rate_table().as_ptr() as usize,
             0x2010_4450
         );
         assert_eq!(
-            callbacks.ack_rate_secondary().as_ptr() as usize,
-            0x2010_4458
+            callbacks.ack_scck_rate_table().as_ptr() as usize,
+            0x2010_4454
+        );
+        assert_eq!(callbacks.cts_rate_table().as_ptr() as usize, 0x2010_4458);
+        assert_eq!(
+            callbacks.cts_cck_rate_table().as_ptr() as usize,
+            0x2010_445c
         );
         assert_eq!(
-            callbacks.ack_policy_secondary().as_ptr() as usize,
-            0x2010_445c
+            callbacks.cts_scck_rate_table().as_ptr() as usize,
+            0x2010_4460
         );
         assert_eq!(
             callbacks.bb_rx_hang_control().as_ptr() as usize,

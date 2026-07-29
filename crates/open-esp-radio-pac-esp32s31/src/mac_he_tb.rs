@@ -59,8 +59,8 @@ impl RadioRegisters {
     ) {
         let control = self
             .peripherals
-            .wifi_mac_he_init_prefix
-            .parent_control_edges();
+            .wifi_mac_he_init_suffix
+            .he_default_control();
         control.modify(|_, w| w.ul_mu_disable().bit(ul_mu_disabled));
         control.modify(|_, w| w.ul_mu_data_disable().bit(ul_mu_data_disabled));
     }

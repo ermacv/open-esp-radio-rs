@@ -17,39 +17,44 @@ impl RadioRegisters {
             let filter = filters.policy(queue);
 
             filter.modify(|_, w| {
-                w.policy_bit_7_unknown()
+                w.receive_broadcast_check_bssid()
                     .set_bit()
-                    .policy_bit_9_unknown()
+                    .receive_unicast_check_da()
                     .set_bit()
             });
-            filter.modify(|_, w| w.mode_policy_unknown().clear_bit());
-            filter.modify(|_, w| w.low_unknown().set_bit().policy_bit_2_unknown().set_bit());
+            filter.modify(|_, w| w.receive_management_not_check_bssid().clear_bit());
             filter.modify(|_, w| {
-                w.cold_clear_bit_13_unknown()
+                w.dump_unicast_check_da()
+                    .set_bit()
+                    .dump_broadcast_check_bssid()
+                    .set_bit()
+            });
+            filter.modify(|_, w| {
+                w.check_bssid()
                     .clear_bit()
-                    .control_policy_unknown()
+                    .dump_management_not_check_bssid()
                     .clear_bit()
             });
 
             if queue < 3 {
                 let bssid = bssids.bssid_high(queue);
                 filter.modify(|_, w| {
-                    w.mode_policy_unknown()
+                    w.receive_management_not_check_bssid()
                         .clear_bit()
-                        .management_policy_unknown()
+                        .pass_beacon()
                         .clear_bit()
                 });
                 if queue == 1 {
-                    bssid.modify(|_, w| w.policy_bit_30_unknown().set_bit());
+                    bssid.modify(|_, w| w.interface_is_soft_ap().set_bit());
                 } else {
                     bssid.modify(|_, w| {
-                        w.policy_bit_30_unknown()
+                        w.interface_is_soft_ap()
                             .clear_bit()
                             .address_check_enable()
                             .clear_bit()
                     });
                 }
-                filter.modify(|_, w| w.control_policy_unknown().clear_bit());
+                filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
                 bssid.modify(|_, w| w.address_check_enable().clear_bit());
                 // SAFETY: zero is the complete low-half replacement performed
                 // by the mode-zero cold leaf; high policy bits are preserved.
@@ -101,13 +106,13 @@ impl RadioRegisters {
         // `ic_set_rx_policy(0, mode=0, control=1, management=1)`.
         // Keep every complete-leaf fresh-read RMW edge separate.
         filter.modify(|_, w| {
-            w.mode_policy_unknown()
+            w.receive_management_not_check_bssid()
                 .clear_bit()
-                .management_policy_unknown()
+                .pass_beacon()
                 .clear_bit()
         });
-        bssid.modify(|_, w| w.policy_bit_30_unknown().clear_bit());
-        filter.modify(|_, w| w.control_policy_unknown().clear_bit());
+        bssid.modify(|_, w| w.interface_is_soft_ap().clear_bit());
+        filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
         bssid.modify(|_, w| w.address_check_enable().set_bit());
         interface.modify(|_, w| w.rx_policy_enable().set_bit());
 
@@ -124,8 +129,8 @@ impl RadioRegisters {
         // `.L262`; `_oracles/libpp.a[if_hwctrl.o]`
         // `ic_set_rx_policy_ubssid_check`; live `wifi-sta-auth-probe` HIL on
         // 2026-07-28.
-        filter.modify(|_, w| w.ubssid_check_high_unknown().set_bit());
-        filter.modify(|_, w| w.ubssid_check_low_unknown().set_bit());
+        filter.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
+        filter.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
         device_fence();
     }
 }

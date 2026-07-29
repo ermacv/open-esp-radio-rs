@@ -115,6 +115,74 @@ pub struct MacHeQueueSchedulingSnapshot {
     pub mu_edca_timers: [MacHeMuEdcaTimerSnapshot; 4],
 }
 
+/// Receive power-save fields decoded by `dbg_read_rx_misc`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeRxPowerSaveSnapshot {
+    pub threshold: u16,
+    pub enabled: bool,
+    pub stop_rf: bool,
+    pub ready: bool,
+    pub front_end_frequency_hop_time: u8,
+    pub phy_signal_delay: u8,
+    pub intra_bss_color_check_enabled: bool,
+    pub intra_ppdu_enabled: bool,
+    pub vht_txop_address_check_enabled: bool,
+    pub vht_txop_enabled: bool,
+}
+
+/// One custom receive frame-type matcher and its automatic-ACK selector.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeCustomReceiveType {
+    pub enabled: bool,
+    pub value: u8,
+    pub ack_index: u8,
+}
+
+/// Receive beamforming state decoded from `WDEVBEAMFORMCONF`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeBeamformingConfigurationSnapshot {
+    pub memory_write_enabled: bool,
+    pub bfrp_time: u8,
+    pub ndp_time: u8,
+    pub hardware_sequence_select: u8,
+    pub hardware_sequence_enabled: bool,
+    pub he_beam_enabled: bool,
+    pub non_trigger_based_ru_select: bool,
+    pub ru_select: bool,
+}
+
+/// Allocation-free view of the HE/RX policy words decoded by
+/// `dbg_read_rx_misc`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeReceiveConfigurationSnapshot {
+    pub bss_color: u8,
+    pub bss_color_enabled: bool,
+    pub partial_bss_color_enabled: bool,
+    pub bssid_select: u8,
+    pub he_bssid_enabled: bool,
+    pub multi_bssid_enabled: bool,
+    pub multi_bssid_mask: u8,
+    pub co_hosted_enabled: bool,
+    pub default_packet_extension_duration: u8,
+    pub mpdu_length_offset: u16,
+    pub nfrp_buffer_threshold: u8,
+    pub hardware_txop_enabled: bool,
+    pub bsr_update_enabled: bool,
+    pub trigger_based_stop_option: bool,
+    pub trigger_response_scheduling_supported: bool,
+    pub uplink_mu_data_disabled: bool,
+    pub uplink_mu_disabled: bool,
+    pub trigger_based_no_resource_continue_tx: bool,
+    pub automatic_ack_allows_extended_range_su: bool,
+    pub he_response_ack: bool,
+    pub nominal_packet_padding_duration: [u8; 5],
+    pub rx_control_9_bssid_position: u8,
+    pub power_save: MacHeRxPowerSaveSnapshot,
+    /// Profiles are ordered exactly as CUSTOM_TYPE0, 1 and 2.
+    pub custom_receive_types: [MacHeCustomReceiveType; 3],
+    pub beamforming: MacHeBeamformingConfigurationSnapshot,
+}
+
 impl RadioRegisters {
     /// Select whether one TID participates in HE trigger-based BSR handling.
     ///
@@ -160,6 +228,106 @@ impl RadioRegisters {
             ac_empty_uses_software_tid: control.ac_empty_use_software_tid().bit(),
             basic_special_bsr_sequence: control.basic_special_bsr_sequence().bit(),
             tid_limit_zero_bsr_sequence: control.tid_limit_zero_bsr_sequence().bit(),
+        }
+    }
+
+    /// Read all HE/RX configuration fields recovered from `dbg_read_rx_misc`.
+    ///
+    /// This is a best-effort multi-register sample. It deliberately exposes
+    /// the blob's hardware polarity: `uplink_mu_disabled == true` means the
+    /// disable bit is set, while `hardware_txop_enabled == true` means the
+    /// blob's `HE_USE_SW_TXOP` bit is clear.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]`
+    /// `dbg_read_rx_misc`, size `0x42a`, and its function-local strings.
+    pub fn he_receive_configuration_snapshot(&self) -> MacHeReceiveConfigurationSnapshot {
+        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let multi = suffix.multi_bssid_control().read();
+        let options1 = suffix.ersu_and_vht_control().read();
+        let options2 = suffix.he_default_control().read();
+        let padding = suffix.he_packet_padding().read();
+        let power_save = self.peripherals.wifi_mac_rx_power_save.control().read();
+        let custom = self.peripherals.wifi_mac_rx_custom_type.control().read();
+        let beamforming = self
+            .peripherals
+            .wifi_mac_he_init_prefix
+            .bf_timing_control()
+            .read();
+
+        MacHeReceiveConfigurationSnapshot {
+            bss_color: multi.bss_color().bits(),
+            bss_color_enabled: multi.bss_color_enable().bit(),
+            partial_bss_color_enabled: multi.partial_bss_color_enable().bit(),
+            bssid_select: multi.bssid_select().bits(),
+            he_bssid_enabled: multi.he_bssid_enable().bit(),
+            multi_bssid_enabled: multi.multi_bssid_enable().bit(),
+            multi_bssid_mask: multi.multi_bssid_mask().bits(),
+            co_hosted_enabled: multi.co_hosted_enable().bit(),
+            default_packet_extension_duration: options2.default_pe_duration().bits(),
+            mpdu_length_offset: options2.mpdu_length_offset().bits(),
+            nfrp_buffer_threshold: options2.nfrp_buffer_threshold().bits(),
+            hardware_txop_enabled: !options2.he_use_software_txop().bit(),
+            bsr_update_enabled: options2.bsr_update_enable().bit(),
+            trigger_based_stop_option: options2.tb_stop_option().bit(),
+            trigger_response_scheduling_supported: options2.he_trs_support().bit(),
+            uplink_mu_data_disabled: options2.ul_mu_data_disable().bit(),
+            uplink_mu_disabled: options2.ul_mu_disable().bit(),
+            trigger_based_no_resource_continue_tx: options1.tb_no_resource_continue_tx().bit(),
+            automatic_ack_allows_extended_range_su: options1.auto_ack_allow_ersu().bit(),
+            he_response_ack: options1.he_response_ack().bit(),
+            nominal_packet_padding_duration: [
+                padding.bpsk_duration().bits(),
+                padding.qpsk_duration().bits(),
+                padding.qam16_duration().bits(),
+                padding.qam64_duration().bits(),
+                padding.qam256_duration().bits(),
+            ],
+            rx_control_9_bssid_position: self
+                .peripherals
+                .wifi_mac_rx_bssid_list
+                .control()
+                .read()
+                .rx_control_9_bssid_position()
+                .bits(),
+            power_save: MacHeRxPowerSaveSnapshot {
+                threshold: power_save.rx_ps_threshold().bits(),
+                enabled: power_save.rx_ps_enable().bit(),
+                stop_rf: power_save.stop_rf().bit(),
+                ready: power_save.ps_ready().bit(),
+                front_end_frequency_hop_time: power_save.fe_frequency_hop_time().bits(),
+                phy_signal_delay: power_save.rx_phy_signal_delay().bits(),
+                intra_bss_color_check_enabled: power_save.intra_ps_check_bss_color_enable().bit(),
+                intra_ppdu_enabled: power_save.intra_ppdu_ps_enable().bit(),
+                vht_txop_address_check_enabled: power_save.rx_vht_txop_ps_check_address().bit(),
+                vht_txop_enabled: power_save.rx_vht_txop_ps_enable().bit(),
+            },
+            custom_receive_types: [
+                MacHeCustomReceiveType {
+                    enabled: custom.type_0_enable().bit(),
+                    value: custom.type_0_value().bits(),
+                    ack_index: custom.type_0_ack_index().bits(),
+                },
+                MacHeCustomReceiveType {
+                    enabled: custom.type_1_enable().bit(),
+                    value: custom.type_1_value().bits(),
+                    ack_index: custom.type_1_ack_index().bits(),
+                },
+                MacHeCustomReceiveType {
+                    enabled: custom.type_2_enable().bit(),
+                    value: custom.type_2_value().bits(),
+                    ack_index: custom.type_2_ack_index().bits(),
+                },
+            ],
+            beamforming: MacHeBeamformingConfigurationSnapshot {
+                memory_write_enabled: beamforming.bf_memory_write_enable().bit(),
+                bfrp_time: beamforming.he_beam_bfrp_time().bits(),
+                ndp_time: beamforming.he_beam_ndp_time().bits(),
+                hardware_sequence_select: beamforming.he_beam_hw_sequence_select().bits(),
+                hardware_sequence_enabled: beamforming.he_beam_hw_sequence_enable().bit(),
+                he_beam_enabled: beamforming.he_beam_enable().bit(),
+                non_trigger_based_ru_select: beamforming.non_tb_beam_ru_select().bit(),
+                ru_select: beamforming.beam_ru_select().bit(),
+            },
         }
     }
 

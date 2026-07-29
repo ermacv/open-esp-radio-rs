@@ -11,10 +11,13 @@ impl RadioRegisters {
     /// It stops immediately before the parent calls `hal_init_tx_pwr`.
     pub fn initialize_mac_he_prefix(&mut self) {
         let init = &self.peripherals.wifi_mac_he_init_prefix;
+        let options = self
+            .peripherals
+            .wifi_mac_he_init_suffix
+            .he_default_control();
 
-        init.parent_control_edges()
-            .modify(|_, w| w.ul_mu_disable().clear_bit());
-        init.parent_control_edges().modify(|_, w| {
+        options.modify(|_, w| w.ul_mu_disable().clear_bit());
+        options.modify(|_, w| {
             w.ul_mu_disable()
                 .clear_bit()
                 .ul_mu_data_disable()

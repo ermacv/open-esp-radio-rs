@@ -60,6 +60,9 @@ are not used. The existing `Register32`/`Field32` surface is a temporary
 compatibility facade while HAL and MAC move to the native generated register
 API. The current unsafe/MMIO inventory and non-radio clock/power dependencies
 are recorded in [`PAC_AND_UNSAFE_AUDIT.md`](docs/PAC_AND_UNSAFE_AUDIT.md).
+The blob/ROM debug-symbol audit and its MMIO-versus-descriptor classification
+are recorded in
+[`esp32s31-debug-oracles.md`](docs/esp32s31-debug-oracles.md).
 
 The former upper MAC/STA/AP/security migration archive has been retired.
 Source-owned logic now lives in the buildable IEEE 802.11, MAC, WPA2, PAC and

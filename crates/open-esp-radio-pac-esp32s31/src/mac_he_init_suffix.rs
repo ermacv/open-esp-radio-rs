@@ -30,14 +30,15 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
     /// `hal_he_set_ersu` and
     /// `_oracles/libnet80211.a[ieee80211_he.o]`
-    /// `ieee80211_parse_heopr`. A true argument clears `ERSU_DISABLED`;
-    /// false sets it. The false leaf additionally rewrites ACK-rate bytes,
+    /// `ieee80211_parse_heopr`. A true argument clears the blob-named
+    /// `AUTO_ACK_ALLOW_ERSU` bit; false sets it. The counterintuitive polarity
+    /// is instruction-exact. The false leaf additionally rewrites ACK-rate bytes,
     /// already initialized by the complete cold HE suffix.
     pub fn set_he_extended_range_single_user(&mut self, enabled: bool) {
         self.peripherals
             .wifi_mac_he_init_suffix
             .ersu_and_vht_control()
-            .modify(|_, w| w.ersu_disabled().bit(!enabled));
+            .modify(|_, w| w.auto_ack_allow_ersu().bit(!enabled));
     }
 
     /// Publish the associated BSS's HE Default PE Duration.
@@ -71,7 +72,7 @@ impl RadioRegisters {
         // hal_he_set_ersu_ack_rate(0) child. The four bytes are deliberately
         // four fresh-read RMWs rather than one full-word write.
         init.ersu_and_vht_control()
-            .modify(|_, w| w.ersu_disabled().set_bit());
+            .modify(|_, w| w.auto_ack_allow_ersu().set_bit());
         let ack = init.ersu_ack_rate();
         ack.modify(|_, w| unsafe { w.rate_0().bits(0x80) });
         ack.modify(|_, w| unsafe { w.rate_1().bits(0x80) });
@@ -82,7 +83,7 @@ impl RadioRegisters {
         init.common_power_control()
             .modify(|_, w| unsafe { w.minimum_power_index().bits(0x35) });
         init.he_default_control()
-            .modify(|_, w| unsafe { w.image_unknown().bits(0x17c) });
+            .modify(|_, w| unsafe { w.mpdu_length_offset().bits(0x17c) });
 
         // The parent clears this complete 120-word aperture in ascending order.
         for word in 0..120 {
@@ -133,16 +134,19 @@ impl RadioRegisters {
 
         // Two parent RMWs precede the complete clear leaf.
         let multi = init.multi_bssid_control();
-        multi.modify(|_, w| w.enable().clear_bit());
-        multi.modify(|_, w| w.abort_translated_bss().clear_bit());
+        multi.modify(|_, w| w.multi_bssid_enable().clear_bit());
+        multi.modify(|_, w| w.co_hosted_enable().clear_bit());
 
         // Complete hal_he_clr_multi_bssid. Preserve its explicit guard read
         // and its repeated ENABLE update even though the parent just cleared
         // the same bit.
-        if multi.read().abort_translated_bss().bit_is_clear() {
-            multi.modify(|_, w| w.enable().clear_bit());
-            multi.modify(|r, w| unsafe { w.hosted_mask().bits(r.hosted_mask().bits() | 0xff) });
-            multi.modify(|_, w| unsafe { w.low_address_unknown().bits(0) });
+        if multi.read().co_hosted_enable().bit_is_clear() {
+            multi.modify(|_, w| w.multi_bssid_enable().clear_bit());
+            multi.modify(|r, w| unsafe {
+                w.multi_bssid_mask()
+                    .bits(r.multi_bssid_mask().bits() | 0xff)
+            });
+            multi.modify(|_, w| unsafe { w.bssid_byte_5().bits(0) });
             init.multi_bssid_high()
                 .modify(|_, w| unsafe { w.high_address_unknown().bits(0) });
             for physical in (0..8).rev() {
@@ -153,9 +157,12 @@ impl RadioRegisters {
 
         // Complete hal_he_set_co_hosted_bss(0, 0), including its independent
         // guard read and the repeated hosted-mask OR.
-        if multi.read().enable().bit_is_clear() {
-            multi.modify(|_, w| w.abort_translated_bss().clear_bit());
-            multi.modify(|r, w| unsafe { w.hosted_mask().bits(r.hosted_mask().bits() | 0xff) });
+        if multi.read().multi_bssid_enable().bit_is_clear() {
+            multi.modify(|_, w| w.co_hosted_enable().clear_bit());
+            multi.modify(|r, w| unsafe {
+                w.multi_bssid_mask()
+                    .bits(r.multi_bssid_mask().bits() | 0xff)
+            });
         }
     }
 }

@@ -734,6 +734,45 @@ impl HeRate {
         table[self.mcs.index() as usize]
     }
 
+    /// Maximum APEP bytes for the vendor's zero-TXOP HE SU policy.
+    ///
+    /// SOURCE: ROM rev0 `he_max_apep_length` at `0x2f84fd40`, complete
+    /// `_oracles/libpp.a[trc.o]::rx11AXRate2AMPDULimit`, and complete
+    /// `_oracles/libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength`.
+    ///
+    /// The ROM object contains three GI rows by ten MCS columns. The selector
+    /// maps both 0.8-us GI encodings to row zero. `ppCheckTxHEAMPDUlength`
+    /// consumes the selected value as a `u16` and halves it when descriptor
+    /// state bit 15 selects DCM. This limit is independent of the peer's
+    /// advertised maximum A-MPDU exponent; an owner must satisfy both.
+    ///
+    /// A nonzero EDCA TXOP limit uses the separately generated
+    /// `rx11AXRate2AMPDULimit_update` table and is deliberately not presented
+    /// as this zero-TXOP result.
+    pub const fn maximum_default_apep_bytes(self) -> u16 {
+        const GI_800: [u16; 10] = [
+            3_700, 7_400, 11_100, 14_800, 22_500, 30_000, 33_600, 37_600, 45_000, 50_000,
+        ];
+        const GI_1600: [u16; 10] = [
+            3_500, 7_000, 10_500, 14_000, 21_000, 28_200, 31_500, 35_200, 42_300, 47_000,
+        ];
+        const GI_3200: [u16; 10] = [
+            3_200, 6_400, 9_600, 12_800, 19_000, 25_200, 28_700, 32_000, 37_800, 42_000,
+        ];
+        let row = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => &GI_800,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => &GI_1600,
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
+        };
+        let limit = row[self.mcs.index() as usize];
+        if self.dcm {
+            limit / 2
+        } else {
+            limit
+        }
+    }
+
     /// Minimum DCM A-MPDU subframe length for a negotiated density.
     ///
     /// This reproduces complete

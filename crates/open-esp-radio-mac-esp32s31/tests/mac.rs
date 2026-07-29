@@ -2249,6 +2249,39 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
 }
 
 #[test]
+fn he_default_apep_limit_matches_rom_and_the_blob_dcm_branch() {
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::OneLtf800Ns).maximum_default_apep_bytes(),
+        3_700
+    );
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns).maximum_default_apep_bytes(),
+        50_000
+    );
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs6, HeGuardIntervalAndLtf::TwoLtf1600Ns).maximum_default_apep_bytes(),
+        31_500
+    );
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::FourLtf3200Ns).maximum_default_apep_bytes(),
+        42_000
+    );
+
+    // Complete ppCheckTxHEAMPDUlength halves the selected rate/GI limit when
+    // descriptor-state bit 15 requests DCM.
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)
+            .maximum_default_apep_bytes(),
+        1_850
+    );
+    assert_eq!(
+        HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, HeGuardIntervalAndLtf::FourLtf3200Ns)
+            .maximum_default_apep_bytes(),
+        6_400
+    );
+}
+
+#[test]
 fn ht_single_and_ampdu_formatters_cover_every_mcs_width_and_gi() {
     for mcs in 0..=7 {
         let mcs = HtMcs::from_index(mcs).unwrap();

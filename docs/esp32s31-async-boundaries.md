@@ -1489,9 +1489,13 @@ negotiated maximum A-MPDU byte exponent.
 
 The bounded Rust owner now permits the blob-valid one-subframe HE A-MPDU
 representation; the separate HT batching policy still requires at least two.
-Removing the HIL's artificial minimum of two reduced MCS0 DCM to one full-size
-MPDU. The first aggregate completed with status zero and BlockAck bitmap
-`0x0000000000000007`. Repeated matrix rounds then passed MCS0 at
+It also exposes the complete zero-TXOP ROM table as a typed `HeRate` policy and
+applies the separate DCM divide-by-two branch proved by
+`ppCheckTxHEAMPDUlength`. The HIL uses that exact byte ceiling with the same
+delimiter/MPDU/MIC/FCS accumulator as the DMA owner. Removing the artificial
+minimum of two reduced MCS0 DCM to one full-size MPDU. The first aggregate
+completed with status zero and BlockAck bitmap `0x0000000000000007`. Repeated
+matrix rounds then passed MCS0 at
 2xLTF/0.8 us, 2xLTF/1.6 us and 4xLTF/3.2 us with 64 aggregate attempts per
 profile, zero final retry failures and approximately 2.8--3.4 Mbit/s payload
 throughput. The controlled AX211 AP advertises only BPSK DCM RX, so these
@@ -1500,9 +1504,10 @@ results do not qualify MCS1/QPSK or MCS3/16-QAM.
 SOURCE[HIL_OPEN_HE20_MCS0_DCM_AMPDU_2026_07_29]: ESP32-S31 rev0,
 `psram-code-psram-data --open-radio-hil`, complete open PHY/MAC, controlled
 AX211 HE20 WPA2 AP on channel 11, typed BCC DCM MCS0 matrix and direct
-completion/BlockAck observations. The test used a conservative 3.5-ms payload
-airtime policy; reproducing the exact generated blob table remains a separate
-rate-control port.
+completion/BlockAck observations. The successful run first used a conservative
+3.5-ms payload policy; the checked-in regression now uses the exact zero-TXOP
+ROM APEP values and blob DCM branch. Reproducing the generated table for a
+nonzero EDCA TXOP remains a separate rate-control port.
 
 ## Open HT40 receive qualification (2026-07-29)
 

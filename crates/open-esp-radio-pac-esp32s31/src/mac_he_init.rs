@@ -13,19 +13,28 @@ impl RadioRegisters {
         let init = &self.peripherals.wifi_mac_he_init_prefix;
 
         init.parent_control_edges()
-            .modify(|_, w| w.clear_31().clear_bit());
-        init.parent_control_edges()
-            .modify(|_, w| w.clear_31().clear_bit().clear_30().clear_bit());
+            .modify(|_, w| w.ul_mu_disable().clear_bit());
+        init.parent_control_edges().modify(|_, w| {
+            w.ul_mu_disable()
+                .clear_bit()
+                .ul_mu_data_disable()
+                .clear_bit()
+        });
 
         let timing = init.bf_timing_control();
-        timing.modify(|_, w| w.clear_21().clear_bit());
-        timing.modify(|_, w| w.clear_23().clear_bit());
-        timing.modify(|_, w| w.enable_19().set_bit());
+        timing.modify(|_, w| w.non_tb_beam_ru_select().clear_bit());
+        timing.modify(|_, w| w.clear_unknown_23().clear_bit());
+        timing.modify(|_, w| w.he_beam_hw_sequence_enable().set_bit());
         // SAFETY: all constants fit their complete generated fields.
-        timing.modify(|_, w| unsafe { w.byte_one().bits(0x71) });
-        timing.modify(|_, w| unsafe { w.low_byte().bits(0x20) });
-        timing.modify(|_, w| unsafe { w.mode().bits(5) });
-        timing.modify(|_, w| w.enable_25().set_bit());
+        timing.modify(|_, w| unsafe { w.he_beam_ndp_time().bits(0x71) });
+        timing.modify(|_, w| unsafe {
+            w.bf_memory_write_enable()
+                .clear_bit()
+                .he_beam_bfrp_time()
+                .bits(0x10)
+        });
+        timing.modify(|_, w| unsafe { w.he_beam_hw_sequence_select().bits(5) });
+        timing.modify(|_, w| w.enable_unknown_25().set_bit());
 
         init.bf_enable().modify(|_, w| w.enable_unknown().set_bit());
         init.bf_vector_control()
@@ -37,12 +46,40 @@ impl RadioRegisters {
         init.bf_mode_control()
             .modify(|_, w| w.enable_unknown().set_bit());
 
-        // Complete hal_he_set_bf_report_rate(1, 0x10, 0, 0) derives 0x20
-        // and publishes high, middle and low fields in that order.
+        // Complete hal_he_set_bf_report_rate(1, 0x10, 0, 0) derives signal
+        // mode one, normalized rate zero, DCM false and ER-SU false, then
+        // publishes the 16-QAM, QPSK and BPSK profiles in that order.
         let report = init.bf_report_rate();
-        report.modify(|_, w| unsafe { w.high_rate().bits(0x20) });
-        report.modify(|_, w| unsafe { w.middle_rate().bits(0x20) });
-        report.modify(|_, w| unsafe { w.low_rate().bits(0x20) });
+        report.modify(|_, w| unsafe {
+            w.qam16_rate()
+                .bits(0)
+                .qam16_signal_mode()
+                .bits(1)
+                .qam16_dcm()
+                .clear_bit()
+                .qam16_ersu()
+                .clear_bit()
+        });
+        report.modify(|_, w| unsafe {
+            w.qpsk_rate()
+                .bits(0)
+                .qpsk_signal_mode()
+                .bits(1)
+                .qpsk_dcm()
+                .clear_bit()
+                .qpsk_ersu()
+                .clear_bit()
+        });
+        report.modify(|_, w| unsafe {
+            w.bpsk_rate()
+                .bits(0)
+                .bpsk_signal_mode()
+                .bits(1)
+                .bpsk_dcm()
+                .clear_bit()
+                .bpsk_ersu()
+                .clear_bit()
+        });
 
         // The complete leaf performs this read after all BF writes even though
         // its value is unused. Preserve it because MMIO reads may acknowledge

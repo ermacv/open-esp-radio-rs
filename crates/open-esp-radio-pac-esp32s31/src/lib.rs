@@ -16,9 +16,11 @@ mod mac_cold_start;
 mod mac_crypto;
 mod mac_enable;
 mod mac_hal_init_tail;
+mod mac_he_beamforming;
 mod mac_he_init;
 mod mac_he_init_suffix;
 mod mac_he_peer;
+mod mac_he_tb;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
@@ -36,7 +38,9 @@ pub mod power;
 mod table_memory;
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
+pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
+pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::MacInterruptRegisters;
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
@@ -630,6 +634,22 @@ mod tests {
         assert_eq!(init.parent_control_edges().as_ptr() as usize, 0x2010_4c80);
         assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
         assert_eq!(init.bf_sync_status_unknown().as_ptr() as usize, 0x2010_7128);
+    }
+
+    #[test]
+    fn generated_mac_he_tb_diagnostics_match_complete_blob_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let statistics = &registers.peripherals.wifi_mac_he_tb_statistics;
+        assert_eq!(statistics.rx_trigger().as_ptr() as usize, 0x2010_43a0);
+        assert_eq!(statistics.tb_transmission().as_ptr() as usize, 0x2010_43a4);
+
+        let diagnostics = &registers.peripherals.wifi_mac_he_tb_diagnostics;
+        assert_eq!(diagnostics.timing().as_ptr() as usize, 0x2010_44f4);
+        assert_eq!(diagnostics.psdu().as_ptr() as usize, 0x2010_44f8);
+        assert_eq!(diagnostics.trigger().as_ptr() as usize, 0x2010_44fc);
+        assert_eq!(diagnostics.user().as_ptr() as usize, 0x2010_4500);
     }
 
     #[test]

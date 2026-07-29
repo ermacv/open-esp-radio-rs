@@ -11312,7 +11312,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn he_queue_mode(&self) -> &HeQueueMode {
             &self.he_queue_mode
         }
-        #[doc = "0x41c - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs."]
+        #[doc = "0x41c - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
         #[inline(always)]
         pub const fn bf_report_rate(&self) -> &BfReportRate {
             &self.bf_report_rate
@@ -11332,12 +11332,12 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn parent_enable(&self) -> &ParentEnable {
             &self.parent_enable
         }
-        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf."]
+        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder."]
         #[inline(always)]
         pub const fn bf_timing_control(&self) -> &BfTimingControl {
             &self.bf_timing_control
         }
-        #[doc = "0xc38 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW."]
+        #[doc = "0xc38 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Complete hal_he_init clears UL_MU_DISABLE, then clears UL_MU_DISABLE and UL_MU_DATA_DISABLE through a second fresh-read RMW. Complete wifi_htc_omc_txcb later derives both values from the transmitted HE OMC and complete hal_he_set_ul_mu publishes them independently."]
         #[inline(always)]
         pub const fn parent_control_edges(&self) -> &ParentControlEdges {
             &self.parent_control_edges
@@ -11579,46 +11579,127 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_REPORT_RATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_report_rate`] module"]
+    #[doc = "BF_REPORT_RATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_report_rate`] module"]
     #[doc(alias = "BF_REPORT_RATE")]
     pub type BfReportRate = crate::Reg<bf_report_rate::BfReportRateSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
     pub mod bf_report_rate {
         #[doc = "Register `BF_REPORT_RATE` reader"]
         pub type R = crate::R<BfReportRateSpec>;
         #[doc = "Register `BF_REPORT_RATE` writer"]
         pub type W = crate::W<BfReportRateSpec>;
-        #[doc = "Field `LOW_RATE` reader - "]
-        pub type LowRateR = crate::FieldReader<u16>;
-        #[doc = "Field `LOW_RATE` writer - "]
-        pub type LowRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
-        #[doc = "Field `MIDDLE_RATE` reader - "]
-        pub type MiddleRateR = crate::FieldReader<u16>;
-        #[doc = "Field `MIDDLE_RATE` writer - "]
-        pub type MiddleRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
-        #[doc = "Field `HIGH_RATE` reader - "]
-        pub type HighRateR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_RATE` writer - "]
-        pub type HighRateW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `BPSK_RATE` reader - "]
+        pub type BpskRateR = crate::FieldReader;
+        #[doc = "Field `BPSK_RATE` writer - "]
+        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `BPSK_SIGNAL_MODE` reader - "]
+        pub type BpskSignalModeR = crate::FieldReader;
+        #[doc = "Field `BPSK_SIGNAL_MODE` writer - "]
+        pub type BpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BPSK_DCM` reader - "]
+        pub type BpskDcmR = crate::BitReader;
+        #[doc = "Field `BPSK_DCM` writer - "]
+        pub type BpskDcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BPSK_ERSU` reader - "]
+        pub type BpskErsuR = crate::BitReader;
+        #[doc = "Field `BPSK_ERSU` writer - "]
+        pub type BpskErsuW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `QPSK_RATE` reader - "]
+        pub type QpskRateR = crate::FieldReader;
+        #[doc = "Field `QPSK_RATE` writer - "]
+        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `QPSK_SIGNAL_MODE` reader - "]
+        pub type QpskSignalModeR = crate::FieldReader;
+        #[doc = "Field `QPSK_SIGNAL_MODE` writer - "]
+        pub type QpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `QPSK_DCM` reader - "]
+        pub type QpskDcmR = crate::BitReader;
+        #[doc = "Field `QPSK_DCM` writer - "]
+        pub type QpskDcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `QPSK_ERSU` reader - "]
+        pub type QpskErsuR = crate::BitReader;
+        #[doc = "Field `QPSK_ERSU` writer - "]
+        pub type QpskErsuW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `QAM16_RATE` reader - "]
+        pub type Qam16RateR = crate::FieldReader;
+        #[doc = "Field `QAM16_RATE` writer - "]
+        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `QAM16_SIGNAL_MODE` reader - "]
+        pub type Qam16SignalModeR = crate::FieldReader;
+        #[doc = "Field `QAM16_SIGNAL_MODE` writer - "]
+        pub type Qam16SignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `QAM16_DCM` reader - "]
+        pub type Qam16DcmR = crate::BitReader;
+        #[doc = "Field `QAM16_DCM` writer - "]
+        pub type Qam16DcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `QAM16_ERSU` reader - "]
+        pub type Qam16ErsuR = crate::BitReader;
+        #[doc = "Field `QAM16_ERSU` writer - "]
+        pub type Qam16ErsuW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TOP_PRESERVED_UNKNOWN` reader - "]
         pub type TopPreservedUnknownR = crate::FieldReader;
         #[doc = "Field `TOP_PRESERVED_UNKNOWN` writer - "]
         pub type TopPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         impl R {
-            #[doc = "Bits 0:8"]
+            #[doc = "Bits 0:4"]
             #[inline(always)]
-            pub fn low_rate(&self) -> LowRateR {
-                LowRateR::new((self.bits & 0x01ff) as u16)
+            pub fn bpsk_rate(&self) -> BpskRateR {
+                BpskRateR::new((self.bits & 0x1f) as u8)
             }
-            #[doc = "Bits 9:17"]
+            #[doc = "Bits 5:6"]
             #[inline(always)]
-            pub fn middle_rate(&self) -> MiddleRateR {
-                MiddleRateR::new(((self.bits >> 9) & 0x01ff) as u16)
+            pub fn bpsk_signal_mode(&self) -> BpskSignalModeR {
+                BpskSignalModeR::new(((self.bits >> 5) & 3) as u8)
             }
-            #[doc = "Bits 18:26"]
+            #[doc = "Bit 7"]
             #[inline(always)]
-            pub fn high_rate(&self) -> HighRateR {
-                HighRateR::new(((self.bits >> 18) & 0x01ff) as u16)
+            pub fn bpsk_dcm(&self) -> BpskDcmR {
+                BpskDcmR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn bpsk_ersu(&self) -> BpskErsuR {
+                BpskErsuR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:13"]
+            #[inline(always)]
+            pub fn qpsk_rate(&self) -> QpskRateR {
+                QpskRateR::new(((self.bits >> 9) & 0x1f) as u8)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn qpsk_signal_mode(&self) -> QpskSignalModeR {
+                QpskSignalModeR::new(((self.bits >> 14) & 3) as u8)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn qpsk_dcm(&self) -> QpskDcmR {
+                QpskDcmR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn qpsk_ersu(&self) -> QpskErsuR {
+                QpskErsuR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bits 18:22"]
+            #[inline(always)]
+            pub fn qam16_rate(&self) -> Qam16RateR {
+                Qam16RateR::new(((self.bits >> 18) & 0x1f) as u8)
+            }
+            #[doc = "Bits 23:24"]
+            #[inline(always)]
+            pub fn qam16_signal_mode(&self) -> Qam16SignalModeR {
+                Qam16SignalModeR::new(((self.bits >> 23) & 3) as u8)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn qam16_dcm(&self) -> Qam16DcmR {
+                Qam16DcmR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn qam16_ersu(&self) -> Qam16ErsuR {
+                Qam16ErsuR::new(((self.bits >> 26) & 1) != 0)
             }
             #[doc = "Bits 27:31"]
             #[inline(always)]
@@ -11627,20 +11708,65 @@ pub mod wifi_mac_he_init_prefix {
             }
         }
         impl W {
-            #[doc = "Bits 0:8"]
+            #[doc = "Bits 0:4"]
             #[inline(always)]
-            pub fn low_rate(&mut self) -> LowRateW<'_, BfReportRateSpec> {
-                LowRateW::new(self, 0)
+            pub fn bpsk_rate(&mut self) -> BpskRateW<'_, BfReportRateSpec> {
+                BpskRateW::new(self, 0)
             }
-            #[doc = "Bits 9:17"]
+            #[doc = "Bits 5:6"]
             #[inline(always)]
-            pub fn middle_rate(&mut self) -> MiddleRateW<'_, BfReportRateSpec> {
-                MiddleRateW::new(self, 9)
+            pub fn bpsk_signal_mode(&mut self) -> BpskSignalModeW<'_, BfReportRateSpec> {
+                BpskSignalModeW::new(self, 5)
             }
-            #[doc = "Bits 18:26"]
+            #[doc = "Bit 7"]
             #[inline(always)]
-            pub fn high_rate(&mut self) -> HighRateW<'_, BfReportRateSpec> {
-                HighRateW::new(self, 18)
+            pub fn bpsk_dcm(&mut self) -> BpskDcmW<'_, BfReportRateSpec> {
+                BpskDcmW::new(self, 7)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn bpsk_ersu(&mut self) -> BpskErsuW<'_, BfReportRateSpec> {
+                BpskErsuW::new(self, 8)
+            }
+            #[doc = "Bits 9:13"]
+            #[inline(always)]
+            pub fn qpsk_rate(&mut self) -> QpskRateW<'_, BfReportRateSpec> {
+                QpskRateW::new(self, 9)
+            }
+            #[doc = "Bits 14:15"]
+            #[inline(always)]
+            pub fn qpsk_signal_mode(&mut self) -> QpskSignalModeW<'_, BfReportRateSpec> {
+                QpskSignalModeW::new(self, 14)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn qpsk_dcm(&mut self) -> QpskDcmW<'_, BfReportRateSpec> {
+                QpskDcmW::new(self, 16)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn qpsk_ersu(&mut self) -> QpskErsuW<'_, BfReportRateSpec> {
+                QpskErsuW::new(self, 17)
+            }
+            #[doc = "Bits 18:22"]
+            #[inline(always)]
+            pub fn qam16_rate(&mut self) -> Qam16RateW<'_, BfReportRateSpec> {
+                Qam16RateW::new(self, 18)
+            }
+            #[doc = "Bits 23:24"]
+            #[inline(always)]
+            pub fn qam16_signal_mode(&mut self) -> Qam16SignalModeW<'_, BfReportRateSpec> {
+                Qam16SignalModeW::new(self, 23)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn qam16_dcm(&mut self) -> Qam16DcmW<'_, BfReportRateSpec> {
+                Qam16DcmW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn qam16_ersu(&mut self) -> Qam16ErsuW<'_, BfReportRateSpec> {
+                Qam16ErsuW::new(self, 26)
             }
             #[doc = "Bits 27:31"]
             #[inline(always)]
@@ -11648,7 +11774,7 @@ pub mod wifi_mac_he_init_prefix {
                 TopPreservedUnknownW::new(self, 27)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes value 0x20 into three nine-bit fields through separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfReportRateSpec;
         impl crate::RegisterSpec for BfReportRateSpec {
             type Ux = u32;
@@ -11853,109 +11979,118 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
+    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
     #[doc(alias = "BF_TIMING_CONTROL")]
     pub type BfTimingControl = crate::Reg<bf_timing_control::BfTimingControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder."]
     pub mod bf_timing_control {
         #[doc = "Register `BF_TIMING_CONTROL` reader"]
         pub type R = crate::R<BfTimingControlSpec>;
         #[doc = "Register `BF_TIMING_CONTROL` writer"]
         pub type W = crate::W<BfTimingControlSpec>;
-        #[doc = "Field `LOW_BYTE` reader - "]
-        pub type LowByteR = crate::FieldReader;
-        #[doc = "Field `LOW_BYTE` writer - "]
-        pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `BYTE_ONE` reader - "]
-        pub type ByteOneR = crate::FieldReader;
-        #[doc = "Field `BYTE_ONE` writer - "]
-        pub type ByteOneW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `MODE` reader - "]
-        pub type ModeR = crate::FieldReader;
-        #[doc = "Field `MODE` writer - "]
-        pub type ModeW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
-        #[doc = "Field `ENABLE_19` reader - "]
-        pub type Enable19R = crate::BitReader;
-        #[doc = "Field `ENABLE_19` writer - "]
-        pub type Enable19W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PRESERVED_20` reader - "]
-        pub type Preserved20R = crate::BitReader;
-        #[doc = "Field `PRESERVED_20` writer - "]
-        pub type Preserved20W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLEAR_21` reader - "]
-        pub type Clear21R = crate::BitReader;
-        #[doc = "Field `CLEAR_21` writer - "]
-        pub type Clear21W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PRESERVED_22` reader - "]
-        pub type Preserved22R = crate::BitReader;
-        #[doc = "Field `PRESERVED_22` writer - "]
-        pub type Preserved22W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLEAR_23` reader - "]
-        pub type Clear23R = crate::BitReader;
-        #[doc = "Field `CLEAR_23` writer - "]
-        pub type Clear23W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PRESERVED_24` reader - "]
-        pub type Preserved24R = crate::BitReader;
-        #[doc = "Field `PRESERVED_24` writer - "]
-        pub type Preserved24W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ENABLE_25` reader - "]
-        pub type Enable25R = crate::BitReader;
-        #[doc = "Field `ENABLE_25` writer - "]
-        pub type Enable25W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BF_MEMORY_WRITE_ENABLE` reader - "]
+        pub type BfMemoryWriteEnableR = crate::BitReader;
+        #[doc = "Field `BF_MEMORY_WRITE_ENABLE` writer - "]
+        pub type BfMemoryWriteEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HE_BEAM_BFRP_TIME` reader - "]
+        pub type HeBeamBfrpTimeR = crate::FieldReader;
+        #[doc = "Field `HE_BEAM_BFRP_TIME` writer - "]
+        pub type HeBeamBfrpTimeW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `HE_BEAM_NDP_TIME` reader - "]
+        pub type HeBeamNdpTimeR = crate::FieldReader;
+        #[doc = "Field `HE_BEAM_NDP_TIME` writer - "]
+        pub type HeBeamNdpTimeW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `HE_BEAM_HW_SEQUENCE_SELECT` reader - "]
+        pub type HeBeamHwSequenceSelectR = crate::FieldReader;
+        #[doc = "Field `HE_BEAM_HW_SEQUENCE_SELECT` writer - "]
+        pub type HeBeamHwSequenceSelectW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `HE_BEAM_HW_SEQUENCE_ENABLE` reader - "]
+        pub type HeBeamHwSequenceEnableR = crate::BitReader;
+        #[doc = "Field `HE_BEAM_HW_SEQUENCE_ENABLE` writer - "]
+        pub type HeBeamHwSequenceEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HE_BEAM_ENABLE` reader - "]
+        pub type HeBeamEnableR = crate::BitReader;
+        #[doc = "Field `HE_BEAM_ENABLE` writer - "]
+        pub type HeBeamEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `NON_TB_BEAM_RU_SELECT` reader - "]
+        pub type NonTbBeamRuSelectR = crate::BitReader;
+        #[doc = "Field `NON_TB_BEAM_RU_SELECT` writer - "]
+        pub type NonTbBeamRuSelectW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BEAM_RU_SELECT` reader - "]
+        pub type BeamRuSelectR = crate::BitReader;
+        #[doc = "Field `BEAM_RU_SELECT` writer - "]
+        pub type BeamRuSelectW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_UNKNOWN_23` reader - "]
+        pub type ClearUnknown23R = crate::BitReader;
+        #[doc = "Field `CLEAR_UNKNOWN_23` writer - "]
+        pub type ClearUnknown23W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PRESERVED_UNKNOWN_24` reader - "]
+        pub type PreservedUnknown24R = crate::BitReader;
+        #[doc = "Field `PRESERVED_UNKNOWN_24` writer - "]
+        pub type PreservedUnknown24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_UNKNOWN_25` reader - "]
+        pub type EnableUnknown25R = crate::BitReader;
+        #[doc = "Field `ENABLE_UNKNOWN_25` writer - "]
+        pub type EnableUnknown25W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
         pub type HighPreservedUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
         pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
         impl R {
-            #[doc = "Bits 0:7"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn low_byte(&self) -> LowByteR {
-                LowByteR::new((self.bits & 0xff) as u8)
+            pub fn bf_memory_write_enable(&self) -> BfMemoryWriteEnableR {
+                BfMemoryWriteEnableR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:7"]
+            #[inline(always)]
+            pub fn he_beam_bfrp_time(&self) -> HeBeamBfrpTimeR {
+                HeBeamBfrpTimeR::new(((self.bits >> 1) & 0x7f) as u8)
             }
             #[doc = "Bits 8:15"]
             #[inline(always)]
-            pub fn byte_one(&self) -> ByteOneR {
-                ByteOneR::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn he_beam_ndp_time(&self) -> HeBeamNdpTimeR {
+                HeBeamNdpTimeR::new(((self.bits >> 8) & 0xff) as u8)
             }
             #[doc = "Bits 16:18"]
             #[inline(always)]
-            pub fn mode(&self) -> ModeR {
-                ModeR::new(((self.bits >> 16) & 7) as u8)
+            pub fn he_beam_hw_sequence_select(&self) -> HeBeamHwSequenceSelectR {
+                HeBeamHwSequenceSelectR::new(((self.bits >> 16) & 7) as u8)
             }
             #[doc = "Bit 19"]
             #[inline(always)]
-            pub fn enable_19(&self) -> Enable19R {
-                Enable19R::new(((self.bits >> 19) & 1) != 0)
+            pub fn he_beam_hw_sequence_enable(&self) -> HeBeamHwSequenceEnableR {
+                HeBeamHwSequenceEnableR::new(((self.bits >> 19) & 1) != 0)
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn preserved_20(&self) -> Preserved20R {
-                Preserved20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn he_beam_enable(&self) -> HeBeamEnableR {
+                HeBeamEnableR::new(((self.bits >> 20) & 1) != 0)
             }
             #[doc = "Bit 21"]
             #[inline(always)]
-            pub fn clear_21(&self) -> Clear21R {
-                Clear21R::new(((self.bits >> 21) & 1) != 0)
+            pub fn non_tb_beam_ru_select(&self) -> NonTbBeamRuSelectR {
+                NonTbBeamRuSelectR::new(((self.bits >> 21) & 1) != 0)
             }
             #[doc = "Bit 22"]
             #[inline(always)]
-            pub fn preserved_22(&self) -> Preserved22R {
-                Preserved22R::new(((self.bits >> 22) & 1) != 0)
+            pub fn beam_ru_select(&self) -> BeamRuSelectR {
+                BeamRuSelectR::new(((self.bits >> 22) & 1) != 0)
             }
             #[doc = "Bit 23"]
             #[inline(always)]
-            pub fn clear_23(&self) -> Clear23R {
-                Clear23R::new(((self.bits >> 23) & 1) != 0)
+            pub fn clear_unknown_23(&self) -> ClearUnknown23R {
+                ClearUnknown23R::new(((self.bits >> 23) & 1) != 0)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
-            pub fn preserved_24(&self) -> Preserved24R {
-                Preserved24R::new(((self.bits >> 24) & 1) != 0)
+            pub fn preserved_unknown_24(&self) -> PreservedUnknown24R {
+                PreservedUnknown24R::new(((self.bits >> 24) & 1) != 0)
             }
             #[doc = "Bit 25"]
             #[inline(always)]
-            pub fn enable_25(&self) -> Enable25R {
-                Enable25R::new(((self.bits >> 25) & 1) != 0)
+            pub fn enable_unknown_25(&self) -> EnableUnknown25R {
+                EnableUnknown25R::new(((self.bits >> 25) & 1) != 0)
             }
             #[doc = "Bits 26:31"]
             #[inline(always)]
@@ -11964,55 +12099,66 @@ pub mod wifi_mac_he_init_prefix {
             }
         }
         impl W {
-            #[doc = "Bits 0:7"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn low_byte(&mut self) -> LowByteW<'_, BfTimingControlSpec> {
-                LowByteW::new(self, 0)
+            pub fn bf_memory_write_enable(
+                &mut self,
+            ) -> BfMemoryWriteEnableW<'_, BfTimingControlSpec> {
+                BfMemoryWriteEnableW::new(self, 0)
+            }
+            #[doc = "Bits 1:7"]
+            #[inline(always)]
+            pub fn he_beam_bfrp_time(&mut self) -> HeBeamBfrpTimeW<'_, BfTimingControlSpec> {
+                HeBeamBfrpTimeW::new(self, 1)
             }
             #[doc = "Bits 8:15"]
             #[inline(always)]
-            pub fn byte_one(&mut self) -> ByteOneW<'_, BfTimingControlSpec> {
-                ByteOneW::new(self, 8)
+            pub fn he_beam_ndp_time(&mut self) -> HeBeamNdpTimeW<'_, BfTimingControlSpec> {
+                HeBeamNdpTimeW::new(self, 8)
             }
             #[doc = "Bits 16:18"]
             #[inline(always)]
-            pub fn mode(&mut self) -> ModeW<'_, BfTimingControlSpec> {
-                ModeW::new(self, 16)
+            pub fn he_beam_hw_sequence_select(
+                &mut self,
+            ) -> HeBeamHwSequenceSelectW<'_, BfTimingControlSpec> {
+                HeBeamHwSequenceSelectW::new(self, 16)
             }
             #[doc = "Bit 19"]
             #[inline(always)]
-            pub fn enable_19(&mut self) -> Enable19W<'_, BfTimingControlSpec> {
-                Enable19W::new(self, 19)
+            pub fn he_beam_hw_sequence_enable(
+                &mut self,
+            ) -> HeBeamHwSequenceEnableW<'_, BfTimingControlSpec> {
+                HeBeamHwSequenceEnableW::new(self, 19)
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn preserved_20(&mut self) -> Preserved20W<'_, BfTimingControlSpec> {
-                Preserved20W::new(self, 20)
+            pub fn he_beam_enable(&mut self) -> HeBeamEnableW<'_, BfTimingControlSpec> {
+                HeBeamEnableW::new(self, 20)
             }
             #[doc = "Bit 21"]
             #[inline(always)]
-            pub fn clear_21(&mut self) -> Clear21W<'_, BfTimingControlSpec> {
-                Clear21W::new(self, 21)
+            pub fn non_tb_beam_ru_select(&mut self) -> NonTbBeamRuSelectW<'_, BfTimingControlSpec> {
+                NonTbBeamRuSelectW::new(self, 21)
             }
             #[doc = "Bit 22"]
             #[inline(always)]
-            pub fn preserved_22(&mut self) -> Preserved22W<'_, BfTimingControlSpec> {
-                Preserved22W::new(self, 22)
+            pub fn beam_ru_select(&mut self) -> BeamRuSelectW<'_, BfTimingControlSpec> {
+                BeamRuSelectW::new(self, 22)
             }
             #[doc = "Bit 23"]
             #[inline(always)]
-            pub fn clear_23(&mut self) -> Clear23W<'_, BfTimingControlSpec> {
-                Clear23W::new(self, 23)
+            pub fn clear_unknown_23(&mut self) -> ClearUnknown23W<'_, BfTimingControlSpec> {
+                ClearUnknown23W::new(self, 23)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
-            pub fn preserved_24(&mut self) -> Preserved24W<'_, BfTimingControlSpec> {
-                Preserved24W::new(self, 24)
+            pub fn preserved_unknown_24(&mut self) -> PreservedUnknown24W<'_, BfTimingControlSpec> {
+                PreservedUnknown24W::new(self, 24)
             }
             #[doc = "Bit 25"]
             #[inline(always)]
-            pub fn enable_25(&mut self) -> Enable25W<'_, BfTimingControlSpec> {
-                Enable25W::new(self, 25)
+            pub fn enable_unknown_25(&mut self) -> EnableUnknown25W<'_, BfTimingControlSpec> {
+                EnableUnknown25W::new(self, 25)
             }
             #[doc = "Bits 26:31"]
             #[inline(always)]
@@ -12022,7 +12168,7 @@ pub mod wifi_mac_he_init_prefix {
                 HighPreservedUnknownW::new(self, 26)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-fields\\]. Seven ordered RMWs in complete hal_init_bf.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfTimingControlSpec;
         impl crate::RegisterSpec for BfTimingControlSpec {
             type Ux = u32;
@@ -12034,10 +12180,10 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PARENT_CONTROL_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_control_edges`] module"]
+    #[doc = "PARENT_CONTROL_EDGES (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Complete hal_he_init clears UL_MU_DISABLE, then clears UL_MU_DISABLE and UL_MU_DATA_DISABLE through a second fresh-read RMW. Complete wifi_htc_omc_txcb later derives both values from the transmitted HE OMC and complete hal_he_set_ul_mu publishes them independently.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_control_edges`] module"]
     #[doc(alias = "PARENT_CONTROL_EDGES")]
     pub type ParentControlEdges = crate::Reg<parent_control_edges::ParentControlEdgesSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Complete hal_he_init clears UL_MU_DISABLE, then clears UL_MU_DISABLE and UL_MU_DATA_DISABLE through a second fresh-read RMW. Complete wifi_htc_omc_txcb later derives both values from the transmitted HE OMC and complete hal_he_set_ul_mu publishes them independently."]
     pub mod parent_control_edges {
         #[doc = "Register `PARENT_CONTROL_EDGES` reader"]
         pub type R = crate::R<ParentControlEdgesSpec>;
@@ -12047,29 +12193,29 @@ pub mod wifi_mac_he_init_prefix {
         pub type LowPreservedUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
         pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
-        #[doc = "Field `CLEAR_30` reader - "]
-        pub type Clear30R = crate::BitReader;
-        #[doc = "Field `CLEAR_30` writer - "]
-        pub type Clear30W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLEAR_31` reader - "]
-        pub type Clear31R = crate::BitReader;
-        #[doc = "Field `CLEAR_31` writer - "]
-        pub type Clear31W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UL_MU_DATA_DISABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Data Disable copied from HT-Control bit 17 by wifi_htc_omc_txcb."]
+        pub type UlMuDataDisableR = crate::BitReader;
+        #[doc = "Field `UL_MU_DATA_DISABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Data Disable copied from HT-Control bit 17 by wifi_htc_omc_txcb."]
+        pub type UlMuDataDisableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UL_MU_DISABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Disable copied from HT-Control bit 11 by wifi_htc_omc_txcb."]
+        pub type UlMuDisableR = crate::BitReader;
+        #[doc = "Field `UL_MU_DISABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Disable copied from HT-Control bit 11 by wifi_htc_omc_txcb."]
+        pub type UlMuDisableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:29"]
             #[inline(always)]
             pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
                 LowPreservedUnknownR::new(self.bits & 0x3fff_ffff)
             }
-            #[doc = "Bit 30"]
+            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Data Disable copied from HT-Control bit 17 by wifi_htc_omc_txcb."]
             #[inline(always)]
-            pub fn clear_30(&self) -> Clear30R {
-                Clear30R::new(((self.bits >> 30) & 1) != 0)
+            pub fn ul_mu_data_disable(&self) -> UlMuDataDisableR {
+                UlMuDataDisableR::new(((self.bits >> 30) & 1) != 0)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Disable copied from HT-Control bit 11 by wifi_htc_omc_txcb."]
             #[inline(always)]
-            pub fn clear_31(&self) -> Clear31R {
-                Clear31R::new(((self.bits >> 31) & 1) != 0)
+            pub fn ul_mu_disable(&self) -> UlMuDisableR {
+                UlMuDisableR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -12080,18 +12226,18 @@ pub mod wifi_mac_he_init_prefix {
             ) -> LowPreservedUnknownW<'_, ParentControlEdgesSpec> {
                 LowPreservedUnknownW::new(self, 0)
             }
-            #[doc = "Bit 30"]
+            #[doc = "Bit 30 - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Data Disable copied from HT-Control bit 17 by wifi_htc_omc_txcb."]
             #[inline(always)]
-            pub fn clear_30(&mut self) -> Clear30W<'_, ParentControlEdgesSpec> {
-                Clear30W::new(self, 30)
+            pub fn ul_mu_data_disable(&mut self) -> UlMuDataDisableW<'_, ParentControlEdgesSpec> {
+                UlMuDataDisableW::new(self, 30)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. HE Operating Mode Control UL MU Disable copied from HT-Control bit 11 by wifi_htc_omc_txcb."]
             #[inline(always)]
-            pub fn clear_31(&mut self) -> Clear31W<'_, ParentControlEdgesSpec> {
-                Clear31W::new(self, 31)
+            pub fn ul_mu_disable(&mut self) -> UlMuDisableW<'_, ParentControlEdgesSpec> {
+                UlMuDisableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-repeated-clear\\]. Complete parent clears bit 31, then clears bits 31:30 through a second fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_HE_UL_MU_OMC\\]; CONFIDENCE\\[instruction-exact-field-semantics\\]. Complete hal_he_init clears UL_MU_DISABLE, then clears UL_MU_DISABLE and UL_MU_DATA_DISABLE through a second fresh-read RMW. Complete wifi_htc_omc_txcb later derives both values from the transmitted HE OMC and complete hal_he_set_ul_mu publishes them independently.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_control_edges::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_control_edges::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ParentControlEdgesSpec;
         impl crate::RegisterSpec for ParentControlEdgesSpec {
             type Ux = u32;
@@ -12260,6 +12406,339 @@ pub mod wifi_mac_he_init_prefix {
         }
         #[doc = "`read()` method returns [`bf_sync_status_unknown::R`](R) reader structure"]
         impl crate::Readable for BfSyncStatusUnknownSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS,HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol-hil-observed\\]. Hardware counters read by the complete hal_he_get_rx_trigger_cnt, hal_he_get_tb_times_cnt and hal_he_get_tb_qosnull_cnt leaves. These counters distinguish Trigger reception from actual trigger-based transmission and appended QoS Null responses. An ordinary controlled HE SU AP produced no Trigger frames, so all three remained zero during sustained HE DCM A-MPDU traffic."]
+pub type WifiMacHeTbStatistics =
+    crate::Periph<wifi_mac_he_tb_statistics::RegisterBlock, 0x2010_43a0>;
+impl core::fmt::Debug for WifiMacHeTbStatistics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacHeTbStatistics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS,HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol-hil-observed\\]. Hardware counters read by the complete hal_he_get_rx_trigger_cnt, hal_he_get_tb_times_cnt and hal_he_get_tb_qosnull_cnt leaves. These counters distinguish Trigger reception from actual trigger-based transmission and appended QoS Null responses. An ordinary controlled HE SU AP produced no Trigger frames, so all three remained zero during sustained HE DCM A-MPDU traffic."]
+pub mod wifi_mac_he_tb_statistics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        rx_trigger: RxTrigger,
+        tb_transmission: TbTransmission,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-symbol\\]. Complete hal_he_get_rx_trigger_cnt returns the low sixteen bits."]
+        #[inline(always)]
+        pub const fn rx_trigger(&self) -> &RxTrigger {
+            &self.rx_trigger
+        }
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol\\]. Complete hal_he_get_tb_times_cnt returns the low sixteen bits; complete hal_he_get_tb_qosnull_cnt returns the high sixteen bits."]
+        #[inline(always)]
+        pub const fn tb_transmission(&self) -> &TbTransmission {
+            &self.tb_transmission
+        }
+    }
+    #[doc = "RX_TRIGGER (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-symbol\\]. Complete hal_he_get_rx_trigger_cnt returns the low sixteen bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_trigger::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_trigger`] module"]
+    #[doc(alias = "RX_TRIGGER")]
+    pub type RxTrigger = crate::Reg<rx_trigger::RxTriggerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-symbol\\]. Complete hal_he_get_rx_trigger_cnt returns the low sixteen bits."]
+    pub mod rx_trigger {
+        #[doc = "Register `RX_TRIGGER` reader"]
+        pub type R = crate::R<RxTriggerSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_COUNT_UNKNOWN` reader - "]
+        pub type HighCountUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn high_count_unknown(&self) -> HighCountUnknownR {
+                HighCountUnknownR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-symbol\\]. Complete hal_he_get_rx_trigger_cnt returns the low sixteen bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_trigger::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxTriggerSpec;
+        impl crate::RegisterSpec for RxTriggerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_trigger::R`](R) reader structure"]
+        impl crate::Readable for RxTriggerSpec {}
+    }
+    #[doc = "TB_TRANSMISSION (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol\\]. Complete hal_he_get_tb_times_cnt returns the low sixteen bits; complete hal_he_get_tb_qosnull_cnt returns the high sixteen bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_transmission::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tb_transmission`] module"]
+    #[doc(alias = "TB_TRANSMISSION")]
+    pub type TbTransmission = crate::Reg<tb_transmission::TbTransmissionSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol\\]. Complete hal_he_get_tb_times_cnt returns the low sixteen bits; complete hal_he_get_tb_qosnull_cnt returns the high sixteen bits."]
+    pub mod tb_transmission {
+        #[doc = "Register `TB_TRANSMISSION` reader"]
+        pub type R = crate::R<TbTransmissionSpec>;
+        #[doc = "Field `COUNT` reader - "]
+        pub type CountR = crate::FieldReader<u16>;
+        #[doc = "Field `QOS_NULL_COUNT` reader - "]
+        pub type QosNullCountR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn count(&self) -> CountR {
+                CountR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn qos_null_count(&self) -> QosNullCountR {
+                QosNullCountR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-symbol\\]. Complete hal_he_get_tb_times_cnt returns the low sixteen bits; complete hal_he_get_tb_qosnull_cnt returns the high sixteen bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`tb_transmission::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbTransmissionSpec;
+        impl crate::RegisterSpec for TbTransmissionSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tb_transmission::R`](R) reader structure"]
+        impl crate::Readable for TbTransmissionSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS,HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. Four read-only hardware result words decoded by complete dbg_read_axtb_diag and its four complete getter leaves. The names come from the pinned blob's own format strings; no field meaning is inferred from reset images. All four words remained zero when the controlled AP sent no Trigger frames."]
+pub type WifiMacHeTbDiagnostics =
+    crate::Periph<wifi_mac_he_tb_diagnostics::RegisterBlock, 0x2010_44f4>;
+impl core::fmt::Debug for WifiMacHeTbDiagnostics {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacHeTbDiagnostics").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS,HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. Four read-only hardware result words decoded by complete dbg_read_axtb_diag and its four complete getter leaves. The names come from the pinned blob's own format strings; no field meaning is inferred from reset images. All four words remained zero when the controlled AP sent no Trigger frames."]
+pub mod wifi_mac_he_tb_diagnostics {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        timing: Timing,
+        psdu: Psdu,
+        trigger: Trigger,
+        user: User,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG0."]
+        #[inline(always)]
+        pub const fn timing(&self) -> &Timing {
+            &self.timing
+        }
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG1."]
+        #[inline(always)]
+        pub const fn psdu(&self) -> &Psdu {
+            &self.psdu
+        }
+        #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG2."]
+        #[inline(always)]
+        pub const fn trigger(&self) -> &Trigger {
+            &self.trigger
+        }
+        #[doc = "0x0c - SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG3."]
+        #[inline(always)]
+        pub const fn user(&self) -> &User {
+            &self.user
+        }
+    }
+    #[doc = "TIMING (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG0.\n\nYou can [`read`](crate::Reg::read) this register and get [`timing::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@timing`] module"]
+    #[doc(alias = "TIMING")]
+    pub type Timing = crate::Reg<timing::TimingSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG0."]
+    pub mod timing {
+        #[doc = "Register `TIMING` reader"]
+        pub type R = crate::R<TimingSpec>;
+        #[doc = "Field `TX_TIME` reader - "]
+        pub type TxTimeR = crate::FieldReader<u16>;
+        #[doc = "Field `SYMBOL_COUNT` reader - "]
+        pub type SymbolCountR = crate::FieldReader<u16>;
+        #[doc = "Field `PRE_FEC_PADDING_PHY` reader - "]
+        pub type PreFecPaddingPhyR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn tx_time(&self) -> TxTimeR {
+                TxTimeR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:25"]
+            #[inline(always)]
+            pub fn symbol_count(&self) -> SymbolCountR {
+                SymbolCountR::new(((self.bits >> 16) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 26:31"]
+            #[inline(always)]
+            pub fn pre_fec_padding_phy(&self) -> PreFecPaddingPhyR {
+                PreFecPaddingPhyR::new(((self.bits >> 26) & 0x3f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG0.\n\nYou can [`read`](crate::Reg::read) this register and get [`timing::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TimingSpec;
+        impl crate::RegisterSpec for TimingSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`timing::R`](R) reader structure"]
+        impl crate::Readable for TimingSpec {}
+    }
+    #[doc = "PSDU (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG1.\n\nYou can [`read`](crate::Reg::read) this register and get [`psdu::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@psdu`] module"]
+    #[doc(alias = "PSDU")]
+    pub type Psdu = crate::Reg<psdu::PsduSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG1."]
+    pub mod psdu {
+        #[doc = "Register `PSDU` reader"]
+        pub type R = crate::R<PsduSpec>;
+        #[doc = "Field `PSDU_LENGTH` reader - "]
+        pub type PsduLengthR = crate::FieldReader<u32>;
+        #[doc = "Field `MINIMUM_SUBFRAME_LENGTH` reader - "]
+        pub type MinimumSubframeLengthR = crate::FieldReader<u16>;
+        #[doc = "Field `PACKET_EXTENSION_TIME` reader - "]
+        pub type PacketExtensionTimeR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:16"]
+            #[inline(always)]
+            pub fn psdu_length(&self) -> PsduLengthR {
+                PsduLengthR::new(self.bits & 0x0001_ffff)
+            }
+            #[doc = "Bits 17:26"]
+            #[inline(always)]
+            pub fn minimum_subframe_length(&self) -> MinimumSubframeLengthR {
+                MinimumSubframeLengthR::new(((self.bits >> 17) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 27:31"]
+            #[inline(always)]
+            pub fn packet_extension_time(&self) -> PacketExtensionTimeR {
+                PacketExtensionTimeR::new(((self.bits >> 27) & 0x1f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG1.\n\nYou can [`read`](crate::Reg::read) this register and get [`psdu::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PsduSpec;
+        impl crate::RegisterSpec for PsduSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`psdu::R`](R) reader structure"]
+        impl crate::Readable for PsduSpec {}
+    }
+    #[doc = "TRIGGER (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG2.\n\nYou can [`read`](crate::Reg::read) this register and get [`trigger::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@trigger`] module"]
+    #[doc(alias = "TRIGGER")]
+    pub type Trigger = crate::Reg<trigger::TriggerSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG2."]
+    pub mod trigger {
+        #[doc = "Register `TRIGGER` reader"]
+        pub type R = crate::R<TriggerSpec>;
+        #[doc = "Field `TX_20_PACKET_COUNT` reader - "]
+        pub type Tx20PacketCountR = crate::FieldReader;
+        #[doc = "Field `QOS_NULL_APPEND_COUNT` reader - "]
+        pub type QosNullAppendCountR = crate::FieldReader;
+        #[doc = "Field `TRIGGER_TYPE` reader - "]
+        pub type TriggerTypeR = crate::FieldReader;
+        #[doc = "Field `UPLINK_LENGTH` reader - "]
+        pub type UplinkLengthR = crate::FieldReader<u16>;
+        #[doc = "Field `GI_AND_LTF` reader - "]
+        pub type GiAndLtfR = crate::FieldReader;
+        #[doc = "Field `TID_LIMIT` reader - "]
+        pub type TidLimitR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:6"]
+            #[inline(always)]
+            pub fn tx_20_packet_count(&self) -> Tx20PacketCountR {
+                Tx20PacketCountR::new((self.bits & 0x7f) as u8)
+            }
+            #[doc = "Bits 7:10"]
+            #[inline(always)]
+            pub fn qos_null_append_count(&self) -> QosNullAppendCountR {
+                QosNullAppendCountR::new(((self.bits >> 7) & 0x0f) as u8)
+            }
+            #[doc = "Bits 11:14"]
+            #[inline(always)]
+            pub fn trigger_type(&self) -> TriggerTypeR {
+                TriggerTypeR::new(((self.bits >> 11) & 0x0f) as u8)
+            }
+            #[doc = "Bits 15:26"]
+            #[inline(always)]
+            pub fn uplink_length(&self) -> UplinkLengthR {
+                UplinkLengthR::new(((self.bits >> 15) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 27:28"]
+            #[inline(always)]
+            pub fn gi_and_ltf(&self) -> GiAndLtfR {
+                GiAndLtfR::new(((self.bits >> 27) & 3) as u8)
+            }
+            #[doc = "Bits 29:31"]
+            #[inline(always)]
+            pub fn tid_limit(&self) -> TidLimitR {
+                TidLimitR::new(((self.bits >> 29) & 7) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG2.\n\nYou can [`read`](crate::Reg::read) this register and get [`trigger::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TriggerSpec;
+        impl crate::RegisterSpec for TriggerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`trigger::R`](R) reader structure"]
+        impl crate::Readable for TriggerSpec {}
+    }
+    #[doc = "USER (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG3.\n\nYou can [`read`](crate::Reg::read) this register and get [`user::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@user`] module"]
+    #[doc(alias = "USER")]
+    pub type User = crate::Reg<user::UserSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG3."]
+    pub mod user {
+        #[doc = "Register `USER` reader"]
+        pub type R = crate::R<UserSpec>;
+        #[doc = "Field `ASSOCIATION_ID` reader - "]
+        pub type AssociationIdR = crate::FieldReader<u16>;
+        #[doc = "Field `RU_ALLOCATION` reader - "]
+        pub type RuAllocationR = crate::FieldReader;
+        #[doc = "Field `UPLINK_MCS` reader - "]
+        pub type UplinkMcsR = crate::FieldReader;
+        #[doc = "Field `BASIC_PREFERRED_AC` reader - "]
+        pub type BasicPreferredAcR = crate::FieldReader;
+        #[doc = "Field `BASIC_SPACING_FACTOR` reader - "]
+        pub type BasicSpacingFactorR = crate::FieldReader;
+        #[doc = "Field `UPLINK_PACKET_EXTENSION` reader - "]
+        pub type UplinkPacketExtensionR = crate::FieldReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::BitReader;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn association_id(&self) -> AssociationIdR {
+                AssociationIdR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn ru_allocation(&self) -> RuAllocationR {
+                RuAllocationR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn uplink_mcs(&self) -> UplinkMcsR {
+                UplinkMcsR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:25"]
+            #[inline(always)]
+            pub fn basic_preferred_ac(&self) -> BasicPreferredAcR {
+                BasicPreferredAcR::new(((self.bits >> 24) & 3) as u8)
+            }
+            #[doc = "Bits 26:27"]
+            #[inline(always)]
+            pub fn basic_spacing_factor(&self) -> BasicSpacingFactorR {
+                BasicSpacingFactorR::new(((self.bits >> 26) & 3) as u8)
+            }
+            #[doc = "Bits 28:30"]
+            #[inline(always)]
+            pub fn uplink_packet_extension(&self) -> UplinkPacketExtensionR {
+                UplinkPacketExtensionR::new(((self.bits >> 28) & 7) as u8)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols\\]. WDEVAXTBDIAG3.\n\nYou can [`read`](crate::Reg::read) this register and get [`user::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct UserSpec;
+        impl crate::RegisterSpec for UserSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`user::R`](R) reader structure"]
+        impl crate::Readable for UserSpec {}
     }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR\\]; CONFIDENCE\\[instruction-exact-fields-semantics-partial\\]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm."]
@@ -18980,6 +19459,10 @@ pub struct Peripherals {
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_HE_INIT_PREFIX"]
     pub wifi_mac_he_init_prefix: WifiMacHeInitPrefix,
+    #[doc = "WIFI_MAC_HE_TB_STATISTICS"]
+    pub wifi_mac_he_tb_statistics: WifiMacHeTbStatistics,
+    #[doc = "WIFI_MAC_HE_TB_DIAGNOSTICS"]
+    pub wifi_mac_he_tb_diagnostics: WifiMacHeTbDiagnostics,
     #[doc = "WIFI_MAC_TX_POWER_INIT"]
     pub wifi_mac_tx_power_init: WifiMacTxPowerInit,
     #[doc = "WIFI_MAC_HE_STA_ASSOC"]
@@ -19054,6 +19537,8 @@ impl Peripherals {
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_he_init_prefix: WifiMacHeInitPrefix::steal(),
+            wifi_mac_he_tb_statistics: WifiMacHeTbStatistics::steal(),
+            wifi_mac_he_tb_diagnostics: WifiMacHeTbDiagnostics::steal(),
             wifi_mac_tx_power_init: WifiMacTxPowerInit::steal(),
             wifi_mac_he_sta_assoc: WifiMacHeStaAssoc::steal(),
             wifi_mac_he_init_suffix: WifiMacHeInitSuffix::steal(),

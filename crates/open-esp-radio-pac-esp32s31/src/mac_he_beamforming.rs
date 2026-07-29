@@ -1,0 +1,186 @@
+//! Typed HE beamforming report-rate configuration.
+
+use super::RadioRegisters;
+
+/// Invalid input to the recovered `hal_he_set_bf_report_rate` transform.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeBeamformingReportProfileError {
+    /// The hardware signaling-mode field is two bits wide.
+    SignalMode(u8),
+    /// Mode zero accepts a direct five-bit rate; nonzero modes accept the two
+    /// recovered ten-rate descriptor ranges `0x10..=0x19` and `0x1a..=0x23`.
+    RateCode { signal_mode: u8, rate_code: u16 },
+}
+
+/// One profile replicated into the BPSK, QPSK and 16-QAM report selectors.
+///
+/// Construction performs the exact rate normalization from complete
+/// `hal_he_set_bf_report_rate`, but rejects inputs for which the blob would
+/// rely on unsigned wrap and field truncation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeBeamformingReportProfile {
+    signal_mode: u8,
+    normalized_rate: u8,
+    dcm: bool,
+    extended_range_single_user: bool,
+}
+
+impl MacHeBeamformingReportProfile {
+    /// Build a bounded profile from the four HAL arguments.
+    pub const fn from_hal_arguments(
+        signal_mode: u8,
+        rate_code: u16,
+        dcm: bool,
+        extended_range_single_user: bool,
+    ) -> Result<Self, MacHeBeamformingReportProfileError> {
+        if signal_mode > 3 {
+            return Err(MacHeBeamformingReportProfileError::SignalMode(signal_mode));
+        }
+
+        let normalized_rate = if signal_mode == 0 {
+            if rate_code > 0x1f {
+                return Err(MacHeBeamformingReportProfileError::RateCode {
+                    signal_mode,
+                    rate_code,
+                });
+            }
+            rate_code as u8
+        } else if rate_code >= 0x10 && rate_code <= 0x19 {
+            (rate_code - 0x10) as u8
+        } else if rate_code >= 0x1a && rate_code <= 0x23 {
+            (rate_code - 0x1a) as u8
+        } else {
+            return Err(MacHeBeamformingReportProfileError::RateCode {
+                signal_mode,
+                rate_code,
+            });
+        };
+
+        Ok(Self {
+            signal_mode,
+            normalized_rate,
+            dcm,
+            extended_range_single_user,
+        })
+    }
+
+    pub const fn signal_mode(self) -> u8 {
+        self.signal_mode
+    }
+
+    pub const fn normalized_rate(self) -> u8 {
+        self.normalized_rate
+    }
+
+    pub const fn dcm(self) -> bool {
+        self.dcm
+    }
+
+    pub const fn extended_range_single_user(self) -> bool {
+        self.extended_range_single_user
+    }
+}
+
+impl RadioRegisters {
+    /// Publish one report profile to 16-QAM, QPSK and BPSK selectors.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_set_bf_report_rate`, `_oracles/libpp.a[hal_debug.o]`
+    /// `dbg_read_bfr_rate`, and `_oracles/libpp.a[trc.o]`
+    /// `trc_set_bf_report_rate`. The three fresh-read RMWs and their
+    /// high-to-low order are preserved.
+    pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
+        let report = self.peripherals.wifi_mac_he_init_prefix.bf_report_rate();
+
+        // SAFETY: construction bounds signal_mode to two bits and normalized
+        // rate to five bits. Boolean fields use generated safe bit writers.
+        report.modify(|_, w| unsafe {
+            w.qam16_rate()
+                .bits(profile.normalized_rate)
+                .qam16_signal_mode()
+                .bits(profile.signal_mode)
+                .qam16_dcm()
+                .bit(profile.dcm)
+                .qam16_ersu()
+                .bit(profile.extended_range_single_user)
+        });
+        report.modify(|_, w| unsafe {
+            w.qpsk_rate()
+                .bits(profile.normalized_rate)
+                .qpsk_signal_mode()
+                .bits(profile.signal_mode)
+                .qpsk_dcm()
+                .bit(profile.dcm)
+                .qpsk_ersu()
+                .bit(profile.extended_range_single_user)
+        });
+        report.modify(|_, w| unsafe {
+            w.bpsk_rate()
+                .bits(profile.normalized_rate)
+                .bpsk_signal_mode()
+                .bits(profile.signal_mode)
+                .bpsk_dcm()
+                .bit(profile.dcm)
+                .bpsk_ersu()
+                .bit(profile.extended_range_single_user)
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_profile_matches_all_three_complete_trc_policy_outputs() {
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(1, 0x10, false, false),
+            Ok(MacHeBeamformingReportProfile {
+                signal_mode: 1,
+                normalized_rate: 0,
+                dcm: false,
+                extended_range_single_user: false,
+            })
+        );
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(2, 0x10, true, true),
+            Ok(MacHeBeamformingReportProfile {
+                signal_mode: 2,
+                normalized_rate: 0,
+                dcm: true,
+                extended_range_single_user: true,
+            })
+        );
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(0, 0x0b, false, false),
+            Ok(MacHeBeamformingReportProfile {
+                signal_mode: 0,
+                normalized_rate: 0x0b,
+                dcm: false,
+                extended_range_single_user: false,
+            })
+        );
+    }
+
+    #[test]
+    fn report_profile_rejects_blob_wrap_and_field_truncation() {
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(4, 0x10, false, false),
+            Err(MacHeBeamformingReportProfileError::SignalMode(4))
+        );
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(1, 0x0f, false, false),
+            Err(MacHeBeamformingReportProfileError::RateCode {
+                signal_mode: 1,
+                rate_code: 0x0f,
+            })
+        );
+        assert_eq!(
+            MacHeBeamformingReportProfile::from_hal_arguments(0, 0x20, false, false),
+            Err(MacHeBeamformingReportProfileError::RateCode {
+                signal_mode: 0,
+                rate_code: 0x20,
+            })
+        );
+    }
+}

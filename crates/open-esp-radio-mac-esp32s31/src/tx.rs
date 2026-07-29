@@ -3,6 +3,9 @@
 use core::pin::Pin;
 
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
+use open_esp_radio_ieee80211::trigger::{
+    TriggerCommonInfo, TriggerGiLtf, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
+};
 use open_esp_radio_pac_esp32s31::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters, RadioRegisters,
@@ -1148,6 +1151,105 @@ impl HeRate {
         } else {
             Some(delimiters as u8)
         }
+    }
+}
+
+/// One scheduled 1T1R HE-TB rate recovered from Trigger Common/User Info.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeTriggerScheduledRate {
+    pub rate: HeRate,
+    pub resource_unit: HeResourceUnit,
+    pub resource_unit_index: u8,
+    pub resource_unit_region: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeTriggerScheduledRateError {
+    UnsupportedTriggerType,
+    UnsupportedBandwidth,
+    AssociationIdMismatch,
+    UnsupportedSpatialStreams,
+    UnsupportedResourceUnit,
+    UnsupportedMcs,
+    UnsupportedDcmCombination,
+}
+
+impl HeTriggerScheduledRate {
+    /// Admit the Trigger user assigned to this 1T1R HE20 station.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::
+    /// dbg_dump_trig_common_info`, `dbg_dump_trig_user_ss`, complete
+    /// `_oracles/libpp.a[hal_utilities.o]::ru2str`, and complete
+    /// `_oracles/libnet80211.a[test_rx_trig.o]::esp_test_cal_tx_tb`
+    /// (size `0xa44`). The calculation body derives RU class from the same
+    /// raw allocation, indexes coding/MCS and GI tables, and uses the
+    /// scheduled user's spatial-stream allocation.
+    ///
+    /// Wider bandwidths, non-NSS1 assignments and unsupported DCM/MCS
+    /// combinations fail before they can become a transmit rate. AID zero
+    /// random-access users use a different policy and are intentionally not
+    /// accepted by this scheduled-user constructor.
+    pub const fn new(
+        common: TriggerCommonInfo,
+        user: TriggerUserSpatialStreamInfo,
+        association_id: u16,
+    ) -> Result<Self, HeTriggerScheduledRateError> {
+        if !matches!(common.trigger_type, TriggerType::Basic) {
+            return Err(HeTriggerScheduledRateError::UnsupportedTriggerType);
+        }
+        if common.uplink_bandwidth_encoding != 0 {
+            return Err(HeTriggerScheduledRateError::UnsupportedBandwidth);
+        }
+        if user.aid12 != association_id || association_id == 0 || association_id > 0x0fff {
+            return Err(HeTriggerScheduledRateError::AssociationIdMismatch);
+        }
+        if user.starting_spatial_stream != 1 || user.spatial_stream_count != 1 {
+            return Err(HeTriggerScheduledRateError::UnsupportedSpatialStreams);
+        }
+        let Some(allocation) = TriggerRuAllocation::from_encoding(user.ru_allocation) else {
+            return Err(HeTriggerScheduledRateError::UnsupportedResourceUnit);
+        };
+        let TriggerRuAllocation::Narrow {
+            resource_unit,
+            one_based_index,
+        } = allocation
+        else {
+            return Err(HeTriggerScheduledRateError::UnsupportedResourceUnit);
+        };
+        let Some(mcs) = HeMcs::from_index(user.mcs) else {
+            return Err(HeTriggerScheduledRateError::UnsupportedMcs);
+        };
+        let gi_ltf = match common.gi_ltf {
+            TriggerGiLtf::OneLtf800Ns => crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns,
+            TriggerGiLtf::TwoLtf800Ns => crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+            TriggerGiLtf::TwoLtf1600Ns => crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            TriggerGiLtf::FourLtf3200Ns => crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns,
+        };
+        let rate = match (user.dcm, user.coding_type, mcs) {
+            (false, false, _) => HeRate::new(mcs, gi_ltf),
+            (false, true, _) => HeRate::ldpc(mcs, gi_ltf),
+            (true, false, HeMcs::Mcs0) => HeRate::bcc_dcm(HeBccDcmMcs::Mcs0, gi_ltf),
+            (true, false, HeMcs::Mcs1) => HeRate::bcc_dcm(HeBccDcmMcs::Mcs1, gi_ltf),
+            (true, false, HeMcs::Mcs3) => HeRate::bcc_dcm(HeBccDcmMcs::Mcs3, gi_ltf),
+            (true, true, HeMcs::Mcs0) => HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs0, gi_ltf),
+            (true, true, HeMcs::Mcs1) => HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs1, gi_ltf),
+            (true, true, HeMcs::Mcs3) => HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs3, gi_ltf),
+            (true, true, HeMcs::Mcs4) => HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs4, gi_ltf),
+            (true, _, _) => {
+                return Err(HeTriggerScheduledRateError::UnsupportedDcmCombination);
+            }
+        };
+
+        Ok(Self {
+            rate,
+            resource_unit,
+            resource_unit_index: one_based_index,
+            resource_unit_region: user.ru_allocation_region,
+        })
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        self.rate.nominal_kbps_for_resource_unit(self.resource_unit)
     }
 }
 

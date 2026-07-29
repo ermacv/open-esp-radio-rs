@@ -93,6 +93,15 @@ distinct unsupported-wide class because ESP32-S31 non-AP operation is
 the Rust classifier returns `None` rather than inheriting its mutable string
 buffer.
 
+The MAC-side `HeTriggerScheduledRate` then joins those wire fields to the
+complete RU rate tables. It accepts only a Basic Trigger, 20-MHz uplink,
+the associated AID, one spatial stream, a classified narrow RU, MCS0..9 and
+the separately typed BCC/LDPC DCM sets. Complete
+`test_rx_trig.o::esp_test_cal_tx_tb` (size `0xa44`) is the arithmetic oracle
+for RU class, coding, MCS, GI/LTF and scheduled spatial-stream inputs. This
+is a host-verifiable admission/rate plan, not yet evidence that hardware
+entered the TB transmit state.
+
 Exact Trigger encodings recovered from the complete functions are:
 
 | Oracle | Recovered byte/bit boundary |

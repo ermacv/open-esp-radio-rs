@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use open_esp_radio_ieee80211::trigger::{
+    parse_trigger_common_info, parse_trigger_user_spatial_stream,
+};
 use open_esp_radio_mac_esp32s31::{
     crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CcmpKeyHardware, CryptoKeyError},
     descriptor::{
@@ -40,9 +43,10 @@ use open_esp_radio_mac_esp32s31::{
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
         HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs, HeMcs, HeRate,
-        HeResourceUnit, HeSmpduTxConfig, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth,
-        HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate,
-        LegacyTxConfig, LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate, HeTriggerScheduledRateError,
+        HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
+        HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
+        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -2347,6 +2351,89 @@ fn he_resource_unit_rates_match_all_complete_blob_table_endpoints() {
         assert_eq!(dcm_mcs3.nominal_kbps_for_resource_unit(ru), mcs3_kbps);
         assert_eq!(dcm_mcs4.nominal_kbps_for_resource_unit(ru), mcs4_kbps);
     }
+}
+
+fn scheduled_trigger_user(
+    aid12: u16,
+    ru_allocation: u8,
+    coding_type: bool,
+    mcs: u8,
+    dcm: bool,
+    starting_spatial_stream_encoding: u8,
+    spatial_stream_count_encoding: u8,
+) -> [u8; 5] {
+    [
+        aid12 as u8,
+        ((aid12 >> 8) as u8 & 0x0f) | ((ru_allocation & 0x07) << 5),
+        ((ru_allocation >> 3) & 0x0f) | ((coding_type as u8) << 4) | ((mcs & 0x07) << 5),
+        ((mcs >> 3) & 0x01)
+            | ((dcm as u8) << 1)
+            | ((starting_spatial_stream_encoding & 0x07) << 2)
+            | ((spatial_stream_count_encoding & 0x07) << 5),
+        0x7f,
+    ]
+}
+
+#[test]
+fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
+    let common =
+        parse_trigger_common_info(&(2_u64 << 20).to_le_bytes()).expect("complete common info");
+    let user_bytes = scheduled_trigger_user(0x234, 53, true, 4, true, 0, 0);
+    let user = parse_trigger_user_spatial_stream(&user_bytes).unwrap();
+    let scheduled = HeTriggerScheduledRate::new(common, user, 0x234).unwrap();
+    assert_eq!(scheduled.resource_unit, HeResourceUnit::Ru106);
+    assert_eq!(scheduled.resource_unit_index, 1);
+    assert_eq!(scheduled.rate.mcs(), HeMcs::Mcs4);
+    assert!(scheduled.rate.is_ldpc());
+    assert!(scheduled.rate.is_dcm());
+    assert_eq!(scheduled.nominal_kbps(), 10_600);
+
+    let bsrp_common = parse_trigger_common_info(&((2_u64 << 20) | 4).to_le_bytes()).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::new(bsrp_common, user, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedTriggerType)
+    );
+    let wide_common =
+        parse_trigger_common_info(&((2_u64 << 20) | (1 << 18)).to_le_bytes()).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::new(wide_common, user, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedBandwidth)
+    );
+    assert_eq!(
+        HeTriggerScheduledRate::new(common, user, 0x235),
+        Err(HeTriggerScheduledRateError::AssociationIdMismatch)
+    );
+
+    let two_stream_bytes = scheduled_trigger_user(0x234, 53, true, 4, true, 0, 1);
+    let two_streams = parse_trigger_user_spatial_stream(&two_stream_bytes).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::new(common, two_streams, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedSpatialStreams)
+    );
+
+    for ru_allocation in [9, 69] {
+        let unsupported_ru_bytes =
+            scheduled_trigger_user(0x234, ru_allocation, false, 0, false, 0, 0);
+        let unsupported_ru = parse_trigger_user_spatial_stream(&unsupported_ru_bytes).unwrap();
+        assert_eq!(
+            HeTriggerScheduledRate::new(common, unsupported_ru, 0x234),
+            Err(HeTriggerScheduledRateError::UnsupportedResourceUnit)
+        );
+    }
+
+    let mcs10_bytes = scheduled_trigger_user(0x234, 53, true, 10, false, 0, 0);
+    let mcs10 = parse_trigger_user_spatial_stream(&mcs10_bytes).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::new(common, mcs10, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedMcs)
+    );
+
+    let dcm_mcs2_bytes = scheduled_trigger_user(0x234, 53, true, 2, true, 0, 0);
+    let dcm_mcs2 = parse_trigger_user_spatial_stream(&dcm_mcs2_bytes).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::new(common, dcm_mcs2, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedDcmCombination)
+    );
 }
 
 #[test]

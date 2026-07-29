@@ -1379,6 +1379,72 @@ therefore not synthesized. These words are mapped as opaque observations
 until a selector experiment or another complete hardware leaf proves their
 higher-level meanings.
 
+SVD v3.32 follows that rule with the actual write-side Trigger path rather
+than another passive decoder. Complete blob
+`hal_mac_tx.o::{mac_tx_set_hesig,mac_tx_set_tb,mac_tx_set_mplen}` and the
+independent rev0 ROM bodies agree on this chain:
+
+1. `mac_tx_set_hesig` enters `mac_tx_set_tb` for an HE frame unless
+   descriptor-state word `+0x30` bit 16 suppresses it.
+2. The QoS TID must belong to the configured bitmap. Complete
+   `if_hecfg.o::wifi_he_get_hetb_tid_bitmap` maps limits one through four to
+   `[0x01, 0x81, 0xa1, 0xa3]`; the normal/fallback limit three therefore
+   admits TIDs 0, 5 and 7.
+3. `mac_tx_set_mplen` allocates and writes a `MPDU_LEN/NEXT` chain in the
+   already mapped 120-word aperture. It publishes the terminal seven-bit link
+   at `0x201054fc-q*0x7c`, a previously unnamed vector word.
+4. `mac_tx_set_tb` sets `0x20104dbc+4*q[8]`, constructs
+   `WDEVTXQ_CONF1` at `0x20104d68-0x10*q` from preserved bit two plus
+   `TB_ENA`, queue, first link and TID, updates the corresponding low-twenty
+   `WDEVTXQBSR_SW` value at `0x20104d78+8*q`, then publishes
+   `1<<q` into `WDEVTXQBSR_CTRL[7:0]`.
+
+The exact non-single-TID link ranges partition all 120 entries: q0 32..63, q1
+64..95, q2 0..31 and q3 96..119. The typed PAC consequently replaces the
+blob's mutable allocation bitmaps with `MacHeTbLinkReservation`: one live
+aggregate per hardware queue receives a deterministic, disjoint contiguous
+range. `prepare_he_trigger_based_queue` validates TID, entry count, all
+fourteen-bit MPDU lengths and the twenty-bit BSR value before MMIO, preserves
+the instruction order, and uses the validity RMW as its final publication
+edge. `hal_mac_tx_clr_mplen` independently proves that hardware-visible
+cleanup clears `TB_ENA`; its remaining work only frees the blob's software
+bitmap.
+
+This closes the missing internal write-side transition. It does not claim
+UL-OFDMA HIL: a real AP Trigger and observed nonzero Trigger/TB counters are
+still required.
+
+SVD v3.33 closes the remaining direct-MMIO gap in the complete
+`hal_debug.o::dbg_read_tx_sig` decoder. Besides independently checking the
+existing HE-SIG-A words, the function decodes:
+
+- the low HT MCS nibble and sixteen-bit HT length;
+- internal VHT signal words at `0x201054ec/4f0-q*0x7c`, including MCS,
+  channel width, group ID, NSTS, SU partial AID, SGI, coding and the
+  SU-CBW20 pre-EOF-padding length;
+- the HT40 length, MCS, EOF and TXOP counts at
+  `0x2010550c-q*0x7c`;
+- the RTS rate, HT20 EOF/TXOP counts and two three-bit antenna-selector
+  groups at `0x20105510-q*0x7c`.
+
+These are instruction-exact internal vector fields. Mapping the VHT branch
+does not claim that the public ESP32-S31 station feature set supports VHT.
+
+The same exhaustive sweep bounded every exported Wi-Fi `dbg_*` symbol: 69
+unique functions across `libpp.a` and `libnet80211.a`. The remaining symbols
+are packet/descriptor decoders, software-counter dumps, allocator checks or
+empty debug stubs and add no fixed MMIO addresses. The rev0 ROM ELF has no
+equivalent callable `dbg_*` decoder suite.
+
+Two reachable nontrivial leaves add useful hardware evidence. The
+`dbg_clr_hw_count` target `esp_test_clr_hw_statistics` asserts
+`0x20104c00[16]`, pulses `0x20104308[0]`, then clears the arm bit. The
+beamforming test helper `esp_test_get_bfr_avgsnr` reads
+`0x20105f94[7:0]` and computes stream-zero average SNR as
+`(code + 88) / 4` dB, treating `0x7f` as a saturated lower bound. The latter
+is now exposed as an integer quarter-dB PAC snapshot for future BFRP/SU
+beamforming HIL.
+
 `HIL_OPEN_TX_BLOCK_ACK_DIAGNOSTIC_2026_07_29` qualified the v3.30 TX result
 map under a real HE20 MCS0..9 A-MPDU matrix. After TID0 AddBA with window 32,
 logical queue two reported BlockAck, bitmap `0x00000000ffffffff`, and

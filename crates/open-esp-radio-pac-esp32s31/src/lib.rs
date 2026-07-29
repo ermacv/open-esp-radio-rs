@@ -46,9 +46,10 @@ pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
 pub use mac_he_init_suffix::MacHeTxMpduLengthLink;
 pub use mac_he_ofdma::{
-    MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot, MacHeCustomReceiveType,
-    MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot,
-    MacHeReceiveConfigurationSnapshot, MacHeRxPowerSaveSnapshot, MacHeTid,
+    MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot,
+    MacHeCustomReceiveType, MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot,
+    MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot, MacHeRxPowerSaveSnapshot,
+    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
@@ -720,6 +721,30 @@ mod tests {
             );
         }
         assert_eq!(bsr.control().as_ptr() as usize, 0x2010_4db8);
+
+        let vectors = &registers.peripherals.wifi_mac_tx_queue_vector;
+        for physical_queue in 0..4 {
+            assert_eq!(
+                vectors.vht_signal_1(physical_queue).as_ptr() as usize,
+                0x2010_5378 + physical_queue * 0x7c
+            );
+            assert_eq!(
+                vectors.vht_mode(physical_queue).as_ptr() as usize,
+                0x2010_537c + physical_queue * 0x7c
+            );
+            assert_eq!(
+                vectors.he_mpdu_length_tail(physical_queue).as_ptr() as usize,
+                0x2010_5388 + physical_queue * 0x7c
+            );
+        }
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_beamforming_report
+                .average_snr()
+                .as_ptr() as usize,
+            0x2010_5f94
+        );
 
         let trigger = &registers.peripherals.wifi_mac_he_trigger_rx_diagnostics;
         assert_eq!(trigger.state().as_ptr() as usize, 0x2010_4508);

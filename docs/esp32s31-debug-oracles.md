@@ -29,7 +29,7 @@ shifts and masks agree with those strings.
 | `dbg_read_internal_txba` | standalone internal TX BlockAck result | complete five-word geometry and fragment/SSN/TID fields decoded |
 | `dbg_read_key_entry` | per-queue key selector plus MAC crypto key table and validity state | selector, table geometry and validity bitmap decoded |
 | `dbg_read_tx_mplen` | 120-entry linked MPDU-length table | complete aperture with MPDU length and next-link fields decoded |
-| `dbg_read_tx_sig` | active TX queue PLCP/SIG vectors | major queue words mapped; residual diagnostic fields pending |
+| `dbg_read_tx_sig` | active TX queue PLCP/SIG vectors | complete HT/HE branches plus the internal VHT words, HT20/HT40 length/count and antenna-selector fields decoded |
 | `dbg_dump_txq_txinfo` | per-queue ACK/BlockAck and trigger-based TX result | complete two-word field decode |
 | `dbg_lmac_hw_statis_dump` | RX/TX interrupt, Trigger and hang/panic hardware counters | complete address/name map; opaque full-width values retained where no mask exists |
 | `dbg_lmac_diag_statis_dump` | sparse `diag0..diag12` and `diagsel` bank | complete address/name map; higher-level meanings pending |
@@ -92,13 +92,28 @@ The following symbols change hardware or debug policy and need the same
 transaction-level treatment as ordinary HAL setters:
 
 - `dbg_clr_hw_count`
-- `dbg_complete_ignore_no_key`
 - `dbg_disable_report_cbf`
 - `dbg_tb_ignore_cca_enable`
 - `dbg_check_mutimer`
 
 Their symbol names alone are not sufficient to assign bit semantics. A field
 is promoted only after the complete body and all reachable leaves are bounded.
+
+`dbg_complete_ignore_no_key` is not a mutator despite its imperative-looking
+name. Its complete body only filters a completion object, reads the already
+mapped key-validity word at `0x20104814`, and logs descriptor/software state.
+It adds no new fixed address or write semantics.
+
+The direct mutator audit is also now bounded further. Complete
+`dbg_tb_ignore_cca_enable` already supplies the polarity of
+`0x20104c7c[12]`. Complete `dbg_disable_report_cbf` operates only on the
+already mapped beamforming-control word `0x20104c78[20]`; it clears the bit
+for a nonzero “disable” argument and sets it for zero. This strengthens the
+compressed-beamforming-report interpretation but adds no new address.
+`dbg_clr_hw_count` is only a tail call to `esp_test_clr_hw_statistics`, but
+the reachable leaf is useful: it asserts `0x20104c00[16]`, pulses
+`0x20104308[0]` high then low, and clears the first bit. The SVD records this
+as one bounded hardware-statistics-clear transaction.
 
 ## Other archives and ROM
 
@@ -111,6 +126,23 @@ The newly useful observations are `CTS_INTERRUPT` at `0x20104384`,
 uses the blob's exact labels while retaining opaque 32-bit values.
 `dbg_lmac_rxtx_statis_dump` itself primarily reads software counters and adds
 no fixed MMIO address.
+
+The complete Wi-Fi inventory contains 69 distinct exported `dbg_*` symbols:
+67 in `libpp.a` and two software-statistics dumps in `libnet80211.a`.
+Within `libpp.a`, 46 live in `hal_debug.o`, 16 in `pp_debug.o`, two in
+`lmac.o`, two in `hal_he_common.o`, and one in the MU-SIG-B test object.
+The empty two-byte `pp_debug.o` stubs (`dbg_ebuf_loc_show`,
+`dbg_his_lmac_*`, `dbg_lmac_init`, `dbg_perf_path_set/show`) contain only a
+return instruction. `dbg_lmac_ps_statis_*`, `dbg_lmac_statis_dump`,
+`dbg_perf_throughput_cal`, `dbg_cnt_lmac_drop` and `dbg_lmac_get_acs` access
+software globals or caller-owned objects. They cannot add radio MMIO
+addresses.
+
+One adjacent non-`dbg_*` helper is directly useful to the beamforming
+frontier. Complete `hal_debug.o::esp_test_get_bfr_avgsnr` reads
+`0x20105f94[7:0]` as stream-zero average-SNR code and converts it to dB as
+`(code + 88) / 4`; code `0x7f` is printed as a lower bound. This word is now
+in the SVD and exposed through an integer-only PAC snapshot.
 
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
@@ -128,8 +160,8 @@ MU timer rather than directly naming a new register bank.
 state and protocol objects rather than raw MAC addresses, but they can connect
 an already recovered register field to its higher-level 802.11 meaning.
 
-The rev0 ROM ELF does not contain an equivalent rich `dbg_read_*` register
-suite. Its debug-related public symbols are mainly configuration leaves such
+The rev0 ROM ELF contains no callable `dbg_*` register decoder. Its
+debug-related public symbols are mainly configuration leaves such
 as `phy_chan_dump_cfg`, `phy_csidump_force_lltf_cfg`,
 `phy_txcal_debuge_mode_` and `phy_pbus_debugmode`. The register-map recovery
 value is consequently concentrated in blob `hal_debug.o`; ROM remains the

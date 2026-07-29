@@ -1,6 +1,9 @@
 //! Typed HE trigger/OFDMA control and best-effort hardware diagnostics.
 
-use super::RadioRegisters;
+use super::{device_fence, RadioRegisters};
+
+const ORDINARY_QUEUE_COUNT: u8 = 4;
+const MPDU_LENGTH_LINK_END: u8 = 0x7f;
 
 /// One IEEE 802.11 traffic identifier accepted by the recovered HE BSR block.
 ///
@@ -27,6 +30,128 @@ impl MacHeTid {
     const fn mask(self) -> u8 {
         1 << self.0
     }
+}
+
+/// Configured maximum number of TIDs eligible for HE trigger-based TX.
+///
+/// SOURCE: complete `_oracles/libpp.a[if_hecfg.o]::
+/// wifi_he_get_hetb_tid_bitmap` and its four-byte table. The enum is the
+/// Rust-owned replacement for `g_wifi_menuconfig + 0x5c`; callers cannot
+/// manufacture the blob's invalid configuration values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum MacHeTbTidLimit {
+    One = 1,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+}
+
+impl MacHeTbTidLimit {
+    /// Exact eligible-TID bitmap returned by the pinned blob.
+    pub const fn bitmap(self) -> u8 {
+        match self {
+            Self::One => 0x01,
+            Self::Two => 0x81,
+            Self::Three => 0xa1,
+            Self::Four => 0xa3,
+        }
+    }
+
+    pub const fn contains(self, tid: MacHeTid) -> bool {
+        self.bitmap() & tid.mask() != 0
+    }
+}
+
+impl Default for MacHeTbTidLimit {
+    fn default() -> Self {
+        // This is the blob's fallback for an invalid menuconfig value and the
+        // observed normal configuration: TIDs 0, 5 and 7.
+        Self::Three
+    }
+}
+
+/// Exclusive contiguous reservation in the 120-entry HE MPDU-length table.
+///
+/// The open owner permits one live aggregate per hardware queue, so the
+/// vendor allocator's disjoint queue ranges can be used deterministically
+/// without a global bitmap or dynamic allocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTbLinkReservation {
+    queue: u8,
+    first: u8,
+    count: u8,
+}
+
+impl MacHeTbLinkReservation {
+    /// Reserve the beginning of the exact range selected by the blob.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_he_common.o]::{
+    /// hal_he_get_mplen_addr_start,hal_he_get_mplen_addr_end}` and the
+    /// corresponding ROM leaves. The single-TID layout differs from all
+    /// other policies.
+    pub const fn for_queue(policy: MacHeTbTidLimit, queue: u8, count: u8) -> Option<Self> {
+        if queue >= ORDINARY_QUEUE_COUNT || count == 0 {
+            return None;
+        }
+        let (first, last) = match (policy, queue) {
+            (MacHeTbTidLimit::One, 0) => (64, 81),
+            (MacHeTbTidLimit::One, 1) => (82, 99),
+            (MacHeTbTidLimit::One, 2) => (0, 63),
+            (MacHeTbTidLimit::One, 3) => (100, 117),
+            (_, 0) => (32, 63),
+            (_, 1) => (64, 95),
+            (_, 2) => (0, 31),
+            (_, 3) => (96, 119),
+            _ => return None,
+        };
+        if count > last - first + 1 {
+            return None;
+        }
+        Some(Self {
+            queue,
+            first,
+            count,
+        })
+    }
+
+    pub const fn queue(self) -> u8 {
+        self.queue
+    }
+
+    pub const fn first(self) -> u8 {
+        self.first
+    }
+
+    pub const fn count(self) -> u8 {
+        self.count
+    }
+
+    const fn index(self, position: u8) -> Option<u8> {
+        if position < self.count {
+            Some(self.first + position)
+        } else {
+            None
+        }
+    }
+
+    const fn next(self, position: u8) -> Option<u8> {
+        if position >= self.count {
+            None
+        } else if position + 1 == self.count {
+            Some(MPDU_LENGTH_LINK_END)
+        } else {
+            Some(self.first + position + 1)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeTbProgramError {
+    TidNotEligible,
+    LengthCountMismatch,
+    InvalidMpduLength,
+    QueuedBytesTooLarge,
 }
 
 /// One non-latched view of all hardware-visible HE Buffer Status Reports.
@@ -151,6 +276,27 @@ pub struct MacHeBeamformingConfigurationSnapshot {
     pub ru_select: bool,
 }
 
+/// Stream-zero average SNR captured by the beamforming-report hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacBeamformingAverageSnr {
+    /// Raw byte printed by the complete vendor debug helper.
+    pub raw_code: u8,
+    /// SNR in quarter-dB units: `(raw_code + 88)`.
+    pub quarter_db: u16,
+    /// Code `0x7f` is rendered by the blob as a lower bound (`>=`).
+    pub is_lower_bound: bool,
+}
+
+impl MacBeamformingAverageSnr {
+    const fn from_raw_code(raw_code: u8) -> Self {
+        Self {
+            raw_code,
+            quarter_db: raw_code as u16 + 88,
+            is_lower_bound: raw_code == 0x7f,
+        }
+    }
+}
+
 /// Allocation-free view of the HE/RX policy words decoded by
 /// `dbg_read_rx_misc`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -184,6 +330,143 @@ pub struct MacHeReceiveConfigurationSnapshot {
 }
 
 impl RadioRegisters {
+    /// Read the beamforming-report average SNR without using floating point.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::
+    /// esp_test_get_bfr_avgsnr`, size `0x86`. The blob reads
+    /// `0x20105f94[7:0]` and computes `(code + 88.0) * 0.25` dB. Code `0x7f`
+    /// uses a `>=` prefix, so the typed value retains that saturation state.
+    pub fn beamforming_average_snr(&self) -> MacBeamformingAverageSnr {
+        let raw_code = self
+            .peripherals
+            .wifi_mac_beamforming_report
+            .average_snr()
+            .read()
+            .stream_0_code()
+            .bits();
+        MacBeamformingAverageSnr::from_raw_code(raw_code)
+    }
+
+    /// Program the complete write-side HE Trigger-eligible queue transition.
+    ///
+    /// SOURCE: instruction-equivalent complete
+    /// `_oracles/libpp.a[hal_mac_tx.o]::{mac_tx_set_tb,
+    /// mac_tx_set_mplen}` and rev0 ROM bodies `mac_tx_set_tb` at
+    /// `0x2f834f82` and `mac_tx_set_mplen` at `0x2f836b1a`.
+    ///
+    /// `reservation` represents exclusive software ownership of this
+    /// hardware queue's disjoint MPDU-link range. The final validity RMW is
+    /// the publication edge; every link, timer, queue-control, tail and BSR
+    /// write is device-visible before it.
+    pub fn prepare_he_trigger_based_queue(
+        &mut self,
+        policy: MacHeTbTidLimit,
+        reservation: MacHeTbLinkReservation,
+        tid: MacHeTid,
+        mpdu_lengths: &[u16],
+        queued_bytes: u32,
+    ) -> Result<(), MacHeTbProgramError> {
+        if !policy.contains(tid) {
+            return Err(MacHeTbProgramError::TidNotEligible);
+        }
+        if mpdu_lengths.len() != usize::from(reservation.count) {
+            return Err(MacHeTbProgramError::LengthCountMismatch);
+        }
+        if mpdu_lengths
+            .iter()
+            .any(|length| *length == 0 || *length > 0x3fff)
+        {
+            return Err(MacHeTbProgramError::InvalidMpduLength);
+        }
+        if queued_bytes > 0x000f_ffff {
+            return Err(MacHeTbProgramError::QueuedBytesTooLarge);
+        }
+
+        let queue = reservation.queue;
+        let physical_queue = 7 - usize::from(queue);
+        let vector_bank = 3 - usize::from(queue);
+        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let timer = self
+            .peripherals
+            .wifi_mac_he_mu_edca_timer
+            .timer(usize::from(queue));
+
+        // mac_tx_set_tb enables the selected MU-EDCA timer before allocating
+        // the first MPDU-length entry.
+        timer.modify(|_, w| w.enable().set_bit());
+
+        let write_link = |position: u8, length: u16| {
+            let index = reservation.index(position).unwrap();
+            let next = reservation.next(position).unwrap();
+            suffix
+                .he_scratch(usize::from(index))
+                .modify(|_, w| unsafe { w.mpdu_length().bits(length).next_link().bits(next) });
+            if next == MPDU_LENGTH_LINK_END {
+                self.peripherals
+                    .wifi_mac_tx_queue_vector
+                    .he_mpdu_length_tail(vector_bank)
+                    .modify(|_, w| unsafe { w.link_index().bits(index) });
+            }
+        };
+
+        write_link(0, mpdu_lengths[0]);
+
+        // The setter preserves exactly bit two of the old CONF1 image and
+        // constructs every other named field from the current frame/queue.
+        let queue_control = suffix.queue_control(physical_queue);
+        let qos_null_to_translated_bss = queue_control.read().qos_null_to_translated_bss().bit();
+        // SAFETY: complete blob and ROM setters intentionally replace the
+        // full word with exactly this bounded image; zero is not assumed to
+        // be the peripheral reset value.
+        unsafe {
+            queue_control.write_with_zero(|w| {
+                w.qos_null_to_translated_bss()
+                    .bit(qos_null_to_translated_bss)
+                    .trigger_based_enable()
+                    .set_bit()
+                    .mu_edca_timer_select()
+                    .bits(queue)
+                    .mpdu_length_link_address()
+                    .bits(reservation.first)
+                    .tid()
+                    .bits(tid.value())
+            });
+        }
+
+        for (position, length) in mpdu_lengths.iter().enumerate().skip(1) {
+            write_link(position as u8, *length);
+        }
+
+        self.peripherals
+            .wifi_mac_he_buffer_status
+            .software_bsr(usize::from(queue))
+            .modify(|_, w| unsafe { w.value().bits(queued_bytes) });
+
+        device_fence();
+        self.peripherals
+            .wifi_mac_he_buffer_status
+            .control()
+            .modify(|r, w| unsafe {
+                w.valid_bitmap()
+                    .bits(r.valid_bitmap().bits() | (1 << queue))
+            });
+        Ok(())
+    }
+
+    /// Remove Trigger eligibility after the queue has returned to software.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// hal_mac_tx_clr_mplen`, size `0x1aa`. The hardware-visible cleanup
+    /// clears only `TB_ENA`; software-owned allocation bookkeeping is
+    /// unnecessary for the deterministic disjoint reservation.
+    pub fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
+        let physical_queue = 7 - usize::from(reservation.queue);
+        self.peripherals
+            .wifi_mac_he_init_suffix
+            .queue_control(physical_queue)
+            .modify(|_, w| w.trigger_based_enable().clear_bit());
+    }
+
     /// Select whether one TID participates in HE trigger-based BSR handling.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
@@ -222,7 +505,7 @@ impl RadioRegisters {
         MacHeBufferStatusSnapshot {
             hardware,
             software,
-            valid_tid_bitmap: control.valid_tid_bitmap().bits(),
+            valid_tid_bitmap: control.valid_bitmap().bits(),
             trigger_based_tid_bitmap: control.tid_bitmap().bits(),
             ac_empty_software_tid: control.ac_empty_software_tid().bits(),
             ac_empty_uses_software_tid: control.ac_empty_use_software_tid().bit(),
@@ -476,5 +759,79 @@ mod tests {
         }
         assert_eq!(MacHeTid::new(8), None);
         assert_eq!(MacHeTid::new(u8::MAX), None);
+    }
+
+    #[test]
+    fn trigger_tid_limit_matches_the_complete_blob_table() {
+        assert_eq!(MacHeTbTidLimit::One.bitmap(), 0x01);
+        assert_eq!(MacHeTbTidLimit::Two.bitmap(), 0x81);
+        assert_eq!(MacHeTbTidLimit::Three.bitmap(), 0xa1);
+        assert_eq!(MacHeTbTidLimit::Four.bitmap(), 0xa3);
+        assert_eq!(MacHeTbTidLimit::default(), MacHeTbTidLimit::Three);
+    }
+
+    #[test]
+    fn beamforming_average_snr_retains_the_blob_quarter_db_transform() {
+        assert_eq!(
+            MacBeamformingAverageSnr::from_raw_code(0),
+            MacBeamformingAverageSnr {
+                raw_code: 0,
+                quarter_db: 88,
+                is_lower_bound: false,
+            }
+        );
+        assert_eq!(
+            MacBeamformingAverageSnr::from_raw_code(0x7f),
+            MacBeamformingAverageSnr {
+                raw_code: 0x7f,
+                quarter_db: 215,
+                is_lower_bound: true,
+            }
+        );
+    }
+
+    #[test]
+    fn default_trigger_link_ranges_partition_all_120_entries() {
+        let expected = [(32, 32), (64, 32), (0, 32), (96, 24)];
+        let mut seen = [false; 120];
+        for (queue, (first, capacity)) in expected.into_iter().enumerate() {
+            let reservation =
+                MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, queue as u8, capacity)
+                    .unwrap();
+            assert_eq!(reservation.first(), first);
+            assert_eq!(reservation.count(), capacity);
+            for position in 0..capacity {
+                let index = reservation.index(position).unwrap();
+                assert!(!seen[usize::from(index)]);
+                seen[usize::from(index)] = true;
+                assert_eq!(
+                    reservation.next(position).unwrap(),
+                    if position + 1 == capacity {
+                        MPDU_LENGTH_LINK_END
+                    } else {
+                        index + 1
+                    }
+                );
+            }
+        }
+        assert!(seen.into_iter().all(core::convert::identity));
+    }
+
+    #[test]
+    fn single_tid_trigger_link_ranges_match_the_blob_tables() {
+        let expected = [(64, 18), (82, 18), (0, 64), (100, 18)];
+        for (queue, (first, capacity)) in expected.into_iter().enumerate() {
+            let reservation =
+                MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::One, queue as u8, capacity)
+                    .unwrap();
+            assert_eq!(reservation.first(), first);
+            assert_eq!(reservation.count(), capacity);
+            assert!(MacHeTbLinkReservation::for_queue(
+                MacHeTbTidLimit::One,
+                queue as u8,
+                capacity + 1
+            )
+            .is_none());
+        }
     }
 }

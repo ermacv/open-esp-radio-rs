@@ -12570,14 +12570,14 @@ pub mod wifi_mac_tx_queue_control {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0. The write-side Trigger-based path additionally publishes the tail of its linked MPDU-length list in the word between HE-SIG-A2 and POWER."]
 pub type WifiMacTxQueueVector = crate::Periph<wifi_mac_tx_queue_vector::RegisterBlock, 0x2010_5364>;
 impl core::fmt::Debug for WifiMacTxQueueVector {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxQueueVector").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0. The write-side Trigger-based path additionally publishes the tail of its linked MPDU-length list in the word between HE-SIG-A2 and POWER."]
 pub mod wifi_mac_tx_queue_vector {
     #[repr(C)]
     #[doc = "Register block"]
@@ -12589,17 +12589,23 @@ pub mod wifi_mac_tx_queue_vector {
         pti: (),
         _reserved3: [u8; 0x08],
         ht_signal: (),
-        _reserved4: [u8; 0x0c],
-        he_su_signal_a1: (),
+        _reserved4: [u8; 0x04],
+        vht_signal_1: (),
         _reserved5: [u8; 0x04],
-        he_su_signal_a2_length: (),
-        _reserved6: [u8; 0x08],
-        power: (),
+        vht_mode: (),
+        _reserved6: [u8; 0x04],
+        he_su_signal_a1: (),
         _reserved7: [u8; 0x04],
-        ht_descriptor_counts: (),
-        _reserved8: [u8; 0x08],
-        data_length: (),
+        he_su_signal_a2_length: (),
+        _reserved8: [u8; 0x04],
+        he_mpdu_length_tail: (),
         _reserved9: [u8; 0x04],
+        power: (),
+        _reserved10: [u8; 0x04],
+        ht_descriptor_counts: (),
+        _reserved11: [u8; 0x08],
+        data_length: (),
+        _reserved12: [u8; 0x04],
         length_control: (),
     }
     impl RegisterBlock {
@@ -12668,7 +12674,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
         #[inline(always)]
         pub const fn ht_signal(&self, n: usize) -> &HtSignal {
             #[allow(clippy::no_effect)]
@@ -12682,13 +12688,63 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+        #[doc = "0x10..0x20 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
         #[inline(always)]
         pub fn ht_signal_iter(&self) -> impl Iterator<Item = &HtSignal> {
             (0..4).map(move |n| unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(16)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x14..0x24 - SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission."]
+        #[inline(always)]
+        pub const fn vht_signal_1(&self, n: usize) -> &VhtSignal1 {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(20)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x14..0x24 - SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission."]
+        #[inline(always)]
+        pub fn vht_signal_1_iter(&self) -> impl Iterator<Item = &VhtSignal1> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(20)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body."]
+        #[inline(always)]
+        pub const fn vht_mode(&self, n: usize) -> &VhtMode {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body."]
+        #[inline(always)]
+        pub fn vht_mode_iter(&self) -> impl Iterator<Item = &VhtMode> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
                     .add(124 * n)
                     .cast()
             })
@@ -12743,6 +12799,31 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
+        #[doc = "0x24..0x34 - SOURCE\\[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-call-graph\\]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+        #[inline(always)]
+        pub const fn he_mpdu_length_tail(&self, n: usize) -> &HeMpduLengthTail {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(36)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x24..0x34 - SOURCE\\[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-call-graph\\]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+        #[inline(always)]
+        pub fn he_mpdu_length_tail_iter(&self) -> impl Iterator<Item = &HeMpduLengthTail> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(36)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
         #[doc = "0x28..0x38 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm."]
         #[inline(always)]
         pub const fn power(&self, n: usize) -> &Power {
@@ -12793,7 +12874,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
         #[inline(always)]
         pub const fn data_length(&self, n: usize) -> &DataLength {
             #[allow(clippy::no_effect)]
@@ -12807,7 +12888,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[doc = "0x34..0x44 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
         #[inline(always)]
         pub fn data_length_iter(&self) -> impl Iterator<Item = &DataLength> {
             (0..4).map(move |n| unsafe {
@@ -12818,7 +12899,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub const fn length_control(&self, n: usize) -> &LengthControl {
             #[allow(clippy::no_effect)]
@@ -12832,7 +12913,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+        #[doc = "0x38..0x48 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub fn length_control_iter(&self) -> impl Iterator<Item = &LengthControl> {
             (0..4).map(move |n| unsafe {
@@ -13103,34 +13184,76 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HT_SIGNAL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
+    #[doc = "HT_SIGNAL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
     #[doc(alias = "HT_SIGNAL")]
     pub type HtSignal = crate::Reg<ht_signal::HtSignalSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
     pub mod ht_signal {
         #[doc = "Register `HT_SIGNAL%s` reader"]
         pub type R = crate::R<HtSignalSpec>;
         #[doc = "Register `HT_SIGNAL%s` writer"]
         pub type W = crate::W<HtSignalSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `MCS_LOW_NIBBLE` reader - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
+        pub type McsLowNibbleR = crate::FieldReader;
+        #[doc = "Field `MCS_LOW_NIBBLE` writer - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
+        pub type McsLowNibbleW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LOW_CONTROL_UNKNOWN` reader - "]
+        pub type LowControlUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_CONTROL_UNKNOWN` writer - "]
+        pub type LowControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LENGTH` reader - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
+        pub type LengthR = crate::FieldReader<u16>;
+        #[doc = "Field `LENGTH` writer - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
+        pub type LengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
+        pub type HighControlUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
+        pub type HighControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn mcs_low_nibble(&self) -> McsLowNibbleR {
+                McsLowNibbleR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn low_control_unknown(&self) -> LowControlUnknownR {
+                LowControlUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:23 - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
+            #[inline(always)]
+            pub fn length(&self) -> LengthR {
+                LengthR::new(((self.bits >> 8) & 0xffff) as u16)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_control_unknown(&self) -> HighControlUnknownR {
+                HighControlUnknownR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
             #[inline(always)]
-            pub fn value(&mut self) -> ValueW<'_, HtSignalSpec> {
-                ValueW::new(self, 0)
+            pub fn mcs_low_nibble(&mut self) -> McsLowNibbleW<'_, HtSignalSpec> {
+                McsLowNibbleW::new(self, 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn low_control_unknown(&mut self) -> LowControlUnknownW<'_, HtSignalSpec> {
+                LowControlUnknownW::new(self, 4)
+            }
+            #[doc = "Bits 8:23 - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
+            #[inline(always)]
+            pub fn length(&mut self) -> LengthW<'_, HtSignalSpec> {
+                LengthW::new(self, 8)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_control_unknown(&mut self) -> HighControlUnknownW<'_, HtSignalSpec> {
+                HighControlUnknownW::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. It copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions. The PAC exposes the complete word until the remaining fields have independent hardware qualification.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-standard-semantic\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HtSignalSpec;
         impl crate::RegisterSpec for HtSignalSpec {
             type Ux = u32;
@@ -13139,6 +13262,258 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for HtSignalSpec {}
         #[doc = "`write(|w| ..)` method takes [`ht_signal::W`](W) writer structure"]
         impl crate::Writable for HtSignalSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "VHT_SIGNAL_1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission.\n\nYou can [`read`](crate::Reg::read) this register and get [`vht_signal_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`vht_signal_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@vht_signal_1`] module"]
+    #[doc(alias = "VHT_SIGNAL_1")]
+    pub type VhtSignal1 = crate::Reg<vht_signal_1::VhtSignal1Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission."]
+    pub mod vht_signal_1 {
+        #[doc = "Register `VHT_SIGNAL_1%s` reader"]
+        pub type R = crate::R<VhtSignal1Spec>;
+        #[doc = "Register `VHT_SIGNAL_1%s` writer"]
+        pub type W = crate::W<VhtSignal1Spec>;
+        #[doc = "Field `CHANNEL_WIDTH` reader - "]
+        pub type ChannelWidthR = crate::FieldReader;
+        #[doc = "Field `CHANNEL_WIDTH` writer - "]
+        pub type ChannelWidthW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `UNKNOWN_2_3` reader - "]
+        pub type Unknown2_3R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_2_3` writer - "]
+        pub type Unknown2_3W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `GROUP_ID` reader - "]
+        pub type GroupIdR = crate::FieldReader;
+        #[doc = "Field `GROUP_ID` writer - "]
+        pub type GroupIdW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `NSTS` reader - "]
+        pub type NstsR = crate::FieldReader;
+        #[doc = "Field `NSTS` writer - "]
+        pub type NstsW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `SU_PARTIAL_AID` reader - "]
+        pub type SuPartialAidR = crate::FieldReader<u16>;
+        #[doc = "Field `SU_PARTIAL_AID` writer - "]
+        pub type SuPartialAidW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `UNKNOWN_22_23` reader - "]
+        pub type Unknown22_23R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_22_23` writer - "]
+        pub type Unknown22_23W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `SHORT_GI` reader - "]
+        pub type ShortGiR = crate::BitReader;
+        #[doc = "Field `SHORT_GI` writer - "]
+        pub type ShortGiW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SHORT_GI_SYMBOL_DISAMBIGUATION` reader - "]
+        pub type ShortGiSymbolDisambiguationR = crate::BitReader;
+        #[doc = "Field `SHORT_GI_SYMBOL_DISAMBIGUATION` writer - "]
+        pub type ShortGiSymbolDisambiguationW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CODING` reader - "]
+        pub type CodingR = crate::BitReader;
+        #[doc = "Field `CODING` writer - "]
+        pub type CodingW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_27` reader - "]
+        pub type Unknown27R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_27` writer - "]
+        pub type Unknown27W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MCS` reader - "]
+        pub type McsR = crate::FieldReader;
+        #[doc = "Field `MCS` writer - "]
+        pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn channel_width(&self) -> ChannelWidthR {
+                ChannelWidthR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn unknown_2_3(&self) -> Unknown2_3R {
+                Unknown2_3R::new(((self.bits >> 2) & 3) as u8)
+            }
+            #[doc = "Bits 4:9"]
+            #[inline(always)]
+            pub fn group_id(&self) -> GroupIdR {
+                GroupIdR::new(((self.bits >> 4) & 0x3f) as u8)
+            }
+            #[doc = "Bits 10:12"]
+            #[inline(always)]
+            pub fn nsts(&self) -> NstsR {
+                NstsR::new(((self.bits >> 10) & 7) as u8)
+            }
+            #[doc = "Bits 13:21"]
+            #[inline(always)]
+            pub fn su_partial_aid(&self) -> SuPartialAidR {
+                SuPartialAidR::new(((self.bits >> 13) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn unknown_22_23(&self) -> Unknown22_23R {
+                Unknown22_23R::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn short_gi(&self) -> ShortGiR {
+                ShortGiR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn short_gi_symbol_disambiguation(&self) -> ShortGiSymbolDisambiguationR {
+                ShortGiSymbolDisambiguationR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn coding(&self) -> CodingR {
+                CodingR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn unknown_27(&self) -> Unknown27R {
+                Unknown27R::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn mcs(&self) -> McsR {
+                McsR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn channel_width(&mut self) -> ChannelWidthW<'_, VhtSignal1Spec> {
+                ChannelWidthW::new(self, 0)
+            }
+            #[doc = "Bits 2:3"]
+            #[inline(always)]
+            pub fn unknown_2_3(&mut self) -> Unknown2_3W<'_, VhtSignal1Spec> {
+                Unknown2_3W::new(self, 2)
+            }
+            #[doc = "Bits 4:9"]
+            #[inline(always)]
+            pub fn group_id(&mut self) -> GroupIdW<'_, VhtSignal1Spec> {
+                GroupIdW::new(self, 4)
+            }
+            #[doc = "Bits 10:12"]
+            #[inline(always)]
+            pub fn nsts(&mut self) -> NstsW<'_, VhtSignal1Spec> {
+                NstsW::new(self, 10)
+            }
+            #[doc = "Bits 13:21"]
+            #[inline(always)]
+            pub fn su_partial_aid(&mut self) -> SuPartialAidW<'_, VhtSignal1Spec> {
+                SuPartialAidW::new(self, 13)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn unknown_22_23(&mut self) -> Unknown22_23W<'_, VhtSignal1Spec> {
+                Unknown22_23W::new(self, 22)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn short_gi(&mut self) -> ShortGiW<'_, VhtSignal1Spec> {
+                ShortGiW::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn short_gi_symbol_disambiguation(
+                &mut self,
+            ) -> ShortGiSymbolDisambiguationW<'_, VhtSignal1Spec> {
+                ShortGiSymbolDisambiguationW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn coding(&mut self) -> CodingW<'_, VhtSignal1Spec> {
+                CodingW::new(self, 26)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn unknown_27(&mut self) -> Unknown27W<'_, VhtSignal1Spec> {
+                Unknown27W::new(self, 27)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn mcs(&mut self) -> McsW<'_, VhtSignal1Spec> {
+                McsW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission.\n\nYou can [`read`](crate::Reg::read) this register and get [`vht_signal_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`vht_signal_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct VhtSignal1Spec;
+        impl crate::RegisterSpec for VhtSignal1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`vht_signal_1::R`](R) reader structure"]
+        impl crate::Readable for VhtSignal1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`vht_signal_1::W`](W) writer structure"]
+        impl crate::Writable for VhtSignal1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "VHT_MODE (rw) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body.\n\nYou can [`read`](crate::Reg::read) this register and get [`vht_mode::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`vht_mode::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@vht_mode`] module"]
+    #[doc(alias = "VHT_MODE")]
+    pub type VhtMode = crate::Reg<vht_mode::VhtModeSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body."]
+    pub mod vht_mode {
+        #[doc = "Register `VHT_MODE%s` reader"]
+        pub type R = crate::R<VhtModeSpec>;
+        #[doc = "Register `VHT_MODE%s` writer"]
+        pub type W = crate::W<VhtModeSpec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_UNKNOWN` writer - "]
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LENGTH` reader - "]
+        pub type SuCbw20PreEofpadUnit4bytesLengthR = crate::FieldReader<u32>;
+        #[doc = "Field `SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LENGTH` writer - "]
+        pub type SuCbw20PreEofpadUnit4bytesLengthW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 13, u16>;
+        impl R {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 3) as u8)
+            }
+            #[doc = "Bits 2:18"]
+            #[inline(always)]
+            pub fn su_cbw20_pre_eofpad_unit4bytes_length(
+                &self,
+            ) -> SuCbw20PreEofpadUnit4bytesLengthR {
+                SuCbw20PreEofpadUnit4bytesLengthR::new((self.bits >> 2) & 0x0001_ffff)
+            }
+            #[doc = "Bits 19:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 19) & 0x1fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1"]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, VhtModeSpec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 2:18"]
+            #[inline(always)]
+            pub fn su_cbw20_pre_eofpad_unit4bytes_length(
+                &mut self,
+            ) -> SuCbw20PreEofpadUnit4bytesLengthW<'_, VhtModeSpec> {
+                SuCbw20PreEofpadUnit4bytesLengthW::new(self, 2)
+            }
+            #[doc = "Bits 19:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, VhtModeSpec> {
+                HighUnknownW::new(self, 19)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_TX_SIG\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body.\n\nYou can [`read`](crate::Reg::read) this register and get [`vht_mode::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`vht_mode::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct VhtModeSpec;
+        impl crate::RegisterSpec for VhtModeSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`vht_mode::R`](R) reader structure"]
+        impl crate::Readable for VhtModeSpec {}
+        #[doc = "`write(|w| ..)` method takes [`vht_mode::W`](W) writer structure"]
+        impl crate::Writable for VhtModeSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -13418,6 +13793,59 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "HE_MPDU_LENGTH_TAIL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-call-graph\\]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_mpdu_length_tail`] module"]
+    #[doc(alias = "HE_MPDU_LENGTH_TAIL")]
+    pub type HeMpduLengthTail = crate::Reg<he_mpdu_length_tail::HeMpduLengthTailSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-call-graph\\]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+    pub mod he_mpdu_length_tail {
+        #[doc = "Register `HE_MPDU_LENGTH_TAIL%s` reader"]
+        pub type R = crate::R<HeMpduLengthTailSpec>;
+        #[doc = "Register `HE_MPDU_LENGTH_TAIL%s` writer"]
+        pub type W = crate::W<HeMpduLengthTailSpec>;
+        #[doc = "Field `LINK_INDEX` reader - "]
+        pub type LinkIndexR = crate::FieldReader;
+        #[doc = "Field `LINK_INDEX` writer - "]
+        pub type LinkIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `PRESERVED_UNKNOWN` reader - "]
+        pub type PreservedUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `PRESERVED_UNKNOWN` writer - "]
+        pub type PreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32>;
+        impl R {
+            #[doc = "Bits 0:6"]
+            #[inline(always)]
+            pub fn link_index(&self) -> LinkIndexR {
+                LinkIndexR::new((self.bits & 0x7f) as u8)
+            }
+            #[doc = "Bits 7:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(&self) -> PreservedUnknownR {
+                PreservedUnknownR::new((self.bits >> 7) & 0x01ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:6"]
+            #[inline(always)]
+            pub fn link_index(&mut self) -> LinkIndexW<'_, HeMpduLengthTailSpec> {
+                LinkIndexW::new(self, 0)
+            }
+            #[doc = "Bits 7:31"]
+            #[inline(always)]
+            pub fn preserved_unknown(&mut self) -> PreservedUnknownW<'_, HeMpduLengthTailSpec> {
+                PreservedUnknownW::new(self, 7)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-field-semantics-from-call-graph\\]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeMpduLengthTailSpec;
+        impl crate::RegisterSpec for HeMpduLengthTailSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_mpdu_length_tail::R`](R) reader structure"]
+        impl crate::Readable for HeMpduLengthTailSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_mpdu_length_tail::W`](W) writer structure"]
+        impl crate::Writable for HeMpduLengthTailSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "POWER (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-mode-dependent\\]. Packed data/RTS PHY gain-table indices, not dBm.\n\nYou can [`read`](crate::Reg::read) this register and get [`power::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power`] module"]
     #[doc(alias = "POWER")]
     pub type Power = crate::Reg<power::PowerSpec>;
@@ -13540,34 +13968,90 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DATA_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_length`] module"]
+    #[doc = "DATA_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_length`] module"]
     #[doc(alias = "DATA_LENGTH")]
     pub type DataLength = crate::Reg<data_length::DataLengthSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
     pub mod data_length {
         #[doc = "Register `DATA_LENGTH%s` reader"]
         pub type R = crate::R<DataLengthSpec>;
         #[doc = "Register `DATA_LENGTH%s` writer"]
         pub type W = crate::W<DataLengthSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `HT40_LENGTH` reader - "]
+        pub type Ht40LengthR = crate::FieldReader<u32>;
+        #[doc = "Field `HT40_LENGTH` writer - "]
+        pub type Ht40LengthW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        #[doc = "Field `UNKNOWN_19_21` reader - "]
+        pub type Unknown19_21R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_19_21` writer - "]
+        pub type Unknown19_21W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `HT40_EOF_COUNT` reader - "]
+        pub type Ht40EofCountR = crate::FieldReader;
+        #[doc = "Field `HT40_EOF_COUNT` writer - "]
+        pub type Ht40EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HT40_TXOP_COUNT` reader - "]
+        pub type Ht40TxopCountR = crate::FieldReader;
+        #[doc = "Field `HT40_TXOP_COUNT` writer - "]
+        pub type Ht40TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `HT40_MCS` reader - "]
+        pub type Ht40McsR = crate::FieldReader;
+        #[doc = "Field `HT40_MCS` writer - "]
+        pub type Ht40McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:18"]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn ht40_length(&self) -> Ht40LengthR {
+                Ht40LengthR::new(self.bits & 0x0007_ffff)
+            }
+            #[doc = "Bits 19:21"]
+            #[inline(always)]
+            pub fn unknown_19_21(&self) -> Unknown19_21R {
+                Unknown19_21R::new(((self.bits >> 19) & 7) as u8)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn ht40_eof_count(&self) -> Ht40EofCountR {
+                Ht40EofCountR::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn ht40_txop_count(&self) -> Ht40TxopCountR {
+                Ht40TxopCountR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn ht40_mcs(&self) -> Ht40McsR {
+                Ht40McsR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:18"]
             #[inline(always)]
-            pub fn value(&mut self) -> ValueW<'_, DataLengthSpec> {
-                ValueW::new(self, 0)
+            pub fn ht40_length(&mut self) -> Ht40LengthW<'_, DataLengthSpec> {
+                Ht40LengthW::new(self, 0)
+            }
+            #[doc = "Bits 19:21"]
+            #[inline(always)]
+            pub fn unknown_19_21(&mut self) -> Unknown19_21W<'_, DataLengthSpec> {
+                Unknown19_21W::new(self, 19)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn ht40_eof_count(&mut self) -> Ht40EofCountW<'_, DataLengthSpec> {
+                Ht40EofCountW::new(self, 22)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn ht40_txop_count(&mut self) -> Ht40TxopCountW<'_, DataLengthSpec> {
+                Ht40TxopCountW::new(self, 24)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn ht40_mcs(&mut self) -> Ht40McsW<'_, DataLengthSpec> {
+                Ht40McsW::new(self, 28)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DataLengthSpec;
         impl crate::RegisterSpec for DataLengthSpec {
             type Ux = u32;
@@ -13579,34 +14063,184 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "LENGTH_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
+    #[doc = "LENGTH_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
     #[doc(alias = "LENGTH_CONTROL")]
     pub type LengthControl = crate::Reg<length_control::LengthControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
     pub mod length_control {
         #[doc = "Register `LENGTH_CONTROL%s` reader"]
         pub type R = crate::R<LengthControlSpec>;
         #[doc = "Register `LENGTH_CONTROL%s` writer"]
         pub type W = crate::W<LengthControlSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_LAST` reader - "]
+        pub type TxrxQueueAntennaLastR = crate::BitReader;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_LAST` writer - "]
+        pub type TxrxQueueAntennaLastW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_VALUE` reader - "]
+        pub type TxrxQueueAntennaValueR = crate::BitReader;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_VALUE` writer - "]
+        pub type TxrxQueueAntennaValueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_ENABLE` reader - "]
+        pub type TxrxQueueAntennaEnableR = crate::BitReader;
+        #[doc = "Field `TXRX_QUEUE_ANTENNA_ENABLE` writer - "]
+        pub type TxrxQueueAntennaEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_QUEUE_ANTENNA_LAST` reader - "]
+        pub type TxQueueAntennaLastR = crate::BitReader;
+        #[doc = "Field `TX_QUEUE_ANTENNA_LAST` writer - "]
+        pub type TxQueueAntennaLastW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_QUEUE_ANTENNA_VALUE` reader - "]
+        pub type TxQueueAntennaValueR = crate::BitReader;
+        #[doc = "Field `TX_QUEUE_ANTENNA_VALUE` writer - "]
+        pub type TxQueueAntennaValueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_QUEUE_ANTENNA_ENABLE` reader - "]
+        pub type TxQueueAntennaEnableR = crate::BitReader;
+        #[doc = "Field `TX_QUEUE_ANTENNA_ENABLE` writer - "]
+        pub type TxQueueAntennaEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RTS_RATE` reader - "]
+        pub type RtsRateR = crate::FieldReader;
+        #[doc = "Field `RTS_RATE` writer - "]
+        pub type RtsRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `UNKNOWN_14_21` reader - "]
+        pub type Unknown14_21R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_14_21` writer - "]
+        pub type Unknown14_21W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `HT20_EOF_COUNT` reader - "]
+        pub type Ht20EofCountR = crate::FieldReader;
+        #[doc = "Field `HT20_EOF_COUNT` writer - "]
+        pub type Ht20EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HT20_TXOP_COUNT` reader - "]
+        pub type Ht20TxopCountR = crate::FieldReader;
+        #[doc = "Field `HT20_TXOP_COUNT` writer - "]
+        pub type Ht20TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn txrx_queue_antenna_last(&self) -> TxrxQueueAntennaLastR {
+                TxrxQueueAntennaLastR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn txrx_queue_antenna_value(&self) -> TxrxQueueAntennaValueR {
+                TxrxQueueAntennaValueR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn txrx_queue_antenna_enable(&self) -> TxrxQueueAntennaEnableR {
+                TxrxQueueAntennaEnableR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_last(&self) -> TxQueueAntennaLastR {
+                TxQueueAntennaLastR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_value(&self) -> TxQueueAntennaValueR {
+                TxQueueAntennaValueR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_enable(&self) -> TxQueueAntennaEnableR {
+                TxQueueAntennaEnableR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bits 6:13"]
+            #[inline(always)]
+            pub fn rts_rate(&self) -> RtsRateR {
+                RtsRateR::new(((self.bits >> 6) & 0xff) as u8)
+            }
+            #[doc = "Bits 14:21"]
+            #[inline(always)]
+            pub fn unknown_14_21(&self) -> Unknown14_21R {
+                Unknown14_21R::new(((self.bits >> 14) & 0xff) as u8)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn ht20_eof_count(&self) -> Ht20EofCountR {
+                Ht20EofCountR::new(((self.bits >> 22) & 3) as u8)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn ht20_txop_count(&self) -> Ht20TxopCountR {
+                Ht20TxopCountR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn value(&mut self) -> ValueW<'_, LengthControlSpec> {
-                ValueW::new(self, 0)
+            pub fn txrx_queue_antenna_last(
+                &mut self,
+            ) -> TxrxQueueAntennaLastW<'_, LengthControlSpec> {
+                TxrxQueueAntennaLastW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn txrx_queue_antenna_value(
+                &mut self,
+            ) -> TxrxQueueAntennaValueW<'_, LengthControlSpec> {
+                TxrxQueueAntennaValueW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn txrx_queue_antenna_enable(
+                &mut self,
+            ) -> TxrxQueueAntennaEnableW<'_, LengthControlSpec> {
+                TxrxQueueAntennaEnableW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_last(&mut self) -> TxQueueAntennaLastW<'_, LengthControlSpec> {
+                TxQueueAntennaLastW::new(self, 3)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_value(
+                &mut self,
+            ) -> TxQueueAntennaValueW<'_, LengthControlSpec> {
+                TxQueueAntennaValueW::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_queue_antenna_enable(
+                &mut self,
+            ) -> TxQueueAntennaEnableW<'_, LengthControlSpec> {
+                TxQueueAntennaEnableW::new(self, 5)
+            }
+            #[doc = "Bits 6:13"]
+            #[inline(always)]
+            pub fn rts_rate(&mut self) -> RtsRateW<'_, LengthControlSpec> {
+                RtsRateW::new(self, 6)
+            }
+            #[doc = "Bits 14:21"]
+            #[inline(always)]
+            pub fn unknown_14_21(&mut self) -> Unknown14_21W<'_, LengthControlSpec> {
+                Unknown14_21W::new(self, 14)
+            }
+            #[doc = "Bits 22:23"]
+            #[inline(always)]
+            pub fn ht20_eof_count(&mut self) -> Ht20EofCountW<'_, LengthControlSpec> {
+                Ht20EofCountW::new(self, 22)
+            }
+            #[doc = "Bits 24:27"]
+            #[inline(always)]
+            pub fn ht20_txop_count(&mut self) -> Ht20TxopCountW<'_, LengthControlSpec> {
+                Ht20TxopCountW::new(self, 24)
+            }
+            #[doc = "Bits 28:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, LengthControlSpec> {
+                HighUnknownW::new(self, 28)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct LengthControlSpec;
         impl crate::RegisterSpec for LengthControlSpec {
             type Ux = u32;
@@ -13617,6 +14251,60 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Writable for LengthControlSpec {
             type Safety = crate::Unsafe;
         }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_BFR_AVERAGE_SNR\\]; CONFIDENCE\\[instruction-exact-field-and-transform-from-debug-helper\\]. Complete esp_test_get_bfr_avgsnr reads the low byte at 0x20105f94 as stream-zero average-SNR code. Code 0x7f is a special saturated/invalid value rendered with a greater-than-or-equal prefix; every other code is converted to dB as (code + 88) / 4."]
+pub type WifiMacBeamformingReport =
+    crate::Periph<wifi_mac_beamforming_report::RegisterBlock, 0x2010_5f94>;
+impl core::fmt::Debug for WifiMacBeamformingReport {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacBeamformingReport").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_BFR_AVERAGE_SNR\\]; CONFIDENCE\\[instruction-exact-field-and-transform-from-debug-helper\\]. Complete esp_test_get_bfr_avgsnr reads the low byte at 0x20105f94 as stream-zero average-SNR code. Code 0x7f is a special saturated/invalid value rendered with a greater-than-or-equal prefix; every other code is converted to dB as (code + 88) / 4."]
+pub mod wifi_mac_beamforming_report {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        average_snr: AverageSnr,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Beamforming-report average SNR observation used by complete esp_test_get_bfr_avgsnr."]
+        #[inline(always)]
+        pub const fn average_snr(&self) -> &AverageSnr {
+            &self.average_snr
+        }
+    }
+    #[doc = "AVERAGE_SNR (r) register accessor: Beamforming-report average SNR observation used by complete esp_test_get_bfr_avgsnr.\n\nYou can [`read`](crate::Reg::read) this register and get [`average_snr::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@average_snr`] module"]
+    #[doc(alias = "AVERAGE_SNR")]
+    pub type AverageSnr = crate::Reg<average_snr::AverageSnrSpec>;
+    #[doc = "Beamforming-report average SNR observation used by complete esp_test_get_bfr_avgsnr."]
+    pub mod average_snr {
+        #[doc = "Register `AVERAGE_SNR` reader"]
+        pub type R = crate::R<AverageSnrSpec>;
+        #[doc = "Field `STREAM_0_CODE` reader - Unsigned raw code. Values other than 0x7f convert to quarter-dB units after adding 88."]
+        pub type Stream0CodeR = crate::FieldReader;
+        #[doc = "Field `UNKNOWN` reader - "]
+        pub type UnknownR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:7 - Unsigned raw code. Values other than 0x7f convert to quarter-dB units after adding 88."]
+            #[inline(always)]
+            pub fn stream_0_code(&self) -> Stream0CodeR {
+                Stream0CodeR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:31"]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        #[doc = "Beamforming-report average SNR observation used by complete esp_test_get_bfr_avgsnr.\n\nYou can [`read`](crate::Reg::read) this register and get [`average_snr::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AverageSnrSpec;
+        impl crate::RegisterSpec for AverageSnrSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`average_snr::R`](R) reader structure"]
+        impl crate::Readable for AverageSnrSpec {}
     }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four 0x7c-byte completion banks represent logical EDCA queues 3,2,1,0."]
@@ -13948,7 +14636,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn parent_enable(&self) -> &ParentEnable {
             &self.parent_enable
         }
-        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder."]
+        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20."]
         #[inline(always)]
         pub const fn bf_timing_control(&self) -> &BfTimingControl {
             &self.bf_timing_control
@@ -14630,10 +15318,10 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
+    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
     #[doc(alias = "BF_TIMING_CONTROL")]
     pub type BfTimingControl = crate::Reg<bf_timing_control::BfTimingControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20."]
     pub mod bf_timing_control {
         #[doc = "Register `BF_TIMING_CONTROL` reader"]
         pub type R = crate::R<BfTimingControlSpec>;
@@ -14659,9 +15347,9 @@ pub mod wifi_mac_he_init_prefix {
         pub type HeBeamHwSequenceEnableR = crate::BitReader;
         #[doc = "Field `HE_BEAM_HW_SEQUENCE_ENABLE` writer - "]
         pub type HeBeamHwSequenceEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `HE_BEAM_ENABLE` reader - "]
+        #[doc = "Field `HE_BEAM_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-name-and-write-polarity\\]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output."]
         pub type HeBeamEnableR = crate::BitReader;
-        #[doc = "Field `HE_BEAM_ENABLE` writer - "]
+        #[doc = "Field `HE_BEAM_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-name-and-write-polarity\\]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output."]
         pub type HeBeamEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `NON_TB_BEAM_RU_SELECT` reader - "]
         pub type NonTbBeamRuSelectR = crate::BitReader;
@@ -14713,7 +15401,7 @@ pub mod wifi_mac_he_init_prefix {
             pub fn he_beam_hw_sequence_enable(&self) -> HeBeamHwSequenceEnableR {
                 HeBeamHwSequenceEnableR::new(((self.bits >> 19) & 1) != 0)
             }
-            #[doc = "Bit 20"]
+            #[doc = "Bit 20 - SOURCE\\[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-name-and-write-polarity\\]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output."]
             #[inline(always)]
             pub fn he_beam_enable(&self) -> HeBeamEnableR {
                 HeBeamEnableR::new(((self.bits >> 20) & 1) != 0)
@@ -14781,7 +15469,7 @@ pub mod wifi_mac_he_init_prefix {
             ) -> HeBeamHwSequenceEnableW<'_, BfTimingControlSpec> {
                 HeBeamHwSequenceEnableW::new(self, 19)
             }
-            #[doc = "Bit 20"]
+            #[doc = "Bit 20 - SOURCE\\[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-name-and-write-polarity\\]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output."]
             #[inline(always)]
             pub fn he_beam_enable(&mut self) -> HeBeamEnableW<'_, BfTimingControlSpec> {
                 HeBeamEnableW::new(self, 20)
@@ -14819,7 +15507,7 @@ pub mod wifi_mac_he_init_prefix {
                 HighPreservedUnknownW::new(self, 26)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-field-semantics-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfTimingControlSpec;
         impl crate::RegisterSpec for BfTimingControlSpec {
             type Ux = u32;
@@ -15323,7 +16011,7 @@ pub mod wifi_mac_he_tb_diagnostics {
         impl crate::Readable for UserSpec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared TID control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. Complete HE BlockAck response/deletion paths select and clear TID bitmap bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the accumulated queued-byte value, then OR the queue bit into CONTROL\\[7:0\\]. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
 pub type WifiMacHeBufferStatus =
     crate::Periph<wifi_mac_he_buffer_status::RegisterBlock, 0x2010_4d74>;
 impl core::fmt::Debug for WifiMacHeBufferStatus {
@@ -15331,7 +16019,7 @@ impl core::fmt::Debug for WifiMacHeBufferStatus {
         f.debug_struct("WifiMacHeBufferStatus").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared TID control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. Complete HE BlockAck response/deletion paths select and clear TID bitmap bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the accumulated queued-byte value, then OR the queue bit into CONTROL\\[7:0\\]. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
 pub mod wifi_mac_he_buffer_status {
     #[repr(C)]
     #[doc = "Register block"]
@@ -15357,7 +16045,7 @@ pub mod wifi_mac_he_buffer_status {
             (0..8)
                 .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
         }
-        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact-array-field-semantics-from-debug-symbol\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads these hardware-visible words; no complete setter in the pinned archive proves software write semantics, so the recovered PAC exposes them read-only."]
+        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
         #[inline(always)]
         pub const fn software_bsr(&self, n: usize) -> &SoftwareBsr {
             #[allow(clippy::no_effect)]
@@ -15371,7 +16059,7 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact-array-field-semantics-from-debug-symbol\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads these hardware-visible words; no complete setter in the pinned archive proves software write semantics, so the recovered PAC exposes them read-only."]
+        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
         #[inline(always)]
         pub fn software_bsr_iter(&self) -> impl Iterator<Item = &SoftwareBsr> {
             (0..8).map(move |n| unsafe {
@@ -15382,7 +16070,7 @@ pub mod wifi_mac_he_buffer_status {
                     .cast()
             })
         }
-        #[doc = "0x44 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA."]
+        #[doc = "0x44 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -15419,19 +16107,25 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "`read()` method returns [`hardware_bsr::R`](R) reader structure"]
         impl crate::Readable for HardwareBsrSpec {}
     }
-    #[doc = "SOFTWARE_BSR (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact-array-field-semantics-from-debug-symbol\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads these hardware-visible words; no complete setter in the pinned archive proves software write semantics, so the recovered PAC exposes them read-only.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
+    #[doc = "SOFTWARE_BSR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
     #[doc(alias = "SOFTWARE_BSR")]
     pub type SoftwareBsr = crate::Reg<software_bsr::SoftwareBsrSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact-array-field-semantics-from-debug-symbol\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads these hardware-visible words; no complete setter in the pinned archive proves software write semantics, so the recovered PAC exposes them read-only."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
     pub mod software_bsr {
         #[doc = "Register `SOFTWARE_BSR%s` reader"]
         pub type R = crate::R<SoftwareBsrSpec>;
-        #[doc = "Field `VALUE` reader - "]
+        #[doc = "Register `SOFTWARE_BSR%s` writer"]
+        pub type W = crate::W<SoftwareBsrSpec>;
+        #[doc = "Field `VALUE` reader - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
         pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl R {
-            #[doc = "Bits 0:19"]
+            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new(self.bits & 0x000f_ffff)
@@ -15442,27 +16136,43 @@ pub mod wifi_mac_he_buffer_status {
                 HighUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact-array-field-semantics-from-debug-symbol\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads these hardware-visible words; no complete setter in the pinned archive proves software write semantics, so the recovered PAC exposes them read-only.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, SoftwareBsrSpec> {
+                ValueW::new(self, 0)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, SoftwareBsrSpec> {
+                HighUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SoftwareBsrSpec;
         impl crate::RegisterSpec for SoftwareBsrSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`software_bsr::R`](R) reader structure"]
         impl crate::Readable for SoftwareBsrSpec {}
+        #[doc = "`write(|w| ..)` method takes [`software_bsr::W`](W) writer structure"]
+        impl crate::Writable for SoftwareBsrSpec {
+            type Safety = crate::Unsafe;
+        }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `VALID_TID_BITMAP` reader - WDEVTXQBSR_VD\\[0-7\\], one validity bit per TID."]
-        pub type ValidTidBitmapR = crate::FieldReader;
-        #[doc = "Field `VALID_TID_BITMAP` writer - WDEVTXQBSR_VD\\[0-7\\], one validity bit per TID."]
-        pub type ValidTidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `VALID_BITMAP` reader - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
+        pub type ValidBitmapR = crate::FieldReader;
+        #[doc = "Field `VALID_BITMAP` writer - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
+        pub type ValidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` reader - TID used when AC_EMPTY_USE_SW_TID is set."]
         pub type AcEmptySoftwareTidR = crate::FieldReader;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` writer - TID used when AC_EMPTY_USE_SW_TID is set."]
@@ -15488,10 +16198,10 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
         pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
         impl R {
-            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\], one validity bit per TID."]
+            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
             #[inline(always)]
-            pub fn valid_tid_bitmap(&self) -> ValidTidBitmapR {
-                ValidTidBitmapR::new((self.bits & 0xff) as u8)
+            pub fn valid_bitmap(&self) -> ValidBitmapR {
+                ValidBitmapR::new((self.bits & 0xff) as u8)
             }
             #[doc = "Bits 8:11 - TID used when AC_EMPTY_USE_SW_TID is set."]
             #[inline(always)]
@@ -15525,10 +16235,10 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\], one validity bit per TID."]
+            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
             #[inline(always)]
-            pub fn valid_tid_bitmap(&mut self) -> ValidTidBitmapW<'_, ControlSpec> {
-                ValidTidBitmapW::new(self, 0)
+            pub fn valid_bitmap(&mut self) -> ValidBitmapW<'_, ControlSpec> {
+                ValidBitmapW::new(self, 0)
             }
             #[doc = "Bits 8:11 - TID used when AC_EMPTY_USE_SW_TID is set."]
             #[inline(always)]
@@ -15565,7 +16275,7 @@ pub mod wifi_mac_he_buffer_status {
                 HighUnknownW::new(self, 23)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -15578,7 +16288,7 @@ pub mod wifi_mac_he_buffer_status {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed\\]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; the AP emitted no Trigger frame."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed\\]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
 pub type WifiMacHeMuEdcaTimer =
     crate::Periph<wifi_mac_he_mu_edca_timer::RegisterBlock, 0x2010_4dbc>;
 impl core::fmt::Debug for WifiMacHeMuEdcaTimer {
@@ -15586,7 +16296,7 @@ impl core::fmt::Debug for WifiMacHeMuEdcaTimer {
         f.debug_struct("WifiMacHeMuEdcaTimer").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed\\]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; the AP emitted no Trigger frame."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed\\]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
 pub mod wifi_mac_he_mu_edca_timer {
     #[repr(C)]
     #[doc = "Register block"]
@@ -17381,7 +18091,7 @@ pub mod wifi_mac_he_init_suffix {
         pub const fn shared_enable_control(&self) -> &SharedEnableControl {
             &self.shared_enable_control
         }
-        #[doc = "0xcd8..0xcf8 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+        #[doc = "0xcd8..0xcf8 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
         #[inline(always)]
         pub const fn queue_control(&self, n: usize) -> &QueueControl {
             #[allow(clippy::no_effect)]
@@ -17395,7 +18105,7 @@ pub mod wifi_mac_he_init_suffix {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0xcd8..0xcf8 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+        #[doc = "0xcd8..0xcf8 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
         #[inline(always)]
         pub fn queue_control_iter(&self) -> impl Iterator<Item = &QueueControl> {
             (0..8).map(move |n| unsafe {
@@ -17431,13 +18141,13 @@ pub mod wifi_mac_he_init_suffix {
                     .cast()
             })
         }
-        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
+        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-fields\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
         #[inline(always)]
         pub const fn he_scratch(&self, n: usize) -> &HeScratch {
             &self.he_scratch[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
+        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-fields\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
         #[inline(always)]
         pub fn he_scratch_iter(&self) -> impl Iterator<Item = &HeScratch> {
             self.he_scratch.iter()
@@ -19040,138 +19750,140 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "QUEUE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_control`] module"]
+    #[doc = "QUEUE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_control`] module"]
     #[doc(alias = "QUEUE_CONTROL")]
     pub type QueueControl = crate::Reg<queue_control::QueueControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
     pub mod queue_control {
         #[doc = "Register `QUEUE_CONTROL%s` reader"]
         pub type R = crate::R<QueueControlSpec>;
         #[doc = "Register `QUEUE_CONTROL%s` writer"]
         pub type W = crate::W<QueueControlSpec>;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
-        pub type LowPreservedUnknownR = crate::FieldReader;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
-        pub type LowPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` reader - "]
+        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` reader - Bits zero and one are cleared by complete mac_tx_set_tb."]
+        pub type LowClearedByTbSetupR = crate::FieldReader;
+        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` writer - Bits zero and one are cleared by complete mac_tx_set_tb."]
+        pub type LowClearedByTbSetupW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` reader - The sole pre-existing bit preserved by complete mac_tx_set_tb."]
         pub type QosNullToTranslatedBssR = crate::BitReader;
-        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` writer - "]
+        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` writer - The sole pre-existing bit preserved by complete mac_tx_set_tb."]
         pub type QosNullToTranslatedBssW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `TRIGGER_BASED_ENABLE` reader - Complete dbg_read_txq_conf1 names bit 3 TB_ENA."]
+        #[doc = "Field `TRIGGER_BASED_ENABLE` reader - Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
         pub type TriggerBasedEnableR = crate::BitReader;
-        #[doc = "Field `TRIGGER_BASED_ENABLE` writer - Complete dbg_read_txq_conf1 names bit 3 TB_ENA."]
+        #[doc = "Field `TRIGGER_BASED_ENABLE` writer - Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
         pub type TriggerBasedEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MU_EDCA_TIMER_SELECT` reader - "]
+        #[doc = "Field `MU_EDCA_TIMER_SELECT` reader - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
         pub type MuEdcaTimerSelectR = crate::FieldReader;
-        #[doc = "Field `MU_EDCA_TIMER_SELECT` writer - "]
+        #[doc = "Field `MU_EDCA_TIMER_SELECT` writer - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
         pub type MuEdcaTimerSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` reader - "]
+        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` reader - First seven-bit link returned by complete mac_tx_set_mplen."]
         pub type MpduLengthLinkAddressR = crate::FieldReader;
-        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` writer - "]
+        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` writer - First seven-bit link returned by complete mac_tx_set_mplen."]
         pub type MpduLengthLinkAddressW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
-        #[doc = "Field `TID` reader - "]
+        #[doc = "Field `TID` reader - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
         pub type TidR = crate::FieldReader;
-        #[doc = "Field `TID` writer - "]
+        #[doc = "Field `TID` writer - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
         pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `MINIMUM_TX_POWER` reader - "]
+        #[doc = "Field `MINIMUM_TX_POWER` reader - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
         pub type MinimumTxPowerR = crate::FieldReader;
-        #[doc = "Field `MINIMUM_TX_POWER` writer - "]
+        #[doc = "Field `MINIMUM_TX_POWER` writer - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
         pub type MinimumTxPowerW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
-        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
-        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
-        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` reader - Bits 31:22 are cleared by complete mac_tx_set_tb."]
+        pub type HighClearedByTbSetupR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` writer - Bits 31:22 are cleared by complete mac_tx_set_tb."]
+        pub type HighClearedByTbSetupW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
         impl R {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bits 0:1 - Bits zero and one are cleared by complete mac_tx_set_tb."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
-                LowPreservedUnknownR::new((self.bits & 3) as u8)
+            pub fn low_cleared_by_tb_setup(&self) -> LowClearedByTbSetupR {
+                LowClearedByTbSetupR::new((self.bits & 3) as u8)
             }
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - The sole pre-existing bit preserved by complete mac_tx_set_tb."]
             #[inline(always)]
             pub fn qos_null_to_translated_bss(&self) -> QosNullToTranslatedBssR {
                 QosNullToTranslatedBssR::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bit 3 - Complete dbg_read_txq_conf1 names bit 3 TB_ENA."]
+            #[doc = "Bit 3 - Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
             #[inline(always)]
             pub fn trigger_based_enable(&self) -> TriggerBasedEnableR {
                 TriggerBasedEnableR::new(((self.bits >> 3) & 1) != 0)
             }
-            #[doc = "Bits 4:5"]
+            #[doc = "Bits 4:5 - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
             #[inline(always)]
             pub fn mu_edca_timer_select(&self) -> MuEdcaTimerSelectR {
                 MuEdcaTimerSelectR::new(((self.bits >> 4) & 3) as u8)
             }
-            #[doc = "Bits 6:12"]
+            #[doc = "Bits 6:12 - First seven-bit link returned by complete mac_tx_set_mplen."]
             #[inline(always)]
             pub fn mpdu_length_link_address(&self) -> MpduLengthLinkAddressR {
                 MpduLengthLinkAddressR::new(((self.bits >> 6) & 0x7f) as u8)
             }
-            #[doc = "Bits 13:16"]
+            #[doc = "Bits 13:16 - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
             #[inline(always)]
             pub fn tid(&self) -> TidR {
                 TidR::new(((self.bits >> 13) & 0x0f) as u8)
             }
-            #[doc = "Bits 17:21"]
+            #[doc = "Bits 17:21 - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
             #[inline(always)]
             pub fn minimum_tx_power(&self) -> MinimumTxPowerR {
                 MinimumTxPowerR::new(((self.bits >> 17) & 0x1f) as u8)
             }
-            #[doc = "Bits 22:31"]
+            #[doc = "Bits 22:31 - Bits 31:22 are cleared by complete mac_tx_set_tb."]
             #[inline(always)]
-            pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
-                HighPreservedUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            pub fn high_cleared_by_tb_setup(&self) -> HighClearedByTbSetupR {
+                HighClearedByTbSetupR::new(((self.bits >> 22) & 0x03ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bits 0:1 - Bits zero and one are cleared by complete mac_tx_set_tb."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, QueueControlSpec> {
-                LowPreservedUnknownW::new(self, 0)
+            pub fn low_cleared_by_tb_setup(
+                &mut self,
+            ) -> LowClearedByTbSetupW<'_, QueueControlSpec> {
+                LowClearedByTbSetupW::new(self, 0)
             }
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - The sole pre-existing bit preserved by complete mac_tx_set_tb."]
             #[inline(always)]
             pub fn qos_null_to_translated_bss(
                 &mut self,
             ) -> QosNullToTranslatedBssW<'_, QueueControlSpec> {
                 QosNullToTranslatedBssW::new(self, 2)
             }
-            #[doc = "Bit 3 - Complete dbg_read_txq_conf1 names bit 3 TB_ENA."]
+            #[doc = "Bit 3 - Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
             #[inline(always)]
             pub fn trigger_based_enable(&mut self) -> TriggerBasedEnableW<'_, QueueControlSpec> {
                 TriggerBasedEnableW::new(self, 3)
             }
-            #[doc = "Bits 4:5"]
+            #[doc = "Bits 4:5 - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
             #[inline(always)]
             pub fn mu_edca_timer_select(&mut self) -> MuEdcaTimerSelectW<'_, QueueControlSpec> {
                 MuEdcaTimerSelectW::new(self, 4)
             }
-            #[doc = "Bits 6:12"]
+            #[doc = "Bits 6:12 - First seven-bit link returned by complete mac_tx_set_mplen."]
             #[inline(always)]
             pub fn mpdu_length_link_address(
                 &mut self,
             ) -> MpduLengthLinkAddressW<'_, QueueControlSpec> {
                 MpduLengthLinkAddressW::new(self, 6)
             }
-            #[doc = "Bits 13:16"]
+            #[doc = "Bits 13:16 - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
             #[inline(always)]
             pub fn tid(&mut self) -> TidW<'_, QueueControlSpec> {
                 TidW::new(self, 13)
             }
-            #[doc = "Bits 17:21"]
+            #[doc = "Bits 17:21 - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
             #[inline(always)]
             pub fn minimum_tx_power(&mut self) -> MinimumTxPowerW<'_, QueueControlSpec> {
                 MinimumTxPowerW::new(self, 17)
             }
-            #[doc = "Bits 22:31"]
+            #[doc = "Bits 22:31 - Bits 31:22 are cleared by complete mac_tx_set_tb."]
             #[inline(always)]
-            pub fn high_preserved_unknown(
+            pub fn high_cleared_by_tb_setup(
                 &mut self,
-            ) -> HighPreservedUnknownW<'_, QueueControlSpec> {
-                HighPreservedUnknownW::new(self, 22)
+            ) -> HighClearedByTbSetupW<'_, QueueControlSpec> {
+                HighClearedByTbSetupW::new(self, 22)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-from-debug-symbols-hil-observed\\]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct QueueControlSpec;
         impl crate::RegisterSpec for QueueControlSpec {
             type Ux = u32;
@@ -19236,10 +19948,10 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SCRATCH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
+    #[doc = "HE_SCRATCH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-fields\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
     #[doc(alias = "HE_SCRATCH")]
     pub type HeScratch = crate::Reg<he_scratch::HeScratchSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-fields\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
     pub mod he_scratch {
         #[doc = "Register `HE_SCRATCH%s` reader"]
         pub type R = crate::R<HeScratchSpec>;
@@ -19291,7 +20003,7 @@ pub mod wifi_mac_he_init_suffix {
                 HighUnknownW::new(self, 21)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-fields\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeScratchSpec;
         impl crate::RegisterSpec for HeScratchSpec {
             type Ux = u32;
@@ -21845,7 +22557,7 @@ pub mod wifi_mac_txrx_suffix {
         field_control: FieldControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. The TX/RX init suffix sets bit 1. Complete dbg_clr_hw_count reaches esp_test_clr_hw_statistics, which independently pulses bit 0 high then low while the matching core statistics-clear arm is asserted."]
         #[inline(always)]
         pub const fn aux_enable(&self) -> &AuxEnable {
             &self.aux_enable
@@ -21876,19 +22588,19 @@ pub mod wifi_mac_txrx_suffix {
             &self.field_control
         }
     }
-    #[doc = "AUX_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_enable`] module"]
+    #[doc = "AUX_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. The TX/RX init suffix sets bit 1. Complete dbg_clr_hw_count reaches esp_test_clr_hw_statistics, which independently pulses bit 0 high then low while the matching core statistics-clear arm is asserted.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@aux_enable`] module"]
     #[doc(alias = "AUX_ENABLE")]
     pub type AuxEnable = crate::Reg<aux_enable::AuxEnableSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. The TX/RX init suffix sets bit 1. Complete dbg_clr_hw_count reaches esp_test_clr_hw_statistics, which independently pulses bit 0 high then low while the matching core statistics-clear arm is asserted."]
     pub mod aux_enable {
         #[doc = "Register `AUX_ENABLE` reader"]
         pub type R = crate::R<AuxEnableSpec>;
         #[doc = "Register `AUX_ENABLE` writer"]
         pub type W = crate::W<AuxEnableSpec>;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` reader - "]
-        pub type LowPreservedUnknownR = crate::BitReader;
-        #[doc = "Field `LOW_PRESERVED_UNKNOWN` writer - "]
-        pub type LowPreservedUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HARDWARE_STATISTICS_CLEAR_PULSE` reader - Set and then cleared by complete esp_test_clr_hw_statistics."]
+        pub type HardwareStatisticsClearPulseR = crate::BitReader;
+        #[doc = "Field `HARDWARE_STATISTICS_CLEAR_PULSE` writer - Set and then cleared by complete esp_test_clr_hw_statistics."]
+        pub type HardwareStatisticsClearPulseW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `ENABLE_UNKNOWN` reader - "]
         pub type EnableUnknownR = crate::BitReader;
         #[doc = "Field `ENABLE_UNKNOWN` writer - "]
@@ -21898,10 +22610,10 @@ pub mod wifi_mac_txrx_suffix {
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
         pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
         impl R {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Set and then cleared by complete esp_test_clr_hw_statistics."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&self) -> LowPreservedUnknownR {
-                LowPreservedUnknownR::new((self.bits & 1) != 0)
+            pub fn hardware_statistics_clear_pulse(&self) -> HardwareStatisticsClearPulseR {
+                HardwareStatisticsClearPulseR::new((self.bits & 1) != 0)
             }
             #[doc = "Bit 1"]
             #[inline(always)]
@@ -21915,10 +22627,12 @@ pub mod wifi_mac_txrx_suffix {
             }
         }
         impl W {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Set and then cleared by complete esp_test_clr_hw_statistics."]
             #[inline(always)]
-            pub fn low_preserved_unknown(&mut self) -> LowPreservedUnknownW<'_, AuxEnableSpec> {
-                LowPreservedUnknownW::new(self, 0)
+            pub fn hardware_statistics_clear_pulse(
+                &mut self,
+            ) -> HardwareStatisticsClearPulseW<'_, AuxEnableSpec> {
+                HardwareStatisticsClearPulseW::new(self, 0)
             }
             #[doc = "Bit 1"]
             #[inline(always)]
@@ -21931,7 +22645,7 @@ pub mod wifi_mac_txrx_suffix {
                 HighPreservedUnknownW::new(self, 2)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Penultimate direct suffix edge sets bit 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. The TX/RX init suffix sets bit 1. Complete dbg_clr_hw_count reaches esp_test_clr_hw_statistics, which independently pulses bit 0 high then low while the matching core statistics-clear arm is asserted.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`aux_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AuxEnableSpec;
         impl crate::RegisterSpec for AuxEnableSpec {
             type Ux = u32;
@@ -22628,16 +23342,16 @@ pub mod wifi_mac_core_enable {
         control: Control,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits. Complete esp_test_clr_hw_statistics independently asserts bit 16 around the separate 0x20104308 bit-zero clear pulse, then clears bit 16."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits. Complete esp_test_clr_hw_statistics independently asserts bit 16 around the separate 0x20104308 bit-zero clear pulse, then clears bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits. Complete esp_test_clr_hw_statistics independently asserts bit 16 around the separate 0x20104308 bit-zero clear pulse, then clears bit 16."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
@@ -22651,10 +23365,18 @@ pub mod wifi_mac_core_enable {
         pub type MacDisableGatesUnknownR = crate::FieldReader;
         #[doc = "Field `MAC_DISABLE_GATES_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-group-semantics\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
         pub type MacDisableGatesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` reader - "]
+        pub type MiddlePreservedUnknownR = crate::FieldReader;
+        #[doc = "Field `MIDDLE_PRESERVED_UNKNOWN` writer - "]
+        pub type MiddlePreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `HARDWARE_STATISTICS_CLEAR_ARM` reader - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
+        pub type HardwareStatisticsClearArmR = crate::BitReader;
+        #[doc = "Field `HARDWARE_STATISTICS_CLEAR_ARM` writer - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
+        pub type HardwareStatisticsClearArmW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` reader - "]
-        pub type HighPreservedUnknownR = crate::FieldReader<u32>;
+        pub type HighPreservedUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
-        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
@@ -22666,10 +23388,20 @@ pub mod wifi_mac_core_enable {
             pub fn mac_disable_gates_unknown(&self) -> MacDisableGatesUnknownR {
                 MacDisableGatesUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
             }
-            #[doc = "Bits 8:31"]
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&self) -> MiddlePreservedUnknownR {
+                MiddlePreservedUnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bit 16 - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
+            #[inline(always)]
+            pub fn hardware_statistics_clear_arm(&self) -> HardwareStatisticsClearArmR {
+                HardwareStatisticsClearArmR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bits 17:31"]
             #[inline(always)]
             pub fn high_preserved_unknown(&self) -> HighPreservedUnknownR {
-                HighPreservedUnknownR::new((self.bits >> 8) & 0x00ff_ffff)
+                HighPreservedUnknownR::new(((self.bits >> 17) & 0x7fff) as u16)
             }
         }
         impl W {
@@ -22685,13 +23417,25 @@ pub mod wifi_mac_core_enable {
             ) -> MacDisableGatesUnknownW<'_, ControlSpec> {
                 MacDisableGatesUnknownW::new(self, 4)
             }
-            #[doc = "Bits 8:31"]
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn middle_preserved_unknown(&mut self) -> MiddlePreservedUnknownW<'_, ControlSpec> {
+                MiddlePreservedUnknownW::new(self, 8)
+            }
+            #[doc = "Bit 16 - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
+            #[inline(always)]
+            pub fn hardware_statistics_clear_arm(
+                &mut self,
+            ) -> HardwareStatisticsClearArmW<'_, ControlSpec> {
+                HardwareStatisticsClearArmW::new(self, 16)
+            }
+            #[doc = "Bits 17:31"]
             #[inline(always)]
             pub fn high_preserved_unknown(&mut self) -> HighPreservedUnknownW<'_, ControlSpec> {
-                HighPreservedUnknownW::new(self, 8)
+                HighPreservedUnknownW::new(self, 17)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_DEBUG_STATISTICS_CONTROL\\]; CONFIDENCE\\[instruction-exact-semantics-partial\\]. Complete hal_enable_mac clears bits 7:4 in one fresh-read RMW before publishing its interrupt-mask argument; complete hal_disable_mac sets the same four bits. Complete esp_test_clr_hw_statistics independently asserts bit 16 around the separate 0x20104308 bit-zero clear pulse, then clears bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -25701,6 +26445,8 @@ pub struct Peripherals {
     pub wifi_mac_tx_queue_control: WifiMacTxQueueControl,
     #[doc = "WIFI_MAC_TX_QUEUE_VECTOR"]
     pub wifi_mac_tx_queue_vector: WifiMacTxQueueVector,
+    #[doc = "WIFI_MAC_BEAMFORMING_REPORT"]
+    pub wifi_mac_beamforming_report: WifiMacBeamformingReport,
     #[doc = "WIFI_MAC_TX_COMPLETION"]
     pub wifi_mac_tx_completion: WifiMacTxCompletion,
     #[doc = "WIFI_MAC_HE_INIT_PREFIX"]
@@ -25798,6 +26544,7 @@ impl Peripherals {
             wifi_mac_tx_common: WifiMacTxCommon::steal(),
             wifi_mac_tx_queue_control: WifiMacTxQueueControl::steal(),
             wifi_mac_tx_queue_vector: WifiMacTxQueueVector::steal(),
+            wifi_mac_beamforming_report: WifiMacBeamformingReport::steal(),
             wifi_mac_tx_completion: WifiMacTxCompletion::steal(),
             wifi_mac_he_init_prefix: WifiMacHeInitPrefix::steal(),
             wifi_mac_he_tb_statistics: WifiMacHeTbStatistics::steal(),

@@ -27,12 +27,13 @@ gate are usable, while the temporary register leaf module is progressively
 being moved down into HAL/PAC.
 
 Cold source-only PHY initialization, open promiscuous RX, active/passive scan,
-open authentication, WPA2 association, and the four-way handshake through an
-acknowledged hardware-CCMP Message 4 have passed on ESP32-S31 without vendor
-radio initialization. The protected TX run used the recovered QoS/CCMP
-layout, PN 3, owned STA pairwise slot 4, and direct raw-q0 DMA. Protected RX,
-GTK installation, controlled-port data, and ordinary network traffic remain
-to be qualified in the live crates.
+open authentication, WPA2 association, the four-way handshake, protected
+pairwise/group traffic, DHCP, HT40 and HE20 A-MPDU/BlockAck have passed on
+ESP32-S31 without vendor radio initialization. The current open HE SU TX path
+has exercised MCS0 through MCS9 with the datasheet's 0.8-, 1.6- and 3.2-us
+guard intervals. [`ESP32S31_WIFI_FEATURE_STATUS.md`](docs/ESP32S31_WIFI_FEATURE_STATUS.md)
+tracks these results and the remaining datasheet capabilities without
+equating discovered oracle symbols with implemented features.
 
 The ESP32-S31 HAL binds the integration layer's singleton peripheral token to
 `Radio<P, Owned>`. Its finite `power_up` transition reproduces the

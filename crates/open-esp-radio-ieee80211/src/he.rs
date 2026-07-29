@@ -39,11 +39,24 @@ pub struct He20Capabilities {
     pub transmit_mcs_map: u16,
     pub receive_nss1: HeMcsNssSupport,
     pub transmit_nss1: HeMcsNssSupport,
+    /// The peer can receive the optional HE SU 1x HE-LTF / 0.8-us GI form.
+    ///
+    /// SOURCE[LINUX_IEEE80211_HE_PHY_CAP1_GI_2026_07_29]: Linux v6.12
+    /// `include/linux/ieee80211.h` names HE PHY capability byte 1 bit `0x40`
+    /// `HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US`. The S31 oracle's ordinary
+    /// `ppSelectTxFormat` never emits GI/LTF selector zero, while HIL against a
+    /// peer with this bit clear rejected selector zero for MCS0 through MCS9
+    /// and accepted selectors one through three.
+    pub one_ltf_800ns_gi: bool,
 }
 
 impl He20Capabilities {
     pub const fn supports_bidirectional_mcs9(self) -> bool {
         self.receive_nss1.supports_mcs9() && self.transmit_nss1.supports_mcs9()
+    }
+
+    pub const fn supports_one_ltf_800ns_gi(self) -> bool {
+        self.one_ltf_800ns_gi
     }
 }
 
@@ -110,6 +123,7 @@ pub fn parse_he20_capabilities(element: &[u8]) -> Result<He20Capabilities, HeEle
         transmit_mcs_map,
         receive_nss1: HeMcsNssSupport::from_map(receive_mcs_map, 1),
         transmit_nss1: HeMcsNssSupport::from_map(transmit_mcs_map, 1),
+        one_ltf_800ns_gi: element[10] & 0x40 != 0,
     })
 }
 
@@ -192,6 +206,17 @@ mod tests {
         assert_eq!(capability.receive_nss1, HeMcsNssSupport::Mcs0To9);
         assert_eq!(capability.transmit_nss1, HeMcsNssSupport::Mcs0To9);
         assert!(capability.supports_bidirectional_mcs9());
+        assert!(!capability.supports_one_ltf_800ns_gi());
+    }
+
+    #[test]
+    fn parses_optional_one_ltf_800ns_gi_capability() {
+        let mut element = [0_u8; 24];
+        element[..3].copy_from_slice(&[255, 22, 35]);
+        element[10] = 0x40;
+        assert!(parse_he20_capabilities(&element)
+            .unwrap()
+            .supports_one_ltf_800ns_gi());
     }
 
     #[test]
@@ -217,5 +242,8 @@ mod tests {
         assert_eq!(state.basic_mcs_nss_map, 0xfffc);
         assert_eq!(state.rts_threshold, None);
         assert!(state.extended_range_single_user);
+        assert!(!parse_he20_capabilities(&capability)
+            .unwrap()
+            .supports_one_ltf_800ns_gi());
     }
 }

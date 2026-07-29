@@ -86,6 +86,16 @@ pub struct He20Capabilities {
     /// peer with this bit clear rejected selector zero for MCS0 through MCS9
     /// and accepted selectors one through three.
     pub one_ltf_800ns_gi: bool,
+    /// The peer can decode LDPC coding in an HE payload.
+    ///
+    /// SOURCE[BLOB_LIBNET80211_HE_CAP_LDPC]: complete
+    /// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
+    /// (size `0x2d8`) reads HE PHY capability byte one at element offset ten,
+    /// shifts it by five and masks one before publishing the decoded field in
+    /// its complete capability diagnostic. The same function subsequently
+    /// copies the complete 24-byte bounded prefix into peer state. This is
+    /// independent of the peer's DCM receive constellation.
+    pub ldpc_coding_in_payload: bool,
     /// The peer can transmit HE STBC below 80 MHz.
     ///
     /// HE PHY capability byte 2 bit 2. For the S31 non-AP role this is the
@@ -135,6 +145,10 @@ impl He20Capabilities {
 
     pub const fn supports_one_ltf_800ns_gi(self) -> bool {
         self.one_ltf_800ns_gi
+    }
+
+    pub const fn supports_ldpc_coding_in_payload(self) -> bool {
+        self.ldpc_coding_in_payload
     }
 
     pub const fn dcm_receive_constellation(self) -> HeDcmConstellation {
@@ -228,6 +242,7 @@ pub fn parse_he20_capabilities(element: &[u8]) -> Result<He20Capabilities, HeEle
         receive_nss1: HeMcsNssSupport::from_map(receive_mcs_map, 1),
         transmit_nss1: HeMcsNssSupport::from_map(transmit_mcs_map, 1),
         one_ltf_800ns_gi: element[10] & 0x40 != 0,
+        ldpc_coding_in_payload: element[10] & 0x20 != 0,
         stbc_transmit_under_80_mhz: element[11] & 0x04 != 0,
         stbc_receive_under_80_mhz: element[11] & 0x08 != 0,
         dcm_transmit: HeDcmConstellation::from_encoding(element[12]),
@@ -333,9 +348,23 @@ mod tests {
         let mut element = [0_u8; 24];
         element[..3].copy_from_slice(&[255, 22, 35]);
         element[10] = 0x40;
-        assert!(parse_he20_capabilities(&element)
-            .unwrap()
-            .supports_one_ltf_800ns_gi());
+        let capability = parse_he20_capabilities(&element).unwrap();
+        assert!(capability.supports_one_ltf_800ns_gi());
+        assert!(!capability.supports_ldpc_coding_in_payload());
+    }
+
+    #[test]
+    fn parses_payload_ldpc_independently_from_gi_and_dcm() {
+        let mut element = [0_u8; 24];
+        element[..3].copy_from_slice(&[255, 22, 35]);
+        element[10] = 0x20;
+        let capability = parse_he20_capabilities(&element).unwrap();
+        assert!(!capability.supports_one_ltf_800ns_gi());
+        assert!(capability.supports_ldpc_coding_in_payload());
+        assert_eq!(
+            capability.dcm_receive_constellation(),
+            HeDcmConstellation::NotSupported
+        );
     }
 
     #[test]

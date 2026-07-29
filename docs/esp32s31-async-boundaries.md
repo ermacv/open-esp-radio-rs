@@ -1527,6 +1527,30 @@ first A-MPDU completion. The observed Best Effort TXOP was zero; all nonzero
 producer entries are covered independently by instruction-shaped exhaustive
 host comparison over the blob's complete 0..255 input domain.
 
+The HE SU formatter now also owns the separate LDPC coding image. Complete
+`_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_hesig` loads
+`esp_wifi_cert_tx_bcc`, produces intermediate halfword `0x017f` for BCC or
+`0x01ff` for LDPC, then shifts it right by six into the queue control. With the
+already qualified bounded control bits this yields low eleven-bit images
+`0x105` and `0x107`, respectively. ROM rev0 `mac_tx_set_hesig` at
+`0x2f8350a8` independently contains the same transform. ROM
+`he_rates_dcm_ru_242` at `0x2f84e07c` supplies the previously omitted DCM MCS4
+rates 25.8, 24.4 and 21.9 Mbit/s for the three GI rows. A typed constructor
+keeps this MCS4 column LDPC-only. The live HIL matrix additionally requires HE
+PHY capability byte-one bit five, decoded by complete
+`ieee80211_parse_hecap`, before selecting it; HIL still requires a peer that
+advertises both 16-QAM DCM receive and LDPC payload decoding.
+
+SOURCE[HIL_OPEN_HE20_LDPC_MATRIX_2026_07_30]: ESP32-S31 rev0,
+`open-radio-phy-prelude-hil`, complete open PHY/MAC, FRITZ!Box 7530 FN on
+channel 6 advertising payload LDPC but no DCM receive. Three complete
+30-profile matrices covered MCS0..9 with 2xLTF/0.8 us, 2xLTF/1.6 us and
+4xLTF/3.2 us. Every profile completed at least one A-MPDU/BlockAck,
+`failed_profiles=0`, and `retry_failures=0`. MCS9/0.8 us admitted 32 MPDUs
+per aggregate and measured about 80--81 Mbit/s in the synthetic protected
+Ethernet path. This qualifies the LDPC queue-control image independently of
+the still unavailable 16-QAM DCM peer needed for LDPC+DCM MCS4.
+
 ## Open HT40 receive qualification (2026-07-29)
 
 A controlled Linux/mac80211 AP supplied the missing 40-MHz peer boundary:

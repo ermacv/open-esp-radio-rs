@@ -39,8 +39,8 @@ use open_esp_radio_mac_esp32s31::{
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
-        HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeMcs, HeRate, HeSmpduTxConfig,
-        HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
+        HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs, HeMcs, HeRate,
+        HeSmpduTxConfig, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
         HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
         TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
@@ -2277,6 +2277,48 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
             .minimum_ampdu_subframe_bytes(HtAmpduDensity::QuarterMicrosecond),
         1
     );
+}
+
+#[test]
+fn he_ldpc_profile_owns_coding_control_and_the_dcm_mcs4_rom_column() {
+    let ordinary = HeRate::ldpc(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    assert_eq!(ordinary.fec_coding(), HeFecCoding::Ldpc);
+    assert!(ordinary.is_ldpc());
+    assert!(!ordinary.is_dcm());
+    let ordinary_image = he_ampdu_q0_image(
+        0x2f00_5000,
+        HeAmpduTxConfig::new(ordinary, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
+    )
+    .unwrap();
+    // Complete blob and ROM mac_tx_set_hesig transform certification BCC=0
+    // from intermediate 0x01ff to this queue-control low eleven-bit image.
+    assert_eq!(ordinary_image.he_signal_a2_length & 0x7ff, 0x107);
+
+    for (gi_ltf, expected_kbps) in [
+        (HeGuardIntervalAndLtf::TwoLtf800Ns, 25_800),
+        (HeGuardIntervalAndLtf::TwoLtf1600Ns, 24_400),
+        (HeGuardIntervalAndLtf::FourLtf3200Ns, 21_900),
+    ] {
+        let rate = HeRate::ldpc_dcm(HeLdpcDcmMcs::Mcs4, gi_ltf);
+        assert_eq!(rate.fec_coding(), HeFecCoding::Ldpc);
+        assert!(rate.is_dcm());
+        assert_eq!(rate.mcs(), HeMcs::Mcs4);
+        assert_eq!(rate.code(), 0x1e);
+        // rcGetDCMMaxRate publishes only its separate MCS0/1/3 fallback
+        // domain. Direct LDPC+DCM MCS4 retains the canonical HE rate code.
+        assert_eq!(rate.rate_control_dcm_fallback_code(), None);
+        assert_eq!(rate.nominal_kbps(), expected_kbps);
+
+        let image = he_ampdu_q0_image(
+            0x2f00_5000,
+            HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
+        )
+        .unwrap();
+        assert_eq!((image.plcp1 >> 12) & 0x1f, 0x1e);
+        assert_eq!((image.he_signal_a1 >> 3) & 0x0f, 4);
+        assert_ne!(image.he_signal_a1 & (1 << 7), 0);
+        assert_eq!(image.he_signal_a2_length & 0x7ff, 0x107);
+    }
 }
 
 #[test]

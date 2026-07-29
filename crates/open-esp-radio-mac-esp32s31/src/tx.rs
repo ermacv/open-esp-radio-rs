@@ -48,6 +48,7 @@ const HE_AMPDU_ENTRY_FLAGS: u8 = 1;
 const HE_SMPDU_ENTRY_FLAGS: u8 = 1;
 const HE_SMPDU_DESCRIPTOR_FLAGS: u32 = 0xc040_7008;
 const HE_SU_A2_CONTROL_BCC: u16 = 0x0105;
+const HE_SU_A2_CONTROL_LDPC: u16 = 0x0107;
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
 ///
@@ -646,6 +647,23 @@ impl HeMcs {
     }
 }
 
+/// Forward-error-correction profile carried by the S31 HE-SIG-A2 control.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_hesig`
+/// (size `0x324`) and ROM rev0 `mac_tx_set_hesig` at `0x2f8350a8`.
+/// The blob's `esp_wifi_cert_tx_bcc` selector produces intermediate halfword
+/// `0x017f` for BCC and `0x01ff` for LDPC. Its final `>> 6` transformation
+/// changes the queue's HE-SIG-A2 control image from `0x105` to `0x107`.
+/// SOURCE[HIL_OPEN_HE20_LDPC_MATRIX_2026_07_30]: the open formatter's LDPC
+/// image completed three 30-profile MCS0..9 by GI/LTF A-MPDU matrices against
+/// an LDPC-capable FRITZ peer with no failed profiles or terminal retries.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HeFecCoding {
+    #[default]
+    Bcc,
+    Ldpc,
+}
+
 /// HE DCM MCS values valid in the currently owned BCC SU profile.
 ///
 /// This intentionally does not expose an unchecked integer. The pinned
@@ -669,6 +687,33 @@ impl HeBccDcmMcs {
             Self::Mcs0 => HeMcs::Mcs0,
             Self::Mcs1 => HeMcs::Mcs1,
             Self::Mcs3 => HeMcs::Mcs3,
+        }
+    }
+}
+
+/// HE DCM MCS values valid with the separately owned LDPC SU profile.
+///
+/// SOURCE: ROM rev0 `he_rates_dcm_ru_242` at `0x2f84e07c` contains three
+/// GI rows by five MCS columns. Its valid columns are MCS0, MCS1, MCS3 and
+/// MCS4; MCS2 is zero. MCS4 is deliberately available only through this LDPC
+/// type, so it cannot be combined with [`HeRate::bcc_dcm`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HeLdpcDcmMcs {
+    #[default]
+    Mcs0 = 0,
+    Mcs1 = 1,
+    Mcs3 = 3,
+    Mcs4 = 4,
+}
+
+impl HeLdpcDcmMcs {
+    pub const fn mcs(self) -> HeMcs {
+        match self {
+            Self::Mcs0 => HeMcs::Mcs0,
+            Self::Mcs1 => HeMcs::Mcs1,
+            Self::Mcs3 => HeMcs::Mcs3,
+            Self::Mcs4 => HeMcs::Mcs4,
         }
     }
 }
@@ -722,6 +767,7 @@ impl HeEdcaTxopLimit {
 pub struct HeRate {
     mcs: HeMcs,
     guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    fec_coding: HeFecCoding,
     dcm: bool,
 }
 
@@ -730,6 +776,23 @@ impl HeRate {
         Self {
             mcs,
             guard_interval_and_ltf,
+            fec_coding: HeFecCoding::Bcc,
+            dcm: false,
+        }
+    }
+
+    /// Construct one HE SU LDPC rate without DCM.
+    ///
+    /// The coding selector is independently represented even though the
+    /// descriptor rate code remains `0x1a + MCS`.
+    pub const fn ldpc(
+        mcs: HeMcs,
+        guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Self {
+        Self {
+            mcs,
+            guard_interval_and_ltf,
+            fec_coding: HeFecCoding::Ldpc,
             dcm: false,
         }
     }
@@ -746,6 +809,24 @@ impl HeRate {
         Self {
             mcs: mcs.mcs(),
             guard_interval_and_ltf,
+            fec_coding: HeFecCoding::Bcc,
+            dcm: true,
+        }
+    }
+
+    /// Construct one standard-valid HE SU LDPC+DCM rate.
+    ///
+    /// Unlike the bounded BCC constructor, this admits the ROM-evidenced
+    /// MCS4 column. It still excludes the zero MCS2 column and every
+    /// unsupported MCS5..9 DCM combination at the type boundary.
+    pub const fn ldpc_dcm(
+        mcs: HeLdpcDcmMcs,
+        guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Self {
+        Self {
+            mcs: mcs.mcs(),
+            guard_interval_and_ltf,
+            fec_coding: HeFecCoding::Ldpc,
             dcm: true,
         }
     }
@@ -756,6 +837,14 @@ impl HeRate {
 
     pub const fn guard_interval_and_ltf(self) -> crate::rx::HeGuardIntervalAndLtf {
         self.guard_interval_and_ltf
+    }
+
+    pub const fn fec_coding(self) -> HeFecCoding {
+        self.fec_coding
+    }
+
+    pub const fn is_ldpc(self) -> bool {
+        matches!(self.fec_coding, HeFecCoding::Ldpc)
     }
 
     pub const fn is_dcm(self) -> bool {
@@ -786,10 +875,9 @@ impl HeRate {
     /// This is exposed for a future owned rate-control port; the direct queue
     /// formatter must continue to use [`Self::code`].
     pub const fn rate_control_dcm_fallback_code(self) -> Option<u8> {
-        if self.dcm {
-            Some(0x10 + self.mcs.index())
-        } else {
-            None
+        match (self.dcm, self.mcs) {
+            (true, HeMcs::Mcs0 | HeMcs::Mcs1 | HeMcs::Mcs3) => Some(0x10 + self.mcs.index()),
+            _ => None,
         }
     }
 
@@ -825,9 +913,10 @@ impl HeRate {
         const GI_3200: [u32; 10] = [
             7_300, 14_600, 21_900, 29_300, 43_900, 58_500, 65_800, 73_100, 87_800, 97_500,
         ];
-        const DCM_GI_800: [u32; 10] = [4_300, 8_600, 0, 17_200, 0, 0, 0, 0, 0, 0];
-        const DCM_GI_1600: [u32; 10] = [4_000, 8_100, 0, 16_300, 0, 0, 0, 0, 0, 0];
-        const DCM_GI_3200: [u32; 10] = [3_600, 7_300, 0, 14_600, 0, 0, 0, 0, 0, 0];
+        // SOURCE: ROM rev0 he_rates_dcm_ru_242 at 0x2f84e07c.
+        const DCM_GI_800: [u32; 10] = [4_300, 8_600, 0, 17_200, 25_800, 0, 0, 0, 0, 0];
+        const DCM_GI_1600: [u32; 10] = [4_000, 8_100, 0, 16_300, 24_400, 0, 0, 0, 0, 0];
+        const DCM_GI_3200: [u32; 10] = [3_600, 7_300, 0, 14_600, 21_900, 0, 0, 0, 0, 0];
         let table = match (self.dcm, self.guard_interval_and_ltf) {
             (true, crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns)
             | (true, crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns) => &DCM_GI_800,
@@ -1580,6 +1669,13 @@ const fn he_su_signal_a1(rate: HeRate, bss_color: u8, spatial_reuse: u8) -> u32 
         | ((rate.guard_interval_and_ltf.encoding() as u32) << 21)
 }
 
+const fn he_su_signal_a2_control(rate: HeRate) -> u16 {
+    match rate.fec_coding() {
+        HeFecCoding::Bcc => HE_SU_A2_CONTROL_BCC,
+        HeFecCoding::Ldpc => HE_SU_A2_CONTROL_LDPC,
+    }
+}
+
 /// Build the instruction-exact bounded HE20 SU S-MPDU queue image.
 ///
 /// SOURCE: complete `_oracles/libpp.a[pp_he.o]::ppCalTxHESMPDULength`,
@@ -1604,7 +1700,8 @@ pub const fn he_smpdu_q0_image(
         plcp1: he_plcp1_word(rate, config.hardware_key_selector),
         he_signal_a1: he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse),
         // S-MPDU leaves the A-MPDU selector at bit 28 clear.
-        he_signal_a2_length: (HE_SU_A2_CONTROL_BCC as u32) | ((config.apep_length() as u32) << 11),
+        he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
+            | ((config.apep_length() as u32) << 11),
         power: config.data_power_primary as u32
             | ((config.data_power_alternate as u32) << 8)
             | ((config.rts_power_primary as u32) << 16)
@@ -1749,7 +1846,7 @@ pub const fn he_ampdu_q0_image(
         plcp0: he_ampdu_plcp0_word(dma_head_address as usize),
         plcp1: he_plcp1_word(rate, config.hardware_key_selector),
         he_signal_a1,
-        he_signal_a2_length: (HE_SU_A2_CONTROL_BCC as u32)
+        he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
             | ((config.aggregate_length as u32) << 11)
             | 0x1000_0000,
         power: config.data_power_primary as u32

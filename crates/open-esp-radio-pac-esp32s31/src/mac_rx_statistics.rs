@@ -96,7 +96,12 @@ impl RadioRegisters {
             collision_threshold: control.collision_threshold().bits(),
             timeout_seconds: control.timeout_seconds().bits(),
             bitmap_control: control.bitmap_control().bits(),
-            color_bitmap_clear: control.color_bitmap_clear().bit(),
+            // SOURCE: complete `_oracles/libpp.a[hal_debug.o]::
+            // dbg_read_color_collision` prints the low bit separately as
+            // COLOR_BITMAP_CLR and the containing two-bit value as BITMAP.
+            // The SVD keeps one non-overlapping field; this typed diagnostic
+            // exposes the named low-bit view without duplicating MMIO fields.
+            color_bitmap_clear: control.bitmap_control().bits() & 1 != 0,
         }
     }
 

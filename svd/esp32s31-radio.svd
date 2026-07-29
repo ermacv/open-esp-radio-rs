@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.33</version>
+  <version>3.34</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -231,6 +231,7 @@
           <fields><field><name>OPAQUE_DATA</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
         <register>
+          <dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>GROUP_BOUNDARY%s</name>
           <description>
             SOURCE[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG];
@@ -239,7 +240,6 @@
             pair. Six words describe all twelve groups.
           </description>
           <addressOffset>0x54</addressOffset><size>32</size><access>read-write</access>
-          <dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <fields>
             <field><name>EVEN_GROUP_FIRST_ENTRY</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>EVEN_GROUP_LAST_ENTRY</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
@@ -358,10 +358,10 @@
           </fields>
         </register>
         <register>
+          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
           <name>I2C_NUMBER_WORD%s</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-packed-layout]. Six consecutive five-bit PHY-I2C number addresses packed by complete phy_freq_num_get_data; unused slots are zero.</description>
           <addressOffset>0x0034</addressOffset><size>32</size><access>write-only</access>
-          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
           <fields>
             <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth></field>
             <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
@@ -1011,9 +1011,9 @@
           <fields>
             <field><name>MEASUREMENT_START</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>MEASUREMENT_ENABLE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>MEASUREMENT_READY</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>Q_COMPARATOR_HIGH</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>I_COMPARATOR_HIGH</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MEASUREMENT_READY</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
+            <field><name>Q_COMPARATOR_HIGH</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
+            <field><name>I_COMPARATOR_HIGH</name><bitOffset>29</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
           </fields>
         </register>
         <register>
@@ -1644,16 +1644,16 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY]; CONFIDENCE[instruction-exact-hil-qualified]. Per-interface BSSID address and policy words used by scan and associated-STA receive filtering.</description>
       <baseAddress>0x20104000</baseAddress>
       <registers>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>BSSID_LOW%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID]; CONFIDENCE[instruction-exact]. BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>BSSID_HIGH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID,BLOB_LIBPP_RX_POLICY,BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact-fields]. High BSSID bytes, association identity and interface policy for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>BSSID_HIGH</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
             <field><name>ASSOCIATION_ID</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. Eleven-bit AID printed by dbg_read_rx_misc.</description><bitOffset>16</bitOffset><bitWidth>11</bitWidth></field>
@@ -1669,11 +1669,11 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-hil-qualified]. Four interface-address pairs consumed by MAC receive filtering.</description>
       <baseAddress>0x2010405c</baseAddress>
       <registers>
-        <register><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>ADDRESS_HIGH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-semantics-partial]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>BYTES_4_5</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
             <field><name>RX_POLICY_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY]; CONFIDENCE[instruction-exact-mode-dependent]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
@@ -1687,10 +1687,10 @@
       <description>SOURCE[BLOB_LIBPP_HAL_INIT_RX_POLICY,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY,BLOB_LIBPP_HAL_SNIFFER_ENABLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact-fields-hil-qualified]. Four WDEVRX_ABORT receive-queue policy words. Complete dbg_read_rx_misc names every used bit through 19; queue three is also the complete promiscuous-sniffer control word.</description>
       <baseAddress>0x201040d8</baseAddress>
       <registers>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-3</dimIndex>
           <name>POLICY%s</name>
           <description>SOURCE[BLOB_LIBPP_RX_POLICY,BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. WDEVRX_ABORT[0-3], updated through separate fresh-read RMW edges.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>DUMP_UNICAST_CHECK_DA</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>DUMP_UNICAST_CHECK_BSSID</name><description>SOURCE[BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY,HIL_VENDOR_STA_AUTH_POLICY_2026_07_28]; CONFIDENCE[instruction-exact-hil-qualified]. The policy-six UBSSID branch sets this bit before live vendor Authentication.</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
@@ -1774,10 +1774,10 @@
       <baseAddress>0x20104800</baseAddress>
       <registers>
         <register>
+          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
           <name>INTERFACE_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-multifunction]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <dim>3</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-2</dimIndex>
           <fields>
             <field><name>CONTROL_LOW_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown.</description><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field>
             <field><name>MODE_HIGH_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field>
@@ -1821,10 +1821,10 @@
       <baseAddress>0x20105800</baseAddress>
       <registers>
         <register>
+          <dim>250</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-249</dimIndex>
           <name>ENTRY_WORD%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-mode-dependent]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <dim>250</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-249</dimIndex>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
       </registers>
@@ -1880,10 +1880,10 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Four ascending physical banks represent logical EDCA queues 3,2,1,0.</description>
       <baseAddress>0x20104d34</baseAddress>
       <registers>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <name>PROTECTION%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29]; CONFIDENCE[instruction-exact-field-semantics-hil-qualified]. WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>MINIMUM_MPDU_LENGTH_CBW20</name><description>First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
             <field><name>MINIMUM_MPDU_LENGTH_CBW40</name><description>Second copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value.</description><bitOffset>10</bitOffset><bitWidth>10</bitWidth></field>
@@ -1892,16 +1892,16 @@
             <field><name>SOFTWARE_CTS</name><description>SOURCE[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. Complete dbg_read_txq_conf2 names bit 31 SW_CTS.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <name>PPDU_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-multifunction]. Per-queue PPDU control; open legacy formatting clears bit 3.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>CONTROL_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field><field><name>LEGACY_CLEAR_UNKNOWN</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>CONTROL_HIGH_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>28</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <name>CONFIG%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Timeout, contention window, interface, AIFSN and scheduler-priority fields configured as distinct recovered RMW edges. Scheduler priority is not the original packet PTI retained in the vector bank.</description>
-          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>TIMEOUT</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field>
             <field><name>CONTENTION_WINDOW</name><bitOffset>12</bitOffset><bitWidth>10</bitWidth></field>
@@ -1910,10 +1910,10 @@
             <field><name>SCHEDULER_PRIORITY</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions.</description><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <name>CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Descriptor address and PLCP0 format image in low 30 bits; VALID bit 30 and ENABLE bit 31 publish hardware ownership.</description>
-          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>DESCRIPTOR_ADDRESS_LOW</name><description>SOURCE[MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-fields]. Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits.</description><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
             <field><name>CONTROL_21_20_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-semantics-unknown]. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path.</description><bitOffset>20</bitOffset><bitWidth>2</bitWidth></field>
@@ -1932,13 +1932,13 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,MIGRATION_LMAC_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four 0x7c-byte physical vector banks represent logical EDCA queues 3,2,1,0. The write-side Trigger-based path additionally publishes the tail of its linked MPDU-length list in the word between HE-SIG-A2 and POWER.</description>
       <baseAddress>0x20105364</baseAddress>
       <registers>
-        <register><name>PLCP1%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29]; CONFIDENCE[instruction-exact-mode-dependent-hil-qualified]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>LOW_MODE_DEPENDENT</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field><field><name>KEY_ENTRY_INDEX</name><bitOffset>17</bitOffset><bitWidth>6</bitWidth></field><field><name>BSSID_SELECT</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth></field><field><name>HIGH_MODE_DEPENDENT</name><bitOffset>25</bitOffset><bitWidth>7</bitWidth></field></fields></register>
-        <register><name>HE_RTS_CONTROL%s</name><description>SOURCE[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER]; CONFIDENCE[instruction-exact-field-semantics-partial]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field><field><name>HE_RTS_DISABLED</name><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>14</bitWidth></field></fields></register>
-        <register><name>PTI%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_0</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_2</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_3</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field><field><name>COUNT</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count.</description><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields></register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>PLCP1%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29]; CONFIDENCE[instruction-exact-mode-dependent-hil-qualified]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><fields><field><name>LOW_MODE_DEPENDENT</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field><field><name>KEY_ENTRY_INDEX</name><bitOffset>17</bitOffset><bitWidth>6</bitWidth></field><field><name>BSSID_SELECT</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth></field><field><name>HIGH_MODE_DEPENDENT</name><bitOffset>25</bitOffset><bitWidth>7</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>HE_RTS_CONTROL%s</name><description>SOURCE[BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR,MIGRATION_HE20_PEER]; CONFIDENCE[instruction-exact-field-semantics-partial]. Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field><field><name>HE_RTS_DISABLED</name><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>14</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>PTI%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-write</access><fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_0</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_2</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field><field><name>PTI_3</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field><field><name>COUNT</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count.</description><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>HT_SIGNAL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,IEEE80211_HT_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]; CONFIDENCE[instruction-exact-standard-semantic]. Complete libpp.a[hal_mac_tx.o]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.</description>
-          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>MCS_LOW_NIBBLE</name><description>Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
             <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
@@ -1946,10 +1946,10 @@
             <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>VHT_SIGNAL_1%s</name>
           <description>SOURCE[BLOB_LIBPP_DBG_READ_TX_SIG]; CONFIDENCE[instruction-exact-fields-from-debug-symbol]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names VHT MCS, channel width, group ID, NSTS, SU partial AID, SGI, SGI symbol disambiguation and coding. This maps an internal hardware vector; it does not assert that the ESP32-S31 public Wi-Fi mode supports VHT transmission.</description>
-          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>CHANNEL_WIDTH</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
             <field><name>UNKNOWN_2_3</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
@@ -1964,20 +1964,20 @@
             <field><name>MCS</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>VHT_MODE%s</name>
           <description>SOURCE[BLOB_LIBPP_DBG_READ_TX_SIG]; CONFIDENCE[instruction-exact-fields-from-debug-symbol]. Complete dbg_read_tx_sig decodes this word only when PLCP_FORMAT is three and names bits 18:2 SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN. Remaining bits are not assigned a meaning by the complete body.</description>
-          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
             <field><name>SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LENGTH</name><bitOffset>2</bitOffset><bitWidth>17</bitWidth></field>
             <field><name>HIGH_UNKNOWN</name><bitOffset>19</bitOffset><bitWidth>13</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>HE_SU_SIGNAL_A1%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29,ESP_WIFI_SYS_S31_HE_SU_SIG]; CONFIDENCE[instruction-exact-hil-qualified-standard-fields]. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.</description>
-          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>FORMAT</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>BEAM_CHANGE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
@@ -1997,10 +1997,10 @@
             <field><name>VECTOR_REQUIRED_HIGH</name><description>SOURCE[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified-semantics-unknown]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits.</description><bitOffset>26</bitOffset><bitWidth>6</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>HE_SU_SIGNAL_A2_LENGTH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified-semantics-partial]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.</description>
-          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>CONTROL_LOW</name><description>SOURCE[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified-semantics-partial]. Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
             <field><name>DESCRIPTOR_CLASS_MATCH</name><description>SOURCE[BLOB_LIBPP_HAL_HE_TX]; CONFIDENCE[instruction-exact-semantics-unknown]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven.</description><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
@@ -2008,17 +2008,17 @@
             <field><name>AMPDU_LENGTH_VALID</name><description>SOURCE[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified-semantics-from-control-flow]. Copy of frame-state bit 12; set in live HE A-MPDU images and clear in the acknowledged HE S-MPDU image.</description><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>HE_MPDU_LENGTH_TAIL%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact-field-semantics-from-call-graph]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.</description>
-          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>LINK_INDEX</name><bitOffset>0</bitOffset><bitWidth>7</bitWidth></field><field><name>PRESERVED_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>25</bitWidth></field></fields>
         </register>
-        <register><name>POWER%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Packed data/RTS PHY gain-table indices, not dBm.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>POWER%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Packed data/RTS PHY gain-table indices, not dBm.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>HT_DESCRIPTOR_COUNTS%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_CONNECTED_VECTOR_2026_07_29,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Complete libpp.a[hal_mac_tx.o]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.</description>
-          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>DESCRIPTOR_COUNT_A</name><description>Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig.</description><bitOffset>0</bitOffset><bitWidth>7</bitWidth></field>
             <field><name>DESCRIPTOR_COUNT_B</name><description>Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig.</description><bitOffset>7</bitOffset><bitWidth>7</bitWidth></field>
@@ -2026,10 +2026,10 @@
             <field><name>HIGH_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>DATA_LENGTH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Complete libpp.a[hal_mac_tx.o]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.</description>
-          <addressOffset>0x34</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x34</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>HT40_LENGTH</name><bitOffset>0</bitOffset><bitWidth>19</bitWidth></field>
             <field><name>UNKNOWN_19_21</name><bitOffset>19</bitOffset><bitWidth>3</bitWidth></field>
@@ -2038,10 +2038,10 @@
             <field><name>HT40_MCS</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
           <name>LENGTH_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_TX_SIG,MIGRATION_LMAC_TX,HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29,HIL_VENDOR_HT_AMPDU_PPDU,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Recovered length/rate/key-selector image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.</description>
-          <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>TXRX_QUEUE_ANTENNA_LAST</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>TXRX_QUEUE_ANTENNA_VALUE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
@@ -2079,11 +2079,11 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Four 0x7c-byte completion banks represent logical EDCA queues 3,2,1,0.</description>
       <baseAddress>0x201053b0</baseAddress>
       <registers>
-        <register><name>AUX_B%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>AUX_A%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x10</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>PRIMARY%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.</description><addressOffset>0x18</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>ALTERNATE%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Alternate completion/status word selected by the recovered auxiliary bit.</description><addressOffset>0x1c</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>AUX_C%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Third auxiliary completion word contributing to the second decoded extension image.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-only</access><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>AUX_B%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>AUX_A%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Auxiliary completion bits contributing to alternate selection and decoded status extension.</description><addressOffset>0x10</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>PRIMARY%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.</description><addressOffset>0x18</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>ALTERNATE%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-mode-dependent]. Alternate completion/status word selected by the recovered auxiliary bit.</description><addressOffset>0x1c</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>AUX_C%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-semantics-partial]. Third auxiliary completion word contributing to the second decoded extension image.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-only</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
       </registers>
     </peripheral>
     <peripheral>
@@ -2095,7 +2095,7 @@
           <name>RX_FIELD_CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. RX_HE_BSS_COLOR_CONF. Complete dbg_read_color_collision names the fields; the HE init parent independently replaces TIMEOUT_SECONDS bits 8:3 with 0x3c.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>COLOR_BITMAP_CLEAR</name><description>Blob decoder's COLOR_BITMAP_CLR alias.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>BITMAP_CONTROL</name><description>Blob decoder's overlapping two-bit BITMAP value.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>PRESERVED_UNKNOWN_2</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TIMEOUT_SECONDS</name><bitOffset>3</bitOffset><bitWidth>6</bitWidth></field><field><name>COLLISION_THRESHOLD</name><bitOffset>9</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>19</bitWidth></field></fields>
+          <fields><field><name>BITMAP_CONTROL</name><description>Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL[0], not a second overlapping SVD field.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>PRESERVED_UNKNOWN_2</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TIMEOUT_SECONDS</name><bitOffset>3</bitOffset><bitWidth>6</bitWidth></field><field><name>COLLISION_THRESHOLD</name><bitOffset>9</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>19</bitWidth></field></fields>
         </register>
         <register>
           <name>BF_MODE_CONTROL</name>
@@ -2225,20 +2225,20 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_HE_BUFFER_STATUS</name>
-      <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29]; CONFIDENCE[instruction-exact-fields-semantics-hil-qualified]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the accumulated queued-byte value, then OR the queue bit into CONTROL[7:0]. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean.</description>
+      <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29]; CONFIDENCE[instruction-exact-fields-semantics-hil-qualified]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL[7:0]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean.</description>
       <baseAddress>0x20104d74</baseAddress>
       <registers>
-        <register>
+        <register><dim>8</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-7</dimIndex>
           <name>HARDWARE_BSR%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS]; CONFIDENCE[instruction-exact-array-field-semantics]. WDEVTXQBSR_HW[0-7].</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><dim>8</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-7</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>8</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-7</dimIndex>
           <name>SOFTWARE_BSR%s</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact-array-field-semantics]. WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><dim>8</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-7</dimIndex>
-          <fields><field><name>VALUE</name><description>Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue.</description><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
+          <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact-array-field-semantics]. WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>VALUE</name><description>Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths.</description><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
         </register>
         <register>
           <name>CONTROL</name>
@@ -2261,10 +2261,10 @@
       <description>SOURCE[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame.</description>
       <baseAddress>0x20104dbc</baseAddress>
       <registers>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-3</dimIndex>
           <name>TIMER%s</name>
           <description>WDEVMUEDCA_TIMER[0-3].</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>TIMER_8TU</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>ENABLE</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field><field><name>RESET</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field><field><name>CURRENT_COUNT_8TU</name><bitOffset>10</bitOffset><bitWidth>8</bitWidth></field><field><name>REACHED</name><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field><field><name>AIFS</name><bitOffset>19</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>9</bitWidth></field></fields>
         </register>
       </registers>
@@ -2360,10 +2360,10 @@
       <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT,ROM_REV0_PHY_GET_MAX_PWR]; CONFIDENCE[instruction-exact-fields-semantics-partial]. Complete hal_init_tx_pwr consumes 43 two-byte PHY power results, then complete TB, immediate-response and TB-RU leaves publish 56 ordered fresh-read RMW edges. Values are PHY gain-table indices, not dBm.</description>
       <baseAddress>0x20104408</baseAddress>
       <registers>
-        <register>
+        <register><dim>10</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-9</dimIndex>
           <name>IMMEDIATE_RESPONSE%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT]; CONFIDENCE[instruction-exact-fields-semantics-partial]. Ten immediate-response command words. Complete hal_init_imrsp_power separately replaces format, rate and power-index fields in that order.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>10</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-9</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>POWER_INDEX</name><description>PHY gain-table index selected for the response rate; not dBm.</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
@@ -2373,10 +2373,10 @@
             <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>3</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-2</dimIndex>
           <name>TB_POWER%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT]; CONFIDENCE[instruction-exact-packed-fields]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW.</description>
-          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><dim>3</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-2</dimIndex>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
             <field><name>PRESERVED_0</name><bitOffset>6</bitOffset><bitWidth>2</bitWidth></field>
@@ -2394,10 +2394,10 @@
           <addressOffset>0x34</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field><field><name>POWER_INDEX</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>3</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-2</dimIndex>
           <name>TB_RU_POWER%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT]; CONFIDENCE[instruction-exact-indexed-fields]. Packed trigger-based resource-unit power deltas selected by complete hal_mac_set_tb_max_pwr.</description>
-          <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access><dim>3</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-2</dimIndex>
+          <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
             <field><name>POWER_1</name><bitOffset>6</bitOffset><bitWidth>6</bitWidth></field>
@@ -2523,22 +2523,22 @@
           <addressOffset>0xca0</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>31</bitWidth></field><field><name>ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>8</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-7</dimIndex>
           <name>QUEUE_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-fields-semantics-from-debug-symbols-hil-observed]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.</description>
-          <addressOffset>0xcd8</addressOffset><size>32</size><access>read-write</access><dim>8</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-7</dimIndex>
+          <addressOffset>0xcd8</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>LOW_CLEARED_BY_TB_SETUP</name><description>Bits zero and one are cleared by complete mac_tx_set_tb.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>QOS_NULL_TO_TRANSLATED_BSS</name><description>The sole pre-existing bit preserved by complete mac_tx_set_tb.</description><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TRIGGER_BASED_ENABLE</name><description>Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it.</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>MU_EDCA_TIMER_SELECT</name><description>Complete mac_tx_set_tb copies the two-bit logical queue number here.</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field><field><name>MPDU_LENGTH_LINK_ADDRESS</name><description>First seven-bit link returned by complete mac_tx_set_mplen.</description><bitOffset>6</bitOffset><bitWidth>7</bitWidth></field><field><name>TID</name><description>Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb.</description><bitOffset>13</bitOffset><bitWidth>4</bitWidth></field><field><name>MINIMUM_TX_POWER</name><description>Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name.</description><bitOffset>17</bitOffset><bitWidth>5</bitWidth></field><field><name>HIGH_CLEARED_BY_TB_SETUP</name><description>Bits 31:22 are cleared by complete mac_tx_set_tb.</description><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <name>PROTECTION%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact-field-semantics-unknown]. Four physical queue words traversed in descending-address order; bits 31:30 are cleared.</description>
-          <addressOffset>0xd14</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0xd14</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field><field><name>MODE_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>120</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-119</dimIndex>
           <name>HE_SCRATCH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact-fields]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.</description>
-          <addressOffset>0x15d0</addressOffset><size>32</size><access>read-write</access><dim>120</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-119</dimIndex>
+          <addressOffset>0x15d0</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>MPDU_LENGTH</name><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field><field><name>NEXT_LINK</name><bitOffset>14</bitOffset><bitWidth>7</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field></fields>
         </register>
       </registers>
@@ -2616,10 +2616,10 @@
           </fields>
         </register>
         <register>
+          <dim>8</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-7</dimIndex>
           <name>BANK_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_ANTENNA_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Eight ascending physical words at 0x201051ac..0x20105510. The complete leaf traverses them in reverse order: it clears bit 2 across all words, then makes three separate RMW passes per word to clear bit 3, set bit 5 and clear bit 4.</description>
           <addressOffset>0xefc</addressOffset><size>32</size><access>read-write</access>
-          <dim>8</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-7</dimIndex>
           <fields>
             <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
             <field><name>FIRST_CLEAR_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_ANTENNA_INIT]; CONFIDENCE[instruction-exact-bit]. Cleared for all eight words in the first reverse traversal.</description><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
@@ -2681,10 +2681,10 @@
       <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX,BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-semantics-partial]. Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init; complete hal_init later repeats the bit-28 set edge.</description>
       <baseAddress>0x201040fc</baseAddress>
       <registers>
-        <register>
+        <register><dim>4</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-3</dimIndex>
           <name>RX_QUEUE_DEFAULT%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Four queue words have their high half cleared independently; queue zero and one then receive separate bit-24 and bit-26 set edges.</description>
-          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-3</dimIndex>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
             <field><name>HIGH_23_16_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
@@ -2890,22 +2890,22 @@
             <field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>14</bitOffset><bitWidth>18</bitWidth></field>
           </fields>
         </register>
-        <register>
+        <register><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>ENTRY_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-values-semantics-partial]. First full-word image for each of six entries.</description>
-          <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
+          <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access>
           <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>ENTRY_PARAMETER_A%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-values-semantics-unknown]. Second full-word image for each of six entries.</description>
-          <addressOffset>0x20</addressOffset><size>32</size><access>write-only</access><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
+          <addressOffset>0x20</addressOffset><size>32</size><access>write-only</access>
           <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
-        <register>
+        <register><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>ENTRY_PARAMETER_B%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-values-semantics-unknown]. Third full-word image for each of six entries.</description>
-          <addressOffset>0x3c</addressOffset><size>32</size><access>write-only</access><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
+          <addressOffset>0x3c</addressOffset><size>32</size><access>write-only</access>
           <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
       </registers>
@@ -2974,7 +2974,7 @@
         <register>
           <name>CLEAR</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact-write-to-clear]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.</description>
-          <addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access><modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field><name>EVENTS</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT]; CONFIDENCE[instruction-exact-write-to-clear]. Ones acknowledge the corresponding event bits.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
           </fields>
@@ -2991,7 +2991,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-fields]. Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>READY</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-from-complete-parent]. Polled until asserted after REQUEST.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>READY</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-from-complete-parent]. Polled until asserted after REQUEST.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
             <field><name>REQUEST</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-from-complete-parent]. Set before the READY polling loop.</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>30</bitWidth></field>
           </fields>
@@ -3024,7 +3024,7 @@
             <field>
               <name>APPEND_DESCRIPTOR_RELOAD</name>
               <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil]. Write one after publishing old_tail.next to make a prepared live-list append visible. Hardware clears the bit after accepting the append.</description>
-              <bitOffset>0</bitOffset><bitWidth>1</bitWidth>
+              <bitOffset>0</bitOffset><bitWidth>1</bitWidth><modifiedWriteValues>clear</modifiedWriteValues>
             </field>
             <field>
               <name>WALKER_ENABLE</name>
@@ -3222,17 +3222,17 @@
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_HIGH_Q3</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 3.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 3.</description>
           <addressOffset>0x13b4</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q3</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 3.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 3.</description>
           <addressOffset>0x13b8</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.</description>
           <addressOffset>0x13bc</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>STARTING_SEQUENCE</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field><field><name>TID_OR_CONTROL</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field></fields>
         </register>
@@ -3255,17 +3255,17 @@
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_HIGH_Q2</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 2.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 2.</description>
           <addressOffset>0x1430</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q2</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 2.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 2.</description>
           <addressOffset>0x1434</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.</description>
           <addressOffset>0x1438</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>STARTING_SEQUENCE</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field><field><name>TID_OR_CONTROL</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field></fields>
         </register>
@@ -3288,17 +3288,17 @@
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_HIGH_Q1</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 1.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. High 32 acknowledgement bits for completed hardware queue 1.</description>
           <addressOffset>0x14ac</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q1</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 1.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Low 32 acknowledgement bits for completed hardware queue 1.</description>
           <addressOffset>0x14b0</addressOffset><size>32</size><access>read-only</access>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.</description>
           <addressOffset>0x14b4</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>STARTING_SEQUENCE</name><bitOffset>4</bitOffset><bitWidth>12</bitWidth></field><field><name>TID_OR_CONTROL</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field></fields>
         </register>
@@ -3351,7 +3351,7 @@
         </register>
         <register>
           <name>RX_BLOCK_ACK_AGREEMENT_UPDATE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.</description>
           <addressOffset>0x0298</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>COMMIT</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
@@ -3360,7 +3360,7 @@
         </register>
         <register>
           <name>RX_BLOCK_ACK_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered receive BlockAck entries.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Selects and publishes one of eight recovered receive BlockAck entries.</description>
           <addressOffset>0x0ea4</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
@@ -3372,7 +3372,7 @@
         </register>
         <register>
           <name>RX_BLOCK_ACK_PEER_TAIL_AND_POLICY</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and reorder-window size.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Carries peer MAC bytes 4..5, interface and reorder-window size.</description>
           <addressOffset>0x0ea8</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
@@ -3382,23 +3382,23 @@
         </register>
         <register>
           <name>RX_BLOCK_ACK_PEER_HEAD</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Peer MAC bytes 0..3 in little-endian order.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Peer MAC bytes 0..3 in little-endian order.</description>
           <addressOffset>0x0eac</addressOffset><size>32</size><access>read-write</access>
         </register>
         <register>
           <name>RX_BLOCK_ACK_START_SEQUENCE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Twelve-bit starting sequence control.</description>
           <addressOffset>0x0eb0</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
         </register>
         <register>
           <name>RX_BLOCK_ACK_BITMAP_LOW</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. Low receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. Low receive/reorder bitmap word, cleared when installing or removing an entry.</description>
           <addressOffset>0x0eb4</addressOffset><size>32</size><access>read-write</access>
         </register>
         <register>
           <name>RX_BLOCK_ACK_BITMAP_HIGH</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs]; CONFIDENCE[instruction-exact-not-hil]. High receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-not-hil]. High receive/reorder bitmap word, cleared when installing or removing an entry.</description>
           <addressOffset>0x0eb8</addressOffset><size>32</size><access>read-write</access>
         </register>
       </registers>
@@ -3410,6 +3410,34 @@
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
       <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
       <source id="S31_REG_BASE">esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/include/esp32s31/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d; names the HP-system 0x205x, LP-system 0x207x and LP-peripheral 0x208x blocks and IEEE802154_REG_BASE in the 0x201x modem/radio window</source>
+      <source id="BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_start_tx_tone_step_new body, size 0xc2.</source>
+      <source id="BLOB_LIBPHY_PHY_XTAL_DUTY_CAL">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_cal.o phy_xtal_duty_cal body, size 0x392.</source>
+      <source id="BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete pp_debug.o dbg_lmac_diag_statis_dump body, size 0x17c, and its pinned diag0..diag12/diagsel format strings.</source>
+      <source id="BLOB_LIBPP_PP_DEBUG_HW_STATISTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete pp_debug.o dbg_lmac_hw_statis_dump body, size 0x252, and its pinned hardware-counter format strings.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_get_event body, size 0x0a.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_clr_event body, size 0x0a; writes the supplied event bitmap to the clear register.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_clr_watchdog body, size 0x16.</source>
+      <source id="BLOB_LIBPP_WDEV_PROCESS_FIQ">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete wdev.o wDev_ProcessFiq body, size 0x1ae, including MAC event-mask dispatch and event-clear call graph.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete color-collision branch reached from wdev.o wDev_ProcessFiq and the independently named dbg_read_color_collision register decode.</source>
+      <source id="BLOB_LIBPP_HAL_TSF">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_enable_sta_tsf size 0x26, hal_disable_sta_tsf size 0x22 and hal_set_sta_tsf_wakeup size 0x32.</source>
+      <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o pwr_hal_set_mac_modem_state_wakeup_protect_enable size 0x14 and disable size 0x16, plus their shared control-word leaves.</source>
+      <source id="BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_set_mmss_and_aid body, size 0x82.</source>
+      <source id="BLOB_LIBNET80211_IEEE80211_PARSE_HECAP">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete ieee80211_he.o ieee80211_parse_hecap body, size 0x2d8, including nominal-packet-padding extraction.</source>
+      <source id="BLOB_LIBPP_DBG_READ_TX_PPDU">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o dbg_read_tx_ppdu body, size 0x3b6, and its pinned format strings. The decoder names frame-state halfword offset 0x22 msdu_len; complete mac_tx_set_tb independently sums that exact halfword into WDEVTXQBSR_SW.</source>
+      <source id="ROM_REV0_PHY_DAC_SCALE_SET">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_dac_scale_set at 0x2f82873a, size 0x3c.</source>
+      <source id="ROM_REV0_PHY_SET_RX_GAIN_CAL_DC">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_set_rx_gain_cal_dc at 0x2f829858, size 0x206.</source>
+      <source id="ROM_REV0_PHY_START_TX_TONE_STEP">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_start_tx_tone_step at 0x2f828776, size 0x102.</source>
+      <source id="ROM_REV0_PHY_START_STOP_TX_TONE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_start_tx_tone_step at 0x2f828776, size 0x102, and phy_stop_tx_tone at 0x2f828878, size 0x30.</source>
+      <source id="ROM_REV0_PHY_TXIQ_GET_MIS_PWR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_get_mis_pwr at 0x2f82ae18, size 0xa8.</source>
+      <source id="ROM_REV0_PHY_RX_DCO_CAL">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pbus_rx_dco_cal at 0x2f828f44, size 0x228, including the bounded capture/clear/restore graph.</source>
+      <source id="ROM_REV0_PHY_RX_DCO">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete RX-DCO call graph rooted at phy_pbus_rx_dco_cal at 0x2f828f44, size 0x228, and its PBUS helper leaves.</source>
+      <source id="MIGRATION_HE20_PEER">Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/he.rs; finite HE Capability/Operation parsing and peer-register transcription subsequently promoted into open driver crates.</source>
+      <source id="MIGRATION_HE20_ASSOCIATION">Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/he.rs and association owner; finite interface-zero MMSS/AID transcription subsequently promoted into open driver crates.</source>
+      <source id="MIGRATION_RX_AMPDU">Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs blob 293a864aae77f5768054b3a0a8e7b5dbe78404e5; recovered RX BlockAck transaction later promoted to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs.</source>
+      <source id="MIGRATION_TX_AMPDU">Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs blob 14b76600977613fa878d0e9838fabc4b63606bbd; recovered TX BlockAck transaction later promoted to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs.</source>
+      <source id="HIL_OPEN_AUTH_PTI_2026_07_29">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC and standard psram-code-psram-data profile, 2026-07-29. Five reset-to-connect runs read scheduler priority one and PTI image 0x00111110 for Authentication/Association.</source>
+      <source id="HIL_VENDOR_CONNECTED_VECTOR_2026_07_29">../esp32s31_rust firmware wifi-sta-auth-probe on ESP32-S31 rev0 with the complete vendor driver, 2026-07-29. A synchronous connected HT queue snapshot read HT_DESCRIPTOR_COUNTS 0x00004081 and preserved the complete vector image before queue enable.</source>
+      <source id="HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC, standard psram-code-psram-data profile and controlled HE20 AP, 2026-07-29. After HE association, WPA2 and TID0 AddBA, all ordinary-SU TB_ENA fields and Trigger/TB counters remained zero; MU-EDCA timers were disabled with REACHED=1.</source>
       <source id="S31_PMU_HEADERS">ESP-IDF master commit 102122904ade11fd1ae373848f34ffd7dfb18aeb, components/soc/esp32s31/register/soc/pmu_reg.h; local esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, pmu_reg.h sha256 b1a04a306b9d7ee908e2f7b083d42b7a634f8687b6ee034cfe6f54f385e0d816 and pmu_struct.h sha256 5fc84c7569f9f24e193b0205728a647768c7c289b39d5ce679c50db7d8352e28</source>
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">_oracles/esp32s31_rev0_rom.elf phy_open_fe_bb_clk at 0x2f823ec0, complete 0x38-byte body</source>
       <source id="ROM_REV0_PHY_FE_REG_INIT">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_fe_reg_init at 0x2f827740 size 0xf6</source>
@@ -3452,8 +3480,8 @@
       <source id="ROM_REV0_WDEV_APPEND_RX_BLOCKS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels, live old_tail.next publication, RX_CONTROL bit-0 reload, RX_NEXT_DESCRIPTOR terminal test and RX_DESCRIPTOR_BASE repair</source>
       <source id="ROM_REV0_HAL_MAC_RX_GATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_enable at 0x2f8386c0 size 0x14 and hal_mac_rx_disable at 0x2f8386d4 size 0x12; set and clear RX_CONTROL bit 31</source>
       <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
-      <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
-      <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in MIGRATION_RX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into MIGRATION_TX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_init body. It proves five ordered full-word stores at 0x20104800, 0x20104804, 0x20104808, 0x2010480c and 0x20104810 with images 0x00030000, 0x00030000, zero, zero and zero.</source>
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>

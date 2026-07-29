@@ -1483,6 +1483,36 @@ zero and every queue retained `TB_ENA=0`. This device qualifies HE-SU and
 CCMP interoperability, but its own capability/configuration evidence makes it
 unsuitable as a UL-OFDMA or MU-beamforming oracle.
 
+SVD v3.34 makes the recovered map structurally checkable instead of relying
+only on the permissive local parser. All 46 register arrays now place the
+CMSIS-SVD dimension group before `name`; 45 required correction and
+`PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s` was already canonical. The resulting
+file passes Arm's official `CMSIS-SVD.xsd`. `pac-gen` now rejects:
+
+- a non-canonical dimension group or overlapping fields;
+- any new absolute-address alias outside the explicit 28-address audit set;
+- an undefined or duplicate provenance source;
+- an invalid or overlapping address window.
+
+The generator reads its MMIO windows directly from
+`openEspRadioAddressWindows`, eliminating the former duplicated Rust
+constant. The existing 28 register-address aliases remain deliberately
+allowlisted for a separate canonical-peripheral/alternate-register change,
+because that work can alter the generated public PAC API.
+
+The only field overlap was resolved without losing information.
+`hal_debug.o::dbg_read_color_collision` prints `RX_HE_BSS_COLOR_CONF[1:0]`
+as `BITMAP` and separately prints its low bit as `COLOR_BITMAP_CLR`.
+Consequently the SVD retains one two-bit `BITMAP_CONTROL` field, while the
+typed PAC snapshot derives `color_bitmap_clear` from bit zero.
+
+This revision also closes every previously dangling `SOURCE[...]` reference
+and records the complete `hal_debug.o::dbg_read_tx_ppdu` body. That decoder
+names frame-state halfword `+0x22` as `msdu_len`; complete blob and ROM
+`mac_tx_set_tb` sum exactly those halfwords into `WDEVTXQBSR_SW`. The
+Trigger-based owner must therefore retain original MSDU lengths separately
+from its larger encoded MPDU/PSDU lengths.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

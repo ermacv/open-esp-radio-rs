@@ -7141,16 +7141,10 @@ pub mod phy_baseband_config_oracle {
         pub type MeasurementEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `MEASUREMENT_READY` reader - "]
         pub type MeasurementReadyR = crate::BitReader;
-        #[doc = "Field `MEASUREMENT_READY` writer - "]
-        pub type MeasurementReadyW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `Q_COMPARATOR_HIGH` reader - "]
         pub type QComparatorHighR = crate::BitReader;
-        #[doc = "Field `Q_COMPARATOR_HIGH` writer - "]
-        pub type QComparatorHighW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `I_COMPARATOR_HIGH` reader - "]
         pub type IComparatorHighR = crate::BitReader;
-        #[doc = "Field `I_COMPARATOR_HIGH` writer - "]
-        pub type IComparatorHighW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -7192,27 +7186,6 @@ pub mod phy_baseband_config_oracle {
                 &mut self,
             ) -> MeasurementEnableW<'_, TxDcMeasurementControlStatusSpec> {
                 MeasurementEnableW::new(self, 1)
-            }
-            #[doc = "Bit 22"]
-            #[inline(always)]
-            pub fn measurement_ready(
-                &mut self,
-            ) -> MeasurementReadyW<'_, TxDcMeasurementControlStatusSpec> {
-                MeasurementReadyW::new(self, 22)
-            }
-            #[doc = "Bit 28"]
-            #[inline(always)]
-            pub fn q_comparator_high(
-                &mut self,
-            ) -> QComparatorHighW<'_, TxDcMeasurementControlStatusSpec> {
-                QComparatorHighW::new(self, 28)
-            }
-            #[doc = "Bit 29"]
-            #[inline(always)]
-            pub fn i_comparator_high(
-                &mut self,
-            ) -> IComparatorHighW<'_, TxDcMeasurementControlStatusSpec> {
-                IComparatorHighW::new(self, 29)
             }
         }
         #[doc = "SOURCE\\[ROM_REV0_PHY_TXDC_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-from-control-flow\\]. Complete phy_txdc_cal triggers measurement with bits 1 and 0, polls ready bit 22, samples I and Q comparator bits 29 and 28 through independent reads, then clears bits 1 and 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_dc_measurement_control_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_dc_measurement_control_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -14666,13 +14639,9 @@ pub mod wifi_mac_he_init_prefix {
         pub type R = crate::R<RxFieldControlSpec>;
         #[doc = "Register `RX_FIELD_CONTROL` writer"]
         pub type W = crate::W<RxFieldControlSpec>;
-        #[doc = "Field `COLOR_BITMAP_CLEAR` reader - Blob decoder's COLOR_BITMAP_CLR alias."]
-        pub type ColorBitmapClearR = crate::BitReader;
-        #[doc = "Field `COLOR_BITMAP_CLEAR` writer - Blob decoder's COLOR_BITMAP_CLR alias."]
-        pub type ColorBitmapClearW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BITMAP_CONTROL` reader - Blob decoder's overlapping two-bit BITMAP value."]
+        #[doc = "Field `BITMAP_CONTROL` reader - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
         pub type BitmapControlR = crate::FieldReader;
-        #[doc = "Field `BITMAP_CONTROL` writer - Blob decoder's overlapping two-bit BITMAP value."]
+        #[doc = "Field `BITMAP_CONTROL` writer - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
         pub type BitmapControlW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `PRESERVED_UNKNOWN_2` reader - "]
         pub type PreservedUnknown2R = crate::BitReader;
@@ -14691,12 +14660,7 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `HIGH_PRESERVED_UNKNOWN` writer - "]
         pub type HighPreservedUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
         impl R {
-            #[doc = "Bit 0 - Blob decoder's COLOR_BITMAP_CLR alias."]
-            #[inline(always)]
-            pub fn color_bitmap_clear(&self) -> ColorBitmapClearR {
-                ColorBitmapClearR::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bits 0:1 - Blob decoder's overlapping two-bit BITMAP value."]
+            #[doc = "Bits 0:1 - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
             #[inline(always)]
             pub fn bitmap_control(&self) -> BitmapControlR {
                 BitmapControlR::new((self.bits & 3) as u8)
@@ -14723,12 +14687,7 @@ pub mod wifi_mac_he_init_prefix {
             }
         }
         impl W {
-            #[doc = "Bit 0 - Blob decoder's COLOR_BITMAP_CLR alias."]
-            #[inline(always)]
-            pub fn color_bitmap_clear(&mut self) -> ColorBitmapClearW<'_, RxFieldControlSpec> {
-                ColorBitmapClearW::new(self, 0)
-            }
-            #[doc = "Bits 0:1 - Blob decoder's overlapping two-bit BITMAP value."]
+            #[doc = "Bits 0:1 - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
             #[inline(always)]
             pub fn bitmap_control(&mut self) -> BitmapControlW<'_, RxFieldControlSpec> {
                 BitmapControlW::new(self, 0)
@@ -16011,7 +15970,7 @@ pub mod wifi_mac_he_tb_diagnostics {
         impl crate::Readable for UserSpec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the accumulated queued-byte value, then OR the queue bit into CONTROL\\[7:0\\]. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
 pub type WifiMacHeBufferStatus =
     crate::Periph<wifi_mac_he_buffer_status::RegisterBlock, 0x2010_4d74>;
 impl core::fmt::Debug for WifiMacHeBufferStatus {
@@ -16019,7 +15978,7 @@ impl core::fmt::Debug for WifiMacHeBufferStatus {
         f.debug_struct("WifiMacHeBufferStatus").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the accumulated queued-byte value, then OR the queue bit into CONTROL\\[7:0\\]. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_HAL_HE_BSR_STATUS,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-fields-semantics-hil-qualified\\]. Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean."]
 pub mod wifi_mac_he_buffer_status {
     #[repr(C)]
     #[doc = "Register block"]
@@ -16045,7 +16004,7 @@ pub mod wifi_mac_he_buffer_status {
             (0..8)
                 .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
         }
-        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
+        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len."]
         #[inline(always)]
         pub const fn software_bsr(&self, n: usize) -> &SoftwareBsr {
             #[allow(clippy::no_effect)]
@@ -16059,7 +16018,7 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
+        #[doc = "0x04..0x24 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len."]
         #[inline(always)]
         pub fn software_bsr_iter(&self) -> impl Iterator<Item = &SoftwareBsr> {
             (0..8).map(move |n| unsafe {
@@ -16107,25 +16066,25 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "`read()` method returns [`hardware_bsr::R`](R) reader structure"]
         impl crate::Readable for HardwareBsrSpec {}
     }
-    #[doc = "SOFTWARE_BSR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
+    #[doc = "SOFTWARE_BSR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
     #[doc(alias = "SOFTWARE_BSR")]
     pub type SoftwareBsr = crate::Reg<software_bsr::SoftwareBsrSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len."]
     pub mod software_bsr {
         #[doc = "Register `SOFTWARE_BSR%s` reader"]
         pub type R = crate::R<SoftwareBsrSpec>;
         #[doc = "Register `SOFTWARE_BSR%s` writer"]
         pub type W = crate::W<SoftwareBsrSpec>;
-        #[doc = "Field `VALUE` reader - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+        #[doc = "Field `VALUE` reader - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
         pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+        #[doc = "Field `VALUE` writer - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
         pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
         pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl R {
-            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new(self.bits & 0x000f_ffff)
@@ -16137,7 +16096,7 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         impl W {
-            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit queued-byte accumulator for the selected logical queue."]
+            #[doc = "Bits 0:19 - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
             #[inline(always)]
             pub fn value(&mut self) -> ValueW<'_, SoftwareBsrSpec> {
                 ValueW::new(self, 0)
@@ -16148,7 +16107,7 @@ pub mod wifi_mac_he_buffer_status {
                 HighUnknownW::new(self, 20)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the queued-byte accumulator before publishing the queue-ready bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB\\]; CONFIDENCE\\[instruction-exact-array-field-semantics\\]. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SoftwareBsrSpec;
         impl crate::RegisterSpec for SoftwareBsrSpec {
             type Ux = u32;
@@ -23597,6 +23556,7 @@ pub mod wifi_mac_interrupt {
         #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
         impl crate::Writable for ClearSpec {
             type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
 }
@@ -23632,8 +23592,6 @@ pub mod wifi_mac_cold_handshake {
         pub type W = crate::W<ControlSpec>;
         #[doc = "Field `READY` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
         pub type ReadyR = crate::BitReader;
-        #[doc = "Field `READY` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
-        pub type ReadyW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `REQUEST` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
         pub type RequestR = crate::BitReader;
         #[doc = "Field `REQUEST` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
@@ -23660,11 +23618,6 @@ pub mod wifi_mac_cold_handshake {
             }
         }
         impl W {
-            #[doc = "Bit 0 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Polled until asserted after REQUEST."]
-            #[inline(always)]
-            pub fn ready(&mut self) -> ReadyW<'_, ControlSpec> {
-                ReadyW::new(self, 0)
-            }
             #[doc = "Bit 1 - SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-from-complete-parent\\]. Set before the READY polling loop."]
             #[inline(always)]
             pub fn request(&mut self) -> RequestW<'_, ControlSpec> {
@@ -23803,7 +23756,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_last_descriptor(&self) -> &RxLastDescriptor {
             &self.rx_last_descriptor
         }
-        #[doc = "0x298 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
+        #[doc = "0x298 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
         #[inline(always)]
         pub const fn rx_block_ack_agreement_update(&self) -> &RxBlockAckAgreementUpdate {
             &self.rx_block_ack_agreement_update
@@ -23823,32 +23776,32 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_descriptor_high_window(&self) -> &RxDescriptorHighWindow {
             &self.rx_descriptor_high_window
         }
-        #[doc = "0xea4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
+        #[doc = "0xea4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
         #[inline(always)]
         pub const fn rx_block_ack_control(&self) -> &RxBlockAckControl {
             &self.rx_block_ack_control
         }
-        #[doc = "0xea8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
+        #[doc = "0xea8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
         #[inline(always)]
         pub const fn rx_block_ack_peer_tail_and_policy(&self) -> &RxBlockAckPeerTailAndPolicy {
             &self.rx_block_ack_peer_tail_and_policy
         }
-        #[doc = "0xeac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order."]
+        #[doc = "0xeac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order."]
         #[inline(always)]
         pub const fn rx_block_ack_peer_head(&self) -> &RxBlockAckPeerHead {
             &self.rx_block_ack_peer_head
         }
-        #[doc = "0xeb0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control."]
+        #[doc = "0xeb0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control."]
         #[inline(always)]
         pub const fn rx_block_ack_start_sequence(&self) -> &RxBlockAckStartSequence {
             &self.rx_block_ack_start_sequence
         }
-        #[doc = "0xeb4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
+        #[doc = "0xeb4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
         #[inline(always)]
         pub const fn rx_block_ack_bitmap_low(&self) -> &RxBlockAckBitmapLow {
             &self.rx_block_ack_bitmap_low
         }
-        #[doc = "0xeb8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
+        #[doc = "0xeb8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
         #[inline(always)]
         pub const fn rx_block_ack_bitmap_high(&self) -> &RxBlockAckBitmapHigh {
             &self.rx_block_ack_bitmap_high
@@ -23994,17 +23947,17 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_queue_information_q3(&self) -> &TxQueueInformationQ3 {
             &self.tx_queue_information_q3
         }
-        #[doc = "0x13b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3."]
+        #[doc = "0x13b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q3(&self) -> &TxBlockAckBitmapHighQ3 {
             &self.tx_block_ack_bitmap_high_q3
         }
-        #[doc = "0x13b8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3."]
+        #[doc = "0x13b8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_low_q3(&self) -> &TxBlockAckBitmapLowQ3 {
             &self.tx_block_ack_bitmap_low_q3
         }
-        #[doc = "0x13bc - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3."]
+        #[doc = "0x13bc - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3."]
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q3(&self) -> &TxBlockAckControlSequenceQ3 {
             &self.tx_block_ack_control_sequence_q3
@@ -24028,17 +23981,17 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_queue_information_q2(&self) -> &TxQueueInformationQ2 {
             &self.tx_queue_information_q2
         }
-        #[doc = "0x1430 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2."]
+        #[doc = "0x1430 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q2(&self) -> &TxBlockAckBitmapHighQ2 {
             &self.tx_block_ack_bitmap_high_q2
         }
-        #[doc = "0x1434 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2."]
+        #[doc = "0x1434 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_low_q2(&self) -> &TxBlockAckBitmapLowQ2 {
             &self.tx_block_ack_bitmap_low_q2
         }
-        #[doc = "0x1438 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2."]
+        #[doc = "0x1438 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2."]
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q2(&self) -> &TxBlockAckControlSequenceQ2 {
             &self.tx_block_ack_control_sequence_q2
@@ -24062,17 +24015,17 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_queue_information_q1(&self) -> &TxQueueInformationQ1 {
             &self.tx_queue_information_q1
         }
-        #[doc = "0x14ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1."]
+        #[doc = "0x14ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q1(&self) -> &TxBlockAckBitmapHighQ1 {
             &self.tx_block_ack_bitmap_high_q1
         }
-        #[doc = "0x14b0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1."]
+        #[doc = "0x14b0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_low_q1(&self) -> &TxBlockAckBitmapLowQ1 {
             &self.tx_block_ack_bitmap_low_q1
         }
-        #[doc = "0x14b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1."]
+        #[doc = "0x14b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1."]
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q1(&self) -> &TxBlockAckControlSequenceQ1 {
             &self.tx_block_ack_control_sequence_q1
@@ -25310,11 +25263,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_queue_information_q3::R`](R) reader structure"]
         impl crate::Readable for TxQueueInformationQ3Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q3`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q3`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q3")]
     pub type TxBlockAckBitmapHighQ3 =
         crate::Reg<tx_block_ack_bitmap_high_q3::TxBlockAckBitmapHighQ3Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3."]
     pub mod tx_block_ack_bitmap_high_q3 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q3` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ3Spec>;
@@ -25323,7 +25276,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapHighQ3Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapHighQ3Spec {
             type Ux = u32;
@@ -25331,11 +25284,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q3::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapHighQ3Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q3`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q3`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q3")]
     pub type TxBlockAckBitmapLowQ3 =
         crate::Reg<tx_block_ack_bitmap_low_q3::TxBlockAckBitmapLowQ3Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3."]
     pub mod tx_block_ack_bitmap_low_q3 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q3` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ3Spec>;
@@ -25344,7 +25297,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapLowQ3Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapLowQ3Spec {
             type Ux = u32;
@@ -25352,11 +25305,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q3::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapLowQ3Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q3`] module"]
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q3`] module"]
     #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3")]
     pub type TxBlockAckControlSequenceQ3 =
         crate::Reg<tx_block_ack_control_sequence_q3::TxBlockAckControlSequenceQ3Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3."]
     pub mod tx_block_ack_control_sequence_q3 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ3Spec>;
@@ -25376,7 +25329,7 @@ pub mod wifi_mac_rx_dma {
                 TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckControlSequenceQ3Spec;
         impl crate::RegisterSpec for TxBlockAckControlSequenceQ3Spec {
             type Ux = u32;
@@ -25504,11 +25457,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_queue_information_q2::R`](R) reader structure"]
         impl crate::Readable for TxQueueInformationQ2Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q2`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q2`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q2")]
     pub type TxBlockAckBitmapHighQ2 =
         crate::Reg<tx_block_ack_bitmap_high_q2::TxBlockAckBitmapHighQ2Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2."]
     pub mod tx_block_ack_bitmap_high_q2 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q2` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ2Spec>;
@@ -25517,7 +25470,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapHighQ2Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapHighQ2Spec {
             type Ux = u32;
@@ -25525,11 +25478,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q2::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapHighQ2Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q2`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q2`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q2")]
     pub type TxBlockAckBitmapLowQ2 =
         crate::Reg<tx_block_ack_bitmap_low_q2::TxBlockAckBitmapLowQ2Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2."]
     pub mod tx_block_ack_bitmap_low_q2 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q2` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ2Spec>;
@@ -25538,7 +25491,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapLowQ2Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapLowQ2Spec {
             type Ux = u32;
@@ -25546,11 +25499,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q2::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapLowQ2Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q2`] module"]
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q2`] module"]
     #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2")]
     pub type TxBlockAckControlSequenceQ2 =
         crate::Reg<tx_block_ack_control_sequence_q2::TxBlockAckControlSequenceQ2Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2."]
     pub mod tx_block_ack_control_sequence_q2 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ2Spec>;
@@ -25570,7 +25523,7 @@ pub mod wifi_mac_rx_dma {
                 TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckControlSequenceQ2Spec;
         impl crate::RegisterSpec for TxBlockAckControlSequenceQ2Spec {
             type Ux = u32;
@@ -25698,11 +25651,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_queue_information_q1::R`](R) reader structure"]
         impl crate::Readable for TxQueueInformationQ1Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q1`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q1`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q1")]
     pub type TxBlockAckBitmapHighQ1 =
         crate::Reg<tx_block_ack_bitmap_high_q1::TxBlockAckBitmapHighQ1Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1."]
     pub mod tx_block_ack_bitmap_high_q1 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q1` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ1Spec>;
@@ -25711,7 +25664,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapHighQ1Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapHighQ1Spec {
             type Ux = u32;
@@ -25719,11 +25672,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q1::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapHighQ1Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q1`] module"]
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q1`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q1")]
     pub type TxBlockAckBitmapLowQ1 =
         crate::Reg<tx_block_ack_bitmap_low_q1::TxBlockAckBitmapLowQ1Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1."]
     pub mod tx_block_ack_bitmap_low_q1 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q1` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ1Spec>;
@@ -25732,7 +25685,7 @@ pub mod wifi_mac_rx_dma {
                 write!(f, "{}", self.bits())
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckBitmapLowQ1Spec;
         impl crate::RegisterSpec for TxBlockAckBitmapLowQ1Spec {
             type Ux = u32;
@@ -25740,11 +25693,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q1::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckBitmapLowQ1Spec {}
     }
-    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q1`] module"]
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q1`] module"]
     #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1")]
     pub type TxBlockAckControlSequenceQ1 =
         crate::Reg<tx_block_ack_control_sequence_q1::TxBlockAckControlSequenceQ1Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1."]
     pub mod tx_block_ack_control_sequence_q1 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ1Spec>;
@@ -25764,7 +25717,7 @@ pub mod wifi_mac_rx_dma {
                 TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,MIGRATION_TX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxBlockAckControlSequenceQ1Spec;
         impl crate::RegisterSpec for TxBlockAckControlSequenceQ1Spec {
             type Ux = u32;
@@ -26041,11 +25994,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q0::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckTransmitterAddressLowQ0Spec {}
     }
-    #[doc = "RX_BLOCK_ACK_AGREEMENT_UPDATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_agreement_update`] module"]
+    #[doc = "RX_BLOCK_ACK_AGREEMENT_UPDATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_agreement_update`] module"]
     #[doc(alias = "RX_BLOCK_ACK_AGREEMENT_UPDATE")]
     pub type RxBlockAckAgreementUpdate =
         crate::Reg<rx_block_ack_agreement_update::RxBlockAckAgreementUpdateSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
     pub mod rx_block_ack_agreement_update {
         #[doc = "Register `RX_BLOCK_ACK_AGREEMENT_UPDATE` reader"]
         pub type R = crate::R<RxBlockAckAgreementUpdateSpec>;
@@ -26083,7 +26036,7 @@ pub mod wifi_mac_rx_dma {
                 ReadbackLatchW::new(self, 9)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckAgreementUpdateSpec;
         impl crate::RegisterSpec for RxBlockAckAgreementUpdateSpec {
             type Ux = u32;
@@ -26095,10 +26048,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_control`] module"]
+    #[doc = "RX_BLOCK_ACK_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_control`] module"]
     #[doc(alias = "RX_BLOCK_ACK_CONTROL")]
     pub type RxBlockAckControl = crate::Reg<rx_block_ack_control::RxBlockAckControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
     pub mod rx_block_ack_control {
         #[doc = "Register `RX_BLOCK_ACK_CONTROL` reader"]
         pub type R = crate::R<RxBlockAckControlSpec>;
@@ -26178,7 +26131,7 @@ pub mod wifi_mac_rx_dma {
                 ValidW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckControlSpec;
         impl crate::RegisterSpec for RxBlockAckControlSpec {
             type Ux = u32;
@@ -26190,11 +26143,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_tail_and_policy`] module"]
+    #[doc = "RX_BLOCK_ACK_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_tail_and_policy`] module"]
     #[doc(alias = "RX_BLOCK_ACK_PEER_TAIL_AND_POLICY")]
     pub type RxBlockAckPeerTailAndPolicy =
         crate::Reg<rx_block_ack_peer_tail_and_policy::RxBlockAckPeerTailAndPolicySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
     pub mod rx_block_ack_peer_tail_and_policy {
         #[doc = "Register `RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` reader"]
         pub type R = crate::R<RxBlockAckPeerTailAndPolicySpec>;
@@ -26248,7 +26201,7 @@ pub mod wifi_mac_rx_dma {
                 WindowW::new(self, 18)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckPeerTailAndPolicySpec;
         impl crate::RegisterSpec for RxBlockAckPeerTailAndPolicySpec {
             type Ux = u32;
@@ -26260,10 +26213,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_PEER_HEAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_head`] module"]
+    #[doc = "RX_BLOCK_ACK_PEER_HEAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_head`] module"]
     #[doc(alias = "RX_BLOCK_ACK_PEER_HEAD")]
     pub type RxBlockAckPeerHead = crate::Reg<rx_block_ack_peer_head::RxBlockAckPeerHeadSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order."]
     pub mod rx_block_ack_peer_head {
         #[doc = "Register `RX_BLOCK_ACK_PEER_HEAD` reader"]
         pub type R = crate::R<RxBlockAckPeerHeadSpec>;
@@ -26275,7 +26228,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckPeerHeadSpec;
         impl crate::RegisterSpec for RxBlockAckPeerHeadSpec {
             type Ux = u32;
@@ -26287,11 +26240,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_START_SEQUENCE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_start_sequence`] module"]
+    #[doc = "RX_BLOCK_ACK_START_SEQUENCE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_start_sequence`] module"]
     #[doc(alias = "RX_BLOCK_ACK_START_SEQUENCE")]
     pub type RxBlockAckStartSequence =
         crate::Reg<rx_block_ack_start_sequence::RxBlockAckStartSequenceSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control."]
     pub mod rx_block_ack_start_sequence {
         #[doc = "Register `RX_BLOCK_ACK_START_SEQUENCE` reader"]
         pub type R = crate::R<RxBlockAckStartSequenceSpec>;
@@ -26315,7 +26268,7 @@ pub mod wifi_mac_rx_dma {
                 SequenceW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckStartSequenceSpec;
         impl crate::RegisterSpec for RxBlockAckStartSequenceSpec {
             type Ux = u32;
@@ -26327,10 +26280,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_BITMAP_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_low`] module"]
+    #[doc = "RX_BLOCK_ACK_BITMAP_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_low`] module"]
     #[doc(alias = "RX_BLOCK_ACK_BITMAP_LOW")]
     pub type RxBlockAckBitmapLow = crate::Reg<rx_block_ack_bitmap_low::RxBlockAckBitmapLowSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
     pub mod rx_block_ack_bitmap_low {
         #[doc = "Register `RX_BLOCK_ACK_BITMAP_LOW` reader"]
         pub type R = crate::R<RxBlockAckBitmapLowSpec>;
@@ -26342,7 +26295,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckBitmapLowSpec;
         impl crate::RegisterSpec for RxBlockAckBitmapLowSpec {
             type Ux = u32;
@@ -26354,10 +26307,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_BITMAP_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_high`] module"]
+    #[doc = "RX_BLOCK_ACK_BITMAP_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_high`] module"]
     #[doc(alias = "RX_BLOCK_ACK_BITMAP_HIGH")]
     pub type RxBlockAckBitmapHigh = crate::Reg<rx_block_ack_bitmap_high::RxBlockAckBitmapHighSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
     pub mod rx_block_ack_bitmap_high {
         #[doc = "Register `RX_BLOCK_ACK_BITMAP_HIGH` reader"]
         pub type R = crate::R<RxBlockAckBitmapHighSpec>;
@@ -26369,7 +26322,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckBitmapHighSpec;
         impl crate::RegisterSpec for RxBlockAckBitmapHighSpec {
             type Ux = u32;

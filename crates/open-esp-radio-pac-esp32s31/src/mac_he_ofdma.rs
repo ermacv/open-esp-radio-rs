@@ -364,7 +364,7 @@ impl RadioRegisters {
         reservation: MacHeTbLinkReservation,
         tid: MacHeTid,
         mpdu_lengths: &[u16],
-        queued_bytes: u32,
+        queued_msdu_bytes: u32,
     ) -> Result<(), MacHeTbProgramError> {
         if !policy.contains(tid) {
             return Err(MacHeTbProgramError::TidNotEligible);
@@ -378,7 +378,7 @@ impl RadioRegisters {
         {
             return Err(MacHeTbProgramError::InvalidMpduLength);
         }
-        if queued_bytes > 0x000f_ffff {
+        if queued_msdu_bytes > 0x000f_ffff {
             return Err(MacHeTbProgramError::QueuedBytesTooLarge);
         }
 
@@ -440,7 +440,7 @@ impl RadioRegisters {
         self.peripherals
             .wifi_mac_he_buffer_status
             .software_bsr(usize::from(queue))
-            .modify(|_, w| unsafe { w.value().bits(queued_bytes) });
+            .modify(|_, w| unsafe { w.value().bits(queued_msdu_bytes) });
 
         device_fence();
         self.peripherals

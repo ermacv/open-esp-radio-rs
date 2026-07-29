@@ -399,6 +399,7 @@ dependencies = [
 name = "open-esp-radio-pac-gen"
 version = "0.1.0"
 dependencies = [
+ "roxmltree",
  "svd-parser",
  "svd2rust",
 ]

@@ -25,12 +25,12 @@ shifts and masks agree with those strings.
 | `dbg_read_bfr_rate` | BPSK/QPSK/16-QAM beamforming report profiles | decoded |
 | `dbg_read_imrsp_power` | ten immediate-response format/rate/power profiles | decoded by the TX-power peripheral |
 | `dbg_read_wdevdelay` | TX/RX CCK timing fields | decoded |
-| `dbg_read_rx_ba` | hardware RX BlockAck entries | address geometry owned; field-name audit pending |
-| `dbg_read_internal_txba` | hardware TX BlockAck state | address geometry owned; field-name audit pending |
-| `dbg_read_key_entry` | MAC crypto key table and validity state | address geometry owned; field-name audit pending |
-| `dbg_read_tx_mplen` | linked MPDU-length table | partial map; complete field-name audit pending |
+| `dbg_read_rx_ba` | eight reverse-addressed `WDEVTXQBA` TX BlockAck result banks (despite the function name) | complete five-word geometry and named SSN/TID/TA fields decoded |
+| `dbg_read_internal_txba` | standalone internal TX BlockAck result | complete five-word geometry and fragment/SSN/TID fields decoded |
+| `dbg_read_key_entry` | per-queue key selector plus MAC crypto key table and validity state | selector, table geometry and validity bitmap decoded |
+| `dbg_read_tx_mplen` | 120-entry linked MPDU-length table | complete aperture with MPDU length and next-link fields decoded |
 | `dbg_read_tx_sig` | active TX queue PLCP/SIG vectors | major queue words mapped; residual diagnostic fields pending |
-| `dbg_dump_txq_txinfo` | active queue information plus queue-local memory | mixed MMIO/memory; audit pending |
+| `dbg_dump_txq_txinfo` | per-queue ACK/BlockAck and trigger-based TX result | complete two-word field decode |
 
 `dbg_read_nav_misc` is a two-byte `ret` and contains no register evidence.
 `dbg_read_tx_power` is not a passive decoder: it calls PHY maximum-power
@@ -99,6 +99,21 @@ Their symbol names alone are not sufficient to assign bit semantics. A field
 is promoted only after the complete body and all reachable leaves are bounded.
 
 ## Other archives and ROM
+
+The first cross-object scan found additional direct-MMIO candidates in
+`libpp.a[pp_debug.o]`: `dbg_lmac_rxtx_statis_dump` reaches `0x20104388`,
+`dbg_lmac_hw_statis_dump` reaches `0x2010435c` and `0x20104e08`, and
+`dbg_lmac_diag_statis_dump` reaches `0x201043b4` and `0x20104e50`. Their
+complete field-name/width audit is still pending, so these addresses are not
+yet promoted to the SVD. `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` also reads
+`0x20104028`, but mixes that observation with an RX object and needs the same
+boundary audit.
+
+By contrast, `hal_he_common.o::dbg_hal_check_set_mplen_bitmap` and
+`dbg_hal_check_clr_mplen_bitmap` traverse software-owned allocation bitmaps;
+they help recover the MPDU-link allocator but do not add fixed MMIO addresses.
+`hal_debug.o::dbg_check_mutimer` likewise snapshots software history around a
+MU timer rather than directly naming a new register bank.
 
 `libnet80211.a` contains `dbg_hmac_*_statis_dump`, `esp_wifi_statis_dump`,
 `bsscolor_event_dump` and TWT dump functions. They primarily expose software

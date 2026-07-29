@@ -2,12 +2,44 @@
 
 use super::{device_fence, RadioRegisters};
 
-/// Raw three-word result sampled for one completed TX hardware queue.
+/// Result sampled for one completed TX hardware queue.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+/// The hot TX completion path intentionally samples only the three words it
+/// consumes. Use [`TxBlockAckDiagnosticSnapshot`] when the transmitter address
+/// and queues four through seven are needed for diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckRegisterImage {
     pub control_and_sequence: u32,
     pub bitmap_low: u32,
     pub bitmap_high: u32,
+}
+
+/// Complete five-word `WDEVTXQBA` result plus adjacent TX queue information.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+/// Despite the function name, its strings identify eight reverse-addressed
+/// TX BlockAck result banks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TxBlockAckDiagnosticSnapshot {
+    pub control_and_sequence: u32,
+    pub bitmap_low: u32,
+    pub bitmap_high: u32,
+    pub transmitter_address: [u8; 6],
+    pub acknowledgement_tid: u8,
+    pub acknowledgement_received: bool,
+    pub block_ack_received: bool,
+    pub last_tx_was_trigger_based: bool,
+    pub trigger_based_packet_count: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InternalTxBlockAckSnapshot {
+    pub bitmap: u64,
+    pub transmitter_address_words: [u32; 2],
+    pub fragment_number: u8,
+    pub starting_sequence: u16,
+    pub tid: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,9 +183,7 @@ impl RadioRegisters {
         update.modify(|_, w| w.commit().clear_bit());
     }
 
-    /// Sample the three completed TX BlockAck words for one hardware queue.
-    ///
-    /// Reads remain in control/sequence, low bitmap, high bitmap order.
+    /// Sample the three TX BlockAck words consumed by the hot completion path.
     pub fn read_tx_block_ack_registers(
         &self,
         hardware_queue: u8,
@@ -187,6 +217,175 @@ impl RadioRegisters {
             bitmap_low,
             bitmap_high,
         })
+    }
+
+    /// Sample one complete TX BlockAck result and its queue-information word.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+    /// Queue zero occupies `0x2010_5528..0x2010_5538`; logical queues descend
+    /// by `0x7c` through queue seven at `0x2010_51c4..0x2010_51d4`.
+    pub fn tx_block_ack_diagnostic_snapshot(
+        &self,
+        hardware_queue: u8,
+    ) -> Option<TxBlockAckDiagnosticSnapshot> {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let (
+            control_and_sequence,
+            bitmap_low,
+            bitmap_high,
+            address_high,
+            address_low,
+            queue_information,
+        ) = match hardware_queue {
+            0 => (
+                block.tx_block_ack_control_sequence_q0().read().bits(),
+                block.tx_block_ack_bitmap_low_q0().read().bits(),
+                block.tx_block_ack_bitmap_high_q0().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q0()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q0()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q0().read().bits(),
+            ),
+            1 => (
+                block.tx_block_ack_control_sequence_q1().read().bits(),
+                block.tx_block_ack_bitmap_low_q1().read().bits(),
+                block.tx_block_ack_bitmap_high_q1().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q1()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q1()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q1().read().bits(),
+            ),
+            2 => (
+                block.tx_block_ack_control_sequence_q2().read().bits(),
+                block.tx_block_ack_bitmap_low_q2().read().bits(),
+                block.tx_block_ack_bitmap_high_q2().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q2()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q2()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q2().read().bits(),
+            ),
+            3 => (
+                block.tx_block_ack_control_sequence_q3().read().bits(),
+                block.tx_block_ack_bitmap_low_q3().read().bits(),
+                block.tx_block_ack_bitmap_high_q3().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q3()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q3()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q3().read().bits(),
+            ),
+            4 => (
+                block.tx_block_ack_control_sequence_q4().read().bits(),
+                block.tx_block_ack_bitmap_low_q4().read().bits(),
+                block.tx_block_ack_bitmap_high_q4().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q4()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q4()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q4().read().bits(),
+            ),
+            5 => (
+                block.tx_block_ack_control_sequence_q5().read().bits(),
+                block.tx_block_ack_bitmap_low_q5().read().bits(),
+                block.tx_block_ack_bitmap_high_q5().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q5()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q5()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q5().read().bits(),
+            ),
+            6 => (
+                block.tx_block_ack_control_sequence_q6().read().bits(),
+                block.tx_block_ack_bitmap_low_q6().read().bits(),
+                block.tx_block_ack_bitmap_high_q6().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q6()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q6()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q6().read().bits(),
+            ),
+            7 => (
+                block.tx_block_ack_control_sequence_q7().read().bits(),
+                block.tx_block_ack_bitmap_low_q7().read().bits(),
+                block.tx_block_ack_bitmap_high_q7().read().bits(),
+                block
+                    .tx_block_ack_transmitter_address_high_q7()
+                    .read()
+                    .bits(),
+                block
+                    .tx_block_ack_transmitter_address_low_q7()
+                    .read()
+                    .bits(),
+                block.tx_queue_information_q7().read().bits(),
+            ),
+            _ => return None,
+        };
+        let low = address_low.to_le_bytes();
+        let high = address_high.to_le_bytes();
+        Some(TxBlockAckDiagnosticSnapshot {
+            control_and_sequence,
+            bitmap_low,
+            bitmap_high,
+            transmitter_address: [low[0], low[1], low[2], low[3], high[0], high[1]],
+            acknowledgement_tid: ((address_high >> 16) & 0x0f) as u8,
+            acknowledgement_received: address_high & (1 << 20) != 0,
+            block_ack_received: address_high & (1 << 21) != 0,
+            last_tx_was_trigger_based: queue_information & (1 << 20) != 0,
+            trigger_based_packet_count: ((queue_information >> 13) & 0x7f) as u8,
+        })
+    }
+
+    /// Sample the standalone internal WDEVTXBA result.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::
+    /// dbg_read_internal_txba`; all five addresses and three masks are exact.
+    /// The blob does not name byte ordering inside the two TA words, so they
+    /// remain raw.
+    pub fn internal_tx_block_ack_snapshot(&self) -> InternalTxBlockAckSnapshot {
+        let block = &self.peripherals.wifi_mac_internal_tx_block_ack;
+        let control = block.control_sequence().read();
+        InternalTxBlockAckSnapshot {
+            bitmap: u64::from(block.bitmap_low().read().bits())
+                | (u64::from(block.bitmap_high().read().bits()) << 32),
+            transmitter_address_words: [
+                block.transmitter_address_word_0().read().bits(),
+                block.transmitter_address_word_1().read().bits(),
+            ],
+            fragment_number: control.fragment_number().bits(),
+            starting_sequence: control.starting_sequence().bits(),
+            tid: control.tid().bits(),
+        }
     }
 }
 

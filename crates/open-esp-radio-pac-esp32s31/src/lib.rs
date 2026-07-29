@@ -38,9 +38,13 @@ pub mod phy;
 pub mod phy_i2c;
 pub mod power;
 mod table_memory;
+pub use mac_block_ack::{
+    InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckRegisterImage,
+};
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
+pub use mac_he_init_suffix::MacHeTxMpduLengthLink;
 pub use mac_he_ofdma::{
     MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot, MacHeCustomReceiveType,
     MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot,
@@ -405,6 +409,42 @@ mod tests {
         assert_eq!(vector.plcp1(0).as_ptr() as usize, 0x2010_5364);
         assert_eq!(completion.primary(3).as_ptr() as usize, 0x2010_553c);
         assert_eq!(completion.primary(0).as_ptr() as usize, 0x2010_53c8);
+    }
+
+    #[test]
+    fn generated_tx_block_ack_debug_geometry_matches_complete_decoders() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let queues = &registers.peripherals.wifi_mac_rx_dma;
+        assert_eq!(
+            queues.tx_queue_information_q0().as_ptr() as usize,
+            0x2010_5524
+        );
+        assert_eq!(
+            queues.tx_block_ack_bitmap_high_q0().as_ptr() as usize,
+            0x2010_5528
+        );
+        assert_eq!(
+            queues.tx_block_ack_transmitter_address_low_q0().as_ptr() as usize,
+            0x2010_5538
+        );
+        assert_eq!(
+            queues.tx_queue_information_q7().as_ptr() as usize,
+            0x2010_51c0
+        );
+        assert_eq!(
+            queues.tx_block_ack_bitmap_high_q7().as_ptr() as usize,
+            0x2010_51c4
+        );
+        assert_eq!(
+            queues.tx_block_ack_transmitter_address_low_q7().as_ptr() as usize,
+            0x2010_51d4
+        );
+
+        let internal = &registers.peripherals.wifi_mac_internal_tx_block_ack;
+        assert_eq!(internal.bitmap_high().as_ptr() as usize, 0x2010_429c);
+        assert_eq!(internal.control_sequence().as_ptr() as usize, 0x2010_42ac);
     }
 
     #[test]

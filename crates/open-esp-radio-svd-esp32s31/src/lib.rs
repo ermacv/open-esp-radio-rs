@@ -873,6 +873,173 @@ pub mod generic {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_INTERNAL_TXBA\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_internal_txba reads one internal WDEVTXBA result: a 64-bit bitmap, two transmitter-address words and a combined fragment/starting-sequence/TID word."]
+pub type WifiMacInternalTxBlockAck =
+    crate::Periph<wifi_mac_internal_tx_block_ack::RegisterBlock, 0x2010_429c>;
+impl core::fmt::Debug for WifiMacInternalTxBlockAck {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInternalTxBlockAck").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_INTERNAL_TXBA\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Complete dbg_read_internal_txba reads one internal WDEVTXBA result: a 64-bit bitmap, two transmitter-address words and a combined fragment/starting-sequence/TID word."]
+pub mod wifi_mac_internal_tx_block_ack {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        bitmap_high: BitmapHigh,
+        bitmap_low: BitmapLow,
+        transmitter_address_word_0: TransmitterAddressWord0,
+        transmitter_address_word_1: TransmitterAddressWord1,
+        control_sequence: ControlSequence,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - "]
+        #[inline(always)]
+        pub const fn bitmap_high(&self) -> &BitmapHigh {
+            &self.bitmap_high
+        }
+        #[doc = "0x04 - "]
+        #[inline(always)]
+        pub const fn bitmap_low(&self) -> &BitmapLow {
+            &self.bitmap_low
+        }
+        #[doc = "0x08 - First WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it."]
+        #[inline(always)]
+        pub const fn transmitter_address_word_0(&self) -> &TransmitterAddressWord0 {
+            &self.transmitter_address_word_0
+        }
+        #[doc = "0x0c - Second WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it."]
+        #[inline(always)]
+        pub const fn transmitter_address_word_1(&self) -> &TransmitterAddressWord1 {
+            &self.transmitter_address_word_1
+        }
+        #[doc = "0x10 - "]
+        #[inline(always)]
+        pub const fn control_sequence(&self) -> &ControlSequence {
+            &self.control_sequence
+        }
+    }
+    #[doc = "BITMAP_HIGH (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bitmap_high`] module"]
+    #[doc(alias = "BITMAP_HIGH")]
+    pub type BitmapHigh = crate::Reg<bitmap_high::BitmapHighSpec>;
+    #[doc = ""]
+    pub mod bitmap_high {
+        #[doc = "Register `BITMAP_HIGH` reader"]
+        pub type R = crate::R<BitmapHighSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BitmapHighSpec;
+        impl crate::RegisterSpec for BitmapHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bitmap_high::R`](R) reader structure"]
+        impl crate::Readable for BitmapHighSpec {}
+    }
+    #[doc = "BITMAP_LOW (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bitmap_low`] module"]
+    #[doc(alias = "BITMAP_LOW")]
+    pub type BitmapLow = crate::Reg<bitmap_low::BitmapLowSpec>;
+    #[doc = ""]
+    pub mod bitmap_low {
+        #[doc = "Register `BITMAP_LOW` reader"]
+        pub type R = crate::R<BitmapLowSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BitmapLowSpec;
+        impl crate::RegisterSpec for BitmapLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bitmap_low::R`](R) reader structure"]
+        impl crate::Readable for BitmapLowSpec {}
+    }
+    #[doc = "TRANSMITTER_ADDRESS_WORD_0 (r) register accessor: First WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it.\n\nYou can [`read`](crate::Reg::read) this register and get [`transmitter_address_word_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@transmitter_address_word_0`] module"]
+    #[doc(alias = "TRANSMITTER_ADDRESS_WORD_0")]
+    pub type TransmitterAddressWord0 =
+        crate::Reg<transmitter_address_word_0::TransmitterAddressWord0Spec>;
+    #[doc = "First WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it."]
+    pub mod transmitter_address_word_0 {
+        #[doc = "Register `TRANSMITTER_ADDRESS_WORD_0` reader"]
+        pub type R = crate::R<TransmitterAddressWord0Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "First WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it.\n\nYou can [`read`](crate::Reg::read) this register and get [`transmitter_address_word_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TransmitterAddressWord0Spec;
+        impl crate::RegisterSpec for TransmitterAddressWord0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`transmitter_address_word_0::R`](R) reader structure"]
+        impl crate::Readable for TransmitterAddressWord0Spec {}
+    }
+    #[doc = "TRANSMITTER_ADDRESS_WORD_1 (r) register accessor: Second WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it.\n\nYou can [`read`](crate::Reg::read) this register and get [`transmitter_address_word_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@transmitter_address_word_1`] module"]
+    #[doc(alias = "TRANSMITTER_ADDRESS_WORD_1")]
+    pub type TransmitterAddressWord1 =
+        crate::Reg<transmitter_address_word_1::TransmitterAddressWord1Spec>;
+    #[doc = "Second WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it."]
+    pub mod transmitter_address_word_1 {
+        #[doc = "Register `TRANSMITTER_ADDRESS_WORD_1` reader"]
+        pub type R = crate::R<TransmitterAddressWord1Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "Second WDEVTXBA TA word printed by the complete blob decoder. Byte ordering is retained as a raw word until a matching live frame qualifies it.\n\nYou can [`read`](crate::Reg::read) this register and get [`transmitter_address_word_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TransmitterAddressWord1Spec;
+        impl crate::RegisterSpec for TransmitterAddressWord1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`transmitter_address_word_1::R`](R) reader structure"]
+        impl crate::Readable for TransmitterAddressWord1Spec {}
+    }
+    #[doc = "CONTROL_SEQUENCE (r) register accessor: \n\nYou can [`read`](crate::Reg::read) this register and get [`control_sequence::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_sequence`] module"]
+    #[doc(alias = "CONTROL_SEQUENCE")]
+    pub type ControlSequence = crate::Reg<control_sequence::ControlSequenceSpec>;
+    #[doc = ""]
+    pub mod control_sequence {
+        #[doc = "Register `CONTROL_SEQUENCE` reader"]
+        pub type R = crate::R<ControlSequenceSpec>;
+        #[doc = "Field `FRAGMENT_NUMBER` reader - "]
+        pub type FragmentNumberR = crate::FieldReader;
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID` reader - "]
+        pub type TidR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn fragment_number(&self) -> FragmentNumberR {
+                FragmentNumberR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid(&self) -> TidR {
+                TidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+        }
+        #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`control_sequence::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSequenceSpec;
+        impl crate::RegisterSpec for ControlSequenceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control_sequence::R`](R) reader structure"]
+        impl crate::Readable for ControlSequenceSpec {}
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS,HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29\\]; CONFIDENCE\\[instruction-exact-registers-from-debug-symbol-hil-observed\\]. Complete dbg_read_color_collision reads the 64-bit observed BSS-color bitmap. Its adjacent control word is the canonical WIFI_MAC_HE_INIT_PREFIX.RX_FIELD_CONTROL register. Open HE HIL observed color bit 25, threshold one and timeout 60 seconds."]
 pub type WifiMacHeColorCollision =
     crate::Periph<wifi_mac_he_color_collision::RegisterBlock, 0x2010_4040>;
@@ -11831,7 +11998,7 @@ pub mod wifi_mac_tx_queue_vector {
         length_control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
         #[inline(always)]
         pub const fn plcp1(&self, n: usize) -> &Plcp1 {
             #[allow(clippy::no_effect)]
@@ -11839,7 +12006,7 @@ pub mod wifi_mac_tx_queue_vector {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+        #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
         #[inline(always)]
         pub fn plcp1_iter(&self) -> impl Iterator<Item = &Plcp1> {
             (0..4).map(move |n| unsafe {
@@ -12072,34 +12239,76 @@ pub mod wifi_mac_tx_queue_vector {
             })
         }
     }
-    #[doc = "PLCP1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
+    #[doc = "PLCP1 (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
     #[doc(alias = "PLCP1")]
     pub type Plcp1 = crate::Reg<plcp1::Plcp1Spec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
     pub mod plcp1 {
         #[doc = "Register `PLCP1%s` reader"]
         pub type R = crate::R<Plcp1Spec>;
         #[doc = "Register `PLCP1%s` writer"]
         pub type W = crate::W<Plcp1Spec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `LOW_MODE_DEPENDENT` reader - "]
+        pub type LowModeDependentR = crate::FieldReader<u32>;
+        #[doc = "Field `LOW_MODE_DEPENDENT` writer - "]
+        pub type LowModeDependentW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        #[doc = "Field `KEY_ENTRY_INDEX` reader - "]
+        pub type KeyEntryIndexR = crate::FieldReader;
+        #[doc = "Field `KEY_ENTRY_INDEX` writer - "]
+        pub type KeyEntryIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `BSSID_SELECT` reader - "]
+        pub type BssidSelectR = crate::FieldReader;
+        #[doc = "Field `BSSID_SELECT` writer - "]
+        pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HIGH_MODE_DEPENDENT` reader - "]
+        pub type HighModeDependentR = crate::FieldReader;
+        #[doc = "Field `HIGH_MODE_DEPENDENT` writer - "]
+        pub type HighModeDependentW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:16"]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn low_mode_dependent(&self) -> LowModeDependentR {
+                LowModeDependentR::new(self.bits & 0x0001_ffff)
+            }
+            #[doc = "Bits 17:22"]
+            #[inline(always)]
+            pub fn key_entry_index(&self) -> KeyEntryIndexR {
+                KeyEntryIndexR::new(((self.bits >> 17) & 0x3f) as u8)
+            }
+            #[doc = "Bits 23:24"]
+            #[inline(always)]
+            pub fn bssid_select(&self) -> BssidSelectR {
+                BssidSelectR::new(((self.bits >> 23) & 3) as u8)
+            }
+            #[doc = "Bits 25:31"]
+            #[inline(always)]
+            pub fn high_mode_dependent(&self) -> HighModeDependentR {
+                HighModeDependentR::new(((self.bits >> 25) & 0x7f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:16"]
             #[inline(always)]
-            pub fn value(&mut self) -> ValueW<'_, Plcp1Spec> {
-                ValueW::new(self, 0)
+            pub fn low_mode_dependent(&mut self) -> LowModeDependentW<'_, Plcp1Spec> {
+                LowModeDependentW::new(self, 0)
+            }
+            #[doc = "Bits 17:22"]
+            #[inline(always)]
+            pub fn key_entry_index(&mut self) -> KeyEntryIndexW<'_, Plcp1Spec> {
+                KeyEntryIndexW::new(self, 17)
+            }
+            #[doc = "Bits 23:24"]
+            #[inline(always)]
+            pub fn bssid_select(&mut self) -> BssidSelectW<'_, Plcp1Spec> {
+                BssidSelectW::new(self, 23)
+            }
+            #[doc = "Bits 25:31"]
+            #[inline(always)]
+            pub fn high_mode_dependent(&mut self) -> HighModeDependentW<'_, Plcp1Spec> {
+                HighModeDependentW::new(self, 25)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-mode-dependent-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Plcp1Spec;
         impl crate::RegisterSpec for Plcp1Spec {
             type Ux = u32;
@@ -16617,13 +16826,13 @@ pub mod wifi_mac_he_init_suffix {
                     .cast()
             })
         }
-        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-write-aperture\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc."]
+        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
         #[inline(always)]
         pub const fn he_scratch(&self, n: usize) -> &HeScratch {
             &self.he_scratch[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-write-aperture\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc."]
+        #[doc = "0x15d0..0x17b0 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
         #[inline(always)]
         pub fn he_scratch_iter(&self) -> impl Iterator<Item = &HeScratch> {
             self.he_scratch.iter()
@@ -18422,27 +18631,68 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SCRATCH (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-write-aperture\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
+    #[doc = "HE_SCRATCH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
     #[doc(alias = "HE_SCRATCH")]
     pub type HeScratch = crate::Reg<he_scratch::HeScratchSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-write-aperture\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT."]
     pub mod he_scratch {
+        #[doc = "Register `HE_SCRATCH%s` reader"]
+        pub type R = crate::R<HeScratchSpec>;
         #[doc = "Register `HE_SCRATCH%s` writer"]
         pub type W = crate::W<HeScratchSpec>;
-        #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
+        #[doc = "Field `MPDU_LENGTH` reader - "]
+        pub type MpduLengthR = crate::FieldReader<u16>;
+        #[doc = "Field `MPDU_LENGTH` writer - "]
+        pub type MpduLengthW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        #[doc = "Field `NEXT_LINK` reader - "]
+        pub type NextLinkR = crate::FieldReader;
+        #[doc = "Field `NEXT_LINK` writer - "]
+        pub type NextLinkW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        impl R {
+            #[doc = "Bits 0:13"]
             #[inline(always)]
-            pub fn image_unknown(&mut self) -> ImageUnknownW<'_, HeScratchSpec> {
-                ImageUnknownW::new(self, 0)
+            pub fn mpdu_length(&self) -> MpduLengthR {
+                MpduLengthR::new((self.bits & 0x3fff) as u16)
+            }
+            #[doc = "Bits 14:20"]
+            #[inline(always)]
+            pub fn next_link(&self) -> NextLinkR {
+                NextLinkR::new(((self.bits >> 14) & 0x7f) as u8)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-write-aperture\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:13"]
+            #[inline(always)]
+            pub fn mpdu_length(&mut self) -> MpduLengthW<'_, HeScratchSpec> {
+                MpduLengthW::new(self, 0)
+            }
+            #[doc = "Bits 14:20"]
+            #[inline(always)]
+            pub fn next_link(&mut self) -> NextLinkW<'_, HeScratchSpec> {
+                NextLinkW::new(self, 14)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, HeScratchSpec> {
+                HighUnknownW::new(self, 21)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeScratchSpec;
         impl crate::RegisterSpec for HeScratchSpec {
             type Ux = u32;
         }
+        #[doc = "`read()` method returns [`he_scratch::R`](R) reader structure"]
+        impl crate::Readable for HeScratchSpec {}
         #[doc = "`write(|w| ..)` method takes [`he_scratch::W`](W) writer structure"]
         impl crate::Writable for HeScratchSpec {
             type Safety = crate::Unsafe;
@@ -22121,22 +22371,62 @@ pub mod wifi_mac_rx_dma {
         rx_block_ack_start_sequence: RxBlockAckStartSequence,
         rx_block_ack_bitmap_low: RxBlockAckBitmapLow,
         rx_block_ack_bitmap_high: RxBlockAckBitmapHigh,
-        _reserved15: [u8; 0x04f8],
+        _reserved15: [u8; 0x0304],
+        tx_queue_information_q7: TxQueueInformationQ7,
+        tx_block_ack_bitmap_high_q7: TxBlockAckBitmapHighQ7,
+        tx_block_ack_bitmap_low_q7: TxBlockAckBitmapLowQ7,
+        tx_block_ack_control_sequence_q7: TxBlockAckControlSequenceQ7,
+        tx_block_ack_transmitter_address_high_q7: TxBlockAckTransmitterAddressHighQ7,
+        tx_block_ack_transmitter_address_low_q7: TxBlockAckTransmitterAddressLowQ7,
+        _reserved21: [u8; 0x64],
+        tx_queue_information_q6: TxQueueInformationQ6,
+        tx_block_ack_bitmap_high_q6: TxBlockAckBitmapHighQ6,
+        tx_block_ack_bitmap_low_q6: TxBlockAckBitmapLowQ6,
+        tx_block_ack_control_sequence_q6: TxBlockAckControlSequenceQ6,
+        tx_block_ack_transmitter_address_high_q6: TxBlockAckTransmitterAddressHighQ6,
+        tx_block_ack_transmitter_address_low_q6: TxBlockAckTransmitterAddressLowQ6,
+        _reserved27: [u8; 0x64],
+        tx_queue_information_q5: TxQueueInformationQ5,
+        tx_block_ack_bitmap_high_q5: TxBlockAckBitmapHighQ5,
+        tx_block_ack_bitmap_low_q5: TxBlockAckBitmapLowQ5,
+        tx_block_ack_control_sequence_q5: TxBlockAckControlSequenceQ5,
+        tx_block_ack_transmitter_address_high_q5: TxBlockAckTransmitterAddressHighQ5,
+        tx_block_ack_transmitter_address_low_q5: TxBlockAckTransmitterAddressLowQ5,
+        _reserved33: [u8; 0x64],
+        tx_queue_information_q4: TxQueueInformationQ4,
+        tx_block_ack_bitmap_high_q4: TxBlockAckBitmapHighQ4,
+        tx_block_ack_bitmap_low_q4: TxBlockAckBitmapLowQ4,
+        tx_block_ack_control_sequence_q4: TxBlockAckControlSequenceQ4,
+        tx_block_ack_transmitter_address_high_q4: TxBlockAckTransmitterAddressHighQ4,
+        tx_block_ack_transmitter_address_low_q4: TxBlockAckTransmitterAddressLowQ4,
+        _reserved39: [u8; 0x64],
+        tx_queue_information_q3: TxQueueInformationQ3,
         tx_block_ack_bitmap_high_q3: TxBlockAckBitmapHighQ3,
         tx_block_ack_bitmap_low_q3: TxBlockAckBitmapLowQ3,
         tx_block_ack_control_sequence_q3: TxBlockAckControlSequenceQ3,
-        _reserved18: [u8; 0x70],
+        tx_block_ack_transmitter_address_high_q3: TxBlockAckTransmitterAddressHighQ3,
+        tx_block_ack_transmitter_address_low_q3: TxBlockAckTransmitterAddressLowQ3,
+        _reserved45: [u8; 0x64],
+        tx_queue_information_q2: TxQueueInformationQ2,
         tx_block_ack_bitmap_high_q2: TxBlockAckBitmapHighQ2,
         tx_block_ack_bitmap_low_q2: TxBlockAckBitmapLowQ2,
         tx_block_ack_control_sequence_q2: TxBlockAckControlSequenceQ2,
-        _reserved21: [u8; 0x70],
+        tx_block_ack_transmitter_address_high_q2: TxBlockAckTransmitterAddressHighQ2,
+        tx_block_ack_transmitter_address_low_q2: TxBlockAckTransmitterAddressLowQ2,
+        _reserved51: [u8; 0x64],
+        tx_queue_information_q1: TxQueueInformationQ1,
         tx_block_ack_bitmap_high_q1: TxBlockAckBitmapHighQ1,
         tx_block_ack_bitmap_low_q1: TxBlockAckBitmapLowQ1,
         tx_block_ack_control_sequence_q1: TxBlockAckControlSequenceQ1,
-        _reserved24: [u8; 0x70],
+        tx_block_ack_transmitter_address_high_q1: TxBlockAckTransmitterAddressHighQ1,
+        tx_block_ack_transmitter_address_low_q1: TxBlockAckTransmitterAddressLowQ1,
+        _reserved57: [u8; 0x64],
+        tx_queue_information_q0: TxQueueInformationQ0,
         tx_block_ack_bitmap_high_q0: TxBlockAckBitmapHighQ0,
         tx_block_ack_bitmap_low_q0: TxBlockAckBitmapLowQ0,
         tx_block_ack_control_sequence_q0: TxBlockAckControlSequenceQ0,
+        tx_block_ack_transmitter_address_high_q0: TxBlockAckTransmitterAddressHighQ0,
+        tx_block_ack_transmitter_address_low_q0: TxBlockAckTransmitterAddressLowQ0,
     }
     impl RegisterBlock {
         #[doc = "0x7c - SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown."]
@@ -22214,6 +22504,147 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_block_ack_bitmap_high(&self) -> &RxBlockAckBitmapHigh {
             &self.rx_block_ack_bitmap_high
         }
+        #[doc = "0x11c0 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 7."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q7(&self) -> &TxQueueInformationQ7 {
+            &self.tx_queue_information_q7
+        }
+        #[doc = "0x11c4 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 7."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_high_q7(&self) -> &TxBlockAckBitmapHighQ7 {
+            &self.tx_block_ack_bitmap_high_q7
+        }
+        #[doc = "0x11c8 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 7."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_low_q7(&self) -> &TxBlockAckBitmapLowQ7 {
+            &self.tx_block_ack_bitmap_low_q7
+        }
+        #[doc = "0x11cc - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 7."]
+        #[inline(always)]
+        pub const fn tx_block_ack_control_sequence_q7(&self) -> &TxBlockAckControlSequenceQ7 {
+            &self.tx_block_ack_control_sequence_q7
+        }
+        #[doc = "0x11d0 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q7(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ7 {
+            &self.tx_block_ack_transmitter_address_high_q7
+        }
+        #[doc = "0x11d4 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q7(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ7 {
+            &self.tx_block_ack_transmitter_address_low_q7
+        }
+        #[doc = "0x123c - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 6."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q6(&self) -> &TxQueueInformationQ6 {
+            &self.tx_queue_information_q6
+        }
+        #[doc = "0x1240 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 6."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_high_q6(&self) -> &TxBlockAckBitmapHighQ6 {
+            &self.tx_block_ack_bitmap_high_q6
+        }
+        #[doc = "0x1244 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 6."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_low_q6(&self) -> &TxBlockAckBitmapLowQ6 {
+            &self.tx_block_ack_bitmap_low_q6
+        }
+        #[doc = "0x1248 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 6."]
+        #[inline(always)]
+        pub const fn tx_block_ack_control_sequence_q6(&self) -> &TxBlockAckControlSequenceQ6 {
+            &self.tx_block_ack_control_sequence_q6
+        }
+        #[doc = "0x124c - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q6(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ6 {
+            &self.tx_block_ack_transmitter_address_high_q6
+        }
+        #[doc = "0x1250 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q6(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ6 {
+            &self.tx_block_ack_transmitter_address_low_q6
+        }
+        #[doc = "0x12b8 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 5."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q5(&self) -> &TxQueueInformationQ5 {
+            &self.tx_queue_information_q5
+        }
+        #[doc = "0x12bc - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 5."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_high_q5(&self) -> &TxBlockAckBitmapHighQ5 {
+            &self.tx_block_ack_bitmap_high_q5
+        }
+        #[doc = "0x12c0 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 5."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_low_q5(&self) -> &TxBlockAckBitmapLowQ5 {
+            &self.tx_block_ack_bitmap_low_q5
+        }
+        #[doc = "0x12c4 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 5."]
+        #[inline(always)]
+        pub const fn tx_block_ack_control_sequence_q5(&self) -> &TxBlockAckControlSequenceQ5 {
+            &self.tx_block_ack_control_sequence_q5
+        }
+        #[doc = "0x12c8 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q5(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ5 {
+            &self.tx_block_ack_transmitter_address_high_q5
+        }
+        #[doc = "0x12cc - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q5(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ5 {
+            &self.tx_block_ack_transmitter_address_low_q5
+        }
+        #[doc = "0x1334 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 4."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q4(&self) -> &TxQueueInformationQ4 {
+            &self.tx_queue_information_q4
+        }
+        #[doc = "0x1338 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 4."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_high_q4(&self) -> &TxBlockAckBitmapHighQ4 {
+            &self.tx_block_ack_bitmap_high_q4
+        }
+        #[doc = "0x133c - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 4."]
+        #[inline(always)]
+        pub const fn tx_block_ack_bitmap_low_q4(&self) -> &TxBlockAckBitmapLowQ4 {
+            &self.tx_block_ack_bitmap_low_q4
+        }
+        #[doc = "0x1340 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 4."]
+        #[inline(always)]
+        pub const fn tx_block_ack_control_sequence_q4(&self) -> &TxBlockAckControlSequenceQ4 {
+            &self.tx_block_ack_control_sequence_q4
+        }
+        #[doc = "0x1344 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q4(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ4 {
+            &self.tx_block_ack_transmitter_address_high_q4
+        }
+        #[doc = "0x1348 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q4(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ4 {
+            &self.tx_block_ack_transmitter_address_low_q4
+        }
+        #[doc = "0x13b0 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 3."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q3(&self) -> &TxQueueInformationQ3 {
+            &self.tx_queue_information_q3
+        }
         #[doc = "0x13b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q3(&self) -> &TxBlockAckBitmapHighQ3 {
@@ -22228,6 +22659,25 @@ pub mod wifi_mac_rx_dma {
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q3(&self) -> &TxBlockAckControlSequenceQ3 {
             &self.tx_block_ack_control_sequence_q3
+        }
+        #[doc = "0x13c0 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q3(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ3 {
+            &self.tx_block_ack_transmitter_address_high_q3
+        }
+        #[doc = "0x13c4 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q3(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ3 {
+            &self.tx_block_ack_transmitter_address_low_q3
+        }
+        #[doc = "0x142c - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 2."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q2(&self) -> &TxQueueInformationQ2 {
+            &self.tx_queue_information_q2
         }
         #[doc = "0x1430 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2."]
         #[inline(always)]
@@ -22244,6 +22694,25 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_block_ack_control_sequence_q2(&self) -> &TxBlockAckControlSequenceQ2 {
             &self.tx_block_ack_control_sequence_q2
         }
+        #[doc = "0x143c - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q2(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ2 {
+            &self.tx_block_ack_transmitter_address_high_q2
+        }
+        #[doc = "0x1440 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q2(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ2 {
+            &self.tx_block_ack_transmitter_address_low_q2
+        }
+        #[doc = "0x14a8 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 1."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q1(&self) -> &TxQueueInformationQ1 {
+            &self.tx_queue_information_q1
+        }
         #[doc = "0x14ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q1(&self) -> &TxBlockAckBitmapHighQ1 {
@@ -22259,6 +22728,25 @@ pub mod wifi_mac_rx_dma {
         pub const fn tx_block_ack_control_sequence_q1(&self) -> &TxBlockAckControlSequenceQ1 {
             &self.tx_block_ack_control_sequence_q1
         }
+        #[doc = "0x14b8 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q1(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ1 {
+            &self.tx_block_ack_transmitter_address_high_q1
+        }
+        #[doc = "0x14bc - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q1(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ1 {
+            &self.tx_block_ack_transmitter_address_low_q1
+        }
+        #[doc = "0x1524 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 0."]
+        #[inline(always)]
+        pub const fn tx_queue_information_q0(&self) -> &TxQueueInformationQ0 {
+            &self.tx_queue_information_q0
+        }
         #[doc = "0x1528 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge."]
         #[inline(always)]
         pub const fn tx_block_ack_bitmap_high_q0(&self) -> &TxBlockAckBitmapHighQ0 {
@@ -22273,6 +22761,20 @@ pub mod wifi_mac_rx_dma {
         #[inline(always)]
         pub const fn tx_block_ack_control_sequence_q0(&self) -> &TxBlockAckControlSequenceQ0 {
             &self.tx_block_ack_control_sequence_q0
+        }
+        #[doc = "0x1534 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state for completed queue 0."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_high_q0(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressHighQ0 {
+            &self.tx_block_ack_transmitter_address_high_q0
+        }
+        #[doc = "0x1538 - SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0."]
+        #[inline(always)]
+        pub const fn tx_block_ack_transmitter_address_low_q0(
+            &self,
+        ) -> &TxBlockAckTransmitterAddressLowQ0 {
+            &self.tx_block_ack_transmitter_address_low_q0
         }
     }
     #[doc = "RX_COLD_CONTROL_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_cold_control_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_cold_control_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_cold_control_unknown`] module"]
@@ -22638,6 +23140,827 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "TX_QUEUE_INFORMATION_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q7`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q7")]
+    pub type TxQueueInformationQ7 = crate::Reg<tx_queue_information_q7::TxQueueInformationQ7Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 7."]
+    pub mod tx_queue_information_q7 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q7` reader"]
+        pub type R = crate::R<TxQueueInformationQ7Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ7Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q7::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ7Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q7`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q7")]
+    pub type TxBlockAckBitmapHighQ7 =
+        crate::Reg<tx_block_ack_bitmap_high_q7::TxBlockAckBitmapHighQ7Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 7."]
+    pub mod tx_block_ack_bitmap_high_q7 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q7` reader"]
+        pub type R = crate::R<TxBlockAckBitmapHighQ7Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapHighQ7Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapHighQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q7::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapHighQ7Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q7`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q7")]
+    pub type TxBlockAckBitmapLowQ7 =
+        crate::Reg<tx_block_ack_bitmap_low_q7::TxBlockAckBitmapLowQ7Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 7."]
+    pub mod tx_block_ack_bitmap_low_q7 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q7` reader"]
+        pub type R = crate::R<TxBlockAckBitmapLowQ7Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapLowQ7Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapLowQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q7::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapLowQ7Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q7`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7")]
+    pub type TxBlockAckControlSequenceQ7 =
+        crate::Reg<tx_block_ack_control_sequence_q7::TxBlockAckControlSequenceQ7Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 7."]
+    pub mod tx_block_ack_control_sequence_q7 {
+        #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7` reader"]
+        pub type R = crate::R<TxBlockAckControlSequenceQ7Spec>;
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckControlSequenceQ7Spec;
+        impl crate::RegisterSpec for TxBlockAckControlSequenceQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q7::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckControlSequenceQ7Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q7`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7")]
+    pub type TxBlockAckTransmitterAddressHighQ7 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q7::TxBlockAckTransmitterAddressHighQ7Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q7 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ7Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ7Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q7::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ7Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q7::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q7`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7")]
+    pub type TxBlockAckTransmitterAddressLowQ7 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q7::TxBlockAckTransmitterAddressLowQ7Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q7 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ7Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ7Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ7Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q7::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ7Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q6`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q6")]
+    pub type TxQueueInformationQ6 = crate::Reg<tx_queue_information_q6::TxQueueInformationQ6Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 6."]
+    pub mod tx_queue_information_q6 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q6` reader"]
+        pub type R = crate::R<TxQueueInformationQ6Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ6Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q6::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ6Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q6`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q6")]
+    pub type TxBlockAckBitmapHighQ6 =
+        crate::Reg<tx_block_ack_bitmap_high_q6::TxBlockAckBitmapHighQ6Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 6."]
+    pub mod tx_block_ack_bitmap_high_q6 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q6` reader"]
+        pub type R = crate::R<TxBlockAckBitmapHighQ6Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapHighQ6Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapHighQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q6::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapHighQ6Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q6`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q6")]
+    pub type TxBlockAckBitmapLowQ6 =
+        crate::Reg<tx_block_ack_bitmap_low_q6::TxBlockAckBitmapLowQ6Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 6."]
+    pub mod tx_block_ack_bitmap_low_q6 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q6` reader"]
+        pub type R = crate::R<TxBlockAckBitmapLowQ6Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapLowQ6Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapLowQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q6::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapLowQ6Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q6`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6")]
+    pub type TxBlockAckControlSequenceQ6 =
+        crate::Reg<tx_block_ack_control_sequence_q6::TxBlockAckControlSequenceQ6Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 6."]
+    pub mod tx_block_ack_control_sequence_q6 {
+        #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6` reader"]
+        pub type R = crate::R<TxBlockAckControlSequenceQ6Spec>;
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckControlSequenceQ6Spec;
+        impl crate::RegisterSpec for TxBlockAckControlSequenceQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q6::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckControlSequenceQ6Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q6`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6")]
+    pub type TxBlockAckTransmitterAddressHighQ6 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q6::TxBlockAckTransmitterAddressHighQ6Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q6 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ6Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ6Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q6::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ6Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q6::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q6`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6")]
+    pub type TxBlockAckTransmitterAddressLowQ6 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q6::TxBlockAckTransmitterAddressLowQ6Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q6 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ6Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ6Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ6Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q6::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ6Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q5`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q5")]
+    pub type TxQueueInformationQ5 = crate::Reg<tx_queue_information_q5::TxQueueInformationQ5Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 5."]
+    pub mod tx_queue_information_q5 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q5` reader"]
+        pub type R = crate::R<TxQueueInformationQ5Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ5Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q5::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ5Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q5`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q5")]
+    pub type TxBlockAckBitmapHighQ5 =
+        crate::Reg<tx_block_ack_bitmap_high_q5::TxBlockAckBitmapHighQ5Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 5."]
+    pub mod tx_block_ack_bitmap_high_q5 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q5` reader"]
+        pub type R = crate::R<TxBlockAckBitmapHighQ5Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapHighQ5Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapHighQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q5::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapHighQ5Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q5`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q5")]
+    pub type TxBlockAckBitmapLowQ5 =
+        crate::Reg<tx_block_ack_bitmap_low_q5::TxBlockAckBitmapLowQ5Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 5."]
+    pub mod tx_block_ack_bitmap_low_q5 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q5` reader"]
+        pub type R = crate::R<TxBlockAckBitmapLowQ5Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapLowQ5Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapLowQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q5::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapLowQ5Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q5`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5")]
+    pub type TxBlockAckControlSequenceQ5 =
+        crate::Reg<tx_block_ack_control_sequence_q5::TxBlockAckControlSequenceQ5Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 5."]
+    pub mod tx_block_ack_control_sequence_q5 {
+        #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5` reader"]
+        pub type R = crate::R<TxBlockAckControlSequenceQ5Spec>;
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckControlSequenceQ5Spec;
+        impl crate::RegisterSpec for TxBlockAckControlSequenceQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q5::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckControlSequenceQ5Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q5`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5")]
+    pub type TxBlockAckTransmitterAddressHighQ5 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q5::TxBlockAckTransmitterAddressHighQ5Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q5 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ5Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ5Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q5::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ5Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q5::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q5`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5")]
+    pub type TxBlockAckTransmitterAddressLowQ5 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q5::TxBlockAckTransmitterAddressLowQ5Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q5 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ5Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ5Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ5Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q5::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ5Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q4`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q4")]
+    pub type TxQueueInformationQ4 = crate::Reg<tx_queue_information_q4::TxQueueInformationQ4Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 4."]
+    pub mod tx_queue_information_q4 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q4` reader"]
+        pub type R = crate::R<TxQueueInformationQ4Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ4Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q4::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ4Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q4`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q4")]
+    pub type TxBlockAckBitmapHighQ4 =
+        crate::Reg<tx_block_ack_bitmap_high_q4::TxBlockAckBitmapHighQ4Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 4."]
+    pub mod tx_block_ack_bitmap_high_q4 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q4` reader"]
+        pub type R = crate::R<TxBlockAckBitmapHighQ4Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMHI for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapHighQ4Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapHighQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_high_q4::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapHighQ4Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_BITMAP_LOW_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_low_q4`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_BITMAP_LOW_Q4")]
+    pub type TxBlockAckBitmapLowQ4 =
+        crate::Reg<tx_block_ack_bitmap_low_q4::TxBlockAckBitmapLowQ4Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 4."]
+    pub mod tx_block_ack_bitmap_low_q4 {
+        #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q4` reader"]
+        pub type R = crate::R<TxBlockAckBitmapLowQ4Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_BMLO for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckBitmapLowQ4Spec;
+        impl crate::RegisterSpec for TxBlockAckBitmapLowQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_bitmap_low_q4::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckBitmapLowQ4Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_control_sequence_q4`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4")]
+    pub type TxBlockAckControlSequenceQ4 =
+        crate::Reg<tx_block_ack_control_sequence_q4::TxBlockAckControlSequenceQ4Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 4."]
+    pub mod tx_block_ack_control_sequence_q4 {
+        #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4` reader"]
+        pub type R = crate::R<TxBlockAckControlSequenceQ4Spec>;
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_SSN: starting sequence bits 15:4 and TID/control bits 19:16 for queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckControlSequenceQ4Spec;
+        impl crate::RegisterSpec for TxBlockAckControlSequenceQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q4::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckControlSequenceQ4Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q4`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4")]
+    pub type TxBlockAckTransmitterAddressHighQ4 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q4::TxBlockAckTransmitterAddressHighQ4Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q4 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ4Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; the blob identifies the low sixteen bits as the high two transmitter-address bytes and the upper fields as ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ4Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q4::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ4Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q4`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4")]
+    pub type TxBlockAckTransmitterAddressLowQ4 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q4::TxBlockAckTransmitterAddressLowQ4Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q4 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ4Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ4Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q4::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ4Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q3`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q3")]
+    pub type TxQueueInformationQ3 = crate::Reg<tx_queue_information_q3::TxQueueInformationQ3Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 3."]
+    pub mod tx_queue_information_q3 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q3` reader"]
+        pub type R = crate::R<TxQueueInformationQ3Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ3Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ3Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q3::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ3Spec {}
+    }
     #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q3`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q3")]
     pub type TxBlockAckBitmapHighQ3 =
@@ -22688,9 +24011,20 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_control_sequence_q3 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ3Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -22700,6 +24034,126 @@ pub mod wifi_mac_rx_dma {
         }
         #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q3::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckControlSequenceQ3Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q3`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3")]
+    pub type TxBlockAckTransmitterAddressHighQ3 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q3::TxBlockAckTransmitterAddressHighQ3Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q3 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ3Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ3Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ3Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q3::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ3Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q3`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3")]
+    pub type TxBlockAckTransmitterAddressLowQ3 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q3::TxBlockAckTransmitterAddressLowQ3Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q3 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ3Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ3Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ3Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q3::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ3Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q2`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q2")]
+    pub type TxQueueInformationQ2 = crate::Reg<tx_queue_information_q2::TxQueueInformationQ2Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 2."]
+    pub mod tx_queue_information_q2 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q2` reader"]
+        pub type R = crate::R<TxQueueInformationQ2Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ2Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q2::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ2Spec {}
     }
     #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q2`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q2")]
@@ -22751,9 +24205,20 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_control_sequence_q2 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ2Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -22763,6 +24228,126 @@ pub mod wifi_mac_rx_dma {
         }
         #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q2::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckControlSequenceQ2Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q2`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2")]
+    pub type TxBlockAckTransmitterAddressHighQ2 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q2::TxBlockAckTransmitterAddressHighQ2Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q2 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ2Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ2Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q2::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ2Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q2`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2")]
+    pub type TxBlockAckTransmitterAddressLowQ2 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q2::TxBlockAckTransmitterAddressLowQ2Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q2 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ2Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ2Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q2::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ2Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q1`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q1")]
+    pub type TxQueueInformationQ1 = crate::Reg<tx_queue_information_q1::TxQueueInformationQ1Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 1."]
+    pub mod tx_queue_information_q1 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q1` reader"]
+        pub type R = crate::R<TxQueueInformationQ1Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ1Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q1::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ1Spec {}
     }
     #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q1`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q1")]
@@ -22814,9 +24399,20 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_control_sequence_q1 {
         #[doc = "Register `TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1` reader"]
         pub type R = crate::R<TxBlockAckControlSequenceQ1Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `STARTING_SEQUENCE` reader - "]
+        pub type StartingSequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn starting_sequence(&self) -> StartingSequenceR {
+                StartingSequenceR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -22826,6 +24422,126 @@ pub mod wifi_mac_rx_dma {
         }
         #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q1::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckControlSequenceQ1Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q1`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1")]
+    pub type TxBlockAckTransmitterAddressHighQ1 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q1::TxBlockAckTransmitterAddressHighQ1Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state."]
+    pub mod tx_block_ack_transmitter_address_high_q1 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ1Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ1Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q1::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ1Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q1`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1")]
+    pub type TxBlockAckTransmitterAddressLowQ1 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q1::TxBlockAckTransmitterAddressLowQ1Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes."]
+    pub mod tx_block_ack_transmitter_address_low_q1 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ1Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA\\]; CONFIDENCE\\[instruction-exact-debug-symbol\\]. WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ1Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q1::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ1Spec {}
+    }
+    #[doc = "TX_QUEUE_INFORMATION_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_queue_information_q0`] module"]
+    #[doc(alias = "TX_QUEUE_INFORMATION_Q0")]
+    pub type TxQueueInformationQ0 = crate::Reg<tx_queue_information_q0::TxQueueInformationQ0Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 0."]
+    pub mod tx_queue_information_q0 {
+        #[doc = "Register `TX_QUEUE_INFORMATION_Q0` reader"]
+        pub type R = crate::R<TxQueueInformationQ0Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - "]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TRIGGER_BASED_PACKET_COUNT` reader - "]
+        pub type TriggerBasedPacketCountR = crate::FieldReader;
+        #[doc = "Field `LAST_TX_WAS_TRIGGER_BASED` reader - "]
+        pub type LastTxWasTriggerBasedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:12"]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x1fff) as u16)
+            }
+            #[doc = "Bits 13:19"]
+            #[inline(always)]
+            pub fn trigger_based_packet_count(&self) -> TriggerBasedPacketCountR {
+                TriggerBasedPacketCountR::new(((self.bits >> 13) & 0x7f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn last_tx_was_trigger_based(&self) -> LastTxWasTriggerBasedR {
+                LastTxWasTriggerBasedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bits 21:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact-fields-from-debug-symbol\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_queue_information_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxQueueInformationQ0Spec;
+        impl crate::RegisterSpec for TxQueueInformationQ0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_queue_information_q0::R`](R) reader structure"]
+        impl crate::Readable for TxQueueInformationQ0Spec {}
     }
     #[doc = "TX_BLOCK_ACK_BITMAP_HIGH_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_bitmap_high_q0`] module"]
     #[doc(alias = "TX_BLOCK_ACK_BITMAP_HIGH_Q0")]
@@ -22879,8 +24595,8 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<TxBlockAckControlSequenceQ0Spec>;
         #[doc = "Field `STARTING_SEQUENCE` reader - "]
         pub type StartingSequenceR = crate::FieldReader<u16>;
-        #[doc = "Field `CONTROL` reader - "]
-        pub type ControlR = crate::FieldReader;
+        #[doc = "Field `TID_OR_CONTROL` reader - "]
+        pub type TidOrControlR = crate::FieldReader;
         impl R {
             #[doc = "Bits 4:15"]
             #[inline(always)]
@@ -22889,8 +24605,8 @@ pub mod wifi_mac_rx_dma {
             }
             #[doc = "Bits 16:19"]
             #[inline(always)]
-            pub fn control(&self) -> ControlR {
-                ControlR::new(((self.bits >> 16) & 0x0f) as u8)
+            pub fn tid_or_control(&self) -> TidOrControlR {
+                TidOrControlR::new(((self.bits >> 16) & 0x0f) as u8)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Control bits 19:16 and starting sequence bits 15:4 for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_control_sequence_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -22900,6 +24616,81 @@ pub mod wifi_mac_rx_dma {
         }
         #[doc = "`read()` method returns [`tx_block_ack_control_sequence_q0::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckControlSequenceQ0Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state for completed queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_high_q0`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0")]
+    pub type TxBlockAckTransmitterAddressHighQ0 = crate::Reg<
+        tx_block_ack_transmitter_address_high_q0::TxBlockAckTransmitterAddressHighQ0Spec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state for completed queue 0."]
+    pub mod tx_block_ack_transmitter_address_high_q0 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressHighQ0Spec>;
+        #[doc = "Field `ADDRESS_BYTES_4_5` reader - "]
+        pub type AddressBytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `ACK_TID` reader - "]
+        pub type AckTidR = crate::FieldReader;
+        #[doc = "Field `ACK_RECEIVED` reader - "]
+        pub type AckReceivedR = crate::BitReader;
+        #[doc = "Field `BLOCK_ACK_RECEIVED` reader - "]
+        pub type BlockAckReceivedR = crate::BitReader;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn address_bytes_4_5(&self) -> AddressBytes4_5R {
+                AddressBytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:19"]
+            #[inline(always)]
+            pub fn ack_tid(&self) -> AckTidR {
+                AckTidR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn ack_received(&self) -> AckReceivedR {
+                AckReceivedR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn block_ack_received(&self) -> BlockAckReceivedR {
+                BlockAckReceivedR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 22) & 0x03ff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TAHI; high two transmitter-address bytes plus ACK/BlockAck result state for completed queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_high_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressHighQ0Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressHighQ0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_high_q0::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressHighQ0Spec {}
+    }
+    #[doc = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0 (r) register accessor: SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_block_ack_transmitter_address_low_q0`] module"]
+    #[doc(alias = "TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0")]
+    pub type TxBlockAckTransmitterAddressLowQ0 =
+        crate::Reg<tx_block_ack_transmitter_address_low_q0::TxBlockAckTransmitterAddressLowQ0Spec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0."]
+    pub mod tx_block_ack_transmitter_address_low_q0 {
+        #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0` reader"]
+        pub type R = crate::R<TxBlockAckTransmitterAddressLowQ0Spec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_DBG_READ_RX_BA,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-observed\\]. WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxBlockAckTransmitterAddressLowQ0Spec;
+        impl crate::RegisterSpec for TxBlockAckTransmitterAddressLowQ0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q0::R`](R) reader structure"]
+        impl crate::Readable for TxBlockAckTransmitterAddressLowQ0Spec {}
     }
     #[doc = "RX_BLOCK_ACK_AGREEMENT_UPDATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs\\]; CONFIDENCE\\[instruction-exact-not-hil\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_agreement_update`] module"]
     #[doc(alias = "RX_BLOCK_ACK_AGREEMENT_UPDATE")]
@@ -23247,6 +25038,8 @@ static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
 #[allow(non_snake_case)]
 pub struct Peripherals {
+    #[doc = "WIFI_MAC_INTERNAL_TX_BLOCK_ACK"]
+    pub wifi_mac_internal_tx_block_ack: WifiMacInternalTxBlockAck,
     #[doc = "WIFI_MAC_HE_COLOR_COLLISION"]
     pub wifi_mac_he_color_collision: WifiMacHeColorCollision,
     #[doc = "WIFI_MAC_RX_POWER_SAVE"]
@@ -23367,6 +25160,7 @@ impl Peripherals {
     pub unsafe fn steal() -> Self {
         DEVICE_PERIPHERALS = true;
         Peripherals {
+            wifi_mac_internal_tx_block_ack: WifiMacInternalTxBlockAck::steal(),
             wifi_mac_he_color_collision: WifiMacHeColorCollision::steal(),
             wifi_mac_rx_power_save: WifiMacRxPowerSave::steal(),
             wifi_mac_rx_bssid_list: WifiMacRxBssidList::steal(),

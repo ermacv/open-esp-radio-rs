@@ -1328,6 +1328,39 @@ custom receive types were disabled. Trigger/TB and all hang/panic counters
 remained zero. This qualifies the read path and idle configuration, not an
 actual OFDMA or beamforming exchange.
 
+SVD v3.30 decodes five further complete `hal_debug.o` bodies.
+`dbg_read_rx_ba` is misleadingly named: its own strings and address walk prove
+eight reverse-addressed `WDEVTXQBA` TX BlockAck result banks. Logical queue
+zero occupies `0x20105528..0x20105538`; each following queue descends by
+`0x7c`, ending with queue seven at `0x201051c4..0x201051d4`. Every bank
+contains bitmap high/low, starting sequence plus TID/control, and transmitter
+address high/low. The existing three-read TX completion API remains unchanged
+so diagnostic address reads do not add latency to the hot path; a separate
+five-word snapshot exposes the complete debug evidence.
+
+Complete `dbg_dump_txq_txinfo` adds one adjacent word per queue at
+`0x20105524-q*0x7c` and resolves upper bits in the TX-BA transmitter-address
+high word. The resulting diagnostic snapshot reports ACK, BlockAck, ACK TID,
+whether the last transmission was trigger-based and the seven-bit
+trigger-based packet count. These are directly useful for distinguishing a
+received Trigger frame from a subsequently scheduled TB transmission.
+
+Complete `dbg_read_internal_txba` independently proves the standalone
+`0x2010429c..0x201042ac` TX BlockAck result: 64-bit bitmap, two raw
+transmitter-address words, fragment number, starting sequence and TID. The
+blob does not identify byte ordering inside the raw address pair, so the PAC
+does not invent it.
+
+Complete `dbg_read_key_entry` names queue PLCP1 bits 22:17 as the six-bit key
+entry index and bits 24:23 as the BSSID selector. It then indexes the already
+owned ten-word-per-entry key table at `0x20105800` with stride `0x28` and
+checks the corresponding validity bit at `0x20104814`. Finally,
+`dbg_read_tx_mplen` proves that the 120-word aperture cleared by
+`hal_he_init` at `0x201055f0..0x201057cc` is the TX MPDU-length link table:
+bits 13:0 are `MPDU_LEN`, bits 20:14 are `NEXT`, and bits 31:21 remain
+unnamed. Generated fields and an allocation-free typed reader now own this
+map.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

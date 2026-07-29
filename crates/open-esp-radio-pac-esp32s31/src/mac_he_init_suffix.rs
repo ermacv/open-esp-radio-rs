@@ -2,7 +2,35 @@
 
 use super::RadioRegisters;
 
+/// One hardware TX MPDU-length link-table entry.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_read_tx_mplen`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTxMpduLengthLink {
+    pub mpdu_length: u16,
+    pub next_link: u8,
+    /// Bits 31:21 are read by the blob but not assigned a field name.
+    pub high_unknown: u16,
+}
+
 impl RadioRegisters {
+    /// Sample one of the 120 linked TX MPDU-length entries.
+    pub fn he_tx_mpdu_length_link(&self, index: u8) -> Option<MacHeTxMpduLengthLink> {
+        if index >= 120 {
+            return None;
+        }
+        let entry = self
+            .peripherals
+            .wifi_mac_he_init_suffix
+            .he_scratch(usize::from(index));
+        let value = entry.read();
+        Some(MacHeTxMpduLengthLink {
+            mpdu_length: value.mpdu_length().bits(),
+            next_link: value.next_link().bits(),
+            high_unknown: value.high_unknown().bits(),
+        })
+    }
+
     /// Apply the complete HE Buffer Status Report initialization leaf.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
@@ -87,11 +115,11 @@ impl RadioRegisters {
 
         // The parent clears this complete 120-word aperture in ascending order.
         for word in 0..120 {
-            // SAFETY: this write-only register is a complete 32-bit scratch
-            // word, and zero is the instruction-exact full image.
+            // SAFETY: the complete parent proves zero as the full 32-bit image
+            // of every TX MPDU-length link-table word. This deliberately
+            // clears both named fields and the still-unknown high bits.
             unsafe {
-                init.he_scratch(word)
-                    .write_with_zero(|w| w.image_unknown().bits(0));
+                init.he_scratch(word).write_with_zero(|w| w.bits(0));
             }
         }
 

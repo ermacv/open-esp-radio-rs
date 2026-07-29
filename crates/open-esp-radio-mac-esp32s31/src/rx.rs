@@ -105,6 +105,7 @@ const CSI_APPEND_ENABLE: u32 = 0x0080_0000;
 
 const MLME_HEADER_SIZE: usize = 24;
 const MLME_AUTH_BODY_SIZE: usize = 6;
+const CONTROL_HEADER_MIN_SIZE: usize = 10;
 const SUBTYPE_ASSOC_RESPONSE: u8 = 0x10;
 const SUBTYPE_REASSOC_RESPONSE: u8 = 0x30;
 const SUBTYPE_AUTH: u8 = 0xb0;
@@ -1184,6 +1185,27 @@ fn extract_mpdu(
     output: &mut [u8],
 ) -> Result<RxMpduFrame, RxError> {
     extract_mpdu_allowing_consumed_trailer(segments, config, output, 0).map(|(frame, _)| frame)
+}
+
+/// Validate and copy one control MPDU whose four-byte FCS is stripped by the
+/// S31 RX boundary.
+///
+/// This function owns only descriptor geometry and the IEEE frame-type
+/// admission check. Subtype-specific formats, including 802.11ax Trigger
+/// Common/User Info, belong to `open-esp-radio-ieee80211`.
+pub fn extract_control(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxMpduFrame, RxError> {
+    let frame = extract_mpdu(segments, config, output)?;
+    if frame.length < CONTROL_HEADER_MIN_SIZE {
+        return Err(RxError::Bounds);
+    }
+    if output[0] & 0x0f != 0x04 {
+        return Err(RxError::Ignored);
+    }
+    Ok(frame)
 }
 
 /// Validates one completed chain, strips the four-byte FCS and copies one

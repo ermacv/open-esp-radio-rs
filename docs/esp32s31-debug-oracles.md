@@ -63,9 +63,26 @@ hardware address:
 - `dbg_read_tx_ppdu`
 
 The `dbg_dump_trig_*` group is the primary oracle for Trigger Common Info,
-per-user RU/SS fields and Basic/BFRP/MU-BAR/NFRP dependent information. It is
-therefore the next source for the open Trigger/OFDMA parser even though it does
-not expand the MMIO address map.
+per-user RU/SS fields and Basic/BFRP/MU-BAR/NFRP dependent information.
+SVD-independent, allocation-free decoders for all of those printed fields now
+live in `open-esp-radio-ieee80211::trigger`. The same module owns the fields
+printed by `dbg_dump_trs_control` and `dbg_dump_uph_control`. These functions
+therefore restore the 802.11ax wire format, but do not expand the MMIO address
+map.
+
+Exact Trigger encodings recovered from the complete functions are:
+
+| Oracle | Recovered byte/bit boundary |
+| --- | --- |
+| `dbg_dump_trig_common_info` | eight-byte Common Info: type, UL length, More TF, CS, BW, GI/LTF, MU-MIMO LTF mode, HE-LTF/midamble, STBC, LDPC extra symbol, AP power, padding, PE, spatial reuse, Doppler and HE-SIG-A2 reserved |
+| `dbg_dump_trig_user_ru` | five-byte RA-RU user: AID12, RU region/allocation, coding, MCS, DCM, RA-RU count/continuation and target RSSI |
+| `dbg_dump_trig_user_ss` | five-byte scheduled user: shared prefix plus starting spatial stream, stream count and target RSSI |
+| `dbg_dump_trig_basic_dependent` | one byte: MPDU MU spacing, TID aggregation limit and preferred AC |
+| `dbg_dump_trig_bfrp_dependent` | one-byte feedback-segment retransmission bitmap |
+| `dbg_dump_trig_mubar_dependent` | four-byte BAR control/information, including policy, type, TID and SSN |
+| `dbg_dump_trig_nfrp_user` | five-byte starting AID, feedback type, target RSSI and multiplexing layout |
+| `dbg_dump_trs_control` | 32-bit TRS HE-control information |
+| `dbg_dump_uph_control` | named UPH fields in bits 6:13; upper bits remain explicitly unowned |
 
 ## Mutating debug helpers
 

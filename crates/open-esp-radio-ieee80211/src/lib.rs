@@ -18,3 +18,4 @@ pub mod management;
 pub mod scan;
 pub mod station;
 pub mod tbtt;
+pub mod trigger;

@@ -31,10 +31,11 @@ use open_esp_radio_mac_esp32s31::{
     },
     rx::{
         build_cold_ring, decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data,
-        extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
-        publish_cold_ring, rearm_descriptor, HeBandwidth, HeGuardIntervalAndLtf, HeSuSignal,
-        RxBasebandFormat, RxDma, RxError, RxIngressConfig, RxPhyInfo, RxRingError, RxRingStopped,
-        RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
+        extract_control, extract_data, extract_management, first_segment_layout,
+        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor, HeBandwidth,
+        HeGuardIntervalAndLtf, HeSuSignal, RxBasebandFormat, RxDma, RxError, RxIngressConfig,
+        RxPhyInfo, RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP,
+        INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
@@ -1530,7 +1531,7 @@ fn sta_group_ccmp_install_matches_the_migration_slot_and_control_word() {
     );
 }
 
-fn management_segment<'a>(storage: &'a mut [u8; 128]) -> RxSegment<'a> {
+fn single_frame_segment<'a>(storage: &'a mut [u8; 128], frame_control_low: u8) -> RxSegment<'a> {
     const SIGNAL_LENGTH: usize = 34;
     const TAIL_OFFSET: usize = 0x38;
     const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
@@ -1539,7 +1540,7 @@ fn management_segment<'a>(storage: &'a mut [u8; 128]) -> RxSegment<'a> {
     storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
         &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
     );
-    storage[FRAME_OFFSET] = 0xb0;
+    storage[FRAME_OFFSET] = frame_control_low;
     storage[FRAME_OFFSET + 1] = 0;
     storage[FRAME_OFFSET + 22] = 0;
 
@@ -1554,7 +1555,7 @@ fn management_segment<'a>(storage: &'a mut [u8; 128]) -> RxSegment<'a> {
 #[test]
 fn management_rx_extracts_one_bounded_mpdu_and_strips_fcs() {
     let mut storage = [0_u8; 128];
-    let segment = management_segment(&mut storage);
+    let segment = single_frame_segment(&mut storage, 0xb0);
     let mut output = [0_u8; 64];
     let frame = extract_management(
         &[segment],
@@ -1575,9 +1576,30 @@ fn management_rx_extracts_one_bounded_mpdu_and_strips_fcs() {
 }
 
 #[test]
+fn control_rx_extracts_trigger_mpdu_without_interpreting_its_payload() {
+    let mut storage = [0_u8; 128];
+    let segment = single_frame_segment(&mut storage, 0x24);
+    let mut output = [0_u8; 64];
+    let frame = extract_control(
+        &[segment],
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+        },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(frame.length, 30);
+    assert_eq!(output[0], 0x24);
+    assert_eq!(output[1], 0);
+}
+
+#[test]
 fn management_rx_rejects_failed_hardware_status() {
     let mut storage = [0_u8; 128];
-    let mut segment = management_segment(&mut storage);
+    let mut segment = single_frame_segment(&mut storage, 0xb0);
     let mut failed = [0_u8; 128];
     failed.copy_from_slice(segment.buffer);
     failed[0x38 + 4] = 0xf5;

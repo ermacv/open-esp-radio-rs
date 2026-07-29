@@ -1243,6 +1243,32 @@ zero because the controlled AX211 AP emitted no Trigger frames. Twenty-four
 complete DCM A-MPDU matrix rounds remained clean. This qualifies the lifecycle
 write, but not OFDMA scheduling.
 
+SVD v3.27 continues with `dbg_read_txq_conf1`, `dbg_read_txq_conf2` and
+`dbg_read_muedca_timer`. The first decoder names TID, TB enable, MU-EDCA timer
+selection, MPDU-length link address and minimum TX power in all eight
+reverse-addressed queue words. The second resolves the formerly historical
+`HT_SPACING_*` names: the three ten-bit lanes are `TXQ_MIN_MPDU_LEN` for
+CBW20, CBW40 and CBW80, followed by software RTS and software CTS. This agrees
+with the existing HE delimiter HIL: the same rate/density-derived minimum
+subframe length must be copied into each channel-width lane.
+
+The four MU-EDCA words at `0x20104dbc..0x20104dc8` now expose timer and current
+count in eight-TU units, enable, reset, reached and AIFS. A fixed-allocation
+PAC snapshot normalizes reverse physical queue addressing back to the logical
+queue numbers logged by the blob.
+
+`HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29` exercised that snapshot
+after HE association, WPA2 Message 3, successful TID0 AddBA with window 32,
+and ten clean three-profile DCM A-MPDU matrix rounds. All eight queue-one
+`TB_ENA` fields were clear and their TID, MU-EDCA selection, MPDU-length-link
+and minimum-power fields were zero. All four MU-EDCA timers were disabled with
+zero timer/count/AIFS and `REACHED=1`. Queue-two CONF2 alone contained
+`TXQ_MIN_MPDU_LEN=(3,3,3)`; the other three queues contained zero and all
+software RTS/CTS bits were clear. Trigger reception, TB transmission and
+TB QoS Null counters remained zero. This qualifies register geometry, logical
+queue ordering and the ordinary HE-SU idle baseline; it does not qualify an
+OFDMA scheduling transition because the AX211 AP emitted no Trigger frame.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

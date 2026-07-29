@@ -205,7 +205,7 @@ impl RadioRegisters {
             .modify(|_, w| w.legacy_clear_unknown().clear_bit());
         control_bank
             .protection(bank)
-            .modify(|_, w| w.txop_descriptor_policy().clear_bit());
+            .modify(|_, w| w.software_cts().clear_bit());
         // SAFETY: the complete hal_mac_tx_set_ppdu leaf stores whole words.
         unsafe {
             self.peripherals
@@ -292,7 +292,7 @@ impl RadioRegisters {
             .modify(|_, w| w.legacy_clear_unknown().clear_bit());
         control_bank
             .protection(bank)
-            .modify(|_, w| w.txop_descriptor_policy().clear_bit());
+            .modify(|_, w| w.software_cts().clear_bit());
 
         // SOURCE: complete mac_tx_set_htsig writes HT-SIG first, then uses the
         // separate vector word at 0x20105504-q*0x7c to copy descriptor byte
@@ -317,17 +317,24 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.descriptor_count_a_copy().bits(program.descriptor_count_a) });
 
         // SOURCE: complete mac_tx_set_htsig offsets 0x1da..0x21a. The peer's
-        // finite spacing value from rcUpdateAMPDUParam is copied into three
-        // independent 10-bit fields through three fresh-read RMW edges.
+        // finite spacing value from rcUpdateAMPDUParam is copied into the
+        // CBW20/CBW40/CBW80 minimum-MPDU lanes through three fresh-read RMW
+        // edges. Complete dbg_read_txq_conf2 supplies those lane names.
         // HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29 observed value 40 in all
         // three fields (whole word 0x0280_a028) on a hardware-owned HT queue.
         let protection = control_bank.protection(bank);
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_primary().bits(program.protection_spacing) });
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_secondary().bits(program.protection_spacing) });
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_tertiary().bits(program.protection_spacing) });
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw20()
+                .bits(program.protection_spacing)
+        });
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw40()
+                .bits(program.protection_spacing)
+        });
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw80()
+                .bits(program.protection_spacing)
+        });
 
         // SOURCE: complete mac_tx_set_len followed by the HT power branch in
         // hal_mac_tx_set_ppdu.
@@ -408,16 +415,22 @@ impl RadioRegisters {
             .modify(|_, w| w.legacy_clear_unknown().clear_bit());
 
         // SOURCE: complete mac_tx_set_plcp0/hal_he_set_tx_protection followed
-        // by mac_tx_set_hesig. The bounded SU profile clears the protection
-        // high bit, then replaces the three finite ten-bit spacing lanes.
+        // by mac_tx_set_hesig. The bounded SU profile clears software CTS,
+        // then replaces the three finite channel-width minimum-MPDU lanes.
         let protection = control_bank.protection(bank);
-        protection.modify(|_, w| w.txop_descriptor_policy().clear_bit());
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_primary().bits(program.protection_spacing) });
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_secondary().bits(program.protection_spacing) });
-        protection
-            .modify(|_, w| unsafe { w.ht_spacing_tertiary().bits(program.protection_spacing) });
+        protection.modify(|_, w| w.software_cts().clear_bit());
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw20()
+                .bits(program.protection_spacing)
+        });
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw40()
+                .bits(program.protection_spacing)
+        });
+        protection.modify(|_, w| unsafe {
+            w.minimum_mpdu_length_cbw80()
+                .bits(program.protection_spacing)
+        });
 
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
         // publishing the same three descriptor-count edges used by HT.

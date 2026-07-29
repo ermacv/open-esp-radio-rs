@@ -40,7 +40,11 @@ mod table_memory;
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
-pub use mac_he_ofdma::{MacHeBufferStatusSnapshot, MacHeTid, MacHeTriggerRxDiagnostics};
+pub use mac_he_ofdma::{
+    MacHeBufferStatusSnapshot, MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot,
+    MacHeQueueSchedulingSnapshot, MacHeTid, MacHeTriggerQueueConfiguration,
+    MacHeTriggerRxDiagnostics,
+};
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::MacInterruptRegisters;
@@ -682,6 +686,14 @@ mod tests {
         let obss = &registers.peripherals.wifi_mac_he_obss_narrow_band_ru;
         assert_eq!(obss.disable_bitmap().as_ptr() as usize, 0x2010_4e9c);
         assert_eq!(obss.control().as_ptr() as usize, 0x2010_4ea0);
+
+        let timers = &registers.peripherals.wifi_mac_he_mu_edca_timer;
+        for index in 0..4 {
+            assert_eq!(
+                timers.timer(index).as_ptr() as usize,
+                0x2010_4dbc + index * 4
+            );
+        }
     }
 
     #[test]

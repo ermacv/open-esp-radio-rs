@@ -76,6 +76,45 @@ pub struct MacHeTriggerRxDiagnostics {
     pub qos_null_append_packet_count: u8,
 }
 
+/// WDEVTXQ_CONF1 fields for one of the eight reverse-addressed logical queues.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTriggerQueueConfiguration {
+    pub tid: u8,
+    pub trigger_based_enabled: bool,
+    pub mu_edca_timer_select: u8,
+    pub mpdu_length_link_address: u8,
+    pub minimum_tx_power: u8,
+}
+
+/// WDEVTXQ_CONF2 fields for one of the four ordinary EDCA queues.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeEdcaQueueConfiguration {
+    pub minimum_mpdu_length_cbw20: u16,
+    pub minimum_mpdu_length_cbw40: u16,
+    pub minimum_mpdu_length_cbw80: u16,
+    pub software_rts: bool,
+    pub software_cts: bool,
+}
+
+/// One MU-EDCA timer decoded in the blob's eight-TU units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeMuEdcaTimerSnapshot {
+    pub timer_8tu: u8,
+    pub enabled: bool,
+    pub reset: bool,
+    pub current_count_8tu: u8,
+    pub reached: bool,
+    pub aifs: u8,
+}
+
+/// Fixed-allocation snapshot of all recovered HE queue scheduling fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeQueueSchedulingSnapshot {
+    pub trigger_queues: [MacHeTriggerQueueConfiguration; 8],
+    pub edca_queues: [MacHeEdcaQueueConfiguration; 4],
+    pub mu_edca_timers: [MacHeMuEdcaTimerSnapshot; 4],
+}
+
 impl RadioRegisters {
     /// Select whether one TID participates in HE trigger-based BSR handling.
     ///
@@ -200,6 +239,59 @@ impl RadioRegisters {
             cbw40_packet_count: counts.cbw40_packet_count().bits(),
             cbw80_packet_count: counts.cbw80_packet_count().bits(),
             qos_null_append_packet_count: counts.qos_null_append_packet_count().bits(),
+        }
+    }
+
+    /// Read queue-local TB, TID, minimum-MPDU and MU-EDCA state.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]`
+    /// `dbg_read_txq_conf1`, `dbg_read_txq_conf2` and
+    /// `dbg_read_muedca_timer`. CONF1 and CONF2 use reverse logical queue
+    /// addressing, normalized here so array index equals the blob's logged
+    /// logical queue number.
+    pub fn he_queue_scheduling_snapshot(&self) -> MacHeQueueSchedulingSnapshot {
+        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
+        let timers = &self.peripherals.wifi_mac_he_mu_edca_timer;
+
+        let trigger_queues = core::array::from_fn(|logical_queue| {
+            let physical_queue = 7 - logical_queue;
+            let queue = suffix.queue_control(physical_queue).read();
+            MacHeTriggerQueueConfiguration {
+                tid: queue.tid().bits(),
+                trigger_based_enabled: queue.trigger_based_enable().bit(),
+                mu_edca_timer_select: queue.mu_edca_timer_select().bits(),
+                mpdu_length_link_address: queue.mpdu_length_link_address().bits(),
+                minimum_tx_power: queue.minimum_tx_power().bits(),
+            }
+        });
+        let edca_queues = core::array::from_fn(|logical_queue| {
+            let physical_queue = 3 - logical_queue;
+            let queue = queue_control.protection(physical_queue).read();
+            MacHeEdcaQueueConfiguration {
+                minimum_mpdu_length_cbw20: queue.minimum_mpdu_length_cbw20().bits(),
+                minimum_mpdu_length_cbw40: queue.minimum_mpdu_length_cbw40().bits(),
+                minimum_mpdu_length_cbw80: queue.minimum_mpdu_length_cbw80().bits(),
+                software_rts: queue.software_rts().bit(),
+                software_cts: queue.software_cts().bit(),
+            }
+        });
+        let mu_edca_timers = core::array::from_fn(|index| {
+            let timer = timers.timer(index).read();
+            MacHeMuEdcaTimerSnapshot {
+                timer_8tu: timer.timer_8tu().bits(),
+                enabled: timer.enable().bit(),
+                reset: timer.reset().bit(),
+                current_count_8tu: timer.current_count_8tu().bits(),
+                reached: timer.reached().bit(),
+                aifs: timer.aifs().bits(),
+            }
+        });
+
+        MacHeQueueSchedulingSnapshot {
+            trigger_queues,
+            edca_queues,
+            mu_edca_timers,
         }
     }
 }

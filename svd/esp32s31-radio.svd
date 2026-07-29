@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.26</version>
+  <version>3.27</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1736,14 +1736,14 @@
       <registers>
         <register>
           <name>PROTECTION%s</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Per-queue HT/HE response and minimum-subframe timing. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into three independent 10-bit fields while preserving bits 31:30; complete rcUpdateAMPDUParam derives that peer value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into the same three fields. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated HT value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. Complete mac_tx_set_txop_q independently updates bit 31. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_TRC_AMPDU_PARAM,BLOB_LIBPP_HE_DELIMITER_SPACING,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29,HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29]; CONFIDENCE[instruction-exact-field-semantics-hil-qualified]. WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-3</dimIndex>
           <fields>
-            <field><name>HT_SPACING_PRIMARY</name><description>First copy of the HT peer-derived or HE rate/density-derived protection spacing value; the historical HT name is retained for API stability.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
-            <field><name>HT_SPACING_SECONDARY</name><description>Second copy of the HT peer-derived or HE rate/density-derived protection spacing value.</description><bitOffset>10</bitOffset><bitWidth>10</bitWidth></field>
-            <field><name>HT_SPACING_TERTIARY</name><description>Third copy of the HT peer-derived or HE rate/density-derived protection spacing value.</description><bitOffset>20</bitOffset><bitWidth>10</bitWidth></field>
-            <field><name>PROTECTION_MODE_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>TXOP_DESCRIPTOR_POLICY</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_tx_set_txop_q sets this bit only for one descriptor flag combination and clears it otherwise.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MINIMUM_MPDU_LENGTH_CBW20</name><description>First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MINIMUM_MPDU_LENGTH_CBW40</name><description>Second copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value.</description><bitOffset>10</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MINIMUM_MPDU_LENGTH_CBW80</name><description>Third copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value.</description><bitOffset>20</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>SOFTWARE_RTS</name><description>SOURCE[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. Complete dbg_read_txq_conf2 names bit 30 SW_RTS.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>SOFTWARE_CTS</name><description>SOURCE[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG]; CONFIDENCE[instruction-exact-field-semantics-from-debug-symbol]. Complete dbg_read_txq_conf2 names bit 31 SW_CTS.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -2029,6 +2029,19 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_HE_MU_EDCA_TIMER</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-array-fields-semantics-from-debug-symbol-hil-observed]. Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; the AP emitted no Trigger frame.</description>
+      <baseAddress>0x20104dbc</baseAddress>
+      <registers>
+        <register>
+          <name>TIMER%s</name>
+          <description>WDEVMUEDCA_TIMER[0-3].</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><dim>4</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-3</dimIndex>
+          <fields><field><name>TIMER_8TU</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>ENABLE</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field><field><name>RESET</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field><field><name>CURRENT_COUNT_8TU</name><bitOffset>10</bitOffset><bitWidth>8</bitWidth></field><field><name>REACHED</name><bitOffset>18</bitOffset><bitWidth>1</bitWidth></field><field><name>AIFS</name><bitOffset>19</bitOffset><bitWidth>4</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>9</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS</name>
       <description>SOURCE[BLOB_LIBPP_HAL_HE_TRIGGER_RX_DIAGNOSTICS]; CONFIDENCE[instruction-exact-fields-semantics-from-debug-symbols]. Ten hardware diagnostic words decoded by complete dbg_read_ax_diag. The blob explicitly warns that these words are not latched and can be updated by a following RX frame; consume them only as best-effort diagnostics adjacent to a known Trigger reception.</description>
       <baseAddress>0x20104508</baseAddress>
@@ -2284,9 +2297,9 @@
         </register>
         <register>
           <name>QUEUE_CONTROL%s</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact-bit-semantics-unknown]. Eight physical queue words traversed in descending-address order by complete multi-BSSID clear; bit two is cleared.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-fields-semantics-from-debug-symbols-hil-observed]. WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. An open ordinary-SU HE baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.</description>
           <addressOffset>0xcd8</addressOffset><size>32</size><access>read-write</access><dim>8</dim><dimIncrement>0x10</dimIncrement><dimIndex>0-7</dimIndex>
-          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>QOS_NULL_TO_TRANSLATED_BSS</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>3</bitOffset><bitWidth>29</bitWidth></field></fields>
+          <fields><field><name>LOW_PRESERVED_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>QOS_NULL_TO_TRANSLATED_BSS</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TRIGGER_BASED_ENABLE</name><description>Complete dbg_read_txq_conf1 names bit 3 TB_ENA.</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>MU_EDCA_TIMER_SELECT</name><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field><field><name>MPDU_LENGTH_LINK_ADDRESS</name><bitOffset>6</bitOffset><bitWidth>7</bitWidth></field><field><name>TID</name><bitOffset>13</bitOffset><bitWidth>4</bitWidth></field><field><name>MINIMUM_TX_POWER</name><bitOffset>17</bitOffset><bitWidth>5</bitWidth></field><field><name>HIGH_PRESERVED_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field></fields>
         </register>
         <register>
           <name>PROTECTION%s</name>
@@ -3027,6 +3040,7 @@
       <source id="BLOB_LIBPP_HAL_HE_BSR_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_bsr_init body, size 0x50, plus complete hal_he_bsr_ctrl and hal_he_get/set_bsr_acihigh_comp_method leaves. It proves eight ordered fresh-read RMW edges: set 0x20104c7c bits 15, 8, 7 and 6; set 0x20104c80 bit 27; clear 0x20104c7c bits 5 and 4; then replace bits 1:0 with one.</source>
       <source id="BLOB_LIBPP_HAL_HE_BSR_DEBUG">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o dbg_read_bsr_info size 0x268 and dbg_tb_ignore_cca_enable size 0x3c, including their pinned format strings. The first function decodes WDEVTXQBSR_CTRL, eight interleaved hardware/software BSR values, WDEVAXOPTIONS1 and WDEVAXOPTIONS2. The second proves that 0x20104c7c bit 12 set means TB cares about CCA and NAV, while clear means the debug ignore mode.</source>
       <source id="BLOB_LIBPP_HAL_HE_BSR_STATUS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_get_hw_txq_bsr size 0x14. It reads 0x20104d74 plus eight times the queue/TID index and returns the low twenty bits.</source>
+      <source id="BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o dbg_read_muedca_timer size 0x70, dbg_read_txq_conf1 size 0x86 and dbg_read_txq_conf2 size 0x80, including their pinned format strings. They decode four WDEVMUEDCA_TIMER words at 0x20104dbc..0x20104dc8, eight reverse-addressed WDEVTXQ_CONF1 words at 0x20104cf8..0x20104d68 and four reverse-addressed WDEVTXQ_CONF2 words at 0x20104d34..0x20104d64. The strings identify TID, TB enable, MU-EDCA timer select, MPDU-length link address, minimum TX power, three channel-width minimum-MPDU lengths, software RTS/CTS, timer/reset/reached and AIFS fields.</source>
       <source id="BLOB_LIBNET80211_HE_TID_BITMAP">_oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40; complete ieee80211_ht.o ht_recv_action_ba_addba_response size 0x24a and ht_recv_action_ba_delba size 0xda call hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap for HE nodes. _oracles/libpp.a complete hal_mac_ctl.o leaves size 0x2a and 0x2e update 0x20104db8 bits 20:13 with the selected TID bit through two reads followed by one write.</source>
       <source id="BLOB_LIBPP_HAL_HE_TRIGGER_RX_DIAGNOSTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o dbg_read_ax_diag size 0x466 and its pinned WDEVAXDIAG0..9 format strings. The function reads 0x20104508..0x2010452c and decodes Trigger state, TB APEP length, EOF/pre-FEC padding, matched user RU/MCS/DCM/FEC/AID, common GI/LTF/bandwidth/spatial-reuse fields, TRS and packet counts. Its own warning says the words are not reliable after a following RX frame, so the PAC treats them as a best-effort diagnostic snapshot rather than durable state.</source>
       <source id="BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_disable_obss_narrow_bw_ru size 0x3e. A nonzero argument writes 0xfffff to 0x20104e9c, sets 0x20104ea0 bits 8:4 through one fresh-read RMW and bit 0 through another; zero writes zero and clears those two groups in the same order. The aggregate disabled/enabled meaning is symbol-exact, while individual bitmap/class meanings remain approximate.</source>

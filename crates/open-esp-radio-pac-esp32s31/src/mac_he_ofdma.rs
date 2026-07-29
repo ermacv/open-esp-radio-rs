@@ -1,6 +1,6 @@
 //! Typed HE trigger/OFDMA control and best-effort hardware diagnostics.
 
-use super::{device_fence, RadioRegisters};
+use super::RadioRegisters;
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const MPDU_LENGTH_LINK_END: u8 = 0x7f;
@@ -169,7 +169,11 @@ pub struct MacHeTriggerTxQueueSnapshot {
     pub first_mpdu_length: u16,
     pub first_next_link: u8,
     pub tail_link: u8,
+    /// Low-twenty-bit value supplied to the software-BSR write.
+    pub programmed_msdu_bytes: u32,
     /// Low-twenty-bit sum of original frame-state `msdu_len` values.
+    ///
+    /// This second sample is taken after the validity publication edge.
     pub queued_msdu_bytes: u32,
     pub queue_valid: bool,
 }
@@ -385,7 +389,7 @@ impl RadioRegisters {
         tid: MacHeTid,
         mpdu_lengths: &[u16],
         queued_msdu_bytes: u32,
-    ) -> Result<(), MacHeTbProgramError> {
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
         if !policy.contains(tid) {
             return Err(MacHeTbProgramError::TidNotEligible);
         }
@@ -461,8 +465,10 @@ impl RadioRegisters {
             .wifi_mac_he_buffer_status
             .software_bsr(usize::from(queue))
             .modify(|_, w| unsafe { w.value().bits(queued_msdu_bytes) });
-
-        device_fence();
+        // Do not add a fence or diagnostic read here. The complete blob and
+        // ROM sequence is exactly SW(BSR), LW(CONTROL), SW(CONTROL). BSR
+        // hardware update is live, so lengthening the interval before the
+        // validity RMW changes observable behavior.
         self.peripherals
             .wifi_mac_he_buffer_status
             .control()
@@ -470,7 +476,9 @@ impl RadioRegisters {
                 w.valid_bitmap()
                     .bits(r.valid_bitmap().bits() | (1 << queue))
             });
-        Ok(())
+        let mut snapshot = self.he_trigger_based_queue_snapshot(reservation);
+        snapshot.programmed_msdu_bytes = queued_msdu_bytes;
+        Ok(snapshot)
     }
 
     /// Remove Trigger eligibility after the queue has returned to software.
@@ -532,6 +540,7 @@ impl RadioRegisters {
             first_mpdu_length: first.mpdu_length().bits(),
             first_next_link: first.next_link().bits(),
             tail_link: tail.link_index().bits(),
+            programmed_msdu_bytes: bsr.value().bits(),
             queued_msdu_bytes: bsr.value().bits(),
             queue_valid: control.valid_bitmap().bits() & (1 << queue) != 0,
         }

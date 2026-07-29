@@ -226,7 +226,7 @@ pub trait HtAmpduHardware: TxHardware {
         tid: MacHeTid,
         mpdu_lengths: &[u16],
         queued_msdu_bytes: u32,
-    ) -> Result<(), MacHeTbProgramError>;
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError>;
 
     /// Remove Trigger eligibility only after DMA ownership has returned.
     fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation);
@@ -253,7 +253,7 @@ impl HtAmpduHardware for RadioRegisters {
         tid: MacHeTid,
         mpdu_lengths: &[u16],
         queued_msdu_bytes: u32,
-    ) -> Result<(), MacHeTbProgramError> {
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
         RadioRegisters::prepare_he_trigger_based_queue(
             self,
             policy,
@@ -374,6 +374,7 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     aggregate_length: u16,
     max_aggregate_bytes: u16,
     trigger_reservation: Option<MacHeTbLinkReservation>,
+    trigger_publication_snapshot: Option<MacHeTriggerTxQueueSnapshot>,
     detached: bool,
     _pin: PhantomPinned,
 }
@@ -400,6 +401,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             // is installed by the association owner.
             max_aggregate_bytes: TX_AMPDU_DEFAULT_MAX_BYTES,
             trigger_reservation: None,
+            trigger_publication_snapshot: None,
             detached: false,
             _pin: PhantomPinned,
         }
@@ -427,6 +429,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::BestEffort);
             ptr::addr_of_mut!((*storage).max_aggregate_bytes).write(TX_AMPDU_DEFAULT_MAX_BYTES);
             ptr::addr_of_mut!((*storage).trigger_reservation).write(None);
+            ptr::addr_of_mut!((*storage).trigger_publication_snapshot).write(None);
             ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
             &mut *storage
         }
@@ -613,6 +616,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.prepared_length = 0;
         storage.aggregate_length = 0;
         storage.trigger_reservation = None;
+        storage.trigger_publication_snapshot = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
         storage.recalculate_prepared_length()
@@ -642,6 +646,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.prepared_length = 0;
         storage.aggregate_length = 0;
         storage.trigger_reservation = None;
+        storage.trigger_publication_snapshot = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
         Ok(storage.active)
@@ -1025,7 +1030,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::QueueActive);
         }
         if let Some(trigger) = trigger {
-            hardware
+            let publication_snapshot = hardware
                 .prepare_he_trigger_based_queue(
                     trigger.policy,
                     trigger.reservation,
@@ -1035,6 +1040,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 )
                 .map_err(HtAmpduTxError::TriggerBased)?;
             storage.trigger_reservation = Some(trigger.reservation);
+            // SOURCE: complete blob/ROM `mac_tx_set_tb` make the BSR valid
+            // bitmap their final publication edge. The following ordinary
+            // HE queue doorbell can immediately consume and clear both BSR
+            // value and validity, as observed by
+            // HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30. Preserve the
+            // PAC-backed readback at the only deterministic boundary: after
+            // publication and before `start_he_tx`.
+            storage.trigger_publication_snapshot = Some(publication_snapshot);
         }
         storage.queue = queue;
         storage.aggregate_length = aggregate.bytes;
@@ -1159,19 +1172,22 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }))
     }
 
-    /// Read back the live Trigger queue before completion cleanup.
+    /// Return the Trigger queue readback captured at its publication edge.
+    ///
+    /// The snapshot is sampled after the complete queue/BSR transaction and
+    /// before the HE TX doorbell. Hardware may consume the BSR value and
+    /// validity immediately after that doorbell, so a later live read is not
+    /// an equivalent publication check.
     pub fn he_trigger_based_snapshot<H: HtAmpduHardware>(
         self: Pin<&Self>,
-        hardware: &H,
+        _hardware: &H,
         cookie: TxCookie,
     ) -> Result<Option<MacHeTriggerTxQueueSnapshot>, HtAmpduTxError> {
         let storage = self.get_ref();
         if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        Ok(storage
-            .trigger_reservation
-            .and_then(|reservation| hardware.he_trigger_based_queue_snapshot(reservation)))
+        Ok(storage.trigger_publication_snapshot)
     }
 
     /// Transfer one HE S-MPDU ACK completion back to software.
@@ -1277,6 +1293,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self.prepared_length = 0;
         self.aggregate_length = 0;
         self.trigger_reservation = None;
+        self.trigger_publication_snapshot = None;
         self.detached = false;
         self.state = TxSlotState::Free;
     }
@@ -2930,8 +2947,9 @@ mod tests {
             _: MacHeTid,
             _: &[u16],
             _: u32,
-        ) -> Result<(), MacHeTbProgramError> {
-            Ok(())
+        ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+            self.trigger_snapshot
+                .ok_or(MacHeTbProgramError::LengthCountMismatch)
         }
 
         fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
@@ -3137,19 +3155,13 @@ mod tests {
     }
 
     #[test]
-    fn completion_exposes_live_trigger_snapshot_then_clears_tb_enable() {
+    fn completion_exposes_publication_snapshot_then_clears_tb_enable() {
         let mut storage = HtAmpduTxStorage::<2, 256>::new();
         // SAFETY: this test models hardware ownership without publishing the
         // host address, and never moves the pinned local.
         let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
         let cookie = storage.as_mut().begin().unwrap();
         let reservation = MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, 2, 2).unwrap();
-        unsafe {
-            let storage = storage.as_mut().get_unchecked_mut();
-            storage.state = TxSlotState::HardwareOwned;
-            storage.queue = LegacyTxQueue::BestEffort;
-            storage.trigger_reservation = Some(reservation);
-        }
         let snapshot = MacHeTriggerTxQueueSnapshot {
             logical_queue: 2,
             tid: 0,
@@ -3160,9 +3172,17 @@ mod tests {
             first_mpdu_length: 112,
             first_next_link: 1,
             tail_link: 1,
+            programmed_msdu_bytes: 161,
             queued_msdu_bytes: 161,
             queue_valid: true,
         };
+        unsafe {
+            let storage = storage.as_mut().get_unchecked_mut();
+            storage.state = TxSlotState::HardwareOwned;
+            storage.queue = LegacyTxQueue::BestEffort;
+            storage.trigger_reservation = Some(reservation);
+            storage.trigger_publication_snapshot = Some(snapshot);
+        }
         let mut hardware = CompletionHardware {
             completion: Some(MacHtAmpduCompletionRegisters {
                 tx: MacTxCompletionRegisters {

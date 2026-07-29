@@ -1545,6 +1545,27 @@ not falsely described as hardware-self-clearing. There are no inferred
 `resetValue` entries. Reset images remain deferred until an HIL snapshot names
 the silicon revision and power/reset domain.
 
+## SVD v3.36: Trigger-queue publication boundary
+
+The owned HE A-MPDU path now retains each original MSDU length separately
+from its MPDU and PSDU lengths and can publish the complete
+`mac_tx_set_tb` transaction without a vendor scheduler. On ESP32-S31 rev0,
+the standard PSRAM/PSRAM image completed HE20 association, WPA2/CCMP and a
+TID0 AddBA window of 32. Before the HE queue doorbell, typed PAC readback
+confirmed logical queue two, TID0, `TB_ENA`, MU-EDCA selector/timer, the
+contiguous MPDU-length chain 0 through 31, terminal link 31 and validity bit
+two. The following ordinary MCS9 A-MPDU received a full 32-bit BlockAck.
+
+One boundary remains deliberately unresolved. The exact ROM sequence was
+given a 47,104-byte MSDU sum, but `WDEVTXQBSR_SW[2]` read zero immediately
+after the validity RMW. Removing the extra Rust device fence and reproducing
+ROM's exact `SW(BSR)`, `LW(CONTROL)`, `SW(CONTROL)` order did not change the
+readback. Since the AP emitted no Trigger and both RX-Trigger and TB-TX
+counters remained zero, this HIL cannot distinguish a live hardware-consumed
+value from a write-side latch that is not reflected by the read path. The SVD
+records the observation but does not change access semantics or invent a
+reset value.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

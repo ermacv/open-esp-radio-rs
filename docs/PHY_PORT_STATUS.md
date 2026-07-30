@@ -7,6 +7,12 @@ The crate has no dependency on `esp-wifi-sys`, vendor static archives, or
 radio/Wi-Fi ROM symbols. The audited PHY transition files are physically
 owned by this repository.
 
+The maintained function inventory, layer-by-layer comparison and explicit
+parity findings live in [`phy/README.md`](phy/README.md). In particular,
+“verified cold init” below means the qualified Wi-Fi full-calibration profile;
+it does not mean that every child and lifecycle mode of the vendor PHY is
+ported.
+
 Current layers:
 
 - Rust-owned cold-PHY and baseband state machines;
@@ -31,7 +37,8 @@ calling the vendor PHY initializer:
 6. the source-only MAC publishes its RX descriptor ring and enables
    promiscuous receive.
 
-This ordering was checked against local copies of
+This ordering, with the documented omission of the vendor's unconditional
+Bluetooth gain child, was checked against local copies of
 `esp32s31_rev0_rom.elf` and `libphy.a`; neither oracle is linked into the
 firmware. On hardware, the open path received a real channel-6 frame on four
 consecutive boots (the first fix-validation boot plus three reset runs).

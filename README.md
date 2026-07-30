@@ -25,6 +25,8 @@ Current workspace layers:
 The PHY port is still experimental. Its state machines and source-only link
 gate are usable, while the temporary register leaf module is progressively
 being moved down into HAL/PAC.
+The maintained vendor function inventory and behaviour comparison are in
+[`docs/phy/README.md`](docs/phy/README.md).
 
 Cold source-only PHY initialization, open promiscuous RX, active/passive scan,
 open authentication, WPA2 association, the four-way handshake, protected

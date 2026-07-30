@@ -96,28 +96,36 @@ impl TriggerType {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TriggerGiLtf {
-    OneLtf800Ns,
-    TwoLtf800Ns,
+    OneLtf1600Ns,
     TwoLtf1600Ns,
     FourLtf3200Ns,
+    Reserved,
 }
 
 impl TriggerGiLtf {
     const fn from_encoding(value: u8) -> Self {
         match value & 0x03 {
-            0 => Self::OneLtf800Ns,
-            1 => Self::TwoLtf800Ns,
-            2 => Self::TwoLtf1600Ns,
-            _ => Self::FourLtf3200Ns,
+            0 => Self::OneLtf1600Ns,
+            1 => Self::TwoLtf1600Ns,
+            2 => Self::FourLtf3200Ns,
+            _ => Self::Reserved,
         }
     }
 
+    /// Two-bit Trigger Common Info wire encoding.
+    ///
+    /// This is not the HE-SU HE-SIG-A GI/LTF encoding: Trigger-based uplink
+    /// has no 0.8-us value. SOURCE[BLOB_LIBPP_DBG_TRIGGER_COMMON] proves bits
+    /// 21:20 and their named GI/LTF role. IEEE 802.11 Trigger Common Info,
+    /// independently implemented by Wireshark
+    /// `packet-ieee80211.c::gi_and_ltf_type_subfield_vals`, supplies the exact
+    /// `1x/1.6`, `2x/1.6`, `4x/3.2`, reserved mapping.
     pub const fn encoding(self) -> u8 {
         match self {
-            Self::OneLtf800Ns => 0,
-            Self::TwoLtf800Ns => 1,
-            Self::TwoLtf1600Ns => 2,
-            Self::FourLtf3200Ns => 3,
+            Self::OneLtf1600Ns => 0,
+            Self::TwoLtf1600Ns => 1,
+            Self::FourLtf3200Ns => 2,
+            Self::Reserved => 3,
         }
     }
 }
@@ -928,7 +936,7 @@ mod tests {
         assert!(common.more_trigger_frames);
         assert!(common.carrier_sense_required);
         assert_eq!(common.uplink_bandwidth_encoding, 2);
-        assert_eq!(common.gi_ltf, TriggerGiLtf::FourLtf3200Ns);
+        assert_eq!(common.gi_ltf, TriggerGiLtf::Reserved);
         assert!(common.mu_mimo_ltf_mode);
         assert_eq!(common.he_ltf_symbols_and_midamble_periodicity, 5);
         assert!(common.uplink_stbc);
@@ -1071,7 +1079,7 @@ mod tests {
                 more_trigger_frames: false,
                 carrier_sense_required: false,
                 uplink_bandwidth_encoding: 0,
-                gi_ltf: TriggerGiLtf::OneLtf800Ns,
+                gi_ltf: TriggerGiLtf::OneLtf1600Ns,
                 mu_mimo_ltf_mode: false,
                 he_ltf_symbols_and_midamble_periodicity: 0,
                 uplink_stbc: false,

@@ -2509,7 +2509,9 @@ fn scheduled_trigger_user(
 fn basic_trigger_with_users(users: &[[u8; 5]]) -> Vec<u8> {
     let mut frame = vec![0_u8; 24];
     frame[..2].copy_from_slice(&0x0024_u16.to_le_bytes());
-    frame[16..24].copy_from_slice(&(2_u64 << 20).to_le_bytes());
+    // Trigger Common Info selector one is 2x HE-LTF + 1.6-us GI. This is a
+    // different wire table from HE-SU HE-SIG-A GI/LTF.
+    frame[16..24].copy_from_slice(&(1_u64 << 20).to_le_bytes());
     for user in users {
         frame.extend_from_slice(user);
         frame.push(0);
@@ -2564,7 +2566,7 @@ fn scheduled_he20_trigger_rate_selects_our_user_from_the_complete_iterator() {
 #[test]
 fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
     let common =
-        parse_trigger_common_info(&(2_u64 << 20).to_le_bytes()).expect("complete common info");
+        parse_trigger_common_info(&(1_u64 << 20).to_le_bytes()).expect("complete common info");
     let user_bytes = scheduled_trigger_user(0x234, 53, true, 4, true, 0, 0);
     let user = parse_trigger_user_spatial_stream(&user_bytes).unwrap();
     let scheduled = HeTriggerScheduledRate::new(common, user, 0x234).unwrap();
@@ -2572,6 +2574,10 @@ fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
     assert_eq!(scheduled.resource_unit_index, 1);
     assert_eq!(scheduled.partial_ru_power_selector.trigger_encoding(), 53);
     assert_eq!(scheduled.rate.mcs(), HeMcs::Mcs4);
+    assert_eq!(
+        scheduled.trigger_gi_ltf,
+        open_esp_radio_ieee80211::trigger::TriggerGiLtf::TwoLtf1600Ns
+    );
     assert!(scheduled.rate.is_ldpc());
     assert!(scheduled.rate.is_dcm());
     assert_eq!(scheduled.nominal_kbps(), 10_600);
@@ -2621,6 +2627,13 @@ fn scheduled_he20_trigger_rate_fails_closed_at_every_owned_boundary() {
     assert_eq!(
         HeTriggerScheduledRate::new(common, dcm_mcs2, 0x234),
         Err(HeTriggerScheduledRateError::UnsupportedDcmCombination)
+    );
+
+    let reserved_gi =
+        parse_trigger_common_info(&(3_u64 << 20).to_le_bytes()).expect("complete common info");
+    assert_eq!(
+        HeTriggerScheduledRate::new(reserved_gi, user, 0x234),
+        Err(HeTriggerScheduledRateError::UnsupportedGiLtf)
     );
 }
 

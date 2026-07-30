@@ -1242,6 +1242,9 @@ impl HeRate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeTriggerScheduledRate {
     pub rate: HeRate,
+    /// Exact Trigger Common Info selector retained independently from the
+    /// HE-SU formatter's different GI/LTF encoding.
+    pub trigger_gi_ltf: TriggerGiLtf,
     pub resource_unit: HeResourceUnit,
     pub resource_unit_index: u8,
     pub resource_unit_region: bool,
@@ -1259,6 +1262,7 @@ pub enum HeTriggerScheduledRateError {
     UnsupportedSpatialStreams,
     UnsupportedResourceUnit,
     UnsupportedMcs,
+    UnsupportedGiLtf,
     UnsupportedDcmCombination,
 }
 
@@ -1360,10 +1364,17 @@ impl HeTriggerScheduledRate {
             return Err(HeTriggerScheduledRateError::UnsupportedMcs);
         };
         let gi_ltf = match common.gi_ltf {
-            TriggerGiLtf::OneLtf800Ns => crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns,
-            TriggerGiLtf::TwoLtf800Ns => crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
-            TriggerGiLtf::TwoLtf1600Ns => crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            // The HE-SU rate type does not encode the Trigger-only 1x-LTF
+            // distinction. Both selectors share the same 1.6-us data-symbol
+            // rate; `trigger_gi_ltf` below retains the exact LTF count for
+            // eventual HE-TB vector programming.
+            TriggerGiLtf::OneLtf1600Ns | TriggerGiLtf::TwoLtf1600Ns => {
+                crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns
+            }
             TriggerGiLtf::FourLtf3200Ns => crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns,
+            TriggerGiLtf::Reserved => {
+                return Err(HeTriggerScheduledRateError::UnsupportedGiLtf);
+            }
         };
         let rate = match (user.dcm, user.coding_type, mcs) {
             (false, false, _) => HeRate::new(mcs, gi_ltf),
@@ -1382,6 +1393,7 @@ impl HeTriggerScheduledRate {
 
         Ok(Self {
             rate,
+            trigger_gi_ltf: common.gi_ltf,
             resource_unit,
             resource_unit_index: one_based_index,
             resource_unit_region: user.ru_allocation_region,

@@ -97,8 +97,19 @@ container is anchored by complete
 bit length and presence flag at RX-prefix offsets `0x2a..0x2b`, the common
 and selected-user words at `0x2d..0x2f` and `0x28..0x2a`, and borrows the
 optional complete bytes from `0x38`. The bounded Rust view checks that variable
-length before producing a slice. Complete-stream symbol unpacking and user
-iteration still remain to be recovered from the two larger test parsers.
+length before producing a slice.
+
+The two complete test parsers constrain, but do not yet justify, a generic
+complete-stream iterator. `test_get_nonmumimo_common` proves common-field
+lengths of 18 bits for bandwidth selectors 0/1, 27 bits for 2/4/5 and 43 bits
+for 3/6/7. `test_rx_parse_nonmumimo_complete_sigb` then extracts 21-bit user
+words at absolute complete-stream bit offsets
+`18,39,70,91,122,143,174,195,226` in its tested layout, while applying
+mode/RU-dependent remaining-length thresholds. The MU-MIMO test parser uses
+another unrolled, configuration-dependent layout. A simple contiguous
+21-bit iterator would therefore be false; complete-stream iteration remains
+closed until those layout selectors are recovered or independently anchored
+by the 802.11 wire specification.
 
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is
@@ -207,6 +218,17 @@ frontier. Complete `hal_debug.o::esp_test_get_bfr_avgsnr` reads
 `0x20105f94[7:0]` as stream-zero average-SNR code and converts it to dB as
 `(code + 88) / 4`; code `0x7f` is printed as a lower bound. This word is now
 in the SVD and exposed through an integer-only PAC snapshot.
+
+The report-rate write path is also complete. `trc.o::trc_set_bf_report_rate`
+(size `0x52`) selects one of three policies from a signed link metric and two
+feature bytes at rate-control-record offsets `0x8f`/`0x90`. It first calls
+`hal_mac_ctl.o::hal_he_set_bf_report_rate`, which publishes three replicated
+profiles at `0x20104464`, then tail-calls
+`hal_he_set_ersu_ack_rate` (size `0x4e`). That second leaf writes `0x80`, or
+`0xa0` for the low-metric DCM plus ER-SU branch, through four separate
+low-to-high byte RMWs at `0x20104404`. The MAC rate policy and PAC transaction
+now preserve this complete ordering. This closes report-rate selection; it
+does not yet implement sounding or compressed feedback generation.
 
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for

@@ -43,7 +43,9 @@ pub use mac_block_ack::{
 };
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
-pub use mac_he_beamforming::{MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError};
+pub use mac_he_beamforming::{
+    MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
+};
 pub use mac_he_init_suffix::MacHeTxMpduLengthLink;
 pub use mac_he_ofdma::{
     MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot,

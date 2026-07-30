@@ -8,6 +8,10 @@
 //! untyped pointer.
 
 use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
+use open_esp_radio_pac_esp32s31::{
+    MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
+    RadioRegisters,
+};
 
 pub const RATE_CONTROL_RECORD_SIZE: usize = 0x98;
 
@@ -128,13 +132,70 @@ impl RateControlState {
     }
 }
 
+/// Hardware report-rate selection produced by the recovered link policy.
+///
+/// Fields are private so callers cannot construct a combination that the
+/// complete blob policy never emits. Use [`beamforming_report_rate`] or
+/// [`beamforming_report_rate_for_metric`] to obtain a value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct BeamformingReportRate {
-    pub mode: u8,
-    pub rate: u16,
-    pub dcm: bool,
-    pub ersu: bool,
-    pub ersu_ack: bool,
+pub struct BeamformingReportRate {
+    mode: u8,
+    rate: u16,
+    dcm: bool,
+    ersu: bool,
+    ersu_ack: bool,
+}
+
+impl BeamformingReportRate {
+    pub const fn signal_mode(self) -> u8 {
+        self.mode
+    }
+
+    pub const fn rate_code(self) -> u16 {
+        self.rate
+    }
+
+    pub const fn dcm(self) -> bool {
+        self.dcm
+    }
+
+    pub const fn extended_range_single_user(self) -> bool {
+        self.ersu
+    }
+
+    pub const fn extended_range_ack(self) -> bool {
+        self.ersu_ack
+    }
+
+    /// Publish both hardware leaves of complete `trc_set_bf_report_rate`.
+    ///
+    /// The mutable borrow is the Rust ownership boundary for the radio
+    /// registers: while this call runs, no second safe owner can interleave
+    /// writes between the report profile and its matching ACK profile.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[trc.o]`
+    /// `trc_set_bf_report_rate`, size `0x52`, and its complete
+    /// `_oracles/libpp.a[hal_mac_ctl.o]` children
+    /// `hal_he_set_bf_report_rate` and `hal_he_set_ersu_ack_rate`.
+    pub fn program(
+        self,
+        registers: &mut RadioRegisters,
+    ) -> Result<(), MacHeBeamformingReportProfileError> {
+        let profile = MacHeBeamformingReportProfile::from_hal_arguments(
+            self.mode, self.rate, self.dcm, self.ersu,
+        )?;
+        let ack_profile = if self.ersu_ack {
+            MacHeErSuAckRateProfile::ExtendedRange
+        } else {
+            MacHeErSuAckRateProfile::Ordinary
+        };
+
+        // Preserve the complete blob's transaction order: three report-rate
+        // RMWs first, then the four ER-SU ACK-rate RMWs.
+        registers.set_he_beamforming_report_profile(profile);
+        registers.set_he_ersu_ack_rate_profile(ack_profile);
+        Ok(())
+    }
 }
 
 /// Recovered PHY-family discriminator stored in a rate-control record.
@@ -551,8 +612,11 @@ pub(crate) const fn ampdu_limit_for_rate(rate: u8) -> u16 {
     }
 }
 
-/// Safe policy recovered from `trc_set_bf_report_rate`.
-pub(crate) const fn beamforming_report_rate(
+/// Safe policy recovered from complete `trc_set_bf_report_rate`.
+///
+/// The byte subtraction and signed narrowing intentionally match the RISC-V
+/// instructions used by the blob.
+pub const fn beamforming_report_rate(
     filtered_ack_snr: u8,
     quarter_noise_floor: i32,
     he_feature_8f: bool,
@@ -562,9 +626,10 @@ pub(crate) const fn beamforming_report_rate(
     beamforming_report_rate_for_metric(metric as i32, he_feature_8f, he_feature_90)
 }
 
-/// Direct form used by `rcUpdatePhyMode`, whose caller already supplies the
-/// signed link metric rather than ACK SNR and noise-floor components.
-pub(crate) const fn beamforming_report_rate_for_metric(
+/// Direct form used by `rcLowerSched`, `rcUpSched` and the recovered
+/// `rcUpdatePhyMode` branch, whose callers already supply the signed link
+/// metric rather than ACK SNR and noise-floor components.
+pub const fn beamforming_report_rate_for_metric(
     metric: i32,
     he_feature_8f: bool,
     he_feature_90: bool,

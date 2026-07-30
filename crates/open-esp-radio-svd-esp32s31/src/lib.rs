@@ -17059,7 +17059,7 @@ pub mod wifi_mac_he_init_suffix {
         pub const fn tx_mode_control(&self) -> &TxModeControl {
             &self.tx_mode_control
         }
-        #[doc = "0x3e4 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate(0) writes 0x80 into four bytes through four separate RMWs."]
+        #[doc = "0x3e4 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
         #[inline(always)]
         pub const fn ersu_ack_rate(&self) -> &ErsuAckRate {
             &self.ersu_ack_rate
@@ -17549,76 +17549,76 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ERSU_ACK_RATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate(0) writes 0x80 into four bytes through four separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_ack_rate`] module"]
+    #[doc = "ERSU_ACK_RATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_ack_rate`] module"]
     #[doc(alias = "ERSU_ACK_RATE")]
     pub type ErsuAckRate = crate::Reg<ersu_ack_rate::ErsuAckRateSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate(0) writes 0x80 into four bytes through four separate RMWs."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
     pub mod ersu_ack_rate {
         #[doc = "Register `ERSU_ACK_RATE` reader"]
         pub type R = crate::R<ErsuAckRateSpec>;
         #[doc = "Register `ERSU_ACK_RATE` writer"]
         pub type W = crate::W<ErsuAckRateSpec>;
-        #[doc = "Field `RATE_0` reader - "]
+        #[doc = "Field `RATE_0` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate0R = crate::FieldReader;
-        #[doc = "Field `RATE_0` writer - "]
+        #[doc = "Field `RATE_0` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `RATE_1` reader - "]
+        #[doc = "Field `RATE_1` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate1R = crate::FieldReader;
-        #[doc = "Field `RATE_1` writer - "]
+        #[doc = "Field `RATE_1` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `RATE_2` reader - "]
+        #[doc = "Field `RATE_2` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate2R = crate::FieldReader;
-        #[doc = "Field `RATE_2` writer - "]
+        #[doc = "Field `RATE_2` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate2W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `RATE_3` reader - "]
+        #[doc = "Field `RATE_3` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate3R = crate::FieldReader;
-        #[doc = "Field `RATE_3` writer - "]
+        #[doc = "Field `RATE_3` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate3W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
-            #[doc = "Bits 0:7"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_0(&self) -> Rate0R {
                 Rate0R::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:15"]
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_1(&self) -> Rate1R {
                 Rate1R::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23"]
+            #[doc = "Bits 16:23 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_2(&self) -> Rate2R {
                 Rate2R::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31"]
+            #[doc = "Bits 24:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_3(&self) -> Rate3R {
                 Rate3R::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:7"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_0(&mut self) -> Rate0W<'_, ErsuAckRateSpec> {
                 Rate0W::new(self, 0)
             }
-            #[doc = "Bits 8:15"]
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_1(&mut self) -> Rate1W<'_, ErsuAckRateSpec> {
                 Rate1W::new(self, 8)
             }
-            #[doc = "Bits 16:23"]
+            #[doc = "Bits 16:23 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_2(&mut self) -> Rate2W<'_, ErsuAckRateSpec> {
                 Rate2W::new(self, 16)
             }
-            #[doc = "Bits 24:31"]
+            #[doc = "Bits 24:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_3(&mut self) -> Rate3W<'_, ErsuAckRateSpec> {
                 Rate3W::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate(0) writes 0x80 into four bytes through four separate RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ErsuAckRateSpec;
         impl crate::RegisterSpec for ErsuAckRateSpec {
             type Ux = u32;

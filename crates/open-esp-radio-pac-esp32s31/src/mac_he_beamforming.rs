@@ -2,6 +2,28 @@
 
 use super::RadioRegisters;
 
+/// Four-byte ER-SU ACK-rate image selected by the recovered rate policy.
+///
+/// The byte values are hardware rate encodings, not booleans. Keeping the
+/// choice typed prevents MAC policy from manufacturing other undocumented
+/// images for this register.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeErSuAckRateProfile {
+    /// Ordinary report response selected by a zero HAL argument.
+    Ordinary,
+    /// Extended-range report response selected by a nonzero HAL argument.
+    ExtendedRange,
+}
+
+impl MacHeErSuAckRateProfile {
+    pub const fn encoded_byte(self) -> u8 {
+        match self {
+            Self::Ordinary => 0x80,
+            Self::ExtendedRange => 0xa0,
+        }
+    }
+}
+
 /// Invalid input to the recovered `hal_he_set_bf_report_rate` transform.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacHeBeamformingReportProfileError {
@@ -125,6 +147,26 @@ impl RadioRegisters {
                 .bit(profile.extended_range_single_user)
         });
     }
+
+    /// Publish the ER-SU ACK-rate profile selected alongside the report rate.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
+    /// `hal_he_set_ersu_ack_rate`, size `0x4e`, reached from complete
+    /// `_oracles/libpp.a[trc.o]::trc_set_bf_report_rate`, size `0x52`.
+    /// The four fresh-read byte RMWs and their low-to-high order are
+    /// instruction-exact.
+    pub fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
+        let encoded = profile.encoded_byte();
+        let ack = self.peripherals.wifi_mac_he_init_suffix.ersu_ack_rate();
+
+        // SAFETY: every generated field is exactly eight bits wide and
+        // `encoded` is a bounded byte. Each modify preserves the other three
+        // lanes, matching the four independently observed volatile RMWs.
+        ack.modify(|_, w| unsafe { w.rate_0().bits(encoded) });
+        ack.modify(|_, w| unsafe { w.rate_1().bits(encoded) });
+        ack.modify(|_, w| unsafe { w.rate_2().bits(encoded) });
+        ack.modify(|_, w| unsafe { w.rate_3().bits(encoded) });
+    }
 }
 
 #[cfg(test)]
@@ -182,5 +224,11 @@ mod tests {
                 rate_code: 0x20,
             })
         );
+    }
+
+    #[test]
+    fn ersu_ack_profiles_are_the_two_complete_leaf_images() {
+        assert_eq!(MacHeErSuAckRateProfile::Ordinary.encoded_byte(), 0x80);
+        assert_eq!(MacHeErSuAckRateProfile::ExtendedRange.encoded_byte(), 0xa0);
     }
 }

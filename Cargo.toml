@@ -2,6 +2,7 @@
 members = [
     "crates/open-esp-radio",
     "crates/open-esp-radio-embassy-net",
+    "crates/open-esp-radio-esp-hal-esp32s31",
     "crates/open-esp-radio-hal-esp32s31",
     "crates/open-esp-radio-ieee80211",
     "crates/open-esp-radio-mac-esp32s31",
@@ -27,3 +28,8 @@ opt-level = 3
 debug = true
 lto = "fat"
 codegen-units = 1
+
+# The ESP32-S31 async-platform branch uses register accessor fixes that are
+# still carried by the matching PAC fork.
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "3df8dc705" }

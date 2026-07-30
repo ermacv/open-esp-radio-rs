@@ -15,6 +15,8 @@ Current workspace layers:
 - `open-esp-radio-pac-esp32s31`: register access and peripheral ownership;
 - `open-esp-radio-hal-esp32s31`: finite radio transactions and async boundary
   traits;
+- `open-esp-radio-esp-hal-esp32s31`: optional singleton-token adapter for the
+  `esp32s31-async-platform` branch of the `esp-hal` fork;
 - `open-esp-radio-mac-esp32s31`: allocation-free descriptor, RX/TX ownership,
   interrupt primitives, with a compatibility re-export of the generic scan
   API;
@@ -77,10 +79,11 @@ archive decision, and
 tracks the remaining application-to-driver transfer. Git history preserves the
 exact pre-cleanup archive.
 
-Hardware integration belongs in a separate application workspace. The
-`esp32s31_rust` HIL project may depend on this repository for the open driver
-and on `esp-wifi-sys` for a closed-driver comparison profile; neither driver
-depends on the other.
+Board policy, task spawning, linker placement and flashing belong in a
+separate application workspace. Reusable ESP-HAL singleton/trait wiring lives
+in the optional adapter crate above. The `esp32s31_rust` HIL project may
+depend on this repository for the open driver and on `esp-wifi-sys` for a
+closed-driver comparison profile; neither driver depends on the other.
 
 No vendor ELF, static library, disassembly dump, generated proprietary header,
 or extracted binary table belongs in this repository.

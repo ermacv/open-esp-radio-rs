@@ -14,9 +14,10 @@ Future MAC, IEEE 802.11 and WPA crates sit above PHY/HAL. Cryptography,
 timers, channels and executor integration are injected at those higher
 boundaries. PAC and HAL must not depend on Embassy or another executor.
 
-An Embassy adapter is planned as a separate crate. It may provide static
-tasks, interrupt futures, timers and channels, but the core remains usable
-with a custom executor.
+`open-esp-radio-esp-hal-esp32s31` now owns the optional ESP-HAL singleton and
+platform-trait adapter. A narrower Embassy executor adapter is still planned;
+it may provide static tasks, interrupt futures, timers and channels, but the
+core remains usable with a custom executor.
 
 ## Ownership
 

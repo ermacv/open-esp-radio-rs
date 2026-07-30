@@ -63,15 +63,14 @@ dependency to the PHY core.
 
 ### 2. ESP-HAL platform adapter
 
-`esp32s31_rust::open_radio_platform` is a 742-line reusable implementation of
-the S31 power/clock, PHY-I2C, temperature, baseband and MAC cold-start traits
-using the official `esp-hal` PAC.
-
-Move it to a separate optional integration crate, provisionally
-`open-esp-radio-esp-hal-esp32s31`. This keeps the core HAL independent of one
-framework while avoiding a new copy in every Embassy application. Interrupt
-handler functions and logging remain application-owned; typed singleton
-collection and trait implementations belong in the adapter crate.
+The former 742-line `esp32s31_rust::open_radio_platform` implementation of the
+S31 power/clock, PHY-I2C, temperature, baseband and MAC cold-start traits now
+lives in the optional `open-esp-radio-esp-hal-esp32s31` crate. This keeps the
+core HAL independent of one framework while avoiding a new copy in every
+Embassy application. Interrupt handler functions and logging remain
+application-owned. A post-transfer `psram-code-psram-data` run delivered
+10.046-Mbit/s RX plus 67.544-Mbit/s TX with zero `BUFFER_FULL` and zero
+`FIFO_OVERFLOW`.
 
 ### 3. MAC runtime TX owner
 
@@ -145,7 +144,7 @@ diagnostic snapshot or delete the obsolete raw read.
 3. PHY target executor with injected delay/observation traits.
 4. MAC TX runtime and protected A-MPDU retry owner.
 5. STA link runtime.
-6. Optional `esp-hal`/Embassy integration crates.
+6. Optional `esp-hal` adapter — complete; Embassy executor adapter remains.
 7. Shrink the HIL file to configuration, test scenarios and reporting.
 
 Each stage first receives host tests in `open-esp-radio-rs`, then the

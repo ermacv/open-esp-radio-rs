@@ -13336,10 +13336,10 @@ pub mod wifi_mac_tx_queue_vector {
         pub type GiLtfR = crate::FieldReader;
         #[doc = "Field `GI_LTF` writer - "]
         pub type GiLtfW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `NSS_MINUS_ONE` reader - "]
-        pub type NssMinusOneR = crate::FieldReader;
-        #[doc = "Field `NSS_MINUS_ONE` writer - "]
-        pub type NssMinusOneW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `NSTS_AND_MIDAMBLE_PERIODICITY` reader - SOURCE\\[BLOB_LIBPP_DBG_DUMP_RX_PPDU,ESP_WIFI_SYS_S31_HE_SU_SIG,HIL_OPEN_HE20_STBC_NSTS_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
+        pub type NstsAndMidamblePeriodicityR = crate::FieldReader;
+        #[doc = "Field `NSTS_AND_MIDAMBLE_PERIODICITY` writer - SOURCE\\[BLOB_LIBPP_DBG_DUMP_RX_PPDU,ESP_WIFI_SYS_S31_HE_SU_SIG,HIL_OPEN_HE20_STBC_NSTS_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
+        pub type NstsAndMidamblePeriodicityW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `VECTOR_REQUIRED_HIGH` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
         pub type VectorRequiredHighR = crate::FieldReader;
         #[doc = "Field `VECTOR_REQUIRED_HIGH` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
@@ -13395,10 +13395,10 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn gi_ltf(&self) -> GiLtfR {
                 GiLtfR::new(((self.bits >> 21) & 3) as u8)
             }
-            #[doc = "Bits 23:25"]
+            #[doc = "Bits 23:25 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_RX_PPDU,ESP_WIFI_SYS_S31_HE_SU_SIG,HIL_OPEN_HE20_STBC_NSTS_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
             #[inline(always)]
-            pub fn nss_minus_one(&self) -> NssMinusOneR {
-                NssMinusOneR::new(((self.bits >> 23) & 7) as u8)
+            pub fn nsts_and_midamble_periodicity(&self) -> NstsAndMidamblePeriodicityR {
+                NstsAndMidamblePeriodicityR::new(((self.bits >> 23) & 7) as u8)
             }
             #[doc = "Bits 26:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
             #[inline(always)]
@@ -13457,10 +13457,12 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn gi_ltf(&mut self) -> GiLtfW<'_, HeSuSignalA1Spec> {
                 GiLtfW::new(self, 21)
             }
-            #[doc = "Bits 23:25"]
+            #[doc = "Bits 23:25 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_RX_PPDU,ESP_WIFI_SYS_S31_HE_SU_SIG,HIL_OPEN_HE20_STBC_NSTS_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
             #[inline(always)]
-            pub fn nss_minus_one(&mut self) -> NssMinusOneW<'_, HeSuSignalA1Spec> {
-                NssMinusOneW::new(self, 23)
+            pub fn nsts_and_midamble_periodicity(
+                &mut self,
+            ) -> NstsAndMidamblePeriodicityW<'_, HeSuSignalA1Spec> {
+                NstsAndMidamblePeriodicityW::new(self, 23)
             }
             #[doc = "Bits 26:31 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
             #[inline(always)]

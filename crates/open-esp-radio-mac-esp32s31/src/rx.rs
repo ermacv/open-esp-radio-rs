@@ -327,7 +327,10 @@ impl HeGuardIntervalAndLtf {
 /// `esp_wifi_su_siga1_t` and packed `esp_wifi_su_siga2_t` layouts. The same
 /// MCS/BW/GI bit positions are independently used by the pinned vendor
 /// `libpp.a` `dbg_read_tx_sig` diagnostic and its Rust oracle in
-/// `esp32s31_rust/firmware/esp32s31/app/src/ethernet_bench.rs`.
+/// `esp32s31_rust/firmware/esp32s31/app/src/ethernet_bench.rs`. Complete
+/// `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`, names
+/// bits 25:23 `nsts_and_midamble_periodicity`; they must not be reported
+/// unconditionally as the number of spatial streams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeSuSignal {
     pub format: bool,
@@ -339,7 +342,7 @@ pub struct HeSuSignal {
     pub spatial_reuse: u8,
     pub bandwidth: HeBandwidth,
     pub guard_interval_and_ltf: HeGuardIntervalAndLtf,
-    pub spatial_streams_minus_one: u8,
+    pub nsts_and_midamble_periodicity: u8,
     pub txop: u8,
     pub ldpc: bool,
     pub ldpc_extra_symbol: bool,
@@ -362,7 +365,7 @@ impl HeSuSignal {
             spatial_reuse: ((siga1 >> 15) & 0x0f) as u8,
             bandwidth: HeBandwidth::decode(((siga1 >> 19) & 0x03) as u8),
             guard_interval_and_ltf: HeGuardIntervalAndLtf::decode(((siga1 >> 21) & 0x03) as u8),
-            spatial_streams_minus_one: ((siga1 >> 23) & 0x07) as u8,
+            nsts_and_midamble_periodicity: ((siga1 >> 23) & 0x07) as u8,
             txop: (siga2 & 0x7f) as u8,
             ldpc: siga2 & (1 << 7) != 0,
             ldpc_extra_symbol: siga2 & (1 << 8) != 0,
@@ -371,6 +374,30 @@ impl HeSuSignal {
             pre_fec_padding_factor: ((siga2 >> 11) & 0x03) as u8,
             packet_extension_disambiguity: siga2 & (1 << 13) != 0,
             doppler: siga2 & (1 << 15) != 0,
+        }
+    }
+
+    /// Returns the number of space-time streams when the field is not shared
+    /// with the Doppler midamble-periodicity encoding.
+    ///
+    /// With STBC enabled, one spatial stream occupies two space-time streams.
+    /// For example, the live 1T1R RX vector `HE-SIG-A1=0x00e0591b`,
+    /// `HE-SIG-A2=0x4a0c` has encoding one, hence two space-time streams but
+    /// only one spatial stream.
+    pub const fn space_time_stream_count(self) -> Option<u8> {
+        if self.doppler {
+            None
+        } else {
+            Some(self.nsts_and_midamble_periodicity + 1)
+        }
+    }
+
+    /// Returns the spatial-stream count for a non-Doppler HE SU vector.
+    pub const fn spatial_stream_count(self) -> Option<u8> {
+        match self.space_time_stream_count() {
+            Some(nsts) if self.stbc && nsts & 1 == 0 => Some(nsts / 2),
+            Some(nsts) if !self.stbc => Some(nsts),
+            _ => None,
         }
     }
 }

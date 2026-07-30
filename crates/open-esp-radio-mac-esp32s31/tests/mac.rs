@@ -2853,7 +2853,7 @@ fn rx_phy_info_decodes_the_qualified_he20_mcs9_signal() {
             spatial_reuse: 0,
             bandwidth: HeBandwidth::Mhz20,
             guard_interval_and_ltf: HeGuardIntervalAndLtf::TwoLtf1600Ns,
-            spatial_streams_minus_one: 0,
+            nsts_and_midamble_periodicity: 0,
             txop: 0,
             ldpc: false,
             ldpc_extra_symbol: false,
@@ -2868,6 +2868,23 @@ fn rx_phy_info_decodes_the_qualified_he20_mcs9_signal() {
     assert_eq!(signal.bandwidth.mhz(), 20);
     assert_eq!(signal.guard_interval_and_ltf.guard_interval_ns(), 1_600);
     assert_eq!(signal.guard_interval_and_ltf.ltf_count(), 2);
+    assert_eq!(signal.space_time_stream_count(), Some(1));
+    assert_eq!(signal.spatial_stream_count(), Some(1));
+}
+
+#[test]
+fn he_su_stbc_distinguishes_space_time_and_spatial_stream_counts() {
+    let signal = HeSuSignal::decode(0x00e0_591b, 0x4a0c);
+    assert!(signal.stbc);
+    assert!(!signal.doppler);
+    assert_eq!(signal.nsts_and_midamble_periodicity, 1);
+    assert_eq!(signal.space_time_stream_count(), Some(2));
+    assert_eq!(signal.spatial_stream_count(), Some(1));
+
+    let doppler = HeSuSignal::decode(0x00e0_591b, 0xca0c);
+    assert!(doppler.doppler);
+    assert_eq!(doppler.space_time_stream_count(), None);
+    assert_eq!(doppler.spatial_stream_count(), None);
 }
 
 #[test]

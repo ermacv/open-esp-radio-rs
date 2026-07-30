@@ -22,11 +22,12 @@ also present in the parent history of this change.
 | Owned aligned keys and fixed key table | `open-esp-radio-wpa2::keys` |
 | AP WPA2-PSK/CCMP RSN admission | `open-esp-radio-wpa2::ap` |
 | Bounded Ethernet ownership boundary | `open-esp-radio-embassy-net` |
-| End-to-end open PHY/MAC/scan/STA/WPA2 integration example | `esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs` |
+| End-to-end open PHY/MAC/scan/STA/WPA2 HIL integration | `esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs`; remaining reusable runtime extraction is tracked in [`ESP32S31_RUST_INTEGRATION_AUDIT.md`](ESP32S31_RUST_INTEGRATION_AUDIT.md) |
 
-The firmware integration now delegates WPA2 phase, replay and completion
-ordering to `Wpa2StaState`. It retains only platform execution: DMA storage,
-MAC submission/completion, clocks, deadlines, logging and key installation.
+The firmware integration delegates WPA2 phase, replay and completion ordering
+to `Wpa2StaState`, but it still contains reusable PHY target dispatch, MAC
+submission/completion policy and STA orchestration. It is a qualified HIL
+source, not the final architectural home of those layers.
 
 ## Deleted rather than promoted
 

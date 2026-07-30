@@ -39,6 +39,70 @@ pub struct MacRxPrimaryStatistics {
     pub rts_interrupt: u16,
 }
 
+/// Wrapping deltas for the 16-bit counters in [`MacRxPrimaryStatistics`].
+///
+/// `cfo_scaled_40` is intentionally absent: it is a signed accumulator sample,
+/// not an event counter.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacRxPrimaryStatisticsDelta {
+    pub mpdu_count: u16,
+    pub fcs_error: u16,
+    pub abort: u16,
+    pub abort_fcs_pass: u16,
+    pub power_drop_error: u16,
+    pub he_sig_b_error: u16,
+    pub same_bm_error: u16,
+    pub signal_field: u16,
+    pub end: u16,
+    pub data_success: u16,
+    pub other_unicast: u16,
+    pub buffer_full: u16,
+    pub fifo_overflow: u16,
+    pub tkip_error: u16,
+    pub bt_block_error: u16,
+    pub frequency_hop_error: u16,
+    pub last_unmatched_error: u16,
+    pub ack_interrupt: u16,
+    pub rts_interrupt: u16,
+}
+
+impl MacRxPrimaryStatistics {
+    /// Return counter increments since an earlier hardware snapshot.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]::
+    /// dbg_read_rx_count` reads these values as unsigned halfwords. HIL shows
+    /// the primary counters crossing `0xffff` during sustained HE20 traffic,
+    /// so interval telemetry must use 16-bit wrapping subtraction rather than
+    /// comparing absolute boot-lifetime values.
+    pub fn wrapping_delta_since(self, earlier: Self) -> MacRxPrimaryStatisticsDelta {
+        MacRxPrimaryStatisticsDelta {
+            mpdu_count: self.mpdu_count.wrapping_sub(earlier.mpdu_count),
+            fcs_error: self.fcs_error.wrapping_sub(earlier.fcs_error),
+            abort: self.abort.wrapping_sub(earlier.abort),
+            abort_fcs_pass: self.abort_fcs_pass.wrapping_sub(earlier.abort_fcs_pass),
+            power_drop_error: self.power_drop_error.wrapping_sub(earlier.power_drop_error),
+            he_sig_b_error: self.he_sig_b_error.wrapping_sub(earlier.he_sig_b_error),
+            same_bm_error: self.same_bm_error.wrapping_sub(earlier.same_bm_error),
+            signal_field: self.signal_field.wrapping_sub(earlier.signal_field),
+            end: self.end.wrapping_sub(earlier.end),
+            data_success: self.data_success.wrapping_sub(earlier.data_success),
+            other_unicast: self.other_unicast.wrapping_sub(earlier.other_unicast),
+            buffer_full: self.buffer_full.wrapping_sub(earlier.buffer_full),
+            fifo_overflow: self.fifo_overflow.wrapping_sub(earlier.fifo_overflow),
+            tkip_error: self.tkip_error.wrapping_sub(earlier.tkip_error),
+            bt_block_error: self.bt_block_error.wrapping_sub(earlier.bt_block_error),
+            frequency_hop_error: self
+                .frequency_hop_error
+                .wrapping_sub(earlier.frequency_hop_error),
+            last_unmatched_error: self
+                .last_unmatched_error
+                .wrapping_sub(earlier.last_unmatched_error),
+            ack_interrupt: self.ack_interrupt.wrapping_sub(earlier.ack_interrupt),
+            rts_interrupt: self.rts_interrupt.wrapping_sub(earlier.rts_interrupt),
+        }
+    }
+}
+
 /// Ten-bit baseband and normal-RX decoder error counters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacRxDecodeErrorStatistics {
@@ -171,6 +235,33 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
+    use super::{MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta};
+
+    fn primary(mpdu_count: u16, buffer_full: u16) -> MacRxPrimaryStatistics {
+        MacRxPrimaryStatistics {
+            mpdu_count,
+            cfo_scaled_40: -80,
+            fcs_error: 2,
+            abort: 3,
+            abort_fcs_pass: 4,
+            power_drop_error: 5,
+            he_sig_b_error: 6,
+            same_bm_error: 7,
+            signal_field: 8,
+            end: 9,
+            data_success: 10,
+            other_unicast: 11,
+            buffer_full,
+            fifo_overflow: 12,
+            tkip_error: 13,
+            bt_block_error: 14,
+            frequency_hop_error: 15,
+            last_unmatched_error: 16,
+            ack_interrupt: 17,
+            rts_interrupt: 18,
+        }
+    }
+
     #[test]
     fn cfo_transform_matches_complete_blob_signed_halfword_arithmetic() {
         let transform = |raw: u16| i32::from(raw as i16) * 40;
@@ -179,5 +270,23 @@ mod tests {
         assert_eq!(transform(0xffff), -40);
         assert_eq!(transform(0x8000), -1_310_720);
         assert_eq!(transform(0x7fff), 1_310_680);
+    }
+
+    #[test]
+    fn primary_counter_delta_preserves_sixteen_bit_wrap() {
+        let earlier = primary(0xfffe, 0xffff);
+        let mut current = primary(3, 2);
+        current.fcs_error = 9;
+
+        let delta = current.wrapping_delta_since(earlier);
+        assert_eq!(
+            delta,
+            MacRxPrimaryStatisticsDelta {
+                mpdu_count: 5,
+                fcs_error: 7,
+                buffer_full: 3,
+                ..MacRxPrimaryStatisticsDelta::default()
+            }
+        );
     }
 }

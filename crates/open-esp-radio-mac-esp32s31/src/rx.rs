@@ -822,15 +822,50 @@ pub enum RxRingError {
 
 /// One descriptor whose completion ownership has moved from the MAC to Rust.
 ///
-/// The value is a snapshot. Taking it through [`RxRingLive::take_completed`]
-/// also records that this descriptor must not be exposed a second time before
-/// its recycle group has been rearmed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Taking it through [`RxRingLive::take_completed`] also records that this
+/// descriptor must not be exposed a second time before its recycle group has
+/// been rearmed. The token is deliberately neither `Copy` nor constructible
+/// by callers: consuming it at the staging boundary represents the unique
+/// software owner of that completed DMA descriptor.
+#[derive(Debug, PartialEq, Eq)]
 pub struct RxCompletedDescriptor {
-    pub index: usize,
-    pub descriptor_address: u32,
-    pub word0: u32,
-    pub next_descriptor_address: u32,
+    index: usize,
+    descriptor_address: u32,
+    word0: u32,
+    next_descriptor_address: u32,
+}
+
+impl RxCompletedDescriptor {
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+
+    pub const fn descriptor_address(&self) -> u32 {
+        self.descriptor_address
+    }
+
+    pub const fn word0(&self) -> u32 {
+        self.word0
+    }
+
+    pub const fn next_descriptor_address(&self) -> u32 {
+        self.next_descriptor_address
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn from_raw_parts_for_test(
+        index: usize,
+        descriptor_address: u32,
+        word0: u32,
+        next_descriptor_address: u32,
+    ) -> Self {
+        Self {
+            index,
+            descriptor_address,
+            word0,
+            next_descriptor_address,
+        }
+    }
 }
 
 /// One live append accepted for publication to the RX descriptor walker.
@@ -839,6 +874,7 @@ pub struct RxLiveAppend {
     pub head_index: usize,
     pub head_address: u32,
     pub tail_index: usize,
+    pub descriptor_count: usize,
 }
 
 /// Prepared zero-terminated RX ring while the hardware walker is stopped.
@@ -1050,6 +1086,64 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         self.recycle_completed_group(mmio, BATCH, prepare_buffer)
     }
 
+    /// Rearm the longest currently completed prefix, up to `MAX_BATCH`.
+    ///
+    /// Unlike [`Self::recycle_completed_batch`], this does not wait for a
+    /// fixed-size group. It is the closer ownership model for the complete
+    /// vendor receive path:
+    ///
+    /// - `wDev_ProcessFiq` posts PP event `0x19`;
+    /// - `ppTask` calls `wdevProcessRxSucDataAll`;
+    /// - that walker counts the descriptors in one completed RX unit;
+    /// - `wDev_DiscardFrame` immediately transfers `(head, tail, count)` to
+    ///   `wDev_AppendRxBlocks`.
+    ///
+    /// The complete vendor archive places `wDev_AppendRxBlocks` in
+    /// `wdev.o:.wifislprxiram.55`, `wDev_DiscardFrame` in
+    /// `.wifislpiram.18`, and `wdevProcessRxSucDataAll` in
+    /// `.wifislprxiram.28`. This proves that prompt reclaim is an intentional
+    /// SRAM-resident software path rather than a background hardware feature.
+    ///
+    /// Hardware provides completion, last/next and the reload doorbell. The
+    /// variable-size reclaim policy is software, not automatic DMA recycling.
+    /// `MAX_BATCH` bounds one append transaction without imposing a minimum.
+    #[inline(never)]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".rwtext.open_radio_rx_hot")
+    )]
+    pub fn recycle_completed_prefix<const MAX_BATCH: usize, M, F>(
+        &mut self,
+        mmio: &mut M,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        if MAX_BATCH == 0 || MAX_BATCH > COUNT {
+            return Err(RxRingError::Count);
+        }
+        if mmio.reload_pending() {
+            return Ok(None);
+        }
+        self.settle_reload(mmio)?;
+
+        let mut completed = 0;
+        while completed < MAX_BATCH {
+            let index = wrap_add::<COUNT>(self.recycle_start, completed);
+            let bit = 1_u64 << index;
+            if self.observed_mask & bit == 0 || !rx_done(self.descriptors[index].word0()) {
+                break;
+            }
+            completed += 1;
+        }
+        if completed == 0 {
+            return Ok(None);
+        }
+        self.recycle_completed_group(mmio, completed, prepare_buffer)
+    }
+
     fn recycle_completed_group<M, F>(
         &mut self,
         mmio: &mut M,
@@ -1116,6 +1210,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
             head_index,
             head_address,
             tail_index,
+            descriptor_count: group_size,
         }))
     }
 

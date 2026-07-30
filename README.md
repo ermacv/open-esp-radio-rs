@@ -67,10 +67,14 @@ are recorded in
 [`esp32s31-debug-oracles.md`](docs/esp32s31-debug-oracles.md).
 
 The former upper MAC/STA/AP/security migration archive has been retired.
-Source-owned logic now lives in the buildable IEEE 802.11, MAC, WPA2, PAC and
+Source-owned primitives live in the buildable IEEE 802.11, MAC, WPA2, PAC and
 integration crates above; vendor ABI glue and superseded duplicates were
-deleted. [`MIGRATION_COMPLETION.md`](docs/MIGRATION_COMPLETION.md) records the
-destination and deletion decision for each workset. Git history preserves the
+deleted. The end-to-end HIL application still contains reusable runtime
+orchestration that is being extracted into these crates.
+[`MIGRATION_COMPLETION.md`](docs/MIGRATION_COMPLETION.md) records the original
+archive decision, and
+[`ESP32S31_RUST_INTEGRATION_AUDIT.md`](docs/ESP32S31_RUST_INTEGRATION_AUDIT.md)
+tracks the remaining application-to-driver transfer. Git history preserves the
 exact pre-cleanup archive.
 
 Hardware integration belongs in a separate application workspace. The

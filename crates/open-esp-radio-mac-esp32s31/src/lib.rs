@@ -35,6 +35,7 @@ pub mod registers;
 pub mod rx;
 pub mod rx_ampdu;
 pub mod rx_ampdu_hw;
+pub mod rx_pool;
 mod sniffer;
 mod sta_link_policy;
 pub mod tx;

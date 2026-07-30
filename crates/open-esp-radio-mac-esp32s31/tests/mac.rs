@@ -1357,9 +1357,9 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     descriptors[2].write_word0(completed);
     descriptors[3].write_word0(completed);
-    assert_eq!(live.take_completed(2).unwrap().index, 2);
+    assert_eq!(live.take_completed(2).unwrap().index(), 2);
     assert_eq!(live.take_completed(2), None);
-    assert_eq!(live.take_completed(3).unwrap().index, 3);
+    assert_eq!(live.take_completed(3).unwrap().index(), 3);
 
     let mut recycled = Vec::new();
     let first = live
@@ -1461,6 +1461,55 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
     );
     assert_eq!(
         live.recycle_completed_batch::<3, _, _>(&mut mmio, |_| Ok(())),
+        Err(RxRingError::Count)
+    );
+}
+
+#[test]
+fn live_rx_ring_replenishes_the_available_variable_prefix() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    descriptors[0].write_word0(completed);
+    descriptors[1].write_word0(completed);
+    assert!(live.take_completed(0).is_some());
+    assert!(live.take_completed(1).is_some());
+    let first = live
+        .recycle_completed_prefix::<4, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.head_index, 0);
+    assert_eq!(first.tail_index, 1);
+    assert_eq!(first.descriptor_count, 2);
+
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
+    live.finish_pending_reload(&mut mmio).unwrap();
+
+    descriptors[2].write_word0(completed);
+    assert!(live.take_completed(2).is_some());
+    let second = live
+        .recycle_completed_prefix::<4, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.head_index, 2);
+    assert_eq!(second.tail_index, 2);
+    assert_eq!(second.descriptor_count, 1);
+
+    assert_eq!(
+        live.recycle_completed_prefix::<0, _, _>(&mut mmio, |_| Ok(())),
         Err(RxRingError::Count)
     );
 }

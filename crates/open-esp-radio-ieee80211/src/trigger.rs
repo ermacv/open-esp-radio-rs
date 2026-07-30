@@ -19,6 +19,8 @@ pub const TRIGGER_MAC_HEADER_LEN: usize = 16;
 pub const TRIGGER_FRAME_MIN_LEN: usize = TRIGGER_MAC_HEADER_LEN + TRIGGER_COMMON_INFO_LEN;
 pub const TRIGGER_USER_INFO_LEN: usize = 5;
 pub const TRIGGER_BASIC_DEPENDENT_LEN: usize = 1;
+pub const TRIGGER_BASIC_FRAME_LEN: usize =
+    TRIGGER_FRAME_MIN_LEN + TRIGGER_USER_INFO_LEN + TRIGGER_BASIC_DEPENDENT_LEN;
 pub const TRIGGER_BFRP_DEPENDENT_LEN: usize = 1;
 pub const TRIGGER_MU_BAR_DEPENDENT_LEN: usize = 4;
 pub const TRIGGER_NFRP_USER_INFO_LEN: usize = 5;
@@ -29,6 +31,24 @@ pub enum TriggerParseError {
     Truncated { required: usize },
     NotTriggerFrame,
     UnsupportedUserLayout { trigger_type: TriggerType },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TriggerEncodeError {
+    OutputTooSmall { required: usize },
+    UplinkLengthOutOfRange,
+    UplinkBandwidthOutOfRange,
+    HeLtfSymbolsOutOfRange,
+    ApTxPowerOutOfRange,
+    PreFecPaddingOutOfRange,
+    HeSigA2ReservedOutOfRange,
+    AssociationIdOutOfRange,
+    RuAllocationOutOfRange,
+    McsOutOfRange,
+    StartingSpatialStreamOutOfRange,
+    SpatialStreamCountOutOfRange,
+    TargetRssiOutOfRange,
+    BasicDependentInfoOutOfRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +78,20 @@ impl TriggerType {
             value => Self::Reserved(value),
         }
     }
+
+    pub const fn encoding(self) -> u8 {
+        match self {
+            Self::Basic => 0,
+            Self::BeamformingReportPoll => 1,
+            Self::MultiUserBlockAckRequest => 2,
+            Self::MultiUserRequestToSend => 3,
+            Self::BufferStatusReportPoll => 4,
+            Self::GroupcastMultiUserBlockAckRequest => 5,
+            Self::BandwidthQueryReportPoll => 6,
+            Self::NgpaFeedbackReportPoll => 7,
+            Self::Reserved(value) => value & 0x0f,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +110,203 @@ impl TriggerGiLtf {
             2 => Self::TwoLtf1600Ns,
             _ => Self::FourLtf3200Ns,
         }
+    }
+
+    pub const fn encoding(self) -> u8 {
+        match self {
+            Self::OneLtf800Ns => 0,
+            Self::TwoLtf800Ns => 1,
+            Self::TwoLtf1600Ns => 2,
+            Self::FourLtf3200Ns => 3,
+        }
+    }
+}
+
+/// Fields used to encode one Trigger Common Info value.
+///
+/// This is deliberately separate from [`TriggerCommonInfo`]: the parsed type
+/// also contains derived physical-unit values, while an encoder must have only
+/// one authoritative representation for every wire field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TriggerCommonEncoding {
+    pub uplink_length: u16,
+    pub more_trigger_frames: bool,
+    pub carrier_sense_required: bool,
+    pub uplink_bandwidth_encoding: u8,
+    pub gi_ltf: TriggerGiLtf,
+    pub mu_mimo_ltf_mode: bool,
+    pub he_ltf_symbols_and_midamble_periodicity: u8,
+    pub uplink_stbc: bool,
+    pub ldpc_extra_symbol_segment: bool,
+    pub ap_tx_power_encoding: u8,
+    pub pre_fec_padding_factor_encoding: u8,
+    pub packet_extension_disambiguity: bool,
+    pub uplink_spatial_reuse: u16,
+    pub doppler: bool,
+    pub uplink_he_sig_a2_reserved: u16,
+    pub trailing_reserved: bool,
+}
+
+impl TriggerCommonEncoding {
+    /// Encode Common Info using the inverse of the complete blob decoder.
+    ///
+    /// SOURCE[BLOB_LIBPP_DBG_DUMP_TRIG_COMMON_INFO]: complete
+    /// `_oracles/libpp.a[hal_debug.o]::dbg_dump_trig_common_info`. This method
+    /// reverses only its instruction-proven shifts and masks; it does not
+    /// choose policy values for reserved or scheduling fields.
+    pub fn encode(
+        self,
+        trigger_type: TriggerType,
+    ) -> Result<[u8; TRIGGER_COMMON_INFO_LEN], TriggerEncodeError> {
+        if self.uplink_length > 0x0fff {
+            return Err(TriggerEncodeError::UplinkLengthOutOfRange);
+        }
+        if self.uplink_bandwidth_encoding > 0x03 {
+            return Err(TriggerEncodeError::UplinkBandwidthOutOfRange);
+        }
+        if self.he_ltf_symbols_and_midamble_periodicity > 0x07 {
+            return Err(TriggerEncodeError::HeLtfSymbolsOutOfRange);
+        }
+        if self.ap_tx_power_encoding > 0x3f {
+            return Err(TriggerEncodeError::ApTxPowerOutOfRange);
+        }
+        if self.pre_fec_padding_factor_encoding > 0x03 {
+            return Err(TriggerEncodeError::PreFecPaddingOutOfRange);
+        }
+        if self.uplink_he_sig_a2_reserved > 0x01ff {
+            return Err(TriggerEncodeError::HeSigA2ReservedOutOfRange);
+        }
+
+        let bits = u64::from(trigger_type.encoding())
+            | (u64::from(self.uplink_length) << 4)
+            | (u64::from(self.more_trigger_frames) << 16)
+            | (u64::from(self.carrier_sense_required) << 17)
+            | (u64::from(self.uplink_bandwidth_encoding) << 18)
+            | (u64::from(self.gi_ltf.encoding()) << 20)
+            | (u64::from(self.mu_mimo_ltf_mode) << 22)
+            | (u64::from(self.he_ltf_symbols_and_midamble_periodicity) << 23)
+            | (u64::from(self.uplink_stbc) << 26)
+            | (u64::from(self.ldpc_extra_symbol_segment) << 27)
+            | (u64::from(self.ap_tx_power_encoding) << 28)
+            | (u64::from(self.pre_fec_padding_factor_encoding) << 34)
+            | (u64::from(self.packet_extension_disambiguity) << 36)
+            | (u64::from(self.uplink_spatial_reuse) << 37)
+            | (u64::from(self.doppler) << 53)
+            | (u64::from(self.uplink_he_sig_a2_reserved) << 54)
+            | (u64::from(self.trailing_reserved) << 63);
+        Ok(bits.to_le_bytes())
+    }
+}
+
+/// Scheduled spatial-stream fields for one Trigger User Info value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TriggerScheduledUserEncoding {
+    pub association_id: u16,
+    pub ru_allocation_region: bool,
+    pub ru_allocation: u8,
+    pub coding_type: bool,
+    pub mcs: u8,
+    pub dcm: bool,
+    pub starting_spatial_stream_encoding: u8,
+    pub spatial_stream_count_encoding: u8,
+    pub target_rssi_encoding: u8,
+    pub reserved: bool,
+}
+
+impl TriggerScheduledUserEncoding {
+    /// Encode User Info using the inverse of the complete blob decoder.
+    ///
+    /// SOURCE[BLOB_LIBPP_DBG_DUMP_TRIG_USER_SS]: complete
+    /// `_oracles/libpp.a[hal_debug.o]::dbg_dump_trig_user_ss`.
+    pub fn encode(self) -> Result<[u8; TRIGGER_USER_INFO_LEN], TriggerEncodeError> {
+        if self.association_id == 0 || self.association_id > 0x0fff {
+            return Err(TriggerEncodeError::AssociationIdOutOfRange);
+        }
+        if self.ru_allocation > 0x7f {
+            return Err(TriggerEncodeError::RuAllocationOutOfRange);
+        }
+        if self.mcs > 0x0f {
+            return Err(TriggerEncodeError::McsOutOfRange);
+        }
+        if self.starting_spatial_stream_encoding > 0x07 {
+            return Err(TriggerEncodeError::StartingSpatialStreamOutOfRange);
+        }
+        if self.spatial_stream_count_encoding > 0x07 {
+            return Err(TriggerEncodeError::SpatialStreamCountOutOfRange);
+        }
+        if self.target_rssi_encoding > 0x7f {
+            return Err(TriggerEncodeError::TargetRssiOutOfRange);
+        }
+
+        Ok([
+            self.association_id as u8,
+            ((self.association_id >> 8) as u8 & 0x0f)
+                | (u8::from(self.ru_allocation_region) << 4)
+                | ((self.ru_allocation & 0x07) << 5),
+            ((self.ru_allocation >> 3) & 0x0f)
+                | (u8::from(self.coding_type) << 4)
+                | ((self.mcs & 0x07) << 5),
+            ((self.mcs >> 3) & 0x01)
+                | (u8::from(self.dcm) << 1)
+                | (self.starting_spatial_stream_encoding << 2)
+                | (self.spatial_stream_count_encoding << 5),
+            self.target_rssi_encoding | (u8::from(self.reserved) << 7),
+        ])
+    }
+}
+
+impl TriggerBasicDependentInfo {
+    /// Encode Basic Trigger-dependent User Info.
+    ///
+    /// SOURCE[BLOB_LIBPP_DBG_DUMP_TRIG_BASIC_DEPENDENT]: complete
+    /// `_oracles/libpp.a[hal_debug.o]::dbg_dump_trig_basic_dependent`.
+    pub fn encode(self) -> Result<u8, TriggerEncodeError> {
+        if self.mpdu_mu_spacing_factor > 0x03
+            || self.tid_aggregation_limit > 0x07
+            || self.preferred_access_category > 0x03
+        {
+            return Err(TriggerEncodeError::BasicDependentInfoOutOfRange);
+        }
+        Ok(self.mpdu_mu_spacing_factor
+            | (self.tid_aggregation_limit << 2)
+            | (u8::from(self.reserved) << 5)
+            | (self.preferred_access_category << 6))
+    }
+}
+
+/// One Basic Trigger control MPDU with exactly one scheduled user.
+///
+/// `encode` omits the FCS. A host injection interface or radio DMA owner must
+/// add it according to that interface's contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BasicTriggerFrameEncoding {
+    pub duration: u16,
+    pub receiver_address: [u8; 6],
+    pub transmitter_address: [u8; 6],
+    pub common: TriggerCommonEncoding,
+    pub user: TriggerScheduledUserEncoding,
+    pub dependent: TriggerBasicDependentInfo,
+}
+
+impl BasicTriggerFrameEncoding {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, TriggerEncodeError> {
+        if output.len() < TRIGGER_BASIC_FRAME_LEN {
+            return Err(TriggerEncodeError::OutputTooSmall {
+                required: TRIGGER_BASIC_FRAME_LEN,
+            });
+        }
+        let common = self.common.encode(TriggerType::Basic)?;
+        let user = self.user.encode()?;
+        let dependent = self.dependent.encode()?;
+        output[..TRIGGER_BASIC_FRAME_LEN].fill(0);
+        output[0..2].copy_from_slice(&0x0024_u16.to_le_bytes());
+        output[2..4].copy_from_slice(&self.duration.to_le_bytes());
+        output[4..10].copy_from_slice(&self.receiver_address);
+        output[10..16].copy_from_slice(&self.transmitter_address);
+        output[16..24].copy_from_slice(&common);
+        output[24..29].copy_from_slice(&user);
+        output[29] = dependent;
+        Ok(TRIGGER_BASIC_FRAME_LEN)
     }
 }
 
@@ -741,6 +972,165 @@ mod tests {
             TriggerType::BeamformingReportPoll
         );
         assert_eq!(trigger.user_info_and_padding, [13, 14, 15, 16, 17]);
+    }
+
+    #[test]
+    fn basic_trigger_encoder_round_trips_every_owned_field() {
+        let encoded = BasicTriggerFrameEncoding {
+            duration: 0x1234,
+            receiver_address: [1, 2, 3, 4, 5, 6],
+            transmitter_address: [7, 8, 9, 10, 11, 12],
+            common: TriggerCommonEncoding {
+                uplink_length: 0xabc,
+                more_trigger_frames: true,
+                carrier_sense_required: true,
+                uplink_bandwidth_encoding: 0,
+                gi_ltf: TriggerGiLtf::TwoLtf1600Ns,
+                mu_mimo_ltf_mode: true,
+                he_ltf_symbols_and_midamble_periodicity: 5,
+                uplink_stbc: true,
+                ldpc_extra_symbol_segment: true,
+                ap_tx_power_encoding: 42,
+                pre_fec_padding_factor_encoding: 2,
+                packet_extension_disambiguity: true,
+                uplink_spatial_reuse: 0xbeef,
+                doppler: true,
+                uplink_he_sig_a2_reserved: 0x155,
+                trailing_reserved: true,
+            },
+            user: TriggerScheduledUserEncoding {
+                association_id: 0x234,
+                ru_allocation_region: true,
+                ru_allocation: 53,
+                coding_type: true,
+                mcs: 9,
+                dcm: true,
+                starting_spatial_stream_encoding: 2,
+                spatial_stream_count_encoding: 3,
+                target_rssi_encoding: 0x55,
+                reserved: true,
+            },
+            dependent: TriggerBasicDependentInfo {
+                mpdu_mu_spacing_factor: 3,
+                tid_aggregation_limit: 5,
+                reserved: true,
+                preferred_access_category: 2,
+            },
+        };
+        let mut bytes = [0xaa; TRIGGER_BASIC_FRAME_LEN];
+        assert_eq!(encoded.encode(&mut bytes), Ok(TRIGGER_BASIC_FRAME_LEN));
+
+        let trigger = parse_trigger_frame(&bytes).unwrap();
+        assert_eq!(trigger.frame_control, 0x0024);
+        assert_eq!(trigger.duration, encoded.duration);
+        assert_eq!(trigger.receiver_address, encoded.receiver_address);
+        assert_eq!(trigger.transmitter_address, encoded.transmitter_address);
+        assert_eq!(trigger.common.trigger_type, TriggerType::Basic);
+        assert_eq!(trigger.common.uplink_length, encoded.common.uplink_length);
+        assert_eq!(
+            trigger.common.uplink_bandwidth_encoding,
+            encoded.common.uplink_bandwidth_encoding
+        );
+        assert_eq!(trigger.common.gi_ltf, encoded.common.gi_ltf);
+        assert_eq!(
+            trigger.common.he_ltf_symbols_and_midamble_periodicity,
+            encoded.common.he_ltf_symbols_and_midamble_periodicity
+        );
+        assert_eq!(
+            trigger.common.uplink_he_sig_a2_reserved,
+            encoded.common.uplink_he_sig_a2_reserved
+        );
+
+        let mut users = trigger.users();
+        let user = users.next().unwrap().unwrap();
+        assert_eq!(users.next(), None);
+        let parsed_user = parse_trigger_user_spatial_stream(user.user_info).unwrap();
+        assert_eq!(parsed_user.aid12, encoded.user.association_id);
+        assert_eq!(parsed_user.ru_allocation, encoded.user.ru_allocation);
+        assert_eq!(parsed_user.coding_type, encoded.user.coding_type);
+        assert_eq!(parsed_user.mcs, encoded.user.mcs);
+        assert_eq!(parsed_user.dcm, encoded.user.dcm);
+        assert_eq!(
+            parsed_user.starting_spatial_stream_encoding,
+            encoded.user.starting_spatial_stream_encoding
+        );
+        assert_eq!(
+            parsed_user.spatial_stream_count_encoding,
+            encoded.user.spatial_stream_count_encoding
+        );
+        assert_eq!(
+            parsed_user.target_rssi_encoding,
+            encoded.user.target_rssi_encoding
+        );
+        assert_eq!(
+            parse_trigger_basic_dependent(user.dependent_info),
+            Ok(encoded.dependent)
+        );
+    }
+
+    #[test]
+    fn basic_trigger_encoder_rejects_truncation_and_unbounded_fields() {
+        let valid = BasicTriggerFrameEncoding {
+            duration: 0,
+            receiver_address: [0xff; 6],
+            transmitter_address: [0; 6],
+            common: TriggerCommonEncoding {
+                uplink_length: 1,
+                more_trigger_frames: false,
+                carrier_sense_required: false,
+                uplink_bandwidth_encoding: 0,
+                gi_ltf: TriggerGiLtf::OneLtf800Ns,
+                mu_mimo_ltf_mode: false,
+                he_ltf_symbols_and_midamble_periodicity: 0,
+                uplink_stbc: false,
+                ldpc_extra_symbol_segment: false,
+                ap_tx_power_encoding: 20,
+                pre_fec_padding_factor_encoding: 1,
+                packet_extension_disambiguity: false,
+                uplink_spatial_reuse: 0,
+                doppler: false,
+                uplink_he_sig_a2_reserved: 0x1ff,
+                trailing_reserved: false,
+            },
+            user: TriggerScheduledUserEncoding {
+                association_id: 1,
+                ru_allocation_region: false,
+                ru_allocation: 61,
+                coding_type: false,
+                mcs: 0,
+                dcm: false,
+                starting_spatial_stream_encoding: 0,
+                spatial_stream_count_encoding: 0,
+                target_rssi_encoding: 0x7f,
+                reserved: false,
+            },
+            dependent: TriggerBasicDependentInfo {
+                mpdu_mu_spacing_factor: 0,
+                tid_aggregation_limit: 0,
+                reserved: false,
+                preferred_access_category: 0,
+            },
+        };
+        assert_eq!(
+            valid.encode(&mut [0; TRIGGER_BASIC_FRAME_LEN - 1]),
+            Err(TriggerEncodeError::OutputTooSmall {
+                required: TRIGGER_BASIC_FRAME_LEN
+            })
+        );
+
+        let mut invalid = valid;
+        invalid.user.association_id = 0;
+        assert_eq!(
+            invalid.encode(&mut [0; TRIGGER_BASIC_FRAME_LEN]),
+            Err(TriggerEncodeError::AssociationIdOutOfRange)
+        );
+
+        let mut invalid = valid;
+        invalid.common.uplink_length = 0x1000;
+        assert_eq!(
+            invalid.encode(&mut [0; TRIGGER_BASIC_FRAME_LEN]),
+            Err(TriggerEncodeError::UplinkLengthOutOfRange)
+        );
     }
 
     #[test]

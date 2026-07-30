@@ -2975,6 +2975,10 @@ fn rx_he_mu_sig_b_borrows_only_the_blob_advertised_complete_bytes() {
     assert_eq!(sig_b.ru_size, 2);
     assert_eq!(sig_b.ru_position, 11);
     assert_eq!(sig_b.complete_bytes, &[0xaa, 0xbb, 0x1c]);
+    let compressed_users: Vec<_> = sig_b.he20_mimo_users().unwrap().collect();
+    assert_eq!(compressed_users.len(), 1);
+    assert_eq!(compressed_users[0].bit_offset, 0);
+    assert_eq!(compressed_users[0].raw, 0x1c_bbaa & 0x1f_ffff);
 
     assert_eq!(decode_rx_he_mu_sig_b(&metadata[..0x3a]), None);
     metadata[0x2b] &= 0x7f;

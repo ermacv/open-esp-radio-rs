@@ -99,6 +99,18 @@ pub const HE_MU_SIG_B_USER_BITS: u16 = 21;
 pub const HE20_MU_SIG_B_USER_PAIR_BITS: u16 = 52;
 /// Maximum number of users in the blob's complete non-MU-MIMO HE20 parser.
 pub const HE20_MU_SIG_B_MAX_USERS: u8 = 9;
+/// Maximum number of users retained by the blob's compressed/MU-MIMO parser.
+pub const HE20_MU_SIG_B_MIMO_MAX_USERS: u8 = 4;
+
+fn read_complete_sig_b_user(complete_bytes: &[u8], bit_offset: u16) -> u32 {
+    let mut raw = 0_u32;
+    for output_bit in 0..HE_MU_SIG_B_USER_BITS {
+        let source_bit = bit_offset + output_bit;
+        let source_byte = complete_bytes[usize::from(source_bit / 8)];
+        raw |= u32::from((source_byte >> (source_bit % 8)) & 1) << output_bit;
+    }
+    raw
+}
 
 /// A failure to construct a bounded HE20 non-MU-MIMO complete-SIG-B view.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,12 +206,7 @@ impl<'a> He20MuSigBNonMimoUsers<'a> {
         };
         let bit_offset =
             HE20_MU_SIG_B_COMMON_BITS + pair * HE20_MU_SIG_B_USER_PAIR_BITS + within_pair;
-        let mut raw = 0_u32;
-        for output_bit in 0..HE_MU_SIG_B_USER_BITS {
-            let source_bit = bit_offset + output_bit;
-            let source_byte = self.complete_bytes[usize::from(source_bit / 8)];
-            raw |= u32::from((source_byte >> (source_bit % 8)) & 1) << output_bit;
-        }
+        let raw = read_complete_sig_b_user(self.complete_bytes, bit_offset);
         (bit_offset, raw)
     }
 }
@@ -230,6 +237,108 @@ impl Iterator for He20MuSigBNonMimoUsers<'_> {
 
 impl ExactSizeIterator for He20MuSigBNonMimoUsers<'_> {}
 impl core::iter::FusedIterator for He20MuSigBNonMimoUsers<'_> {}
+
+/// A failure to construct the bounded HE20 compressed/MU-MIMO SIG-B view.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum He20MuSigBMimoStreamError {
+    UserCountOutOfRange,
+    CompleteBytesTooShort,
+    IncompleteUserField,
+}
+
+/// One MU-MIMO user recovered from a complete compressed HE20 SIG-B stream.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBMimoEntry {
+    pub index: u8,
+    pub bit_offset: u16,
+    pub raw: u32,
+    pub user: HeMuSigBMimoUser,
+}
+
+/// Allocation-free iterator over the blob's HE20 compressed/MU-MIMO layout.
+///
+/// SOURCE[BLOB_LIBPP_TEST_RX_PARSE_MUMIMO_COMPLETE_SIGB]: complete
+/// `_oracles/libpp.a[test_hal_rx_mu_sigb.o]::
+/// test_rx_parse_mumimo_complete_sigb`, size `0x20c`, from archive SHA-256
+/// `f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e`.
+/// The body derives a one-based user count from HE-SIG-A1 bits 21:18, copies
+/// 16 complete-SIG-B bytes and extracts at most four 21-bit words at exact
+/// bit offsets `0,21,52,105`. The third and fourth paths require total bit
+/// lengths above 72 and 135 respectively. The non-linear fourth offset is
+/// retained deliberately instead of imposing the non-MIMO pair geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBMimoUsers<'a> {
+    complete_bytes: &'a [u8],
+    bit_length: u16,
+    user_count: u8,
+    next_user: u8,
+}
+
+impl<'a> He20MuSigBMimoUsers<'a> {
+    const USER_BIT_OFFSETS: [u16; HE20_MU_SIG_B_MIMO_MAX_USERS as usize] = [0, 21, 52, 105];
+    // The first two bounds are the safe completion of the fields the blob
+    // reads. The last two are the blob's explicit `> 72` and `> 135` guards.
+    const REQUIRED_BIT_LENGTHS: [u16; HE20_MU_SIG_B_MIMO_MAX_USERS as usize] = [21, 42, 73, 136];
+
+    pub fn try_new(
+        complete_bytes: &'a [u8],
+        bit_length: u16,
+        user_count: u8,
+    ) -> Result<Self, He20MuSigBMimoStreamError> {
+        if user_count == 0 || user_count > HE20_MU_SIG_B_MIMO_MAX_USERS {
+            return Err(He20MuSigBMimoStreamError::UserCountOutOfRange);
+        }
+        let required_bytes = usize::from(bit_length).div_ceil(8);
+        if complete_bytes.len() < required_bytes {
+            return Err(He20MuSigBMimoStreamError::CompleteBytesTooShort);
+        }
+        if bit_length < Self::REQUIRED_BIT_LENGTHS[usize::from(user_count - 1)] {
+            return Err(He20MuSigBMimoStreamError::IncompleteUserField);
+        }
+        Ok(Self {
+            complete_bytes,
+            bit_length,
+            user_count,
+            next_user: 0,
+        })
+    }
+
+    pub const fn bit_length(&self) -> u16 {
+        self.bit_length
+    }
+
+    pub const fn user_count(&self) -> u8 {
+        self.user_count
+    }
+}
+
+impl Iterator for He20MuSigBMimoUsers<'_> {
+    type Item = He20MuSigBMimoEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_user >= self.user_count {
+            return None;
+        }
+        let index = self.next_user;
+        let bit_offset = Self::USER_BIT_OFFSETS[usize::from(index)];
+        let raw = read_complete_sig_b_user(self.complete_bytes, bit_offset);
+        self.next_user += 1;
+        Some(He20MuSigBMimoEntry {
+            index,
+            bit_offset,
+            raw,
+            user: HeMuSigBMimoUser::decode(raw),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = usize::from(self.user_count - self.next_user);
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for He20MuSigBMimoUsers<'_> {}
+impl core::iter::FusedIterator for He20MuSigBMimoUsers<'_> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HeMcsNssSupport {
@@ -659,6 +768,54 @@ mod tests {
         assert_eq!(
             He20MuSigBNonMimoUsers::try_new(&[0; 35], 278),
             Err(He20MuSigBNonMimoStreamError::TooManyUsers)
+        );
+    }
+
+    #[test]
+    fn iterates_the_four_non_linear_compressed_mimo_user_offsets() {
+        let words = [
+            (1 << 20) | (1 << 15) | (1 << 11) | 0x111,
+            (2 << 15) | (2 << 11) | 0x222,
+            (1 << 20) | (3 << 15) | (3 << 11) | 0x333,
+            (4 << 15) | (4 << 11) | 0x444,
+        ];
+        let mut complete = [0_u8; 17];
+        for (offset, word) in [0, 21, 52, 105].into_iter().zip(words) {
+            write_bits(&mut complete, offset, 21, word);
+        }
+
+        let mut users = He20MuSigBMimoUsers::try_new(&complete, 136, 4).unwrap();
+        assert_eq!(users.len(), 4);
+        for (expected_offset, expected_word) in [0, 21, 52, 105].into_iter().zip(words) {
+            let entry = users.next().unwrap();
+            assert_eq!(entry.bit_offset, expected_offset);
+            assert_eq!(entry.raw, expected_word);
+            assert_eq!(entry.user, HeMuSigBMimoUser::decode(expected_word));
+        }
+        assert_eq!(users.next(), None);
+    }
+
+    #[test]
+    fn rejects_invalid_compressed_mimo_counts_lengths_and_storage() {
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&[0; 17], 136, 0),
+            Err(He20MuSigBMimoStreamError::UserCountOutOfRange)
+        );
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&[0; 17], 136, 5),
+            Err(He20MuSigBMimoStreamError::UserCountOutOfRange)
+        );
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&[0; 16], 136, 4),
+            Err(He20MuSigBMimoStreamError::CompleteBytesTooShort)
+        );
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&[0; 17], 135, 4),
+            Err(He20MuSigBMimoStreamError::IncompleteUserField)
+        );
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&[0; 9], 72, 3),
+            Err(He20MuSigBMimoStreamError::IncompleteUserField)
         );
     }
 

@@ -109,9 +109,13 @@ bits for bandwidth selectors 0/1, 27 bits for 2/4/5 and 43 bits for 3/6/7.
 plus ten intervening CRC/tail bits. `He20MuSigBNonMimoUsers` now reproduces
 that geometry without allocation, retains the raw word/bit offset and rejects
 short streams or more than the blob's nine unrolled users. Wider bandwidths
-are not folded onto the 18-bit common prefix. The complete MU-MIMO parser also
-uses an unrolled configuration-dependent layout, so compressed SIG-B still
-fails closed instead of pretending that all user words are contiguous.
+are not folded onto the 18-bit common prefix. The complete compressed/MU-MIMO
+parser (size `0x20c`) independently extracts at most four user words at
+non-linear bit offsets `0,21,52,105`; its explicit third/fourth length guards
+are `>72` and `>135`. `He20MuSigBMimoUsers` preserves that separate layout and
+uses the one-based compressed user count from HE-SIG-A1. It rejects wider
+bandwidth, counts outside one through four and truncated fields rather than
+pretending that compressed users follow the non-MIMO pair geometry.
 
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is

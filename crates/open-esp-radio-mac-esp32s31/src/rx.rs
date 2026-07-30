@@ -5,7 +5,8 @@ use crate::descriptor::{
     rx_rearm_word, size as descriptor_size, Descriptor, BIT_31, DESCRIPTOR_BYTES,
 };
 use open_esp_radio_ieee80211::he::{
-    He20MuSigBNonMimoStreamError, He20MuSigBNonMimoUsers, HeMuSigBUser,
+    He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
+    He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
@@ -557,6 +558,14 @@ pub enum RxHe20MuSigBUsersError {
     CompleteStream(He20MuSigBNonMimoStreamError),
 }
 
+/// Why a complete RX HE-SIG-B stream cannot use the HE20 MU-MIMO layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxHe20MuSigBMimoUsersError {
+    WiderOrUnknownBandwidth,
+    NotMuMimoCompressed,
+    CompleteStream(He20MuSigBMimoStreamError),
+}
+
 impl RxHeMuSigBInfo<'_> {
     /// Iterates all users when the captured stream is the exact HE20
     /// non-MU-MIMO layout recovered from the blob.
@@ -574,6 +583,23 @@ impl RxHeMuSigBInfo<'_> {
         }
         He20MuSigBNonMimoUsers::try_new(self.complete_bytes, self.bit_length)
             .map_err(RxHe20MuSigBUsersError::CompleteStream)
+    }
+
+    /// Iterates the at-most-four compressed/MU-MIMO users using the exact
+    /// non-linear offsets from the complete blob test parser.
+    pub fn he20_mimo_users(&self) -> Result<He20MuSigBMimoUsers<'_>, RxHe20MuSigBMimoUsersError> {
+        if self.signal.bandwidth != HeMuBandwidth::Mhz20 {
+            return Err(RxHe20MuSigBMimoUsersError::WiderOrUnknownBandwidth);
+        }
+        if !self.signal.sig_b_compression {
+            return Err(RxHe20MuSigBMimoUsersError::NotMuMimoCompressed);
+        }
+        He20MuSigBMimoUsers::try_new(
+            self.complete_bytes,
+            self.bit_length,
+            self.signal.sig_b_symbols_or_mu_mimo_users(),
+        )
+        .map_err(RxHe20MuSigBMimoUsersError::CompleteStream)
     }
 }
 

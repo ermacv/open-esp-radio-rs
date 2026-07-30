@@ -17,6 +17,8 @@ use crate::{
 };
 
 const OPEN_AUTHENTICATION_FRAME_CONTROL: u16 = 0x00b0;
+const DISASSOCIATION_FRAME_CONTROL: u16 = 0x00a0;
+const DEAUTHENTICATION_FRAME_CONTROL: u16 = 0x00c0;
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 const ASSOCIATION_REQUEST_FRAME_CONTROL: u16 = 0x0000;
 const ASSOCIATION_RESPONSE_FRAME_CONTROL: u16 = 0x0010;
@@ -475,6 +477,19 @@ pub struct OpenAuthenticationResponse {
     pub status_code: u16,
 }
 
+/// Management transition by which the selected AP ends the STA relationship.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaDisconnectKind {
+    Disassociation,
+    Deauthentication,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaDisconnect {
+    pub kind: StaDisconnectKind,
+    pub reason_code: u16,
+}
+
 /// One unprotected STA-originated Action management frame.
 ///
 /// BlockAck negotiation uses this common 24-byte management header followed
@@ -543,6 +558,38 @@ pub fn parse_open_authentication_response(
     }
     Some(OpenAuthenticationResponse {
         status_code: read_u16(frame, 28)?,
+    })
+}
+
+/// Parse a Disassociation or Deauthentication sent by the selected AP.
+///
+/// An authentication wait must treat this as a protocol transition rather
+/// than an absent response. In particular, an AP may reject the first Open
+/// Authentication after a rapid station reset by first clearing its previous
+/// relationship with a Deauthentication frame.
+///
+/// SOURCE: complete
+/// `_oracles/libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt`: branches `.L723`
+/// (Disassociation) and `.L729` (Deauthentication) read the reason code at
+/// management-body offset zero (`frame + 24`) and immediately call
+/// `ieee80211_sta_new_state(g_ic, 0, (reason << 8) | subtype)`.
+pub fn parse_sta_disconnect(frame: &[u8], local: [u8; 6], bssid: [u8; 6]) -> Option<StaDisconnect> {
+    if frame.len() < MANAGEMENT_HEADER_LEN + 2
+        || frame[4..10] != local
+        || frame[10..16] != bssid
+        || frame[16..22] != bssid
+    {
+        return None;
+    }
+
+    let kind = match read_u16(frame, 0)? & 0x00fc {
+        DISASSOCIATION_FRAME_CONTROL => StaDisconnectKind::Disassociation,
+        DEAUTHENTICATION_FRAME_CONTROL => StaDisconnectKind::Deauthentication,
+        _ => return None,
+    };
+    Some(StaDisconnect {
+        kind,
+        reason_code: read_u16(frame, MANAGEMENT_HEADER_LEN)?,
     })
 }
 
@@ -1427,6 +1474,43 @@ mod tests {
             parse_open_authentication_response(&frame, [0; 6], BSSID),
             None
         );
+    }
+
+    #[test]
+    fn parses_only_disconnects_from_selected_access_point() {
+        let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
+        frame[0..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&1_u16.to_le_bytes());
+        assert_eq!(
+            parse_sta_disconnect(&frame, LOCAL, BSSID),
+            Some(StaDisconnect {
+                kind: StaDisconnectKind::Deauthentication,
+                reason_code: 1,
+            })
+        );
+
+        frame[0..2].copy_from_slice(&DISASSOCIATION_FRAME_CONTROL.to_le_bytes());
+        frame[24..26].copy_from_slice(&8_u16.to_le_bytes());
+        assert_eq!(
+            parse_sta_disconnect(&frame, LOCAL, BSSID),
+            Some(StaDisconnect {
+                kind: StaDisconnectKind::Disassociation,
+                reason_code: 8,
+            })
+        );
+
+        assert_eq!(parse_sta_disconnect(&frame, [0; 6], BSSID), None);
+        assert_eq!(parse_sta_disconnect(&frame, LOCAL, [0; 6]), None);
+        assert_eq!(
+            parse_sta_disconnect(&frame[..MANAGEMENT_HEADER_LEN + 1], LOCAL, BSSID),
+            None
+        );
+
+        frame[0..2].copy_from_slice(&OPEN_AUTHENTICATION_FRAME_CONTROL.to_le_bytes());
+        assert_eq!(parse_sta_disconnect(&frame, LOCAL, BSSID), None);
     }
 
     #[test]

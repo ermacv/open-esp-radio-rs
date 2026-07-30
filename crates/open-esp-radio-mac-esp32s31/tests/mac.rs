@@ -2120,6 +2120,37 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
 }
 
 #[test]
+fn he_retry_rates_follow_the_owned_dot11ax_schedule_and_preserve_ldpc() {
+    let mcs9 = HeRate::ldpc(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf1600Ns);
+    assert_eq!(mcs9.vendor_retry_rate(0), Some(TxPhyRate::He(mcs9)));
+    assert_eq!(mcs9.vendor_retry_rate(1), Some(TxPhyRate::He(mcs9)));
+    assert_eq!(
+        mcs9.vendor_retry_rate(2),
+        Some(TxPhyRate::He(HeRate::ldpc(
+            HeMcs::Mcs7,
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        )))
+    );
+    assert_eq!(
+        mcs9.vendor_retry_rate(4),
+        Some(TxPhyRate::Legacy(LegacyRate::Ofdm6M))
+    );
+
+    let mcs9_800 = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::OneLtf800Ns);
+    assert_eq!(
+        mcs9_800.vendor_retry_rate(2),
+        Some(TxPhyRate::He(HeRate::new(
+            HeMcs::Mcs8,
+            HeGuardIntervalAndLtf::OneLtf800Ns,
+        )))
+    );
+    assert_eq!(
+        HeRate::new(HeMcs::Mcs8, HeGuardIntervalAndLtf::OneLtf800Ns).vendor_retry_rate(0),
+        None
+    );
+}
+
+#[test]
 fn ht_single_mpdu_image_matches_complete_blob_word_formulas() {
     let rate = HtRate::new(
         HtMcs::Mcs7,

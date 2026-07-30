@@ -21594,69 +21594,87 @@ pub mod wifi_mac_rx_dma {
         rx_descriptor_base: RxDescriptorBase,
         rx_next_descriptor: RxNextDescriptor,
         rx_last_descriptor: RxLastDescriptor,
-        _reserved5: [u8; 0x0208],
+        _reserved5: [u8; 0xe8],
+        rx_block_ack_entry_control: (),
+        _reserved6: [u8; 0x04],
+        rx_block_ack_entry_peer_tail_and_policy: (),
+        _reserved7: [u8; 0x04],
+        rx_block_ack_entry_peer_head: (),
+        _reserved8: [u8; 0x04],
+        rx_block_ack_entry_current_sequence: (),
+        _reserved9: [u8; 0x04],
+        rx_block_ack_entry_start_sequence_load: (),
+        _reserved10: [u8; 0x04],
+        rx_block_ack_entry_bitmap_low_status: (),
+        _reserved11: [u8; 0x04],
+        rx_block_ack_entry_bitmap_low_load: (),
+        _reserved12: [u8; 0x04],
+        rx_block_ack_entry_bitmap_high_status: (),
+        _reserved13: [u8; 0x04],
+        rx_block_ack_entry_bitmap_high_load: (),
+        _reserved14: [u8; 0x0100],
         rx_block_ack_agreement_update: RxBlockAckAgreementUpdate,
-        _reserved6: [u8; 0x09cc],
+        _reserved15: [u8; 0x09cc],
         rx_buffer_limit_unknown: RxBufferLimitUnknown,
         rx_buffer_base_unknown: RxBufferBaseUnknown,
         rx_descriptor_high_window: RxDescriptorHighWindow,
-        _reserved9: [u8; 0x0230],
-        rx_block_ack_control: RxBlockAckControl,
-        rx_block_ack_peer_tail_and_policy: RxBlockAckPeerTailAndPolicy,
-        rx_block_ack_peer_head: RxBlockAckPeerHead,
-        rx_block_ack_start_sequence: RxBlockAckStartSequence,
-        rx_block_ack_bitmap_low: RxBlockAckBitmapLow,
-        rx_block_ack_bitmap_high: RxBlockAckBitmapHigh,
-        _reserved15: [u8; 0x0304],
+        _reserved18: [u8; 0x0230],
+        extra_softap_rx_block_ack_control: ExtraSoftapRxBlockAckControl,
+        extra_softap_rx_block_ack_peer_tail_and_policy: ExtraSoftapRxBlockAckPeerTailAndPolicy,
+        extra_softap_rx_block_ack_peer_head: ExtraSoftapRxBlockAckPeerHead,
+        extra_softap_rx_block_ack_start_sequence: ExtraSoftapRxBlockAckStartSequence,
+        extra_softap_rx_block_ack_bitmap_low: ExtraSoftapRxBlockAckBitmapLow,
+        extra_softap_rx_block_ack_bitmap_high: ExtraSoftapRxBlockAckBitmapHigh,
+        _reserved24: [u8; 0x0304],
         tx_queue_information_q7: TxQueueInformationQ7,
         tx_block_ack_bitmap_high_q7: TxBlockAckBitmapHighQ7,
         tx_block_ack_bitmap_low_q7: TxBlockAckBitmapLowQ7,
         tx_block_ack_control_sequence_q7: TxBlockAckControlSequenceQ7,
         tx_block_ack_transmitter_address_high_q7: TxBlockAckTransmitterAddressHighQ7,
         tx_block_ack_transmitter_address_low_q7: TxBlockAckTransmitterAddressLowQ7,
-        _reserved21: [u8; 0x64],
+        _reserved30: [u8; 0x64],
         tx_queue_information_q6: TxQueueInformationQ6,
         tx_block_ack_bitmap_high_q6: TxBlockAckBitmapHighQ6,
         tx_block_ack_bitmap_low_q6: TxBlockAckBitmapLowQ6,
         tx_block_ack_control_sequence_q6: TxBlockAckControlSequenceQ6,
         tx_block_ack_transmitter_address_high_q6: TxBlockAckTransmitterAddressHighQ6,
         tx_block_ack_transmitter_address_low_q6: TxBlockAckTransmitterAddressLowQ6,
-        _reserved27: [u8; 0x64],
+        _reserved36: [u8; 0x64],
         tx_queue_information_q5: TxQueueInformationQ5,
         tx_block_ack_bitmap_high_q5: TxBlockAckBitmapHighQ5,
         tx_block_ack_bitmap_low_q5: TxBlockAckBitmapLowQ5,
         tx_block_ack_control_sequence_q5: TxBlockAckControlSequenceQ5,
         tx_block_ack_transmitter_address_high_q5: TxBlockAckTransmitterAddressHighQ5,
         tx_block_ack_transmitter_address_low_q5: TxBlockAckTransmitterAddressLowQ5,
-        _reserved33: [u8; 0x64],
+        _reserved42: [u8; 0x64],
         tx_queue_information_q4: TxQueueInformationQ4,
         tx_block_ack_bitmap_high_q4: TxBlockAckBitmapHighQ4,
         tx_block_ack_bitmap_low_q4: TxBlockAckBitmapLowQ4,
         tx_block_ack_control_sequence_q4: TxBlockAckControlSequenceQ4,
         tx_block_ack_transmitter_address_high_q4: TxBlockAckTransmitterAddressHighQ4,
         tx_block_ack_transmitter_address_low_q4: TxBlockAckTransmitterAddressLowQ4,
-        _reserved39: [u8; 0x64],
+        _reserved48: [u8; 0x64],
         tx_queue_information_q3: TxQueueInformationQ3,
         tx_block_ack_bitmap_high_q3: TxBlockAckBitmapHighQ3,
         tx_block_ack_bitmap_low_q3: TxBlockAckBitmapLowQ3,
         tx_block_ack_control_sequence_q3: TxBlockAckControlSequenceQ3,
         tx_block_ack_transmitter_address_high_q3: TxBlockAckTransmitterAddressHighQ3,
         tx_block_ack_transmitter_address_low_q3: TxBlockAckTransmitterAddressLowQ3,
-        _reserved45: [u8; 0x64],
+        _reserved54: [u8; 0x64],
         tx_queue_information_q2: TxQueueInformationQ2,
         tx_block_ack_bitmap_high_q2: TxBlockAckBitmapHighQ2,
         tx_block_ack_bitmap_low_q2: TxBlockAckBitmapLowQ2,
         tx_block_ack_control_sequence_q2: TxBlockAckControlSequenceQ2,
         tx_block_ack_transmitter_address_high_q2: TxBlockAckTransmitterAddressHighQ2,
         tx_block_ack_transmitter_address_low_q2: TxBlockAckTransmitterAddressLowQ2,
-        _reserved51: [u8; 0x64],
+        _reserved60: [u8; 0x64],
         tx_queue_information_q1: TxQueueInformationQ1,
         tx_block_ack_bitmap_high_q1: TxBlockAckBitmapHighQ1,
         tx_block_ack_bitmap_low_q1: TxBlockAckBitmapLowQ1,
         tx_block_ack_control_sequence_q1: TxBlockAckControlSequenceQ1,
         tx_block_ack_transmitter_address_high_q1: TxBlockAckTransmitterAddressHighQ1,
         tx_block_ack_transmitter_address_low_q1: TxBlockAckTransmitterAddressLowQ1,
-        _reserved57: [u8; 0x64],
+        _reserved66: [u8; 0x64],
         tx_queue_information_q0: TxQueueInformationQ0,
         tx_block_ack_bitmap_high_q0: TxBlockAckBitmapHighQ0,
         tx_block_ack_bitmap_low_q0: TxBlockAckBitmapLowQ0,
@@ -21690,7 +21708,729 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_last_descriptor(&self) -> &RxLastDescriptor {
             &self.rx_last_descriptor
         }
-        #[doc = "0x298 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
+        #[doc = "0x178..0x198 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_CONTROL` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_control(&self, n: usize) -> &RxBlockAckEntryControl {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(376)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x178..0x198 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_control_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryControl> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(376)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x178 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(0)
+        }
+        #[doc = "0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(1)
+        }
+        #[doc = "0x1c0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(2)
+        }
+        #[doc = "0x1e4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(3)
+        }
+        #[doc = "0x208 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(4)
+        }
+        #[doc = "0x22c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(5)
+        }
+        #[doc = "0x250 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(6)
+        }
+        #[doc = "0x274 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_control(&self) -> &RxBlockAckEntryControl {
+            self.rx_block_ack_entry_control(7)
+        }
+        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_PEER_TAIL_AND_POLICY` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_peer_tail_and_policy(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(380)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_peer_tail_and_policy_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryPeerTailAndPolicy> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(380)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x17c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(0)
+        }
+        #[doc = "0x1a0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(1)
+        }
+        #[doc = "0x1c4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(2)
+        }
+        #[doc = "0x1e8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(3)
+        }
+        #[doc = "0x20c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(4)
+        }
+        #[doc = "0x230 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(5)
+        }
+        #[doc = "0x254 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(6)
+        }
+        #[doc = "0x278 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_peer_tail_and_policy(
+            &self,
+        ) -> &RxBlockAckEntryPeerTailAndPolicy {
+            self.rx_block_ack_entry_peer_tail_and_policy(7)
+        }
+        #[doc = "0x180..0x1a0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_PEER_HEAD` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_peer_head(&self, n: usize) -> &RxBlockAckEntryPeerHead {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(384)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x180..0x1a0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_peer_head_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryPeerHead> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(384)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x180 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(0)
+        }
+        #[doc = "0x1a4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(1)
+        }
+        #[doc = "0x1c8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(2)
+        }
+        #[doc = "0x1ec - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(3)
+        }
+        #[doc = "0x210 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(4)
+        }
+        #[doc = "0x234 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(5)
+        }
+        #[doc = "0x258 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(6)
+        }
+        #[doc = "0x27c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_peer_head(&self) -> &RxBlockAckEntryPeerHead {
+            self.rx_block_ack_entry_peer_head(7)
+        }
+        #[doc = "0x184..0x1a4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_CURRENT_SEQUENCE` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_current_sequence(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(388)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x184..0x1a4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_current_sequence_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryCurrentSequence> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(388)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x184 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(0)
+        }
+        #[doc = "0x1a8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(1)
+        }
+        #[doc = "0x1cc - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(2)
+        }
+        #[doc = "0x1f0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(3)
+        }
+        #[doc = "0x214 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(4)
+        }
+        #[doc = "0x238 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(5)
+        }
+        #[doc = "0x25c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(6)
+        }
+        #[doc = "0x280 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_current_sequence(
+            &self,
+        ) -> &RxBlockAckEntryCurrentSequence {
+            self.rx_block_ack_entry_current_sequence(7)
+        }
+        #[doc = "0x188..0x1a8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_START_SEQUENCE_LOAD` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_start_sequence_load(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(392)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x188..0x1a8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_start_sequence_load_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryStartSequenceLoad> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(392)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x188 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(0)
+        }
+        #[doc = "0x1ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(1)
+        }
+        #[doc = "0x1d0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(2)
+        }
+        #[doc = "0x1f4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(3)
+        }
+        #[doc = "0x218 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(4)
+        }
+        #[doc = "0x23c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(5)
+        }
+        #[doc = "0x260 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(6)
+        }
+        #[doc = "0x284 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_start_sequence_load(
+            &self,
+        ) -> &RxBlockAckEntryStartSequenceLoad {
+            self.rx_block_ack_entry_start_sequence_load(7)
+        }
+        #[doc = "0x18c..0x1ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_LOW_STATUS` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_bitmap_low_status(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(396)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x18c..0x1ac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_bitmap_low_status_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryBitmapLowStatus> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(396)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x18c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(0)
+        }
+        #[doc = "0x1b0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(1)
+        }
+        #[doc = "0x1d4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(2)
+        }
+        #[doc = "0x1f8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(3)
+        }
+        #[doc = "0x21c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(4)
+        }
+        #[doc = "0x240 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(5)
+        }
+        #[doc = "0x264 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(6)
+        }
+        #[doc = "0x288 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_bitmap_low_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapLowStatus {
+            self.rx_block_ack_entry_bitmap_low_status(7)
+        }
+        #[doc = "0x190..0x1b0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_LOW_LOAD` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_bitmap_low_load(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryBitmapLowLoad {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(400)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x190..0x1b0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_bitmap_low_load_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryBitmapLowLoad> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(400)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x190 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(0)
+        }
+        #[doc = "0x1b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(1)
+        }
+        #[doc = "0x1d8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(2)
+        }
+        #[doc = "0x1fc - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(3)
+        }
+        #[doc = "0x220 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(4)
+        }
+        #[doc = "0x244 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(5)
+        }
+        #[doc = "0x268 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(6)
+        }
+        #[doc = "0x28c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
+            self.rx_block_ack_entry_bitmap_low_load(7)
+        }
+        #[doc = "0x194..0x1b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_HIGH_STATUS` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_bitmap_high_status(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(404)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x194..0x1b4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_bitmap_high_status_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryBitmapHighStatus> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(404)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x194 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(0)
+        }
+        #[doc = "0x1b8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(1)
+        }
+        #[doc = "0x1dc - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(2)
+        }
+        #[doc = "0x200 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(3)
+        }
+        #[doc = "0x224 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(4)
+        }
+        #[doc = "0x248 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(5)
+        }
+        #[doc = "0x26c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(6)
+        }
+        #[doc = "0x290 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_bitmap_high_status(
+            &self,
+        ) -> &RxBlockAckEntryBitmapHighStatus {
+            self.rx_block_ack_entry_bitmap_high_status(7)
+        }
+        #[doc = "0x198..0x1b8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[doc = ""]
+        #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_HIGH_LOAD` register.</div>"]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry_bitmap_high_load(
+            &self,
+            n: usize,
+        ) -> &RxBlockAckEntryBitmapHighLoad {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(408)
+                    .add(36 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x198..0x1b8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub fn rx_block_ack_entry_bitmap_high_load_iter(
+            &self,
+        ) -> impl Iterator<Item = &RxBlockAckEntryBitmapHighLoad> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(408)
+                    .add(36 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x198 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry7_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(0)
+        }
+        #[doc = "0x1bc - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry6_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(1)
+        }
+        #[doc = "0x1e0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry5_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(2)
+        }
+        #[doc = "0x204 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry4_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(3)
+        }
+        #[doc = "0x228 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry3_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(4)
+        }
+        #[doc = "0x24c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry2_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(5)
+        }
+        #[doc = "0x270 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry1_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(6)
+        }
+        #[doc = "0x294 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+        #[inline(always)]
+        pub const fn rx_block_ack_entry0_bitmap_high_load(&self) -> &RxBlockAckEntryBitmapHighLoad {
+            self.rx_block_ack_entry_bitmap_high_load(7)
+        }
+        #[doc = "0x298 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback."]
         #[inline(always)]
         pub const fn rx_block_ack_agreement_update(&self) -> &RxBlockAckAgreementUpdate {
             &self.rx_block_ack_agreement_update
@@ -21710,35 +22450,43 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_descriptor_high_window(&self) -> &RxDescriptorHighWindow {
             &self.rx_descriptor_high_window
         }
-        #[doc = "0xea4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
+        #[doc = "0xea4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared staging and readback-control word used only by complete hal_agreement_*_extra_softap_rx_ba leaves. Ordinary STA/AP receive BlockAck agreements use the eight direct banks at 0x20104178..0x20104294 instead."]
         #[inline(always)]
-        pub const fn rx_block_ack_control(&self) -> &RxBlockAckControl {
-            &self.rx_block_ack_control
+        pub const fn extra_softap_rx_block_ack_control(&self) -> &ExtraSoftapRxBlockAckControl {
+            &self.extra_softap_rx_block_ack_control
         }
-        #[doc = "0xea8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
+        #[doc = "0xea8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size."]
         #[inline(always)]
-        pub const fn rx_block_ack_peer_tail_and_policy(&self) -> &RxBlockAckPeerTailAndPolicy {
-            &self.rx_block_ack_peer_tail_and_policy
+        pub const fn extra_softap_rx_block_ack_peer_tail_and_policy(
+            &self,
+        ) -> &ExtraSoftapRxBlockAckPeerTailAndPolicy {
+            &self.extra_softap_rx_block_ack_peer_tail_and_policy
         }
-        #[doc = "0xeac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes 0..3 in little-endian order."]
+        #[doc = "0xeac - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order."]
         #[inline(always)]
-        pub const fn rx_block_ack_peer_head(&self) -> &RxBlockAckPeerHead {
-            &self.rx_block_ack_peer_head
+        pub const fn extra_softap_rx_block_ack_peer_head(&self) -> &ExtraSoftapRxBlockAckPeerHead {
+            &self.extra_softap_rx_block_ack_peer_head
         }
-        #[doc = "0xeb0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence control."]
+        #[doc = "0xeb0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying the twelve-bit starting sequence."]
         #[inline(always)]
-        pub const fn rx_block_ack_start_sequence(&self) -> &RxBlockAckStartSequence {
-            &self.rx_block_ack_start_sequence
+        pub const fn extra_softap_rx_block_ack_start_sequence(
+            &self,
+        ) -> &ExtraSoftapRxBlockAckStartSequence {
+            &self.extra_softap_rx_block_ack_start_sequence
         }
-        #[doc = "0xeb4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
+        #[doc = "0xeb4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry."]
         #[inline(always)]
-        pub const fn rx_block_ack_bitmap_low(&self) -> &RxBlockAckBitmapLow {
-            &self.rx_block_ack_bitmap_low
+        pub const fn extra_softap_rx_block_ack_bitmap_low(
+            &self,
+        ) -> &ExtraSoftapRxBlockAckBitmapLow {
+            &self.extra_softap_rx_block_ack_bitmap_low
         }
-        #[doc = "0xeb8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
+        #[doc = "0xeb8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry."]
         #[inline(always)]
-        pub const fn rx_block_ack_bitmap_high(&self) -> &RxBlockAckBitmapHigh {
-            &self.rx_block_ack_bitmap_high
+        pub const fn extra_softap_rx_block_ack_bitmap_high(
+            &self,
+        ) -> &ExtraSoftapRxBlockAckBitmapHigh {
+            &self.extra_softap_rx_block_ack_bitmap_high
         }
         #[doc = "0x11c0 - SOURCE\\[BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO\\]; CONFIDENCE\\[instruction-exact\\]. WDEVTXQ_TXINFO for reverse-addressed hardware queue 7."]
         #[inline(always)]
@@ -23880,49 +24628,412 @@ pub mod wifi_mac_rx_dma {
         #[doc = "`read()` method returns [`tx_block_ack_transmitter_address_low_q0::R`](R) reader structure"]
         impl crate::Readable for TxBlockAckTransmitterAddressLowQ0Spec {}
     }
-    #[doc = "RX_BLOCK_ACK_AGREEMENT_UPDATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_agreement_update`] module"]
+    #[doc = "RX_BLOCK_ACK_ENTRY_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_control`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_CONTROL")]
+    pub type RxBlockAckEntryControl =
+        crate::Reg<rx_block_ack_entry_control::RxBlockAckEntryControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
+    pub mod rx_block_ack_entry_control {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_CONTROL` reader"]
+        pub type R = crate::R<RxBlockAckEntryControlSpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_CONTROL` writer"]
+        pub type W = crate::W<RxBlockAckEntryControlSpec>;
+        #[doc = "Field `ENABLE` reader - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TID` reader - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+        pub type TidR = crate::FieldReader;
+        #[doc = "Field `TID` writer - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `WRITE` reader - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
+        pub type WriteR = crate::BitReader;
+        #[doc = "Field `WRITE` writer - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
+        pub type WriteW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID` reader - Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry."]
+        pub type ValidR = crate::BitReader;
+        #[doc = "Field `VALID` writer - Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry."]
+        pub type ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+            #[inline(always)]
+            pub fn tid(&self) -> TidR {
+                TidR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bit 30 - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
+            #[inline(always)]
+            pub fn write(&self) -> WriteR {
+                WriteR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry."]
+            #[inline(always)]
+            pub fn valid(&self) -> ValidR {
+                ValidR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, RxBlockAckEntryControlSpec> {
+                EnableW::new(self, 0)
+            }
+            #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+            #[inline(always)]
+            pub fn tid(&mut self) -> TidW<'_, RxBlockAckEntryControlSpec> {
+                TidW::new(self, 12)
+            }
+            #[doc = "Bit 30 - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
+            #[inline(always)]
+            pub fn write(&mut self) -> WriteW<'_, RxBlockAckEntryControlSpec> {
+                WriteW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry."]
+            #[inline(always)]
+            pub fn valid(&mut self) -> ValidW<'_, RxBlockAckEntryControlSpec> {
+                ValidW::new(self, 31)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryControlSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_control::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_control::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_peer_tail_and_policy`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_PEER_TAIL_AND_POLICY")]
+    pub type RxBlockAckEntryPeerTailAndPolicy =
+        crate::Reg<rx_block_ack_entry_peer_tail_and_policy::RxBlockAckEntryPeerTailAndPolicySpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+    pub mod rx_block_ack_entry_peer_tail_and_policy {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY` reader"]
+        pub type R = crate::R<RxBlockAckEntryPeerTailAndPolicySpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY` writer"]
+        pub type W = crate::W<RxBlockAckEntryPeerTailAndPolicySpec>;
+        #[doc = "Field `PEER_ADDRESS_TAIL` reader - "]
+        pub type PeerAddressTailR = crate::FieldReader<u16>;
+        #[doc = "Field `PEER_ADDRESS_TAIL` writer - "]
+        pub type PeerAddressTailW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `INTERFACE` reader - "]
+        pub type InterfaceR = crate::FieldReader;
+        #[doc = "Field `INTERFACE` writer - "]
+        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `WINDOW` reader - "]
+        pub type WindowR = crate::FieldReader;
+        #[doc = "Field `WINDOW` writer - "]
+        pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn peer_address_tail(&self) -> PeerAddressTailR {
+                PeerAddressTailR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:17"]
+            #[inline(always)]
+            pub fn interface(&self) -> InterfaceR {
+                InterfaceR::new(((self.bits >> 16) & 3) as u8)
+            }
+            #[doc = "Bits 18:24"]
+            #[inline(always)]
+            pub fn window(&self) -> WindowR {
+                WindowR::new(((self.bits >> 18) & 0x7f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn peer_address_tail(
+                &mut self,
+            ) -> PeerAddressTailW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
+                PeerAddressTailW::new(self, 0)
+            }
+            #[doc = "Bits 16:17"]
+            #[inline(always)]
+            pub fn interface(&mut self) -> InterfaceW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
+                InterfaceW::new(self, 16)
+            }
+            #[doc = "Bits 18:24"]
+            #[inline(always)]
+            pub fn window(&mut self) -> WindowW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
+                WindowW::new(self, 18)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryPeerTailAndPolicySpec;
+        impl crate::RegisterSpec for RxBlockAckEntryPeerTailAndPolicySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_peer_tail_and_policy::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryPeerTailAndPolicySpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_peer_tail_and_policy::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryPeerTailAndPolicySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_PEER_HEAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_head::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_head::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_peer_head`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_PEER_HEAD")]
+    pub type RxBlockAckEntryPeerHead =
+        crate::Reg<rx_block_ack_entry_peer_head::RxBlockAckEntryPeerHeadSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank."]
+    pub mod rx_block_ack_entry_peer_head {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_HEAD` reader"]
+        pub type R = crate::R<RxBlockAckEntryPeerHeadSpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_HEAD` writer"]
+        pub type W = crate::W<RxBlockAckEntryPeerHeadSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryPeerHeadSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryPeerHeadSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_peer_head::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryPeerHeadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_peer_head::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryPeerHeadSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_current_sequence`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE")]
+    pub type RxBlockAckEntryCurrentSequence =
+        crate::Reg<rx_block_ack_entry_current_sequence::RxBlockAckEntryCurrentSequenceSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+    pub mod rx_block_ack_entry_current_sequence {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE` reader"]
+        pub type R = crate::R<RxBlockAckEntryCurrentSequenceSpec>;
+        #[doc = "Field `SEQUENCE` reader - "]
+        pub type SequenceR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn sequence(&self) -> SequenceR {
+                SequenceR::new((self.bits & 0x0fff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryCurrentSequenceSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryCurrentSequenceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_current_sequence::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryCurrentSequenceSpec {}
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_START_SEQUENCE_LOAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_start_sequence_load::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_start_sequence_load::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_start_sequence_load`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_START_SEQUENCE_LOAD")]
+    pub type RxBlockAckEntryStartSequenceLoad =
+        crate::Reg<rx_block_ack_entry_start_sequence_load::RxBlockAckEntryStartSequenceLoadSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word."]
+    pub mod rx_block_ack_entry_start_sequence_load {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD` reader"]
+        pub type R = crate::R<RxBlockAckEntryStartSequenceLoadSpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD` writer"]
+        pub type W = crate::W<RxBlockAckEntryStartSequenceLoadSpec>;
+        #[doc = "Field `SEQUENCE` reader - "]
+        pub type SequenceR = crate::FieldReader<u16>;
+        #[doc = "Field `SEQUENCE` writer - "]
+        pub type SequenceW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn sequence(&self) -> SequenceR {
+                SequenceR::new((self.bits & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn sequence(&mut self) -> SequenceW<'_, RxBlockAckEntryStartSequenceLoadSpec> {
+                SequenceW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_start_sequence_load::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_start_sequence_load::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryStartSequenceLoadSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryStartSequenceLoadSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_start_sequence_load::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryStartSequenceLoadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_start_sequence_load::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryStartSequenceLoadSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_low_status`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_STATUS")]
+    pub type RxBlockAckEntryBitmapLowStatus =
+        crate::Reg<rx_block_ack_entry_bitmap_low_status::RxBlockAckEntryBitmapLowStatusSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+    pub mod rx_block_ack_entry_bitmap_low_status {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS` reader"]
+        pub type R = crate::R<RxBlockAckEntryBitmapLowStatusSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryBitmapLowStatusSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryBitmapLowStatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_bitmap_low_status::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryBitmapLowStatusSpec {}
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_LOAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_load::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_low_load::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_low_load`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_LOAD")]
+    pub type RxBlockAckEntryBitmapLowLoad =
+        crate::Reg<rx_block_ack_entry_bitmap_low_load::RxBlockAckEntryBitmapLowLoadSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear."]
+    pub mod rx_block_ack_entry_bitmap_low_load {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD` reader"]
+        pub type R = crate::R<RxBlockAckEntryBitmapLowLoadSpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD` writer"]
+        pub type W = crate::W<RxBlockAckEntryBitmapLowLoadSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_load::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_low_load::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryBitmapLowLoadSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryBitmapLowLoadSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_bitmap_low_load::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryBitmapLowLoadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_bitmap_low_load::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryBitmapLowLoadSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_high_status`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_STATUS")]
+    pub type RxBlockAckEntryBitmapHighStatus =
+        crate::Reg<rx_block_ack_entry_bitmap_high_status::RxBlockAckEntryBitmapHighStatusSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+    pub mod rx_block_ack_entry_bitmap_high_status {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS` reader"]
+        pub type R = crate::R<RxBlockAckEntryBitmapHighStatusSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryBitmapHighStatusSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryBitmapHighStatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_bitmap_high_status::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryBitmapHighStatusSpec {}
+    }
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_LOAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_load::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_high_load::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_high_load`] module"]
+    #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_LOAD")]
+    pub type RxBlockAckEntryBitmapHighLoad =
+        crate::Reg<rx_block_ack_entry_bitmap_high_load::RxBlockAckEntryBitmapHighLoadSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear."]
+    pub mod rx_block_ack_entry_bitmap_high_load {
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD` reader"]
+        pub type R = crate::R<RxBlockAckEntryBitmapHighLoadSpec>;
+        #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD` writer"]
+        pub type W = crate::W<RxBlockAckEntryBitmapHighLoadSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_load::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_high_load::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBlockAckEntryBitmapHighLoadSpec;
+        impl crate::RegisterSpec for RxBlockAckEntryBitmapHighLoadSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_block_ack_entry_bitmap_high_load::R`](R) reader structure"]
+        impl crate::Readable for RxBlockAckEntryBitmapHighLoadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_bitmap_high_load::W`](W) writer structure"]
+        impl crate::Writable for RxBlockAckEntryBitmapHighLoadSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BLOCK_ACK_AGREEMENT_UPDATE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_agreement_update`] module"]
     #[doc(alias = "RX_BLOCK_ACK_AGREEMENT_UPDATE")]
     pub type RxBlockAckAgreementUpdate =
         crate::Reg<rx_block_ack_agreement_update::RxBlockAckAgreementUpdateSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback."]
     pub mod rx_block_ack_agreement_update {
         #[doc = "Register `RX_BLOCK_ACK_AGREEMENT_UPDATE` reader"]
         pub type R = crate::R<RxBlockAckAgreementUpdateSpec>;
         #[doc = "Register `RX_BLOCK_ACK_AGREEMENT_UPDATE` writer"]
         pub type W = crate::W<RxBlockAckAgreementUpdateSpec>;
-        #[doc = "Field `COMMIT` reader - "]
-        pub type CommitR = crate::BitReader;
-        #[doc = "Field `COMMIT` writer - "]
-        pub type CommitW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `READBACK_LATCH` reader - "]
-        pub type ReadbackLatchR = crate::BitReader;
-        #[doc = "Field `READBACK_LATCH` writer - "]
-        pub type ReadbackLatchW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ORDINARY_ENTRY_UPDATE` reader - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
+        pub type OrdinaryEntryUpdateR = crate::FieldReader;
+        #[doc = "Field `ORDINARY_ENTRY_UPDATE` writer - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
+        pub type OrdinaryEntryUpdateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `EXTRA_SOFTAP_COMMIT` reader - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
+        pub type ExtraSoftapCommitR = crate::BitReader;
+        #[doc = "Field `EXTRA_SOFTAP_COMMIT` writer - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
+        pub type ExtraSoftapCommitW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `EXTRA_SOFTAP_READBACK_LATCH` reader - Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards."]
+        pub type ExtraSoftapReadbackLatchR = crate::BitReader;
+        #[doc = "Field `EXTRA_SOFTAP_READBACK_LATCH` writer - Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards."]
+        pub type ExtraSoftapReadbackLatchW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 8"]
+            #[doc = "Bits 0:7 - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
             #[inline(always)]
-            pub fn commit(&self) -> CommitR {
-                CommitR::new(((self.bits >> 8) & 1) != 0)
+            pub fn ordinary_entry_update(&self) -> OrdinaryEntryUpdateR {
+                OrdinaryEntryUpdateR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bit 9"]
+            #[doc = "Bit 8 - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
             #[inline(always)]
-            pub fn readback_latch(&self) -> ReadbackLatchR {
-                ReadbackLatchR::new(((self.bits >> 9) & 1) != 0)
+            pub fn extra_softap_commit(&self) -> ExtraSoftapCommitR {
+                ExtraSoftapCommitR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9 - Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards."]
+            #[inline(always)]
+            pub fn extra_softap_readback_latch(&self) -> ExtraSoftapReadbackLatchR {
+                ExtraSoftapReadbackLatchR::new(((self.bits >> 9) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 8"]
+            #[doc = "Bits 0:7 - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
             #[inline(always)]
-            pub fn commit(&mut self) -> CommitW<'_, RxBlockAckAgreementUpdateSpec> {
-                CommitW::new(self, 8)
+            pub fn ordinary_entry_update(
+                &mut self,
+            ) -> OrdinaryEntryUpdateW<'_, RxBlockAckAgreementUpdateSpec> {
+                OrdinaryEntryUpdateW::new(self, 0)
             }
-            #[doc = "Bit 9"]
+            #[doc = "Bit 8 - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
             #[inline(always)]
-            pub fn readback_latch(&mut self) -> ReadbackLatchW<'_, RxBlockAckAgreementUpdateSpec> {
-                ReadbackLatchW::new(self, 9)
+            pub fn extra_softap_commit(
+                &mut self,
+            ) -> ExtraSoftapCommitW<'_, RxBlockAckAgreementUpdateSpec> {
+                ExtraSoftapCommitW::new(self, 8)
+            }
+            #[doc = "Bit 9 - Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards."]
+            #[inline(always)]
+            pub fn extra_softap_readback_latch(
+                &mut self,
+            ) -> ExtraSoftapReadbackLatchW<'_, RxBlockAckAgreementUpdateSpec> {
+                ExtraSoftapReadbackLatchW::new(self, 9)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_agreement_update::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_agreement_update::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckAgreementUpdateSpec;
         impl crate::RegisterSpec for RxBlockAckAgreementUpdateSpec {
             type Ux = u32;
@@ -23934,15 +25045,16 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_control`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_CONTROL")]
-    pub type RxBlockAckControl = crate::Reg<rx_block_ack_control::RxBlockAckControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Selects and publishes one of eight recovered receive BlockAck entries."]
-    pub mod rx_block_ack_control {
-        #[doc = "Register `RX_BLOCK_ACK_CONTROL` reader"]
-        pub type R = crate::R<RxBlockAckControlSpec>;
-        #[doc = "Register `RX_BLOCK_ACK_CONTROL` writer"]
-        pub type W = crate::W<RxBlockAckControlSpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared staging and readback-control word used only by complete hal_agreement_*_extra_softap_rx_ba leaves. Ordinary STA/AP receive BlockAck agreements use the eight direct banks at 0x20104178..0x20104294 instead.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_control`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL")]
+    pub type ExtraSoftapRxBlockAckControl =
+        crate::Reg<extra_softap_rx_block_ack_control::ExtraSoftapRxBlockAckControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared staging and readback-control word used only by complete hal_agreement_*_extra_softap_rx_ba leaves. Ordinary STA/AP receive BlockAck agreements use the eight direct banks at 0x20104178..0x20104294 instead."]
+    pub mod extra_softap_rx_block_ack_control {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckControlSpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckControlSpec>;
         #[doc = "Field `ENABLE` reader - "]
         pub type EnableR = crate::BitReader;
         #[doc = "Field `ENABLE` writer - "]
@@ -23993,52 +25105,53 @@ pub mod wifi_mac_rx_dma {
         impl W {
             #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn enable(&mut self) -> EnableW<'_, RxBlockAckControlSpec> {
+            pub fn enable(&mut self) -> EnableW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 EnableW::new(self, 0)
             }
             #[doc = "Bits 5:9"]
             #[inline(always)]
-            pub fn index(&mut self) -> IndexW<'_, RxBlockAckControlSpec> {
+            pub fn index(&mut self) -> IndexW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 IndexW::new(self, 5)
             }
             #[doc = "Bits 12:15"]
             #[inline(always)]
-            pub fn tid(&mut self) -> TidW<'_, RxBlockAckControlSpec> {
+            pub fn tid(&mut self) -> TidW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 TidW::new(self, 12)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
-            pub fn write(&mut self) -> WriteW<'_, RxBlockAckControlSpec> {
+            pub fn write(&mut self) -> WriteW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 WriteW::new(self, 30)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn valid(&mut self) -> ValidW<'_, RxBlockAckControlSpec> {
+            pub fn valid(&mut self) -> ValidW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 ValidW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Selects and publishes one of eight recovered receive BlockAck entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckControlSpec;
-        impl crate::RegisterSpec for RxBlockAckControlSpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared staging and readback-control word used only by complete hal_agreement_*_extra_softap_rx_ba leaves. Ordinary STA/AP receive BlockAck agreements use the eight direct banks at 0x20104178..0x20104294 instead.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckControlSpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckControlSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_control::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckControlSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_control::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckControlSpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_control::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_control::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckControlSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_tail_and_policy`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_PEER_TAIL_AND_POLICY")]
-    pub type RxBlockAckPeerTailAndPolicy =
-        crate::Reg<rx_block_ack_peer_tail_and_policy::RxBlockAckPeerTailAndPolicySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Carries peer MAC bytes 4..5, interface and reorder-window size."]
-    pub mod rx_block_ack_peer_tail_and_policy {
-        #[doc = "Register `RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` reader"]
-        pub type R = crate::R<RxBlockAckPeerTailAndPolicySpec>;
-        #[doc = "Register `RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` writer"]
-        pub type W = crate::W<RxBlockAckPeerTailAndPolicySpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_peer_tail_and_policy`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY")]
+    pub type ExtraSoftapRxBlockAckPeerTailAndPolicy = crate::Reg<
+        extra_softap_rx_block_ack_peer_tail_and_policy::ExtraSoftapRxBlockAckPeerTailAndPolicySpec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size."]
+    pub mod extra_softap_rx_block_ack_peer_tail_and_policy {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckPeerTailAndPolicySpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckPeerTailAndPolicySpec>;
         #[doc = "Field `PEER_ADDRESS_TAIL` reader - "]
         pub type PeerAddressTailR = crate::FieldReader<u16>;
         #[doc = "Field `PEER_ADDRESS_TAIL` writer - "]
@@ -24073,69 +25186,73 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn peer_address_tail(
                 &mut self,
-            ) -> PeerAddressTailW<'_, RxBlockAckPeerTailAndPolicySpec> {
+            ) -> PeerAddressTailW<'_, ExtraSoftapRxBlockAckPeerTailAndPolicySpec> {
                 PeerAddressTailW::new(self, 0)
             }
             #[doc = "Bits 16:17"]
             #[inline(always)]
-            pub fn interface(&mut self) -> InterfaceW<'_, RxBlockAckPeerTailAndPolicySpec> {
+            pub fn interface(
+                &mut self,
+            ) -> InterfaceW<'_, ExtraSoftapRxBlockAckPeerTailAndPolicySpec> {
                 InterfaceW::new(self, 16)
             }
             #[doc = "Bits 18:24"]
             #[inline(always)]
-            pub fn window(&mut self) -> WindowW<'_, RxBlockAckPeerTailAndPolicySpec> {
+            pub fn window(&mut self) -> WindowW<'_, ExtraSoftapRxBlockAckPeerTailAndPolicySpec> {
                 WindowW::new(self, 18)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Carries peer MAC bytes 4..5, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckPeerTailAndPolicySpec;
-        impl crate::RegisterSpec for RxBlockAckPeerTailAndPolicySpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckPeerTailAndPolicySpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckPeerTailAndPolicySpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_peer_tail_and_policy::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckPeerTailAndPolicySpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_peer_tail_and_policy::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckPeerTailAndPolicySpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_peer_tail_and_policy::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckPeerTailAndPolicySpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_peer_tail_and_policy::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckPeerTailAndPolicySpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_PEER_HEAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_peer_head`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_PEER_HEAD")]
-    pub type RxBlockAckPeerHead = crate::Reg<rx_block_ack_peer_head::RxBlockAckPeerHeadSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes 0..3 in little-endian order."]
-    pub mod rx_block_ack_peer_head {
-        #[doc = "Register `RX_BLOCK_ACK_PEER_HEAD` reader"]
-        pub type R = crate::R<RxBlockAckPeerHeadSpec>;
-        #[doc = "Register `RX_BLOCK_ACK_PEER_HEAD` writer"]
-        pub type W = crate::W<RxBlockAckPeerHeadSpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_head::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_head::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_peer_head`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD")]
+    pub type ExtraSoftapRxBlockAckPeerHead =
+        crate::Reg<extra_softap_rx_block_ack_peer_head::ExtraSoftapRxBlockAckPeerHeadSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order."]
+    pub mod extra_softap_rx_block_ack_peer_head {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckPeerHeadSpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckPeerHeadSpec>;
         impl core::fmt::Debug for R {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 write!(f, "{}", self.bits())
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes 0..3 in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckPeerHeadSpec;
-        impl crate::RegisterSpec for RxBlockAckPeerHeadSpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckPeerHeadSpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckPeerHeadSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_peer_head::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckPeerHeadSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_peer_head::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckPeerHeadSpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_peer_head::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckPeerHeadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_peer_head::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckPeerHeadSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_START_SEQUENCE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_start_sequence`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_START_SEQUENCE")]
-    pub type RxBlockAckStartSequence =
-        crate::Reg<rx_block_ack_start_sequence::RxBlockAckStartSequenceSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence control."]
-    pub mod rx_block_ack_start_sequence {
-        #[doc = "Register `RX_BLOCK_ACK_START_SEQUENCE` reader"]
-        pub type R = crate::R<RxBlockAckStartSequenceSpec>;
-        #[doc = "Register `RX_BLOCK_ACK_START_SEQUENCE` writer"]
-        pub type W = crate::W<RxBlockAckStartSequenceSpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying the twelve-bit starting sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_start_sequence::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_start_sequence::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_start_sequence`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE")]
+    pub type ExtraSoftapRxBlockAckStartSequence = crate::Reg<
+        extra_softap_rx_block_ack_start_sequence::ExtraSoftapRxBlockAckStartSequenceSpec,
+    >;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying the twelve-bit starting sequence."]
+    pub mod extra_softap_rx_block_ack_start_sequence {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckStartSequenceSpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckStartSequenceSpec>;
         #[doc = "Field `SEQUENCE` reader - "]
         pub type SequenceR = crate::FieldReader<u16>;
         #[doc = "Field `SEQUENCE` writer - "]
@@ -24150,73 +25267,75 @@ pub mod wifi_mac_rx_dma {
         impl W {
             #[doc = "Bits 0:11"]
             #[inline(always)]
-            pub fn sequence(&mut self) -> SequenceW<'_, RxBlockAckStartSequenceSpec> {
+            pub fn sequence(&mut self) -> SequenceW<'_, ExtraSoftapRxBlockAckStartSequenceSpec> {
                 SequenceW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Twelve-bit starting sequence control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_start_sequence::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_start_sequence::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckStartSequenceSpec;
-        impl crate::RegisterSpec for RxBlockAckStartSequenceSpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP staging word carrying the twelve-bit starting sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_start_sequence::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_start_sequence::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckStartSequenceSpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckStartSequenceSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_start_sequence::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckStartSequenceSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_start_sequence::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckStartSequenceSpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_start_sequence::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckStartSequenceSpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_start_sequence::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckStartSequenceSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_BITMAP_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_low`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_BITMAP_LOW")]
-    pub type RxBlockAckBitmapLow = crate::Reg<rx_block_ack_bitmap_low::RxBlockAckBitmapLowSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry."]
-    pub mod rx_block_ack_bitmap_low {
-        #[doc = "Register `RX_BLOCK_ACK_BITMAP_LOW` reader"]
-        pub type R = crate::R<RxBlockAckBitmapLowSpec>;
-        #[doc = "Register `RX_BLOCK_ACK_BITMAP_LOW` writer"]
-        pub type W = crate::W<RxBlockAckBitmapLowSpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_bitmap_low`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW")]
+    pub type ExtraSoftapRxBlockAckBitmapLow =
+        crate::Reg<extra_softap_rx_block_ack_bitmap_low::ExtraSoftapRxBlockAckBitmapLowSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry."]
+    pub mod extra_softap_rx_block_ack_bitmap_low {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckBitmapLowSpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckBitmapLowSpec>;
         impl core::fmt::Debug for R {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 write!(f, "{}", self.bits())
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckBitmapLowSpec;
-        impl crate::RegisterSpec for RxBlockAckBitmapLowSpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckBitmapLowSpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckBitmapLowSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_bitmap_low::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckBitmapLowSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_bitmap_low::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckBitmapLowSpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_bitmap_low::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckBitmapLowSpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_bitmap_low::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckBitmapLowSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_BITMAP_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_bitmap_high`] module"]
-    #[doc(alias = "RX_BLOCK_ACK_BITMAP_HIGH")]
-    pub type RxBlockAckBitmapHigh = crate::Reg<rx_block_ack_bitmap_high::RxBlockAckBitmapHighSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High receive/reorder bitmap word, cleared when installing or removing an entry."]
-    pub mod rx_block_ack_bitmap_high {
-        #[doc = "Register `RX_BLOCK_ACK_BITMAP_HIGH` reader"]
-        pub type R = crate::R<RxBlockAckBitmapHighSpec>;
-        #[doc = "Register `RX_BLOCK_ACK_BITMAP_HIGH` writer"]
-        pub type W = crate::W<RxBlockAckBitmapHighSpec>;
+    #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_bitmap_high`] module"]
+    #[doc(alias = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH")]
+    pub type ExtraSoftapRxBlockAckBitmapHigh =
+        crate::Reg<extra_softap_rx_block_ack_bitmap_high::ExtraSoftapRxBlockAckBitmapHighSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry."]
+    pub mod extra_softap_rx_block_ack_bitmap_high {
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH` reader"]
+        pub type R = crate::R<ExtraSoftapRxBlockAckBitmapHighSpec>;
+        #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH` writer"]
+        pub type W = crate::W<ExtraSoftapRxBlockAckBitmapHighSpec>;
         impl core::fmt::Debug for R {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 write!(f, "{}", self.bits())
             }
         }
         impl W {}
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. High receive/reorder bitmap word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_bitmap_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_bitmap_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxBlockAckBitmapHighSpec;
-        impl crate::RegisterSpec for RxBlockAckBitmapHighSpec {
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ExtraSoftapRxBlockAckBitmapHighSpec;
+        impl crate::RegisterSpec for ExtraSoftapRxBlockAckBitmapHighSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_block_ack_bitmap_high::R`](R) reader structure"]
-        impl crate::Readable for RxBlockAckBitmapHighSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_block_ack_bitmap_high::W`](W) writer structure"]
-        impl crate::Writable for RxBlockAckBitmapHighSpec {
+        #[doc = "`read()` method returns [`extra_softap_rx_block_ack_bitmap_high::R`](R) reader structure"]
+        impl crate::Readable for ExtraSoftapRxBlockAckBitmapHighSpec {}
+        #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_bitmap_high::W`](W) writer structure"]
+        impl crate::Writable for ExtraSoftapRxBlockAckBitmapHighSpec {
             type Safety = crate::Unsafe;
         }
     }

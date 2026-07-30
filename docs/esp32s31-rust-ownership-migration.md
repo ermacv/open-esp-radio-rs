@@ -3281,19 +3281,68 @@ the generated `WIFI_MAC_RX_DMA` peripheral directly. Their SVD identities
 come from the complete pinned `libpp.a` leaves and the preserved
 `migration/esp32s31-hybrid-runtime` transcriptions recorded on each register.
 
-`RadioRegisters::program_rx_block_ack_entry` retains the selected-index RMW,
-six full entry writes, separate commit edges, readback-latch interval, four
-diagnostic reads and both device fences. In particular, it preserves the
-recovered caller's unusual `tid << 14` image instead of silently substituting
-the nominal SVD field value. The clear path retains the same latch, validity,
-bitmap and commit order. The TX sampler matches each of the four descending
-hardware queue banks and reads control/sequence, low bitmap and high bitmap
-in source order.
+The earlier migration transcription incorrectly used the shared
+extra-SoftAP staging window at `0x2010_4ea4..=0x2010_4eb8` for an ordinary STA
+agreement. Complete `hal_ampdu.o` disassembly instead proves eight direct,
+reverse-addressed ordinary banks at `0x2010_4178..=0x2010_4294`, with a
+`0x24`-byte stride. Logical bank zero ends at `0x2010_4294`; each successive
+logical bank subtracts `0x24`. Bits 0 through 7 of `0x2010_4298` publish the
+corresponding direct bank. Bits 8 and 9 belong only to the independent
+extra-SoftAP staging commit/readback protocol.
+
+`RadioRegisters::program_rx_block_ack_entry` now reproduces the complete
+ordinary add leaf in instruction order: write peer head and peer/policy, load
+the starting sequence, clear `VALID`, clear both bitmap-load words, set the
+bank's update bit, then publish `ENABLE | (tid << 12) | WRITE | VALID`. The
+delete operation reproduces the complete ordinary delete leaf without a
+staging latch or commit pulse.
+Generated PAC access also distinguishes hardware-maintained current
+sequence/bitmap status from their adjacent software load words.
+
+ESP32-S31 rev0 HIL qualified that distinction. For a negotiated TID0/window-16
+agreement starting at sequence five, direct bank zero read back the expected
+peer and configuration. Its hardware current-sequence word advanced from five
+to 491 and then 992 across two 500-packet ICMP receive runs while the loaded
+starting sequence stayed five. The obsolete raw compatibility constants that
+gave the extra-SoftAP aperture ordinary names were removed. The TX sampler
+still matches each of the descending hardware queue banks and reads
+control/sequence, low bitmap and high bitmap in source order.
 
 The live MAC layer now owns only agreement validation and protocol-result
 decoding. Its `rx_ampdu_hw.rs` and `tx_ampdu.rs` modules contain no
 `Register32`, `Field32`, `read32`, `write32` or `modify32` calls; the source
 audit prevents that compatibility boundary from returning.
+
+## Native HE A-MPDU retry ownership
+
+Complete pinned `_oracles/libpp.a` disassembly fixes the retry boundary that
+was previously missing from the open connected path. The
+`lmacProcessTxComplete` jump table identifies completion status five as ACK
+timeout; `lmacProcessAckTimeout` enters `lmacProcessLongRetryFail`;
+`ppResortTxAMPDU` retains each unacknowledged MPDU under the aggregate queue
+owner and sets its Retry bit; and `lmacRetryTxFrame` calls `rcGetRate` before
+republishing it. `rcGetRate` walks one persistent four-pair `(rate, count)`
+record. A retry must therefore advance the failure counter in the original
+record rather than start a new record from the MCS selected for the preceding
+attempt.
+
+The open A-MPDU owner now admits a nonempty one-member retry set. This matters
+for HE: the separate vendor `ppHEAMPDU2Normal` metadata conversion has not yet
+been reproduced, so detaching one failed HE MPDU into the ordinary TX owner
+both lost the HE descriptor semantics and was rejected before hardware
+publication. The retained path compacts the fixed storage, recomputes each HE
+delimiter count and metadata byte for the selected fallback rate, updates the
+aggregate length, rate-dependent protection spacing, TX power and EDCA
+backoff, then republishes through the same HE A-MPDU owner.
+
+ESP32-S31 rev0 HIL on 2026-07-30 qualified this transition against a nearby
+HE20 peer. A 1,000-packet ICMP run at 20-ms cadence completed 999 responses;
+the only missing response was the first packet before ARP warm-up. The device
+reported 1,007 HE A-MPDUs, 1,012 hardware attempts, zero terminal partial
+aggregates, zero RX drops and zero RX duplicates. Thus five real aggregate
+retries were recovered without exposing packet loss. The run used HE20 MCS9,
+two-LTF/1.6-us GI and LDPC at a 108.3-Mbit/s PHY rate; its purpose qualifies
+retry ownership and continuity, not maximum throughput.
 
 ## Semantic RX descriptor-walker ownership
 

@@ -455,6 +455,73 @@ mod tests {
     }
 
     #[test]
+    fn generated_rx_block_ack_banks_match_complete_hal_ampdu_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let block = &registers.peripherals.wifi_mac_rx_dma;
+        for physical_index in 0..8 {
+            let base = 0x2010_4178 + physical_index * 0x24;
+            assert_eq!(
+                block.rx_block_ack_entry_control(physical_index).as_ptr() as usize,
+                base
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_current_sequence(physical_index)
+                    .as_ptr() as usize,
+                base + 0x0c
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_start_sequence_load(physical_index)
+                    .as_ptr() as usize,
+                base + 0x10
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_bitmap_low_status(physical_index)
+                    .as_ptr() as usize,
+                base + 0x14
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_bitmap_low_load(physical_index)
+                    .as_ptr() as usize,
+                base + 0x18
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_bitmap_high_status(physical_index)
+                    .as_ptr() as usize,
+                base + 0x1c
+            );
+            assert_eq!(
+                block
+                    .rx_block_ack_entry_bitmap_high_load(physical_index)
+                    .as_ptr() as usize,
+                base + 0x20
+            );
+        }
+        assert_eq!(
+            block.rx_block_ack_entry0_control().as_ptr() as usize,
+            0x2010_4274
+        );
+        assert_eq!(
+            block.rx_block_ack_entry7_control().as_ptr() as usize,
+            0x2010_4178
+        );
+        assert_eq!(
+            block.rx_block_ack_agreement_update().as_ptr() as usize,
+            0x2010_4298
+        );
+        assert_eq!(
+            block.extra_softap_rx_block_ack_control().as_ptr() as usize,
+            0x2010_4ea4
+        );
+    }
+
+    #[test]
     fn generated_sta_rx_policy_registers_match_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.

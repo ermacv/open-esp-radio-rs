@@ -85,40 +85,6 @@ pub const CRYPTO_POLICY_CONTROL: Register32 =
 pub const CRYPTO_KEY_VALID_BITMAP: Register32 =
     Register32::described(0x2010_4814, RegisterAccess::ReadWrite, None);
 
-/// Receive BlockAck agreement staging registers.
-///
-/// SOURCE[`migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs`,
-/// pinned blob leaf `hal_mac_set_rx_ba`]; CONFIDENCE[instruction-exact].
-/// The names describe the fields packed by that recovered leaf. Hardware
-/// testing has not yet independently qualified this transaction.
-pub mod rx_block_ack {
-    pub use crate::power::wifi_mac_rx_dma::{
-        RX_BLOCK_ACK_AGREEMENT_UPDATE as AGREEMENT_UPDATE, RX_BLOCK_ACK_BITMAP_HIGH as BITMAP_HIGH,
-        RX_BLOCK_ACK_BITMAP_LOW as BITMAP_LOW, RX_BLOCK_ACK_CONTROL as CONTROL,
-        RX_BLOCK_ACK_PEER_HEAD as PEER_HEAD,
-        RX_BLOCK_ACK_PEER_TAIL_AND_POLICY as PEER_TAIL_AND_POLICY,
-        RX_BLOCK_ACK_START_SEQUENCE as START_SEQUENCE,
-    };
-
-    pub mod agreement_update {
-        pub use crate::power::wifi_mac_rx_dma::rx_block_ack_agreement_update::{
-            COMMIT, READBACK_LATCH,
-        };
-    }
-    pub mod control {
-        pub use crate::power::wifi_mac_rx_dma::rx_block_ack_control::{
-            ENABLE, INDEX, TID, VALID, WRITE,
-        };
-    }
-    pub mod peer_tail_and_policy {
-        pub use crate::power::wifi_mac_rx_dma::rx_block_ack_peer_tail_and_policy::{
-            INTERFACE, WINDOW,
-        };
-    }
-
-    pub const CAPACITY: u8 = 8;
-}
-
 /// Per-queue TX BlockAck result registers in hardware queue order.
 ///
 /// These aliases are generated from `svd/esp32s31-radio.svd`; the explicit

@@ -942,6 +942,55 @@ impl HeRate {
         }
     }
 
+    /// Select one exact vendor Dot11Ax retry-ladder attempt.
+    ///
+    /// `rcGetRate` walks the four `(rate, count)` pairs of the current
+    /// schedule record after every failed ACK/BlockAck exchange. The ordinary
+    /// HE20 records use one dedicated 800-ns MCS9 entry and ten 1600-ns
+    /// entries for MCS9 through MCS0. The retry code may eventually leave the
+    /// HE domain; returning [`TxPhyRate`] keeps that boundary explicit.
+    ///
+    /// FEC is not part of the schedule byte. When the selected retry remains
+    /// HE, retain the caller's independently negotiated BCC/LDPC choice.
+    /// DCM has a separate producer and is rejected here instead of being
+    /// silently combined with the ordinary Dot11Ax table.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcGetRate`, size `0xd0`,
+    /// and the pinned `rcUpdatePhyMode` mapping represented by the Rust-owned
+    /// [`RateScheduleKind::Dot11Ax`] arena.
+    pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<TxPhyRate> {
+        if self.dcm {
+            return None;
+        }
+        let schedule_index = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
+                if self.mcs == HeMcs::Mcs9 =>
+            {
+                0
+            }
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => 10 - self.mcs.index(),
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns
+            | crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => return None,
+        };
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, schedule_index)?;
+        let code = schedule_rate_after_failures(schedule, failed_attempts)?;
+        let selected = TxPhyRate::from_rate_control_code(
+            RateScheduleKind::Dot11Ax,
+            code,
+            HtChannelWidth::Mhz20,
+            self.guard_interval_and_ltf,
+        )?;
+        match (selected, self.fec_coding) {
+            (TxPhyRate::He(rate), HeFecCoding::Ldpc) => Some(TxPhyRate::He(Self::ldpc(
+                rate.mcs(),
+                rate.guard_interval_and_ltf(),
+            ))),
+            (selected, _) => Some(selected),
+        }
+    }
+
     pub const fn nominal_kbps(self) -> u32 {
         self.nominal_kbps_for_resource_unit(HeResourceUnit::Ru242)
     }
@@ -1842,6 +1891,16 @@ impl HeAmpduTxConfig {
 
     pub const fn protection_spacing(self) -> u16 {
         self.protection_spacing
+    }
+
+    /// Retune a retained HE A-MPDU for one `rcGetRate` retry result.
+    ///
+    /// The minimum delimiter-derived protection spacing is rate dependent,
+    /// so changing only the rate byte would create an internally inconsistent
+    /// queue vector.
+    pub fn set_retry_rate(&mut self, rate: HeRate) {
+        self.rate = rate;
+        self.protection_spacing = rate.minimum_ampdu_subframe_bytes(self.ampdu_density);
     }
 
     pub const fn with_trigger_based(mut self, trigger_based: HeTriggerBasedTxConfig) -> Self {

@@ -1,6 +1,6 @@
 //! Generated-PAC ownership for the finite MAC BlockAck register leaves.
 
-use super::{device_fence, RadioRegisters};
+use super::RadioRegisters;
 
 /// Result sampled for one completed TX hardware queue.
 ///
@@ -49,8 +49,25 @@ struct RxBlockAckImages {
     active_control: u32,
 }
 
+/// Live image of one ordinary receive BlockAck hardware bank.
+///
+/// SOURCE: complete `_oracles/libpp.a[hal_ampdu.o]::hal_ba_session_store`.
+/// The status and load words are deliberately exposed separately: the blob
+/// snapshots the hardware-maintained words and restores them through their
+/// adjacent software-load words.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxBlockAckEntrySnapshot {
+    pub control: u32,
+    pub peer: [u8; 6],
+    pub interface: u8,
+    pub window: u8,
+    pub current_sequence: u16,
+    pub loaded_start_sequence: u16,
+    pub bitmap_status: u64,
+    pub bitmap_load: u64,
+}
+
 const fn rx_block_ack_images(
-    hardware_index: u8,
     interface: u8,
     peer: [u8; 6],
     tid: u8,
@@ -59,8 +76,7 @@ const fn rx_block_ack_images(
     let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
     let peer_tail = u16::from_le_bytes([peer[4], peer[5]]) as u32;
     let peer_tail_and_policy = peer_tail | ((interface as u32) << 16) | ((window as u32) << 18);
-    let tid_image = tid.wrapping_shl(2) & 0x0f;
-    let active_control = 0xc000_0001 | ((hardware_index as u32) << 5) | ((tid_image as u32) << 12);
+    let active_control = 0xc000_0001 | ((tid as u32) << 12);
     RxBlockAckImages {
         peer_head,
         peer_tail_and_policy,
@@ -68,11 +84,19 @@ const fn rx_block_ack_images(
     }
 }
 
+const fn rx_block_ack_register_index(hardware_index: u8) -> usize {
+    7 - hardware_index as usize
+}
+
 impl RadioRegisters {
-    /// Program one receive BlockAck entry through the recovered finite leaf.
+    /// Program one ordinary receive BlockAck entry.
     ///
-    /// SOURCE: pinned `libpp.a::hal_mac_set_rx_ba`; the SVD records each
-    /// register and bit field with the corresponding migration transcription.
+    /// SOURCE: complete `_oracles/libpp.a[hal_ampdu.o]::
+    /// hal_agreement_add_rx_ba`, size `0x12e`.
+    ///
+    /// The eight entries are direct reverse-addressed banks, not the shared
+    /// extra-SoftAP staging window at `0x2010_4ea4`. Logical index zero lives
+    /// at `0x2010_4274`; each successive index subtracts `0x24`.
     pub fn program_rx_block_ack_entry(
         &mut self,
         hardware_index: u8,
@@ -89,25 +113,20 @@ impl RadioRegisters {
         assert!((1..=0x7f).contains(&window));
 
         let block = &self.peripherals.wifi_mac_rx_dma;
-        let images = rx_block_ack_images(hardware_index, interface, peer, tid, window);
+        let register_index = rx_block_ack_register_index(hardware_index);
+        let images = rx_block_ack_images(interface, peer, tid, window);
         let peer_tail = images.peer_tail_and_policy as u16;
-        // The recovered caller passes its per-TID table-byte selector through
-        // the leaf's `argument << 14` transform. Preserve that instruction
-        // image rather than replacing it with the nominal TID value.
-        let tid_image = ((images.active_control >> 12) & 0x0f) as u8;
 
-        // SAFETY: validation proves the index fits the generated five-bit
-        // field. This first RMW intentionally preserves every other bit.
-        block
-            .rx_block_ack_control()
-            .modify(|_, w| unsafe { w.index().bits(hardware_index) });
-        // SAFETY: the complete recovered leaf publishes these whole words.
+        // SAFETY: the complete recovered leaf publishes this whole peer word.
         unsafe {
             block
-                .rx_block_ack_peer_head()
+                .rx_block_ack_entry_peer_head(register_index)
                 .write_with_zero(|w| w.bits(images.peer_head));
+        }
+        // SAFETY: validation above proves every value fits its generated field.
+        unsafe {
             block
-                .rx_block_ack_peer_tail_and_policy()
+                .rx_block_ack_entry_peer_tail_and_policy(register_index)
                 .write_with_zero(|w| {
                     w.peer_address_tail()
                         .bits(peer_tail)
@@ -117,70 +136,143 @@ impl RadioRegisters {
                         .bits(window as u8)
                 });
             block
-                .rx_block_ack_start_sequence()
-                .write_with_zero(|w| w.sequence().bits(starting_sequence));
-            block
-                .rx_block_ack_bitmap_low()
-                .write_with_zero(|w| w.bits(0));
-            block
-                .rx_block_ack_bitmap_high()
-                .write_with_zero(|w| w.bits(0));
-            block.rx_block_ack_control().write_with_zero(|w| {
-                w.valid()
-                    .set_bit()
-                    .write()
-                    .set_bit()
-                    .tid()
-                    .bits(tid_image)
-                    .index()
-                    .bits(hardware_index)
-                    .enable()
-                    .set_bit()
-            });
+                .rx_block_ack_entry_start_sequence_load(register_index)
+                .modify(|_, w| w.sequence().bits(starting_sequence));
         }
-
-        let update = block.rx_block_ack_agreement_update();
-        update.modify(|_, w| w.commit().set_bit());
-        update.modify(|_, w| w.commit().clear_bit());
-        update.modify(|_, w| w.readback_latch().set_bit());
-        device_fence();
-        let _ = block.rx_block_ack_peer_tail_and_policy().read().bits();
-        let _ = block.rx_block_ack_peer_head().read().bits();
-        let _ = block.rx_block_ack_start_sequence().read().bits();
-        let _ = block.rx_block_ack_control().read().bits();
-        device_fence();
-        update.modify(|_, w| w.readback_latch().clear_bit());
-    }
-
-    /// Remove one receive BlockAck entry through the recovered finite leaf.
-    pub fn clear_rx_block_ack_entry(&mut self, hardware_index: u8) {
-        assert!(hardware_index < 8);
-        let block = &self.peripherals.wifi_mac_rx_dma;
-        // SAFETY: validation proves the index fits the generated field.
         block
-            .rx_block_ack_control()
-            .modify(|_, w| unsafe { w.index().bits(hardware_index) });
-        let update = block.rx_block_ack_agreement_update();
-        update.modify(|_, w| w.readback_latch().set_bit());
-        device_fence();
-        let _ = block.rx_block_ack_control().read().bits();
-        device_fence();
-        update.modify(|_, w| w.readback_latch().clear_bit());
-        block
-            .rx_block_ack_control()
+            .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        // SAFETY: the complete recovered clear leaf publishes zero to both
-        // bitmap words.
+        // SAFETY: complete add clears both software-load bitmap words.
         unsafe {
             block
-                .rx_block_ack_bitmap_low()
+                .rx_block_ack_entry_bitmap_low_load(register_index)
                 .write_with_zero(|w| w.bits(0));
             block
-                .rx_block_ack_bitmap_high()
+                .rx_block_ack_entry_bitmap_high_load(register_index)
                 .write_with_zero(|w| w.bits(0));
         }
-        update.modify(|_, w| w.commit().set_bit());
-        update.modify(|_, w| w.commit().clear_bit());
+        let update_bit = 1_u8 << hardware_index;
+        // SAFETY: `hardware_index < 8`, so the OR result fits the eight-bit
+        // generated field. This preserves the blob's fresh-read OR operation.
+        block.rx_block_ack_agreement_update().modify(|r, w| unsafe {
+            w.ordinary_entry_update()
+                .bits(r.ordinary_entry_update().bits() | update_bit)
+        });
+        // SAFETY: `rx_block_ack_images` constructs exactly the complete blob's
+        // full control image from the validated four-bit TID.
+        unsafe {
+            block
+                .rx_block_ack_entry_control(register_index)
+                .write_with_zero(|w| w.bits(images.active_control));
+        }
+    }
+
+    /// Delete one ordinary receive BlockAck entry.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_ampdu.o]::
+    /// hal_agreement_del_rx_ba`, size `0x72`.
+    pub fn delete_rx_block_ack_entry(&mut self, hardware_index: u8) {
+        assert!(hardware_index < 8);
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let register_index = rx_block_ack_register_index(hardware_index);
+        block
+            .rx_block_ack_entry_control(register_index)
+            .modify(|_, w| w.valid().clear_bit());
+        // SAFETY: complete delete clears both software-load bitmap words.
+        unsafe {
+            block
+                .rx_block_ack_entry_bitmap_low_load(register_index)
+                .write_with_zero(|w| w.bits(0));
+            block
+                .rx_block_ack_entry_bitmap_high_load(register_index)
+                .write_with_zero(|w| w.bits(0));
+        }
+        block
+            .rx_block_ack_entry_control(register_index)
+            .modify(|_, w| w.valid().set_bit());
+        // The final full-word zero is a distinct observable edge in the blob.
+        // SAFETY: zero is the complete value written by the recovered delete
+        // leaf; it does not assert any undocumented control bit.
+        unsafe {
+            block
+                .rx_block_ack_entry_control(register_index)
+                .write_with_zero(|w| w);
+        }
+    }
+
+    /// Sample both hardware-maintained and software-load words of one entry.
+    pub fn rx_block_ack_entry_snapshot(
+        &self,
+        hardware_index: u8,
+    ) -> Option<RxBlockAckEntrySnapshot> {
+        if hardware_index >= 8 {
+            return None;
+        }
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let register_index = rx_block_ack_register_index(hardware_index);
+        let control = block
+            .rx_block_ack_entry_control(register_index)
+            .read()
+            .bits();
+        let peer_head = block
+            .rx_block_ack_entry_peer_head(register_index)
+            .read()
+            .bits()
+            .to_le_bytes();
+        let peer_tail_and_policy = block
+            .rx_block_ack_entry_peer_tail_and_policy(register_index)
+            .read();
+        let peer_tail = peer_tail_and_policy
+            .peer_address_tail()
+            .bits()
+            .to_le_bytes();
+        let bitmap_status = u64::from(
+            block
+                .rx_block_ack_entry_bitmap_low_status(register_index)
+                .read()
+                .bits(),
+        ) | (u64::from(
+            block
+                .rx_block_ack_entry_bitmap_high_status(register_index)
+                .read()
+                .bits(),
+        ) << 32);
+        let bitmap_load = u64::from(
+            block
+                .rx_block_ack_entry_bitmap_low_load(register_index)
+                .read()
+                .bits(),
+        ) | (u64::from(
+            block
+                .rx_block_ack_entry_bitmap_high_load(register_index)
+                .read()
+                .bits(),
+        ) << 32);
+        Some(RxBlockAckEntrySnapshot {
+            control,
+            peer: [
+                peer_head[0],
+                peer_head[1],
+                peer_head[2],
+                peer_head[3],
+                peer_tail[0],
+                peer_tail[1],
+            ],
+            interface: peer_tail_and_policy.interface().bits(),
+            window: peer_tail_and_policy.window().bits(),
+            current_sequence: block
+                .rx_block_ack_entry_current_sequence(register_index)
+                .read()
+                .sequence()
+                .bits(),
+            loaded_start_sequence: block
+                .rx_block_ack_entry_start_sequence_load(register_index)
+                .read()
+                .sequence()
+                .bits(),
+            bitmap_status,
+            bitmap_load,
+        })
     }
 
     /// Sample the three TX BlockAck words consumed by the hot completion path.
@@ -396,11 +488,11 @@ mod tests {
     #[test]
     fn rx_block_ack_images_match_the_recovered_leaf() {
         assert_eq!(
-            rx_block_ack_images(3, 1, [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0], 6, 16),
+            rx_block_ack_images(1, [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0], 6, 16),
             RxBlockAckImages {
                 peer_head: 0xa8fb_1570,
                 peer_tail_and_policy: 0x0041_f048,
-                active_control: 0xc000_8061,
+                active_control: 0xc000_6001,
             }
         );
     }

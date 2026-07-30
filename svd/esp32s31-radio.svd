@@ -3313,18 +3313,77 @@
           <description>SOURCE[BLOB_LIBPP_DBG_READ_RX_BA,HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0.</description>
           <addressOffset>0x1538</addressOffset><size>32</size><access>read-only</access>
         </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word.</description>
+          <addressOffset>0x0178</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>ENABLE</name><description>Complete add sets this bit in every installed ordinary receive BlockAck entry.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TID</name><description>Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform.</description><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>WRITE</name><description>Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>VALID</name><description>Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank.</description>
+          <addressOffset>0x017c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>INTERFACE</name><bitOffset>16</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>WINDOW</name><bitOffset>18</bitOffset><bitWidth>7</bitWidth></field>
+          </fields>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_PEER_HEAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank.</description>
+          <addressOffset>0x0180</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.</description>
+          <addressOffset>0x0184</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word.</description>
+          <addressOffset>0x0188</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.</description>
+          <addressOffset>0x018c</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear.</description>
+          <addressOffset>0x0190</addressOffset><size>32</size><access>read-write</access>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.</description>
+          <addressOffset>0x0194</addressOffset><size>32</size><access>read-only</access>
+        </register>
+        <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
+          <name>RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear.</description>
+          <addressOffset>0x0198</addressOffset><size>32</size><access>read-write</access>
+        </register>
         <register>
           <name>RX_BLOCK_ACK_AGREEMENT_UPDATE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Commit and readback-latch edges used by the complete recovered receive BlockAck programming leaf.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback.</description>
           <addressOffset>0x0298</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>COMMIT</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>READBACK_LATCH</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>ORDINARY_ENTRY_UPDATE</name><description>One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>EXTRA_SOFTAP_COMMIT</name><description>Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words.</description><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>EXTRA_SOFTAP_READBACK_LATCH</name><description>Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards.</description><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Selects and publishes one of eight recovered receive BlockAck entries.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared staging and readback-control word used only by complete hal_agreement_*_extra_softap_rx_ba leaves. Ordinary STA/AP receive BlockAck agreements use the eight direct banks at 0x20104178..0x20104294 instead.</description>
           <addressOffset>0x0ea4</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
@@ -3335,8 +3394,8 @@
           </fields>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_PEER_TAIL_AND_POLICY</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Carries peer MAC bytes 4..5, interface and reorder-window size.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size.</description>
           <addressOffset>0x0ea8</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
@@ -3345,24 +3404,24 @@
           </fields>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_PEER_HEAD</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Peer MAC bytes 0..3 in little-endian order.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order.</description>
           <addressOffset>0x0eac</addressOffset><size>32</size><access>read-write</access>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_START_SEQUENCE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Twelve-bit starting sequence control.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared extra-SoftAP staging word carrying the twelve-bit starting sequence.</description>
           <addressOffset>0x0eb0</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_BITMAP_LOW</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. Low receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry.</description>
           <addressOffset>0x0eb4</addressOffset><size>32</size><access>read-write</access>
         </register>
         <register>
-          <name>RX_BLOCK_ACK_BITMAP_HIGH</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,MIGRATION_RX_AMPDU]; CONFIDENCE[instruction-exact-hil-qualified]. High receive/reorder bitmap word, cleared when installing or removing an entry.</description>
+          <name>EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry.</description>
           <addressOffset>0x0eb8</addressOffset><size>32</size><access>read-write</access>
         </register>
       </registers>
@@ -3450,7 +3509,8 @@
       <source id="ROM_REV0_WDEV_APPEND_RX_BLOCKS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels, live old_tail.next publication, RX_CONTROL bit-0 reload, RX_NEXT_DESCRIPTOR terminal test and RX_DESCRIPTOR_BASE repair</source>
       <source id="ROM_REV0_HAL_MAC_RX_GATE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_enable at 0x2f8386c0 size 0x14 and hal_mac_rx_disable at 0x2f8386d4 size 0x12; set and clear RX_CONTROL bit 31</source>
       <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
-      <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in MIGRATION_RX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_ampdu.o hal_agreement_add_rx_ba size 0x12e, hal_agreement_clr_rx_ba size 0xbe, hal_agreement_del_rx_ba size 0x72, hal_ba_session_store size 0x4e, hal_ba_session_restore size 0x66 and hal_ba_session_restore_by_hw_index size 0x6c. These leaves prove eight reverse-addressed ordinary banks at 0x20104178..0x20104294 with stride 0x24, live-state/load-word pairs, and update bits zero through seven. Complete extra-SoftAP leaves independently prove the shared staging window at 0x20104ea4..0x20104eb8 plus commit/readback bits eight and nine.</source>
+      <source id="HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, fully open PHY/MAC, standard psram-code-psram-data profile and FRITZ!Box 7530 FN HE20 channel 1, 2026-07-30. The AP requested TID0 RX BlockAck at starting sequence five and negotiated window sixteen. Immediately after the open driver programmed ordinary bank zero, typed PAC readback at 0x20104274 reported control 0xc0000001, peer dc:15:c8:54:bc:1e, interface zero, window sixteen, current and loaded sequences five, and zero bitmaps. After two independent 500-packet ICMP receive runs, the hardware-maintained current-sequence word advanced first to 491 and then to 992 while the loaded starting sequence remained five. This qualifies the direct-bank geometry, field packing, publication update bit and live-state/load split; it does not qualify the separate extra-SoftAP staging path.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into MIGRATION_TX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_TX_TRIGGER_FLOW">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_get_txq_in_trig_flow_state size 0x0c and complete lmac.o lmacProcessTxComplete size 0x25c, lmacProcessShortRetryFail size 0x318, lmacProcessLongRetryFail size 0x266 and lmacProcessTBSuccess size 0x52. The HAL getter reads 0x20104cb4 and returns its complete high byte. The completion dispatcher right-shifts that byte by the completed queue index, masks bit zero and retains the resulting per-queue trigger-flow flag. On a zero-retry-count ACK/retry failure, both retry-failure paths use that flag to terminate through lmacProcessTBSuccess instead of scheduling an ordinary contention retry; the success completion path remains lmacProcessTxSuccess.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>

@@ -1,8 +1,8 @@
 //! Finite ESP32-S31 receive BlockAck hardware leaf in the live MAC crate.
 //!
-//! The pinned vendor function programs six MAC registers and then logs the
-//! readback. This module reproduces only the register transaction. It owns no
-//! agreement state, allocates nothing, and never waits.
+//! The pinned vendor function programs one of eight reverse-addressed MAC
+//! register banks. This module reproduces only the register transaction. It
+//! owns no agreement state, allocates nothing, and never waits.
 
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
@@ -90,7 +90,7 @@ pub fn clear(
     if hardware_index >= RX_BLOCK_ACK_CAPACITY {
         return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
     }
-    mmio.clear_rx_block_ack_entry(hardware_index);
+    mmio.delete_rx_block_ack_entry(hardware_index);
     Ok(())
 }
 

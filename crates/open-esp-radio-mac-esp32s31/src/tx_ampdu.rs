@@ -551,8 +551,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// Frame Control.Retry, and placed it at the head of a new aggregate.
     ///
     /// The queue must already be detached, so hardware cannot observe the
-    /// compaction. A mask with fewer than two frames is rejected because that
-    /// case belongs to the separate single-MPDU retry owner.
+    /// compaction. A one-frame mask is valid because HE keeps a failed
+    /// one-member A-MPDU under this same owner; converting it to the ordinary
+    /// queue first requires the distinct `ppHEAMPDU2Normal` metadata
+    /// transition.
     pub fn retain_for_ampdu_retry(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -573,7 +575,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         } else {
             (1_u32 << old_count) - 1
         };
-        if retry_mask & !valid_mask != 0 || retry_mask.count_ones() < 2 {
+        if retry_mask == 0 || retry_mask & !valid_mask != 0 {
             return Err(HtAmpduTxError::InvalidGeometry);
         }
         for source in 0..old_count {
@@ -619,6 +621,40 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.trigger_publication_snapshot = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
+        storage.recalculate_prepared_length()
+    }
+
+    /// Recompute retained HE delimiter metadata for a retry-rate transition.
+    ///
+    /// This is the owned equivalent of rebuilding the aggregate after
+    /// `lmacRetryTxFrame` calls `rcGetRate`: every retained PSDU keeps its
+    /// Sequence Control and CCMP PN, while rate/density-dependent empty
+    /// delimiters and the resulting A-MPDU byte count are derived again
+    /// before DMA publication.
+    pub fn retune_he_retry(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<HtAmpduLength, HtAmpduTxError> {
+        // SAFETY: Reserved proves that hardware owns no descriptor or buffer.
+        // Pinning is retained and only scalar metadata inside the fixed
+        // allocation changes.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        for index in 0..usize::from(storage.count) {
+            storage.empty_delimiters[index] = rate
+                .ampdu_empty_delimiters(storage.psdu_lengths[index], density)
+                .ok_or(HtAmpduTxError::FrameTooLong)?;
+            // The DMA-private metadata byte is consumed by the recovered
+            // delimiter/length formatter on the next submission.
+            let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+            buffer[4] = storage.empty_delimiters[index];
+        }
+        storage.prepared_length = 0;
+        storage.aggregate_length = 0;
         storage.recalculate_prepared_length()
     }
 
@@ -3399,6 +3435,56 @@ mod tests {
             assert_eq!(first[TX_AMPDU_METADATA_SIZE + 1], 0x49);
             assert_eq!(second[TX_AMPDU_METADATA_SIZE + 1], 0x49);
         }
+        storage.as_mut().cancel(cookie).unwrap();
+    }
+
+    #[test]
+    fn detached_he_pool_retains_and_retunes_one_missing_mpdu() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let initial = HeRate::ldpc(
+            crate::tx::HeMcs::Mcs9,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        );
+        let retry = HeRate::ldpc(
+            crate::tx::HeMcs::Mcs7,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        );
+        storage.as_mut().next_frame_buffer(cookie).unwrap()[..32].fill(0x5a);
+        storage
+            .as_mut()
+            .commit_he_frame(cookie, 32, 8, initial, HtAmpduDensity::EightMicroseconds)
+            .unwrap();
+        unsafe {
+            let storage = storage.as_mut().get_unchecked_mut();
+            storage.state = TxSlotState::Completed;
+            storage.detached = true;
+        }
+
+        let retained = storage
+            .as_mut()
+            .retain_for_ampdu_retry(cookie, 0b1)
+            .unwrap();
+        assert_eq!(retained.subframes, 1);
+        unsafe {
+            let buffer = &*storage.as_ref().get_ref().buffers[0].0.get();
+            assert_eq!(buffer[TX_AMPDU_METADATA_SIZE + 1] & 0x08, 0x08);
+        }
+
+        let retuned = storage
+            .as_mut()
+            .retune_he_retry(cookie, retry, HtAmpduDensity::EightMicroseconds)
+            .unwrap();
+        assert_eq!(retuned.subframes, 1);
+        assert_eq!(
+            storage.prepared_empty_delimiters(cookie, 0).unwrap(),
+            retry
+                .ampdu_empty_delimiters(32 + 8 + TX_FCS_SIZE, HtAmpduDensity::EightMicroseconds)
+                .unwrap()
+        );
         storage.as_mut().cancel(cookie).unwrap();
     }
 

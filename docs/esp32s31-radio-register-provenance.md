@@ -663,6 +663,20 @@ partial clears inside the two multi-bit initialization fields. The HAL module
 contains only the sequencing split around NRX and official-platform control;
 it no longer imports `Register32`, `Field32`, masks or compatibility MMIO.
 
+The adjacent read-only noise-floor measurement is now native too. Complete
+rev0 ROM `phy_read_hw_noisefloor` at `0x2f827d72` proves
+`0x2010708c[11:0]` and the signed sixteenth-dB to quarter-dB transform;
+complete `libpp.a[wdev.o]::wDev_GetNoiseFloor` proves the final rounded
+whole-dB signed-byte value. SVD v3.40 records the field and exact source, and
+the PAC performs both arithmetic shifts without a ROM call or raw address.
+`HIL_OPEN_STA_RATE_CONTROL_2026_07_30` then read `-92 dBm` on ESP32-S31 rev0,
+joined it with scan RSSI `-20 dBm` into the blob-compatible metric 72 and
+selected Dot11Ax schedule 1/rate `0x19`. The same PSRAM/PSRAM run completed
+WPA2, three AddBA agreements, TX A-MPDU and 100/100 ICMP packets with zero
+driver RX drops. This qualifies the read path and high-metric schedule branch;
+it does not assign protocol names to the still-unmapped low-metric vendor
+record bytes.
+
 The first AGC slice is native as well. Complete ROM enable/disable edges,
 pinned RX-compensation writes, the DC-memory pulse, and the two PBus
 work-mode pulse segments now operate on generated fields. The one- and

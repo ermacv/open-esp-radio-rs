@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.39</version>
+  <version>3.40</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1257,6 +1257,18 @@
           <fields>
             <field><name>AUTO_CONTROL_LOW_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>AUTO_CONTROL_HIGH_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>NOISE_FLOOR_MEASUREMENT</name>
+          <description>SOURCE[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.</description>
+          <addressOffset>0x708c</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field>
+              <name>SIGNED_SIXTEENTH_DB_CODE</name>
+              <description>SOURCE[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm.</description>
+              <bitOffset>0</bitOffset><bitWidth>12</bitWidth><access>read-only</access>
+            </field>
           </fields>
         </register>
         <register>
@@ -3406,6 +3418,8 @@
       <source id="ROM_REV0_PHY_I2C">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_i2c_clk_sel at 0x2f829f1c size 0x68, phy_i2cmst_reg_init at 0x2f8276c4 size 0x22, phy_bbpll_cal at 0x2f827dbc size 0x1c, phy_i2c_master_reset at 0x2f8260d0 size 0x74, phy_chip_i2c_readReg_org at 0x2f829ffa and phy_chip_i2c_writeReg at 0x2f82a30e</source>
       <source id="ROM_REV0_PHY_FREQUENCY_CHANNEL">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_freq_module_resetn at 0x2f824abe size 0x1c, phy_freq_chan_en_sw at 0x2f824ada size 0x38, phy_freq_i2c_mem_write at 0x2f824bb6 size 0x3e, phy_freq_reg_init at 0x2f824c46 size 0x60, phy_freq_num_get_data at 0x2f824ca6 size 0x24, phy_freq_i2c_num_addr at 0x2f824cca size 0x6a, phy_en_hw_set_freq at 0x2f824f9e size 0x14, phy_dis_hw_set_freq at 0x2f824fb2 size 0x14, phy_bb_bss_cbw40 and child at 0x2f826052, phy_mac_tx_chan_offset at 0x2f827550 size 0x38, phy_mac_enable_bb at 0x2f827836 size 0x2a, phy_bb_reg_init at 0x2f8279c6 size 0x140, phy_wifi_fbw_sel at 0x2f827e38 size 0x58, phy_bt_filter_reg at 0x2f827e90 size 0x34, phy_nrx_freq_set at 0x2f8280ec size 0x32, phy_wifi_enable_set at 0x2f828220 size 0x18, phy_bb_cbw_chan_cfg at 0x2f828238 size 0x74 and phy_i2c_master_mem_txcap at 0x2f82a832 size 0x24</source>
       <source id="ROM_REV0_PHY_REGISTER_INITIALIZATION">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_reg_init at 0x2f823ef8 size 0x52, phy_tx_paon_set at 0x2f82764c size 0x78, phy_bb_wdg_cfg at 0x2f827860 size 0x2c, phy_bb_reg_init at 0x2f8279c6 size 0x140, phy_noise_floor_auto_set at 0x2f827d3c size 0x36, phy_iq_corr_enable at 0x2f827d8c size 0x24 and phy_i2c_txrate_init at 0x2f8286d0 size 0x38</source>
+      <source id="ROM_REV0_PHY_READ_NOISE_FLOOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_read_hw_noisefloor at 0x2f827d72, size 0x1a. It reads 0x2010708c, masks the low twelve bits, subtracts 0x1000, sign-extends and arithmetic-shifts right by two.</source>
+      <source id="HIL_OPEN_STA_RATE_CONTROL_2026_07_30">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC, standard psram-code-psram-data profile and nearby FRITZ HE20 peer, 2026-07-30. The generated PAC plus complete ROM/wDev transform read -92 dBm, scan RSSI was -20 dBm and the blob-compatible signed-byte metric was 72. The Rust-owned association selected Dot11Ax schedule 1, rate code 0x19, maximum schedule 13, 16 entries and BF report mode/rate 1/16. WPA2/CCMP, TID0/TID7/TID5 AddBA, a three-subframe TX A-MPDU and DHCP completed; 100/100 ICMP packets completed with 3.692 ms mean RTT and zero driver RX drops or duplicates.</source>
       <source id="ROM_REV0_PHY_POWER_DETECTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pwdet_reg_init at 0x2f82634a size 0x5c, phy_pwdet_sar2_init at 0x2f8263a6 size 0x34, phy_en_pwdet at 0x2f8263da size 0x26, phy_tx_pwctrl_bg_init at 0x2f8267f6 size 0x1e, phy_get_tone_sar_dout_ at 0x2f8266da size 0x40 and phy_txcal_debuge_mode_ at 0x2f8244fe size 0x56</source>
       <source id="ROM_REV0_PHY_IQ_COEFFICIENTS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_set_reg at 0x2f827c16 size 0x68 and phy_rxiq_set_reg at 0x2f827c7e size 0x54</source>
       <source id="ROM_REV0_PHY_IQ_ESTIMATOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_iq_est_enable at 0x2f8289d4 size 0xb4, phy_iq_est_disable at 0x2f828a88 size 0x2c, phy_dc_iq_est at 0x2f828ab4 size 0x84, phy_rxiq_get_mis at 0x2f828b84 size 0x13e, phy_set_rx_gain_cal_iq at 0x2f82964c size 0x20c and phy_get_rx_sig_pwr at 0x2f829ea2 size 0x76</source>

@@ -6699,46 +6699,48 @@ pub mod phy_baseband_config_oracle {
         i2c_tx_rate_control: I2cTxRateControl,
         _reserved24: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved25: [u8; 0x03e4],
+        _reserved25: [u8; 0x70],
+        noise_floor_measurement: NoiseFloorMeasurement,
+        _reserved26: [u8; 0x0370],
         baseband_init_7400: BasebandInit7400,
-        _reserved26: [u8; 0x24],
+        _reserved27: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved27: [u8; 0x10],
+        _reserved28: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved28: [u8; 0x14],
+        _reserved29: [u8; 0x14],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved32: [u8; 0x03a4],
+        _reserved33: [u8; 0x03a4],
         baseband_init_7808: BasebandInit7808,
-        _reserved33: [u8; 0x84],
+        _reserved34: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved34: [u8; 0x48],
+        _reserved35: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved35: [u8; 0x04],
+        _reserved36: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved36: [u8; 0x24],
+        _reserved37: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved37: [u8; 0x70],
+        _reserved38: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved38: [u8; 0xa4],
+        _reserved39: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved39: [u8; 0x01d4],
+        _reserved40: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved40: [u8; 0x2c],
+        _reserved41: [u8; 0x2c],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved41: [u8; 0x08],
+        _reserved42: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved44: [u8; 0x08],
+        _reserved45: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved45: [u8; 0x18],
+        _reserved46: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved46: [u8; 0x38],
+        _reserved47: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved47: [u8; 0x24],
+        _reserved48: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -6866,6 +6868,11 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn noise_floor_control(&self) -> &NoiseFloorControl {
             &self.noise_floor_control
+        }
+        #[doc = "0x708c - SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+        #[inline(always)]
+        pub const fn noise_floor_measurement(&self) -> &NoiseFloorMeasurement {
+            &self.noise_floor_measurement
         }
         #[doc = "0x7400 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init sets bits 14:13."]
         #[inline(always)]
@@ -8621,6 +8628,30 @@ pub mod phy_baseband_config_oracle {
         impl crate::Writable for NoiseFloorControlSpec {
             type Safety = crate::Unsafe;
         }
+    }
+    #[doc = "NOISE_FLOOR_MEASUREMENT (r) register accessor: SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_measurement`] module"]
+    #[doc(alias = "NOISE_FLOOR_MEASUREMENT")]
+    pub type NoiseFloorMeasurement = crate::Reg<noise_floor_measurement::NoiseFloorMeasurementSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+    pub mod noise_floor_measurement {
+        #[doc = "Register `NOISE_FLOOR_MEASUREMENT` reader"]
+        pub type R = crate::R<NoiseFloorMeasurementSpec>;
+        #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+        pub type SignedSixteenthDbCodeR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:11 - SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+            #[inline(always)]
+            pub fn signed_sixteenth_db_code(&self) -> SignedSixteenthDbCodeR {
+                SignedSixteenthDbCodeR::new((self.bits & 0x0fff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_READ_NOISE_FLOOR,HIL_OPEN_STA_RATE_CONTROL_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NoiseFloorMeasurementSpec;
+        impl crate::RegisterSpec for NoiseFloorMeasurementSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`noise_floor_measurement::R`](R) reader structure"]
+        impl crate::Readable for NoiseFloorMeasurementSpec {}
     }
     #[doc = "BASEBAND_INIT_7400 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7400::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7400::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7400`] module"]
     #[doc(alias = "BASEBAND_INIT_7400")]

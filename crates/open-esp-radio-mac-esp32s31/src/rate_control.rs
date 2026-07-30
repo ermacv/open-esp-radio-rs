@@ -1,36 +1,14 @@
 //! Rust-owned transmit rate-control state.
 //!
-//! The vendor ABI still passes a stable 0x98-byte record pointer while the
-//! surrounding rate-selection code is being migrated.  The storage type below
-//! makes that ownership explicit.  Runtime policy is represented separately
-//! by [`RateControlState`], so retry accounting and schedule transitions are
-//! safe value operations rather than mutations performed by ROM through an
-//! untyped pointer.
+//! The open driver does not retain the vendor's 0x98-byte C-layout record.
+//! Association inputs, selected schedules and runtime retry state are separate
+//! Rust values, so no caller interprets a byte array by vendor offsets.
 
 use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
 use open_esp_radio_pac_esp32s31::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
     RadioRegisters,
 };
-
-pub const RATE_CONTROL_RECORD_SIZE: usize = 0x98;
-
-/// Stable backing for one temporary vendor-compatible rate-control record.
-///
-/// Unknown fields remain opaque until their readers and writers are migrated.
-/// Code outside the target adapter must not interpret `bytes` by offset.
-#[repr(C, align(4))]
-pub struct RateControlRecord {
-    bytes: [u8; RATE_CONTROL_RECORD_SIZE],
-}
-
-impl RateControlRecord {
-    pub const fn zeroed() -> Self {
-        Self {
-            bytes: [0; RATE_CONTROL_RECORD_SIZE],
-        }
-    }
-}
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
 ///
@@ -210,6 +188,148 @@ pub(crate) enum RateIndexMap {
     Dot11N,
     Dot11Ax,
     Lora,
+}
+
+/// Protocol-level PHY family used to create one associated STA rate context.
+///
+/// The blob has four internal HT/HE variants (numeric values 2 through 5),
+/// but complete `rcUpdatePhyMode` applies the same schedule policy to all of
+/// them. The open owner therefore does not expose those unowned numeric ABI
+/// tags.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaRateControlPhy {
+    Dot11B,
+    Dot11G,
+    Ht,
+    He,
+    Lora,
+}
+
+/// Two exact HE peer gates consumed by the low-link-metric report-rate branch.
+///
+/// Their record offsets are known, but their complete public 802.11 meanings
+/// are not yet proven. Naming only the behavior they gate prevents a caller
+/// from treating guessed node-layout names as established protocol semantics.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HeLowMetricReportFeatures {
+    pub dcm: bool,
+    pub extended_range_single_user: bool,
+}
+
+/// Value-only association input to the recovered per-peer rate policy.
+///
+/// [`StaLinkMetric`] keeps RSSI and noise floor from being confused with the
+/// signed difference consumed by the schedule thresholds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaRateControlAssociationInput {
+    pub phy: StaRateControlPhy,
+    pub link_metric: StaLinkMetric,
+    pub p2p: bool,
+    pub peer_highest_rate: Option<u32>,
+    pub extended_schedules: bool,
+    pub he_low_metric_report: HeLowMetricReportFeatures,
+}
+
+/// Signed `RSSI - noise floor` value consumed by the blob rate policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaLinkMetric(i8);
+
+impl StaLinkMetric {
+    /// Reproduce the narrowing subtraction performed by complete
+    /// `_oracles/libpp.a[if_hwctrl.o]::ic_set_trc` at instructions
+    /// 0xca..0xce. The complete `wl_cnx.o::ic_set_sta` log string names the
+    /// two source bytes `rssi` and `nf`.
+    pub const fn from_rssi_and_noise_floor(rssi_dbm: i8, noise_floor_dbm: i8) -> Self {
+        Self(rssi_dbm.wrapping_sub(noise_floor_dbm))
+    }
+
+    /// Admit a metric already produced by an owned running link estimator.
+    pub const fn from_estimator(value: i8) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> i8 {
+        self.0
+    }
+}
+
+/// Rust-owned result of the vendor post-association rate-control transition.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::ic_set_sta`
+/// constructs the per-peer input and calls
+/// `_oracles/libpp.a[if_hwctrl.o]::ic_set_trc`. Complete `ic_set_trc`
+/// invokes `rcUpdatePhyMode` after copying only scalar peer state, and
+/// complete `_oracles/libpp.a[trc.o]::rcUpdatePhyMode` selects the schedule
+/// references before calling `trc_set_bf_report_rate` at instruction 0x26c.
+/// This owner preserves that value and hardware-programming order without the
+/// vendor 0x98-byte record or its C offsets.
+#[derive(Debug, Eq, PartialEq)]
+pub struct StaRateControlAssociation {
+    selection: PhyModeSelection,
+    beamforming_report: BeamformingReportRate,
+}
+
+impl StaRateControlAssociation {
+    pub fn new(input: StaRateControlAssociationInput) -> Self {
+        let (phy_type, he_type) = match input.phy {
+            StaRateControlPhy::Dot11B => (0, 0),
+            StaRateControlPhy::Dot11G => (1, 0),
+            StaRateControlPhy::Ht => (2, 0),
+            StaRateControlPhy::He => (2, 7),
+            StaRateControlPhy::Lora => (6, 0),
+        };
+        let peer_highest_rate = input.peer_highest_rate.unwrap_or(0);
+        let selection = select_phy_mode(PhyModeSelectionInput {
+            phy_type,
+            he_type,
+            metric: i32::from(input.link_metric.value()),
+            p2p: input.p2p,
+            supplied_highest_rate: peer_highest_rate,
+            use_supplied_highest_rate: input.peer_highest_rate.is_some(),
+            feature_enabled: input.extended_schedules,
+        });
+        let beamforming_report = beamforming_report_rate_for_metric(
+            i32::from(input.link_metric.value()),
+            input.he_low_metric_report.dcm,
+            input.he_low_metric_report.extended_range_single_user,
+        );
+        Self {
+            selection,
+            beamforming_report,
+        }
+    }
+
+    pub const fn current_schedule(&self) -> RateScheduleRef {
+        self.selection.current
+    }
+
+    pub const fn fallback_schedule(&self) -> RateScheduleRef {
+        self.selection.fallback
+    }
+
+    pub const fn maximum_schedule_index(&self) -> u8 {
+        self.selection.maximum_index
+    }
+
+    pub const fn schedule_count(&self) -> u8 {
+        self.selection.schedule_count
+    }
+
+    pub const fn ampdu_limit_rate(&self) -> Option<u8> {
+        self.selection.ampdu_limit_rate
+    }
+
+    pub const fn beamforming_report(&self) -> BeamformingReportRate {
+        self.beamforming_report
+    }
+
+    /// Reproduce the sole hardware side effect of the association transition.
+    pub fn program_hardware(
+        &self,
+        registers: &mut RadioRegisters,
+    ) -> Result<(), MacHeBeamformingReportProfileError> {
+        self.beamforming_report.program(registers)
+    }
 }
 
 /// Value-only input to the recovered `rcUpdatePhyMode` policy.
@@ -863,6 +983,79 @@ mod tests {
         let lora = select_phy_mode(selection_input(6));
         assert_eq!(lora.current, schedule(RateScheduleKind::Lora, 0));
         assert_eq!(lora.schedule_count, 2);
+    }
+
+    #[test]
+    fn associated_he_owner_joins_schedule_and_report_rate_without_c_layout() {
+        let association = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy: StaRateControlPhy::He,
+            link_metric: StaLinkMetric::from_estimator(20),
+            p2p: false,
+            peer_highest_rate: None,
+            extended_schedules: true,
+            he_low_metric_report: HeLowMetricReportFeatures {
+                dcm: true,
+                extended_range_single_user: true,
+            },
+        });
+
+        assert_eq!(
+            association.current_schedule(),
+            schedule(RateScheduleKind::Dot11Ax, 7)
+        );
+        assert_eq!(
+            association.fallback_schedule(),
+            schedule(RateScheduleKind::Lora, 1)
+        );
+        assert_eq!(association.maximum_schedule_index(), 15);
+        assert_eq!(association.schedule_count(), 16);
+        assert_eq!(association.ampdu_limit_rate(), Some(0x13));
+        assert_eq!(
+            association.beamforming_report(),
+            beamforming_report_rate_for_metric(20, true, true)
+        );
+    }
+
+    #[test]
+    fn associated_he_owner_keeps_low_metric_feature_gates_explicit() {
+        let mut input = StaRateControlAssociationInput {
+            phy: StaRateControlPhy::He,
+            link_metric: StaLinkMetric::from_estimator(8),
+            p2p: false,
+            peer_highest_rate: Some(229),
+            extended_schedules: false,
+            he_low_metric_report: HeLowMetricReportFeatures::default(),
+        };
+        let ordinary = StaRateControlAssociation::new(input);
+        assert_eq!(
+            ordinary.current_schedule(),
+            schedule(RateScheduleKind::Dot11Ax, 0)
+        );
+        assert_eq!(
+            ordinary.beamforming_report(),
+            beamforming_report_rate_for_metric(8, false, false)
+        );
+
+        input.he_low_metric_report = HeLowMetricReportFeatures {
+            dcm: true,
+            extended_range_single_user: true,
+        };
+        assert_eq!(
+            StaRateControlAssociation::new(input).beamforming_report(),
+            beamforming_report_rate_for_metric(8, true, true)
+        );
+    }
+
+    #[test]
+    fn sta_link_metric_preserves_the_blob_signed_byte_subtraction() {
+        assert_eq!(
+            StaLinkMetric::from_rssi_and_noise_floor(-30, -96).value(),
+            66
+        );
+        assert_eq!(
+            StaLinkMetric::from_rssi_and_noise_floor(100, -100).value(),
+            -56
+        );
     }
 
     #[test]

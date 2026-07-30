@@ -62,6 +62,15 @@ const fn clear_baseband_tail_high(value: u8) -> u8 {
     value & !4
 }
 
+const fn decode_noise_floor_dbm(raw_low_twelve: u16) -> i8 {
+    // Complete ROM `phy_read_hw_noisefloor` subtracts 0x1000 from the
+    // masked field unconditionally, sign-extends and shifts by two. Complete
+    // blob `wDev_GetNoiseFloor` then adds two, shifts by two and stores a byte.
+    let signed_sixteenth_db = (raw_low_twelve & 0x0fff) as i32 - 0x1000;
+    let quarter_db = signed_sixteenth_db >> 2;
+    ((quarter_db + 2) >> 2) as i8
+}
+
 impl RadioRegisters {
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
     ///
@@ -202,6 +211,25 @@ impl RadioRegisters {
             .modify(|_, w| w.auto_enable_unknown().set_bit());
         bb.noise_floor_enable_1()
             .modify(|_, w| w.auto_enable_unknown().set_bit());
+    }
+
+    /// Read the current hardware noise floor as the signed byte used by MAC
+    /// rate control.
+    ///
+    /// SOURCE: complete rev0 ROM `phy_read_hw_noisefloor` at
+    /// `0x2f82_7d72`, size `0x1a`, reads `0x2010_708c[11:0]` and performs the
+    /// first arithmetic divide by four. Complete
+    /// `_oracles/libpp.a[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, applies
+    /// `(quarter_db + 2) >> 2` and retains the result as a signed byte.
+    pub fn read_noise_floor_dbm(&self) -> i8 {
+        let raw = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .noise_floor_measurement()
+            .read()
+            .signed_sixteenth_db_code()
+            .bits();
+        decode_noise_floor_dbm(raw)
     }
 
     /// Apply all six ordered PA-on configuration operations.
@@ -857,9 +885,18 @@ impl RadioRegisters {
 mod tests {
     use super::{
         clear_baseband_mode_high, clear_baseband_tail_high, clear_baseband_tail_low,
-        clear_power_detector_enable_field, set_baseband_mode_low, tone_path_image,
-        txdc_power_detector_images, txiq_first_mismatch_image, txiq_second_mismatch_image,
+        clear_power_detector_enable_field, decode_noise_floor_dbm, set_baseband_mode_low,
+        tone_path_image, txdc_power_detector_images, txiq_first_mismatch_image,
+        txiq_second_mismatch_image,
     };
+
+    #[test]
+    fn noise_floor_decode_reproduces_both_complete_arithmetic_shifts() {
+        // -96 dBm is encoded as -1536 sixteenth-dB, or low twelve bits 0xa00.
+        assert_eq!(decode_noise_floor_dbm(0x0a00), -96);
+        assert_eq!(decode_noise_floor_dbm(0x0fff), 0);
+        assert_eq!(decode_noise_floor_dbm(0x0000), 0);
+    }
 
     #[test]
     fn power_detector_enable_clears_remain_three_distinct_images() {

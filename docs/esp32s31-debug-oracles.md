@@ -374,6 +374,37 @@ contained no HE NDPA or Trigger, so exact BlockAck session order, token
 ownership and per-TID SSNs are necessary but do not by themselves activate
 sounding or OFDMA.
 
+The next complete post-association chain is
+`libnet80211.a[wl_cnx.o]::ic_set_sta` ->
+`libpp.a[if_hwctrl.o]::ic_set_trc` -> `libpp.a[trc.o]::rcUpdatePhyMode` ->
+`trc_set_bf_report_rate`. `ic_set_sta`'s own format string names the two
+signed scalar inputs `rssi` and `nf`; `ic_set_trc` subtracts them and narrows
+the result to a signed byte immediately before the tail-call to
+`rcUpdatePhyMode`. At instruction 0x26c that complete 0x43e-byte body calls
+`trc_set_bf_report_rate` after selecting the per-peer schedule. The open
+driver now owns this as `StaRateControlAssociation`: typed PHY family, signed
+link metric, schedule references and BF report profile, with no retained
+0x98-byte vendor C-layout record.
+
+The noise-floor producer is independently complete. Rev0 ROM
+`phy_read_hw_noisefloor` at `0x2f827d72`, size `0x1a`, reads
+`0x2010708c[11:0]`, subtracts `0x1000`, sign-extends and arithmetic-shifts by
+two. Complete `libpp.a[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, adds two,
+shifts by two again and retains a signed byte. The SVD now names the read-only
+sixteenth-dB source field and the handwritten PAC exposes the exact whole-dB
+value; association computes the blob-compatible wrapping `RSSI - NF` metric.
+
+`HIL_OPEN_STA_RATE_CONTROL_2026_07_30` exercised that complete chain on rev0
+with the standard PSRAM/PSRAM image and the nearby FRITZ HE20 peer. The typed
+PAC read `-92 dBm`; the scan result was `-20 dBm`, so the exact signed-byte
+subtraction produced metric 72. The Rust-owned association selected Dot11Ax
+schedule 1, rate code `0x19`, maximum schedule 13, 16 schedule entries and BF
+report mode/rate 1/16. WPA2/CCMP, all three TID AddBA agreements, a
+three-subframe TX A-MPDU and DHCP then completed. A 100-packet ICMP run had
+zero loss and 3.692 ms mean RTT; the driver reported zero RX drops and
+duplicates. The low-metric record-byte gates remain deliberately unclaimed:
+metric 72 takes the complete `> 13` branch before they can affect the result.
+
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
 HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field

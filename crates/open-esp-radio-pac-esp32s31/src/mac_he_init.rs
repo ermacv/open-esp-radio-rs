@@ -33,7 +33,7 @@ impl RadioRegisters {
         timing.modify(|_, w| unsafe {
             w.bf_memory_write_enable()
                 .clear_bit()
-                .he_beam_bfrp_time()
+                .rx_bfrp_timeout_ms()
                 .bits(0x10)
         });
         timing.modify(|_, w| unsafe { w.he_beam_hw_sequence_select().bits(5) });

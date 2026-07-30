@@ -447,6 +447,76 @@ an already recovered register field to its higher-level 802.11 meaning.
 The rev0 ROM ELF contains no callable `dbg_*` register decoder. Its
 debug-related public symbols are mainly configuration leaves such
 as `phy_chan_dump_cfg`, `phy_csidump_force_lltf_cfg`,
-`phy_txcal_debuge_mode_` and `phy_pbus_debugmode`. The register-map recovery
-value is consequently concentrated in blob `hal_debug.o`; ROM remains the
-stronger oracle for complete PHY algorithms and fixed-address leaf behavior.
+`phy_txcal_debuge_mode_` and `phy_pbus_debugmode`. ROM therefore remains the
+stronger oracle for complete PHY algorithms and fixed-address leaf behavior,
+but `hal_debug.o` is not the only strong blob register-map source.
+
+## Additional PHY, BT and test-HAL register oracles
+
+The pinned `_oracles/libphy.a` (SHA-256
+`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`)
+contains three complete `phy_debug.o` functions that materially extend the
+map:
+
+- `phy_reg_check` (`0x3d2` bytes) walks fixed, word-aligned, half-open ranges
+  and prints the block names. These ranges are now recorded as
+  `openEspRadioEvidenceRanges` in the SVD. They prove finite occupied dump
+  windows, not individual register names.
+- `phy_i2c_check` (`0x1f6` bytes) proves ten bank IDs, hosts and index bounds.
+  `PHY_I2C_COMMAND_RAM.BLOCK` now exposes those IDs as enumerated values.
+- `phy_pbus_print` (`0xf4` bytes) associates selector/path pairs with RFRX,
+  RFTX, BB and DCO. The association is recorded on the command fields without
+  over-naming the packed result windows.
+
+`rfpll_cap_check` and ROM `phy_read_pll_cap` additionally establish the
+logical-bank layout `RFPLL[5] = IR_CAP_EXT[7:0]`,
+`RFPLL[7].bit2 = IR_CAP_EXT[8]`, and `RFPLL[6] = IR_DAC_EXT[7:0]`. These are
+PHY-I²C bank registers, not direct MMIO registers, so they are retained here
+as evidence until the PAC has a typed logical-bank layer.
+
+The pinned `_oracles/libbtbb.a` (SHA-256
+`ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df`)
+is a second major source:
+
+- complete `bt_bb_v2.o::ble_tx_config_check` (`0x1c0` bytes) proves the two
+  Bluetooth delay bytes in the canonical FECTRL word at `0x20100870`, plus
+  timing fields in BT-only registers;
+- paired `bt_cte.o` setters and getters independently prove field position and
+  width for CTE and BTAGC registers. Examples include
+  `0x20102124[21:14] CTE_DELAY_RX_AOA`,
+  `0x20102128[31:24] CTE_ANT_DELAY_TX_AOD_1US`,
+  `0x20102164[0] CTE_SQI_EN`, and
+  `0x20102898[29:21] AGC_TARGET_VALUE`.
+
+The complete BLE TX checker specifically decodes
+`0x201020b8[30:23] TX_CCA_START_TS`,
+`0x201020b8[19:12] TX_CCA_END_TS`,
+`0x20102014[26:19] BB_TX_ON_DELAY`,
+`0x20102014[15:11] TX_RAMP_DELAY`,
+`0x2010201c[31:27] TX_RAMPUP_DELAY`,
+`0x20100870[7:0] RF_ON_BT_DELAY_CODE`,
+`0x20100870[15:8] PA_ON_BT_DELAY`, and
+`0x20101650[7:0] LC_TX_ON_DELAY`. Its printed `CONSTANT_DC_TIME` is the
+bounded subtraction
+`LC_TX_ON_DELAY - BB_TX_ON_DELAY - TX_RAMP_DELAY - TX_RAMPUP_DELAY`.
+`bt_bb_ble_diag` independently proves three selectors at
+`0x2010210c[15:13]`, `[19:16]` and `[23:20]`, but no pinned string gives them
+a stronger meaning than `DIAG_*_SELECT`.
+
+The BT-only addresses are deliberately not introduced as independent
+peripheral singletons in the Wi-Fi-oriented SVD. They belong in one canonical
+BT-radio map; duplicating them here would create two Rust owners for one
+physical register.
+
+Finally, pinned `_oracles/libpp.a` supplies two previously omitted sources.
+Complete `hal_debug.o::print_isr_regs` (`0x5a` bytes) reads and names the WDEV,
+WDEV_INT1 and WDEVPWR ENABLE/RAW/STATUS banks. WDEV_INT1 ENABLE aliases the
+already writable HE parent word at `0x20104c2c`, so it remains one canonical
+register; its RAW/STATUS words and the WDEVPWR diagnostic bank remain read-only
+until a writer proves their side effects. Complete
+`test_hal.o::esp_test_get_csi_dump_cfg` (`0x8a` bytes) proves the fields at
+`0x2010411c` and the `RXBFRPTO_MS` field at `0x20104c78[7:1]`.
+`esp_test_set_csi_dump_cfg` (`0x22e` bytes) has a reproducible vendor defect:
+`cfg[8]` gates the BEAMFORMED update, but `cfg[1]` supplies the written bit.
+The SVD describes the physical bit and records the defect; the generated PAC
+does not emulate it.

@@ -4539,14 +4539,14 @@ pub mod phy_frequency_channel_oracle {
         }
     }
 }
-#[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. PBus command, mode, status/clock/force and packed result windows recovered from complete rev0 ROM bodies and their address/shift jump tables."]
+#[doc = "SOURCE\\[ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. PBus command, mode, status/clock/force and packed result windows recovered from complete rev0 ROM bodies and their address/shift jump tables. The blob debug printer independently names selector/path groups: RFRX is selector 0 paths 1/2; BB is selector 1 paths 1/2; DCO is selectors 2/3 paths 1/2; RFTX is selector 4 paths 1/2 and selector 5 path 1."]
 pub type PhyPbus = crate::Periph<phy_pbus::RegisterBlock, 0x2010_0880>;
 impl core::fmt::Debug for PhyPbus {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("PhyPbus").finish()
     }
 }
-#[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. PBus command, mode, status/clock/force and packed result windows recovered from complete rev0 ROM bodies and their address/shift jump tables."]
+#[doc = "SOURCE\\[ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. PBus command, mode, status/clock/force and packed result windows recovered from complete rev0 ROM bodies and their address/shift jump tables. The blob debug printer independently names selector/path groups: RFRX is selector 0 paths 1/2; BB is selector 1 paths 1/2; DCO is selectors 2/3 paths 1/2; RFTX is selector 4 paths 1/2 and selector 5 path 1."]
 pub mod phy_pbus {
     #[repr(C)]
     #[doc = "Register block"]
@@ -4621,17 +4621,17 @@ pub mod phy_pbus {
         pub type TransactionStartR = crate::BitReader;
         #[doc = "Field `TRANSACTION_START` writer - "]
         pub type TransactionStartW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `SELECTOR` reader - "]
+        #[doc = "Field `SELECTOR` reader - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Debug group selector: 0 RFRX, 1 BB, 2/3 DCO, 4/5 RFTX for the evidenced paths. Treat other selector/path combinations as undocumented."]
         pub type SelectorR = crate::FieldReader;
-        #[doc = "Field `SELECTOR` writer - "]
+        #[doc = "Field `SELECTOR` writer - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Debug group selector: 0 RFRX, 1 BB, 2/3 DCO, 4/5 RFTX for the evidenced paths. Treat other selector/path combinations as undocumented."]
         pub type SelectorW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `TEST_VALUE` reader - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical nine-bit value field. The ROM publication expression accepts a wider signed halfword before the combined command mask; use the PAC ROM encoder when reproducing that behavior."]
         pub type TestValueR = crate::FieldReader<u16>;
         #[doc = "Field `TEST_VALUE` writer - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical nine-bit value field. The ROM publication expression accepts a wider signed halfword before the combined command mask; use the PAC ROM encoder when reproducing that behavior."]
         pub type TestValueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
-        #[doc = "Field `PATH` reader - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder."]
+        #[doc = "Field `PATH` reader - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder. The debug printer exercises paths 1 and 2 for RFRX, BB, DCO and selector-4 RFTX, and path 1 for selector-5 RFTX."]
         pub type PathR = crate::FieldReader;
-        #[doc = "Field `PATH` writer - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder."]
+        #[doc = "Field `PATH` writer - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder. The debug printer exercises paths 1 and 2 for RFRX, BB, DCO and selector-4 RFTX, and path 1 for selector-5 RFTX."]
         pub type PathW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
             #[doc = "Bit 0"]
@@ -4644,7 +4644,7 @@ pub mod phy_pbus {
             pub fn transaction_start(&self) -> TransactionStartR {
                 TransactionStartR::new(((self.bits >> 1) & 1) != 0)
             }
-            #[doc = "Bits 2:5"]
+            #[doc = "Bits 2:5 - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Debug group selector: 0 RFRX, 1 BB, 2/3 DCO, 4/5 RFTX for the evidenced paths. Treat other selector/path combinations as undocumented."]
             #[inline(always)]
             pub fn selector(&self) -> SelectorR {
                 SelectorR::new(((self.bits >> 2) & 0x0f) as u8)
@@ -4654,7 +4654,7 @@ pub mod phy_pbus {
             pub fn test_value(&self) -> TestValueR {
                 TestValueR::new(((self.bits >> 6) & 0x01ff) as u16)
             }
-            #[doc = "Bits 15:16 - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder."]
+            #[doc = "Bits 15:16 - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder. The debug printer exercises paths 1 and 2 for RFRX, BB, DCO and selector-4 RFTX, and path 1 for selector-5 RFTX."]
             #[inline(always)]
             pub fn path(&self) -> PathR {
                 PathR::new(((self.bits >> 15) & 3) as u8)
@@ -4671,7 +4671,7 @@ pub mod phy_pbus {
             pub fn transaction_start(&mut self) -> TransactionStartW<'_, CommandSpec> {
                 TransactionStartW::new(self, 1)
             }
-            #[doc = "Bits 2:5"]
+            #[doc = "Bits 2:5 - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Debug group selector: 0 RFRX, 1 BB, 2/3 DCO, 4/5 RFTX for the evidenced paths. Treat other selector/path combinations as undocumented."]
             #[inline(always)]
             pub fn selector(&mut self) -> SelectorW<'_, CommandSpec> {
                 SelectorW::new(self, 2)
@@ -4681,7 +4681,7 @@ pub mod phy_pbus {
             pub fn test_value(&mut self) -> TestValueW<'_, CommandSpec> {
                 TestValueW::new(self, 6)
             }
-            #[doc = "Bits 15:16 - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO\\]; CONFIDENCE\\[instruction-exact\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder."]
+            #[doc = "Bits 15:16 - SOURCE\\[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO,BLOB_LIBPHY_PHY_DEBUG_PBUS\\]; CONFIDENCE\\[instruction-exact-partial\\]. Physical two-bit path field. High retained bits of a wide test-value argument are ORed into this field by the complete ROM command encoder. The debug printer exercises paths 1 and 2 for RFRX, BB, DCO and selector-4 RFTX, and path 1 for selector-5 RFTX."]
             #[inline(always)]
             pub fn path(&mut self) -> PathW<'_, CommandSpec> {
                 PathW::new(self, 15)
@@ -5021,14 +5021,14 @@ pub mod phy_pbus {
         impl crate::Readable for ReadResult4Spec {}
     }
 }
-#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init."]
+#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C,BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init. Complete phy_i2c_check independently names ten logical banks, their block IDs, selected host and finite register-index ranges."]
 pub type PhyI2cCommandRam = crate::Periph<phy_i2c_command_ram::RegisterBlock, 0x2010_fc00>;
 impl core::fmt::Debug for PhyI2cCommandRam {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("PhyI2cCommandRam").finish()
     }
 }
-#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init."]
+#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C,BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init. Complete phy_i2c_check independently names ten logical banks, their block IDs, selected host and finite register-index ranges."]
 pub mod phy_i2c_command_ram {
     #[repr(C)]
     #[doc = "Register block"]
@@ -5055,14 +5055,105 @@ pub mod phy_i2c_command_ram {
     pub mod command_memory {
         #[doc = "Register `COMMAND_MEMORY%s` writer"]
         pub type W = crate::W<CommandMemorySpec>;
-        #[doc = "Field `BLOCK` writer - "]
-        pub type BlockW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 \\[0,7), ULP host 1 \\[0,11), RFPLL host 1 \\[0,22), RFPLL_SDM host 1 \\[0,7), BBPLL host 0 \\[0,11), BBTOP host 1 \\[0,57), PERIF host 0 \\[0,13), BIAS host 1 \\[0,4), TXRF host 1 \\[1,22), DIG_REG host 0 \\[0,15)."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum Block {
+            #[doc = "16: `10000`"]
+            Sar1 = 16,
+            #[doc = "97: `1100001`"]
+            Ulp = 97,
+            #[doc = "98: `1100010`"]
+            Rfpll = 98,
+            #[doc = "99: `1100011`"]
+            RfpllSdm = 99,
+            #[doc = "102: `1100110`"]
+            Bbpll = 102,
+            #[doc = "103: `1100111`"]
+            Bbtop = 103,
+            #[doc = "105: `1101001`"]
+            Perif = 105,
+            #[doc = "106: `1101010`"]
+            Bias = 106,
+            #[doc = "107: `1101011`"]
+            Txrf = 107,
+            #[doc = "109: `1101101`"]
+            DigReg = 109,
+        }
+        impl From<Block> for u8 {
+            #[inline(always)]
+            fn from(variant: Block) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Block {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for Block {}
+        #[doc = "Field `BLOCK` writer - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 \\[0,7), ULP host 1 \\[0,11), RFPLL host 1 \\[0,22), RFPLL_SDM host 1 \\[0,7), BBPLL host 0 \\[0,11), BBTOP host 1 \\[0,57), PERIF host 0 \\[0,13), BIAS host 1 \\[0,4), TXRF host 1 \\[1,22), DIG_REG host 0 \\[0,15)."]
+        pub type BlockW<'a, REG> = crate::FieldWriter<'a, REG, 8, Block>;
+        impl<'a, REG> BlockW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`10000`"]
+            #[inline(always)]
+            pub fn sar1(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Sar1)
+            }
+            #[doc = "`1100001`"]
+            #[inline(always)]
+            pub fn ulp(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Ulp)
+            }
+            #[doc = "`1100010`"]
+            #[inline(always)]
+            pub fn rfpll(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Rfpll)
+            }
+            #[doc = "`1100011`"]
+            #[inline(always)]
+            pub fn rfpll_sdm(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::RfpllSdm)
+            }
+            #[doc = "`1100110`"]
+            #[inline(always)]
+            pub fn bbpll(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Bbpll)
+            }
+            #[doc = "`1100111`"]
+            #[inline(always)]
+            pub fn bbtop(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Bbtop)
+            }
+            #[doc = "`1101001`"]
+            #[inline(always)]
+            pub fn perif(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Perif)
+            }
+            #[doc = "`1101010`"]
+            #[inline(always)]
+            pub fn bias(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Bias)
+            }
+            #[doc = "`1101011`"]
+            #[inline(always)]
+            pub fn txrf(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::Txrf)
+            }
+            #[doc = "`1101101`"]
+            #[inline(always)]
+            pub fn dig_reg(self) -> &'a mut crate::W<REG> {
+                self.variant(Block::DigReg)
+            }
+        }
         #[doc = "Field `REGISTER` writer - "]
         pub type RegisterW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         #[doc = "Field `DATA` writer - "]
         pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl W {
-            #[doc = "Bits 0:7"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 \\[0,7), ULP host 1 \\[0,11), RFPLL host 1 \\[0,22), RFPLL_SDM host 1 \\[0,7), BBPLL host 0 \\[0,11), BBTOP host 1 \\[0,57), PERIF host 0 \\[0,13), BIAS host 1 \\[0,4), TXRF host 1 \\[1,22), DIG_REG host 0 \\[0,15)."]
             #[inline(always)]
             pub fn block(&mut self) -> BlockW<'_, CommandMemorySpec> {
                 BlockW::new(self, 0)
@@ -6834,7 +6925,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn tx_pa_control_0(&self) -> &TxPaControl0 {
             &self.tx_pa_control_0
         }
-        #[doc = "0x870 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one."]
+        #[doc = "0x870 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one. Complete ble_tx_config_check independently names the low two bytes as Bluetooth RF/PA turn-on delays."]
         #[inline(always)]
         pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
             &self.tx_pa_control_1
@@ -8212,28 +8303,37 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TX_PA_CONTROL_1 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_1`] module"]
+    #[doc = "TX_PA_CONTROL_1 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one. Complete ble_tx_config_check independently names the low two bytes as Bluetooth RF/PA turn-on delays.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_1`] module"]
     #[doc(alias = "TX_PA_CONTROL_1")]
     pub type TxPaControl1 = crate::Reg<tx_pa_control_1::TxPaControl1Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one. Complete ble_tx_config_check independently names the low two bytes as Bluetooth RF/PA turn-on delays."]
     pub mod tx_pa_control_1 {
         #[doc = "Register `TX_PA_CONTROL_1` reader"]
         pub type R = crate::R<TxPaControl1Spec>;
         #[doc = "Register `TX_PA_CONTROL_1` writer"]
         pub type W = crate::W<TxPaControl1Spec>;
-        #[doc = "Field `PA_ON_BYTE_1_UNKNOWN` reader - "]
-        pub type PaOnByte1UnknownR = crate::FieldReader;
-        #[doc = "Field `PA_ON_BYTE_1_UNKNOWN` writer - "]
-        pub type PaOnByte1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `RF_ON_BT_DELAY_CODE` reader - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed."]
+        pub type RfOnBtDelayCodeR = crate::FieldReader;
+        #[doc = "Field `RF_ON_BT_DELAY_CODE` writer - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed."]
+        pub type RfOnBtDelayCodeW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `PA_ON_BT_DELAY` reader - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
+        pub type PaOnBtDelayR = crate::FieldReader;
+        #[doc = "Field `PA_ON_BT_DELAY` writer - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
+        pub type PaOnBtDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` reader - "]
         pub type PaOnHighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` writer - "]
         pub type PaOnHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
         impl R {
-            #[doc = "Bits 8:15"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed."]
             #[inline(always)]
-            pub fn pa_on_byte_1_unknown(&self) -> PaOnByte1UnknownR {
-                PaOnByte1UnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn rf_on_bt_delay_code(&self) -> RfOnBtDelayCodeR {
+                RfOnBtDelayCodeR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
+            #[inline(always)]
+            pub fn pa_on_bt_delay(&self) -> PaOnBtDelayR {
+                PaOnBtDelayR::new(((self.bits >> 8) & 0xff) as u8)
             }
             #[doc = "Bits 16:31"]
             #[inline(always)]
@@ -8242,10 +8342,15 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
-            #[doc = "Bits 8:15"]
+            #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed."]
             #[inline(always)]
-            pub fn pa_on_byte_1_unknown(&mut self) -> PaOnByte1UnknownW<'_, TxPaControl1Spec> {
-                PaOnByte1UnknownW::new(self, 8)
+            pub fn rf_on_bt_delay_code(&mut self) -> RfOnBtDelayCodeW<'_, TxPaControl1Spec> {
+                RfOnBtDelayCodeW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
+            #[inline(always)]
+            pub fn pa_on_bt_delay(&mut self) -> PaOnBtDelayW<'_, TxPaControl1Spec> {
+                PaOnBtDelayW::new(self, 8)
             }
             #[doc = "Bits 16:31"]
             #[inline(always)]
@@ -8253,7 +8358,7 @@ pub mod phy_baseband_config_oracle {
                 PaOnHighUnknownW::new(self, 16)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one. Complete ble_tx_config_check independently names the low two bytes as Bluetooth RF/PA turn-on delays.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxPaControl1Spec;
         impl crate::RegisterSpec for TxPaControl1Spec {
             type Ux = u32;
@@ -14287,11 +14392,13 @@ pub mod wifi_mac_he_init_prefix {
         bf_enable: BfEnable,
         _reserved5: [u8; 0x07a8],
         parent_enable: ParentEnable,
-        _reserved6: [u8; 0x48],
+        interrupt_1_raw: Interrupt1Raw,
+        interrupt_1_status: Interrupt1Status,
+        _reserved8: [u8; 0x40],
         bf_timing_control: BfTimingControl,
-        _reserved7: [u8; 0x0168],
+        _reserved9: [u8; 0x0168],
         bf_high_image: BfHighImage,
-        _reserved8: [u8; 0x1c],
+        _reserved10: [u8; 0x1c],
         tb_tx_control: TbTxControl,
     }
     impl RegisterBlock {
@@ -14320,12 +14427,22 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn bf_enable(&self) -> &BfEnable {
             &self.bf_enable
         }
-        #[doc = "0xbe4 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init."]
+        #[doc = "0xbe4 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. Parent sets bit 12 before trigger-based TX init. Complete print_isr_regs independently names this same physical word WDEV_INT1_ENABLE. This is one canonical register with two observed roles, not two peripheral owners."]
         #[inline(always)]
         pub const fn parent_enable(&self) -> &ParentEnable {
             &self.parent_enable
         }
-        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20."]
+        #[doc = "0xbe8 - SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+        #[inline(always)]
+        pub const fn interrupt_1_raw(&self) -> &Interrupt1Raw {
+            &self.interrupt_1_raw
+        }
+        #[doc = "0xbec - SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs."]
+        #[inline(always)]
+        pub const fn interrupt_1_status(&self) -> &Interrupt1Status {
+            &self.interrupt_1_status
+        }
+        #[doc = "0xc30 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL,BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20. Complete esp_test_get_csi_dump_cfg supplies the more specific RXBFRPTO_MS name for bits 7:1."]
         #[inline(always)]
         pub const fn bf_timing_control(&self) -> &BfTimingControl {
             &self.bf_timing_control
@@ -14732,10 +14849,10 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PARENT_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_enable`] module"]
+    #[doc = "PARENT_ENABLE (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. Parent sets bit 12 before trigger-based TX init. Complete print_isr_regs independently names this same physical word WDEV_INT1_ENABLE. This is one canonical register with two observed roles, not two peripheral owners.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@parent_enable`] module"]
     #[doc(alias = "PARENT_ENABLE")]
     pub type ParentEnable = crate::Reg<parent_enable::ParentEnableSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. Parent sets bit 12 before trigger-based TX init. Complete print_isr_regs independently names this same physical word WDEV_INT1_ENABLE. This is one canonical register with two observed roles, not two peripheral owners."]
     pub mod parent_enable {
         #[doc = "Register `PARENT_ENABLE` reader"]
         pub type R = crate::R<ParentEnableSpec>;
@@ -14759,7 +14876,7 @@ pub mod wifi_mac_he_init_prefix {
                 EnableUnknownW::new(self, 12)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Parent sets bit 12 before trigger-based TX init.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. Parent sets bit 12 before trigger-based TX init. Complete print_isr_regs independently names this same physical word WDEV_INT1_ENABLE. This is one canonical register with two observed roles, not two peripheral owners.\n\nYou can [`read`](crate::Reg::read) this register and get [`parent_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`parent_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ParentEnableSpec;
         impl crate::RegisterSpec for ParentEnableSpec {
             type Ux = u32;
@@ -14771,10 +14888,58 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
+    #[doc = "INTERRUPT_1_RAW (r) register accessor: SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_raw`] module"]
+    #[doc(alias = "INTERRUPT_1_RAW")]
+    pub type Interrupt1Raw = crate::Reg<interrupt_1_raw::Interrupt1RawSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+    pub mod interrupt_1_raw {
+        #[doc = "Register `INTERRUPT_1_RAW` reader"]
+        pub type R = crate::R<Interrupt1RawSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Interrupt1RawSpec;
+        impl crate::RegisterSpec for Interrupt1RawSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`interrupt_1_raw::R`](R) reader structure"]
+        impl crate::Readable for Interrupt1RawSpec {}
+    }
+    #[doc = "INTERRUPT_1_STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_status`] module"]
+    #[doc(alias = "INTERRUPT_1_STATUS")]
+    pub type Interrupt1Status = crate::Reg<interrupt_1_status::Interrupt1StatusSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs."]
+    pub mod interrupt_1_status {
+        #[doc = "Register `INTERRUPT_1_STATUS` reader"]
+        pub type R = crate::R<Interrupt1StatusSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Interrupt1StatusSpec;
+        impl crate::RegisterSpec for Interrupt1StatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`interrupt_1_status::R`](R) reader structure"]
+        impl crate::Readable for Interrupt1StatusSpec {}
+    }
+    #[doc = "BF_TIMING_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL,BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20. Complete esp_test_get_csi_dump_cfg supplies the more specific RXBFRPTO_MS name for bits 7:1.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_timing_control`] module"]
     #[doc(alias = "BF_TIMING_CONTROL")]
     pub type BfTimingControl = crate::Reg<bf_timing_control::BfTimingControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL,BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20. Complete esp_test_get_csi_dump_cfg supplies the more specific RXBFRPTO_MS name for bits 7:1."]
     pub mod bf_timing_control {
         #[doc = "Register `BF_TIMING_CONTROL` reader"]
         pub type R = crate::R<BfTimingControlSpec>;
@@ -14784,10 +14949,10 @@ pub mod wifi_mac_he_init_prefix {
         pub type BfMemoryWriteEnableR = crate::BitReader;
         #[doc = "Field `BF_MEMORY_WRITE_ENABLE` writer - "]
         pub type BfMemoryWriteEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `HE_BEAM_BFRP_TIME` reader - "]
-        pub type HeBeamBfrpTimeR = crate::FieldReader;
-        #[doc = "Field `HE_BEAM_BFRP_TIME` writer - "]
-        pub type HeBeamBfrpTimeW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `RX_BFRP_TIMEOUT_MS` reader - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
+        pub type RxBfrpTimeoutMsR = crate::FieldReader;
+        #[doc = "Field `RX_BFRP_TIMEOUT_MS` writer - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
+        pub type RxBfrpTimeoutMsW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         #[doc = "Field `HE_BEAM_NDP_TIME` reader - "]
         pub type HeBeamNdpTimeR = crate::FieldReader;
         #[doc = "Field `HE_BEAM_NDP_TIME` writer - "]
@@ -14826,10 +14991,10 @@ pub mod wifi_mac_he_init_prefix {
             pub fn bf_memory_write_enable(&self) -> BfMemoryWriteEnableR {
                 BfMemoryWriteEnableR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bits 1:7"]
+            #[doc = "Bits 1:7 - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
             #[inline(always)]
-            pub fn he_beam_bfrp_time(&self) -> HeBeamBfrpTimeR {
-                HeBeamBfrpTimeR::new(((self.bits >> 1) & 0x7f) as u8)
+            pub fn rx_bfrp_timeout_ms(&self) -> RxBfrpTimeoutMsR {
+                RxBfrpTimeoutMsR::new(((self.bits >> 1) & 0x7f) as u8)
             }
             #[doc = "Bits 8:15"]
             #[inline(always)]
@@ -14880,10 +15045,10 @@ pub mod wifi_mac_he_init_prefix {
             ) -> BfMemoryWriteEnableW<'_, BfTimingControlSpec> {
                 BfMemoryWriteEnableW::new(self, 0)
             }
-            #[doc = "Bits 1:7"]
+            #[doc = "Bits 1:7 - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
             #[inline(always)]
-            pub fn he_beam_bfrp_time(&mut self) -> HeBeamBfrpTimeW<'_, BfTimingControlSpec> {
-                HeBeamBfrpTimeW::new(self, 1)
+            pub fn rx_bfrp_timeout_ms(&mut self) -> RxBfrpTimeoutMsW<'_, BfTimingControlSpec> {
+                RxBfrpTimeoutMsW::new(self, 1)
             }
             #[doc = "Bits 8:15"]
             #[inline(always)]
@@ -14930,7 +15095,7 @@ pub mod wifi_mac_he_init_prefix {
                 EnableUnknown25W::new(self, 25)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL,BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact-partial\\]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20. Complete esp_test_get_csi_dump_cfg supplies the more specific RXBFRPTO_MS name for bits 7:1.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_timing_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_timing_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfTimingControlSpec;
         impl crate::RegisterSpec for BfTimingControlSpec {
             type Ux = u32;
@@ -21354,7 +21519,7 @@ pub mod wifi_mac_interrupt {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         enable: Enable,
-        _reserved1: [u8; 0x04],
+        raw: Raw,
         status: Status,
         clear: Clear,
     }
@@ -21363,6 +21528,11 @@ pub mod wifi_mac_interrupt {
         #[inline(always)]
         pub const fn enable(&self) -> &Enable {
             &self.enable
+        }
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+        #[inline(always)]
+        pub const fn raw(&self) -> &Raw {
+            &self.raw
         }
         #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."]
         #[inline(always)]
@@ -21413,6 +21583,30 @@ pub mod wifi_mac_interrupt {
         impl crate::Writable for EnableSpec {
             type Safety = crate::Unsafe;
         }
+    }
+    #[doc = "RAW (r) register accessor: SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc(alias = "RAW")]
+    pub type Raw = crate::Reg<raw::RawSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+    pub mod raw {
+        #[doc = "Register `RAW` reader"]
+        pub type R = crate::R<RawSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RawSpec;
+        impl crate::RegisterSpec for RawSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
+        impl crate::Readable for RawSpec {}
     }
     #[doc = "STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
     #[doc(alias = "STATUS")]
@@ -21492,6 +21686,113 @@ pub mod wifi_mac_interrupt {
             type Safety = crate::Unsafe;
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics."]
+pub type WifiMacPowerInterrupt =
+    crate::Periph<wifi_mac_power_interrupt::RegisterBlock, 0x2010_d8b4>;
+impl core::fmt::Debug for WifiMacPowerInterrupt {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacPowerInterrupt").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics."]
+pub mod wifi_mac_power_interrupt {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        enable: Enable,
+        raw: Raw,
+        status: Status,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot."]
+        #[inline(always)]
+        pub const fn enable(&self) -> &Enable {
+            &self.enable
+        }
+        #[doc = "0x04 - WDEVPWR_RAW diagnostic snapshot."]
+        #[inline(always)]
+        pub const fn raw(&self) -> &Raw {
+            &self.raw
+        }
+        #[doc = "0x08 - WDEVPWR_STATUS diagnostic snapshot."]
+        #[inline(always)]
+        pub const fn status(&self) -> &Status {
+            &self.status
+        }
+    }
+    #[doc = "ENABLE (r) register accessor: WDEVPWR_ENABLE diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc(alias = "ENABLE")]
+    pub type Enable = crate::Reg<enable::EnableSpec>;
+    #[doc = "WDEVPWR_ENABLE diagnostic snapshot."]
+    pub mod enable {
+        #[doc = "Register `ENABLE` reader"]
+        pub type R = crate::R<EnableSpec>;
+        #[doc = "Field `EVENT_MASK` reader - "]
+        pub type EventMaskR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn event_mask(&self) -> EventMaskR {
+                EventMaskR::new(self.bits)
+            }
+        }
+        #[doc = "WDEVPWR_ENABLE diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableSpec;
+        impl crate::RegisterSpec for EnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable::R`](R) reader structure"]
+        impl crate::Readable for EnableSpec {}
+    }
+    #[doc = "RAW (r) register accessor: WDEVPWR_RAW diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc(alias = "RAW")]
+    pub type Raw = crate::Reg<raw::RawSpec>;
+    #[doc = "WDEVPWR_RAW diagnostic snapshot."]
+    pub mod raw {
+        #[doc = "Register `RAW` reader"]
+        pub type R = crate::R<RawSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        #[doc = "WDEVPWR_RAW diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RawSpec;
+        impl crate::RegisterSpec for RawSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
+        impl crate::Readable for RawSpec {}
+    }
+    #[doc = "STATUS (r) register accessor: WDEVPWR_STATUS diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc(alias = "STATUS")]
+    pub type Status = crate::Reg<status::StatusSpec>;
+    #[doc = "WDEVPWR_STATUS diagnostic snapshot."]
+    pub mod status {
+        #[doc = "Register `STATUS` reader"]
+        pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        #[doc = "WDEVPWR_STATUS diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StatusSpec;
+        impl crate::RegisterSpec for StatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`status::R`](R) reader structure"]
+        impl crate::Readable for StatusSpec {}
     }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Cold MAC initialization request/ready handshake at the complete hal_init prefix."]
@@ -21594,87 +21895,89 @@ pub mod wifi_mac_rx_dma {
         rx_descriptor_base: RxDescriptorBase,
         rx_next_descriptor: RxNextDescriptor,
         rx_last_descriptor: RxLastDescriptor,
-        _reserved5: [u8; 0xe8],
+        _reserved5: [u8; 0x8c],
+        csi_dump_config: CsiDumpConfig,
+        _reserved6: [u8; 0x58],
         rx_block_ack_entry_control: (),
-        _reserved6: [u8; 0x04],
-        rx_block_ack_entry_peer_tail_and_policy: (),
         _reserved7: [u8; 0x04],
-        rx_block_ack_entry_peer_head: (),
+        rx_block_ack_entry_peer_tail_and_policy: (),
         _reserved8: [u8; 0x04],
-        rx_block_ack_entry_current_sequence: (),
+        rx_block_ack_entry_peer_head: (),
         _reserved9: [u8; 0x04],
-        rx_block_ack_entry_start_sequence_load: (),
+        rx_block_ack_entry_current_sequence: (),
         _reserved10: [u8; 0x04],
-        rx_block_ack_entry_bitmap_low_status: (),
+        rx_block_ack_entry_start_sequence_load: (),
         _reserved11: [u8; 0x04],
-        rx_block_ack_entry_bitmap_low_load: (),
+        rx_block_ack_entry_bitmap_low_status: (),
         _reserved12: [u8; 0x04],
-        rx_block_ack_entry_bitmap_high_status: (),
+        rx_block_ack_entry_bitmap_low_load: (),
         _reserved13: [u8; 0x04],
+        rx_block_ack_entry_bitmap_high_status: (),
+        _reserved14: [u8; 0x04],
         rx_block_ack_entry_bitmap_high_load: (),
-        _reserved14: [u8; 0x0100],
+        _reserved15: [u8; 0x0100],
         rx_block_ack_agreement_update: RxBlockAckAgreementUpdate,
-        _reserved15: [u8; 0x09cc],
+        _reserved16: [u8; 0x09cc],
         rx_buffer_limit_unknown: RxBufferLimitUnknown,
         rx_buffer_base_unknown: RxBufferBaseUnknown,
         rx_descriptor_high_window: RxDescriptorHighWindow,
-        _reserved18: [u8; 0x0230],
+        _reserved19: [u8; 0x0230],
         extra_softap_rx_block_ack_control: ExtraSoftapRxBlockAckControl,
         extra_softap_rx_block_ack_peer_tail_and_policy: ExtraSoftapRxBlockAckPeerTailAndPolicy,
         extra_softap_rx_block_ack_peer_head: ExtraSoftapRxBlockAckPeerHead,
         extra_softap_rx_block_ack_start_sequence: ExtraSoftapRxBlockAckStartSequence,
         extra_softap_rx_block_ack_bitmap_low: ExtraSoftapRxBlockAckBitmapLow,
         extra_softap_rx_block_ack_bitmap_high: ExtraSoftapRxBlockAckBitmapHigh,
-        _reserved24: [u8; 0x0304],
+        _reserved25: [u8; 0x0304],
         tx_queue_information_q7: TxQueueInformationQ7,
         tx_block_ack_bitmap_high_q7: TxBlockAckBitmapHighQ7,
         tx_block_ack_bitmap_low_q7: TxBlockAckBitmapLowQ7,
         tx_block_ack_control_sequence_q7: TxBlockAckControlSequenceQ7,
         tx_block_ack_transmitter_address_high_q7: TxBlockAckTransmitterAddressHighQ7,
         tx_block_ack_transmitter_address_low_q7: TxBlockAckTransmitterAddressLowQ7,
-        _reserved30: [u8; 0x64],
+        _reserved31: [u8; 0x64],
         tx_queue_information_q6: TxQueueInformationQ6,
         tx_block_ack_bitmap_high_q6: TxBlockAckBitmapHighQ6,
         tx_block_ack_bitmap_low_q6: TxBlockAckBitmapLowQ6,
         tx_block_ack_control_sequence_q6: TxBlockAckControlSequenceQ6,
         tx_block_ack_transmitter_address_high_q6: TxBlockAckTransmitterAddressHighQ6,
         tx_block_ack_transmitter_address_low_q6: TxBlockAckTransmitterAddressLowQ6,
-        _reserved36: [u8; 0x64],
+        _reserved37: [u8; 0x64],
         tx_queue_information_q5: TxQueueInformationQ5,
         tx_block_ack_bitmap_high_q5: TxBlockAckBitmapHighQ5,
         tx_block_ack_bitmap_low_q5: TxBlockAckBitmapLowQ5,
         tx_block_ack_control_sequence_q5: TxBlockAckControlSequenceQ5,
         tx_block_ack_transmitter_address_high_q5: TxBlockAckTransmitterAddressHighQ5,
         tx_block_ack_transmitter_address_low_q5: TxBlockAckTransmitterAddressLowQ5,
-        _reserved42: [u8; 0x64],
+        _reserved43: [u8; 0x64],
         tx_queue_information_q4: TxQueueInformationQ4,
         tx_block_ack_bitmap_high_q4: TxBlockAckBitmapHighQ4,
         tx_block_ack_bitmap_low_q4: TxBlockAckBitmapLowQ4,
         tx_block_ack_control_sequence_q4: TxBlockAckControlSequenceQ4,
         tx_block_ack_transmitter_address_high_q4: TxBlockAckTransmitterAddressHighQ4,
         tx_block_ack_transmitter_address_low_q4: TxBlockAckTransmitterAddressLowQ4,
-        _reserved48: [u8; 0x64],
+        _reserved49: [u8; 0x64],
         tx_queue_information_q3: TxQueueInformationQ3,
         tx_block_ack_bitmap_high_q3: TxBlockAckBitmapHighQ3,
         tx_block_ack_bitmap_low_q3: TxBlockAckBitmapLowQ3,
         tx_block_ack_control_sequence_q3: TxBlockAckControlSequenceQ3,
         tx_block_ack_transmitter_address_high_q3: TxBlockAckTransmitterAddressHighQ3,
         tx_block_ack_transmitter_address_low_q3: TxBlockAckTransmitterAddressLowQ3,
-        _reserved54: [u8; 0x64],
+        _reserved55: [u8; 0x64],
         tx_queue_information_q2: TxQueueInformationQ2,
         tx_block_ack_bitmap_high_q2: TxBlockAckBitmapHighQ2,
         tx_block_ack_bitmap_low_q2: TxBlockAckBitmapLowQ2,
         tx_block_ack_control_sequence_q2: TxBlockAckControlSequenceQ2,
         tx_block_ack_transmitter_address_high_q2: TxBlockAckTransmitterAddressHighQ2,
         tx_block_ack_transmitter_address_low_q2: TxBlockAckTransmitterAddressLowQ2,
-        _reserved60: [u8; 0x64],
+        _reserved61: [u8; 0x64],
         tx_queue_information_q1: TxQueueInformationQ1,
         tx_block_ack_bitmap_high_q1: TxBlockAckBitmapHighQ1,
         tx_block_ack_bitmap_low_q1: TxBlockAckBitmapLowQ1,
         tx_block_ack_control_sequence_q1: TxBlockAckControlSequenceQ1,
         tx_block_ack_transmitter_address_high_q1: TxBlockAckTransmitterAddressHighQ1,
         tx_block_ack_transmitter_address_low_q1: TxBlockAckTransmitterAddressLowQ1,
-        _reserved66: [u8; 0x64],
+        _reserved67: [u8; 0x64],
         tx_queue_information_q0: TxQueueInformationQ0,
         tx_block_ack_bitmap_high_q0: TxBlockAckBitmapHighQ0,
         tx_block_ack_bitmap_low_q0: TxBlockAckBitmapLowQ0,
@@ -21707,6 +22010,11 @@ pub mod wifi_mac_rx_dma {
         #[inline(always)]
         pub const fn rx_last_descriptor(&self) -> &RxLastDescriptor {
             &self.rx_last_descriptor
+        }
+        #[doc = "0x11c - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Complete esp_test_get_csi_dump_cfg reads every described field at 0x2010411c. Complete esp_test_set_csi_dump_cfg performs independent fresh-read RMW updates. Its BEAMFORMED update has a pinned vendor quirk: cfg\\[8\\] controls whether bit 11 is updated, but cfg\\[1\\] (MU) supplies the value. This SVD exposes the physical bit and does not reproduce that software bug."]
+        #[inline(always)]
+        pub const fn csi_dump_config(&self) -> &CsiDumpConfig {
+            &self.csi_dump_config
         }
         #[doc = "0x178..0x198 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Configuration word in one of eight reverse-addressed ordinary receive BlockAck banks. Physical array index zero is logical hardware index seven; complete hal_agreement_add_rx_ba writes logical index zero at 0x20104274 and subtracts 0x24 per index. Delete clears VALID, clears both load bitmaps, sets VALID once, then clears this complete word."]
         #[doc = ""]
@@ -22957,6 +23265,185 @@ pub mod wifi_mac_rx_dma {
         }
         #[doc = "`read()` method returns [`rx_last_descriptor::R`](R) reader structure"]
         impl crate::Readable for RxLastDescriptorSpec {}
+    }
+    #[doc = "CSI_DUMP_CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Complete esp_test_get_csi_dump_cfg reads every described field at 0x2010411c. Complete esp_test_set_csi_dump_cfg performs independent fresh-read RMW updates. Its BEAMFORMED update has a pinned vendor quirk: cfg\\[8\\] controls whether bit 11 is updated, but cfg\\[1\\] (MU) supplies the value. This SVD exposes the physical bit and does not reproduce that software bug.\n\nYou can [`read`](crate::Reg::read) this register and get [`csi_dump_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`csi_dump_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@csi_dump_config`] module"]
+    #[doc(alias = "CSI_DUMP_CONFIG")]
+    pub type CsiDumpConfig = crate::Reg<csi_dump_config::CsiDumpConfigSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Complete esp_test_get_csi_dump_cfg reads every described field at 0x2010411c. Complete esp_test_set_csi_dump_cfg performs independent fresh-read RMW updates. Its BEAMFORMED update has a pinned vendor quirk: cfg\\[8\\] controls whether bit 11 is updated, but cfg\\[1\\] (MU) supplies the value. This SVD exposes the physical bit and does not reproduce that software bug."]
+    pub mod csi_dump_config {
+        #[doc = "Register `CSI_DUMP_CONFIG` reader"]
+        pub type R = crate::R<CsiDumpConfigSpec>;
+        #[doc = "Register `CSI_DUMP_CONFIG` writer"]
+        pub type W = crate::W<CsiDumpConfigSpec>;
+        #[doc = "Field `FORCE_LLTF` reader - "]
+        pub type ForceLltfR = crate::BitReader;
+        #[doc = "Field `FORCE_LLTF` writer - "]
+        pub type ForceLltfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MU` reader - "]
+        pub type MuR = crate::BitReader;
+        #[doc = "Field `MU` writer - "]
+        pub type MuW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SU` reader - "]
+        pub type SuR = crate::BitReader;
+        #[doc = "Field `SU` writer - "]
+        pub type SuW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VHT` reader - "]
+        pub type VhtR = crate::BitReader;
+        #[doc = "Field `VHT` writer - "]
+        pub type VhtW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HT40` reader - "]
+        pub type Ht40R = crate::BitReader;
+        #[doc = "Field `HT40` writer - "]
+        pub type Ht40W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HT20` reader - "]
+        pub type Ht20R = crate::BitReader;
+        #[doc = "Field `HT20` writer - "]
+        pub type Ht20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LEGACY` reader - "]
+        pub type LegacyR = crate::BitReader;
+        #[doc = "Field `LEGACY` writer - "]
+        pub type LegacyW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STBC_MODE` reader - "]
+        pub type StbcModeR = crate::FieldReader;
+        #[doc = "Field `STBC_MODE` writer - "]
+        pub type StbcModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BEAMFORMED` reader - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Physical CSI-dump beamformed selector. The pinned vendor setter accidentally writes the MU argument when this field is selected; callers of the generated PAC write the actual bit directly."]
+        pub type BeamformedR = crate::BitReader;
+        #[doc = "Field `BEAMFORMED` writer - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Physical CSI-dump beamformed selector. The pinned vendor setter accidentally writes the MU argument when this field is selected; callers of the generated PAC write the actual bit directly."]
+        pub type BeamformedW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STANDALONE` reader - "]
+        pub type StandaloneR = crate::BitReader;
+        #[doc = "Field `STANDALONE` writer - "]
+        pub type StandaloneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `DCM` reader - "]
+        pub type DcmR = crate::BitReader;
+        #[doc = "Field `DCM` writer - "]
+        pub type DcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn force_lltf(&self) -> ForceLltfR {
+                ForceLltfR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn mu(&self) -> MuR {
+                MuR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn su(&self) -> SuR {
+                SuR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn vht(&self) -> VhtR {
+                VhtR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn ht40(&self) -> Ht40R {
+                Ht40R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn ht20(&self) -> Ht20R {
+                Ht20R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn legacy(&self) -> LegacyR {
+                LegacyR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bits 9:10"]
+            #[inline(always)]
+            pub fn stbc_mode(&self) -> StbcModeR {
+                StbcModeR::new(((self.bits >> 9) & 3) as u8)
+            }
+            #[doc = "Bit 11 - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Physical CSI-dump beamformed selector. The pinned vendor setter accidentally writes the MU argument when this field is selected; callers of the generated PAC write the actual bit directly."]
+            #[inline(always)]
+            pub fn beamformed(&self) -> BeamformedR {
+                BeamformedR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn standalone(&self) -> StandaloneR {
+                StandaloneR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn dcm(&self) -> DcmR {
+                DcmR::new(((self.bits >> 13) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn force_lltf(&mut self) -> ForceLltfW<'_, CsiDumpConfigSpec> {
+                ForceLltfW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn mu(&mut self) -> MuW<'_, CsiDumpConfigSpec> {
+                MuW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn su(&mut self) -> SuW<'_, CsiDumpConfigSpec> {
+                SuW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn vht(&mut self) -> VhtW<'_, CsiDumpConfigSpec> {
+                VhtW::new(self, 3)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn ht40(&mut self) -> Ht40W<'_, CsiDumpConfigSpec> {
+                Ht40W::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn ht20(&mut self) -> Ht20W<'_, CsiDumpConfigSpec> {
+                Ht20W::new(self, 5)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn legacy(&mut self) -> LegacyW<'_, CsiDumpConfigSpec> {
+                LegacyW::new(self, 6)
+            }
+            #[doc = "Bits 9:10"]
+            #[inline(always)]
+            pub fn stbc_mode(&mut self) -> StbcModeW<'_, CsiDumpConfigSpec> {
+                StbcModeW::new(self, 9)
+            }
+            #[doc = "Bit 11 - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Physical CSI-dump beamformed selector. The pinned vendor setter accidentally writes the MU argument when this field is selected; callers of the generated PAC write the actual bit directly."]
+            #[inline(always)]
+            pub fn beamformed(&mut self) -> BeamformedW<'_, CsiDumpConfigSpec> {
+                BeamformedW::new(self, 11)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn standalone(&mut self) -> StandaloneW<'_, CsiDumpConfigSpec> {
+                StandaloneW::new(self, 12)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn dcm(&mut self) -> DcmW<'_, CsiDumpConfigSpec> {
+                DcmW::new(self, 13)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Complete esp_test_get_csi_dump_cfg reads every described field at 0x2010411c. Complete esp_test_set_csi_dump_cfg performs independent fresh-read RMW updates. Its BEAMFORMED update has a pinned vendor quirk: cfg\\[8\\] controls whether bit 11 is updated, but cfg\\[1\\] (MU) supplies the value. This SVD exposes the physical bit and does not reproduce that software bug.\n\nYou can [`read`](crate::Reg::read) this register and get [`csi_dump_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`csi_dump_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CsiDumpConfigSpec;
+        impl crate::RegisterSpec for CsiDumpConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`csi_dump_config::R`](R) reader structure"]
+        impl crate::Readable for CsiDumpConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`csi_dump_config::W`](W) writer structure"]
+        impl crate::Writable for CsiDumpConfigSpec {
+            type Safety = crate::Unsafe;
+        }
     }
     #[doc = "RX_BUFFER_LIMIT_UNKNOWN (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_buffer_limit_unknown::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_buffer_limit_unknown::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_buffer_limit_unknown`] module"]
     #[doc(alias = "RX_BUFFER_LIMIT_UNKNOWN")]
@@ -25447,6 +25934,8 @@ pub struct Peripherals {
     pub wifi_mac_core_enable: WifiMacCoreEnable,
     #[doc = "WIFI_MAC_INTERRUPT"]
     pub wifi_mac_interrupt: WifiMacInterrupt,
+    #[doc = "WIFI_MAC_POWER_INTERRUPT"]
+    pub wifi_mac_power_interrupt: WifiMacPowerInterrupt,
     #[doc = "WIFI_MAC_COLD_HANDSHAKE"]
     pub wifi_mac_cold_handshake: WifiMacColdHandshake,
     #[doc = "WIFI_MAC_RX_DMA"]
@@ -25524,6 +26013,7 @@ impl Peripherals {
             wifi_mac_last_rx_buffer: WifiMacLastRxBuffer::steal(),
             wifi_mac_core_enable: WifiMacCoreEnable::steal(),
             wifi_mac_interrupt: WifiMacInterrupt::steal(),
+            wifi_mac_power_interrupt: WifiMacPowerInterrupt::steal(),
             wifi_mac_cold_handshake: WifiMacColdHandshake::steal(),
             wifi_mac_rx_dma: WifiMacRxDma::steal(),
         }

@@ -423,9 +423,13 @@
     <peripheral>
       <name>PHY_PBUS</name>
       <description>
-        SOURCE[ROM_REV0_PHY_PBUS]; CONFIDENCE[instruction-exact-partial].
+        SOURCE[ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_DEBUG_PBUS]; CONFIDENCE[instruction-exact-partial].
         PBus command, mode, status/clock/force and packed result windows recovered
         from complete rev0 ROM bodies and their address/shift jump tables.
+        The blob debug printer independently names selector/path groups:
+        RFRX is selector 0 paths 1/2; BB is selector 1 paths 1/2; DCO is
+        selectors 2/3 paths 1/2; RFTX is selector 4 paths 1/2 and selector 5
+        path 1.
       </description>
       <baseAddress>0x20100880</baseAddress>
       <registers>
@@ -445,7 +449,7 @@
           <fields>
             <field><name>DEBUG_MODE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>TRANSACTION_START</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>SELECTOR</name><bitOffset>2</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>SELECTOR</name><description>SOURCE[BLOB_LIBPHY_PHY_DEBUG_PBUS]; CONFIDENCE[instruction-exact-partial]. Debug group selector: 0 RFRX, 1 BB, 2/3 DCO, 4/5 RFTX for the evidenced paths. Treat other selector/path combinations as undocumented.</description><bitOffset>2</bitOffset><bitWidth>4</bitWidth></field>
             <field>
               <name>TEST_VALUE</name>
               <description>
@@ -460,11 +464,13 @@
             <field>
               <name>PATH</name>
               <description>
-                SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO];
-                CONFIDENCE[instruction-exact].
+                SOURCE[ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO,BLOB_LIBPHY_PHY_DEBUG_PBUS];
+                CONFIDENCE[instruction-exact-partial].
                 Physical two-bit path field. High retained bits of a wide
                 test-value argument are ORed into this field by the complete
-                ROM command encoder.
+                ROM command encoder. The debug printer exercises paths 1 and
+                2 for RFRX, BB, DCO and selector-4 RFTX, and path 1 for
+                selector-5 RFTX.
               </description>
               <bitOffset>15</bitOffset><bitWidth>2</bitWidth>
             </field>
@@ -552,11 +558,13 @@
     <peripheral>
       <name>PHY_I2C_COMMAND_RAM</name>
       <description>
-        SOURCE[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C];
+        SOURCE[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C,BLOB_LIBPHY_PHY_DEBUG_I2C];
         CONFIDENCE[instruction-exact]. Official S31
         reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The
         complete blob establishes its forty-five-entry command layout and the
-        population order in phy_i2c_master_cmd_mem_init.
+        population order in phy_i2c_master_cmd_mem_init. Complete
+        phy_i2c_check independently names ten logical banks, their block IDs,
+        selected host and finite register-index ranges.
       </description>
       <baseAddress>0x2010fc00</baseAddress>
       <registers>
@@ -566,7 +574,23 @@
           <description>SOURCE[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C]; CONFIDENCE[instruction-exact]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>write-only</access>
           <fields>
-            <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field>
+              <name>BLOCK</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_DEBUG_I2C]; CONFIDENCE[instruction-exact]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 [0,7), ULP host 1 [0,11), RFPLL host 1 [0,22), RFPLL_SDM host 1 [0,7), BBPLL host 0 [0,11), BBTOP host 1 [0,57), PERIF host 0 [0,13), BIAS host 1 [0,4), TXRF host 1 [1,22), DIG_REG host 0 [0,15).</description>
+              <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+              <enumeratedValues>
+                <enumeratedValue><name>SAR1</name><value>0x10</value></enumeratedValue>
+                <enumeratedValue><name>ULP</name><value>0x61</value></enumeratedValue>
+                <enumeratedValue><name>RFPLL</name><value>0x62</value></enumeratedValue>
+                <enumeratedValue><name>RFPLL_SDM</name><value>0x63</value></enumeratedValue>
+                <enumeratedValue><name>BBPLL</name><value>0x66</value></enumeratedValue>
+                <enumeratedValue><name>BBTOP</name><value>0x67</value></enumeratedValue>
+                <enumeratedValue><name>PERIF</name><value>0x69</value></enumeratedValue>
+                <enumeratedValue><name>BIAS</name><value>0x6a</value></enumeratedValue>
+                <enumeratedValue><name>TXRF</name><value>0x6b</value></enumeratedValue>
+                <enumeratedValue><name>DIG_REG</name><value>0x6d</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
             <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
@@ -1187,10 +1211,11 @@
         </register>
         <register>
           <name>TX_PA_CONTROL_1</name>
-          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one.</description>
+          <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Complete phy_tx_paon_set publishes 0x0a0e in the high half and 0xc8 in byte one. Complete ble_tx_config_check independently names the low two bytes as Bluetooth RF/PA turn-on delays.</description>
           <addressOffset>0x0870</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>PA_ON_BYTE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>RF_ON_BT_DELAY_CODE</name><description>SOURCE[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>PA_ON_BT_DELAY</name><description>SOURCE[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Bluetooth PA-on delay.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
             <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
           </fields>
         </register>
@@ -2140,15 +2165,27 @@
         </register>
         <register>
           <name>PARENT_ENABLE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Parent sets bit 12 before trigger-based TX init.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact-partial]. Parent sets bit 12 before trigger-based TX init. Complete print_isr_regs independently names this same physical word WDEV_INT1_ENABLE. This is one canonical register with two observed roles, not two peripheral owners.</description>
           <addressOffset>0xbe4</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>ENABLE_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
         <register>
+          <name>INTERRUPT_1_RAW</name>
+          <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact]. WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.</description>
+          <addressOffset>0xbe8</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>INTERRUPT_1_STATUS</name>
+          <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact]. WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs.</description>
+          <addressOffset>0xbec</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
           <name>BF_TIMING_CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL]; CONFIDENCE[instruction-exact-partial]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL,BLOB_LIBPP_TEST_HAL_CSI]; CONFIDENCE[instruction-exact-partial]. Seven ordered RMWs in complete hal_init_bf. Complete dbg_read_rx_misc supplies the beamforming field names through its WDEVBEAMFORMCONF decoder. Complete dbg_disable_report_cbf independently proves the write polarity of HE_BEAM_ENABLE bit 20. Complete esp_test_get_csi_dump_cfg supplies the more specific RXBFRPTO_MS name for bits 7:1.</description>
           <addressOffset>0xc30</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BF_MEMORY_WRITE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>HE_BEAM_BFRP_TIME</name><bitOffset>1</bitOffset><bitWidth>7</bitWidth></field><field><name>HE_BEAM_NDP_TIME</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>HE_BEAM_HW_SEQUENCE_SELECT</name><bitOffset>16</bitOffset><bitWidth>3</bitWidth></field><field><name>HE_BEAM_HW_SEQUENCE_ENABLE</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field><field><name>HE_BEAM_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL]; CONFIDENCE[instruction-exact]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output.</description><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field><field><name>NON_TB_BEAM_RU_SELECT</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field><field><name>BEAM_RU_SELECT</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field><field><name>CLEAR_UNKNOWN_23</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field><field><name>ENABLE_UNKNOWN_25</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields><field><name>BF_MEMORY_WRITE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>RX_BFRP_TIMEOUT_MS</name><description>SOURCE[BLOB_LIBPP_TEST_HAL_CSI]; CONFIDENCE[instruction-exact]. Vendor test getter names bits 7:1 RXBFRPTO_MS.</description><bitOffset>1</bitOffset><bitWidth>7</bitWidth></field><field><name>HE_BEAM_NDP_TIME</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>HE_BEAM_HW_SEQUENCE_SELECT</name><bitOffset>16</bitOffset><bitWidth>3</bitWidth></field><field><name>HE_BEAM_HW_SEQUENCE_ENABLE</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field><field><name>HE_BEAM_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_BF_CONFIG,BLOB_LIBPP_HAL_BF_DEBUG_CONTROL]; CONFIDENCE[instruction-exact]. Complete dbg_read_rx_misc names bit 20 HE_BEAM_ENA. Complete dbg_disable_report_cbf clears it for a nonzero disable argument and sets it for zero, connecting the general hardware label to compressed-beamforming-report output.</description><bitOffset>20</bitOffset><bitWidth>1</bitWidth></field><field><name>NON_TB_BEAM_RU_SELECT</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field><field><name>BEAM_RU_SELECT</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field><field><name>CLEAR_UNKNOWN_23</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field><field><name>ENABLE_UNKNOWN_25</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
         <register>
           <name>BF_HIGH_IMAGE</name>
@@ -2924,6 +2961,12 @@
           </fields>
         </register>
         <register>
+          <name>RAW</name>
+          <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
           <name>STATUS</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.</description>
           <addressOffset>0x08</addressOffset><size>32</size><access>read-only</access>
@@ -2943,6 +2986,16 @@
             <field><name>EVENTS</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT]; CONFIDENCE[instruction-exact]. Ones acknowledge the corresponding event bits.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
           </fields>
         </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_POWER_INTERRUPT</name>
+      <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact-partial]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics.</description>
+      <baseAddress>0x2010d8b4</baseAddress>
+      <registers>
+        <register><name>ENABLE</name><description>WDEVPWR_ENABLE diagnostic snapshot.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENT_MASK</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>RAW</name><description>WDEVPWR_RAW diagnostic snapshot.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>STATUS</name><description>WDEVPWR_STATUS diagnostic snapshot.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
       </registers>
     </peripheral>
     <peripheral>
@@ -3024,6 +3077,24 @@
           <addressOffset>0x008c</addressOffset><size>32</size><access>read-only</access>
           <fields>
             <field><name>ADDRESS_LOW</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CSI_DUMP_CONFIG</name>
+          <description>SOURCE[BLOB_LIBPP_TEST_HAL_CSI]; CONFIDENCE[instruction-exact]. Complete esp_test_get_csi_dump_cfg reads every described field at 0x2010411c. Complete esp_test_set_csi_dump_cfg performs independent fresh-read RMW updates. Its BEAMFORMED update has a pinned vendor quirk: cfg[8] controls whether bit 11 is updated, but cfg[1] (MU) supplies the value. This SVD exposes the physical bit and does not reproduce that software bug.</description>
+          <addressOffset>0x011c</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>FORCE_LLTF</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MU</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>SU</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>VHT</name><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HT40</name><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>HT20</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>LEGACY</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>STBC_MODE</name><bitOffset>9</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BEAMFORMED</name><description>SOURCE[BLOB_LIBPP_TEST_HAL_CSI]; CONFIDENCE[instruction-exact]. Physical CSI-dump beamformed selector. The pinned vendor setter accidentally writes the MU argument when this field is selected; callers of the generated PAC write the actual bit directly.</description><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>STANDALONE</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>DCM</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -3435,6 +3506,13 @@
       <source id="S31_REG_BASE">esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/include/esp32s31/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d; names the HP-system 0x205x, LP-system 0x207x and LP-peripheral 0x208x blocks and IEEE802154_REG_BASE in the 0x201x modem/radio window</source>
       <source id="BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_start_tx_tone_step_new body, size 0xc2.</source>
       <source id="BLOB_LIBPHY_PHY_XTAL_DUTY_CAL">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_cal.o phy_xtal_duty_cal body, size 0x392.</source>
+      <source id="BLOB_LIBPHY_PHY_DEBUG_REG_CHECK">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_reg_check body, size 0x3d2. Its fixed loop bounds and block-name strings prove the half-open hardware dump ranges recorded in openEspRadioEvidenceRanges; they do not name individual registers.</source>
+      <source id="BLOB_LIBPHY_PHY_DEBUG_I2C">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_i2c_check body, size 0x1f6. Its ten calls prove each logical bank name, block ID, selected host and half-open register-index range.</source>
+      <source id="BLOB_LIBPHY_PHY_DEBUG_PBUS">_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_pbus_print body, size 0xf4. Its finite calls and strings associate selector/path pairs with RFRX, RFTX, BB and DCO groups.</source>
+      <source id="BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK">_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870.</source>
+      <source id="BLOB_LIBBTBB_BT_CTE_ACCESSORS">_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; bt_cte.o public getter/setter pairs. Matching independent masks provide instruction-exact CTE and BTAGC field geometry; these BT-only registers remain evidence for a separate canonical BT-radio SVD rather than duplicate singleton peripherals in this Wi-Fi-oriented map.</source>
+      <source id="BLOB_LIBPP_ISR_REGISTER_DUMP">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o print_isr_regs body, size 0x5a, and pinned register-name strings. It reads WDEV ENABLE/RAW/STATUS at 0x20104c40/44/48, WDEV_INT1 ENABLE/RAW/STATUS at 0x20104c2c/30/34 and WDEVPWR ENABLE/RAW/STATUS at 0x2010d8b4/b8/bc.</source>
+      <source id="BLOB_LIBPP_TEST_HAL_CSI">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete test_hal.o esp_test_get_csi_dump_cfg body, size 0x8a, and esp_test_set_csi_dump_cfg body, size 0x22e. The getter independently proves every promoted field. The setter contains a reproducible vendor quirk: cfg[8] gates the BEAMFORMED update, but retained cfg[1] supplies bit 11.</source>
       <source id="BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete pp_debug.o dbg_lmac_diag_statis_dump body, size 0x17c, and its pinned diag0..diag12/diagsel format strings.</source>
       <source id="BLOB_LIBPP_PP_DEBUG_HW_STATISTICS">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete pp_debug.o dbg_lmac_hw_statis_dump body, size 0x252, and its pinned hardware-counter format strings.</source>
       <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_get_event body, size 0x0a.</source>
@@ -3617,5 +3695,21 @@
       <window name="LP_SYSTEM" start="0x20700000" endExclusive="0x20800000"/>
       <window name="LP_PERIPHERAL" start="0x20800000" endExclusive="0x20900000"/>
     </openEspRadioAddressWindows>
+    <openEspRadioEvidenceRanges source="BLOB_LIBPHY_PHY_DEBUG_REG_CHECK">
+      <range name="FECOEX" start="0x20100000" endExclusive="0x20100058"/>
+      <range name="FEDATA" start="0x20100400" endExclusive="0x2010048c"/>
+      <range name="FECTRL" start="0x20100800" endExclusive="0x201008e4"/>
+      <range name="FEDATA_WIFI" start="0x20100c00" endExclusive="0x20100c58"/>
+      <range name="BTMAC" start="0x20101400" endExclusive="0x20101fb8"/>
+      <range name="BT_V3_2" start="0x20102000" endExclusive="0x20102200"/>
+      <range name="BTAGC" start="0x20102800" endExclusive="0x2010290c"/>
+      <range name="ZBBB" start="0x20102c00" endExclusive="0x20102c4c"/>
+      <range name="IEEE802154_REG" start="0x20103000" endExclusive="0x201031a4"/>
+      <range name="AGC" start="0x20107000" endExclusive="0x2010720c"/>
+      <range name="BBTX" start="0x20107400" endExclusive="0x20107480"/>
+      <range name="NRX" start="0x20107800" endExclusive="0x20107a44"/>
+      <range name="BB" start="0x20107c00" endExclusive="0x20107d50"/>
+      <range name="BRX" start="0x20108000" endExclusive="0x2010809c"/>
+    </openEspRadioEvidenceRanges>
   </vendorExtensions>
 </device>

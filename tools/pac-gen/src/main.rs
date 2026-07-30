@@ -337,6 +337,62 @@ fn parse_mmio_windows(document: &Document<'_>) -> Result<Vec<MmioWindow>, Box<dy
     Ok(windows)
 }
 
+fn validate_evidence_ranges(
+    document: &Document<'_>,
+    windows: &[MmioWindow],
+) -> Result<(), Box<dyn Error>> {
+    let Some(container) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioEvidenceRanges"))
+    else {
+        return Ok(());
+    };
+    let mut names = BTreeSet::new();
+    let mut ranges = Vec::new();
+    for node in container
+        .children()
+        .filter(|node| node.has_tag_name("range"))
+    {
+        let name = node.attribute("name").ok_or("evidence range has no name")?;
+        if !names.insert(name) {
+            return Err(format!("duplicate evidence range name {name}").into());
+        }
+        let start = parse_u64(
+            node.attribute("start")
+                .ok_or("evidence range has no start")?,
+            "evidence range start",
+        )?;
+        let end_exclusive = parse_u64(
+            node.attribute("endExclusive")
+                .ok_or("evidence range has no endExclusive")?,
+            "evidence range endExclusive",
+        )?;
+        if start >= end_exclusive {
+            return Err(format!(
+                "evidence range {name} has invalid half-open bounds \
+                 0x{start:08x}..0x{end_exclusive:08x}"
+            )
+            .into());
+        }
+        if start % 4 != 0 || end_exclusive % 4 != 0 {
+            return Err(format!("evidence range {name} is not word-aligned").into());
+        }
+        if mmio_window(windows, start, end_exclusive).is_none() {
+            return Err(
+                format!("evidence range {name} lies outside the evidenced MMIO windows").into(),
+            );
+        }
+        ranges.push((start, end_exclusive, name));
+    }
+    ranges.sort_by_key(|range| range.0);
+    for pair in ranges.windows(2) {
+        if pair[0].1 > pair[1].0 {
+            return Err(format!("evidence ranges {} and {} overlap", pair[0].2, pair[1].2).into());
+        }
+    }
+    Ok(())
+}
+
 fn validate_dimension_order(document: &Document<'_>) -> Result<(), Box<dyn Error>> {
     for node in document.descendants().filter(|node| {
         node.is_element()
@@ -561,15 +617,19 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             return Err(format!("SOURCE references undefined provenance id {reference}").into());
         }
     }
-    let window_source = document
-        .descendants()
-        .find(|node| node.has_tag_name("openEspRadioAddressWindows"))
-        .and_then(|node| node.attribute("source"))
-        .ok_or("openEspRadioAddressWindows has no source")?;
-    if !definitions.contains(window_source) {
-        return Err(
-            format!("MMIO windows reference undefined provenance id {window_source}").into(),
-        );
+    for extension in ["openEspRadioAddressWindows", "openEspRadioEvidenceRanges"] {
+        let Some(node) = document
+            .descendants()
+            .find(|node| node.has_tag_name(extension))
+        else {
+            continue;
+        };
+        let source = node
+            .attribute("source")
+            .ok_or_else(|| format!("{extension} has no source"))?;
+        if !definitions.contains(source) {
+            return Err(format!("{extension} references undefined provenance id {source}").into());
+        }
     }
     Ok(())
 }
@@ -866,6 +926,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     validate_provenance(&document, input)?;
     validate_confidence(input)?;
     let windows = parse_mmio_windows(&document)?;
+    validate_evidence_ranges(&document, &windows)?;
     validate_register_aliases(input)?;
     Ok(windows)
 }
@@ -926,8 +987,9 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         explicitly_alternate, mmio_window, parse_mmio_windows, validate_alias_group,
-        validate_confidence, validate_dimension_order, validate_names, validate_provenance,
-        validate_register_aliases, validate_register_layout, ExpandedRegister, MmioWindow,
+        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
+        validate_provenance, validate_register_aliases, validate_register_layout, ExpandedRegister,
+        MmioWindow,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -1098,5 +1160,26 @@ mod tests {
                 end_exclusive: 0x2020_0000,
             }]
         );
+    }
+
+    #[test]
+    fn validates_half_open_evidence_ranges() {
+        let document = Document::parse(
+            "<root><openEspRadioEvidenceRanges source=\"DEBUG\">\
+             <range name=\"FE\" start=\"0x20100000\" endExclusive=\"0x20100058\"/>\
+             <range name=\"BB\" start=\"0x20100400\" endExclusive=\"0x2010048c\"/>\
+             </openEspRadioEvidenceRanges></root>",
+        )
+        .unwrap();
+        assert!(validate_evidence_ranges(&document, &windows()).is_ok());
+
+        let overlapping = Document::parse(
+            "<root><openEspRadioEvidenceRanges source=\"DEBUG\">\
+             <range name=\"A\" start=\"0x20100000\" endExclusive=\"0x20100008\"/>\
+             <range name=\"B\" start=\"0x20100004\" endExclusive=\"0x2010000c\"/>\
+             </openEspRadioEvidenceRanges></root>",
+        )
+        .unwrap();
+        assert!(validate_evidence_ranges(&overlapping, &windows()).is_err());
     }
 }

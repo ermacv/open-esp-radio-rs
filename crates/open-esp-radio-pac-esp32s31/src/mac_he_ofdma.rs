@@ -698,7 +698,7 @@ impl RadioRegisters {
             ],
             beamforming: MacHeBeamformingConfigurationSnapshot {
                 memory_write_enabled: beamforming.bf_memory_write_enable().bit(),
-                bfrp_time: beamforming.he_beam_bfrp_time().bits(),
+                bfrp_time: beamforming.rx_bfrp_timeout_ms().bits(),
                 ndp_time: beamforming.he_beam_ndp_time().bits(),
                 hardware_sequence_select: beamforming.he_beam_hw_sequence_select().bits(),
                 hardware_sequence_enabled: beamforming.he_beam_hw_sequence_enable().bit(),

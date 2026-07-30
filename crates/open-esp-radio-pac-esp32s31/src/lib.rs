@@ -652,6 +652,35 @@ mod tests {
             registers.peripherals.wifi_mac_interrupt.enable().as_ptr() as usize,
             0x2010_4c40
         );
+        assert_eq!(
+            registers.peripherals.wifi_mac_interrupt.raw().as_ptr() as usize,
+            0x2010_4c44
+        );
+    }
+
+    #[test]
+    fn generated_debug_oracle_registers_keep_one_canonical_owner() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let he = &registers.peripherals.wifi_mac_he_init_prefix;
+        assert_eq!(he.parent_enable().as_ptr() as usize, 0x2010_4c2c);
+        assert_eq!(he.interrupt_1_raw().as_ptr() as usize, 0x2010_4c30);
+        assert_eq!(he.interrupt_1_status().as_ptr() as usize, 0x2010_4c34);
+
+        let power = &registers.peripherals.wifi_mac_power_interrupt;
+        assert_eq!(power.enable().as_ptr() as usize, 0x2010_d8b4);
+        assert_eq!(power.raw().as_ptr() as usize, 0x2010_d8b8);
+        assert_eq!(power.status().as_ptr() as usize, 0x2010_d8bc);
+
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rx_dma
+                .csi_dump_config()
+                .as_ptr() as usize,
+            0x2010_411c
+        );
     }
 
     #[test]

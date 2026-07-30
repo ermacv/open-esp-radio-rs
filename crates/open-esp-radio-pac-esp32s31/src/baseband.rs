@@ -250,7 +250,7 @@ impl RadioRegisters {
         bb.tx_pa_control_1()
             .modify(|_, w| unsafe { w.pa_on_high_unknown().bits(0x0a0e) });
         bb.tx_pa_control_1()
-            .modify(|_, w| unsafe { w.pa_on_byte_1_unknown().bits(0xc8) });
+            .modify(|_, w| unsafe { w.pa_on_bt_delay().bits(0xc8) });
     }
 
     /// Apply the local prefix of complete rev0 ROM `phy_bb_reg_init`.

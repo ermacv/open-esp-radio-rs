@@ -317,42 +317,6 @@ impl RadioRegisters {
     pub fn fence(&mut self) {
         device_fence();
     }
-
-    // Temporary compatibility for PHY leaves that have not yet moved to
-    // PAC-described registers. New target paths must use the typed methods.
-
-    /// Read one evidenced 32-bit radio register.
-    ///
-    /// # Safety
-    ///
-    /// `address` must be aligned and identify a readable register.
-    pub unsafe fn read(&self, address: usize) -> u32 {
-        debug_assert!(Self::contains(address));
-        unsafe { read_volatile(address as *const u32) }
-    }
-
-    /// Write one evidenced 32-bit radio register.
-    ///
-    /// # Safety
-    ///
-    /// `address` must be aligned and identify a writable register, and the
-    /// value must obey that register's hardware contract.
-    pub unsafe fn write(&mut self, address: usize, value: u32) {
-        debug_assert!(Self::contains(address));
-        unsafe { write_volatile(address as *mut u32, value) }
-    }
-
-    /// Perform a finite read/modify/write transaction.
-    ///
-    /// # Safety
-    ///
-    /// The register must permit read/modify/write with the supplied masks.
-    pub unsafe fn replace_bits(&mut self, address: usize, clear_mask: u32, set_bits: u32) -> u32 {
-        let previous = unsafe { self.read(address) };
-        let next = (previous & !clear_mask) | (set_bits & clear_mask);
-        unsafe { self.write(address, next) };
-        previous
-    }
 }
 
 #[cfg(test)]

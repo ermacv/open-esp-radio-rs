@@ -6,8 +6,6 @@
 //! at compile time, so strict runtime never needs the vendor tables or their
 //! initializer.
 
-use core::cell::UnsafeCell;
-
 pub const RATE_SCHEDULE_RECORD_SIZE: usize = 12;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,7 +90,7 @@ pub struct RateScheduleRecordState {
 }
 
 #[repr(C, align(4))]
-struct ScheduleArena<const BYTES: usize>(UnsafeCell<[u8; BYTES]>);
+struct ScheduleArena<const BYTES: usize>([u8; BYTES]);
 
 impl<const BYTES: usize> ScheduleArena<BYTES> {
     const fn indexed(mut bytes: [u8; BYTES]) -> Self {
@@ -102,17 +100,13 @@ impl<const BYTES: usize> ScheduleArena<BYTES> {
             bytes[record * RATE_SCHEDULE_RECORD_SIZE + 0x0a] = record as u8;
             record += 1;
         }
-        Self(UnsafeCell::new(bytes))
+        Self(bytes)
     }
 
-    fn as_mut_ptr(&self) -> *mut u8 {
-        self.0.get().cast::<u8>()
+    const fn as_slice(&self) -> &[u8] {
+        &self.0
     }
 }
-
-// The radio owner is the only consumer. The post-`rcAttach` contents are
-// materialized at compile time and treated as immutable.
-unsafe impl<const BYTES: usize> Sync for ScheduleArena<BYTES> {}
 
 #[used]
 #[link_section = ".critical.data.wifi_strict.rate_schedules"]
@@ -215,30 +209,41 @@ static P2P_DOT11_N_SCHEDULE: ScheduleArena<120> = ScheduleArena::indexed([
     0x0b, 0x03, 0x0b, 0x19, 0x20, 0x40, 0x00, 0x00,
 ]);
 
-fn arena_base(kind: RateScheduleKind) -> *mut u8 {
+fn arena_bytes(kind: RateScheduleKind) -> &'static [u8] {
     match kind {
-        RateScheduleKind::BarOfdm => BAR_OFDM_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::BasicOfdm => BASIC_OFDM_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::Dot11Ax => DOT11_AX_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::Dot11B => DOT11_B_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::Dot11G => DOT11_G_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::Dot11N => DOT11_N_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::Lora => LORA_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::P2pDot11G => P2P_DOT11_G_SCHEDULE.as_mut_ptr(),
-        RateScheduleKind::P2pDot11N => P2P_DOT11_N_SCHEDULE.as_mut_ptr(),
+        RateScheduleKind::BarOfdm => BAR_OFDM_SCHEDULE.as_slice(),
+        RateScheduleKind::BasicOfdm => BASIC_OFDM_SCHEDULE.as_slice(),
+        RateScheduleKind::Dot11Ax => DOT11_AX_SCHEDULE.as_slice(),
+        RateScheduleKind::Dot11B => DOT11_B_SCHEDULE.as_slice(),
+        RateScheduleKind::Dot11G => DOT11_G_SCHEDULE.as_slice(),
+        RateScheduleKind::Dot11N => DOT11_N_SCHEDULE.as_slice(),
+        RateScheduleKind::Lora => LORA_SCHEDULE.as_slice(),
+        RateScheduleKind::P2pDot11G => P2P_DOT11_G_SCHEDULE.as_slice(),
+        RateScheduleKind::P2pDot11N => P2P_DOT11_N_SCHEDULE.as_slice(),
     }
 }
 
+fn schedule_bytes(schedule: RateScheduleRef) -> &'static [u8] {
+    let offset = usize::from(schedule.index) * RATE_SCHEDULE_RECORD_SIZE;
+    &arena_bytes(schedule.kind)[offset..offset + RATE_SCHEDULE_RECORD_SIZE]
+}
+
+/// Address of one immutable compatibility record.
+///
+/// This exists only for oracle tooling that compares the former vendor
+/// pointer identity. Runtime rate selection uses [`RateScheduleRef`] and
+/// bounded slices, so no raw pointer is dereferenced by the driver.
 #[inline(never)]
-pub fn schedule_pointer(schedule: RateScheduleRef) -> *mut u8 {
-    arena_base(schedule.kind).wrapping_add(usize::from(schedule.index) * RATE_SCHEDULE_RECORD_SIZE)
+pub fn schedule_pointer(schedule: RateScheduleRef) -> *const u8 {
+    schedule_bytes(schedule).as_ptr()
 }
 
 pub fn schedule_from_pointer(pointer: *const u8) -> Option<RateScheduleRef> {
     let address = pointer as usize;
     for kind in RATE_SCHEDULE_KINDS {
-        let base = arena_base(kind) as usize;
-        let bytes = kind.record_count() * RATE_SCHEDULE_RECORD_SIZE;
+        let arena = arena_bytes(kind);
+        let base = arena.as_ptr() as usize;
+        let bytes = arena.len();
         let Some(offset) = address.checked_sub(base) else {
             continue;
         };
@@ -250,17 +255,12 @@ pub fn schedule_from_pointer(pointer: *const u8) -> Option<RateScheduleRef> {
 }
 
 pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
-    let record = schedule_pointer(schedule);
-    // The radio owner is the sole runtime reader and the arenas are no longer
-    // mutated after cold handoff.  Copying four scalar bytes prevents a
-    // reference to the compatibility storage from escaping.
-    unsafe {
-        RateScheduleRecordState {
-            rate: record.read(),
-            retry_limit: record.add(1).read(),
-            index: record.add(0x0a).read(),
-            adaptive: record.add(0x0b).read(),
-        }
+    let record = schedule_bytes(schedule);
+    RateScheduleRecordState {
+        rate: record[0],
+        retry_limit: record[1],
+        index: record[0x0a],
+        adaptive: record[0x0b],
     }
 }
 
@@ -277,17 +277,11 @@ pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
 /// `migration/esp32s31-hybrid-runtime/src/lmac.rs::
 /// select_basic_retry_rate`.
 pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {
-    let record = schedule_pointer(schedule);
+    let record = schedule_bytes(schedule);
     let mut cumulative = 0_u8;
     for index in 0..4 {
-        // The arena is initialized before radio ownership begins and is then
-        // immutable. Copy only the two scalar bytes needed by this safe API.
-        let (rate, count) = unsafe {
-            (
-                record.add(index * 2).read(),
-                record.add(index * 2 + 1).read(),
-            )
-        };
+        let rate = record[index * 2];
+        let count = record[index * 2 + 1];
         cumulative = cumulative.wrapping_add(count);
         if failed_attempts < cumulative {
             return Some(rate);

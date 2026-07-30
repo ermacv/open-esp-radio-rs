@@ -79,7 +79,7 @@ const HE20_HT_CAPABILITY_IE: [u8; 28] = [
     0, 0,
 ];
 // Exact one-stream HE20 MCS0-9 capability captured from the vendor
-// association request and qualified by the old strict HE association HIL.
+// association request and retained as a comparison oracle.
 // This must not be relabelled HE40: complete
 // `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` writes zero to
 // complete IE byte nine (the first HE PHY Capabilities byte / Channel Width
@@ -93,17 +93,35 @@ const HE20_HT_CAPABILITY_IE: [u8; 28] = [
 //
 // FIELD AUDIT: complete
 // `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` proves that
-// byte 11 bit 3 is the S31 `g_phy_cap_rx_stbc` advertisement. Bytes 15 bits
-// 2..4 and 18 bit 1 advertise triggered SU/MU beamforming feedback, triggered
-// CQI and non-triggered CQI. The open RX metadata path already decodes the
-// HE-SIG-A2 STBC bit, but controlled STBC downlink HIL is still pending and
-// the CQI report producer is not yet owned. Preserving the vendor request here
-// is an oracle-compatibility choice, not a claim that those feedback paths are
-// qualified.
-const HE20_MCS9_CAPABILITY_IE: [u8; 24] = [
+// byte 11 bit 3 is the S31 `g_phy_cap_rx_stbc` advertisement. Byte 15 bits
+// 2..4 advertise triggered SU beamforming feedback, triggered MU partial-
+// bandwidth feedback and triggered CQI; byte 18 bit 1 advertises
+// non-triggered CQI.
+const HE20_VENDOR_MCS9_CAPABILITY_IE: [u8; 24] = [
     255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
     0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
 ];
+
+const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
+    let mut capability = HE20_VENDOR_MCS9_CAPABILITY_IE;
+    // The hardware beamforming-report sequence and its rate profile are
+    // Rust-owned, so keep the two beamforming-feedback bits. There is still
+    // no open triggered or non-triggered CQI report producer: advertising
+    // either capability could make an AP schedule a response the STA cannot
+    // generate. Clear only those two independently recovered claims.
+    //
+    // SOURCE[HIL_OPEN_HE20_CQI_CAPABILITY_MASK_2026_07_30]: ESP32-S31 rev0
+    // associated with FRITZ!Box 7530 FN on channel 1 after these exact two
+    // bits were cleared, completed WPA2/CCMP and DHCP, then passed a complete
+    // 30-profile LDPC MCS0..9 x GI/LTF A-MPDU matrix with zero failed
+    // profiles. Evidence:
+    // `/tmp/open-radio-he20-owned-cqi-mask-hil-20260730.log`.
+    capability[15] &= !(1 << 4);
+    capability[18] &= !(1 << 1);
+    capability
+}
+
+const HE20_OWNED_MCS9_CAPABILITY_IE: [u8; 24] = owned_he20_mcs9_capability_ie();
 const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;
@@ -665,7 +683,7 @@ impl AssociationRequest<'_> {
             {
                 (
                     Some(&HE20_HT_CAPABILITY_IE),
-                    Some(&HE20_MCS9_CAPABILITY_IE),
+                    Some(&HE20_OWNED_MCS9_CAPABILITY_IE),
                     Some(
                         self.power_capability
                             .ok_or(AssociationRequestError::MissingPowerCapability)?,
@@ -1629,7 +1647,7 @@ mod tests {
     }
 
     #[test]
-    fn he20_request_reproduces_the_complete_vendor_association_body() {
+    fn he20_request_preserves_vendor_body_except_unowned_cqi_claims() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         let ssid = b"FRITZ!Box 7530 FN";
         record.ssid[..ssid.len()].copy_from_slice(ssid);
@@ -1641,9 +1659,9 @@ mod tests {
         record.extended_supported_rates[..4].copy_from_slice(&[0x6c, 0x12, 0x24, 0x48]);
         record.extended_supported_rates_len = 4;
         record.ht_capability_ie_present = true;
-        record.he_capability_ie[..HE20_MCS9_CAPABILITY_IE.len()]
-            .copy_from_slice(&HE20_MCS9_CAPABILITY_IE);
-        record.he_capability_ie_len = HE20_MCS9_CAPABILITY_IE.len() as u8;
+        record.he_capability_ie[..HE20_VENDOR_MCS9_CAPABILITY_IE.len()]
+            .copy_from_slice(&HE20_VENDOR_MCS9_CAPABILITY_IE);
+        record.he_capability_ie_len = HE20_VENDOR_MCS9_CAPABILITY_IE.len() as u8;
         let he_operation = [255, 7, 36, 0, 0, 0, 1, 0xfd, 0xff];
         record.he_operation_ie[..he_operation.len()].copy_from_slice(&he_operation);
         record.he_operation_ie_len = he_operation.len() as u8;
@@ -1676,7 +1694,7 @@ mod tests {
             ]
         );
         let expected_tail_len = HE20_HT_CAPABILITY_IE.len()
-            + HE20_MCS9_CAPABILITY_IE.len()
+            + HE20_OWNED_MCS9_CAPABILITY_IE.len()
             + HE_UL_MU_POWER_CAPABILITY_IE_LEN
             + WMM_INFORMATION_IE.len()
             + HE20_EXTENDED_CAPABILITY_IE.len();
@@ -1688,10 +1706,26 @@ mod tests {
         );
         offset += HE20_HT_CAPABILITY_IE.len();
         assert_eq!(
-            &tail[offset..offset + HE20_MCS9_CAPABILITY_IE.len()],
-            &HE20_MCS9_CAPABILITY_IE
+            &tail[offset..offset + HE20_OWNED_MCS9_CAPABILITY_IE.len()],
+            &HE20_OWNED_MCS9_CAPABILITY_IE
         );
-        offset += HE20_MCS9_CAPABILITY_IE.len();
+        assert_eq!(
+            HE20_OWNED_MCS9_CAPABILITY_IE[15],
+            HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !(1 << 4)
+        );
+        assert_eq!(
+            HE20_OWNED_MCS9_CAPABILITY_IE[18],
+            HE20_VENDOR_MCS9_CAPABILITY_IE[18] & !(1 << 1)
+        );
+        for index in 0..HE20_VENDOR_MCS9_CAPABILITY_IE.len() {
+            if index != 15 && index != 18 {
+                assert_eq!(
+                    HE20_OWNED_MCS9_CAPABILITY_IE[index],
+                    HE20_VENDOR_MCS9_CAPABILITY_IE[index],
+                );
+            }
+        }
+        offset += HE20_OWNED_MCS9_CAPABILITY_IE.len();
         assert_eq!(
             &tail[offset..offset + HE_UL_MU_POWER_CAPABILITY_IE_LEN],
             &[255, 12, 60, 0, 0, 1, 1, 2, 2, 4, 5, 0, 0, 0]

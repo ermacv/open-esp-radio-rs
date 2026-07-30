@@ -756,8 +756,9 @@ pub enum HeFecCoding {
 /// `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` selects exactly the internal
 /// rate-control fallback codes `0x10`, `0x11`, and `0x13` for BPSK, QPSK,
 /// and 16-QAM DCM. Its RU242 DCM table additionally contains MCS4, but that
-/// requires the still-unowned LDPC profile and therefore must not be combined
-/// with the current `HE_SU_A2_CONTROL_BCC` image.
+/// requires the separately owned LDPC profile and therefore must not be
+/// combined with the `HE_SU_A2_CONTROL_BCC` image. Use
+/// [`HeRate::ldpc_dcm`] for that coding domain.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HeBccDcmMcs {

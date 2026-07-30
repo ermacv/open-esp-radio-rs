@@ -58,6 +58,20 @@ const HT40_CAPABILITY_IE: [u8; 28] = [
     45, 26, 0x6e, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
     0, 0,
 ];
+// Exact HT20 capability carried beside the HE capability in the complete
+// vendor association request. It differs from the deliberately narrow
+// standalone HT20 profile above: SMPS is disabled, RX STBC is one stream,
+// the receive A-MPDU limit is 65,535 bytes and minimum spacing is 4 us.
+//
+// SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: frame 7624 of
+// `esp32s31-he-oracle-fixed-ch11.pcapng`, SHA-256
+// `d50289842bd3cddbcebf3080c049cf6d6b387908b501b6b7333fbfb250e7abde`.
+// SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+// ieee80211_add_htcap_body` produces the same capability fields.
+const HE20_HT_CAPABILITY_IE: [u8; 28] = [
+    45, 26, 0x2c, 0x11, 0x17, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
+];
 // Exact one-stream HE20 MCS0-9 capability captured from the vendor
 // association request and qualified by the old strict HE association HIL.
 // This must not be relabelled HE40: complete
@@ -84,11 +98,79 @@ const HE20_MCS9_CAPABILITY_IE: [u8; 24] = [
     255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
     0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
 ];
+const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
+const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
+// Exact vendor Extended Capabilities IE adjacent to the HE/UL-MU capability
+// pair. It advertises Event, Multiple BSSID and TWT requester support. The HE
+// capability above already carries the same TWT requester contract.
+//
+// SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: exact frame 7624 bytes.
+// SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
+// ieee80211_add_extcap` emits this 12-byte body for the captured STA state.
+const HE20_EXTENDED_CAPABILITY_IE: [u8; 14] =
+    [127, 12, 0x80, 0x00, 0x40, 0, 0, 0, 0, 0, 0, 0x20, 0, 0];
 // WMM Information, version one, U-APSD disabled.
 //
 // SOURCE: the same promoted `sta_link.rs::WMM_INFORMATION_IE`, cross-checked
 // against `_oracles/libnet80211.a` association-request construction.
 const WMM_INFORMATION_IE: [u8; 9] = [221, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00];
+
+/// Relative HE UL-MU transmit-power capability for MAC rates 16 through 25.
+///
+/// The caller supplies calibrated Rust-owned PHY gain-table indices. No ROM
+/// function, C ABI callback or vendor global is retained at this boundary.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_he.o]::
+/// ieee80211_add_ulmu_pwrcap` queries `phy_get_max_pwr` for rates 16..=25,
+/// subtracts every rate 17..=25 primary byte from rate 16, then writes the
+/// nine differences after Extension ID 60 and two reserved zero bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeUlMuPowerCapability {
+    relative_to_rate_16: [u8; 9],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeUlMuPowerCapabilityError {
+    HigherPowerThanRate16 { rate: u8 },
+}
+
+impl HeUlMuPowerCapability {
+    pub fn from_rate_power_indices(
+        rate_16_through_25: [i8; 10],
+    ) -> Result<Self, HeUlMuPowerCapabilityError> {
+        let base = i16::from(rate_16_through_25[0]);
+        let mut relative_to_rate_16 = [0_u8; 9];
+        for (offset, (relative, power)) in relative_to_rate_16
+            .iter_mut()
+            .zip(rate_16_through_25[1..].iter().copied())
+            .enumerate()
+        {
+            let difference = base - i16::from(power);
+            if !(0..=i16::from(u8::MAX)).contains(&difference) {
+                return Err(HeUlMuPowerCapabilityError::HigherPowerThanRate16 {
+                    rate: 17 + offset as u8,
+                });
+            }
+            *relative = difference as u8;
+        }
+        Ok(Self {
+            relative_to_rate_16,
+        })
+    }
+
+    pub const fn relative_to_rate_16(self) -> [u8; 9] {
+        self.relative_to_rate_16
+    }
+
+    fn encode(self) -> [u8; HE_UL_MU_POWER_CAPABILITY_IE_LEN] {
+        let mut element = [0_u8; HE_UL_MU_POWER_CAPABILITY_IE_LEN];
+        element[0] = 255;
+        element[1] = 12;
+        element[2] = HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID;
+        element[3..12].copy_from_slice(&self.relative_to_rate_16);
+        element
+    }
+}
 /// Baseline HT A-MSDU limit selected when HT Capabilities Info bit 11 is
 /// clear. The 7,935-byte extension remains deliberately unadvertised.
 const HT_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
@@ -361,6 +443,9 @@ pub struct AssociationRequest<'a> {
     pub sequence_number: u16,
     pub listen_interval: u16,
     pub phy: StaAssociationPhy,
+    /// Runtime-calibrated UL-MU power capability required by the complete HE
+    /// association contract. Non-HE modes must leave it absent.
+    pub he_ul_mu_power: Option<HeUlMuPowerCapability>,
 }
 
 impl AssociationRequest<'_> {
@@ -390,16 +475,16 @@ impl AssociationRequest<'_> {
         let extended_rates_len = rates_len - first_rates_len;
         let selected_rsn =
             select_wpa2_psk_rsn(self.access_point).map_err(AssociationRequestError::Security)?;
-        let (ht_capability, he_capability) = match self.phy {
-            StaAssociationPhy::Legacy => (None, None),
+        let (ht_capability, he_capability, he_ul_mu_power) = match self.phy {
+            StaAssociationPhy::Legacy => (None, None, None),
             StaAssociationPhy::Ht20 if self.access_point.ht_capability_ie_present => {
-                (Some(&HT20_CAPABILITY_IE), None)
+                (Some(&HT20_CAPABILITY_IE), None, None)
             }
             StaAssociationPhy::Ht20 => {
                 return Err(AssociationRequestError::HtUnsupportedByAccessPoint);
             }
             StaAssociationPhy::Ht40 if self.access_point.ht40_secondary_channel().is_some() => {
-                (Some(&HT40_CAPABILITY_IE), None)
+                (Some(&HT40_CAPABILITY_IE), None, None)
             }
             StaAssociationPhy::Ht40 => {
                 return Err(AssociationRequestError::Ht40UnsupportedByAccessPoint);
@@ -410,16 +495,28 @@ impl AssociationRequest<'_> {
                         .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
                     && parse_he20_operation(self.access_point.he_operation_ie_bytes()).is_ok() =>
             {
-                (Some(&HT20_CAPABILITY_IE), Some(&HE20_MCS9_CAPABILITY_IE))
+                (
+                    Some(&HE20_HT_CAPABILITY_IE),
+                    Some(&HE20_MCS9_CAPABILITY_IE),
+                    Some(
+                        self.he_ul_mu_power
+                            .ok_or(AssociationRequestError::MissingHeUlMuPowerCapability)?,
+                    ),
+                )
             }
             StaAssociationPhy::He20 => {
                 return Err(AssociationRequestError::He20UnsupportedByAccessPoint);
             }
         };
+        if self.phy != StaAssociationPhy::He20 && self.he_ul_mu_power.is_some() {
+            return Err(AssociationRequestError::UnexpectedHeUlMuPowerCapability);
+        }
         let phy_information_len = if let Some(capability) = ht_capability {
             capability.len()
                 + he_capability.map_or(0, |capability| capability.len())
+                + he_ul_mu_power.map_or(0, |_| HE_UL_MU_POWER_CAPABILITY_IE_LEN)
                 + WMM_INFORMATION_IE.len()
+                + usize::from(he_capability.is_some()) * HE20_EXTENDED_CAPABILITY_IE.len()
         } else {
             0
         };
@@ -487,8 +584,18 @@ impl AssociationRequest<'_> {
                 frame[offset..offset + capability.len()].copy_from_slice(capability);
                 offset += capability.len();
             }
+            if let Some(capability) = he_ul_mu_power {
+                let capability = capability.encode();
+                frame[offset..offset + capability.len()].copy_from_slice(&capability);
+                offset += capability.len();
+            }
             frame[offset..offset + WMM_INFORMATION_IE.len()].copy_from_slice(&WMM_INFORMATION_IE);
             offset += WMM_INFORMATION_IE.len();
+            if he_capability.is_some() {
+                frame[offset..offset + HE20_EXTENDED_CAPABILITY_IE.len()]
+                    .copy_from_slice(&HE20_EXTENDED_CAPABILITY_IE);
+                offset += HE20_EXTENDED_CAPABILITY_IE.len();
+            }
         }
         debug_assert_eq!(offset, required);
         Ok(required)
@@ -502,6 +609,8 @@ pub enum AssociationRequestError {
     HtUnsupportedByAccessPoint,
     Ht40UnsupportedByAccessPoint,
     He20UnsupportedByAccessPoint,
+    MissingHeUlMuPowerCapability,
+    UnexpectedHeUlMuPowerCapability,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1180,6 +1289,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Legacy,
+            he_ul_mu_power: None,
         }
         .encode(&mut output)
         .unwrap();
@@ -1206,6 +1316,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht20,
+            he_ul_mu_power: None,
         }
         .encode(&mut output)
         .unwrap();
@@ -1230,6 +1341,7 @@ mod tests {
                 sequence_number: 2,
                 listen_interval: 1,
                 phy: StaAssociationPhy::Ht20,
+                he_ul_mu_power: None,
             }
             .encode(&mut [0; 160]),
             Err(AssociationRequestError::HtUnsupportedByAccessPoint)
@@ -1251,11 +1363,80 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht40,
+            he_ul_mu_power: None,
         }
         .encode(&mut output)
         .unwrap();
         let phy_start = length - HT40_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
         assert_eq!(&output[phy_start..phy_start + 4], &[45, 26, 0x6e, 0]);
+    }
+
+    #[test]
+    fn he20_request_reproduces_the_complete_vendor_capability_tail() {
+        let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        record.ht_capability_ie_present = true;
+        record.he_capability_ie[..HE20_MCS9_CAPABILITY_IE.len()]
+            .copy_from_slice(&HE20_MCS9_CAPABILITY_IE);
+        record.he_capability_ie_len = HE20_MCS9_CAPABILITY_IE.len() as u8;
+        let he_operation = [255, 7, 36, 0, 0, 0, 1, 0xfd, 0xff];
+        record.he_operation_ie[..he_operation.len()].copy_from_slice(&he_operation);
+        record.he_operation_ie_len = he_operation.len() as u8;
+
+        let power = HeUlMuPowerCapability::from_rate_power_indices([
+            20, 20, 20, 19, 19, 18, 18, 16, 15, 20,
+        ])
+        .unwrap();
+        assert_eq!(power.relative_to_rate_16(), [0, 0, 1, 1, 2, 2, 4, 5, 0]);
+
+        let mut output = [0; 192];
+        let length = AssociationRequest {
+            source: LOCAL,
+            access_point: &record,
+            sequence_number: 2,
+            listen_interval: 1,
+            phy: StaAssociationPhy::He20,
+            he_ul_mu_power: Some(power),
+        }
+        .encode(&mut output)
+        .unwrap();
+        let expected_tail_len = HE20_HT_CAPABILITY_IE.len()
+            + HE20_MCS9_CAPABILITY_IE.len()
+            + HE_UL_MU_POWER_CAPABILITY_IE_LEN
+            + WMM_INFORMATION_IE.len()
+            + HE20_EXTENDED_CAPABILITY_IE.len();
+        let tail = &output[length - expected_tail_len..length];
+        let mut offset = 0;
+        assert_eq!(
+            &tail[offset..offset + HE20_HT_CAPABILITY_IE.len()],
+            &HE20_HT_CAPABILITY_IE
+        );
+        offset += HE20_HT_CAPABILITY_IE.len();
+        assert_eq!(
+            &tail[offset..offset + HE20_MCS9_CAPABILITY_IE.len()],
+            &HE20_MCS9_CAPABILITY_IE
+        );
+        offset += HE20_MCS9_CAPABILITY_IE.len();
+        assert_eq!(
+            &tail[offset..offset + HE_UL_MU_POWER_CAPABILITY_IE_LEN],
+            &[255, 12, 60, 0, 0, 1, 1, 2, 2, 4, 5, 0, 0, 0]
+        );
+        offset += HE_UL_MU_POWER_CAPABILITY_IE_LEN;
+        assert_eq!(
+            &tail[offset..offset + WMM_INFORMATION_IE.len()],
+            &WMM_INFORMATION_IE
+        );
+        offset += WMM_INFORMATION_IE.len();
+        assert_eq!(&tail[offset..], &HE20_EXTENDED_CAPABILITY_IE);
+    }
+
+    #[test]
+    fn he_ul_mu_power_rejects_a_rate_above_the_reference() {
+        assert_eq!(
+            HeUlMuPowerCapability::from_rate_power_indices([
+                20, 20, 20, 19, 19, 21, 18, 16, 15, 20,
+            ]),
+            Err(HeUlMuPowerCapabilityError::HigherPowerThanRate16 { rate: 21 })
+        );
     }
 
     #[test]

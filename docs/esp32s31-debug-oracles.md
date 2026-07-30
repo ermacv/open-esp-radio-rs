@@ -316,6 +316,25 @@ implemented. This capture also makes the HIL boundary explicit: injecting
 NDPA alone cannot qualify beamformee behavior because the NDP between the
 announcement and report is semantically required.
 
+The same capture's frame 7624 closes the vendor HE association tail before
+that sounding exchange. The STA emits, in order, HT Capabilities, HE
+Capabilities, HE UL MU Power Capabilities, WMM Information and Extended
+Capabilities. Complete
+`libnet80211.a[ieee80211_he.o]::ieee80211_add_ulmu_pwrcap` obtains the primary
+power index for MAC rates 16 through 25 and publishes the nine unsigned
+differences from rate 16 after Extension ID 60 and two reserved zero bytes.
+The open encoder now takes those calibrated indices through a typed,
+allocation-free Rust value; it retains no ROM callback or C-layout parameter.
+`HIL_OPEN_HE_ASSOC_COMPLETE_FRITZ_2026_07_30` measured live indices
+`[20,20,20,20,19,19,18,18,16,15]`, hence differences
+`[0,0,0,1,1,2,2,4,5]`. The FRITZ accepted the first association request as
+AID 21, and WPA2, protected ARP, TX/RX AddBA and the first three-subframe
+A-MPDU all completed with zero driver drops. A subsequent 175-packet,
+35-second ICMP uplink had zero loss and 3.667 ms mean RTT. Neither that uplink
+window nor the preceding idle observation contained an HE NDPA or Trigger;
+the complete capability tail is therefore HIL-qualified as an association
+contract, not as proof of sounding or OFDMA scheduling.
+
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
 HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field

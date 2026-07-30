@@ -121,6 +121,313 @@ pub struct TxPerUpdate {
     pub schedule: ScheduleSelection,
 }
 
+/// Result of one Rust-owned A-MPDU BlockAck rate-control observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmpduRateDecision {
+    /// The vendor-sized observation window is not complete yet.
+    Accumulating,
+    /// One complete window was evaluated without changing its rate.
+    Retain {
+        raw_success_ratio: u8,
+        filtered_success_ratio: u8,
+    },
+    /// Select the preceding (faster) record in the same schedule arena.
+    Promote {
+        from: RateScheduleRef,
+        to: RateScheduleRef,
+        raw_success_ratio: u8,
+        filtered_success_ratio: u8,
+    },
+    /// Select the following (slower) record in the same schedule arena.
+    Lower {
+        from: RateScheduleRef,
+        to: RateScheduleRef,
+        raw_success_ratio: u8,
+        filtered_success_ratio: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmpduRateObservationError {
+    Unavailable,
+    NoAttemptedMpdu,
+    AcknowledgedExceedsAttempted,
+}
+
+/// Independent rate state used by the vendor A-MPDU schedule getter.
+///
+/// This is intentionally not folded into [`RateControlState`]:
+/// `rcGetAmpduSched` reads a separate rate byte, while `rcGetSched` reads the
+/// ordinary current schedule pointer. Complete
+/// `_oracles/libpp.a[trc.o]::rcUpdateTxDoneAmpdu2` updates the former without
+/// moving the latter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduRateControlState {
+    current_schedule: RateScheduleRef,
+    highest_schedule_index: u8,
+    attempted_mpdu: u32,
+    acknowledged_mpdu: u32,
+    last_evaluation_us: u32,
+    last_lower_us: u32,
+    last_promote_us: u32,
+    promote_cooldown_us: u32,
+    raw_success_ratio: u8,
+    filtered_success_ratio: u8,
+    evaluation_count: u32,
+    promotion_probe: bool,
+}
+
+impl AmpduRateControlState {
+    const COUNTER_RESCALE_LIMIT: u32 = 0x0200_0000;
+    const EVALUATION_MPDU: u32 = 500;
+    const EVALUATION_US: u32 = 100_000;
+    const LOWER_HOLDOFF_US: u32 = 100_000;
+    const INITIAL_PROMOTE_COOLDOWN_US: u32 = 500_000;
+    const MAX_PROMOTE_COOLDOWN_US: u32 = 4_000_000;
+    const VENDOR_AMPDU_FLOOR_INDEX: u8 = 8;
+
+    fn new(
+        schedule_kind: RateScheduleKind,
+        ordinary_schedule_index: u8,
+        highest_schedule_index: u8,
+    ) -> Option<Self> {
+        let ampdu_index = ordinary_schedule_index.min(Self::VENDOR_AMPDU_FLOOR_INDEX);
+        Some(Self {
+            current_schedule: RateScheduleRef::new(schedule_kind, ampdu_index)?,
+            highest_schedule_index,
+            attempted_mpdu: 0,
+            acknowledged_mpdu: 0,
+            last_evaluation_us: 0,
+            last_lower_us: 0,
+            last_promote_us: 0,
+            promote_cooldown_us: Self::INITIAL_PROMOTE_COOLDOWN_US,
+            raw_success_ratio: 0,
+            filtered_success_ratio: 0,
+            evaluation_count: 0,
+            promotion_probe: false,
+        })
+    }
+
+    pub const fn current_schedule(&self) -> RateScheduleRef {
+        self.current_schedule
+    }
+
+    pub const fn raw_success_ratio(&self) -> Option<u8> {
+        if self.evaluation_count == 0 {
+            None
+        } else {
+            Some(self.raw_success_ratio)
+        }
+    }
+
+    pub const fn filtered_success_ratio(&self) -> Option<u8> {
+        if self.evaluation_count == 0 {
+            None
+        } else {
+            Some(self.filtered_success_ratio)
+        }
+    }
+
+    /// Consume one or more completed hardware A-MPDU attempts.
+    ///
+    /// Ratios use the blob's Q7 scale: 128 is a completely acknowledged
+    /// window. `now_us` is the same wrapping 32-bit microsecond domain read by
+    /// the vendor body from `0x2010d800`; the application may obtain it from
+    /// its already-owned monotonic timer.
+    ///
+    /// This ports the complete scalar window/filter/adjacent-rate suffix at
+    /// `rcUpdateTxDoneAmpdu2+0xb0..+0x2e4`. The earlier vendor-result layout
+    /// decoder and the floor-index branch that also changes per-TID aggregate
+    /// state remain outside this value API.
+    pub fn observe_block_ack(
+        &mut self,
+        now_us: u32,
+        attempted_mpdu: u16,
+        acknowledged_mpdu: u16,
+        filtered_ack_snr: Option<i8>,
+    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
+        if attempted_mpdu == 0 {
+            return Err(AmpduRateObservationError::NoAttemptedMpdu);
+        }
+        if acknowledged_mpdu > attempted_mpdu {
+            return Err(AmpduRateObservationError::AcknowledgedExceedsAttempted);
+        }
+
+        let attempted_mpdu = u32::from(attempted_mpdu);
+        let acknowledged_mpdu = u32::from(acknowledged_mpdu);
+        if self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu) >= Self::COUNTER_RESCALE_LIMIT {
+            self.attempted_mpdu >>= 1;
+            self.acknowledged_mpdu >>= 1;
+        }
+        self.attempted_mpdu = self.attempted_mpdu.wrapping_add(attempted_mpdu);
+        self.acknowledged_mpdu = self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu);
+
+        if self.attempted_mpdu < Self::EVALUATION_MPDU
+            && vendor_duration(now_us, self.last_evaluation_us) < Self::EVALUATION_US
+        {
+            return Ok(AmpduRateDecision::Accumulating);
+        }
+
+        let raw_success_ratio = ((self.acknowledged_mpdu << 7) / self.attempted_mpdu) as u8;
+        let rate = schedule_state(self.current_schedule).rate;
+        let ack_snr = filtered_ack_snr.unwrap_or(AckSnrFilter::UNINITIALIZED) as u8;
+        let down_threshold = ampdu_down_threshold(rate, ack_snr);
+        let previous_filtered = self.filtered_success_ratio;
+        let filtered_success_ratio = if previous_filtered == 0 {
+            let initial = ((3 * u16::from(down_threshold) + 128) >> 2) as u8;
+            if initial >= raw_success_ratio {
+                initial
+            } else {
+                ((u16::from(initial) + u16::from(raw_success_ratio)) >> 1) as u8
+            }
+        } else {
+            ((3 * u16::from(previous_filtered) + u16::from(raw_success_ratio)) >> 2) as u8
+        };
+
+        self.last_evaluation_us = now_us;
+        self.raw_success_ratio = raw_success_ratio;
+        self.filtered_success_ratio = filtered_success_ratio;
+        self.evaluation_count = self.evaluation_count.wrapping_add(1);
+        self.attempted_mpdu = 0;
+        self.acknowledged_mpdu = 0;
+
+        if filtered_success_ratio < down_threshold && previous_filtered < down_threshold {
+            if self.promotion_probe {
+                self.promote_cooldown_us = self
+                    .promote_cooldown_us
+                    .saturating_mul(2)
+                    .min(Self::MAX_PROMOTE_COOLDOWN_US);
+            }
+            if vendor_duration(now_us, self.last_lower_us) > Self::LOWER_HOLDOFF_US
+                && self.current_schedule.index < Self::VENDOR_AMPDU_FLOOR_INDEX
+            {
+                let from = self.current_schedule;
+                if let Some(to) = from.advance() {
+                    self.current_schedule = to;
+                    self.last_lower_us = now_us;
+                    self.clear_after_schedule_change();
+                    return Ok(AmpduRateDecision::Lower {
+                        from,
+                        to,
+                        raw_success_ratio,
+                        filtered_success_ratio,
+                    });
+                }
+            }
+            return Ok(AmpduRateDecision::Retain {
+                raw_success_ratio,
+                filtered_success_ratio,
+            });
+        }
+
+        if self.promotion_probe {
+            self.promotion_probe = false;
+            self.promote_cooldown_us = Self::INITIAL_PROMOTE_COOLDOWN_US;
+            return Ok(AmpduRateDecision::Retain {
+                raw_success_ratio,
+                filtered_success_ratio,
+            });
+        }
+
+        let up_threshold = ampdu_up_threshold(rate, ack_snr);
+        if self.highest_schedule_index < self.current_schedule.index
+            && up_threshold < filtered_success_ratio
+            && up_threshold < previous_filtered
+            && vendor_duration(now_us, self.last_promote_us) > self.promote_cooldown_us
+        {
+            let from = self.current_schedule;
+            if let Some(to) = RateScheduleRef::new(from.kind, from.index.wrapping_sub(1)) {
+                self.current_schedule = to;
+                self.last_promote_us = now_us;
+                self.promotion_probe = true;
+                self.clear_after_schedule_change();
+                return Ok(AmpduRateDecision::Promote {
+                    from,
+                    to,
+                    raw_success_ratio,
+                    filtered_success_ratio,
+                });
+            }
+        }
+
+        Ok(AmpduRateDecision::Retain {
+            raw_success_ratio,
+            filtered_success_ratio,
+        })
+    }
+
+    fn clear_after_schedule_change(&mut self) {
+        self.promote_cooldown_us = Self::INITIAL_PROMOTE_COOLDOWN_US;
+        self.attempted_mpdu = 0;
+        self.acknowledged_mpdu = 0;
+        self.raw_success_ratio = 0;
+        self.filtered_success_ratio = 0;
+        self.evaluation_count = 0;
+    }
+}
+
+const fn vendor_duration(now: u32, previous: u32) -> u32 {
+    let duration = now.wrapping_sub(previous);
+    if now < previous {
+        duration.wrapping_sub(1)
+    } else {
+        duration
+    }
+}
+
+const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
+    let mcs = match rate {
+        0x10..=0x19 => rate - 0x10,
+        0x1a..=0x23 => rate - 0x1a,
+        _ => return 0,
+    };
+    let reference = match mcs {
+        0 => 8,
+        1 => 11,
+        2 => 13,
+        3 => 16,
+        4 => 21,
+        5 => 26,
+        6 => 29,
+        7 => 33,
+        8 => 36,
+        _ => 41,
+    };
+    if filtered_ack_snr == AckSnrFilter::UNINITIALIZED as u8 || filtered_ack_snr <= reference {
+        return 0;
+    }
+    let scaled = (((filtered_ack_snr - reference) >> 1) as u16 * 3) as u8;
+    if scaled > 32 {
+        32
+    } else {
+        scaled
+    }
+}
+
+const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
+    let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
+    match rate {
+        0x10..=0x12 => 111 - margin,
+        0x13 => 116 - margin,
+        0x14..=0x19 | 0x21..=0x23 => 121 - margin,
+        _ => 121,
+    }
+}
+
+const fn ampdu_down_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
+    let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
+    match rate {
+        0x10 => 105 - margin,
+        0x11 => 106 - margin,
+        0x12 => 107 - margin,
+        0x13 => 108 - margin,
+        0x14 => 109 - margin,
+        0x15 | 0x17 => 115 - margin,
+        0x16 | 0x18..=0x19 | 0x21..=0x23 => 114 - margin,
+        _ => 114,
+    }
+}
+
 impl RateControlState {
     const COUNTER_RESCALE_LIMIT: u32 = 0x0200_0000;
     const REEVALUATE_AFTER_US: u32 = 500_000;
@@ -390,6 +697,7 @@ pub struct StaRateControlAssociation {
     beamforming_report: BeamformingReportRate,
     ack_snr: AckSnrFilter,
     runtime: RateControlState,
+    ampdu_runtime: Option<AmpduRateControlState>,
 }
 
 impl StaRateControlAssociation {
@@ -421,6 +729,13 @@ impl StaRateControlAssociation {
                 .extended_range_single_user_permitted,
         );
         let current = schedule_state(selection.current);
+        let ampdu_runtime = selection.ampdu_limit_rate.and_then(|_| {
+            AmpduRateControlState::new(
+                selection.current.kind,
+                selection.current.index,
+                selection.highest_index,
+            )
+        });
         Self {
             selection,
             beamforming_report,
@@ -441,6 +756,7 @@ impl StaRateControlAssociation {
                 },
                 legacy_schedule: selection.legacy,
             },
+            ampdu_runtime,
         }
     }
 
@@ -462,6 +778,13 @@ impl StaRateControlAssociation {
 
     pub const fn ampdu_limit_rate(&self) -> Option<u8> {
         self.selection.ampdu_limit_rate
+    }
+
+    pub const fn current_ampdu_schedule(&self) -> Option<RateScheduleRef> {
+        match &self.ampdu_runtime {
+            Some(runtime) => Some(runtime.current_schedule()),
+            None => None,
+        }
     }
 
     pub const fn beamforming_report(&self) -> BeamformingReportRate {
@@ -499,6 +822,36 @@ impl StaRateControlAssociation {
             };
         }
         update
+    }
+
+    pub fn observe_ampdu_block_ack(
+        &mut self,
+        now_us: u32,
+        attempted_mpdu: u16,
+        acknowledged_mpdu: u16,
+    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
+        let filtered_ack_snr = self.ack_snr.filtered();
+        let Some(runtime) = &mut self.ampdu_runtime else {
+            return Err(AmpduRateObservationError::Unavailable);
+        };
+        let decision = runtime.observe_block_ack(
+            now_us,
+            attempted_mpdu,
+            acknowledged_mpdu,
+            filtered_ack_snr,
+        )?;
+        if matches!(
+            decision,
+            AmpduRateDecision::Promote { .. } | AmpduRateDecision::Lower { .. }
+        ) {
+            // Exact scalar side effect of `rcClearCurAMPDUSched`.
+            self.runtime.current_schedule.adaptive = 0;
+        }
+        Ok(decision)
+    }
+
+    pub const fn ampdu_runtime(&self) -> Option<&AmpduRateControlState> {
+        self.ampdu_runtime.as_ref()
     }
 
     pub const fn runtime(&self) -> &RateControlState {
@@ -1200,6 +1553,121 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn ampdu_thresholds_match_the_he_mcs9_oracle_endpoints() {
+        assert_eq!(ampdu_rssi_margin(0x19, 75), 32);
+        assert_eq!(ampdu_up_threshold(0x19, 75), 89);
+        assert_eq!(ampdu_down_threshold(0x19, 75), 82);
+        assert_eq!(
+            ampdu_rssi_margin(0x23, AckSnrFilter::UNINITIALIZED as u8),
+            0
+        );
+        assert_eq!(
+            ampdu_up_threshold(0x23, AckSnrFilter::UNINITIALIZED as u8),
+            121
+        );
+        assert_eq!(
+            ampdu_down_threshold(0x23, AckSnrFilter::UNINITIALIZED as u8),
+            114
+        );
+    }
+
+    #[test]
+    fn ampdu_owner_promotes_after_two_clean_vendor_windows() {
+        let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 1, 0).unwrap();
+        assert_eq!(
+            state.current_schedule(),
+            schedule(RateScheduleKind::Dot11Ax, 1)
+        );
+        assert_eq!(
+            state.observe_block_ack(600_000, 500, 500, Some(75)),
+            Ok(AmpduRateDecision::Retain {
+                raw_success_ratio: 128,
+                filtered_success_ratio: 110,
+            })
+        );
+        assert_eq!(
+            state.observe_block_ack(700_001, 500, 500, Some(75)),
+            Ok(AmpduRateDecision::Promote {
+                from: schedule(RateScheduleKind::Dot11Ax, 1),
+                to: schedule(RateScheduleKind::Dot11Ax, 0),
+                raw_success_ratio: 128,
+                filtered_success_ratio: 114,
+            })
+        );
+        assert_eq!(
+            state.current_schedule(),
+            schedule(RateScheduleKind::Dot11Ax, 0)
+        );
+        assert_eq!(state.filtered_success_ratio(), None);
+    }
+
+    #[test]
+    fn ampdu_owner_lowers_only_after_two_filtered_bad_windows() {
+        let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 0, 0).unwrap();
+        assert!(matches!(
+            state.observe_block_ack(100_001, 500, 0, Some(75)),
+            Ok(AmpduRateDecision::Retain {
+                filtered_success_ratio: 93,
+                ..
+            })
+        ));
+        assert!(matches!(
+            state.observe_block_ack(200_002, 500, 0, Some(75)),
+            Ok(AmpduRateDecision::Retain {
+                filtered_success_ratio: 69,
+                ..
+            })
+        ));
+        assert_eq!(
+            state.observe_block_ack(300_003, 500, 0, Some(75)),
+            Ok(AmpduRateDecision::Lower {
+                from: schedule(RateScheduleKind::Dot11Ax, 0),
+                to: schedule(RateScheduleKind::Dot11Ax, 1),
+                raw_success_ratio: 0,
+                filtered_success_ratio: 51,
+            })
+        );
+    }
+
+    #[test]
+    fn ampdu_owner_accumulates_and_rejects_impossible_block_ack_counts() {
+        let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 0, 0).unwrap();
+        assert_eq!(
+            state.observe_block_ack(10, 16, 16, None),
+            Ok(AmpduRateDecision::Accumulating)
+        );
+        assert_eq!(
+            state.observe_block_ack(11, 0, 0, None),
+            Err(AmpduRateObservationError::NoAttemptedMpdu)
+        );
+        assert_eq!(
+            state.observe_block_ack(12, 15, 16, None),
+            Err(AmpduRateObservationError::AcknowledgedExceedsAttempted)
+        );
+        assert_eq!(vendor_duration(4, u32::MAX - 5), 9);
+    }
+
+    #[test]
+    fn ampdu_initial_rate_uses_the_vendor_index_eight_floor() {
+        let association = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy: StaRateControlPhy::He,
+            link_metric: StaLinkMetric::from_estimator(8),
+            p2p: false,
+            peer_highest_rate: None,
+            long_range_rates_present: false,
+            he_low_metric_report: HeLowMetricReportFeatures::default(),
+        });
+        assert_eq!(
+            association.current_schedule(),
+            schedule(RateScheduleKind::Dot11Ax, 13)
+        );
+        assert_eq!(
+            association.current_ampdu_schedule(),
+            Some(schedule(RateScheduleKind::Dot11Ax, 8))
+        );
     }
 
     #[test]

@@ -3320,20 +3320,21 @@ was previously missing from the open connected path. The
 `lmacProcessTxComplete` jump table identifies completion status five as ACK
 timeout; `lmacProcessAckTimeout` enters `lmacProcessLongRetryFail`;
 `ppResortTxAMPDU` retains each unacknowledged MPDU under the aggregate queue
-owner and sets its Retry bit; and `lmacRetryTxFrame` calls `rcGetRate` before
-republishing it. `rcGetRate` walks one persistent four-pair `(rate, count)`
-record. A retry must therefore advance the failure counter in the original
-record rather than start a new record from the MCS selected for the preceding
-attempt.
+owner and sets its Retry bit. Complete `lmacRetryTxFrame` would call
+`rcGetRate` for an ordinary MPDU, but first compares state byte `+0x12` with
+four and branches around that call. Complete `lmacProcessLongRetryFail`
+writes exactly four immediately before calling the retry leaf for an
+aggregate failure. A retained A-MPDU therefore keeps the original rate rather
+than walking the ordinary four-pair `(rate, count)` record.
 
 The open A-MPDU owner now admits a nonempty one-member retry set. This matters
 for HE: the separate vendor `ppHEAMPDU2Normal` metadata conversion has not yet
 been reproduced, so detaching one failed HE MPDU into the ordinary TX owner
 both lost the HE descriptor semantics and was rejected before hardware
-publication. The retained path compacts the fixed storage, recomputes each HE
-delimiter count and metadata byte for the selected fallback rate, updates the
-aggregate length, rate-dependent protection spacing, TX power and EDCA
-backoff, then republishes through the same HE A-MPDU owner.
+publication. The retained path compacts the fixed storage, keeps the original
+HE delimiter/rate/power/protection image, recomputes the shorter aggregate
+length, updates EDCA backoff, then republishes through the same HE A-MPDU
+owner.
 
 ESP32-S31 rev0 HIL on 2026-07-30 qualified this transition against a nearby
 HE20 peer. A 1,000-packet ICMP run at 20-ms cadence completed 999 responses;
@@ -3343,6 +3344,22 @@ aggregates, zero RX drops and zero RX duplicates. Thus five real aggregate
 retries were recovered without exposing packet loss. The run used HE20 MCS9,
 two-LTF/1.6-us GI and LDPC at a 108.3-Mbit/s PHY rate; its purpose qualifies
 retry ownership and continuity, not maximum throughput.
+
+A later raw-MAC stress run exposed the distinction directly. The open port
+incorrectly sent each retained aggregate through the ordinary `rcGetRate`
+ladder. A 47,104-byte MCS9 APEP then occasionally selected a lower retry rate
+whose rate-dependent maximum was smaller, and the safe queue-image constructor
+rejected publication. Splitting the former generic `InvalidGeometry` error
+localized the failure to `TxImageUnavailable { format: HeAmpdu }`; no DMA
+address, descriptor length or pool invariant was invalid. After restoring the
+blob's state-four rate retention, 11,006 hardware attempts completed across
+10,972 HE aggregates, including 34 retained retries, without another queue
+image failure. The five-second payload samples were 77.0--86.1 Mbit/s.
+
+SOURCE[HIL_OPEN_HE_AMPDU_RETRY_RATE_RETENTION_2026_07_30]: complete
+`_oracles/libpp.a[lmac.o]::{lmacRetryTxFrame,lmacProcessLongRetryFail}`,
+ESP32-S31 rev0, `psram-code-psram-data`, open HE20 MCS9/LDPC A-MSDU raw-MAC
+stress against the nearby `shiva` Android hotspot.
 
 ## Semantic RX descriptor-walker ownership
 

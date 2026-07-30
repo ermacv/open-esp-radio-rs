@@ -304,7 +304,41 @@ impl HtAmpduHardware for RadioRegisters {
 pub enum HtAmpduTxError {
     Busy,
     Stale,
-    InvalidGeometry,
+    FrameIndexOutOfRange {
+        index: u8,
+        count: u8,
+    },
+    InvalidRetryMask {
+        mask: u32,
+        count: u8,
+    },
+    RetainedFrameTooShort {
+        index: u8,
+        length: u16,
+    },
+    SlotCountOverflow {
+        count: usize,
+    },
+    InvalidStorageGeometry {
+        slots: usize,
+        buffer_size: usize,
+    },
+    InvalidDmaRange {
+        descriptor_address: u32,
+        buffer_address: u32,
+        capacity: u32,
+    },
+    InvalidDescriptorLength {
+        capacity: u32,
+        transfer_length: u32,
+    },
+    TxImageUnavailable {
+        format: HtAmpduTxFormat,
+    },
+    InvalidTriggerReservation {
+        queue: u8,
+        subframes: u8,
+    },
     FrameTooLong,
     TooFewFrames,
     AggregateFull,
@@ -316,6 +350,13 @@ pub enum HtAmpduTxError {
     DetachFailed,
     TimeoutNotPending,
     ResetRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtAmpduTxFormat {
+    HtAmpdu,
+    HeAmpdu,
+    HeSmpdu,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -530,7 +571,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let index = usize::from(index);
         if index >= usize::from(self.count) {
-            return Err(HtAmpduTxError::InvalidGeometry);
+            return Err(HtAmpduTxError::FrameIndexOutOfRange {
+                index: index as u8,
+                count: self.count,
+            });
         }
         Ok(self.empty_delimiters[index])
     }
@@ -550,7 +594,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let index = usize::from(index);
         if index >= usize::from(self.count) {
-            return Err(HtAmpduTxError::InvalidGeometry);
+            return Err(HtAmpduTxError::FrameIndexOutOfRange {
+                index: index as u8,
+                count: self.count,
+            });
         }
         let frame_length = usize::from(self.frame_lengths[index]);
         // SAFETY: the completed state has returned DMA ownership to this
@@ -578,6 +625,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// one-member A-MPDU under this same owner; converting it to the ordinary
     /// queue first requires the distinct `ppHEAMPDU2Normal` metadata
     /// transition.
+    ///
+    /// The retained aggregate also keeps its original PHY-rate image.
+    /// Complete `_oracles/libpp.a[lmac.o]::lmacRetryTxFrame` compares state
+    /// byte `+0x12` with four and skips `rcGetRate` in that state; complete
+    /// `lmacProcessLongRetryFail` writes four immediately before entering the
+    /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
+    /// EDCA backoff are expected to change before republication.
     pub fn retain_for_ampdu_retry(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -599,11 +653,17 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             (1_u32 << old_count) - 1
         };
         if retry_mask == 0 || retry_mask & !valid_mask != 0 {
-            return Err(HtAmpduTxError::InvalidGeometry);
+            return Err(HtAmpduTxError::InvalidRetryMask {
+                mask: retry_mask,
+                count: storage.count,
+            });
         }
         for source in 0..old_count {
             if retry_mask & (1_u32 << source) != 0 && storage.frame_lengths[source] < 2 {
-                return Err(HtAmpduTxError::InvalidGeometry);
+                return Err(HtAmpduTxError::RetainedFrameTooShort {
+                    index: source as u8,
+                    length: storage.frame_lengths[source],
+                });
             }
         }
 
@@ -638,47 +698,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             buffer[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
             destination += 1;
         }
-        storage.count = u8::try_from(destination).map_err(|_| HtAmpduTxError::InvalidGeometry)?;
+        storage.count = u8::try_from(destination)
+            .map_err(|_| HtAmpduTxError::SlotCountOverflow { count: destination })?;
         storage.prepared_length = 0;
         storage.aggregate_length = 0;
         storage.trigger_reservation = None;
         storage.trigger_publication_snapshot = None;
         storage.detached = false;
         storage.state = TxSlotState::Reserved;
-        storage.recalculate_prepared_length()
-    }
-
-    /// Recompute retained HE delimiter metadata for a retry-rate transition.
-    ///
-    /// This is the owned equivalent of rebuilding the aggregate after
-    /// `lmacRetryTxFrame` calls `rcGetRate`: every retained PSDU keeps its
-    /// Sequence Control and CCMP PN, while rate/density-dependent empty
-    /// delimiters and the resulting A-MPDU byte count are derived again
-    /// before DMA publication.
-    pub fn retune_he_retry(
-        self: Pin<&mut Self>,
-        cookie: TxCookie,
-        rate: HeRate,
-        density: HtAmpduDensity,
-    ) -> Result<HtAmpduLength, HtAmpduTxError> {
-        // SAFETY: Reserved proves that hardware owns no descriptor or buffer.
-        // Pinning is retained and only scalar metadata inside the fixed
-        // allocation changes.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::Reserved || storage.active != cookie {
-            return Err(HtAmpduTxError::Stale);
-        }
-        for index in 0..usize::from(storage.count) {
-            storage.empty_delimiters[index] = rate
-                .ampdu_empty_delimiters(storage.psdu_lengths[index], density)
-                .ok_or(HtAmpduTxError::FrameTooLong)?;
-            // The DMA-private metadata byte is consumed by the recovered
-            // delimiter/length formatter on the next submission.
-            let buffer = unsafe { &mut *storage.buffers[index].0.get() };
-            buffer[4] = storage.empty_delimiters[index];
-        }
-        storage.prepared_length = 0;
-        storage.aggregate_length = 0;
         storage.recalculate_prepared_length()
     }
 
@@ -694,7 +721,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             || SLOTS > TX_AMPDU_SLOT_CAPACITY
             || BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE + TX_FCS_SIZE as usize
         {
-            return Err(HtAmpduTxError::InvalidGeometry);
+            return Err(HtAmpduTxError::InvalidStorageGeometry {
+                slots: SLOTS,
+                buffer_size: BUFFER_SIZE,
+            });
         }
         let generation = storage
             .generation_cursor
@@ -1230,23 +1260,34 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             if !descriptor_address_valid(descriptor_address)
                 || !dma_range_valid(buffer_address, capacity)
             {
-                return Err(HtAmpduTxError::InvalidGeometry);
+                return Err(HtAmpduTxError::InvalidDmaRange {
+                    descriptor_address,
+                    buffer_address,
+                    capacity,
+                });
             }
             let next_address = if index + 1 < count {
                 core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
             } else {
                 0
             };
-            let mut word0 =
-                tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+            let mut word0 = tx_owned_word(capacity, transfer_length).ok_or(
+                HtAmpduTxError::InvalidDescriptorLength {
+                    capacity,
+                    transfer_length,
+                },
+            )?;
             if index + 1 < count {
                 word0 &= !BIT_30;
             }
             storage.descriptors[index].publish(word0, buffer_address, next_address);
         }
 
-        let image = crate::tx::ht_ampdu_q0_image(first_descriptor, config)
-            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let image = crate::tx::ht_ampdu_q0_image(first_descriptor, config).ok_or(
+            HtAmpduTxError::TxImageUnavailable {
+                format: HtAmpduTxFormat::HtAmpdu,
+            },
+        )?;
         let program = MacHtTxProgram {
             plcp0: image.plcp0,
             plcp1: image.plcp1,
@@ -1319,23 +1360,34 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             if !descriptor_address_valid(descriptor_address)
                 || !dma_range_valid(buffer_address, capacity)
             {
-                return Err(HtAmpduTxError::InvalidGeometry);
+                return Err(HtAmpduTxError::InvalidDmaRange {
+                    descriptor_address,
+                    buffer_address,
+                    capacity,
+                });
             }
             let next_address = if index + 1 < count {
                 core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
             } else {
                 0
             };
-            let mut word0 =
-                tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+            let mut word0 = tx_owned_word(capacity, transfer_length).ok_or(
+                HtAmpduTxError::InvalidDescriptorLength {
+                    capacity,
+                    transfer_length,
+                },
+            )?;
             if index + 1 < count {
                 word0 &= !BIT_30;
             }
             storage.descriptors[index].publish(word0, buffer_address, next_address);
         }
 
-        let image = crate::tx::he_ampdu_q0_image(first_descriptor, config)
-            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let image = crate::tx::he_ampdu_q0_image(first_descriptor, config).ok_or(
+            HtAmpduTxError::TxImageUnavailable {
+                format: HtAmpduTxFormat::HeAmpdu,
+            },
+        )?;
         let program = MacHeTxProgram {
             plcp0: image.plcp0,
             plcp1: image.plcp1,
@@ -1425,7 +1477,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !descriptor_address_valid(descriptor_address)
             || !dma_range_valid(buffer_address, capacity)
         {
-            return Err(HtAmpduTxError::InvalidGeometry);
+            return Err(HtAmpduTxError::InvalidDmaRange {
+                descriptor_address,
+                buffer_address,
+                capacity,
+            });
         }
 
         // `commit_frame` already wrote MPDU+FCS length and reserved the four
@@ -1438,12 +1494,19 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         buffer[4] = 0;
         buffer[7] = 0;
 
-        let word0 =
-            tx_owned_word(capacity, transfer_length).ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let word0 = tx_owned_word(capacity, transfer_length).ok_or(
+            HtAmpduTxError::InvalidDescriptorLength {
+                capacity,
+                transfer_length,
+            },
+        )?;
         storage.descriptors[0].publish(word0, buffer_address, 0);
 
-        let image = crate::tx::he_smpdu_q0_image(descriptor_address, config)
-            .ok_or(HtAmpduTxError::InvalidGeometry)?;
+        let image = crate::tx::he_smpdu_q0_image(descriptor_address, config).ok_or(
+            HtAmpduTxError::TxImageUnavailable {
+                format: HtAmpduTxFormat::HeSmpdu,
+            },
+        )?;
         let program = MacHeTxProgram {
             plcp0: image.plcp0,
             plcp1: image.plcp1,
@@ -1724,8 +1787,12 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         };
         let count = self.count;
         let reservation =
-            MacHeTbLinkReservation::for_queue(trigger.tid_limit(), queue.index(), count)
-                .ok_or(HtAmpduTxError::InvalidGeometry)?;
+            MacHeTbLinkReservation::for_queue(trigger.tid_limit(), queue.index(), count).ok_or(
+                HtAmpduTxError::InvalidTriggerReservation {
+                    queue: queue.index(),
+                    subframes: count,
+                },
+            )?;
         if self.psdu_lengths[..usize::from(count)]
             .iter()
             .any(|length| *length == 0 || *length > 0x3fff)
@@ -3786,7 +3853,7 @@ mod tests {
     }
 
     #[test]
-    fn detached_he_pool_retains_and_retunes_one_missing_mpdu() {
+    fn detached_he_pool_retains_one_missing_mpdu_at_the_original_rate() {
         let mut storage = HtAmpduTxStorage::<2, 256>::new();
         // SAFETY: no address is published and the local is not moved while
         // this pin exists.
@@ -3794,10 +3861,6 @@ mod tests {
         let cookie = storage.as_mut().begin().unwrap();
         let initial = HeRate::ldpc(
             crate::tx::HeMcs::Mcs9,
-            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
-        );
-        let retry = HeRate::ldpc(
-            crate::tx::HeMcs::Mcs7,
             crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
         );
         storage.as_mut().next_frame_buffer(cookie).unwrap()[..32].fill(0x5a);
@@ -3821,14 +3884,9 @@ mod tests {
             assert_eq!(buffer[TX_AMPDU_METADATA_SIZE + 1] & 0x08, 0x08);
         }
 
-        let retuned = storage
-            .as_mut()
-            .retune_he_retry(cookie, retry, HtAmpduDensity::EightMicroseconds)
-            .unwrap();
-        assert_eq!(retuned.subframes, 1);
         assert_eq!(
             storage.prepared_empty_delimiters(cookie, 0).unwrap(),
-            retry
+            initial
                 .ampdu_empty_delimiters(32 + 8 + TX_FCS_SIZE, HtAmpduDensity::EightMicroseconds)
                 .unwrap()
         );

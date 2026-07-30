@@ -989,13 +989,18 @@ impl HeRate {
         }
     }
 
-    /// Select one exact vendor Dot11Ax retry-ladder attempt.
+    /// Select one exact vendor ordinary-MPDU Dot11Ax retry-ladder attempt.
     ///
     /// `rcGetRate` walks the four `(rate, count)` pairs of the current
-    /// schedule record after every failed ACK/BlockAck exchange. The ordinary
-    /// HE20 records use one dedicated 800-ns MCS9 entry and ten 1600-ns
-    /// entries for MCS9 through MCS0. The retry code may eventually leave the
-    /// HE domain; returning [`TxPhyRate`] keeps that boundary explicit.
+    /// schedule record after an ordinary MPDU failure. The aggregate retry
+    /// path is deliberately different: complete
+    /// `_oracles/libpp.a[lmac.o]::lmacRetryTxFrame` branches around
+    /// `rcGetRate` when its state byte is four, and
+    /// `lmacProcessLongRetryFail` installs that state immediately before an
+    /// A-MPDU retry. The HE20 records use one dedicated 800-ns MCS9 entry and
+    /// ten 1600-ns entries for MCS9 through MCS0. The ordinary retry code may
+    /// eventually leave the HE domain; returning [`TxPhyRate`] keeps that
+    /// boundary explicit.
     ///
     /// FEC is not part of the schedule byte. When the selected retry remains
     /// HE, retain the caller's independently negotiated BCC/LDPC choice.
@@ -1991,16 +1996,6 @@ impl HeAmpduTxConfig {
 
     pub const fn protection_spacing(self) -> u16 {
         self.protection_spacing
-    }
-
-    /// Retune a retained HE A-MPDU for one `rcGetRate` retry result.
-    ///
-    /// The minimum delimiter-derived protection spacing is rate dependent,
-    /// so changing only the rate byte would create an internally inconsistent
-    /// queue vector.
-    pub fn set_retry_rate(&mut self, rate: HeRate) {
-        self.rate = rate;
-        self.protection_spacing = rate.minimum_ampdu_subframe_bytes(self.ampdu_density);
     }
 
     pub const fn with_trigger_based(mut self, trigger_based: HeTriggerBasedTxConfig) -> Self {

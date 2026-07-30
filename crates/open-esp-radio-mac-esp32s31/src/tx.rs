@@ -211,6 +211,26 @@ impl TxCompletion {
     pub const fn is_trigger_based(&self) -> bool {
         self.trigger_flow
     }
+
+    /// Decode the signed ACK-SNR sample consumed by vendor rate control.
+    ///
+    /// This value is meaningful only for a successful completion. Complete
+    /// `hal_mac_get_txq_complete` copies `PRIMARY[23:16]` into result byte two;
+    /// complete `lmacProcessTxSuccess` writes that byte to the descriptor's
+    /// ACK-SNR slot; complete `rcUpdateTxDone` adds `wDevCtrl[0x2e]`, whose
+    /// pinned initialized value is `0x60`, and narrows the sum to a signed
+    /// byte before calling `rcUpdateAckSnr`.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// hal_mac_get_txq_complete`, `_oracles/libpp.a[lmac.o]::
+    /// lmacProcessTxSuccess`, and `_oracles/libpp.a[trc.o]::rcUpdateTxDone`.
+    pub const fn ack_snr_sample(&self) -> Option<i8> {
+        if self.status != 0 {
+            return None;
+        }
+        let encoded = (self.primary_word >> 16) as u8;
+        Some(encoded.wrapping_add(0x60) as i8)
+    }
 }
 
 pub(crate) fn decode_tx_completion(
@@ -1349,6 +1369,66 @@ impl TxPhyRate {
             return None;
         };
         Some(Self::Ht(HtRate::new(mcs, guard_interval, ht_width)))
+    }
+
+    /// Decode one rate byte in the context of its owning rate-control arena.
+    ///
+    /// The numeric `wifi_phy_rate_t` MCS domains overlap: `0x10..=0x19`
+    /// means HT long GI in a Dot11N arena, but HE MCS0..9 with 1600-ns GI in
+    /// a Dot11Ax arena. Likewise `0x1a..=0x23` means HT short GI or HE
+    /// MCS0..9 with 800-ns GI. Requiring the arena identity prevents a caller
+    /// from publishing a semantically HE byte through the HT formatter.
+    ///
+    /// `he_800ns_gi_ltf` supplies the peer-qualified LTF count for the HE
+    /// 800-ns domain. The 1600-ns domain has exactly two LTFs. LDPC and DCM
+    /// remain independent rate-control state and are intentionally not
+    /// inferred from the shared rate byte.
+    ///
+    /// SOURCE: sibling S31 `esp_wifi_types_generic.h::wifi_phy_rate_t`, whose
+    /// rate table explicitly assigns HE20 1600 ns to `MCS*_LGI` and HE20
+    /// 800 ns to `MCS*_SGI`; complete
+    /// `_oracles/libpp.a[trc.o]::{rcGetRate,rcGetSMPDURate}`; and the exact
+    /// Rust-owned Dot11Ax/Dot11N schedule arenas.
+    pub const fn from_rate_control_code(
+        kind: RateScheduleKind,
+        code: u8,
+        ht_width: HtChannelWidth,
+        he_800ns_gi_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Option<Self> {
+        if let Some(rate) = LegacyRate::from_code(code) {
+            return Some(Self::Legacy(rate));
+        }
+        if matches!(kind, RateScheduleKind::Dot11Ax) {
+            let (index, gi_ltf) = if code >= 0x10 && code <= 0x19 {
+                (code - 0x10, crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns)
+            } else if code >= 0x1a && code <= 0x23 {
+                if !matches!(
+                    he_800ns_gi_ltf,
+                    crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+                        | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
+                ) {
+                    return None;
+                }
+                (code - 0x1a, he_800ns_gi_ltf)
+            } else {
+                return None;
+            };
+            let Some(mcs) = HeMcs::from_index(index) else {
+                return None;
+            };
+            return Some(Self::He(HeRate::new(mcs, gi_ltf)));
+        }
+        Self::from_code(code, ht_width)
+    }
+
+    /// Decode the primary rate of one complete Rust-owned schedule record.
+    pub fn from_rate_control_schedule(
+        schedule: RateScheduleRef,
+        ht_width: HtChannelWidth,
+        he_800ns_gi_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Option<Self> {
+        let code = crate::rate_schedule::schedule_state(schedule).rate;
+        Self::from_rate_control_code(schedule.kind, code, ht_width, he_800ns_gi_ltf)
     }
 
     pub const fn code(self) -> u8 {

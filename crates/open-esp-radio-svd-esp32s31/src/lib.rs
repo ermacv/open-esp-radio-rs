@@ -5021,14 +5021,14 @@ pub mod phy_pbus {
         impl crate::Readable for ReadResult4Spec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Forty-five-entry command RAM populated by phy_i2c_master_cmd_mem_init."]
+#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init."]
 pub type PhyI2cCommandRam = crate::Periph<phy_i2c_command_ram::RegisterBlock, 0x2010_fc00>;
 impl core::fmt::Debug for PhyI2cCommandRam {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("PhyI2cCommandRam").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Forty-five-entry command RAM populated by phy_i2c_master_cmd_mem_init."]
+#[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init."]
 pub mod phy_i2c_command_ram {
     #[repr(C)]
     #[doc = "Register block"]
@@ -5036,22 +5036,22 @@ pub mod phy_i2c_command_ram {
         command_memory: [CommandMemory; 45],
     }
     impl RegisterBlock {
-        #[doc = "0x00..0xb4 - SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry."]
+        #[doc = "0x00..0xb4 - SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout."]
         #[inline(always)]
         pub const fn command_memory(&self, n: usize) -> &CommandMemory {
             &self.command_memory[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0xb4 - SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry."]
+        #[doc = "0x00..0xb4 - SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout."]
         #[inline(always)]
         pub fn command_memory_iter(&self) -> impl Iterator<Item = &CommandMemory> {
             self.command_memory.iter()
         }
     }
-    #[doc = "COMMAND_MEMORY (w) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_memory::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_memory`] module"]
+    #[doc = "COMMAND_MEMORY (w) register accessor: SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_memory::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_memory`] module"]
     #[doc(alias = "COMMAND_MEMORY")]
     pub type CommandMemory = crate::Reg<command_memory::CommandMemorySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry."]
+    #[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout."]
     pub mod command_memory {
         #[doc = "Register `COMMAND_MEMORY%s` writer"]
         pub type W = crate::W<CommandMemorySpec>;
@@ -5078,7 +5078,7 @@ pub mod phy_i2c_command_ram {
                 DataW::new(self, 16)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_memory::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C\\]; CONFIDENCE\\[instruction-exact\\]. One PHY-I2C master command-memory entry; the public header proves the containing memory aperture while the complete blob proves this word layout.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_memory::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CommandMemorySpec;
         impl crate::RegisterSpec for CommandMemorySpec {
             type Ux = u32;
@@ -14116,7 +14116,7 @@ pub mod wifi_mac_tx_completion {
         aux_c: (),
     }
     impl RegisterBlock {
-        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
         #[inline(always)]
         pub const fn primary(&self, n: usize) -> &Primary {
             #[allow(clippy::no_effect)]
@@ -14130,7 +14130,7 @@ pub mod wifi_mac_tx_completion {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+        #[doc = "0x18..0x28 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
         #[inline(always)]
         pub fn primary_iter(&self) -> impl Iterator<Item = &Primary> {
             (0..4).map(move |n| unsafe {
@@ -14192,23 +14192,23 @@ pub mod wifi_mac_tx_completion {
             })
         }
     }
-    #[doc = "PRIMARY (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@primary`] module"]
+    #[doc = "PRIMARY (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@primary`] module"]
     #[doc(alias = "PRIMARY")]
     pub type Primary = crate::Reg<primary::PrimarySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
     pub mod primary {
         #[doc = "Register `PRIMARY%s` reader"]
         pub type R = crate::R<PrimarySpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `ACK_SNR_ENCODED` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
+        pub type AckSnrEncodedR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 16:23 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn ack_snr_encoded(&self) -> AckSnrEncodedR {
+                AckSnrEncodedR::new(((self.bits >> 16) & 0xff) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Primary completion/status word; status selector occupies bits 15:12 in the open legacy path.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PrimarySpec;
         impl crate::RegisterSpec for PrimarySpec {
             type Ux = u32;

@@ -22,6 +22,77 @@ pub struct RateScheduleState {
     pub adaptive: u8,
 }
 
+/// Rust-owned two-sample ACK-SNR filter used by transmit rate control.
+///
+/// Both bytes begin at the vendor sentinel `0x7f`. A sentinel input is not a
+/// measurement and leaves the state unchanged. Keeping the bytes typed as
+/// signed values makes the two different rounding rules explicit:
+///
+/// - the midpoint uses an arithmetic right shift, and therefore rounds a
+///   negative odd sum toward negative infinity;
+/// - the weighted average uses signed division, and therefore truncates
+///   toward zero.
+///
+/// SOURCE: complete `_oracles/libpp.a[trc.o]::rcUpdateAckSnr` (`0x42`
+/// bytes). The body has no MMIO, callback or global-state access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AckSnrFilter {
+    latest: i8,
+    filtered: i8,
+}
+
+impl AckSnrFilter {
+    pub const UNINITIALIZED: i8 = 0x7f;
+
+    pub const fn new() -> Self {
+        Self {
+            latest: Self::UNINITIALIZED,
+            filtered: Self::UNINITIALIZED,
+        }
+    }
+
+    /// Consume one already decoded signed ACK-SNR sample.
+    pub fn update(&mut self, sample: i8) {
+        if sample == Self::UNINITIALIZED {
+            return;
+        }
+
+        let midpoint = if self.latest == Self::UNINITIALIZED {
+            0
+        } else {
+            ((i16::from(self.latest) + i16::from(sample)) >> 1) as i8
+        };
+        self.latest = sample;
+        self.filtered = if self.filtered == Self::UNINITIALIZED {
+            midpoint
+        } else {
+            ((3 * i16::from(self.filtered) + i16::from(midpoint)) / 4) as i8
+        };
+    }
+
+    pub const fn latest(self) -> Option<i8> {
+        if self.latest == Self::UNINITIALIZED {
+            None
+        } else {
+            Some(self.latest)
+        }
+    }
+
+    pub const fn filtered(self) -> Option<i8> {
+        if self.filtered == Self::UNINITIALIZED {
+            None
+        } else {
+            Some(self.filtered)
+        }
+    }
+}
+
+impl Default for AckSnrFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Safe state mutated by the recovered `rcTxUpdatePer` transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RateControlState {
@@ -278,6 +349,8 @@ impl StaLinkMetric {
 pub struct StaRateControlAssociation {
     selection: PhyModeSelection,
     beamforming_report: BeamformingReportRate,
+    ack_snr: AckSnrFilter,
+    runtime: RateControlState,
 }
 
 impl StaRateControlAssociation {
@@ -306,14 +379,32 @@ impl StaRateControlAssociation {
                 .he_low_metric_report
                 .extended_range_single_user_permitted,
         );
+        let current = schedule_state(selection.current);
         Self {
             selection,
             beamforming_report,
+            ack_snr: AckSnrFilter::new(),
+            runtime: RateControlState {
+                retry_pressure: 0,
+                weighted_retries: 0,
+                transmissions: 0,
+                completed: 0,
+                reevaluate_after_us: 0,
+                retry_state_1d: 0,
+                retry_state_1e: 0,
+                maximum_schedule_index: selection.maximum_index,
+                current_schedule: RateScheduleState {
+                    reference: selection.current,
+                    retry_limit: current.retry_limit,
+                    adaptive: current.adaptive,
+                },
+                legacy_schedule: selection.legacy,
+            },
         }
     }
 
     pub const fn current_schedule(&self) -> RateScheduleRef {
-        self.selection.current
+        self.runtime.current_schedule.reference
     }
 
     pub const fn fallback_schedule(&self) -> RateScheduleRef {
@@ -334,6 +425,43 @@ impl StaRateControlAssociation {
 
     pub const fn beamforming_report(&self) -> BeamformingReportRate {
         self.beamforming_report
+    }
+
+    /// Update the running ACK-SNR estimate with one decoded successful result.
+    ///
+    /// The caller owns completion classification: failures have no valid ACK
+    /// sample and must not call this method.
+    pub fn update_ack_snr(&mut self, sample: i8) {
+        self.ack_snr.update(sample);
+    }
+
+    pub const fn latest_ack_snr(&self) -> Option<i8> {
+        self.ack_snr.latest()
+    }
+
+    pub const fn filtered_ack_snr(&self) -> Option<i8> {
+        self.ack_snr.filtered()
+    }
+
+    /// Apply one completed exchange's retry count to the owned PER state.
+    ///
+    /// A schedule transition is installed as a complete typed record; no
+    /// pointer or vendor-record offset escapes this owner.
+    pub fn update_tx_per(&mut self, retries: u32) -> TxPerUpdate {
+        let update = self.runtime.update_tx_per(retries);
+        if let ScheduleSelection::Selected(reference) = update.schedule {
+            let selected = schedule_state(reference);
+            self.runtime.current_schedule = RateScheduleState {
+                reference,
+                retry_limit: selected.retry_limit,
+                adaptive: selected.adaptive,
+            };
+        }
+        update
+    }
+
+    pub const fn runtime(&self) -> &RateControlState {
+        &self.runtime
     }
 
     /// Reproduce the sole hardware side effect of the association transition.
@@ -815,6 +943,66 @@ mod tests {
             },
             legacy_schedule: RateScheduleRef::new(RateScheduleKind::Dot11B, 0).unwrap(),
         }
+    }
+
+    #[test]
+    fn ack_snr_filter_matches_signed_blob_rounding() {
+        let mut filter = AckSnrFilter::new();
+        assert_eq!(filter.latest(), None);
+        assert_eq!(filter.filtered(), None);
+
+        filter.update(AckSnrFilter::UNINITIALIZED);
+        assert_eq!(filter, AckSnrFilter::new());
+
+        // The first valid sample is retained, while the first midpoint is
+        // exactly zero because the preceding sample was the sentinel.
+        filter.update(-21);
+        assert_eq!(filter.latest(), Some(-21));
+        assert_eq!(filter.filtered(), Some(0));
+
+        // (-21 + -22) >> 1 is -22 (arithmetic shift), then
+        // (3 * 0 + -22) / 4 is -5 (signed division toward zero).
+        filter.update(-22);
+        assert_eq!(filter.latest(), Some(-22));
+        assert_eq!(filter.filtered(), Some(-5));
+
+        // (-22 + 19) >> 1 is -2; (-15 + -2) / 4 is -4.
+        filter.update(19);
+        assert_eq!(filter.latest(), Some(19));
+        assert_eq!(filter.filtered(), Some(-4));
+    }
+
+    #[test]
+    fn association_installs_selected_schedule_as_owned_runtime_state() {
+        let mut association = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy: StaRateControlPhy::He,
+            link_metric: StaLinkMetric::from_estimator(70),
+            p2p: false,
+            peer_highest_rate: None,
+            long_range_rates_present: false,
+            he_low_metric_report: HeLowMetricReportFeatures::default(),
+        });
+        assert_eq!(
+            association.current_schedule(),
+            RateScheduleRef::new(RateScheduleKind::Dot11Ax, 1).unwrap()
+        );
+        assert_eq!(
+            association.runtime.current_schedule.retry_limit,
+            schedule_state(association.current_schedule()).retry_limit
+        );
+
+        association.runtime.retry_pressure = 6;
+        let update = association.update_tx_per(5);
+        assert_eq!(
+            update.schedule,
+            ScheduleSelection::Selected(
+                RateScheduleRef::new(RateScheduleKind::Dot11Ax, 2).unwrap()
+            )
+        );
+        assert_eq!(
+            association.current_schedule(),
+            RateScheduleRef::new(RateScheduleKind::Dot11Ax, 2).unwrap()
+        );
     }
 
     #[test]

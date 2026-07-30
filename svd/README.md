@@ -34,12 +34,17 @@ neighboring-chip similarity into an S31 fact.
 The generator supports CMSIS-SVD `dim`/`dimIncrement` register arrays. The
 45-word `PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s` definition is therefore kept
 compact in the source while still generating bounded Rust register
-identities for every entry.
+identities for every entry. Official ESP-IDF S31 `modem/reg_base.h` now names
+the containing `0x2010_fc00` aperture `DR_REG_I2C_ANA_MST_MEM_BASE`; the
+complete pinned PHY blob remains the source for the 45-word count and
+block/register/data layout.
 
 ## Recovered sources
 
 | Source ID | Basis |
 |---|---|
+| `ESP_IDF_ESP32S31_MODEM_REG_BASE` | Official ESP-IDF S31 modem partition map pinned to the commit and SHA-256 recorded in the SVD |
+| `HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30` | Open HE20 MCS9/LDPC A-MPDU completion, typed ACK-SNR decode, DHCP and zero-loss ICMP qualification on ESP32-S31 rev0 |
 | `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the SVD, plus local hashed copies in `esp-wifi-sys` |

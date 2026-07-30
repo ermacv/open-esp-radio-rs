@@ -25,6 +25,7 @@ use open_esp_radio_mac_esp32s31::{
         handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
         MAC_INT_TX_COMPLETE,
     },
+    rate_schedule::{RateScheduleKind, RateScheduleRef},
     registers::{
         Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_STATUS, RX_CONTROL, RX_DESCRIPTOR_BASE,
         RX_ENABLE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD,
@@ -48,7 +49,7 @@ use open_esp_radio_mac_esp32s31::{
         HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate, HeTriggerScheduledRateError,
         HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs,
         HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig, LegacyTxQueue,
-        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        TxCompletion, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
@@ -1959,6 +1960,33 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
 }
 
 #[test]
+fn tx_completion_decodes_the_blob_ack_snr_byte() {
+    let mut slot = TxSlot::new();
+    let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
+    slot.mark_hardware_owned(cookie).unwrap();
+
+    let mut mmio = MockMmio::default();
+    mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
+    mmio.set(TX_COMPLETE_AUX_A_Q0, 0);
+    mmio.set(TX_COMPLETE_AUX_B_Q0, 0);
+    mmio.set(TX_COMPLETE_AUX_C_Q0, 0);
+    // Encoded 0x8b plus the pinned 0x60 offset narrows to signed -21.
+    mmio.set(TX_COMPLETE_PRIMARY_Q0, 0x8b << 16);
+    mmio.set(TX_COMPLETE_ALTERNATE_Q0, 0);
+    mmio.set(TX_COMPLETE_CLEAR, 0);
+
+    let completion = slot.acknowledge_q0_completion(&mut mmio).unwrap().unwrap();
+    assert_eq!(completion.status, 0);
+    assert_eq!(completion.ack_snr_sample(), Some(-21));
+
+    let failed = TxCompletion {
+        status: 5,
+        ..completion
+    };
+    assert_eq!(failed.ack_snr_sample(), None);
+}
+
+#[test]
 fn tx_slot_reproduces_the_migration_timeout_abort_order() {
     let mut slot = TxSlot::new();
     let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
@@ -2144,6 +2172,59 @@ fn ht_ampdu_image_matches_the_two_mpdu_vendor_oracle() {
     assert_eq!(image.descriptor_count_a, 2);
     assert_eq!(image.descriptor_count_b, 2);
     assert_eq!(image.protection_spacing, 40);
+}
+
+#[test]
+fn rate_control_code_is_decoded_in_its_ht_or_he_arena() {
+    let ht = TxPhyRate::from_rate_control_code(
+        RateScheduleKind::Dot11N,
+        0x17,
+        HtChannelWidth::Mhz40,
+        HeGuardIntervalAndLtf::OneLtf800Ns,
+    );
+    assert_eq!(
+        ht,
+        Some(TxPhyRate::Ht(HtRate::new(
+            HtMcs::Mcs7,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz40,
+        )))
+    );
+
+    let he_long = TxPhyRate::from_rate_control_schedule(
+        RateScheduleRef::new(RateScheduleKind::Dot11Ax, 1).unwrap(),
+        HtChannelWidth::Mhz20,
+        HeGuardIntervalAndLtf::OneLtf800Ns,
+    );
+    assert_eq!(
+        he_long,
+        Some(TxPhyRate::He(HeRate::new(
+            HeMcs::Mcs9,
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        )))
+    );
+
+    let he_short = TxPhyRate::from_rate_control_schedule(
+        RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap(),
+        HtChannelWidth::Mhz20,
+        HeGuardIntervalAndLtf::OneLtf800Ns,
+    );
+    assert_eq!(
+        he_short,
+        Some(TxPhyRate::He(HeRate::new(
+            HeMcs::Mcs9,
+            HeGuardIntervalAndLtf::OneLtf800Ns,
+        )))
+    );
+    assert_eq!(
+        TxPhyRate::from_rate_control_code(
+            RateScheduleKind::Dot11Ax,
+            0x23,
+            HtChannelWidth::Mhz20,
+            HeGuardIntervalAndLtf::FourLtf3200Ns,
+        ),
+        None,
+    );
 }
 
 #[test]

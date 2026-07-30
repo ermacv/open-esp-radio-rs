@@ -355,9 +355,33 @@ publication, bit-25 busy sampling, bit-26 start/reset, read-mask programming,
 master mode/enable, BBPLL calibration and the three clock-selection words.
 The platform adapter owns the official singleton and implements only semantic
 operations while preserving each separately observed fresh-read/RMW edge.
-The adjacent undocumented command memory at `0x2010_fc00` remains in the
-custom PAC as `PHY_I2C_COMMAND_RAM`; it is not part of the official
-`I2C_ANA_MST` address block.
+The adjacent command memory at `0x2010_fc00` remains in the custom PAC as
+`PHY_I2C_COMMAND_RAM`; it is not part of the official `I2C_ANA_MST` register
+block. Official ESP-IDF master commit
+`873d612fdeebf5dadc068670d320dbf4bcd742bc`
+`components/soc/esp32s31/include/modem/reg_base.h` now names its base
+`DR_REG_I2C_ANA_MST_MEM_BASE`. That public header does not describe the
+contents: the complete pinned `phy_i2c_master_cmd_mem_init` blob remains the
+evidence for the 45-word extent and `[block, register, data]` layout.
+
+The same official header closes the top-level modem partition map without
+inventing one monolithic peripheral:
+
+- `0x2010_0000`: FE;
+- `0x2010_4000`: Wi-Fi MAC;
+- `0x2010_7000`: Wi-Fi baseband;
+- `0x2010_8000`: Wi-Fi BRX;
+- `0x2010_8400..0x2010_9c00`: modem timer, ETM, data dump, widgets and
+  syscon;
+- `0x2010_f000`: modem low-power control;
+- `0x2010_f800`: analog-I2C master;
+- `0x2010_fc00`: analog-I2C command memory.
+
+Only the syscon/lpcon/I2C controller register headers expose their register
+and field maps. ESP-IDF still does not publish the internal FE, Wi-Fi MAC,
+Wi-Fi BB or BRX register layouts recovered in this SVD. `MODEM_SYSCON`,
+`MODEM_LPCON` and `I2C_ANA_MST` remain delegated to the official ESP32-S31
+PAC so the open radio PAC does not create competing peripheral singletons.
 
 Public Espressif sources do not currently define these S31 internal PHY
 fields. The public

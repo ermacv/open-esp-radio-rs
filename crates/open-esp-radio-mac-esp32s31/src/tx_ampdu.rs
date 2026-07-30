@@ -1689,7 +1689,7 @@ pub const fn basic_ht_ampdu_assembly(
 /// SRAM for this call. Each `+0x30` frame link and buffer-descriptor `+0x08`
 /// link must describe the same finite chain. The function validates every
 /// pointer/flag/length invariant before performing any write.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "vendor-layout-compat"))]
 #[link_section = ".rwtext.wifi_strict.tx_ampdu_assemble"]
 pub unsafe fn assemble_basic_ht_ampdu(
     first: *mut u8,
@@ -1834,7 +1834,7 @@ pub unsafe fn assemble_basic_ht_ampdu(
 /// for this call. Each input frame must still be independent: its frame link
 /// and tail-buffer link must be null. Its existing internal buffer chain is
 /// owned by the caller and must connect the first buffer to the stated tail.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "vendor-layout-compat"))]
 #[link_section = ".rwtext.wifi_strict.tx_ampdu_chain"]
 pub unsafe fn prepare_basic_ht_ampdu_chain(
     frames: &[*mut u8],
@@ -2091,7 +2091,7 @@ pub unsafe fn prepare_basic_ht_ampdu_chain(
 /// `chain` must still exclusively own every SRAM pointer captured during
 /// preparation. Hardware must be idle for the corresponding queue and no
 /// frame may be recycled or relinked concurrently.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "vendor-layout-compat"))]
 #[link_section = ".rwtext.wifi_strict.tx_ampdu_restore"]
 pub unsafe fn restore_basic_ht_ampdu_chain(
     chain: &BasicHtAmpduChain,
@@ -2255,7 +2255,7 @@ pub unsafe fn restore_basic_ht_ampdu_chain(
 /// `frame` and its descriptor/buffer/payload pointers must remain exclusively
 /// owned writable SRAM. `restore_basic_ht_ampdu_chain` must have detached it
 /// from both aggregate linked representations before this call.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "vendor-layout-compat"))]
 #[link_section = ".rwtext.wifi_strict.tx_ampdu_completion"]
 pub unsafe fn apply_basic_ht_ampdu_completion(
     frame: *mut u8,

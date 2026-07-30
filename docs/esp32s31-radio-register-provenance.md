@@ -1609,6 +1609,35 @@ queue-local flag through the generated eight-bit field accessor and preserves
 it in `TxCompletion`, so later real-Trigger HIL can apply a distinct TB
 completion policy without reconstructing this register boundary again.
 
+## SVD v3.39: associated-STA HE BSSID lifecycle
+
+A post-association open HIL snapshot exposed a real lifecycle omission rather
+than an unknown register: the HE peer and AID were installed, but
+`WDEV_HE_BSSID0_CONF.HE_BSSID_EN` remained clear. The complete
+`libnet80211.a[wl_cnx.o]::cnx_connect_to_bss` associated-STA branch calls
+`hal_he_bssid_init(0)` after receive policy selection when the peer and cipher
+admit HE, then clears the color bitmap and programs the parsed HE Operation
+BSS color.
+
+Complete `libpp.a[hal_mac_ctl.o]::hal_he_bssid_init` and its
+`hal_he_set_power_save` tail prove four interface-zero fresh-read RMW edges:
+
+1. set `WDEV_HE_BSSID0_CONF.HE_BSSID_EN`;
+2. clear its two-bit `HE_BSSID_IDX`;
+3. set `WDEV_RX_POWER_SAVE_CONF.INTRA_PPDU_PS`;
+4. set `WDEV_RX_POWER_SAVE_CONF.INTRA_PS_CHECK_BSS_COLOR`.
+
+The open HE peer installer now performs those edges immediately before its
+already instruction-matched BSS-color programming. The SVD descriptions and
+field provenance name the complete blob functions and the full connection
+caller. Standard PSRAM/PSRAM HIL on rev0 then completed association,
+WPA2/CCMP, TID0 AddBA and sustained 32-MPDU HE MCS9 transmission. Its typed
+snapshot read `HE_BSSID_ENABLE=1`, `BSSID_SELECT=0` and both power-save bits
+set. The controlled AP advertised disabled BSS color `0x99`, so retaining
+`BSS_COLOR_ENABLE=0` is the correct separate outcome. Trigger-based
+transmission still requires a nonzero Trigger/TB counter under an injected
+Basic Trigger.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

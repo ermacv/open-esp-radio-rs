@@ -28,6 +28,28 @@ const fn repeated_packet_padding(packet_padding_eight_us: u8) -> u32 {
 }
 
 impl RadioRegisters {
+    /// Enable interface-zero HE BSSID matching before installing peer state.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_ctl.o]::
+    /// hal_he_bssid_init`, size `0x4c`, tail-calling the complete
+    /// `hal_he_set_power_save`, size `0x36`. The associated-STA path in
+    /// `_oracles/libnet80211.a[wl_cnx.o]::cnx_connect_to_bss`, size `0x2b6`,
+    /// calls this exact interface-zero leaf before clearing the color bitmap
+    /// and programming the parsed HE Operation BSS color.
+    fn initialize_interface_zero_he_bssid(&mut self) {
+        let control = self
+            .peripherals
+            .wifi_mac_he_init_suffix
+            .multi_bssid_control();
+        // Keep the four fresh-read RMW edges distinct and in blob order.
+        control.modify(|_, w| w.he_bssid_enable().set_bit());
+        control.modify(|_, w| unsafe { w.bssid_select().bits(0) });
+
+        let power_save = self.peripherals.wifi_mac_rx_power_save.control();
+        power_save.modify(|_, w| w.intra_ppdu_ps_enable().set_bit());
+        power_save.modify(|_, w| w.intra_ps_check_bss_color_enable().set_bit());
+    }
+
     /// Program the finite HE20 receive-side state reached by the pinned peer
     /// capability and operation parsers.
     ///
@@ -42,6 +64,7 @@ impl RadioRegisters {
             return Err(MacHe20PeerError::UnsupportedRtsThreshold);
         }
 
+        self.initialize_interface_zero_he_bssid();
         let init = &self.peripherals.wifi_mac_he_init_suffix;
         let color_information = config.bss_color_information;
         if color_information & 0xbf != 0 {

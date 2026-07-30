@@ -1117,14 +1117,14 @@ pub mod wifi_mac_he_color_collision {
         impl crate::Readable for BssColorBitmapHighSpec {}
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_RX_POWER_SAVE_CONF decoded by complete dbg_read_rx_misc."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_RX_POWER_SAVE_CONF decoded by complete dbg_read_rx_misc. Complete hal_he_set_power_save sets the interface-zero intra-PPDU and BSS-color-check bits as the tail of hal_he_bssid_init; open associated-STA HIL read both bits set."]
 pub type WifiMacRxPowerSave = crate::Periph<wifi_mac_rx_power_save::RegisterBlock, 0x2010_40a0>;
 impl core::fmt::Debug for WifiMacRxPowerSave {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacRxPowerSave").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_RX_POWER_SAVE_CONF decoded by complete dbg_read_rx_misc."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_RX_POWER_SAVE_CONF decoded by complete dbg_read_rx_misc. Complete hal_he_set_power_save sets the interface-zero intra-PPDU and BSS-color-check bits as the tail of hal_he_bssid_init; open associated-STA HIL read both bits set."]
 pub mod wifi_mac_rx_power_save {
     #[repr(C)]
     #[doc = "Register block"]
@@ -1175,13 +1175,13 @@ pub mod wifi_mac_rx_power_save {
         pub type RxPhySignalDelayR = crate::FieldReader;
         #[doc = "Field `RX_PHY_SIGNAL_DELAY` writer - "]
         pub type RxPhySignalDelayW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
-        #[doc = "Field `INTRA_PS_CHECK_BSS_COLOR_ENABLE` reader - "]
+        #[doc = "Field `INTRA_PS_CHECK_BSS_COLOR_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 28 for interface zero as the final fresh-read RMW of hal_he_bssid_init; dbg_read_rx_misc names it INTRA_PS_CHECK_BSS_COLOR."]
         pub type IntraPsCheckBssColorEnableR = crate::BitReader;
-        #[doc = "Field `INTRA_PS_CHECK_BSS_COLOR_ENABLE` writer - "]
+        #[doc = "Field `INTRA_PS_CHECK_BSS_COLOR_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 28 for interface zero as the final fresh-read RMW of hal_he_bssid_init; dbg_read_rx_misc names it INTRA_PS_CHECK_BSS_COLOR."]
         pub type IntraPsCheckBssColorEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INTRA_PPDU_PS_ENABLE` reader - "]
+        #[doc = "Field `INTRA_PPDU_PS_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 29 for interface zero immediately before bit 28; dbg_read_rx_misc names it INTRA_PPDU_PS."]
         pub type IntraPpduPsEnableR = crate::BitReader;
-        #[doc = "Field `INTRA_PPDU_PS_ENABLE` writer - "]
+        #[doc = "Field `INTRA_PPDU_PS_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 29 for interface zero immediately before bit 28; dbg_read_rx_misc names it INTRA_PPDU_PS."]
         pub type IntraPpduPsEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `RX_VHT_TXOP_PS_CHECK_ADDRESS` reader - "]
         pub type RxVhtTxopPsCheckAddressR = crate::BitReader;
@@ -1227,12 +1227,12 @@ pub mod wifi_mac_rx_power_save {
             pub fn rx_phy_signal_delay(&self) -> RxPhySignalDelayR {
                 RxPhySignalDelayR::new(((self.bits >> 23) & 0x1f) as u8)
             }
-            #[doc = "Bit 28"]
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 28 for interface zero as the final fresh-read RMW of hal_he_bssid_init; dbg_read_rx_misc names it INTRA_PS_CHECK_BSS_COLOR."]
             #[inline(always)]
             pub fn intra_ps_check_bss_color_enable(&self) -> IntraPsCheckBssColorEnableR {
                 IntraPsCheckBssColorEnableR::new(((self.bits >> 28) & 1) != 0)
             }
-            #[doc = "Bit 29"]
+            #[doc = "Bit 29 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 29 for interface zero immediately before bit 28; dbg_read_rx_misc names it INTRA_PPDU_PS."]
             #[inline(always)]
             pub fn intra_ppdu_ps_enable(&self) -> IntraPpduPsEnableR {
                 IntraPpduPsEnableR::new(((self.bits >> 29) & 1) != 0)
@@ -1284,14 +1284,14 @@ pub mod wifi_mac_rx_power_save {
             pub fn rx_phy_signal_delay(&mut self) -> RxPhySignalDelayW<'_, ControlSpec> {
                 RxPhySignalDelayW::new(self, 23)
             }
-            #[doc = "Bit 28"]
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 28 for interface zero as the final fresh-read RMW of hal_he_bssid_init; dbg_read_rx_misc names it INTRA_PS_CHECK_BSS_COLOR."]
             #[inline(always)]
             pub fn intra_ps_check_bss_color_enable(
                 &mut self,
             ) -> IntraPsCheckBssColorEnableW<'_, ControlSpec> {
                 IntraPsCheckBssColorEnableW::new(self, 28)
             }
-            #[doc = "Bit 29"]
+            #[doc = "Bit 29 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_set_power_save sets bit 29 for interface zero immediately before bit 28; dbg_read_rx_misc names it INTRA_PPDU_PS."]
             #[inline(always)]
             pub fn intra_ppdu_ps_enable(&mut self) -> IntraPpduPsEnableW<'_, ControlSpec> {
                 IntraPpduPsEnableW::new(self, 29)
@@ -17029,7 +17029,7 @@ pub mod wifi_mac_he_init_suffix {
         he_scratch: [HeScratch; 120],
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields; complete init/clear/co-hosted leaves independently update the low fields."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields. Complete hal_he_bssid_init sets HE_BSSID_ENABLE and clears BSSID_SELECT for interface zero before its power-save tail; open associated-STA HIL read those values as one and zero. Complete initialization, clear and co-hosted leaves independently update the low fields."]
         #[inline(always)]
         pub const fn multi_bssid_control(&self) -> &MultiBssidControl {
             &self.multi_bssid_control
@@ -17131,10 +17131,10 @@ pub mod wifi_mac_he_init_suffix {
             self.he_scratch.iter()
         }
     }
-    #[doc = "MULTI_BSSID_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields; complete init/clear/co-hosted leaves independently update the low fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`multi_bssid_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@multi_bssid_control`] module"]
+    #[doc = "MULTI_BSSID_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields. Complete hal_he_bssid_init sets HE_BSSID_ENABLE and clears BSSID_SELECT for interface zero before its power-save tail; open associated-STA HIL read those values as one and zero. Complete initialization, clear and co-hosted leaves independently update the low fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`multi_bssid_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@multi_bssid_control`] module"]
     #[doc(alias = "MULTI_BSSID_CONTROL")]
     pub type MultiBssidControl = crate::Reg<multi_bssid_control::MultiBssidControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields; complete init/clear/co-hosted leaves independently update the low fields."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields. Complete hal_he_bssid_init sets HE_BSSID_ENABLE and clears BSSID_SELECT for interface zero before its power-save tail; open associated-STA HIL read those values as one and zero. Complete initialization, clear and co-hosted leaves independently update the low fields."]
     pub mod multi_bssid_control {
         #[doc = "Register `MULTI_BSSID_CONTROL` reader"]
         pub type R = crate::R<MultiBssidControlSpec>;
@@ -17172,13 +17172,13 @@ pub mod wifi_mac_he_init_suffix {
         pub type PartialBssColorEnableR = crate::BitReader;
         #[doc = "Field `PARTIAL_BSS_COLOR_ENABLE` writer - "]
         pub type PartialBssColorEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BSSID_SELECT` reader - "]
+        #[doc = "Field `BSSID_SELECT` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
         pub type BssidSelectR = crate::FieldReader;
-        #[doc = "Field `BSSID_SELECT` writer - "]
+        #[doc = "Field `BSSID_SELECT` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
         pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `HE_BSSID_ENABLE` reader - "]
+        #[doc = "Field `HE_BSSID_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
         pub type HeBssidEnableR = crate::BitReader;
-        #[doc = "Field `HE_BSSID_ENABLE` writer - "]
+        #[doc = "Field `HE_BSSID_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
         pub type HeBssidEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:7"]
@@ -17221,12 +17221,12 @@ pub mod wifi_mac_he_init_suffix {
             pub fn partial_bss_color_enable(&self) -> PartialBssColorEnableR {
                 PartialBssColorEnableR::new(((self.bits >> 28) & 1) != 0)
             }
-            #[doc = "Bits 29:30"]
+            #[doc = "Bits 29:30 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
             #[inline(always)]
             pub fn bssid_select(&self) -> BssidSelectR {
                 BssidSelectR::new(((self.bits >> 29) & 3) as u8)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
             #[inline(always)]
             pub fn he_bssid_enable(&self) -> HeBssidEnableR {
                 HeBssidEnableR::new(((self.bits >> 31) & 1) != 0)
@@ -17275,18 +17275,18 @@ pub mod wifi_mac_he_init_suffix {
             ) -> PartialBssColorEnableW<'_, MultiBssidControlSpec> {
                 PartialBssColorEnableW::new(self, 28)
             }
-            #[doc = "Bits 29:30"]
+            #[doc = "Bits 29:30 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
             #[inline(always)]
             pub fn bssid_select(&mut self) -> BssidSelectW<'_, MultiBssidControlSpec> {
                 BssidSelectW::new(self, 29)
             }
-            #[doc = "Bit 31"]
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
             #[inline(always)]
             pub fn he_bssid_enable(&mut self) -> HeBssidEnableW<'_, MultiBssidControlSpec> {
                 HeBssidEnableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields; complete init/clear/co-hosted leaves independently update the low fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`multi_bssid_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. WDEV_HE_BSSID0_CONF. Complete dbg_read_rx_misc names the BSSID byte, multi-BSSID, co-hosted and HE BSS-color fields. Complete hal_he_bssid_init sets HE_BSSID_ENABLE and clears BSSID_SELECT for interface zero before its power-save tail; open associated-STA HIL read those values as one and zero. Complete initialization, clear and co-hosted leaves independently update the low fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`multi_bssid_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct MultiBssidControlSpec;
         impl crate::RegisterSpec for MultiBssidControlSpec {
             type Ux = u32;

@@ -310,15 +310,7 @@ impl BasicTriggerFrameEncoding {
     }
 }
 
-/// HE resource-unit widths represented by the S31 narrow-RU tables.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum HeResourceUnit {
-    Ru26,
-    Ru52,
-    Ru106,
-    #[default]
-    Ru242,
-}
+pub use crate::he::HeResourceUnit;
 
 /// One raw Trigger RU allocation classified by the complete blob helper.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

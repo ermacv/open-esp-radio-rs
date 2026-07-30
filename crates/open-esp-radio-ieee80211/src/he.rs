@@ -9,6 +9,16 @@ pub const HE_OPERATION_EXTENSION_ID: u8 = 36;
 pub const HE_CAPABILITIES_IE_MIN_LEN: usize = 24;
 pub const HE_OPERATION_IE_MIN_LEN: usize = 9;
 
+/// HE resource-unit widths supported by the S31 HE20 profile.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HeResourceUnit {
+    Ru26,
+    Ru52,
+    Ru106,
+    #[default]
+    Ru242,
+}
+
 /// One decoded 21-bit non-MU-MIMO HE-SIG-B user field.
 ///
 /// SOURCE[BLOB_LIBPP_DBG_DUMP_MUSIGB_NON_MIMO]: complete
@@ -214,6 +224,208 @@ impl HeMuSigBUser {
     }
 }
 
+// SOURCE[ROM_REV0_SIGB_COMMON_RU_ALLOCATION]:
+// `_oracles/esp32s31_rev0_rom.elf`, SHA-256
+// d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542,
+// symbols `sigb_common_ru_allocation` at 0x2f84ff38 (144 bytes) and
+// `sigb_ru_allocation_user_num` at 0x2f84ffc8 (16 bytes). Each row is the
+// exact nine-byte ROM stride; zero tail entries are retained.
+const HE_MU_SIG_B_COMMON_RU_TONES: [[u8; 9]; 16] = [
+    [26, 26, 26, 26, 26, 26, 26, 26, 26],
+    [26, 26, 26, 26, 26, 26, 26, 52, 0],
+    [26, 26, 26, 26, 26, 52, 26, 26, 0],
+    [26, 26, 26, 26, 26, 52, 52, 0, 0],
+    [26, 26, 52, 26, 26, 26, 26, 26, 0],
+    [26, 26, 52, 26, 26, 26, 52, 0, 0],
+    [26, 26, 52, 26, 52, 26, 26, 0, 0],
+    [26, 26, 52, 26, 52, 52, 0, 0, 0],
+    [52, 26, 26, 26, 26, 26, 26, 26, 26],
+    [52, 26, 26, 26, 26, 26, 52, 0, 0],
+    [52, 26, 26, 26, 52, 26, 26, 0, 0],
+    [52, 26, 26, 26, 52, 52, 0, 0, 0],
+    [52, 52, 26, 26, 26, 26, 26, 0, 0],
+    [52, 52, 26, 26, 26, 52, 0, 0, 0],
+    [52, 52, 26, 52, 26, 26, 0, 0, 0],
+    [52, 52, 26, 52, 52, 0, 0, 0, 0],
+];
+const HE_MU_SIG_B_COMMON_RU_USER_COUNTS: [u8; 16] =
+    [9, 8, 8, 7, 8, 7, 7, 6, 8, 7, 7, 6, 7, 6, 6, 5];
+
+/// A failure to decode the complete blob's HE-SIG-B RU Allocation domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum He20MuSigBRuAllocationError {
+    ReservedEncoding,
+    UnsupportedRuType,
+}
+
+/// One user's RU view selected by an HE-SIG-B RU Allocation encoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBRuUser {
+    pub zero_based_position: u8,
+    pub resource_unit: HeResourceUnit,
+    /// The exact numeric `multiplexed` output produced by the blob helper.
+    ///
+    /// It is deliberately not collapsed to `bool`: several allocation
+    /// classes return values through seven.
+    pub multiplexed: u8,
+}
+
+/// A validated HE20 HE-SIG-B RU Allocation encoding.
+///
+/// SOURCE[BLOB_LIBPP_GET_USER_NUM]: complete `_oracles/libpp.a
+/// [test_hal_rx_mu.o]::get_user_num`, size `0x2e2`, object SHA-256
+/// `b9891fdcbbb104e6ee466426916efec6782f8062d7c725fc955c210f4f522d75`.
+/// Complete caller `test_nonmimo_update_user_info` passes the RU Allocation
+/// byte and zero-based user position, then logs the two output bytes as
+/// `ru_size` and `multiplexed`. The helper indexes the two exact ROM objects
+/// above only for encodings 0 through 15 and computes every other class with
+/// bounded branches. RU types four and five are rejected here because the
+/// complete adjacent `rutype2str` supports only types zero through three and
+/// the S31 non-AP profile is HE20.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBRuAllocation {
+    encoding: u8,
+    user_count: u8,
+}
+
+impl He20MuSigBRuAllocation {
+    pub const fn try_new(encoding: u8) -> Result<Self, He20MuSigBRuAllocationError> {
+        let user_count = match encoding {
+            0..=15 => HE_MU_SIG_B_COMMON_RU_USER_COUNTS[encoding as usize],
+            16..=39 => (encoding & 0x07) + 3,
+            40..=47 | 64..=79 => (encoding & 0x07) + 6,
+            48..=63 | 80..=95 => (encoding & 0x07) + 5,
+            96..=111 => (encoding & 0x07) + 4,
+            112 => 4,
+            128..=191 => ((encoding >> 2) & 0x03) + (encoding & 0x03) + 2,
+            192..=199 => (encoding & 0x07) + 1,
+            200..=216 => return Err(He20MuSigBRuAllocationError::UnsupportedRuType),
+            _ => return Err(He20MuSigBRuAllocationError::ReservedEncoding),
+        };
+        Ok(Self {
+            encoding,
+            user_count,
+        })
+    }
+
+    pub const fn encoding(self) -> u8 {
+        self.encoding
+    }
+
+    pub const fn user_count(self) -> u8 {
+        self.user_count
+    }
+
+    pub const fn user(self, zero_based_position: u8) -> Option<He20MuSigBRuUser> {
+        if zero_based_position >= self.user_count {
+            return None;
+        }
+
+        let resource_unit = match self.encoding {
+            0..=15 => {
+                match HE_MU_SIG_B_COMMON_RU_TONES[self.encoding as usize]
+                    [zero_based_position as usize]
+                {
+                    26 => HeResourceUnit::Ru26,
+                    52 => HeResourceUnit::Ru52,
+                    _ => return None,
+                }
+            }
+            16..=23 => {
+                if zero_based_position > 1 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru52
+                }
+            }
+            24..=39 => {
+                if zero_based_position == 0 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru52
+                }
+            }
+            40..=47 => {
+                if zero_based_position == 5 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru26
+                }
+            }
+            48..=55 => match zero_based_position {
+                2 => HeResourceUnit::Ru52,
+                4 => HeResourceUnit::Ru106,
+                _ => HeResourceUnit::Ru26,
+            },
+            56..=63 => match zero_based_position {
+                0 => HeResourceUnit::Ru52,
+                4 => HeResourceUnit::Ru106,
+                _ => HeResourceUnit::Ru26,
+            },
+            64..=79 => {
+                if zero_based_position == 0 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru26
+                }
+            }
+            80..=87 => {
+                if zero_based_position == 0 || zero_based_position == 4 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru26
+                }
+            }
+            88..=95 => {
+                if zero_based_position == 0 || zero_based_position == 2 {
+                    HeResourceUnit::Ru106
+                } else {
+                    HeResourceUnit::Ru26
+                }
+            }
+            96..=103 => match zero_based_position {
+                0 | 1 => HeResourceUnit::Ru52,
+                3 => HeResourceUnit::Ru106,
+                _ => HeResourceUnit::Ru26,
+            },
+            104..=111 => match zero_based_position {
+                0 => HeResourceUnit::Ru106,
+                1 => HeResourceUnit::Ru26,
+                _ => HeResourceUnit::Ru52,
+            },
+            112 => HeResourceUnit::Ru52,
+            128..=191 => HeResourceUnit::Ru106,
+            192..=199 => HeResourceUnit::Ru242,
+            _ => return None,
+        };
+
+        let multiplexed = match self.encoding {
+            0..=15 | 112 => 0,
+            16..=111 | 192..=199 => self.encoding & 0x07,
+            128..=191 => {
+                let first_group_users = ((self.encoding >> 2) & 0x03) + 1;
+                let users_in_group = if zero_based_position < first_group_users {
+                    first_group_users
+                } else {
+                    (self.encoding & 0x03) + 1
+                };
+                if users_in_group >= 2 {
+                    1
+                } else {
+                    0
+                }
+            }
+            _ => return None,
+        };
+
+        Some(He20MuSigBRuUser {
+            zero_based_position,
+            resource_unit,
+            multiplexed,
+        })
+    }
+}
+
 /// Number of common-information bits before the first user in an HE20
 /// non-MU-MIMO complete HE-SIG-B stream.
 pub const HE20_MU_SIG_B_COMMON_BITS: u16 = 18;
@@ -244,6 +456,16 @@ pub enum He20MuSigBNonMimoStreamError {
     CompleteBytesTooShort,
     IncompleteUserField,
     TooManyUsers,
+}
+
+/// Why the common RU Allocation and complete HE20 user stream disagree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum He20MuSigBRuStreamError {
+    Allocation(He20MuSigBRuAllocationError),
+    UserCountMismatch {
+        stream_users: u8,
+        allocation_users: u8,
+    },
 }
 
 /// One user recovered from the complete HE20 non-MU-MIMO HE-SIG-B stream.
@@ -320,6 +542,27 @@ impl<'a> He20MuSigBNonMimoUsers<'a> {
 
     pub const fn user_count(&self) -> u8 {
         self.user_count
+    }
+
+    /// Decodes the first HE20 common-information RU Allocation byte and
+    /// requires it to describe the same number of users as this stream.
+    ///
+    /// SOURCE[BLOB_LIBPP_TEST_GET_NONMUMIMO_COMMON]: complete
+    /// `_oracles/libpp.a[test_hal_rx_mu_sigb.o]::
+    /// test_get_nonmumimo_common`, size `0xf6`, object SHA-256
+    /// `a141879bd5f92710941861f83a968182ef71f83c0f258b7381576c5e8acf4b1e`.
+    /// Bandwidth selector zero loads byte zero as the sole RU Allocation and
+    /// returns an 18-bit common prefix.
+    pub fn ru_allocation(self) -> Result<He20MuSigBRuAllocation, He20MuSigBRuStreamError> {
+        let allocation = He20MuSigBRuAllocation::try_new(self.complete_bytes[0])
+            .map_err(He20MuSigBRuStreamError::Allocation)?;
+        if allocation.user_count() != self.user_count {
+            return Err(He20MuSigBRuStreamError::UserCountMismatch {
+                stream_users: self.user_count,
+                allocation_users: allocation.user_count(),
+            });
+        }
+        Ok(allocation)
     }
 
     fn read_user_word(&self, index: u8) -> (u16, u32) {
@@ -870,6 +1113,107 @@ mod tests {
     }
 
     #[test]
+    fn decodes_exact_rom_backed_he_sig_b_ru_allocations() {
+        for (encoding, expected_users) in [9, 8, 8, 7, 8, 7, 7, 6, 8, 7, 7, 6, 7, 6, 6, 5]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(
+                He20MuSigBRuAllocation::try_new(encoding as u8)
+                    .unwrap()
+                    .user_count(),
+                expected_users
+            );
+        }
+
+        let all_ru26 = He20MuSigBRuAllocation::try_new(0).unwrap();
+        assert_eq!(all_ru26.user_count(), 9);
+        for position in 0..all_ru26.user_count() {
+            assert_eq!(
+                all_ru26.user(position),
+                Some(He20MuSigBRuUser {
+                    zero_based_position: position,
+                    resource_unit: HeResourceUnit::Ru26,
+                    multiplexed: 0,
+                })
+            );
+        }
+
+        let mixed = He20MuSigBRuAllocation::try_new(15).unwrap();
+        let expected = [
+            HeResourceUnit::Ru52,
+            HeResourceUnit::Ru52,
+            HeResourceUnit::Ru26,
+            HeResourceUnit::Ru52,
+            HeResourceUnit::Ru52,
+        ];
+        for (position, resource_unit) in expected.into_iter().enumerate() {
+            assert_eq!(
+                mixed.user(position as u8).unwrap().resource_unit,
+                resource_unit
+            );
+        }
+        assert_eq!(mixed.user(mixed.user_count()), None);
+    }
+
+    #[test]
+    fn decodes_every_computed_he20_sig_b_ru_class_boundary() {
+        let cases = [
+            (23, 0, 10, HeResourceUnit::Ru52, 7),
+            (23, 2, 10, HeResourceUnit::Ru106, 7),
+            (24, 0, 3, HeResourceUnit::Ru106, 0),
+            (24, 1, 3, HeResourceUnit::Ru52, 0),
+            (47, 5, 13, HeResourceUnit::Ru106, 7),
+            (48, 2, 5, HeResourceUnit::Ru52, 0),
+            (48, 4, 5, HeResourceUnit::Ru106, 0),
+            (56, 0, 5, HeResourceUnit::Ru52, 0),
+            (79, 0, 13, HeResourceUnit::Ru106, 7),
+            (80, 4, 5, HeResourceUnit::Ru106, 0),
+            (88, 2, 5, HeResourceUnit::Ru106, 0),
+            (96, 1, 4, HeResourceUnit::Ru52, 0),
+            (96, 3, 4, HeResourceUnit::Ru106, 0),
+            (104, 0, 4, HeResourceUnit::Ru106, 0),
+            (104, 1, 4, HeResourceUnit::Ru26, 0),
+            (104, 2, 4, HeResourceUnit::Ru52, 0),
+            (112, 3, 4, HeResourceUnit::Ru52, 0),
+            (128, 0, 2, HeResourceUnit::Ru106, 0),
+            (129, 0, 3, HeResourceUnit::Ru106, 0),
+            (129, 1, 3, HeResourceUnit::Ru106, 1),
+            (191, 7, 8, HeResourceUnit::Ru106, 1),
+            (199, 7, 8, HeResourceUnit::Ru242, 7),
+        ];
+        for (encoding, position, user_count, resource_unit, multiplexed) in cases {
+            let allocation = He20MuSigBRuAllocation::try_new(encoding).unwrap();
+            assert_eq!(allocation.encoding(), encoding);
+            assert_eq!(allocation.user_count(), user_count);
+            assert_eq!(
+                allocation.user(position),
+                Some(He20MuSigBRuUser {
+                    zero_based_position: position,
+                    resource_unit,
+                    multiplexed,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_reserved_and_non_he20_sig_b_ru_types() {
+        for encoding in [113, 127, 217, 255] {
+            assert_eq!(
+                He20MuSigBRuAllocation::try_new(encoding),
+                Err(He20MuSigBRuAllocationError::ReservedEncoding)
+            );
+        }
+        for encoding in [200, 207, 208, 216] {
+            assert_eq!(
+                He20MuSigBRuAllocation::try_new(encoding),
+                Err(He20MuSigBRuAllocationError::UnsupportedRuType)
+            );
+        }
+    }
+
+    #[test]
     fn iterates_three_he20_non_mimo_users_across_pair_crc_tail_gap() {
         let words = [
             (1 << 20) | (3 << 15) | 0x123,
@@ -916,6 +1260,36 @@ mod tests {
         assert_eq!(
             He20MuSigBNonMimoUsers::try_new(&[0; 35], 278),
             Err(He20MuSigBNonMimoStreamError::TooManyUsers)
+        );
+    }
+
+    #[test]
+    fn binds_he20_common_ru_allocation_to_the_complete_user_count() {
+        let mut four_users = [0_u8; 16];
+        four_users[0] = 112;
+        let users = He20MuSigBNonMimoUsers::try_new(&four_users, 122).unwrap();
+        let allocation = users.ru_allocation().unwrap();
+        assert_eq!(allocation.encoding(), 112);
+        assert_eq!(allocation.user_count(), 4);
+
+        four_users[0] = 0;
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&four_users, 122)
+                .unwrap()
+                .ru_allocation(),
+            Err(He20MuSigBRuStreamError::UserCountMismatch {
+                stream_users: 4,
+                allocation_users: 9,
+            })
+        );
+        four_users[0] = 200;
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&four_users, 122)
+                .unwrap()
+                .ru_allocation(),
+            Err(He20MuSigBRuStreamError::Allocation(
+                He20MuSigBRuAllocationError::UnsupportedRuType
+            ))
         );
     }
 

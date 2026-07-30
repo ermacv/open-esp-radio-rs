@@ -129,6 +129,20 @@ iterator additionally verifies the blob invariant that every decoded user
 carries the same spatial-configuration encoding. Invalid encodings stay
 typed failures rather than indexing ROM.
 
+The non-compressed HE20 common RU Allocation is now owned as well. Complete
+`test_hal_rx_mu_sigb.o::test_get_nonmumimo_common` (size `0xf6`) proves that
+bandwidth selector zero reads the first complete-SIG-B byte and uses an
+18-bit common prefix. Complete `test_hal_rx_mu.o::get_user_num` (size
+`0x2e2`) maps that byte plus a zero-based user position to user count, RU
+type and the numeric vendor `multiplexed` output. Its only data dependencies
+are revision-v0 ROM `sigb_common_ru_allocation` at `0x2f84ff38` (16 rows of
+nine bytes) and `sigb_ru_allocation_user_num` at `0x2f84ffc8` (16 bytes).
+`He20MuSigBRuAllocation` reproduces every narrow computed class, retains the
+exact numeric multiplexing output, rejects reserved encodings and rejects
+the two RU types that the adjacent complete `rutype2str` does not support.
+The complete-user iterator additionally requires the RU Allocation's user
+count to match the count derived from the SIG-B bit length.
+
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is
 `0x1d6` bytes and advances Basic users by 5+1 bytes, MU-BAR users by 5+4,

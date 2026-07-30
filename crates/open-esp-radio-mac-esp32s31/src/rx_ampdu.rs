@@ -5,12 +5,19 @@
 //! protocol ownership in a fixed array of slot indices. Raw packet pointers
 //! stay outside the state machine.
 
-// The reorder owner remains deliberately bounded even when the application
-// enables a deeper kind-7 pool for the async network channel.
+// SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+// ampdu_rx_start.constprop.0`. The vendor agreement owner selects the smaller
+// of the peer request and `g_wifi_menuconfig+0x30`, whose normal configured
+// value is 64. Its later ordinary activation path passes the constant 64 to
+// `ic_add_rx_ba`; complete `_oracles/libpp.a[hal_ampdu.o]::
+// hal_agreement_add_rx_ba` publishes that value in the seven-bit hardware
+// window. Keep the protocol/reorder window independent of the number of RX DMA
+// descriptors: descriptors are recycled while this sequence window remains
+// active. A reduced-memory build can still select eight explicitly.
 #[cfg(feature = "rx-ba-window-8")]
 pub const RX_BLOCK_ACK_MAX_WINDOW: u16 = 8;
 #[cfg(not(feature = "rx-ba-window-8"))]
-pub const RX_BLOCK_ACK_MAX_WINDOW: u16 = 16;
+pub const RX_BLOCK_ACK_MAX_WINDOW: u16 = 64;
 pub const RX_AMPDU_SLOT_CAPACITY: usize = RX_BLOCK_ACK_MAX_WINDOW as usize;
 #[cfg(feature = "large-rx-pool-48")]
 pub(crate) const RX_ESF_SLOT_ID_CAPACITY: usize = 48;
@@ -107,7 +114,7 @@ impl RxAmpduRelease {
     }
 }
 
-/// One receive BlockAck agreement with a fixed 16-frame maximum window.
+/// One receive BlockAck agreement with a fixed, build-selected maximum window.
 ///
 /// Every retained packet is represented only by a checked slot index. The
 /// owner maps that index to its SRAM ESF storage and recycles every frame
@@ -115,7 +122,7 @@ impl RxAmpduRelease {
 pub struct RxBlockAckReorder {
     next_sequence: u16,
     window: u16,
-    occupied: u32,
+    occupied: u64,
     frames: [Option<RxAmpduMpdu>; RX_AMPDU_SLOT_CAPACITY],
 }
 
@@ -175,13 +182,13 @@ impl RxBlockAckReorder {
         }
 
         let index = slot_index(frame.sequence);
-        if self.occupied & (1_u32 << index) != 0 {
+        if self.occupied & (1_u64 << index) != 0 {
             return Err(RxAmpduError::DuplicateSequence(frame.sequence));
         }
         self.frames[index] = Some(frame);
-        self.occupied |= 1_u32 << index;
+        self.occupied |= 1_u64 << index;
         self.release_contiguous(&mut release);
-        release.buffered = self.occupied & (1_u32 << index) != 0;
+        release.buffered = self.occupied & (1_u64 << index) != 0;
         Ok(release)
     }
 
@@ -250,7 +257,7 @@ impl RxBlockAckReorder {
 
     fn has_sequence(&self, sequence: u16) -> bool {
         let index = slot_index(sequence);
-        self.occupied & (1_u32 << index) != 0
+        self.occupied & (1_u64 << index) != 0
             && self.frames[index].is_some_and(|frame| frame.sequence == sequence)
     }
 
@@ -259,7 +266,7 @@ impl RxBlockAckReorder {
         if !self.has_sequence(sequence) {
             return None;
         }
-        self.occupied &= !(1_u32 << index);
+        self.occupied &= !(1_u64 << index);
         self.frames[index].take()
     }
 }
@@ -309,17 +316,18 @@ mod tests {
     #[test]
     #[cfg(not(feature = "rx-ba-window-8"))]
     fn window_advance_releases_owned_frames_and_counts_missing_without_long_loop() {
-        let mut reorder = RxBlockAckReorder::new(0, 16).unwrap();
+        let mut reorder = RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
         reorder.ingest(frame(2, 2)).unwrap();
-        reorder.ingest(frame(15, 15)).unwrap();
+        reorder.ingest(frame(31, 31)).unwrap();
         let release = reorder.ingest(frame(1000, 1)).unwrap();
         assert_eq!(
             release.iter().collect::<std::vec::Vec<_>>(),
-            [frame(2, 2), frame(15, 15)]
+            [frame(2, 2), frame(31, 31)]
         );
-        assert_eq!(release.missing, 983);
+        let expected_advance = 1000 - RX_BLOCK_ACK_MAX_WINDOW + 1;
+        assert_eq!(release.missing, expected_advance - 2);
         assert!(release.buffered);
-        assert_eq!(reorder.next_sequence(), 985);
+        assert_eq!(reorder.next_sequence(), expected_advance);
     }
 
     #[test]
@@ -379,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn window_cannot_exceed_the_internal_sram_slot_pool() {
+    fn window_cannot_exceed_the_owned_reorder_slot_pool() {
         assert!(RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW).is_ok());
         assert!(matches!(
             RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW + 1),

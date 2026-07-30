@@ -20,8 +20,15 @@ impl StaLinkRxPolicyHardware for RadioRegisters {
 /// `ic_set_bssid`/`hal_mac_set_bssid` transaction recovered from the same
 /// vendor STA transition. Unlike migration's policy-five snapshot, the final
 /// UBSSID edge follows `wifi_set_rx_policy(6)`, which is the branch observed
-/// immediately before the first live vendor Authentication TX. It must run
-/// after off-channel scanning and before the station sends Authentication.
+/// immediately before the first live vendor Authentication TX.
+///
+/// The production PAC operation also executes complete
+/// `hal_sniffer_disable` first. The open scan bootstrap uses the vendor
+/// queue-three sniffer leaf, whereas the normal vendor STA lifecycle does not
+/// leave that leaf active after scan. Restoring the inverse leaf here returns
+/// queue three to normal address filtering and clears its hardware
+/// `AUTOACK_DISABLE` policy before Authentication. It must run after
+/// off-channel scanning and before the station sends Authentication.
 pub fn configure_sta_link_receive_policy<H: StaLinkRxPolicyHardware>(
     hardware: &mut H,
     bssid: [u8; 6],

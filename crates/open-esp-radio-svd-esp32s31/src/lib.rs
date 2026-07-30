@@ -22219,7 +22219,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_block_ack_entry0_control(&self) -> &RxBlockAckEntryControl {
             self.rx_block_ack_entry_control(7)
         }
-        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[doc = ""]
         #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_PEER_TAIL_AND_POLICY` register.</div>"]
         #[inline(always)]
@@ -22238,7 +22238,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x17c..0x19c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub fn rx_block_ack_entry_peer_tail_and_policy_iter(
             &self,
@@ -22251,56 +22251,56 @@ pub mod wifi_mac_rx_dma {
                     .cast()
             })
         }
-        #[doc = "0x17c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x17c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry7_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(0)
         }
-        #[doc = "0x1a0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x1a0 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry6_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(1)
         }
-        #[doc = "0x1c4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x1c4 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry5_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(2)
         }
-        #[doc = "0x1e8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x1e8 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry4_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(3)
         }
-        #[doc = "0x20c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x20c - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry3_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(4)
         }
-        #[doc = "0x230 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x230 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry2_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(5)
         }
-        #[doc = "0x254 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x254 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry1_peer_tail_and_policy(
             &self,
         ) -> &RxBlockAckEntryPeerTailAndPolicy {
             self.rx_block_ack_entry_peer_tail_and_policy(6)
         }
-        #[doc = "0x278 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+        #[doc = "0x278 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
         #[inline(always)]
         pub const fn rx_block_ack_entry0_peer_tail_and_policy(
             &self,
@@ -25263,9 +25263,9 @@ pub mod wifi_mac_rx_dma {
         pub type EnableR = crate::BitReader;
         #[doc = "Field `ENABLE` writer - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
         pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `TID` reader - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+        #[doc = "Field `TID` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
         pub type TidR = crate::FieldReader;
-        #[doc = "Field `TID` writer - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+        #[doc = "Field `TID` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
         pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `WRITE` reader - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
         pub type WriteR = crate::BitReader;
@@ -25281,7 +25281,7 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&self) -> EnableR {
                 EnableR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+            #[doc = "Bits 12:15 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
             #[inline(always)]
             pub fn tid(&self) -> TidR {
                 TidR::new(((self.bits >> 12) & 0x0f) as u8)
@@ -25303,7 +25303,7 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&mut self) -> EnableW<'_, RxBlockAckEntryControlSpec> {
                 EnableW::new(self, 0)
             }
-            #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform."]
+            #[doc = "Bits 12:15 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
             #[inline(always)]
             pub fn tid(&mut self) -> TidW<'_, RxBlockAckEntryControlSpec> {
                 TidW::new(self, 12)
@@ -25331,11 +25331,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_ENTRY_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_peer_tail_and_policy`] module"]
+    #[doc = "RX_BLOCK_ACK_ENTRY_PEER_TAIL_AND_POLICY (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_peer_tail_and_policy`] module"]
     #[doc(alias = "RX_BLOCK_ACK_ENTRY_PEER_TAIL_AND_POLICY")]
     pub type RxBlockAckEntryPeerTailAndPolicy =
         crate::Reg<rx_block_ack_entry_peer_tail_and_policy::RxBlockAckEntryPeerTailAndPolicySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW."]
     pub mod rx_block_ack_entry_peer_tail_and_policy {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY` reader"]
         pub type R = crate::R<RxBlockAckEntryPeerTailAndPolicySpec>;
@@ -25349,9 +25349,9 @@ pub mod wifi_mac_rx_dma {
         pub type InterfaceR = crate::FieldReader;
         #[doc = "Field `INTERFACE` writer - "]
         pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `WINDOW` reader - "]
+        #[doc = "Field `WINDOW` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
         pub type WindowR = crate::FieldReader;
-        #[doc = "Field `WINDOW` writer - "]
+        #[doc = "Field `WINDOW` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
         pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
             #[doc = "Bits 0:15"]
@@ -25364,7 +25364,7 @@ pub mod wifi_mac_rx_dma {
             pub fn interface(&self) -> InterfaceR {
                 InterfaceR::new(((self.bits >> 16) & 3) as u8)
             }
-            #[doc = "Bits 18:24"]
+            #[doc = "Bits 18:24 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
             #[inline(always)]
             pub fn window(&self) -> WindowR {
                 WindowR::new(((self.bits >> 18) & 0x7f) as u8)
@@ -25383,13 +25383,13 @@ pub mod wifi_mac_rx_dma {
             pub fn interface(&mut self) -> InterfaceW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
                 InterfaceW::new(self, 16)
             }
-            #[doc = "Bits 18:24"]
+            #[doc = "Bits 18:24 - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
             #[inline(always)]
             pub fn window(&mut self) -> WindowW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
                 WindowW::new(self, 18)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and negotiated reorder-window size in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryPeerTailAndPolicySpec;
         impl crate::RegisterSpec for RxBlockAckEntryPeerTailAndPolicySpec {
             type Ux = u32;

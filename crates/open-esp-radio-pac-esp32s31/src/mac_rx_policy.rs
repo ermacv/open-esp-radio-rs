@@ -70,12 +70,35 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a::hal_mac_rx_set_policy` and
     /// `hal_mac_set_rxq_policy`, reached from the complete
     /// `libnet80211.a::wifi_set_rx_policy` policy-six branch used immediately
-    /// before the first live vendor Authentication TX.
+    /// before the first live vendor Authentication TX. The prefix is the
+    /// complete pinned `libpp.a[hal_sniffer.o]::hal_sniffer_disable` leaf:
+    /// unlike the vendor scan lifecycle, the open bootstrap deliberately uses
+    /// queue three's promiscuous path, so the associated transition must
+    /// restore its normal filtering and hardware auto-ACK policy.
     pub fn apply_sta_link_receive_policy(&mut self, bssid_address: [u8; 6]) {
+        let sniffer = self.peripherals.wifi_mac_rx_filter.policy(3);
         let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
         let bssid_low = self.peripherals.wifi_mac_bssid_policy.bssid_low(0);
         let bssid = self.peripherals.wifi_mac_bssid_policy.bssid_high(0);
         let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
+
+        // Complete `hal_sniffer_disable`, size 0x44. Preserve its seven
+        // separate fresh-read RMW edges: clear AUTOACK_DISABLE, then restore
+        // the six address/rejection checks in exact blob order.
+        //
+        // SOURCE: `_oracles/libpp.a[hal_sniffer.o]::hal_sniffer_disable`.
+        sniffer.modify(|_, w| w.auto_ack_disable().clear_bit());
+        sniffer.modify(|_, w| w.dump_unicast_check_da().set_bit());
+        sniffer.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
+        sniffer.modify(|_, w| w.dump_broadcast_check_bssid().set_bit());
+        sniffer.modify(|_, w| w.abort_group().set_bit());
+        sniffer.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
+        sniffer.modify(|_, w| {
+            w.receive_broadcast_check_bssid()
+                .set_bit()
+                .receive_unicast_check_da()
+                .set_bit()
+        });
 
         // `ic_set_bssid(0, bssid)` delegates to the complete
         // `hal_mac_set_bssid` leaf. Keep its four hardware edges ordered:

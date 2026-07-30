@@ -7,6 +7,14 @@
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
+/// Highest receive BlockAck TID accepted by the vendor net80211 state machine.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+/// ht_recv_action_ba_addba_request`. After extracting the four-bit TID from
+/// ADDBA parameters, the vendor rejects requests with bit three set. Thus its
+/// ordinary receive-BA path accepts TIDs 0 through 7, including TID 7 used by
+/// the FRITZ!Box downlink queue.
+pub const S31_RX_BLOCK_ACK_MAX_TID: u8 = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct S31RxBlockAckAgreement {
@@ -41,7 +49,7 @@ impl S31RxBlockAckAgreement {
         if self.peer[0] & 1 != 0 {
             return Err(S31RxBlockAckAgreementError::MulticastPeer);
         }
-        if self.tid > 15 {
+        if self.tid > S31_RX_BLOCK_ACK_MAX_TID {
             return Err(S31RxBlockAckAgreementError::Tid(self.tid));
         }
         if self.starting_sequence > 0x0fff {
@@ -125,6 +133,14 @@ mod tests {
             }
             .validate(),
             Err(S31RxBlockAckAgreementError::MulticastPeer)
+        ));
+        assert!(matches!(
+            S31RxBlockAckAgreement {
+                tid: 8,
+                ..AGREEMENT
+            }
+            .validate(),
+            Err(S31RxBlockAckAgreementError::Tid(8))
         ));
         assert!(matches!(
             S31RxBlockAckAgreement {

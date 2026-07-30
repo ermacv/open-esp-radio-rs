@@ -12,6 +12,32 @@ pub enum MacCoexEvent {
     Event15 = 15,
 }
 
+impl MacCoexEvent {
+    /// Return the cold PTI published by the complete vendor table.
+    ///
+    /// These values are still required in a Wi-Fi-only build. Complete
+    /// `libpp.a[hal_mac.o]::hal_init` passes event three to
+    /// `hal_set_rx_ack_pti`, which directly programs the MAC's immediate
+    /// RX-ACK scheduler priority. It is not merely a request to a running
+    /// Bluetooth coexistence task: keeping RX-ACK at zero lets a pending
+    /// ordinary EDCA queue outrank the response transaction.
+    ///
+    /// SOURCE: complete
+    /// `_oracles/libcoexist.a[coexist_core.o]::coex_pti_tab` and
+    /// `_oracles/libpp.a[hal_mac.o,hal_coex.o]::{
+    /// hal_init,hal_set_rx_ack_pti,hal_set_wifi_default_pti,
+    /// hal_set_ofdma_sequence_pti}`.
+    pub const fn cold_vendor_pti(self) -> MacCoexPti {
+        let value = match self {
+            Self::Event1 => 5,
+            Self::Event3 => 7,
+            Self::Event10 => 3,
+            Self::Event15 => 1,
+        };
+        MacCoexPti::from_osi_value(value)
+    }
+}
+
 /// One byte returned by `_coex_pti_get`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacCoexPti(u8);
@@ -87,5 +113,18 @@ impl MacColdCoexHardware for ColdRadioRegisters {
             pti.beamforming.map(MacCoexPti::value),
             pti.multi_target.map(MacCoexPti::value),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MacCoexEvent;
+
+    #[test]
+    fn cold_pti_values_match_the_complete_vendor_table() {
+        assert_eq!(MacCoexEvent::Event1.cold_vendor_pti().value(), 5);
+        assert_eq!(MacCoexEvent::Event3.cold_vendor_pti().value(), 7);
+        assert_eq!(MacCoexEvent::Event10.cold_vendor_pti().value(), 3);
+        assert_eq!(MacCoexEvent::Event15.cold_vendor_pti().value(), 1);
     }
 }

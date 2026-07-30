@@ -559,17 +559,23 @@ impl RadioRegisters {
         self.start_prepared_mac_tx(queue, plcp0);
     }
 
-    fn start_prepared_mac_tx(&mut self, queue: u8, plcp0: u32) {
+    fn start_prepared_mac_tx(&mut self, queue: u8, _plcp0: u32) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         device_fence();
-        // SAFETY: the corresponding prepare method validated the selected
-        // queue and the recovered enable leaf publishes this complete image.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_control
-                .control(physical_bank(queue))
-                .write_with_zero(|w| w.bits(plcp0 | ENABLE_VALID_MASK));
-        }
+        // SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+        // hal_mac_txq_enable` offsets 0x00..0x1e. The vendor leaf reads the
+        // already prepared CONTROL word and ORs only ENABLE|VALID before
+        // writing it back. In particular, it does not reconstruct PLCP0 from
+        // the caller's earlier software image: formatter leaves may have
+        // changed control fields after the initial PLCP0 publication.
+        //
+        // SAFETY: the corresponding prepare method validated this ordinary
+        // queue. The RMW preserves its complete prepared hardware image and
+        // asserts only the two recovered ownership bits.
+        self.peripherals
+            .wifi_mac_tx_queue_control
+            .control(physical_bank(queue))
+            .modify(|r, w| unsafe { w.bits(r.bits() | ENABLE_VALID_MASK) });
         device_fence();
     }
 

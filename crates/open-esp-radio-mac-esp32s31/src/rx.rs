@@ -864,7 +864,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
     buffer_addresses: &'a [u32; COUNT],
-    observed_mask: u32,
+    observed_mask: u64,
     recycle_start: usize,
     accepted_tail: usize,
     pending_tail: Option<usize>,
@@ -976,7 +976,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         if index >= COUNT {
             return None;
         }
-        let bit = 1_u32 << index;
+        let bit = 1_u64 << index;
         if self.observed_mask & bit != 0 {
             return None;
         }
@@ -1010,6 +1010,50 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
     pub fn recycle_completed_half<M, F>(
         &mut self,
         mmio: &mut M,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        self.recycle_completed_group(mmio, COUNT / 2, prepare_buffer)
+    }
+
+    /// Rearm and append one fixed-size, contiguous group of completed slots.
+    ///
+    /// The complete ROM `wDev_AppendRxBlocks` contract accepts an arbitrary
+    /// zero-terminated `head..tail` chain; a half-ring is not a hardware
+    /// requirement. Smaller groups let a task replenish the walker before a
+    /// peer's next A-MPDU consumes every remaining descriptor. `BATCH` must
+    /// divide the ring so `recycle_start` visits each slot exactly once.
+    ///
+    /// The caller must still invoke [`Self::finish_pending_reload`] after each
+    /// successful append. This deliberately preserves the ROM doorbell/base
+    /// repair ordering instead of hiding a potentially unbounded wait here.
+    #[inline(never)]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".rwtext.open_radio_rx_hot")
+    )]
+    pub fn recycle_completed_batch<const BATCH: usize, M, F>(
+        &mut self,
+        mmio: &mut M,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        if BATCH == 0 || BATCH > COUNT || !COUNT.is_multiple_of(BATCH) {
+            return Err(RxRingError::Count);
+        }
+        self.recycle_completed_group(mmio, BATCH, prepare_buffer)
+    }
+
+    fn recycle_completed_group<M, F>(
+        &mut self,
+        mmio: &mut M,
+        group_size: usize,
         mut prepare_buffer: F,
     ) -> Result<Option<RxLiveAppend>, RxRingError>
     where
@@ -1021,25 +1065,24 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         }
         self.settle_reload(mmio)?;
 
-        let group_mask = recycle_group_mask::<COUNT>(self.recycle_start);
+        let group_mask = recycle_group_mask::<COUNT>(self.recycle_start, group_size);
         if self.observed_mask & group_mask != group_mask {
             return Ok(None);
         }
 
-        let half = COUNT / 2;
-        for step in 0..half {
+        for step in 0..group_size {
             let index = wrap_add::<COUNT>(self.recycle_start, step);
             if !rx_done(self.descriptors[index].word0()) {
                 return Err(RxRingError::Corrupt);
             }
         }
-        for step in 0..half {
+        for step in 0..group_size {
             prepare_buffer(wrap_add::<COUNT>(self.recycle_start, step))?;
         }
-        for step in 0..half {
+        for step in 0..group_size {
             let index = wrap_add::<COUNT>(self.recycle_start, step);
             let descriptor = &self.descriptors[index];
-            let next = if step + 1 < half {
+            let next = if step + 1 < group_size {
                 descriptor_address(self.descriptor_base, wrap_add::<COUNT>(index, 1))?
             } else {
                 0
@@ -1053,13 +1096,13 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 
         let head_index = self.recycle_start;
         let head_address = descriptor_address(self.descriptor_base, head_index)?;
-        let tail_index = wrap_add::<COUNT>(head_index, half - 1);
+        let tail_index = wrap_add::<COUNT>(head_index, group_size - 1);
         let accepted_tail = &self.descriptors[self.accepted_tail];
         if accepted_tail.next_address() != 0 {
             return Err(RxRingError::Corrupt);
         }
         // SAFETY: this type is the sole publication authority. All descriptors
-        // in the appended half were observed complete, rearmed and remain
+        // in the appended group were observed complete, rearmed and remain
         // unreachable until this old-tail link and the following doorbell.
         unsafe { accepted_tail.publish_next_address(head_address) };
         mmio.fence();
@@ -1068,7 +1111,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 
         self.pending_tail = Some(tail_index);
         self.observed_mask &= !group_mask;
-        self.recycle_start = wrap_add::<COUNT>(self.recycle_start, half);
+        self.recycle_start = wrap_add::<COUNT>(self.recycle_start, group_size);
         Ok(Some(RxLiveAppend {
             head_index,
             head_address,
@@ -1076,8 +1119,18 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         }))
     }
 
-    pub const fn observed_mask(&self) -> u32 {
+    pub const fn observed_mask(&self) -> u64 {
         self.observed_mask
+    }
+
+    /// Whether every descriptor in this ring epoch has returned to software.
+    pub const fn all_observed(&self) -> bool {
+        let complete_mask = if COUNT == 64 {
+            u64::MAX
+        } else {
+            (1_u64 << COUNT) - 1
+        };
+        self.observed_mask == complete_mask
     }
 
     pub const fn recycle_start(&self) -> usize {
@@ -1139,7 +1192,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 }
 
 fn validate_live_ring_geometry<const COUNT: usize>() -> Result<(), RxRingError> {
-    if COUNT < 2 || COUNT > 32 || COUNT % 2 != 0 {
+    if COUNT < 2 || COUNT > 64 || COUNT % 2 != 0 {
         Err(RxRingError::Count)
     } else {
         Ok(())
@@ -1179,10 +1232,10 @@ fn wrap_sub_one<const COUNT: usize>(index: usize) -> usize {
     }
 }
 
-fn recycle_group_mask<const COUNT: usize>(start: usize) -> u32 {
-    let mut mask = 0_u32;
-    for step in 0..COUNT / 2 {
-        mask |= 1_u32 << wrap_add::<COUNT>(start, step);
+fn recycle_group_mask<const COUNT: usize>(start: usize, group_size: usize) -> u64 {
+    let mut mask = 0_u64;
+    for step in 0..group_size {
+        mask |= 1_u64 << wrap_add::<COUNT>(start, step);
     }
     mask
 }

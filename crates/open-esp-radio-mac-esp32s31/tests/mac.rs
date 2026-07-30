@@ -22,8 +22,8 @@ use open_esp_radio_mac_esp32s31::{
         StaLinkRxPolicyHardware,
     },
     irq::{
-        handle_mac_irq, IrqDisposition, IrqState, MacInterrupt, MAC_INT_RX_SUCCESS,
-        MAC_INT_TX_COMPLETE,
+        handle_mac_irq, IrqDisposition, IrqState, IrqWork, MacInterrupt, MAC_INT_COLLISION,
+        MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     registers::{
@@ -1412,6 +1412,60 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
 }
 
 #[test]
+fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    descriptors[0].write_word0(completed);
+    assert!(live.take_completed(0).is_some());
+    let first = live
+        .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.head_index, 0);
+    assert_eq!(first.tail_index, 0);
+    assert_eq!(descriptors[3].next_address(), BASE);
+
+    // Model the doorbell self-clear while the walker still has a live next
+    // pointer. No BASE repair is required for this ordinary append.
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    live.finish_pending_reload(&mut mmio).unwrap();
+    assert_eq!(live.accepted_tail(), 0);
+
+    descriptors[1].write_word0(completed);
+    assert!(live.take_completed(1).is_some());
+    let second = live
+        .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.head_index, 1);
+    assert_eq!(second.tail_index, 1);
+    assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
+
+    assert_eq!(
+        live.recycle_completed_batch::<0, _, _>(&mut mmio, |_| Ok(())),
+        Err(RxRingError::Count)
+    );
+    assert_eq!(
+        live.recycle_completed_batch::<3, _, _>(&mut mmio, |_| Ok(())),
+        Err(RxRingError::Count)
+    );
+}
+
+#[test]
 fn receive_disable_confirms_the_ring_ownership_edge() {
     let mut mmio = MockMmio::default();
     mmio.set(RX_CONTROL, RX_ENABLE | 0x1234);
@@ -1934,6 +1988,22 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     assert!(mmio
         .operations()
         .contains(&Operation::ClearInterrupt(snapshot.status)));
+}
+
+#[test]
+fn irq_state_exposes_vendor_run_to_completion_order() {
+    let mut mmio = MockMmio::default();
+    mmio.interrupt_enable = u32::MAX;
+    mmio.interrupt_status =
+        MAC_INT_COLLISION | MAC_INT_TX_TIMEOUT | MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS;
+    let state = IrqState::new();
+    assert_eq!(handle_mac_irq(&mut mmio, &state).0, IrqDisposition::Posted);
+
+    assert_eq!(state.try_take_next(), Some(IrqWork::RxSuccess));
+    assert_eq!(state.try_take_next(), Some(IrqWork::TxComplete));
+    assert_eq!(state.try_take_next(), Some(IrqWork::TxTimeout));
+    assert_eq!(state.try_take_next(), Some(IrqWork::Collision));
+    assert_eq!(state.try_take_next(), None);
 }
 
 #[test]

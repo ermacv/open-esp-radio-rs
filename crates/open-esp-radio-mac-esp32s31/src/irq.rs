@@ -38,6 +38,43 @@ pub const EVENT_KNOWN_MASK: u32 = 0x0f;
 pub const HANDLED_MAC_MASK: u32 =
     MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION | MAC_INT_RX_SUCCESS;
 
+/// One run-to-completion MAC action in the order used by the vendor ISR.
+///
+/// This is deliberately not an arbitrary bit mask. Complete
+/// `_oracles/libpp.a[wdev.o]::wDev_ProcessFiq` handles RX success before TX
+/// completion, TX timeout and collision when one interrupt snapshot contains
+/// several causes. Those leaves publish separate `ppTask` queue entries, and
+/// complete `_oracles/libpp.a[pp.o]::ppTask` consumes one entry before
+/// receiving the next. An executor port must therefore be able to retain that
+/// ordering instead of merging RX and TX into one indistinguishable wakeup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IrqWork {
+    RxSuccess,
+    TxComplete,
+    TxTimeout,
+    Collision,
+}
+
+impl IrqWork {
+    pub const fn mac_bit(self) -> u32 {
+        match self {
+            Self::RxSuccess => MAC_INT_RX_SUCCESS,
+            Self::TxComplete => MAC_INT_TX_COMPLETE,
+            Self::TxTimeout => MAC_INT_TX_TIMEOUT,
+            Self::Collision => MAC_INT_COLLISION,
+        }
+    }
+
+    pub const fn event_bit(self) -> u32 {
+        match self {
+            Self::RxSuccess => EVENT_RX_SUCCESS,
+            Self::TxComplete => EVENT_TX_COMPLETE,
+            Self::TxTimeout => EVENT_TX_TIMEOUT,
+            Self::Collision => EVENT_COLLISION,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqEvent {
     pub mac_pending: u32,
@@ -96,6 +133,38 @@ impl IrqState {
 
     pub fn observed_unhandled(&self) -> u32 {
         self.observed_unhandled.load(Ordering::Relaxed)
+    }
+
+    /// Take one pending action in the instruction-exact vendor ISR order.
+    ///
+    /// Duplicate edges still coalesce by raw MAC bit, matching `pp_post` for
+    /// these event kinds. Unlike [`try_take`](Self::try_take), this method
+    /// preserves the ordering between different kinds and is suitable for a
+    /// run-to-completion Embassy dispatcher.
+    pub fn try_take_next(&self) -> Option<IrqWork> {
+        let mut pending = self.pending_mac.load(Ordering::Acquire);
+        loop {
+            let work = if pending & MAC_INT_RX_SUCCESS != 0 {
+                IrqWork::RxSuccess
+            } else if pending & MAC_INT_TX_COMPLETE != 0 {
+                IrqWork::TxComplete
+            } else if pending & MAC_INT_TX_TIMEOUT != 0 {
+                IrqWork::TxTimeout
+            } else if pending & MAC_INT_COLLISION != 0 {
+                IrqWork::Collision
+            } else {
+                return None;
+            };
+            match self.pending_mac.compare_exchange_weak(
+                pending,
+                pending & !work.mac_bit(),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(work),
+                Err(current) => pending = current,
+            }
+        }
     }
 
     pub fn try_take(&self) -> Option<IrqEvent> {

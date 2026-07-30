@@ -1,6 +1,6 @@
 //! Bounded q0 legacy TX descriptor, submission and completion ownership.
 
-use core::pin::Pin;
+use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
@@ -13,7 +13,7 @@ use open_esp_radio_pac_esp32s31::{
 };
 
 use crate::{
-    descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor},
+    descriptor::{descriptor_address_valid, tx_owned_word, Descriptor},
     rate_control::dot11g_schedule_for_legacy_rate,
     rate_schedule::{schedule_rate_after_failures, RateScheduleKind, RateScheduleRef},
     tx_plcp::{
@@ -2278,69 +2278,149 @@ pub const fn legacy_q0_image(
     })
 }
 
-pub struct TxSlot {
-    pub descriptor: Descriptor,
+#[repr(C, align(16))]
+struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
+
+/// Permanently pinned storage for one ordinary legacy/HT MPDU.
+///
+/// The descriptor and its source buffer deliberately share one owner. Once
+/// [`pin_static`](Self::pin_static) is called, safe code can neither move the
+/// published descriptor nor move/drop the DMA buffer independently while the
+/// hardware owns it.
+pub struct TxSlot<const BUFFER_SIZE: usize> {
+    descriptor: Descriptor,
+    buffer: TxDmaBuffer<BUFFER_SIZE>,
     state: TxSlotState,
     generation_cursor: u32,
     active: TxCookie,
-    descriptor_address: u32,
     queue: LegacyTxQueue,
+    _pin: PhantomPinned,
 }
 
-impl TxSlot {
+impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub const fn new() -> Self {
         Self {
             descriptor: Descriptor::new(),
+            buffer: TxDmaBuffer([0; BUFFER_SIZE]),
             state: TxSlotState::Free,
             generation_cursor: 0,
             active: TxCookie(0),
-            descriptor_address: 0,
             queue: LegacyTxQueue::Voice,
+            _pin: PhantomPinned,
         }
+    }
+
+    /// Initialize the descriptor and source buffer in their final allocation.
+    ///
+    /// This avoids materializing `BUFFER_SIZE` bytes in an embedded caller's
+    /// stack frame before moving the value into static DMA SRAM.
+    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
+        let storage = storage.as_mut_ptr();
+
+        // SAFETY: `storage` is exclusively borrowed and correctly aligned.
+        // Every field is initialized before the final reference is formed.
+        // Only the byte-array field is zeroed as raw storage; enum and pin
+        // fields are constructed with valid Rust values explicitly.
+        unsafe {
+            ptr::addr_of_mut!((*storage).descriptor).write(Descriptor::new());
+            ptr::addr_of_mut!((*storage).buffer)
+                .cast::<u8>()
+                .write_bytes(0, core::mem::size_of::<TxDmaBuffer<BUFFER_SIZE>>());
+            ptr::addr_of_mut!((*storage).state).write(TxSlotState::Free);
+            ptr::addr_of_mut!((*storage).generation_cursor).write(0);
+            ptr::addr_of_mut!((*storage).active).write(TxCookie(0));
+            ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::Voice);
+            ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
+            &mut *storage
+        }
+    }
+
+    /// Consume a unique static owner and permanently pin its DMA addresses.
+    pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
+        // SAFETY: the unique `&'static mut` is consumed by the returned
+        // `'static` pin. `PhantomPinned` prevents safe extraction or movement
+        // for the remainder of the program.
+        unsafe { Pin::new_unchecked(storage) }
     }
 
     pub fn state(&self) -> TxSlotState {
         self.state
     }
 
-    pub fn reserve(
-        &mut self,
-        descriptor_address: u32,
-        buffer_address: u32,
-        buffer_capacity: u32,
-        frame_length: u32,
-    ) -> Result<TxCookie, TxError> {
-        if self.state != TxSlotState::Free {
+    /// Borrow the complete source buffer while software exclusively owns it.
+    pub fn buffer_mut(self: Pin<&mut Self>) -> Result<&mut [u8; BUFFER_SIZE], TxError> {
+        // SAFETY: the pinned slot is not moved. `Free` proves that no
+        // descriptor containing this buffer's address is hardware-owned.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Free {
             return Err(TxError::Busy);
         }
-        if !descriptor_address_valid(descriptor_address)
-            || !dma_range_valid(buffer_address, buffer_capacity)
-            || frame_length > buffer_capacity
+        Ok(&mut slot.buffer.0)
+    }
+
+    /// Current descriptor ownership word for bounded diagnostics.
+    pub fn descriptor_word0(&self) -> u32 {
+        self.descriptor.word0()
+    }
+
+    /// Stable descriptor address after this owner has been pinned.
+    pub fn descriptor_address(self: Pin<&Self>) -> u32 {
+        core::ptr::addr_of!(self.get_ref().descriptor).addr() as u32
+    }
+
+    /// Stable source-buffer address after this owner has been pinned.
+    pub fn buffer_address(self: Pin<&Self>) -> u32 {
+        self.get_ref().buffer.0.as_ptr().addr() as u32
+    }
+
+    pub fn reserve(
+        self: Pin<&mut Self>,
+        buffer_capacity: u32,
+        transfer_length: u32,
+    ) -> Result<TxCookie, TxError> {
+        // SAFETY: scalar state and descriptor words change in place; neither
+        // the descriptor nor its enclosed DMA buffer is moved.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Free {
+            return Err(TxError::Busy);
+        }
+        if buffer_capacity == 0
+            || buffer_capacity as usize > BUFFER_SIZE
+            || transfer_length == 0
+            || transfer_length > buffer_capacity
         {
             return Err(TxError::Invalid);
+        }
+        let buffer_address = slot.buffer.0.as_ptr().addr() as u32;
+        #[cfg(target_arch = "riscv32")]
+        {
+            let descriptor_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
+            if !descriptor_address_valid(descriptor_address)
+                || !crate::descriptor::dma_range_valid(buffer_address, buffer_capacity)
+            {
+                return Err(TxError::Invalid);
+            }
         }
         // The low field retains allocation capacity while the high field
         // publishes the populated transfer length. They remain distinct even
         // for a direct buffer without an ESF-private prefix.
-        let word0 = tx_owned_word(buffer_capacity, frame_length).ok_or(TxError::Invalid)?;
-        let generation = self
+        let word0 = tx_owned_word(buffer_capacity, transfer_length).ok_or(TxError::Invalid)?;
+        let generation = slot
             .generation_cursor
             .checked_add(1)
             .ok_or(TxError::ResetRequired)?;
-        self.generation_cursor = generation;
-        self.active = TxCookie(generation);
-        self.descriptor_address = descriptor_address;
-        self.queue = LegacyTxQueue::Voice;
-        self.descriptor.publish(word0, buffer_address, 0);
-        self.state = TxSlotState::Reserved;
-        Ok(self.active)
+        slot.generation_cursor = generation;
+        slot.active = TxCookie(generation);
+        slot.queue = LegacyTxQueue::Voice;
+        slot.descriptor.publish(word0, buffer_address, 0);
+        slot.state = TxSlotState::Reserved;
+        Ok(slot.active)
     }
 
     /// Programs and starts one legacy q0 attempt.
     ///
-    /// Pinning makes the descriptor address checked at `reserve` stable across
-    /// the hardware ownership interval. The buffer must likewise remain in
-    /// static/pinned DMA-visible SRAM until completion is detached.
+    /// Pinning keeps both the private descriptor and its enclosed source
+    /// buffer stable across the complete hardware-ownership interval.
     pub fn submit_legacy_q0<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
@@ -2365,9 +2445,6 @@ impl TxSlot {
             return Err(TxError::Stale);
         }
         let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
-        if actual_address != slot.descriptor_address {
-            return Err(TxError::Invalid);
-        }
         let image = legacy_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacLegacyTxProgram {
@@ -2415,9 +2492,6 @@ impl TxSlot {
             return Err(TxError::Stale);
         }
         let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
-        if actual_address != slot.descriptor_address {
-            return Err(TxError::Invalid);
-        }
         let image = ht_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacHtTxProgram {
@@ -2452,18 +2526,20 @@ impl TxSlot {
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
     /// method intentionally performs no incomplete hardware submission.
-    pub fn mark_hardware_owned(&mut self, cookie: TxCookie) -> Result<(), TxError> {
-        if self.state != TxSlotState::Reserved || cookie != self.active {
+    pub fn mark_hardware_owned(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
+        // SAFETY: only scalar ownership state changes inside the pinned slot.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        self.state = TxSlotState::HardwareOwned;
+        slot.state = TxSlotState::HardwareOwned;
         Ok(())
     }
 
     /// Decodes and acknowledges one q0 completion. Storage stays retained in
     /// `Completed`; it is not reusable until `detach_completed` closes q0.
     pub fn acknowledge_q0_completion<H: TxHardware>(
-        &mut self,
+        self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
         self.acknowledge_completion(hardware)
@@ -2472,20 +2548,23 @@ impl TxSlot {
     /// Decodes and acknowledges the completion for the queue retained by the
     /// hardware-owned slot.
     pub fn acknowledge_completion<H: TxHardware>(
-        &mut self,
+        self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
-        let index = self.queue.index();
+        // SAFETY: completion changes scalar state but never moves pinned DMA
+        // storage. The hardware detach edge remains mandatory before reuse.
+        let slot = unsafe { self.get_unchecked_mut() };
+        let index = slot.queue.index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
 
-        if self.state != TxSlotState::HardwareOwned {
-            self.state = TxSlotState::ResetRequired;
+        if slot.state != TxSlotState::HardwareOwned {
+            slot.state = TxSlotState::ResetRequired;
             return Err(TxError::Stale);
         }
-        self.state = TxSlotState::Completed;
-        Ok(Some(decode_tx_completion(self.active, registers)))
+        slot.state = TxSlotState::Completed;
+        Ok(Some(decode_tx_completion(slot.active, registers)))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -2494,14 +2573,17 @@ impl TxSlot {
     /// fixed 16-us settling interval. `Ok(false)` means that this queue has no
     /// timeout edge and leaves all registers untouched.
     pub fn begin_timeout_abort<H: TxHardware>(
-        &mut self,
+        self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
-        if self.state != TxSlotState::HardwareOwned || cookie != self.active {
+        // SAFETY: only scalar state is observed; the pinned allocation stays
+        // in place throughout the two-phase hardware abort.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        if !hardware.begin_tx_timeout_abort(self.queue.index()) {
+        if !hardware.begin_tx_timeout_abort(slot.queue.index()) {
             return Ok(false);
         }
         Ok(true)
@@ -2514,23 +2596,24 @@ impl TxSlot {
     /// matches the recovered migration path: invalidate, release forced CCA,
     /// disable a queue that was still valid, then clear its timeout bit.
     pub fn finish_timeout_abort<H: TxHardware>(
-        &mut self,
+        self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        if self.state != TxSlotState::HardwareOwned || cookie != self.active {
+        // SAFETY: only scalar state changes after hardware confirms detach.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let Some(detached) = hardware.finish_tx_timeout_abort(self.queue.index()) else {
+        let Some(detached) = hardware.finish_tx_timeout_abort(slot.queue.index()) else {
             return Err(TxError::TimeoutNotPending);
         };
         if !detached {
-            self.state = TxSlotState::ResetRequired;
+            slot.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }
-        self.active = TxCookie(0);
-        self.descriptor_address = 0;
-        self.state = TxSlotState::Free;
+        slot.active = TxCookie(0);
+        slot.state = TxSlotState::Free;
         Ok(())
     }
 
@@ -2538,25 +2621,26 @@ impl TxSlot {
     /// readback. This is normal single-attempt turnover, not a global DMA
     /// release oracle for freeing the backing allocation during teardown.
     pub fn detach_completed<H: TxHardware>(
-        &mut self,
+        self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        if self.state != TxSlotState::Completed || cookie != self.active {
+        // SAFETY: only scalar state changes after hardware confirms detach.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Completed || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        if !hardware.detach_completed_tx(self.queue.index()) {
-            self.state = TxSlotState::ResetRequired;
+        if !hardware.detach_completed_tx(slot.queue.index()) {
+            slot.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }
-        self.active = TxCookie(0);
-        self.descriptor_address = 0;
-        self.state = TxSlotState::Free;
+        slot.active = TxCookie(0);
+        slot.state = TxSlotState::Free;
         Ok(())
     }
 }
 
-impl Default for TxSlot {
+impl<const BUFFER_SIZE: usize> Default for TxSlot<BUFFER_SIZE> {
     fn default() -> Self {
         Self::new()
     }

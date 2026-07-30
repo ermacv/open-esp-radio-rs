@@ -336,10 +336,6 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
     }
 }
 
-// The storage owner serializes CPU access with the hardware-owned phase.
-// Moving the enclosing pool after pinning is prevented by `PhantomPinned`.
-unsafe impl<const BUFFER_SIZE: usize> Send for HtAmpduDmaBuffer<BUFFER_SIZE> {}
-
 /// Statically owned direct-DMA pool for one basic-HT A-MPDU.
 ///
 /// This is deliberately a sibling of the single-frame [`crate::tx::TxSlot`].

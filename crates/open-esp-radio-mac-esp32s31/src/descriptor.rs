@@ -30,11 +30,6 @@ const _: () = {
     assert!(core::mem::align_of::<Descriptor>() == 4);
 };
 
-// A descriptor may be moved into its final static storage before publication.
-// Sharing it is intentionally not implemented: its owner must serialize CPU
-// access against the hardware ownership state.
-unsafe impl Send for Descriptor {}
-
 impl Descriptor {
     pub const fn new() -> Self {
         Self {

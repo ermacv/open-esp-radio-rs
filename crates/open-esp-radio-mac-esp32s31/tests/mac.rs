@@ -1929,13 +1929,18 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
 
 #[test]
 fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
-    let mut slot = TxSlot::new();
-    let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
-    assert_eq!(size(slot.descriptor.word0()), 512);
-    assert_eq!(length(slot.descriptor.word0()), 100);
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    slot.as_mut().buffer_mut().unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
+    assert_eq!(size(slot.descriptor_word0()), 512);
+    assert_eq!(length(slot.descriptor_word0()), 100);
     assert_eq!(slot.state(), TxSlotState::Reserved);
-    assert_eq!(slot.mark_hardware_owned(cookie), Ok(()));
-    assert_eq!(slot.mark_hardware_owned(cookie), Err(TxError::Stale));
+    assert_eq!(slot.as_mut().mark_hardware_owned(cookie), Ok(()));
+    assert_eq!(
+        slot.as_mut().mark_hardware_owned(cookie),
+        Err(TxError::Stale)
+    );
 
     let mut mmio = MockMmio::default();
     mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
@@ -1947,7 +1952,11 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     mmio.set(TX_STATE, 1 << 24);
     mmio.set(TX_COMPLETE_CLEAR, 0x100);
 
-    let completion = slot.acknowledge_q0_completion(&mut mmio).unwrap().unwrap();
+    let completion = slot
+        .as_mut()
+        .acknowledge_q0_completion(&mut mmio)
+        .unwrap()
+        .unwrap();
     assert_eq!(completion.cookie, cookie);
     assert_eq!(completion.status, 3);
     assert!(completion.trigger_flow);
@@ -1955,15 +1964,15 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     assert_eq!(slot.state(), TxSlotState::Completed);
 
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
-    slot.detach_completed(&mut mmio, cookie).unwrap();
+    slot.as_mut().detach_completed(&mut mmio, cookie).unwrap();
     assert_eq!(slot.state(), TxSlotState::Free);
 }
 
 #[test]
 fn tx_completion_decodes_the_blob_ack_snr_byte() {
-    let mut slot = TxSlot::new();
-    let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
-    slot.mark_hardware_owned(cookie).unwrap();
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
     let mut mmio = MockMmio::default();
     mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
@@ -1975,7 +1984,11 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
     mmio.set(TX_COMPLETE_ALTERNATE_Q0, 0);
     mmio.set(TX_COMPLETE_CLEAR, 0);
 
-    let completion = slot.acknowledge_q0_completion(&mut mmio).unwrap().unwrap();
+    let completion = slot
+        .as_mut()
+        .acknowledge_q0_completion(&mut mmio)
+        .unwrap()
+        .unwrap();
     assert_eq!(completion.status, 0);
     assert_eq!(completion.ack_snr_sample(), Some(-21));
 
@@ -1988,9 +2001,9 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
 
 #[test]
 fn tx_slot_reproduces_the_migration_timeout_abort_order() {
-    let mut slot = TxSlot::new();
-    let cookie = slot.reserve(0x2f00_5000, 0x2f00_6000, 512, 100).unwrap();
-    slot.mark_hardware_owned(cookie).unwrap();
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
     let timeout_mask = 1 << TX_TIMEOUT_SHIFT;
     let mut mmio = MockMmio::default();
@@ -1998,12 +2011,17 @@ fn tx_slot_reproduces_the_migration_timeout_abort_order() {
     mmio.set(TX_CCA_CONTROL, 0x1234_5678);
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
 
-    assert_eq!(slot.begin_timeout_abort(&mut mmio, cookie), Ok(true));
+    assert_eq!(
+        slot.as_mut().begin_timeout_abort(&mut mmio, cookie),
+        Ok(true)
+    );
     assert_eq!(
         mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
         TX_CCA_FORCE_MASK,
     );
-    slot.finish_timeout_abort(&mut mmio, cookie).unwrap();
+    slot.as_mut()
+        .finish_timeout_abort(&mut mmio, cookie)
+        .unwrap();
 
     assert_eq!(slot.state(), TxSlotState::Free);
     assert_eq!(

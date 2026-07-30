@@ -73,6 +73,131 @@ impl HeMuSigBMimoUser {
     }
 }
 
+// SOURCE[ROM_REV0_MU_MIMO_SPECIAL_CFG]: `_oracles/esp32s31_rev0_rom.elf`
+// SHA-256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542,
+// symbols `mu_mimo_special_cfg_user_num_2` through `_8` at
+// 0x2f84fee8, 0x2f84fe80, 0x2f84fe28, 0x2f84fdf0, 0x2f84fdd0,
+// 0x2f84fdc0 and 0x2f84fdb8. Each configuration occupies the exact
+// eight-byte ROM stride; zero tail bytes are retained below.
+const HE_MU_MIMO_NSTS_2: [[u8; 8]; 10] = [
+    [1, 1, 0, 0, 0, 0, 0, 0],
+    [2, 1, 0, 0, 0, 0, 0, 0],
+    [3, 1, 0, 0, 0, 0, 0, 0],
+    [4, 1, 0, 0, 0, 0, 0, 0],
+    [2, 2, 0, 0, 0, 0, 0, 0],
+    [3, 2, 0, 0, 0, 0, 0, 0],
+    [4, 2, 0, 0, 0, 0, 0, 0],
+    [3, 3, 0, 0, 0, 0, 0, 0],
+    [4, 3, 0, 0, 0, 0, 0, 0],
+    [4, 4, 0, 0, 0, 0, 0, 0],
+];
+const HE_MU_MIMO_NSTS_3: [[u8; 8]; 13] = [
+    [1, 1, 1, 0, 0, 0, 0, 0],
+    [2, 1, 1, 0, 0, 0, 0, 0],
+    [3, 1, 1, 0, 0, 0, 0, 0],
+    [4, 1, 1, 0, 0, 0, 0, 0],
+    [2, 2, 1, 0, 0, 0, 0, 0],
+    [3, 2, 1, 0, 0, 0, 0, 0],
+    [4, 2, 1, 0, 0, 0, 0, 0],
+    [3, 3, 1, 0, 0, 0, 0, 0],
+    [4, 3, 1, 0, 0, 0, 0, 0],
+    [2, 2, 2, 0, 0, 0, 0, 0],
+    [3, 2, 2, 0, 0, 0, 0, 0],
+    [4, 2, 2, 0, 0, 0, 0, 0],
+    [3, 3, 2, 0, 0, 0, 0, 0],
+];
+const HE_MU_MIMO_NSTS_4: [[u8; 8]; 11] = [
+    [1, 1, 1, 1, 0, 0, 0, 0],
+    [2, 1, 1, 1, 0, 0, 0, 0],
+    [3, 1, 1, 1, 0, 0, 0, 0],
+    [4, 1, 1, 1, 0, 0, 0, 0],
+    [2, 2, 1, 1, 0, 0, 0, 0],
+    [3, 2, 1, 1, 0, 0, 0, 0],
+    [4, 2, 1, 1, 0, 0, 0, 0],
+    [3, 3, 1, 1, 0, 0, 0, 0],
+    [2, 2, 2, 1, 0, 0, 0, 0],
+    [3, 2, 2, 1, 0, 0, 0, 0],
+    [2, 2, 2, 2, 0, 0, 0, 0],
+];
+const HE_MU_MIMO_NSTS_5: [[u8; 8]; 7] = [
+    [1, 1, 1, 1, 1, 0, 0, 0],
+    [2, 1, 1, 1, 1, 0, 0, 0],
+    [3, 1, 1, 1, 1, 0, 0, 0],
+    [4, 1, 1, 1, 1, 0, 0, 0],
+    [2, 2, 1, 1, 1, 0, 0, 0],
+    [3, 2, 1, 1, 1, 0, 0, 0],
+    [2, 2, 2, 1, 1, 0, 0, 0],
+];
+const HE_MU_MIMO_NSTS_6: [[u8; 8]; 4] = [
+    [1, 1, 1, 1, 1, 1, 0, 0],
+    [2, 1, 1, 1, 1, 1, 0, 0],
+    [3, 1, 1, 1, 1, 1, 0, 0],
+    [2, 2, 1, 1, 1, 1, 0, 0],
+];
+const HE_MU_MIMO_NSTS_7: [[u8; 8]; 2] = [[1, 1, 1, 1, 1, 1, 1, 0], [2, 1, 1, 1, 1, 1, 1, 0]];
+const HE_MU_MIMO_NSTS_8: [[u8; 8]; 1] = [[1, 1, 1, 1, 1, 1, 1, 1]];
+
+/// A validated HE MU-MIMO spatial-configuration encoding.
+///
+/// SOURCE[BLOB_LIBPP_MUMIMO_SPATIAL_CFG_GET_NSTS]: complete
+/// `_oracles/libpp.a[test_hal_rx_mu.o]::{mumimo_spatial_cfg_get_nsts,
+/// mumimo_spatial_cfg_get_nsts_tot}`, sizes `0x10e` and `0x44`. The first
+/// function selects one of the seven ROM tables above with an eight-byte
+/// stride; the second sums exactly `user_count` entries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeMuMimoSpatialConfiguration {
+    user_count: u8,
+    encoding: u8,
+    nsts: &'static [u8; 8],
+}
+
+impl HeMuMimoSpatialConfiguration {
+    pub fn try_new(user_count: u8, encoding: u8) -> Option<Self> {
+        let nsts = configuration_record(user_count, encoding)?;
+        Some(Self {
+            user_count,
+            encoding,
+            nsts,
+        })
+    }
+
+    pub const fn user_count(self) -> u8 {
+        self.user_count
+    }
+
+    pub const fn encoding(self) -> u8 {
+        self.encoding
+    }
+
+    pub fn nsts_for_user(self, user_index: u8) -> Option<u8> {
+        if user_index >= self.user_count {
+            return None;
+        }
+        Some(self.nsts[usize::from(user_index)])
+    }
+
+    pub fn total_nsts(self) -> u8 {
+        self.nsts[..usize::from(self.user_count)]
+            .iter()
+            .copied()
+            .sum()
+    }
+}
+
+fn configuration_record(user_count: u8, encoding: u8) -> Option<&'static [u8; 8]> {
+    let encoding = usize::from(encoding);
+    match user_count {
+        2 => HE_MU_MIMO_NSTS_2.get(encoding),
+        3 => HE_MU_MIMO_NSTS_3.get(encoding),
+        4 => HE_MU_MIMO_NSTS_4.get(encoding),
+        5 => HE_MU_MIMO_NSTS_5.get(encoding),
+        6 => HE_MU_MIMO_NSTS_6.get(encoding),
+        7 => HE_MU_MIMO_NSTS_7.get(encoding),
+        8 => HE_MU_MIMO_NSTS_8.get(encoding),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HeMuSigBUser {
     NonMimo(HeMuSigBNonMimoUser),
@@ -246,6 +371,12 @@ pub enum He20MuSigBMimoStreamError {
     IncompleteUserField,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum He20MuSigBMimoSpatialError {
+    UnsupportedUserCountOrEncoding,
+    InconsistentEncoding,
+}
+
 /// One MU-MIMO user recovered from a complete compressed HE20 SIG-B stream.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20MuSigBMimoEntry {
@@ -309,6 +440,23 @@ impl<'a> He20MuSigBMimoUsers<'a> {
 
     pub const fn user_count(&self) -> u8 {
         self.user_count
+    }
+
+    /// Validates the shared spatial configuration exactly as the blob test
+    /// does after extracting the per-user words.
+    pub fn spatial_configuration(
+        self,
+    ) -> Result<HeMuMimoSpatialConfiguration, He20MuSigBMimoSpatialError> {
+        let mut users = self;
+        let encoding = users
+            .next()
+            .map(|entry| entry.user.spatial_configuration)
+            .ok_or(He20MuSigBMimoSpatialError::UnsupportedUserCountOrEncoding)?;
+        if users.any(|entry| entry.user.spatial_configuration != encoding) {
+            return Err(He20MuSigBMimoSpatialError::InconsistentEncoding);
+        }
+        HeMuMimoSpatialConfiguration::try_new(self.user_count, encoding)
+            .ok_or(He20MuSigBMimoSpatialError::UnsupportedUserCountOrEncoding)
     }
 }
 
@@ -774,9 +922,9 @@ mod tests {
     #[test]
     fn iterates_the_four_non_linear_compressed_mimo_user_offsets() {
         let words = [
-            (1 << 20) | (1 << 15) | (1 << 11) | 0x111,
-            (2 << 15) | (2 << 11) | 0x222,
-            (1 << 20) | (3 << 15) | (3 << 11) | 0x333,
+            (1 << 20) | (1 << 15) | (4 << 11) | 0x111,
+            (2 << 15) | (4 << 11) | 0x222,
+            (1 << 20) | (3 << 15) | (4 << 11) | 0x333,
             (4 << 15) | (4 << 11) | 0x444,
         ];
         let mut complete = [0_u8; 17];
@@ -785,6 +933,14 @@ mod tests {
         }
 
         let mut users = He20MuSigBMimoUsers::try_new(&complete, 136, 4).unwrap();
+        let spatial = users.spatial_configuration().unwrap();
+        assert_eq!(spatial.user_count(), 4);
+        assert_eq!(spatial.encoding(), 4);
+        assert_eq!(
+            [0, 1, 2, 3].map(|index| spatial.nsts_for_user(index).unwrap()),
+            [2, 2, 1, 1]
+        );
+        assert_eq!(spatial.total_nsts(), 6);
         assert_eq!(users.len(), 4);
         for (expected_offset, expected_word) in [0, 21, 52, 105].into_iter().zip(words) {
             let entry = users.next().unwrap();
@@ -793,6 +949,14 @@ mod tests {
             assert_eq!(entry.user, HeMuSigBMimoUser::decode(expected_word));
         }
         assert_eq!(users.next(), None);
+
+        write_bits(&mut complete, 21, 21, words[1] ^ (1 << 11));
+        assert_eq!(
+            He20MuSigBMimoUsers::try_new(&complete, 136, 4)
+                .unwrap()
+                .spatial_configuration(),
+            Err(He20MuSigBMimoSpatialError::InconsistentEncoding)
+        );
     }
 
     #[test]
@@ -816,6 +980,14 @@ mod tests {
         assert_eq!(
             He20MuSigBMimoUsers::try_new(&[0; 9], 72, 3),
             Err(He20MuSigBMimoStreamError::IncompleteUserField)
+        );
+        assert_eq!(HeMuMimoSpatialConfiguration::try_new(1, 0), None);
+        assert_eq!(HeMuMimoSpatialConfiguration::try_new(4, 11), None);
+        assert_eq!(
+            HeMuMimoSpatialConfiguration::try_new(8, 0)
+                .unwrap()
+                .total_nsts(),
+            8
         );
     }
 

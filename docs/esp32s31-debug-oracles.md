@@ -117,6 +117,18 @@ uses the one-based compressed user count from HE-SIG-A1. It rejects wider
 bandwidth, counts outside one through four and truncated fields rather than
 pretending that compressed users follow the non-MIMO pair geometry.
 
+The adjacent compressed spatial-configuration lookup is also fully owned.
+Complete `test_hal_rx_mu.o::{mumimo_spatial_cfg_get_nsts,
+mumimo_spatial_cfg_get_nsts_tot}` (sizes `0x10e` and `0x44`) index seven
+eight-byte-stride ROM objects for two through eight users. The exact objects
+are `esp32s31_rev0_rom.elf::mu_mimo_special_cfg_user_num_2..8` at
+`0x2f84fee8,0x2f84fe80,0x2f84fe28,0x2f84fdf0,0x2f84fdd0,0x2f84fdc0,
+0x2f84fdb8`. `HeMuMimoSpatialConfiguration` validates the table domain,
+returns each user's NSTS and reproduces the bounded total. The compressed
+iterator additionally verifies the blob invariant that every decoded user
+carries the same spatial-configuration encoding. Invalid encodings stay
+typed failures rather than indexing ROM.
+
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is
 `0x1d6` bytes and advances Basic users by 5+1 bytes, MU-BAR users by 5+4,

@@ -89,6 +89,148 @@ impl HeMuSigBUser {
     }
 }
 
+/// Number of common-information bits before the first user in an HE20
+/// non-MU-MIMO complete HE-SIG-B stream.
+pub const HE20_MU_SIG_B_COMMON_BITS: u16 = 18;
+/// Number of bits in one HE-SIG-B user field.
+pub const HE_MU_SIG_B_USER_BITS: u16 = 21;
+/// Number of bits occupied by a complete pair of user fields and its
+/// intervening CRC/tail.
+pub const HE20_MU_SIG_B_USER_PAIR_BITS: u16 = 52;
+/// Maximum number of users in the blob's complete non-MU-MIMO HE20 parser.
+pub const HE20_MU_SIG_B_MAX_USERS: u8 = 9;
+
+/// A failure to construct a bounded HE20 non-MU-MIMO complete-SIG-B view.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum He20MuSigBNonMimoStreamError {
+    BitLengthBeforeFirstUser,
+    CompleteBytesTooShort,
+    IncompleteUserField,
+    TooManyUsers,
+}
+
+/// One user recovered from the complete HE20 non-MU-MIMO HE-SIG-B stream.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBNonMimoEntry {
+    pub index: u8,
+    pub bit_offset: u16,
+    pub raw: u32,
+    pub user: HeMuSigBNonMimoUser,
+}
+
+/// Allocation-free iterator over an HE20 non-MU-MIMO complete HE-SIG-B stream.
+///
+/// SOURCE[BLOB_LIBPP_TEST_RX_PARSE_NONMUMIMO_COMPLETE_SIGB]: complete
+/// `_oracles/libpp.a[test_hal_rx_mu_sigb.o]::
+/// test_rx_parse_nonmumimo_complete_sigb`, size `0x3e4`, from archive SHA-256
+/// `f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e`.
+/// The RISC-V body copies the complete bytes from RX offset `0x38`, calls
+/// `test_get_nonmumimo_common`, and extracts the tested HE20 user words at
+/// absolute bit offsets `18,39,70,91,122,143,174,195,226`. These are exactly
+/// `18 + pair * 52 + {0,21}`. Its user-count expression is
+/// `(remaining / 52) * 2 + (remaining % 52 != 0)`, and the unrolled body stops
+/// after user eight.
+///
+/// This type intentionally says HE20 and non-MU-MIMO. The same oracle proves
+/// different common lengths for wider bandwidth selectors, while
+/// `test_rx_parse_mumimo_complete_sigb` uses a configuration-dependent layout.
+/// Neither is silently folded onto this iterator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct He20MuSigBNonMimoUsers<'a> {
+    complete_bytes: &'a [u8],
+    bit_length: u16,
+    user_count: u8,
+    next_user: u8,
+}
+
+impl<'a> He20MuSigBNonMimoUsers<'a> {
+    pub fn try_new(
+        complete_bytes: &'a [u8],
+        bit_length: u16,
+    ) -> Result<Self, He20MuSigBNonMimoStreamError> {
+        let remaining = bit_length
+            .checked_sub(HE20_MU_SIG_B_COMMON_BITS)
+            .ok_or(He20MuSigBNonMimoStreamError::BitLengthBeforeFirstUser)?;
+        let required_bytes = usize::from(bit_length).div_ceil(8);
+        if complete_bytes.len() < required_bytes {
+            return Err(He20MuSigBNonMimoStreamError::CompleteBytesTooShort);
+        }
+
+        let complete_pairs = remaining / HE20_MU_SIG_B_USER_PAIR_BITS;
+        let partial_pair_bits = remaining % HE20_MU_SIG_B_USER_PAIR_BITS;
+        if partial_pair_bits != 0 && partial_pair_bits < HE_MU_SIG_B_USER_BITS {
+            return Err(He20MuSigBNonMimoStreamError::IncompleteUserField);
+        }
+        let user_count = complete_pairs
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(u16::from(partial_pair_bits != 0)))
+            .ok_or(He20MuSigBNonMimoStreamError::TooManyUsers)?;
+        if user_count > u16::from(HE20_MU_SIG_B_MAX_USERS) {
+            return Err(He20MuSigBNonMimoStreamError::TooManyUsers);
+        }
+
+        Ok(Self {
+            complete_bytes,
+            bit_length,
+            user_count: user_count as u8,
+            next_user: 0,
+        })
+    }
+
+    pub const fn bit_length(&self) -> u16 {
+        self.bit_length
+    }
+
+    pub const fn user_count(&self) -> u8 {
+        self.user_count
+    }
+
+    fn read_user_word(&self, index: u8) -> (u16, u32) {
+        let pair = u16::from(index / 2);
+        let within_pair = if index & 1 == 0 {
+            0
+        } else {
+            HE_MU_SIG_B_USER_BITS
+        };
+        let bit_offset =
+            HE20_MU_SIG_B_COMMON_BITS + pair * HE20_MU_SIG_B_USER_PAIR_BITS + within_pair;
+        let mut raw = 0_u32;
+        for output_bit in 0..HE_MU_SIG_B_USER_BITS {
+            let source_bit = bit_offset + output_bit;
+            let source_byte = self.complete_bytes[usize::from(source_bit / 8)];
+            raw |= u32::from((source_byte >> (source_bit % 8)) & 1) << output_bit;
+        }
+        (bit_offset, raw)
+    }
+}
+
+impl Iterator for He20MuSigBNonMimoUsers<'_> {
+    type Item = He20MuSigBNonMimoEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_user >= self.user_count {
+            return None;
+        }
+        let index = self.next_user;
+        let (bit_offset, raw) = self.read_user_word(index);
+        self.next_user += 1;
+        Some(He20MuSigBNonMimoEntry {
+            index,
+            bit_offset,
+            raw,
+            user: HeMuSigBNonMimoUser::decode(raw),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = usize::from(self.user_count - self.next_user);
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for He20MuSigBNonMimoUsers<'_> {}
+impl core::iter::FusedIterator for He20MuSigBNonMimoUsers<'_> {}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HeMcsNssSupport {
     Mcs0To7,
@@ -406,6 +548,19 @@ pub fn parse_he20_peer_state(
 mod tests {
     use super::*;
 
+    fn write_bits(bytes: &mut [u8], bit_offset: u16, bit_width: u16, value: u32) {
+        for input_bit in 0..bit_width {
+            let destination_bit = bit_offset + input_bit;
+            let destination = &mut bytes[usize::from(destination_bit / 8)];
+            let mask = 1 << (destination_bit % 8);
+            if value & (1 << input_bit) != 0 {
+                *destination |= mask;
+            } else {
+                *destination &= !mask;
+            }
+        }
+    }
+
     #[test]
     fn parses_single_stream_mcs9_capability_without_optional_tails() {
         let mut element = [0_u8; 24];
@@ -454,6 +609,56 @@ mod tests {
                 mcs: 7,
                 ldpc: true,
             }
+        );
+    }
+
+    #[test]
+    fn iterates_three_he20_non_mimo_users_across_pair_crc_tail_gap() {
+        let words = [
+            (1 << 20) | (3 << 15) | 0x123,
+            (1 << 19) | (5 << 15) | 0x456,
+            (1 << 14) | (7 << 15) | 0x321,
+        ];
+        let mut complete = [0_u8; 13];
+        write_bits(&mut complete, 18, 21, words[0]);
+        write_bits(&mut complete, 39, 21, words[1]);
+        write_bits(&mut complete, 70, 21, words[2]);
+
+        // 18 common + 52 for the first pair + 21 for the final user + ten
+        // final CRC/tail bits. The blob user-count expression sees three.
+        let mut users = He20MuSigBNonMimoUsers::try_new(&complete, 101).unwrap();
+        assert_eq!(users.user_count(), 3);
+        assert_eq!(users.len(), 3);
+        for (expected_index, expected_offset, expected_word) in
+            [(0, 18, words[0]), (1, 39, words[1]), (2, 70, words[2])]
+        {
+            let entry = users.next().unwrap();
+            assert_eq!(entry.index, expected_index);
+            assert_eq!(entry.bit_offset, expected_offset);
+            assert_eq!(entry.raw, expected_word);
+            assert_eq!(entry.user, HeMuSigBNonMimoUser::decode(expected_word));
+        }
+        assert_eq!(users.next(), None);
+        assert_eq!(users.len(), 0);
+    }
+
+    #[test]
+    fn rejects_truncated_or_out_of_domain_he20_complete_streams() {
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&[], 17),
+            Err(He20MuSigBNonMimoStreamError::BitLengthBeforeFirstUser)
+        );
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&[0; 11], 101),
+            Err(He20MuSigBNonMimoStreamError::CompleteBytesTooShort)
+        );
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&[0; 12], 90),
+            Err(He20MuSigBNonMimoStreamError::IncompleteUserField)
+        );
+        assert_eq!(
+            He20MuSigBNonMimoUsers::try_new(&[0; 35], 278),
+            Err(He20MuSigBNonMimoStreamError::TooManyUsers)
         );
     }
 

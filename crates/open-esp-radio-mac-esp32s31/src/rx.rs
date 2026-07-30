@@ -4,7 +4,9 @@ use crate::descriptor::{
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
     rx_rearm_word, size as descriptor_size, Descriptor, BIT_31, DESCRIPTOR_BYTES,
 };
-use open_esp_radio_ieee80211::he::HeMuSigBUser;
+use open_esp_radio_ieee80211::he::{
+    He20MuSigBNonMimoStreamError, He20MuSigBNonMimoUsers, HeMuSigBUser,
+};
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 /// Semantic ownership boundary for the S31 RX descriptor walker.
@@ -537,6 +539,7 @@ impl HeTriggerBasedSignal {
 /// the advertised length before constructing the slice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxHeMuSigBInfo<'a> {
+    pub signal: HeMuSignal,
     pub bit_length: u16,
     pub common_info_raw: u32,
     pub selected_user_info_raw: u32,
@@ -544,6 +547,34 @@ pub struct RxHeMuSigBInfo<'a> {
     pub ru_size: u8,
     pub ru_position: u8,
     pub complete_bytes: &'a [u8],
+}
+
+/// Why a complete RX HE-SIG-B stream cannot use the HE20 non-MU-MIMO layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxHe20MuSigBUsersError {
+    WiderOrUnknownBandwidth,
+    MuMimoCompressed,
+    CompleteStream(He20MuSigBNonMimoStreamError),
+}
+
+impl RxHeMuSigBInfo<'_> {
+    /// Iterates all users when the captured stream is the exact HE20
+    /// non-MU-MIMO layout recovered from the blob.
+    ///
+    /// Wider bandwidths and compressed/MU-MIMO SIG-B fail closed because the
+    /// complete test parser proves configuration-dependent layouts for them.
+    pub fn he20_non_mimo_users(
+        &self,
+    ) -> Result<He20MuSigBNonMimoUsers<'_>, RxHe20MuSigBUsersError> {
+        if self.signal.bandwidth != HeMuBandwidth::Mhz20 {
+            return Err(RxHe20MuSigBUsersError::WiderOrUnknownBandwidth);
+        }
+        if self.signal.sig_b_compression {
+            return Err(RxHe20MuSigBUsersError::MuMimoCompressed);
+        }
+        He20MuSigBNonMimoUsers::try_new(self.complete_bytes, self.bit_length)
+            .map_err(RxHe20MuSigBUsersError::CompleteStream)
+    }
 }
 
 pub fn decode_rx_he_mu_sig_b(buffer: &[u8]) -> Option<RxHeMuSigBInfo<'_>> {
@@ -570,6 +601,7 @@ pub fn decode_rx_he_mu_sig_b(buffer: &[u8]) -> Option<RxHeMuSigBInfo<'_>> {
         | (u32::from(*buffer.get(RX_PHY_HE_MU_COMMON_INFO_OFFSET + 1)?) << 6)
         | (u32::from(*buffer.get(RX_PHY_HE_MU_COMMON_INFO_OFFSET + 2)? & 0x7f) << 14);
     Some(RxHeMuSigBInfo {
+        signal,
         bit_length,
         common_info_raw,
         selected_user_info_raw,

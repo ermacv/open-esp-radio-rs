@@ -99,17 +99,19 @@ and selected-user words at `0x2d..0x2f` and `0x28..0x2a`, and borrows the
 optional complete bytes from `0x38`. The bounded Rust view checks that variable
 length before producing a slice.
 
-The two complete test parsers constrain, but do not yet justify, a generic
-complete-stream iterator. `test_get_nonmumimo_common` proves common-field
-lengths of 18 bits for bandwidth selectors 0/1, 27 bits for 2/4/5 and 43 bits
-for 3/6/7. `test_rx_parse_nonmumimo_complete_sigb` then extracts 21-bit user
-words at absolute complete-stream bit offsets
-`18,39,70,91,122,143,174,195,226` in its tested layout, while applying
-mode/RU-dependent remaining-length thresholds. The MU-MIMO test parser uses
-another unrolled, configuration-dependent layout. A simple contiguous
-21-bit iterator would therefore be false; complete-stream iteration remains
-closed until those layout selectors are recovered or independently anchored
-by the 802.11 wire specification.
+The two complete test parsers prove one bounded iterator and keep the other
+layouts closed. `test_get_nonmumimo_common` proves common-field lengths of 18
+bits for bandwidth selectors 0/1, 27 bits for 2/4/5 and 43 bits for 3/6/7.
+`test_rx_parse_nonmumimo_complete_sigb` (size `0x3e4`) extracts the HE20
+21-bit user words at absolute complete-stream bit offsets
+`18,39,70,91,122,143,174,195,226`. Its exact count expression is
+`(remaining / 52) * 2 + (remaining % 52 != 0)`: each pair is two 21-bit users
+plus ten intervening CRC/tail bits. `He20MuSigBNonMimoUsers` now reproduces
+that geometry without allocation, retains the raw word/bit offset and rejects
+short streams or more than the blob's nine unrolled users. Wider bandwidths
+are not folded onto the 18-bit common prefix. The complete MU-MIMO parser also
+uses an unrolled configuration-dependent layout, so compressed SIG-B still
+fails closed instead of pretending that all user words are contiguous.
 
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is

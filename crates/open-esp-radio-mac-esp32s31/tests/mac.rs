@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBUser};
+use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBNonMimoUser, HeMuSigBUser};
 use open_esp_radio_ieee80211::trigger::{
     parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
@@ -38,9 +38,9 @@ use open_esp_radio_mac_esp32s31::{
         enable_receive, extract_ccmp_data, extract_control, extract_data, extract_management,
         first_segment_layout, prepare_recycled_buffer, publish_cold_ring, rearm_descriptor,
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
-        HeTriggerBasedSignal, RxBasebandFormat, RxDma, RxError, RxIngressConfig, RxPhyInfo,
-        RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
-        RX_BUFFER_SENTINEL,
+        HeTriggerBasedSignal, RxBasebandFormat, RxDma, RxError, RxHe20MuSigBUsersError,
+        RxIngressConfig, RxPhyInfo, RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP,
+        INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
@@ -2985,6 +2985,58 @@ fn rx_he_mu_sig_b_borrows_only_the_blob_advertised_complete_bytes() {
     assert_eq!(decode_rx_he_mu_sig_b(&metadata[..0x30]), None);
     metadata[0x25] = 4 << 4;
     assert_eq!(decode_rx_he_mu_sig_b(&metadata), None);
+}
+
+#[test]
+fn rx_he20_non_mimo_sig_b_iterates_complete_users_and_rejects_other_layouts() {
+    fn write_user(bytes: &mut [u8], bit_offset: usize, word: u32) {
+        for output_bit in 0..21 {
+            let destination_bit = bit_offset + output_bit;
+            if word & (1 << output_bit) != 0 {
+                bytes[destination_bit / 8] |= 1 << (destination_bit % 8);
+            }
+        }
+    }
+
+    let mut metadata = [0_u8; 0x48];
+    metadata[0x25] = 5 << 4;
+    let bit_length = 101_u16;
+    metadata[0x2a] = ((bit_length % 8) as u8) << 5;
+    metadata[0x2b] = 0x80 | (bit_length / 8) as u8;
+
+    let users = [
+        (1 << 20) | (3 << 15) | 0x123,
+        (1 << 19) | (5 << 15) | 0x456,
+        (1 << 14) | (7 << 15) | 0x321,
+    ];
+    write_user(&mut metadata[0x38..], 18, users[0]);
+    write_user(&mut metadata[0x38..], 39, users[1]);
+    write_user(&mut metadata[0x38..], 70, users[2]);
+
+    let sig_b = decode_rx_he_mu_sig_b(&metadata).unwrap();
+    assert_eq!(sig_b.signal.bandwidth, HeMuBandwidth::Mhz20);
+    assert!(!sig_b.signal.sig_b_compression);
+    let entries: Vec<_> = sig_b.he20_non_mimo_users().unwrap().collect();
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0].bit_offset, 18);
+    assert_eq!(entries[1].bit_offset, 39);
+    assert_eq!(entries[2].bit_offset, 70);
+    assert_eq!(entries[2].user, HeMuSigBNonMimoUser::decode(users[2]));
+
+    metadata[4..8].copy_from_slice(&(1_u32 << 22).to_le_bytes());
+    assert_eq!(
+        decode_rx_he_mu_sig_b(&metadata)
+            .unwrap()
+            .he20_non_mimo_users(),
+        Err(RxHe20MuSigBUsersError::MuMimoCompressed)
+    );
+    metadata[4..8].copy_from_slice(&(1_u32 << 15).to_le_bytes());
+    assert_eq!(
+        decode_rx_he_mu_sig_b(&metadata)
+            .unwrap()
+            .he20_non_mimo_users(),
+        Err(RxHe20MuSigBUsersError::WiderOrUnknownBandwidth)
+    );
 }
 
 #[test]

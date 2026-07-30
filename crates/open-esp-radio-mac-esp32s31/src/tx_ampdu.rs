@@ -2370,6 +2370,49 @@ pub struct TxBlockAckAlarm {
     pub deadline_us: u64,
 }
 
+/// One vendor-compatible BlockAck action Dialog Token.
+///
+/// Keeping construction private prevents independent per-TID sessions from
+/// accidentally reusing a token while their negotiations overlap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TxBlockAckDialogToken(u8);
+
+impl TxBlockAckDialogToken {
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
+/// Shared Dialog Token owner for a set of TX BlockAck sessions.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::cnx_auth_done`
+/// invokes `ieee80211_ampdu_request` for TIDs 0, 7 and 5 in that order.
+/// Complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+/// ieee80211_ampdu_request` increments one archive-static token modulo 63
+/// before constructing each request. The vendor HE20 air oracle consequently
+/// carries tokens 1, 2 and 3 for those three negotiations.
+pub struct TxBlockAckDialogTokenSequence {
+    next: u8,
+}
+
+impl TxBlockAckDialogTokenSequence {
+    pub const fn new() -> Self {
+        Self { next: 1 }
+    }
+
+    pub fn take(&mut self) -> TxBlockAckDialogToken {
+        let token = TxBlockAckDialogToken(self.next);
+        self.next = next_vendor_block_ack_dialog_token(self.next);
+        token
+    }
+}
+
+impl Default for TxBlockAckDialogTokenSequence {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AddbaRequest {
     pub generation: u32,
@@ -2732,12 +2775,27 @@ impl TxBlockAckSession {
         starting_sequence: u16,
         now_us: u64,
     ) -> Result<AddbaRequest, TxBlockAckError> {
+        let dialog_token = TxBlockAckDialogToken(self.next_dialog_token);
+        self.next_dialog_token = next_dialog_token(dialog_token.value());
+        self.begin_with_dialog_token(starting_sequence, now_us, dialog_token)
+    }
+
+    /// Start negotiation with a token supplied by a shared multi-TID owner.
+    ///
+    /// A caller that has more than one live TID must obtain this value from
+    /// [`TxBlockAckDialogTokenSequence`]. The session still exclusively owns
+    /// its timeout generation, starting sequence and operational agreement.
+    pub fn begin_with_dialog_token(
+        &mut self,
+        starting_sequence: u16,
+        now_us: u64,
+        dialog_token: TxBlockAckDialogToken,
+    ) -> Result<AddbaRequest, TxBlockAckError> {
         let deadline_us = now_us
             .checked_add(u64::from(self.config.negotiation_timeout_us))
             .ok_or(TxBlockAckError::DeadlineOverflow)?;
         self.generation = next_generation(self.generation);
-        let dialog_token = self.next_dialog_token;
-        self.next_dialog_token = next_dialog_token(dialog_token);
+        let dialog_token = dialog_token.value();
         let starting_sequence = starting_sequence & SEQUENCE_NUMBER_MASK;
         self.phase = TxBlockAckPhase::Awaiting {
             dialog_token,
@@ -2855,6 +2913,17 @@ impl TxBlockAckSession {
     pub const fn is_awaiting(&self) -> bool {
         matches!(self.phase, TxBlockAckPhase::Awaiting { .. })
     }
+
+    /// Dialog Token currently owned by an outstanding negotiation.
+    ///
+    /// A multi-TID dispatcher can use this before calling [`Self::on_response`]
+    /// so a response is delivered to exactly one session.
+    pub const fn awaiting_dialog_token(&self) -> Option<u8> {
+        match self.phase {
+            TxBlockAckPhase::Awaiting { dialog_token, .. } => Some(dialog_token),
+            _ => None,
+        }
+    }
 }
 
 const fn encode_ba_parameters(tid: u8, window: u16, amsdu: bool) -> u16 {
@@ -2879,6 +2948,14 @@ const fn next_dialog_token(current: u8) -> u8 {
         1
     } else {
         next
+    }
+}
+
+const fn next_vendor_block_ack_dialog_token(current: u8) -> u8 {
+    if current >= 62 {
+        0
+    } else {
+        current + 1
     }
 }
 
@@ -3604,6 +3681,19 @@ mod tests {
         assert_eq!(request.starting_sequence, 0x0abc);
         assert_eq!(request.alarm.deadline_us, 100_050);
         assert_eq!(request.body, [3, 0, 1, 0x1f, 0x08, 0, 0, 0xc0, 0xab]);
+    }
+
+    #[test]
+    fn shared_dialog_tokens_reproduce_the_vendor_three_tid_order_and_modulus() {
+        let mut tokens = TxBlockAckDialogTokenSequence::new();
+        assert_eq!(tokens.take().value(), 1);
+        assert_eq!(tokens.take().value(), 2);
+        assert_eq!(tokens.take().value(), 3);
+
+        tokens.next = 62;
+        assert_eq!(tokens.take().value(), 62);
+        assert_eq!(tokens.take().value(), 0);
+        assert_eq!(tokens.take().value(), 1);
     }
 
     #[test]

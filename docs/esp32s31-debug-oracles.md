@@ -354,6 +354,26 @@ the complete association body does not activate the missing sounding/OFDMA
 scheduler; the remaining boundary is post-association node, rate-control or
 traffic-ID lifecycle.
 
+`HIL_OPEN_STA_SEQUENCE_SPACES_2026_07_30` then reproduced the complete
+`libnet80211.a[wl_cnx.o]::cnx_auth_done` TID0, TID7, TID5 AddBA order and the
+shared Dialog Tokens 1, 2, 3. Complete
+`libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_request` instructions
+0x9a..0xa2 load the advertised SSN from the node's TID-indexed halfword at
+`(tid + 0x50) * 2 + 0x0e`. This exposed a real open-path error: the former
+interface-global sequence counter let the three Action frames advance the
+TID0 data SSN. The replacement allocation-free Rust owner has one non-QoS
+counter and sixteen independent QoS/TID counters. In the corrected FRITZ
+capture, Action frames 806, 811 and 816 use management sequence numbers
+2869, 2870 and 2871 while advertising TID0 SSN 2866 and TID7/TID5 SSN 2865.
+The preceding protected TID0 ARP is frame 792 at sequence 2865; the first
+three-subframe A-MPDU is frames 821..823 at TID0 sequences 2866..2868.
+Hardware BlockAck reports the same start 2866 and bitmap `0x7`. All three
+agreements became operational, 175/175 ICMP packets completed with 4.252 ms
+mean RTT, and the driver reported zero RX drops. The same observation still
+contained no HE NDPA or Trigger, so exact BlockAck session order, token
+ownership and per-TID SSNs are necessary but do not by themselves activate
+sounding or OFDMA.
+
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
 HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field

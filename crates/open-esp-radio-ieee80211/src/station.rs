@@ -229,19 +229,25 @@ pub const STA_PROTECTED_QOS_ETHERNET_OVERHEAD: usize =
     crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN + LLC_SNAP_HEADER_LEN
         - ETHERNET_HEADER_LEN;
 
-/// Monotonic twelve-bit sequence-number owner for one STA transmit session.
+/// Monotonic twelve-bit owner for one IEEE 802.11 transmit sequence space.
 ///
 /// A sequence number is consumed for every newly encoded MPDU. Hardware
 /// retries retain the already encoded header and therefore do not call
-/// [`Self::take`]. Keeping this state in one value prevents authentication,
-/// association, EAPOL, and connected data paths from restarting overlapping
-/// ad-hoc ranges.
+/// [`Self::take`].
 ///
-/// SOURCE: the promoted migration data path
-/// `migration/esp32s31-hybrid-runtime/src/net80211_encap.rs` advanced one
-/// interface-owned counter and published its low twelve bits in Sequence
-/// Control. `_oracles/libpp.a[pp.o]` keeps retry handling attached to the same
-/// queued frame rather than allocating another protocol sequence number.
+/// This value deliberately represents only one space. Management/non-QoS
+/// traffic and every QoS TID have independent counters, owned together by
+/// [`StaTxSequenceCounters`].
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+/// ieee80211_ampdu_request` instructions 0x9a..0xa2 load the AddBA Starting
+/// Sequence Number from the node's TID-indexed halfword at
+/// `(tid + 0x50) * 2 + 0x0e`. The captured open-driver AddBA/action exchange
+/// `HIL_OPEN_STA_SEQUENCE_SPACES_2026_07_30` demonstrated why an
+/// interface-global counter is wrong: three action frames advanced the TID0
+/// SSN before its first QoS MPDU. `_oracles/libpp.a[pp.o]` keeps a hardware
+/// retry attached to the already encoded frame, so retries do not consume a
+/// new protocol sequence number.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaSequenceCounter {
     next: u16,
@@ -264,6 +270,69 @@ impl StaSequenceCounter {
 
     pub const fn peek(&self) -> u16 {
         self.next
+    }
+}
+
+/// Allocation-free owner of all STA transmit sequence-number spaces.
+///
+/// IEEE 802.11 QoS traffic has one sequence space per TID. Management and
+/// non-QoS data use the separate non-QoS space. Keeping the counters behind
+/// this owner makes it impossible for an AddBA Action frame to silently
+/// advance the SSN advertised for a QoS agreement.
+///
+/// The same initial value is safe for every entry because the spaces are
+/// independent; callers may seed it from per-association entropy so a reset
+/// does not reproduce the previous peer epoch's initial values.
+#[derive(Debug, Eq, PartialEq)]
+pub struct StaTxSequenceCounters {
+    non_qos: StaSequenceCounter,
+    qos: [StaSequenceCounter; 16],
+}
+
+impl StaTxSequenceCounters {
+    pub const QOS_TID_COUNT: u8 = 16;
+
+    pub const fn new(first: u16) -> Self {
+        let counter = StaSequenceCounter::new(first);
+        Self {
+            non_qos: counter,
+            qos: [counter; Self::QOS_TID_COUNT as usize],
+        }
+    }
+
+    /// Borrow the management/non-QoS sequence-number owner.
+    pub const fn non_qos_mut(&mut self) -> &mut StaSequenceCounter {
+        &mut self.non_qos
+    }
+
+    pub const fn peek_non_qos(&self) -> u16 {
+        self.non_qos.peek()
+    }
+
+    pub const fn take_non_qos(&mut self) -> u16 {
+        self.non_qos.take()
+    }
+
+    /// Borrow one QoS/TID sequence-number owner.
+    pub fn qos_mut(&mut self, tid: u8) -> Option<&mut StaSequenceCounter> {
+        self.qos.get_mut(usize::from(tid))
+    }
+
+    pub fn peek_qos(&self, tid: u8) -> Option<u16> {
+        self.qos.get(usize::from(tid)).map(StaSequenceCounter::peek)
+    }
+
+    pub fn take_qos(&mut self, tid: u8) -> Option<u16> {
+        self.qos_mut(tid).map(StaSequenceCounter::take)
+    }
+
+    /// Consume a data-frame sequence number from the wire-format-selected
+    /// space: `None` for a non-QoS header, or `Some(tid)` for a QoS header.
+    pub fn take_data(&mut self, qos_tid: Option<u8>) -> Option<u16> {
+        match qos_tid {
+            Some(tid) => self.take_qos(tid),
+            None => Some(self.take_non_qos()),
+        }
     }
 }
 
@@ -1793,6 +1862,34 @@ mod tests {
         assert_eq!(sequence.take(), 0x0fff);
         assert_eq!(sequence.take(), 0x0000);
         assert_eq!(sequence.peek(), 0x0001);
+    }
+
+    #[test]
+    fn sta_tx_sequence_spaces_do_not_advance_each_other() {
+        let mut sequences = StaTxSequenceCounters::new(25);
+
+        assert_eq!(sequences.take_non_qos(), 25);
+        assert_eq!(sequences.take_non_qos(), 26);
+        assert_eq!(sequences.peek_qos(0), Some(25));
+        assert_eq!(sequences.peek_qos(5), Some(25));
+        assert_eq!(sequences.peek_qos(7), Some(25));
+
+        assert_eq!(sequences.take_qos(0), Some(25));
+        assert_eq!(sequences.peek_qos(0), Some(26));
+        assert_eq!(sequences.peek_qos(5), Some(25));
+        assert_eq!(sequences.peek_qos(7), Some(25));
+        assert_eq!(sequences.peek_non_qos(), 27);
+    }
+
+    #[test]
+    fn sta_tx_sequence_space_rejects_invalid_tid_and_wraps_independently() {
+        let mut sequences = StaTxSequenceCounters::new(0x0fff);
+
+        assert_eq!(sequences.take_data(Some(15)), Some(0x0fff));
+        assert_eq!(sequences.peek_qos(15), Some(0));
+        assert_eq!(sequences.take_data(None), Some(0x0fff));
+        assert_eq!(sequences.peek_non_qos(), 0);
+        assert_eq!(sequences.take_data(Some(16)), None);
     }
 
     #[test]

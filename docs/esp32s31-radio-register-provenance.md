@@ -1590,6 +1590,25 @@ partial-RU limit without manufacturing a raw selector, truncating an arbitrary
 byte into six bits, or touching adjacent packed fields. These values remain
 PHY gain-table indices, not dBm.
 
+## SVD v3.38: Trigger-flow completion bitmap
+
+The complete `hal_mac_get_txq_in_trig_flow_state` leaf reads
+`0x20104cb4` and returns the entire high byte. The complete
+`lmacProcessTxComplete` dispatcher then shifts that byte by the completed
+queue index and retains bit zero as the queue-local Trigger-flow flag. Its
+bounded queue path proves bits 24 through 28 for queues zero through four;
+the HAL still proves that bits 31:24 are one returned bitmap, so the former
+`HIGH_STATE_UNKNOWN` split was incorrect.
+
+The flag does not replace the TX completion status. A successful completion
+still reaches `lmacProcessTxSuccess`. In both complete short- and long-retry
+failure paths, however, a Trigger-flow completion with zero accumulated retry
+count terminates through the separate `lmacProcessTBSuccess` leaf instead of
+being scheduled as an ordinary contention retry. The open PAC now selects the
+queue-local flag through the generated eight-bit field accessor and preserves
+it in `TxCompletion`, so later real-Trigger HIL can apply a distinct TB
+completion policy without reconstructing this register boundary again.
+
 ## Cross-chip comparison
 
 Current public ESP-IDF headers for ESP32-C5 and ESP32-C61 independently use the

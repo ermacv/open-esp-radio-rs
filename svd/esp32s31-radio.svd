@@ -6,7 +6,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.37</version>
+  <version>3.38</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1824,7 +1824,7 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_TX_COMMON</name>
-      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues.</description>
+      <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-hil-qualified]. Shared CCA, timeout and completion state used by MAC transmit queues.</description>
       <baseAddress>0x20104c5c</baseAddress>
       <registers>
         <register>
@@ -1844,14 +1844,13 @@
         </register>
         <register>
           <name>QUEUE_STATE</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-partial]. Per-queue timeout and trigger-flow state.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact-partial]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.</description>
           <addressOffset>0x58</addressOffset><size>32</size><access>read-only</access>
           <fields>
             <field><name>LOW_STATE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
             <field><name>TIMEOUT</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact]. Bits 16..19 correspond to ordinary queues 0..3.</description><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
             <field><name>MIDDLE_STATE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TRIGGER_FLOW</name><description>SOURCE[MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Bits 24..27 correspond to ordinary queues 0..3.</description><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>HIGH_STATE_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TRIGGER_FLOW</name><description>SOURCE[BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX]; CONFIDENCE[instruction-exact]. Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap.</description><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
         </register>
         <register>
@@ -3408,6 +3407,7 @@
       <source id="ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete hal_mac_rx_get_last_dscr at 0x2f8386a2 size 0x1e; joins RX_LAST_DESCRIPTOR low 20 bits with RX_DESCRIPTOR_HIGH_WINDOW high 12 bits</source>
       <source id="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete recovered receive BlockAck entry programming leaf, preserved with packing tests in MIGRATION_RX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs. No independent HIL qualification yet.</source>
       <source id="BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK">_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into MIGRATION_TX_AMPDU and moved to crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet.</source>
+      <source id="BLOB_LIBPP_HAL_TX_TRIGGER_FLOW">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_tx.o hal_mac_get_txq_in_trig_flow_state size 0x0c and complete lmac.o lmacProcessTxComplete size 0x25c, lmacProcessShortRetryFail size 0x318, lmacProcessLongRetryFail size 0x266 and lmacProcessTBSuccess size 0x52. The HAL getter reads 0x20104cb4 and returns its complete high byte. The completion dispatcher right-shifts that byte by the completed queue index, masks bit zero and retains the resulting per-queue trigger-flow flag. On a zero-retry-count ACK/retry failure, both retry-failure paths use that flag to terminate through lmacProcessTBSuccess instead of scheduling an ordinary contention retry; the success completion path remains lmacProcessTxSuccess.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/open-esp-radio-mac-esp32s31/src/crypto.rs.</source>
       <source id="BLOB_LIBPP_HAL_CRYPTO_INIT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_init body. It proves five ordered full-word stores at 0x20104800, 0x20104804, 0x20104808, 0x2010480c and 0x20104810 with images 0x00030000, 0x00030000, zero, zero and zero.</source>
       <source id="BLOB_LIBPP_HAL_MAC_SET_ADDR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_set_addr body. It proves the four-interface 0x8-byte stride and, per interface, one full low-address store, one full high-address store, then one fresh-read RMW setting bit 16.</source>

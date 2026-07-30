@@ -180,6 +180,13 @@ pub struct TxCookie(pub u32);
 pub struct TxCompletion {
     pub cookie: TxCookie,
     pub status: u8,
+    /// Whether hardware associated this completion with a Trigger-based flow.
+    ///
+    /// This is the queue-selected bit from the complete
+    /// `hal_mac_get_txq_in_trig_flow_state`/`lmacProcessTxComplete` blob path.
+    /// It is not itself an ACK result: vendor success still follows the normal
+    /// success path, while a zero-retry-count failure terminates through the
+    /// separate `lmacProcessTBSuccess` path instead of an ordinary retry.
     pub trigger_flow: bool,
     pub used_alternate: bool,
     /// Raw completion-extension word A.
@@ -196,6 +203,13 @@ pub struct TxCompletion {
     pub auxiliary_c_word: u32,
     pub primary_word: u32,
     pub alternate_word: u32,
+}
+
+impl TxCompletion {
+    /// Return whether this completion belongs to a Trigger-based transmit flow.
+    pub const fn is_trigger_based(&self) -> bool {
+        self.trigger_flow
+    }
 }
 
 pub(crate) fn decode_tx_completion(

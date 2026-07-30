@@ -99,6 +99,13 @@ pub struct MacTxCompletionRegisters {
     pub aux_c: u32,
     pub primary: u32,
     pub alternate: u32,
+    /// This queue completed as part of a hardware Trigger-based transmit flow.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+    /// hal_mac_get_txq_in_trig_flow_state` and
+    /// `_oracles/libpp.a[lmac.o]::lmacProcessTxComplete`. The HAL returns
+    /// `QUEUE_STATE[31:24]` as one bitmap; the completion dispatcher selects
+    /// the completed queue's bit.
     pub trigger_flow: bool,
 }
 
@@ -564,7 +571,7 @@ impl RadioRegisters {
         let aux_c = completion.aux_c(bank).read().bits();
         let primary = completion.primary(bank).read().bits();
         let alternate = completion.alternate(bank).read().bits();
-        let trigger_flow = common.queue_state().read().bits() & (1_u32 << (24 + queue)) != 0;
+        let trigger_flow = common.queue_state().read().trigger_flow().bits() & (1_u8 << queue) != 0;
         let clear = common.complete_clear().read().bits();
         // SAFETY: the complete recovery writes the preserved register image
         // with only this bounded ordinary-queue completion bit asserted.

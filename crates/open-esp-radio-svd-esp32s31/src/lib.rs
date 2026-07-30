@@ -11714,14 +11714,14 @@ pub mod wifi_mac_key_table {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by MAC transmit queues."]
 pub type WifiMacTxCommon = crate::Periph<wifi_mac_tx_common::RegisterBlock, 0x2010_4c5c>;
 impl core::fmt::Debug for WifiMacTxCommon {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxCommon").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by the four ordinary EDCA queues."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by MAC transmit queues."]
 pub mod wifi_mac_tx_common {
     #[repr(C)]
     #[doc = "Register block"]
@@ -11744,7 +11744,7 @@ pub mod wifi_mac_tx_common {
         pub const fn queue_state_clear(&self) -> &QueueStateClear {
             &self.queue_state_clear
         }
-        #[doc = "0x58 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state."]
+        #[doc = "0x58 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero."]
         #[inline(always)]
         pub const fn queue_state(&self) -> &QueueState {
             &self.queue_state
@@ -11839,10 +11839,10 @@ pub mod wifi_mac_tx_common {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "QUEUE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
+    #[doc = "QUEUE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
     #[doc(alias = "QUEUE_STATE")]
     pub type QueueState = crate::Reg<queue_state::QueueStateSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero."]
     pub mod queue_state {
         #[doc = "Register `QUEUE_STATE` reader"]
         pub type R = crate::R<QueueStateSpec>;
@@ -11852,10 +11852,8 @@ pub mod wifi_mac_tx_common {
         pub type TimeoutR = crate::FieldReader;
         #[doc = "Field `MIDDLE_STATE_UNKNOWN` reader - "]
         pub type MiddleStateUnknownR = crate::FieldReader;
-        #[doc = "Field `TRIGGER_FLOW` reader - SOURCE\\[MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24..27 correspond to ordinary queues 0..3."]
+        #[doc = "Field `TRIGGER_FLOW` reader - SOURCE\\[BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."]
         pub type TriggerFlowR = crate::FieldReader;
-        #[doc = "Field `HIGH_STATE_UNKNOWN` reader - "]
-        pub type HighStateUnknownR = crate::FieldReader;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -11872,18 +11870,13 @@ pub mod wifi_mac_tx_common {
             pub fn middle_state_unknown(&self) -> MiddleStateUnknownR {
                 MiddleStateUnknownR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:27 - SOURCE\\[MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24..27 correspond to ordinary queues 0..3."]
+            #[doc = "Bits 24:31 - SOURCE\\[BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."]
             #[inline(always)]
             pub fn trigger_flow(&self) -> TriggerFlowR {
-                TriggerFlowR::new(((self.bits >> 24) & 0x0f) as u8)
-            }
-            #[doc = "Bits 28:31"]
-            #[inline(always)]
-            pub fn high_state_unknown(&self) -> HighStateUnknownR {
-                HighStateUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+                TriggerFlowR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct QueueStateSpec;
         impl crate::RegisterSpec for QueueStateSpec {
             type Ux = u32;

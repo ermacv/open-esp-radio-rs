@@ -225,6 +225,22 @@ pub struct MacHeTriggerRxDiagnostics {
     pub qos_null_append_packet_count: u8,
 }
 
+/// Non-latched hardware state for the HE sounding/feedback sequence.
+///
+/// Complete `dbg_read_ax_diag` prints these fields from `WDEVAXDIAG0` and
+/// `WDEVAXDIAG3`. Like the Trigger fields in the same words, a following RX
+/// frame may overwrite them. Sample this immediately after a parsed NDPA/NDP
+/// edge; it is evidence about hardware progress, not owned protocol state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeBeamformingDiagnostics {
+    pub transmit_or_receive_beam: bool,
+    pub bfrp_timer: u8,
+    pub bfrp_detection_enabled: bool,
+    pub beam_timer: u8,
+    pub ndp_detected_successfully: bool,
+    pub feedback_status: bool,
+}
+
 /// WDEVTXQ_CONF1 fields for one of the eight reverse-addressed logical queues.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHeTriggerQueueConfiguration {
@@ -769,6 +785,30 @@ impl RadioRegisters {
             cbw40_packet_count: counts.cbw40_packet_count().bits(),
             cbw80_packet_count: counts.cbw80_packet_count().bits(),
             qos_null_append_packet_count: counts.qos_null_append_packet_count().bits(),
+        }
+    }
+
+    /// Read the hardware-owned HE NDP/feedback sequence state.
+    ///
+    /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]`
+    /// `dbg_read_ax_diag`, size `0x466`, and its exact `WDEVAXDIAG0` and
+    /// `WDEVAXDIAG3` format strings. Complete
+    /// `_oracles/libpp.a[wdev.o]::wDev_ProcessRxSucData`, size `0x6a0`, only
+    /// logs the result of `is_ndpa_to_dut`; it does not call a software
+    /// feedback producer. These diagnostic bits therefore observe the
+    /// hardware sequence configured by `hal_init_bf`.
+    pub fn he_beamforming_diagnostics(&self) -> MacHeBeamformingDiagnostics {
+        let registers = &self.peripherals.wifi_mac_he_trigger_rx_diagnostics;
+        let state = registers.state().read();
+        let padding = registers.padding().read();
+
+        MacHeBeamformingDiagnostics {
+            transmit_or_receive_beam: state.txrx_beam().bit(),
+            bfrp_timer: state.bfrp_timer().bits(),
+            bfrp_detection_enabled: state.bfrp_detect_enable().bit(),
+            beam_timer: state.beam_timer().bits(),
+            ndp_detected_successfully: state.ndp_detect_success().bit(),
+            feedback_status: padding.feedback_status().bit(),
         }
     }
 

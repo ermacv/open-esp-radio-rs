@@ -48,11 +48,12 @@ pub use mac_he_beamforming::{
 };
 pub use mac_he_init_suffix::MacHeTxMpduLengthLink;
 pub use mac_he_ofdma::{
-    MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBufferStatusSnapshot,
-    MacHeCustomReceiveType, MacHeEdcaQueueConfiguration, MacHeMuEdcaTimerSnapshot,
-    MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot, MacHeRxPowerSaveSnapshot,
-    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics, MacHeTriggerTxQueueSnapshot,
+    MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBeamformingDiagnostics,
+    MacHeBufferStatusSnapshot, MacHeCustomReceiveType, MacHeEdcaQueueConfiguration,
+    MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot,
+    MacHeRxPowerSaveSnapshot, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit,
+    MacHeTid, MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
+    MacHeTriggerTxQueueSnapshot,
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};

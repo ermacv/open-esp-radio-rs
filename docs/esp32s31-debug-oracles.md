@@ -246,12 +246,23 @@ Dialog Token from byte 16, walks four-byte STA Info words from byte 17 and
 matches each low eleven-bit AID against `hal_he_get_aid`. The allocation-free
 `open-esp-radio-ieee80211::ndpa` parser reproduces that geometry after the
 RX owner strips the four-byte FCS and rejects malformed partial STA Info.
+The only production caller is complete `wdev.o::wDev_ProcessRxSucData` (size
+`0x6a0`, call at `0x46a`). It feeds the Boolean result only to the adjacent
+NDPA diagnostic `wifi_log`; there is no software feedback callback, allocation
+or buffer publication on that path. Together with complete `hal_init_bf` and
+the `WDEVAXDIAG0/3` beam/NDP/feedback fields, this proves that report sequencing
+is hardware-owned. The typed PAC exposes those six non-latched progress fields
+through `he_beamforming_diagnostics`; it still does not prove a successful
+report without a real sounding exchange.
 `HIL_OPEN_HE_NDPA_AX211_2026_07_30` then observed zero HE NDPA frames in four
 successive ten-second windows after the open driver associated with the
 controlled AX211 HE20 AP as AID 1. The same run completed WPA2, protected ARP
-and a three-subframe A-MPDU/BlockAck exchange. This is a negative sounding
-baseline for that AP configuration, not evidence that the parser or S31
-feedback hardware was exercised.
+and a three-subframe A-MPDU/BlockAck exchange. Readback confirmed the hardware
+sequence enabled with selector five, HE beam reporting enabled, BFRP time 16
+and NDP time 113. With no NDPA, three subsequent best-effort diagnostic samples
+had beam, BFRP detection, NDP success and feedback status all clear and both
+timers zero. This is a negative sounding baseline for that AP configuration,
+not evidence that the parser or S31 feedback hardware was exercised.
 
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for

@@ -4,7 +4,8 @@ use core::pin::Pin;
 
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
-    TriggerCommonInfo, TriggerGiLtf, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
+    parse_trigger_user_spatial_stream, TriggerCommonInfo, TriggerFrame, TriggerGiLtf,
+    TriggerParseError, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
 };
 use open_esp_radio_pac_esp32s31::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
@@ -1183,6 +1184,9 @@ pub enum HeTriggerScheduledRateError {
     UnsupportedTriggerType,
     UnsupportedBandwidth,
     AssociationIdMismatch,
+    AssociationIdNotScheduled,
+    DuplicateAssociationId,
+    MalformedUserInfo(TriggerParseError),
     UnsupportedSpatialStreams,
     UnsupportedResourceUnit,
     UnsupportedMcs,
@@ -1190,6 +1194,49 @@ pub enum HeTriggerScheduledRateError {
 }
 
 impl HeTriggerScheduledRate {
+    /// Select this station from a complete, possibly multi-user Trigger.
+    ///
+    /// SOURCE: complete `_oracles/libnet80211.a[test_rx_trig.o]::
+    /// esp_test_rx_parse_trig` (size `0x1d6`) supplies the type-dependent,
+    /// allocation-free User Info iteration and its joint AID12/RU padding
+    /// sentinel. Complete `esp_test_cal_tx_tb` then supplies the scheduled
+    /// user's RU/rate calculation consumed by [`Self::new`].
+    ///
+    /// The entire iterator is consumed before returning. A malformed trailing
+    /// user or a duplicate assignment therefore cannot be hidden by placing a
+    /// superficially valid assignment for this station first.
+    pub fn from_trigger_frame(
+        frame: &TriggerFrame<'_>,
+        association_id: u16,
+    ) -> Result<Self, HeTriggerScheduledRateError> {
+        if !matches!(frame.common.trigger_type, TriggerType::Basic) {
+            return Err(HeTriggerScheduledRateError::UnsupportedTriggerType);
+        }
+        if frame.common.uplink_bandwidth_encoding != 0 {
+            return Err(HeTriggerScheduledRateError::UnsupportedBandwidth);
+        }
+        if association_id == 0 || association_id > 0x0fff {
+            return Err(HeTriggerScheduledRateError::AssociationIdMismatch);
+        }
+
+        let mut assigned_user = None;
+        for field in frame.users() {
+            let field = field.map_err(HeTriggerScheduledRateError::MalformedUserInfo)?;
+            if field.aid12() != association_id {
+                continue;
+            }
+            if assigned_user.is_some() {
+                return Err(HeTriggerScheduledRateError::DuplicateAssociationId);
+            }
+            assigned_user = Some(
+                parse_trigger_user_spatial_stream(field.user_info)
+                    .map_err(HeTriggerScheduledRateError::MalformedUserInfo)?,
+            );
+        }
+        let user = assigned_user.ok_or(HeTriggerScheduledRateError::AssociationIdNotScheduled)?;
+        Self::new(frame.common, user, association_id)
+    }
+
     /// Admit the Trigger user assigned to this 1T1R HE20 station.
     ///
     /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::

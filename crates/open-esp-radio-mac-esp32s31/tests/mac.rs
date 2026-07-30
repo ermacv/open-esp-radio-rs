@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_ieee80211::trigger::{
-    parse_trigger_common_info, parse_trigger_user_spatial_stream,
+    parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_mac_esp32s31::{
     crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CcmpKeyHardware, CryptoKeyError},
@@ -2372,6 +2372,61 @@ fn scheduled_trigger_user(
             | ((spatial_stream_count_encoding & 0x07) << 5),
         0x7f,
     ]
+}
+
+fn basic_trigger_with_users(users: &[[u8; 5]]) -> Vec<u8> {
+    let mut frame = vec![0_u8; 24];
+    frame[..2].copy_from_slice(&0x0024_u16.to_le_bytes());
+    frame[16..24].copy_from_slice(&(2_u64 << 20).to_le_bytes());
+    for user in users {
+        frame.extend_from_slice(user);
+        frame.push(0);
+    }
+    frame
+}
+
+#[test]
+fn scheduled_he20_trigger_rate_selects_our_user_from_the_complete_iterator() {
+    let other = scheduled_trigger_user(0x123, 0, false, 0, false, 0, 0);
+    let assigned = scheduled_trigger_user(0x234, 53, true, 4, true, 0, 0);
+    let bytes = basic_trigger_with_users(&[other, assigned]);
+    let frame = parse_trigger_frame(&bytes).unwrap();
+    let scheduled = HeTriggerScheduledRate::from_trigger_frame(&frame, 0x234).unwrap();
+    assert_eq!(scheduled.resource_unit, HeResourceUnit::Ru106);
+    assert_eq!(scheduled.resource_unit_index, 1);
+    assert_eq!(scheduled.rate.mcs(), HeMcs::Mcs4);
+    assert!(scheduled.rate.is_ldpc());
+    assert!(scheduled.rate.is_dcm());
+
+    assert_eq!(
+        HeTriggerScheduledRate::from_trigger_frame(&frame, 0x345),
+        Err(HeTriggerScheduledRateError::AssociationIdNotScheduled)
+    );
+
+    let duplicate_bytes = basic_trigger_with_users(&[assigned, assigned]);
+    let duplicate = parse_trigger_frame(&duplicate_bytes).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::from_trigger_frame(&duplicate, 0x234),
+        Err(HeTriggerScheduledRateError::DuplicateAssociationId)
+    );
+
+    let mut malformed_bytes = basic_trigger_with_users(&[assigned]);
+    malformed_bytes.push(0);
+    let malformed = parse_trigger_frame(&malformed_bytes).unwrap();
+    assert!(matches!(
+        HeTriggerScheduledRate::from_trigger_frame(&malformed, 0x234),
+        Err(HeTriggerScheduledRateError::MalformedUserInfo(_))
+    ));
+
+    let mut padding_hidden_bytes = basic_trigger_with_users(&[]);
+    padding_hidden_bytes.extend_from_slice(&[0xff, 0xef, 0x0f, 0, 0]);
+    padding_hidden_bytes.extend_from_slice(&assigned);
+    padding_hidden_bytes.push(0);
+    let padding_hidden = parse_trigger_frame(&padding_hidden_bytes).unwrap();
+    assert_eq!(
+        HeTriggerScheduledRate::from_trigger_frame(&padding_hidden, 0x234),
+        Err(HeTriggerScheduledRateError::AssociationIdNotScheduled)
+    );
 }
 
 #[test]

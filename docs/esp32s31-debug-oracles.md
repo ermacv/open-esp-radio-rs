@@ -102,6 +102,14 @@ for RU class, coding, MCS, GI/LTF and scheduled spatial-stream inputs. This
 is a host-verifiable admission/rate plan, not yet evidence that hardware
 entered the TB transmit state.
 
+`HeTriggerScheduledRate::from_trigger_frame` closes the multi-user selection
+boundary without assuming that the station is the first scheduled user. It
+consumes the complete instruction-proven iterator, selects the associated
+AID12, and rejects a missing assignment, duplicate assignment, malformed
+trailing user, unsupported layout or padding-hidden assignment before
+constructing a rate. This remains a software admission result until the
+Trigger/TB hardware counters advance in HIL.
+
 Exact Trigger encodings recovered from the complete functions are:
 
 | Oracle | Recovered byte/bit boundary |

@@ -55,11 +55,17 @@ and all nested RF/baseband/I2C/PBus bindings. The actual application policy is
 small: an Embassy microsecond timer, operation limits and optional diagnostic
 hooks.
 
-Move the binding traversal into
-`open-esp-radio-phy-esp32s31::target_executor`. Keep it executor-independent by
-injecting an async microsecond-delay trait and optional no-op observation hook.
-The application should implement only those two traits. Do not add an Embassy
-dependency to the PHY core.
+The first target-executor slice now lives in
+`open-esp-radio-phy-esp32s31::target_executor`: all ten shared PHY-I2C
+completion loops and the TX-calibration PBUS completion loop use the injected
+`PhyAsyncDelay` trait and one driver-owned 10,000-sample bound. The application
+implements only a zero-sized Embassy timer adapter for these operations. A
+post-transfer `psram-code-psram-data` HE20 run delivered 10.049-Mbit/s RX plus
+65.764-Mbit/s TX with zero `BUFFER_FULL` and zero `FIFO_OVERFLOW`.
+
+The remaining `complete_*` RF/baseband composition must move into the same
+module next. Keep diagnostics behind an optional no-op observation hook and do
+not add an Embassy dependency to the PHY core.
 
 ### 2. ESP-HAL platform adapter
 

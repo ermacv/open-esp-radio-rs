@@ -8,6 +8,8 @@
 extern crate std;
 
 pub mod executor;
+#[cfg(target_arch = "riscv32")]
+pub mod target_executor;
 
 pub mod phy_bb;
 pub mod phy_channel;
@@ -44,3 +46,5 @@ pub use phy_register::{
     PhyRegisterTransition,
 };
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
+#[cfg(target_arch = "riscv32")]
+pub use target_executor::{PhyAsyncDelay, PhyTargetPortError, HARDWARE_EDGE_LIMIT};

@@ -4,6 +4,7 @@ use crate::descriptor::{
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
     rx_rearm_word, size as descriptor_size, Descriptor, BIT_31, DESCRIPTOR_BYTES,
 };
+use open_esp_radio_ieee80211::he::HeMuSigBUser;
 use open_esp_radio_pac_esp32s31::RadioRegisters;
 
 /// Semantic ownership boundary for the S31 RX descriptor walker.
@@ -96,6 +97,13 @@ const RX_PHY_RATE_OFFSET: usize = 0x01;
 const RX_PHY_HE_SIGA1_OFFSET: usize = 0x04;
 const RX_PHY_HE_SIGA2_OFFSET: usize = 0x09;
 const RX_PHY_BB_FORMAT_OFFSET: usize = 0x25;
+const RX_PHY_HE_MU_RU_SIZE_OFFSET: usize = 0x1a;
+const RX_PHY_HE_MU_RU_POSITION_OFFSET: usize = 0x1e;
+const RX_PHY_HE_MU_USER_INFO_OFFSET: usize = 0x28;
+const RX_PHY_HE_MU_SIG_B_LENGTH_REMAINDER_OFFSET: usize = 0x2a;
+const RX_PHY_HE_MU_SIG_B_LENGTH_FLAGS_OFFSET: usize = 0x2b;
+const RX_PHY_HE_MU_COMMON_INFO_OFFSET: usize = 0x2d;
+const RX_PHY_COMPLETE_SIG_B_OFFSET: usize = 0x38;
 
 const CSI_LENGTH_LOW_OFFSET: usize = 0x26;
 const CSI_LENGTH_FLAGS_OFFSET: usize = 0x27;
@@ -364,6 +372,214 @@ impl HeSuSignal {
     }
 }
 
+/// HE MU bandwidth encoding from HE-SIG-A1.
+///
+/// Unlike the two-bit SU/TB field, the MU field is three bits wide. Values
+/// four through seven are retained instead of being folded onto a known
+/// bandwidth; that matters when inspecting metadata produced by a newer PHY
+/// mode than this driver currently supports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeMuBandwidth {
+    Mhz20,
+    Mhz40,
+    Mhz80,
+    Mhz160Or80Plus80,
+    Unknown(u8),
+}
+
+impl HeMuBandwidth {
+    const fn decode(raw: u8) -> Self {
+        match raw & 0x07 {
+            0 => Self::Mhz20,
+            1 => Self::Mhz40,
+            2 => Self::Mhz80,
+            3 => Self::Mhz160Or80Plus80,
+            value => Self::Unknown(value),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        match self {
+            Self::Mhz20 => 0,
+            Self::Mhz40 => 1,
+            Self::Mhz80 => 2,
+            Self::Mhz160Or80Plus80 => 3,
+            Self::Unknown(value) => value & 0x07,
+        }
+    }
+
+    pub const fn mhz(self) -> Option<u16> {
+        match self {
+            Self::Mhz20 => Some(20),
+            Self::Mhz40 => Some(40),
+            Self::Mhz80 => Some(80),
+            Self::Mhz160Or80Plus80 => Some(160),
+            Self::Unknown(_) => None,
+        }
+    }
+}
+
+/// Typed HE MU common signal fields captured from S31 RX metadata.
+///
+/// SOURCE[ESP_WIFI_SYS_S31_HE_MU_SIG]: `esp-wifi-sys` commit
+/// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
+/// `c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h`, complete
+/// `esp_wifi_mu_siga1_t` and packed `esp_wifi_mu_siga2_t` layouts.
+///
+/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
+/// `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`,
+/// instructions `0x4b4..0x586`. The format-five branch independently loads
+/// HE-SIG-A1 at RX-prefix offset `0x04` and HE-SIG-A2 at offsets `0x09..0x0a`,
+/// then applies the masks represented below. In particular, it names the
+/// SIG-B DCM bit, three-bit bandwidth, GI/LTF, STBC and padding fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeMuSignal {
+    pub uplink: bool,
+    pub sig_b_mcs: u8,
+    pub sig_b_dcm: bool,
+    pub bss_color: u8,
+    pub spatial_reuse: u8,
+    pub bandwidth: HeMuBandwidth,
+    pub sig_b_symbols_or_mu_mimo_users_minus_one: u8,
+    pub sig_b_compression: bool,
+    pub guard_interval_and_ltf: HeGuardIntervalAndLtf,
+    pub doppler: bool,
+    pub txop: u8,
+    pub nltf_and_midamble_periodicity: u8,
+    pub ldpc_extra_symbol_segment: bool,
+    pub stbc: bool,
+    pub pre_fec_padding_factor: u8,
+    pub packet_extension_disambiguity: bool,
+}
+
+impl HeMuSignal {
+    pub const fn decode(siga1: u32, siga2: u16) -> Self {
+        Self {
+            uplink: siga1 & 1 != 0,
+            sig_b_mcs: ((siga1 >> 1) & 0x07) as u8,
+            sig_b_dcm: siga1 & (1 << 4) != 0,
+            bss_color: ((siga1 >> 5) & 0x3f) as u8,
+            spatial_reuse: ((siga1 >> 11) & 0x0f) as u8,
+            bandwidth: HeMuBandwidth::decode(((siga1 >> 15) & 0x07) as u8),
+            sig_b_symbols_or_mu_mimo_users_minus_one: ((siga1 >> 18) & 0x0f) as u8,
+            sig_b_compression: siga1 & (1 << 22) != 0,
+            guard_interval_and_ltf: HeGuardIntervalAndLtf::decode(((siga1 >> 23) & 0x03) as u8),
+            doppler: siga1 & (1 << 25) != 0,
+            txop: (siga2 & 0x7f) as u8,
+            nltf_and_midamble_periodicity: ((siga2 >> 8) & 0x07) as u8,
+            ldpc_extra_symbol_segment: siga2 & (1 << 11) != 0,
+            stbc: siga2 & (1 << 12) != 0,
+            pre_fec_padding_factor: ((siga2 >> 13) & 0x03) as u8,
+            packet_extension_disambiguity: siga2 & (1 << 15) != 0,
+        }
+    }
+
+    /// One-based value printed by the complete blob diagnostic.
+    pub const fn sig_b_symbols_or_mu_mimo_users(self) -> u8 {
+        self.sig_b_symbols_or_mu_mimo_users_minus_one + 1
+    }
+
+    /// HE-LTF symbol count derived by the complete blob diagnostic.
+    pub const fn he_ltf_symbols(self) -> u8 {
+        if self.nltf_and_midamble_periodicity == 0 {
+            1
+        } else {
+            self.nltf_and_midamble_periodicity * 2
+        }
+    }
+}
+
+/// Typed HE trigger-based common signal fields captured from RX metadata.
+///
+/// SOURCE[ESP_WIFI_SYS_S31_HE_TB_SIG]: the pinned `esp-wifi-sys`
+/// `esp_wifi_tb_siga1_t` and packed `esp_wifi_tb_siga2_t` layouts.
+/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
+/// `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, instructions
+/// `0x412..0x4b2`, independently decodes the same prefix words for baseband
+/// format seven.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeTriggerBasedSignal {
+    pub format: bool,
+    pub bss_color: u8,
+    pub spatial_reuse: [u8; 4],
+    pub bandwidth: HeBandwidth,
+    pub txop: u8,
+}
+
+impl HeTriggerBasedSignal {
+    pub const fn decode(siga1: u32, siga2: u16) -> Self {
+        Self {
+            format: siga1 & 1 != 0,
+            bss_color: ((siga1 >> 1) & 0x3f) as u8,
+            spatial_reuse: [
+                ((siga1 >> 7) & 0x0f) as u8,
+                ((siga1 >> 11) & 0x0f) as u8,
+                ((siga1 >> 15) & 0x0f) as u8,
+                ((siga1 >> 19) & 0x0f) as u8,
+            ],
+            bandwidth: HeBandwidth::decode(((siga1 >> 24) & 0x03) as u8),
+            txop: (siga2 & 0x7f) as u8,
+        }
+    }
+}
+
+/// Bounded HE-MU SIG-B view from one completed S31 RX buffer.
+///
+/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_SIGB]: complete
+/// `_oracles/libpp.a[test_hal_rx_mu_sigb.o]::dbg_dump_rx_sigb`, size `0x1e6`.
+/// The blob reads the exact offsets used by [`decode_rx_he_mu_sig_b`]:
+/// bit length from `0x2a[7:5]` and `0x2b[6:0]`, presence at `0x2b[7]`,
+/// the selected user at `0x28..0x2a`, common information at `0x2d..0x2f`,
+/// RU metadata at `0x1a`/`0x1e`, and optional complete bytes from `0x38`.
+///
+/// The complete bytes borrow the descriptor buffer; this is the Rust
+/// ownership equivalent of the blob's raw pointer walk. The decoder checks
+/// the advertised length before constructing the slice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxHeMuSigBInfo<'a> {
+    pub bit_length: u16,
+    pub common_info_raw: u32,
+    pub selected_user_info_raw: u32,
+    pub selected_user: HeMuSigBUser,
+    pub ru_size: u8,
+    pub ru_position: u8,
+    pub complete_bytes: &'a [u8],
+}
+
+pub fn decode_rx_he_mu_sig_b(buffer: &[u8]) -> Option<RxHeMuSigBInfo<'_>> {
+    if buffer.len() < FIXED_PREFIX_SIZE {
+        return None;
+    }
+    let phy = decode_rx_phy_info(buffer)?;
+    let signal = phy.he_mu_signal()?;
+    let length_remainder = *buffer.get(RX_PHY_HE_MU_SIG_B_LENGTH_REMAINDER_OFFSET)? >> 5;
+    let length_flags = *buffer.get(RX_PHY_HE_MU_SIG_B_LENGTH_FLAGS_OFFSET)?;
+    let bit_length = u16::from(length_flags & 0x7f) * 8 + u16::from(length_remainder);
+    let byte_length = usize::from(bit_length).div_ceil(8);
+    let complete_bytes = if length_flags & 0x80 != 0 {
+        buffer.get(
+            RX_PHY_COMPLETE_SIG_B_OFFSET..RX_PHY_COMPLETE_SIG_B_OFFSET.checked_add(byte_length)?,
+        )?
+    } else {
+        &[]
+    };
+    let selected_user_info_raw = u32::from(*buffer.get(RX_PHY_HE_MU_USER_INFO_OFFSET)?)
+        | (u32::from(*buffer.get(RX_PHY_HE_MU_USER_INFO_OFFSET + 1)?) << 8)
+        | (u32::from(*buffer.get(RX_PHY_HE_MU_SIG_B_LENGTH_REMAINDER_OFFSET)? & 0x1f) << 16);
+    let common_info_raw = u32::from(*buffer.get(RX_PHY_HE_MU_COMMON_INFO_OFFSET)? >> 2)
+        | (u32::from(*buffer.get(RX_PHY_HE_MU_COMMON_INFO_OFFSET + 1)?) << 6)
+        | (u32::from(*buffer.get(RX_PHY_HE_MU_COMMON_INFO_OFFSET + 2)? & 0x7f) << 14);
+    Some(RxHeMuSigBInfo {
+        bit_length,
+        common_info_raw,
+        selected_user_info_raw,
+        selected_user: HeMuSigBUser::decode(selected_user_info_raw, signal.sig_b_compression),
+        ru_size: *buffer.get(RX_PHY_HE_MU_RU_SIZE_OFFSET)? & 0x03,
+        ru_position: *buffer.get(RX_PHY_HE_MU_RU_POSITION_OFFSET)? >> 4,
+        complete_bytes,
+    })
+}
+
 impl RxPhyInfo {
     pub const fn baseband_format(self) -> RxBasebandFormat {
         RxBasebandFormat::decode(self.bb_format)
@@ -371,7 +587,25 @@ impl RxPhyInfo {
 
     pub const fn he_su_signal(self) -> Option<HeSuSignal> {
         match self.baseband_format() {
-            RxBasebandFormat::HeSu => Some(HeSuSignal::decode(self.he_siga1, self.he_siga2)),
+            RxBasebandFormat::HeSu | RxBasebandFormat::HeExtendedRangeSu => {
+                Some(HeSuSignal::decode(self.he_siga1, self.he_siga2))
+            }
+            _ => None,
+        }
+    }
+
+    pub const fn he_mu_signal(self) -> Option<HeMuSignal> {
+        match self.baseband_format() {
+            RxBasebandFormat::HeMu => Some(HeMuSignal::decode(self.he_siga1, self.he_siga2)),
+            _ => None,
+        }
+    }
+
+    pub const fn he_trigger_based_signal(self) -> Option<HeTriggerBasedSignal> {
+        match self.baseband_format() {
+            RxBasebandFormat::HeTriggerBased => {
+                Some(HeTriggerBasedSignal::decode(self.he_siga1, self.he_siga2))
+            }
             _ => None,
         }
     }

@@ -74,6 +74,32 @@ printed by `dbg_dump_trs_control` and `dbg_dump_uph_control`. These functions
 therefore restore the 802.11ax wire format, but do not expand the MMIO address
 map.
 
+Complete `dbg_dump_rx_ppdu` is also an independent instruction-level oracle
+for the public S31 RX-control prefix. Its `0xd0`-masked format test routes both
+HE SU (`4`) and HE extended-range SU (`6`) through the same SIG-A decoder. The
+format-five branch at `0x4b4..0x586` decodes HE MU SIG-A1 from prefix bytes
+`0x04..0x07` and SIG-A2 from `0x09..0x0a`, including SIG-B MCS/DCM,
+three-bit bandwidth, compressed-SIG-B count, GI/LTF, Doppler, STBC and
+padding. The format-seven branch at `0x412..0x4b2` independently decodes the
+HE trigger-based common SIG-A view. These exact packet-metadata layouts now
+live in `open-esp-radio-mac-esp32s31::rx::{HeSuSignal,HeMuSignal,
+HeTriggerBasedSignal}`. This restores passive downlink/TB vector observation;
+it does not by itself qualify payload reception, OFDMA scheduling or MU-MIMO.
+
+The two complete per-user leaves close the next bounded word format.
+`dbg_dump_musigb_non_mimo` (size `0x6e`) names STA-ID, NSTS, beamformed,
+MCS, DCM and coding in one 21-bit non-MIMO word and treats STA-ID `0x7fe` as
+a terminal non-MU-MIMO marker. `dbg_dump_musigb_mimo` (size `0x4a`) names
+STA-ID, spatial configuration, MCS and coding in the MIMO view. Allocation-free
+decoders live in `open-esp-radio-ieee80211::he`. The separate complete-SIG-B
+container is anchored by complete
+`test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` (size `0x1e6`): it publishes the
+bit length and presence flag at RX-prefix offsets `0x2a..0x2b`, the common
+and selected-user words at `0x2d..0x2f` and `0x28..0x2a`, and borrows the
+optional complete bytes from `0x38`. The bounded Rust view checks that variable
+length before producing a slice. Complete-stream symbol unpacking and user
+iteration still remain to be recovered from the two larger test parsers.
+
 The complete `_oracles/libnet80211.a[test_rx_trig.o]::
 esp_test_rx_parse_trig` adds the formerly missing iteration boundary. It is
 `0x1d6` bytes and advances Basic users by 5+1 bytes, MU-BAR users by 5+4,

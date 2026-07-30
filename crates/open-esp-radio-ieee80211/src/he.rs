@@ -9,6 +9,86 @@ pub const HE_OPERATION_EXTENSION_ID: u8 = 36;
 pub const HE_CAPABILITIES_IE_MIN_LEN: usize = 24;
 pub const HE_OPERATION_IE_MIN_LEN: usize = 9;
 
+/// One decoded 21-bit non-MU-MIMO HE-SIG-B user field.
+///
+/// SOURCE[BLOB_LIBPP_DBG_DUMP_MUSIGB_NON_MIMO]: complete
+/// `_oracles/libpp.a[hal_debug.o]::dbg_dump_musigb_non_mimo`, size `0x6e`.
+/// The blob loads one caller-owned word and names bits 10:0 STA-ID, 13:11
+/// NSTS, 14 beamformed, 18:15 MCS, 19 DCM and 20 coding. STA-ID `0x7fe`
+/// takes a terminal special branch and none of the remaining bits are read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeMuSigBNonMimoUser {
+    NonMuMimo,
+    Scheduled {
+        station_id: u16,
+        nsts: u8,
+        beamformed: bool,
+        mcs: u8,
+        dcm: bool,
+        ldpc: bool,
+    },
+}
+
+impl HeMuSigBNonMimoUser {
+    pub const fn decode(word: u32) -> Self {
+        let station_id = (word & 0x07ff) as u16;
+        if station_id == 0x07fe {
+            Self::NonMuMimo
+        } else {
+            Self::Scheduled {
+                station_id,
+                nsts: ((word >> 11) & 0x07) as u8,
+                beamformed: word & (1 << 14) != 0,
+                mcs: ((word >> 15) & 0x0f) as u8,
+                dcm: word & (1 << 19) != 0,
+                ldpc: word & (1 << 20) != 0,
+            }
+        }
+    }
+}
+
+/// One decoded 21-bit MU-MIMO HE-SIG-B user field.
+///
+/// SOURCE[BLOB_LIBPP_DBG_DUMP_MUSIGB_MIMO]: complete
+/// `_oracles/libpp.a[hal_debug.o]::dbg_dump_musigb_mimo`, size `0x4a`.
+/// The blob names bits 10:0 STA-ID, 14:11 spatial configuration, 18:15 MCS,
+/// bit 19 reserved and bit 20 coding. The reserved bit is deliberately not
+/// exposed as a writable semantic field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeMuSigBMimoUser {
+    pub station_id: u16,
+    pub spatial_configuration: u8,
+    pub mcs: u8,
+    pub ldpc: bool,
+}
+
+impl HeMuSigBMimoUser {
+    pub const fn decode(word: u32) -> Self {
+        Self {
+            station_id: (word & 0x07ff) as u16,
+            spatial_configuration: ((word >> 11) & 0x0f) as u8,
+            mcs: ((word >> 15) & 0x0f) as u8,
+            ldpc: word & (1 << 20) != 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeMuSigBUser {
+    NonMimo(HeMuSigBNonMimoUser),
+    Mimo(HeMuSigBMimoUser),
+}
+
+impl HeMuSigBUser {
+    pub const fn decode(word: u32, compressed_sig_b: bool) -> Self {
+        if compressed_sig_b {
+            Self::Mimo(HeMuSigBMimoUser::decode(word))
+        } else {
+            Self::NonMimo(HeMuSigBNonMimoUser::decode(word))
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HeMcsNssSupport {
     Mcs0To7,
@@ -340,6 +420,40 @@ mod tests {
         assert_eq!(
             capability.dcm_receive_constellation(),
             HeDcmConstellation::NotSupported
+        );
+    }
+
+    #[test]
+    fn decodes_complete_non_mimo_sig_b_user_and_terminal_sentinel() {
+        let word = 0x10_0000 | 0x08_0000 | (9 << 15) | (1 << 14) | (5 << 11) | 0x234;
+        assert_eq!(
+            HeMuSigBNonMimoUser::decode(word),
+            HeMuSigBNonMimoUser::Scheduled {
+                station_id: 0x234,
+                nsts: 5,
+                beamformed: true,
+                mcs: 9,
+                dcm: true,
+                ldpc: true,
+            }
+        );
+        assert_eq!(
+            HeMuSigBNonMimoUser::decode(0x001f_f7fe),
+            HeMuSigBNonMimoUser::NonMuMimo
+        );
+    }
+
+    #[test]
+    fn decodes_complete_mimo_sig_b_user_without_exposing_reserved_bit() {
+        let word = 0x10_0000 | 0x08_0000 | (7 << 15) | (12 << 11) | 0x345;
+        assert_eq!(
+            HeMuSigBMimoUser::decode(word),
+            HeMuSigBMimoUser {
+                station_id: 0x345,
+                spatial_configuration: 12,
+                mcs: 7,
+                ldpc: true,
+            }
         );
     }
 

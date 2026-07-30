@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBUser};
 use open_esp_radio_ieee80211::trigger::{
     parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
@@ -33,12 +34,13 @@ use open_esp_radio_mac_esp32s31::{
         TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
-        build_cold_ring, decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data,
-        extract_control, extract_data, extract_management, first_segment_layout,
-        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor, HeBandwidth,
-        HeGuardIntervalAndLtf, HeSuSignal, RxBasebandFormat, RxDma, RxError, RxIngressConfig,
-        RxPhyInfo, RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP,
-        INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
+        build_cold_ring, decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive,
+        enable_receive, extract_ccmp_data, extract_control, extract_data, extract_management,
+        first_segment_layout, prepare_recycled_buffer, publish_cold_ring, rearm_descriptor,
+        HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
+        HeTriggerBasedSignal, RxBasebandFormat, RxDma, RxError, RxIngressConfig, RxPhyInfo,
+        RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND,
+        RX_BUFFER_SENTINEL,
     },
     tx::{
         he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
@@ -2866,6 +2868,123 @@ fn rx_phy_info_decodes_the_qualified_he20_mcs9_signal() {
     assert_eq!(signal.bandwidth.mhz(), 20);
     assert_eq!(signal.guard_interval_and_ltf.guard_interval_ns(), 1_600);
     assert_eq!(signal.guard_interval_and_ltf.ltf_count(), 2);
+}
+
+#[test]
+fn rx_phy_info_uses_the_blob_su_layout_for_extended_range_su() {
+    let phy = RxPhyInfo {
+        rate: 11,
+        bb_format: 6,
+        he_siga1: 0x0040_5b4b,
+        he_siga2: 0,
+    };
+    assert_eq!(phy.he_su_signal().map(|signal| signal.mcs), Some(9));
+}
+
+#[test]
+fn rx_phy_info_decodes_complete_he_mu_common_signal_fields() {
+    let phy = RxPhyInfo {
+        rate: 0,
+        bb_format: 5,
+        he_siga1: 0x03de_4d5b,
+        he_siga2: 0xdbb5,
+    };
+    assert_eq!(
+        phy.he_mu_signal(),
+        Some(HeMuSignal {
+            uplink: true,
+            sig_b_mcs: 5,
+            sig_b_dcm: true,
+            bss_color: 42,
+            spatial_reuse: 9,
+            bandwidth: HeMuBandwidth::Unknown(4),
+            sig_b_symbols_or_mu_mimo_users_minus_one: 7,
+            sig_b_compression: true,
+            guard_interval_and_ltf: HeGuardIntervalAndLtf::FourLtf3200Ns,
+            doppler: true,
+            txop: 0x35,
+            nltf_and_midamble_periodicity: 3,
+            ldpc_extra_symbol_segment: true,
+            stbc: true,
+            pre_fec_padding_factor: 2,
+            packet_extension_disambiguity: true,
+        })
+    );
+    let signal = phy.he_mu_signal().unwrap();
+    assert_eq!(signal.bandwidth.mhz(), None);
+    assert_eq!(signal.bandwidth.raw(), 4);
+    assert_eq!(signal.sig_b_symbols_or_mu_mimo_users(), 8);
+    assert_eq!(signal.he_ltf_symbols(), 6);
+}
+
+#[test]
+fn rx_phy_info_decodes_complete_he_trigger_based_common_signal_fields() {
+    let siga1 = 1 | (17 << 1) | (1 << 7) | (2 << 11) | (3 << 15) | (4 << 19) | (1 << 24);
+    let phy = RxPhyInfo {
+        rate: 0,
+        bb_format: 7,
+        he_siga1: siga1,
+        he_siga2: 0x01d5,
+    };
+    assert_eq!(
+        phy.he_trigger_based_signal(),
+        Some(HeTriggerBasedSignal {
+            format: true,
+            bss_color: 17,
+            spatial_reuse: [1, 2, 3, 4],
+            bandwidth: HeBandwidth::Mhz40,
+            txop: 0x55,
+        })
+    );
+}
+
+#[test]
+fn rx_he_mu_sig_b_borrows_only_the_blob_advertised_complete_bytes() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[0x25] = 5 << 4;
+    metadata[4..8].copy_from_slice(&(1_u32 << 22).to_le_bytes());
+    metadata[0x1a] = 0xfe;
+    metadata[0x1e] = 0xb7;
+
+    let selected_user = (1 << 20) | (7 << 15) | (12 << 11) | 0x345;
+    metadata[0x28] = selected_user as u8;
+    metadata[0x29] = (selected_user >> 8) as u8;
+    metadata[0x2a] = ((selected_user >> 16) as u8 & 0x1f) | (5 << 5);
+    metadata[0x2b] = 0x80 | 2;
+
+    let common = 0x1a_bcde_u32;
+    metadata[0x2d] = (common << 2) as u8;
+    metadata[0x2e] = (common >> 6) as u8;
+    metadata[0x2f] = (common >> 14) as u8 & 0x7f;
+    metadata[0x38..0x3b].copy_from_slice(&[0xaa, 0xbb, 0x1c]);
+    metadata[0x3b] = 0xee;
+
+    let sig_b = decode_rx_he_mu_sig_b(&metadata).unwrap();
+    assert_eq!(sig_b.bit_length, 21);
+    assert_eq!(sig_b.common_info_raw, common);
+    assert_eq!(sig_b.selected_user_info_raw, selected_user);
+    assert_eq!(
+        sig_b.selected_user,
+        HeMuSigBUser::Mimo(HeMuSigBMimoUser {
+            station_id: 0x345,
+            spatial_configuration: 12,
+            mcs: 7,
+            ldpc: true,
+        })
+    );
+    assert_eq!(sig_b.ru_size, 2);
+    assert_eq!(sig_b.ru_position, 11);
+    assert_eq!(sig_b.complete_bytes, &[0xaa, 0xbb, 0x1c]);
+
+    assert_eq!(decode_rx_he_mu_sig_b(&metadata[..0x3a]), None);
+    metadata[0x2b] &= 0x7f;
+    assert_eq!(
+        decode_rx_he_mu_sig_b(&metadata).unwrap().complete_bytes,
+        &[]
+    );
+    assert_eq!(decode_rx_he_mu_sig_b(&metadata[..0x30]), None);
+    metadata[0x25] = 4 << 4;
+    assert_eq!(decode_rx_he_mu_sig_b(&metadata), None);
 }
 
 #[test]

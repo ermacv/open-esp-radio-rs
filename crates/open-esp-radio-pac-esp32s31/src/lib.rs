@@ -459,6 +459,10 @@ mod tests {
         assert_eq!(control.control(0).as_ptr() as usize, 0x2010_4d40);
         assert_eq!(vector.plcp1(3).as_ptr() as usize, 0x2010_54d8);
         assert_eq!(vector.plcp1(0).as_ptr() as usize, 0x2010_5364);
+        assert_eq!(vector.he_control(3).as_ptr() as usize, 0x2010_54e4);
+        assert_eq!(vector.he_control_config(3).as_ptr() as usize, 0x2010_5518);
+        assert_eq!(vector.he_control(0).as_ptr() as usize, 0x2010_5370);
+        assert_eq!(vector.he_control_config(0).as_ptr() as usize, 0x2010_53a4);
         assert_eq!(completion.primary(3).as_ptr() as usize, 0x2010_553c);
         assert_eq!(completion.primary(0).as_ptr() as usize, 0x2010_53c8);
     }

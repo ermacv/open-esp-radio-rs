@@ -32,6 +32,7 @@ pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
 pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
+const HARDWARE_HE_CONTROL_LENGTH: u16 = 4;
 const HE_SMPDU_VENDOR_DMA_CAPACITY: u32 = 64;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
 const BASIC_HT_RATE_MIN: u8 = 16;
@@ -170,6 +171,21 @@ impl HtAmpduLengthAccumulator {
         payload_word: u32,
         empty_delimiters: u8,
     ) -> Result<(), HtAmpduLengthError> {
+        self.push_with_hardware_he_control(payload_word, empty_delimiters, false)
+    }
+
+    /// Add one MPDU whose HE-Control field may be inserted by MAC hardware.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[pp_he.o]::
+    /// ppCalSubFrameLength` reads `metadata[7] & 1`, multiplies it by four,
+    /// and adds it after the delimiter and rounded metadata length. The low
+    /// fourteen-bit MPDU length remains unchanged.
+    pub const fn push_with_hardware_he_control(
+        &mut self,
+        payload_word: u32,
+        empty_delimiters: u8,
+        hardware_he_control: bool,
+    ) -> Result<(), HtAmpduLengthError> {
         if self.count >= self.max_subframes {
             return Err(HtAmpduLengthError::WindowFull);
         }
@@ -179,7 +195,12 @@ impl HtAmpduLengthAccumulator {
         }
         let padding = (4 - (mpdu_bytes & 3)) & 3;
         let empty_bytes = (empty_delimiters as u32) * 4;
-        let contribution = mpdu_bytes + padding + empty_bytes + 4;
+        let inserted_bytes = if hardware_he_control {
+            HARDWARE_HE_CONTROL_LENGTH as u32
+        } else {
+            0
+        };
+        let contribution = mpdu_bytes + padding + empty_bytes + 4 + inserted_bytes;
         let next = self.bytes_with_tail + contribution;
         let final_bytes = next - padding - empty_bytes;
         if final_bytes > self.max_bytes as u32 {
@@ -359,6 +380,11 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     /// therefore the frame cannot be published as Trigger-eligible.
     msdu_lengths: [u16; SLOTS],
     psdu_lengths: [u16; SLOTS],
+    /// MAC inserts one four-byte HE-Control field for this MPDU.
+    ///
+    /// The encoded frame and low fourteen-bit metadata length exclude those
+    /// bytes; DMA metadata byte seven bit zero owns the insertion.
+    hardware_he_control: [bool; SLOTS],
     empty_delimiters: [u8; SLOTS],
     descriptor_capacities: [u16; SLOTS],
     state: TxSlotState,
@@ -384,6 +410,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             hardware_mic_lengths: [0; SLOTS],
             msdu_lengths: [0; SLOTS],
             psdu_lengths: [0; SLOTS],
+            hardware_he_control: [false; SLOTS],
             empty_delimiters: [0; SLOTS],
             descriptor_capacities: [0; SLOTS],
             state: TxSlotState::Free,
@@ -601,6 +628,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 storage.hardware_mic_lengths[destination] = storage.hardware_mic_lengths[source];
                 storage.msdu_lengths[destination] = storage.msdu_lengths[source];
                 storage.psdu_lengths[destination] = storage.psdu_lengths[source];
+                storage.hardware_he_control[destination] = storage.hardware_he_control[source];
                 storage.empty_delimiters[destination] = storage.empty_delimiters[source];
                 storage.descriptor_capacities[destination] = storage.descriptor_capacities[source];
             }
@@ -719,6 +747,21 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware_mic_length: u8,
         _empty_delimiters: u8,
     ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_frame_with_hardware_he_control(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            false,
+        )
+    }
+
+    fn can_commit_frame_with_hardware_he_control(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        hardware_he_control: bool,
+    ) -> Result<bool, HtAmpduTxError> {
         if self.state != TxSlotState::Reserved || self.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -744,7 +787,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::FrameTooLong);
         }
 
-        match self.length_after_append(psdu_length) {
+        match self.length_after_append(psdu_length, hardware_he_control) {
             Ok(_) => Ok(true),
             Err(HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(_))) => Ok(false),
             Err(error) => Err(error),
@@ -775,6 +818,35 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
     }
 
+    /// Check one HE frame whose four-byte HE-Control is inserted by hardware.
+    ///
+    /// The DMA-resident frame length remains unchanged. Only APEP accounting
+    /// gains four bytes through metadata byte seven bit zero.
+    pub fn can_commit_hardware_he_control_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<bool, HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let _empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        self.can_commit_frame_with_hardware_he_control(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            true,
+        )
+    }
+
     /// Commit the next encoded MPDU and its hardware-generated trailer.
     ///
     /// `frame_length` is the encoded 802.11 MPDU before the hardware MIC and
@@ -787,12 +859,34 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware_mic_length: u8,
         empty_delimiters: u8,
     ) -> Result<(), HtAmpduTxError> {
+        self.commit_frame_with_hardware_he_control(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+            false,
+        )
+    }
+
+    fn commit_frame_with_hardware_he_control(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+        hardware_he_control: bool,
+    ) -> Result<(), HtAmpduTxError> {
         // SAFETY: no address-bearing field is moved.
         let storage = unsafe { self.get_unchecked_mut() };
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        if !storage.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
+        if !storage.can_commit_frame_with_hardware_he_control(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            hardware_he_control,
+        )? {
             return Err(HtAmpduTxError::AggregateFull);
         }
         let index = usize::from(storage.count);
@@ -819,6 +913,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         buffer[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
         buffer[4] = empty_delimiters;
         buffer[5..TX_AMPDU_METADATA_SIZE].fill(0);
+        if hardware_he_control {
+            // SOURCE: complete `_oracles/libpp.a[pp_he.o]::
+            // ppCalSubFrameLength` uses byte seven bit zero as the four-byte
+            // on-air insertion term. HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30
+            // captured vendor metadata word one as 0x0100_0000 while CCMP
+            // remained immediately after the QoS header in DMA.
+            buffer[7] = 1;
+        }
         let trailer_start = TX_AMPDU_METADATA_SIZE + frame_length;
         buffer[trailer_start..transfer_length].fill(0);
         buffer[transfer_length..usize::from(descriptor_capacity)].fill(0);
@@ -830,9 +932,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // generation so Trigger publication fails closed.
         storage.msdu_lengths[index] = 0;
         storage.psdu_lengths[index] = psdu_length;
+        storage.hardware_he_control[index] = hardware_he_control;
         storage.empty_delimiters[index] = empty_delimiters;
         storage.descriptor_capacities[index] = descriptor_capacity;
-        storage.prepared_length = storage.length_after_append(psdu_length)?;
+        storage.prepared_length = storage.length_after_append(psdu_length, hardware_he_control)?;
         storage.count += 1;
         Ok(())
     }
@@ -856,6 +959,38 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
         self.commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
+    }
+
+    /// Commit one HE MPDU with a hardware-inserted HE-Control field.
+    ///
+    /// Unlike the former placeholder workaround, this does not move CCMP or
+    /// increase the low fourteen-bit DMA MPDU length. It publishes the exact
+    /// vendor metadata byte-seven bit and adds four only to assembled APEP
+    /// accounting.
+    pub fn commit_hardware_he_control_frame(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<(), HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        self.commit_frame_with_hardware_he_control(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+            true,
+        )
     }
 
     /// Commit one HE MPDU together with its original MSDU byte count.
@@ -885,6 +1020,34 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // SAFETY: commit succeeded in Reserved state and incremented count
         // exactly once. The pinned object's address-bearing fields do not
         // move; this writes only the just-committed slot's scalar metadata.
+        unsafe { self.get_unchecked_mut() }.msdu_lengths[index] = msdu_length;
+        Ok(())
+    }
+
+    /// Commit a Trigger-eligible HE MPDU with hardware HE-Control insertion.
+    pub fn commit_hardware_he_control_msdu_frame(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        msdu_length: usize,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<(), HtAmpduTxError> {
+        let msdu_length = u16::try_from(msdu_length)
+            .ok()
+            .filter(|length| *length != 0)
+            .ok_or(HtAmpduTxError::TriggerMsduLengthUnavailable)?;
+        let index = usize::from(self.count);
+        self.as_mut().commit_hardware_he_control_frame(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+        )?;
+        // SAFETY: the successful commit incremented count once while retaining
+        // the same pinned allocation and exclusive software ownership.
         unsafe { self.get_unchecked_mut() }.msdu_lengths[index] = msdu_length;
         Ok(())
     }
@@ -1044,6 +1207,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             plcp1: image.plcp1,
             he_signal_a1: image.he_signal_a1,
             he_signal_a2_length: image.he_signal_a2_length,
+            software_he_control: None,
             power: image.power,
             length_control: image.length_control,
             descriptor_count_a: image.descriptor_count_a,
@@ -1151,6 +1315,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             plcp1: image.plcp1,
             he_signal_a1: image.he_signal_a1,
             he_signal_a2_length: image.he_signal_a2_length,
+            software_he_control: None,
             power: image.power,
             length_control: image.length_control,
             descriptor_count_a: image.descriptor_count_a,
@@ -1340,9 +1505,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// O(n²).
     ///
     /// SOURCE: complete `_oracles/libpp.a[pp.o]::{ppCalSubFrameLength,
-    /// ppCalTxAMPDULength}` and the equivalent finite rules in
+    /// ppCalTxAMPDULength}`, complete `_oracles/libpp.a[pp_he.o]::
+    /// ppCalSubFrameLength`, and the equivalent finite rules in
     /// [`HtAmpduLengthAccumulator`].
-    fn length_after_append(&self, psdu_length: u16) -> Result<u16, HtAmpduTxError> {
+    fn length_after_append(
+        &self,
+        psdu_length: u16,
+        hardware_he_control: bool,
+    ) -> Result<u16, HtAmpduTxError> {
         if psdu_length == 0 {
             return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
         }
@@ -1360,7 +1530,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 ))?;
         }
         next = next
-            .checked_add(4 + u32::from(psdu_length))
+            .checked_add(
+                4 + u32::from(psdu_length)
+                    + if hardware_he_control {
+                        u32::from(HARDWARE_HE_CONTROL_LENGTH)
+                    } else {
+                        0
+                    },
+            )
             .ok_or(HtAmpduTxError::Length(
                 HtAmpduLengthError::AggregateTooLong(u32::MAX),
             ))?;
@@ -1378,9 +1555,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .map_err(HtAmpduTxError::Length)?;
         for index in 0..usize::from(self.count) {
             length
-                .push(
+                .push_with_hardware_he_control(
                     u32::from(self.psdu_lengths[index]),
                     self.empty_delimiters[index],
+                    self.hardware_he_control[index],
                 )
                 .map_err(HtAmpduTxError::Length)?;
         }
@@ -3169,6 +3347,45 @@ mod tests {
         // SAFETY: Reserved state proves hardware has not observed the buffer.
         let first = unsafe { &*storage.buffers[0].0.get() };
         assert_eq!(first[4], 1);
+    }
+
+    #[test]
+    fn hardware_he_control_uses_vendor_metadata_bit_without_dma_placeholder() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // this pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        let rate = HeRate::new(
+            crate::tx::HeMcs::Mcs9,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        let frame = storage.as_mut().next_frame_buffer(cookie).unwrap();
+        frame[..64].fill(0xa5);
+        // Model the QoS/CCMP boundary: CCMP starts immediately at byte 26.
+        frame[26..34].copy_from_slice(&[0x0f, 0, 0, 0x20, 0, 0, 0, 0]);
+        storage
+            .as_mut()
+            .commit_hardware_he_control_frame(cookie, 64, 8, rate, HtAmpduDensity::NoRestriction)
+            .unwrap();
+
+        // Base MPDU length is frame + MIC + FCS = 76. Hardware HE-Control is
+        // encoded only by metadata[7].bit0 and contributes four to APEP.
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                bytes: 84,
+                subframes: 1,
+            }
+        );
+        // SAFETY: Reserved state proves hardware has not observed the buffer.
+        let dma = unsafe { &*storage.buffers[0].0.get() };
+        assert_eq!(&dma[..4], &76_u32.to_le_bytes());
+        assert_eq!(&dma[4..8], &0x0100_0000_u32.to_le_bytes());
+        assert_eq!(
+            &dma[TX_AMPDU_METADATA_SIZE + 26..TX_AMPDU_METADATA_SIZE + 34],
+            &[0x0f, 0, 0, 0x20, 0, 0, 0, 0]
+        );
     }
 
     #[test]

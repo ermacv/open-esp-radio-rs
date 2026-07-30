@@ -62,6 +62,12 @@ pub struct MacHeTxProgram {
     pub plcp1: u32,
     pub he_signal_a1: u32,
     pub he_signal_a2_length: u32,
+    /// Explicit software HE-Control image, when one is present.
+    ///
+    /// `None` preserves the vendor hardware-generated path used for BSR.
+    /// `Some` writes the complete four-byte OMC/other A-Control image and
+    /// selects it through the independent per-queue override bit.
+    pub software_he_control: Option<u32>,
     pub power: u32,
     pub length_control: u32,
     pub descriptor_count_a: u8,
@@ -88,6 +94,8 @@ pub struct MacHeTxVectorSnapshot {
     pub plcp1: u32,
     pub he_signal_a1: u32,
     pub he_signal_a2_length: u32,
+    pub he_control: u32,
+    pub software_he_control_enabled: bool,
     pub power: u32,
     pub length_control: u32,
 }
@@ -157,6 +165,19 @@ impl RadioRegisters {
                 .he_su_signal_a2_length(bank)
                 .read()
                 .bits(),
+            he_control: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .he_control(bank)
+                .read()
+                .bits(),
+            software_he_control_enabled: self
+                .peripherals
+                .wifi_mac_tx_queue_vector
+                .he_control_config(bank)
+                .read()
+                .software_he_control_enable()
+                .bit_is_set(),
             power: self
                 .peripherals
                 .wifi_mac_tx_queue_vector
@@ -361,7 +382,6 @@ impl RadioRegisters {
                 .power(bank)
                 .write_with_zero(|w| w.bits(program.power));
         }
-
         control_bank
             .config(bank)
             .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
@@ -472,6 +492,33 @@ impl RadioRegisters {
                 .wifi_mac_tx_queue_vector
                 .length_control(bank)
                 .write_with_zero(|w| w.bits(program.length_control));
+        }
+        // SOURCE: complete `_oracles/libpp.a[hal_mac_tx.o]::
+        // hal_mac_tx_set_ppdu` calls complete
+        // `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_set_htc` immediately after
+        // `mac_tx_set_hesig`. That leaf always publishes the complete word,
+        // then sets or clears bit 28 through a fresh-read RMW. A missing
+        // software image is not "no HE-Control": it deliberately leaves the
+        // hardware-generated BSR path selected.
+        let (he_control, software_he_control_enabled) = program
+            .software_he_control
+            .map_or((0, false), |image| (image, true));
+        unsafe {
+            self.peripherals
+                .wifi_mac_tx_queue_vector
+                .he_control(bank)
+                .write_with_zero(|w| w.bits(he_control));
+        }
+        self.peripherals
+            .wifi_mac_tx_queue_vector
+            .he_control_config(bank)
+            .modify(|_, w| {
+                w.software_he_control_enable()
+                    .bit(software_he_control_enabled)
+            });
+        // The complete parent selects and publishes the data/RTS power pair
+        // only after the HE-Control leaf returns.
+        unsafe {
             self.peripherals
                 .wifi_mac_tx_queue_vector
                 .power(bank)

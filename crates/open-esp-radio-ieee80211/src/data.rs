@@ -7,6 +7,7 @@
 pub const ETHERNET_HEADER_LEN: usize = 14;
 pub const IEEE80211_LEGACY_DATA_HEADER_LEN: usize = 24;
 pub const IEEE80211_QOS_DATA_HEADER_LEN: usize = 26;
+pub const IEEE80211_HE_CONTROL_LEN: usize = 4;
 pub const LLC_SNAP_HEADER_LEN: usize = 8;
 
 const ETHER_TYPE_EAPOL: u16 = 0x888e;
@@ -14,6 +15,7 @@ const IEEE80211_DATA: u8 = 0x08;
 const IEEE80211_QOS_DATA: u8 = 0x88;
 const IEEE80211_TO_DS: u8 = 0x01;
 const IEEE80211_FROM_DS: u8 = 0x02;
+const IEEE80211_ORDER: u8 = 0x80;
 const IEEE80211_MORE_FRAGMENTS: u8 = 0x04;
 const IEEE80211_QOS_AMSDU_PRESENT: u8 = 0x80;
 const QOS_NO_ACK_POLICY: u8 = 0x20;
@@ -27,14 +29,59 @@ pub enum DataInterfaceRole {
     AccessPoint,
 }
 
+/// HE-Control policy for an ordinary QoS data MPDU.
+///
+/// The ESP32-S31 vendor path sets Frame Control's Order bit while keeping
+/// CCMP immediately after the 26-byte DMA-resident QoS header. Its MAC-owned
+/// metadata separately accounts for the four bytes inserted on air. Keeping
+/// this choice explicit prevents an ordinary HT QoS frame from accidentally
+/// advertising a field that is absent on air.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_he.o]::
+/// ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
+/// `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC
+/// word and its software-select bit. Complete `_oracles/libpp.a[pp_he.o]::
+/// ppCalSubFrameLength` adds four bytes when DMA metadata byte seven bit zero
+/// is set. `HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30` captured vendor DMA
+/// with no placeholder, metadata byte seven equal to one, and an intact CCMP
+/// header following the hardware-inserted HE-Control field on air.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DataHeControl {
+    #[default]
+    Disabled,
+    HardwareGeneratedBufferStatusReport,
+}
+
+impl DataHeControl {
+    /// Bytes inserted into the on-air MPDU by MAC hardware.
+    ///
+    /// These bytes are not present in the chip-independent encoded frame.
+    pub const fn inserted_air_len(self) -> usize {
+        match self {
+            Self::Disabled => 0,
+            Self::HardwareGeneratedBufferStatusReport => IEEE80211_HE_CONTROL_LEN,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DataEncapPlan {
+    /// Complete DMA-resident 802.11 header. A hardware-generated HE-Control
+    /// field is inserted on air and is deliberately absent here.
     pub header: [u8; IEEE80211_QOS_DATA_HEADER_LEN],
     pub header_len: u8,
     pub llc_snap: [u8; LLC_SNAP_HEADER_LEN],
     pub descriptor_multicast: bool,
     pub queue_class: u8,
     pub packet_type: u8,
+    pub he_control: DataHeControl,
+}
+
+impl DataEncapPlan {
+    /// Complete DMA prefix before plaintext/CCMP payload.
+    pub const fn dma_header_len(self) -> usize {
+        self.header_len as usize
+    }
 }
 
 /// Bounded 802.11-to-Ethernet transform for one ordinary STA/AP MSDU.
@@ -199,6 +246,36 @@ pub const fn plan_data_encapsulation(
     peer_qos: bool,
     no_ack_policy: bool,
 ) -> Option<DataEncapPlan> {
+    plan_data_encapsulation_with_he_control(
+        role,
+        bssid,
+        interface_mac,
+        ethernet,
+        priority,
+        peer_qos,
+        no_ack_policy,
+        DataHeControl::Disabled,
+    )
+}
+
+/// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
+///
+/// SOURCE: complete
+/// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
+/// sets byte-one bit seven but does not extend or move the DMA header.
+/// Complete `_oracles/libpp.a[pp_he.o]::ppCalSubFrameLength` accounts for the
+/// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
+/// metadata remains outside this IEEE 802.11 encoder.
+pub const fn plan_data_encapsulation_with_he_control(
+    role: DataInterfaceRole,
+    bssid: [u8; 6],
+    interface_mac: [u8; 6],
+    ethernet: [u8; ETHERNET_HEADER_LEN],
+    priority: u8,
+    peer_qos: bool,
+    no_ack_policy: bool,
+    he_control: DataHeControl,
+) -> Option<DataEncapPlan> {
     let class = match queue_class(priority) {
         Some(value) => value,
         None => return None,
@@ -216,6 +293,14 @@ pub const fn plan_data_encapsulation(
     let descriptor_multicast =
         matches!(role, DataInterfaceRole::AccessPoint) && destination[0] & 1 != 0;
     let qos = peer_qos && !descriptor_multicast;
+    if !qos
+        && matches!(
+            he_control,
+            DataHeControl::HardwareGeneratedBufferStatusReport
+        )
+    {
+        return None;
+    }
     let mut header = [0_u8; IEEE80211_QOS_DATA_HEADER_LEN];
     header[0] = if qos {
         IEEE80211_QOS_DATA
@@ -241,6 +326,14 @@ pub const fn plan_data_encapsulation(
     if qos {
         header[24] = priority | if no_ack_policy { QOS_NO_ACK_POLICY } else { 0 };
     }
+    if matches!(
+        he_control,
+        DataHeControl::HardwareGeneratedBufferStatusReport
+    ) {
+        // The chip-specific DMA owner separately marks the four-byte hardware
+        // insertion; the encoded QoS header itself remains 26 bytes.
+        header[1] |= IEEE80211_ORDER;
+    }
 
     let packet_class = if qos { class } else { 0 };
     Some(DataEncapPlan {
@@ -254,6 +347,7 @@ pub const fn plan_data_encapsulation(
         descriptor_multicast,
         queue_class: class,
         packet_type: 10 + packet_class,
+        he_control,
     })
 }
 
@@ -499,6 +593,41 @@ mod tests {
         assert_eq!(&plan.header[16..22], &DESTINATION);
         assert_eq!(&plan.header[24..26], &[7, 0]);
         assert_eq!(plan.queue_class, 0);
+        assert_eq!(plan.he_control, DataHeControl::Disabled);
+    }
+
+    #[test]
+    fn hardware_bsr_sets_order_without_moving_dma_payload() {
+        let plan = plan_data_encapsulation_with_he_control(
+            DataInterfaceRole::Station,
+            BSSID,
+            AP_MAC,
+            ethernet(DESTINATION),
+            0,
+            true,
+            false,
+            DataHeControl::HardwareGeneratedBufferStatusReport,
+        )
+        .unwrap();
+        assert_eq!(&plan.header[..2], &[0x88, 0x81]);
+        assert_eq!(plan.header_len, IEEE80211_QOS_DATA_HEADER_LEN as u8);
+        assert_eq!(plan.dma_header_len(), IEEE80211_QOS_DATA_HEADER_LEN);
+        assert_eq!(plan.he_control.inserted_air_len(), IEEE80211_HE_CONTROL_LEN);
+        assert_eq!(
+            plan.he_control,
+            DataHeControl::HardwareGeneratedBufferStatusReport
+        );
+        assert!(plan_data_encapsulation_with_he_control(
+            DataInterfaceRole::Station,
+            BSSID,
+            AP_MAC,
+            ethernet(DESTINATION),
+            0,
+            false,
+            false,
+            DataHeControl::HardwareGeneratedBufferStatusReport,
+        )
+        .is_none());
     }
 
     #[test]

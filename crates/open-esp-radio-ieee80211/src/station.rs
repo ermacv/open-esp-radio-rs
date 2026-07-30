@@ -6,7 +6,10 @@
 
 use crate::{
     ccmp::CCMP_HEADER_LEN,
-    data::{plan_data_encapsulation, DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN},
+    data::{
+        plan_data_encapsulation, plan_data_encapsulation_with_he_control, DataHeControl,
+        DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN,
+    },
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
@@ -403,6 +406,7 @@ pub enum StationFrameError {
     AmsduTooLong { length: usize, maximum: usize },
     SequenceNumberOutOfRange,
     UserPriorityOutOfRange,
+    HeControlRequiresQos,
     OutputTooSmall { required: usize },
 }
 
@@ -835,12 +839,33 @@ pub struct StaProtectedDataFrame<'a> {
 
 impl StaProtectedDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        self.encode_with_he_control(DataHeControl::Disabled, output)
+    }
+
+    /// Encode a protected QoS MPDU with a hardware-generated HE-Control field.
+    ///
+    /// The returned chip-independent DMA image keeps CCMP immediately after
+    /// the 26-byte QoS header. ESP32-S31 accounts for the four bytes inserted
+    /// on air in private TX metadata, not as bytes in this frame.
+    pub fn encode_with_he_control(
+        self,
+        he_control: DataHeControl,
+        output: &mut [u8],
+    ) -> Result<usize, StationFrameError> {
         validate_peer(self.bssid, self.sequence_number)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
         }
+        if !self.peer_qos
+            && matches!(
+                he_control,
+                DataHeControl::HardwareGeneratedBufferStatusReport
+            )
+        {
+            return Err(StationFrameError::HeControlRequiresQos);
+        }
         let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
-        let mut plan = plan_data_encapsulation(
+        let mut plan = plan_data_encapsulation_with_he_control(
             DataInterfaceRole::Station,
             self.bssid,
             self.source,
@@ -848,13 +873,15 @@ impl StaProtectedDataFrame<'_> {
             self.user_priority,
             self.peer_qos,
             false,
+            he_control,
         )
         .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         // Exact `net80211_tx::encapsulate_ordinary` mutation after successful
         // CCMP key selection.
         plan.header[1] |= 0x40;
         let header_len = usize::from(plan.header_len);
-        let required = header_len
+        let dma_header_len = plan.dma_header_len();
+        let required = dma_header_len
             .checked_add(CCMP_HEADER_LEN)
             .and_then(|length| length.checked_add(plan.llc_snap.len()))
             .and_then(|length| length.checked_add(self.payload.len()))
@@ -869,8 +896,8 @@ impl StaProtectedDataFrame<'_> {
         frame.fill(0);
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
         frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
-        let ccmp_end = header_len + CCMP_HEADER_LEN;
-        frame[header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
+        let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
+        frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
         let llc_end = ccmp_end + plan.llc_snap.len();
         frame[ccmp_end..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(self.payload);
@@ -1659,6 +1686,33 @@ mod tests {
         assert_eq!(&output[24..32], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
         assert_eq!(&output[32..40], &[0xaa, 0xaa, 3, 0, 0, 0, 0x88, 0x8e]);
         assert_eq!(&output[40..len], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn protected_he_control_keeps_ccmp_immediately_after_qos() {
+        let mut output = [0xa5; 64];
+        let len = StaProtectedDataFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: 0x123,
+            user_priority: 0,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ether_type: 0x0806,
+            payload: &[1, 2, 3],
+        }
+        .encode_with_he_control(
+            DataHeControl::HardwareGeneratedBufferStatusReport,
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(len, 45);
+        assert_eq!(&output[..2], &[0x88, 0xc1]);
+        assert_eq!(&output[26..34], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        assert_eq!(&output[34..42], &[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x06]);
+        assert_eq!(&output[42..len], &[1, 2, 3]);
     }
 
     #[test]

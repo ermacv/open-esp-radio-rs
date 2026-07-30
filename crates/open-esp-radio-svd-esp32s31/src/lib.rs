@@ -12523,26 +12523,30 @@ pub mod wifi_mac_tx_queue_vector {
         he_rts_control: (),
         _reserved2: [u8; 0x04],
         pti: (),
-        _reserved3: [u8; 0x08],
-        ht_signal: (),
+        _reserved3: [u8; 0x04],
+        he_control: (),
         _reserved4: [u8; 0x04],
-        vht_signal_1: (),
+        ht_signal: (),
         _reserved5: [u8; 0x04],
-        vht_mode: (),
+        vht_signal_1: (),
         _reserved6: [u8; 0x04],
-        he_su_signal_a1: (),
+        vht_mode: (),
         _reserved7: [u8; 0x04],
-        he_su_signal_a2_length: (),
+        he_su_signal_a1: (),
         _reserved8: [u8; 0x04],
-        he_mpdu_length_tail: (),
+        he_su_signal_a2_length: (),
         _reserved9: [u8; 0x04],
-        power: (),
+        he_mpdu_length_tail: (),
         _reserved10: [u8; 0x04],
+        power: (),
+        _reserved11: [u8; 0x04],
         ht_descriptor_counts: (),
-        _reserved11: [u8; 0x08],
+        _reserved12: [u8; 0x08],
         data_length: (),
-        _reserved12: [u8; 0x04],
+        _reserved13: [u8; 0x04],
         length_control: (),
+        _reserved14: [u8; 0x08],
+        he_control_config: (),
     }
     impl RegisterBlock {
         #[doc = "0x00..0x10 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_DBG_READ_KEY_ENTRY,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
@@ -12606,6 +12610,31 @@ pub mod wifi_mac_tx_queue_vector {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(8)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+        #[inline(always)]
+        pub const fn he_control(&self, n: usize) -> &HeControl {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x0c..0x1c - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+        #[inline(always)]
+        pub fn he_control_iter(&self) -> impl Iterator<Item = &HeControl> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
                     .add(124 * n)
                     .cast()
             })
@@ -12710,7 +12739,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
         #[inline(always)]
         pub const fn he_su_signal_a2_length(&self, n: usize) -> &HeSuSignalA2Length {
             #[allow(clippy::no_effect)]
@@ -12724,7 +12753,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+        #[doc = "0x20..0x30 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
         #[inline(always)]
         pub fn he_su_signal_a2_length_iter(&self) -> impl Iterator<Item = &HeSuSignalA2Length> {
             (0..4).map(move |n| unsafe {
@@ -12856,6 +12885,31 @@ pub mod wifi_mac_tx_queue_vector {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(56)
+                    .add(124 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x40..0x50 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+        #[inline(always)]
+        pub const fn he_control_config(&self, n: usize) -> &HeControlConfig {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(64)
+                    .add(124 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x40..0x50 - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+        #[inline(always)]
+        pub fn he_control_config_iter(&self) -> impl Iterator<Item = &HeControlConfig> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(64)
                     .add(124 * n)
                     .cast()
             })
@@ -13087,6 +13141,45 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for PtiSpec {}
         #[doc = "`write(|w| ..)` method takes [`pti::W`](W) writer structure"]
         impl crate::Writable for PtiSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control`] module"]
+    #[doc(alias = "HE_CONTROL")]
+    pub type HeControl = crate::Reg<he_control::HeControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+    pub mod he_control {
+        #[doc = "Register `HE_CONTROL%s` reader"]
+        pub type R = crate::R<HeControlSpec>;
+        #[doc = "Register `HE_CONTROL%s` writer"]
+        pub type W = crate::W<HeControlSpec>;
+        #[doc = "Field `IMAGE` reader - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `IMAGE` writer - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+            #[inline(always)]
+            pub fn image(&self) -> ImageR {
+                ImageR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, HeControlSpec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX\\]; CONFIDENCE\\[instruction-exact\\]. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeControlSpec;
+        impl crate::RegisterSpec for HeControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_control::R`](R) reader structure"]
+        impl crate::Readable for HeControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_control::W`](W) writer structure"]
+        impl crate::Writable for HeControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -13618,10 +13711,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SU_SIGNAL_A2_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a2_length`] module"]
+    #[doc = "HE_SU_SIGNAL_A2_LENGTH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a2_length`] module"]
     #[doc(alias = "HE_SU_SIGNAL_A2_LENGTH")]
     pub type HeSuSignalA2Length = crate::Reg<he_su_signal_a2_length::HeSuSignalA2LengthSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
     pub mod he_su_signal_a2_length {
         #[doc = "Register `HE_SU_SIGNAL_A2_LENGTH%s` reader"]
         pub type R = crate::R<HeSuSignalA2LengthSpec>;
@@ -13635,9 +13728,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type DescriptorClassMatchR = crate::BitReader;
         #[doc = "Field `DESCRIPTOR_CLASS_MATCH` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_TX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
         pub type DescriptorClassMatchW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `APEP_LENGTH` reader - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+        #[doc = "Field `APEP_LENGTH` reader - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
         pub type ApepLengthR = crate::FieldReader<u16>;
-        #[doc = "Field `APEP_LENGTH` writer - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+        #[doc = "Field `APEP_LENGTH` writer - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
         pub type ApepLengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
         #[doc = "Field `AMPDU_LENGTH_VALID` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Copy of frame-state bit 12; set in live HE A-MPDU images and clear in the acknowledged HE S-MPDU image."]
         pub type AmpduLengthValidR = crate::BitReader;
@@ -13654,7 +13747,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn descriptor_class_match(&self) -> DescriptorClassMatchR {
                 DescriptorClassMatchR::new(((self.bits >> 10) & 1) != 0)
             }
-            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
             #[inline(always)]
             pub fn apep_length(&self) -> ApepLengthR {
                 ApepLengthR::new(((self.bits >> 11) & 0xffff) as u16)
@@ -13678,7 +13771,7 @@ pub mod wifi_mac_tx_queue_vector {
             ) -> DescriptorClassMatchW<'_, HeSuSignalA2LengthSpec> {
                 DescriptorClassMatchW::new(self, 10)
             }
-            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+            #[doc = "Bits 11:26 - SOURCE\\[BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,BLOB_LIBPP_HAL_HE_TX,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
             #[inline(always)]
             pub fn apep_length(&mut self) -> ApepLengthW<'_, HeSuSignalA2LengthSpec> {
                 ApepLengthW::new(self, 11)
@@ -13689,7 +13782,7 @@ pub mod wifi_mac_tx_queue_vector {
                 AmpduLengthValidW::new(self, 28)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBPP_PP_HE_AMPDU_LENGTH,BLOB_LIBPP_PP_HE_SMPDU_LENGTH,HIL_VENDOR_HE20_MCS9_SU_2026_07_29,HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30,HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeSuSignalA2LengthSpec;
         impl crate::RegisterSpec for HeSuSignalA2LengthSpec {
             type Ux = u32;
@@ -14143,6 +14236,47 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for LengthControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`length_control::W`](W) writer structure"]
         impl crate::Writable for LengthControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HE_CONTROL_CONFIG (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control_config`] module"]
+    #[doc(alias = "HE_CONTROL_CONFIG")]
+    pub type HeControlConfig = crate::Reg<he_control_config::HeControlConfigSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+    pub mod he_control_config {
+        #[doc = "Register `HE_CONTROL_CONFIG%s` reader"]
+        pub type R = crate::R<HeControlConfigSpec>;
+        #[doc = "Register `HE_CONTROL_CONFIG%s` writer"]
+        pub type W = crate::W<HeControlConfigSpec>;
+        #[doc = "Field `SOFTWARE_HE_CONTROL_ENABLE` reader - Use the software HE_CONTROL word instead of the hardware-generated HE-Control value."]
+        pub type SoftwareHeControlEnableR = crate::BitReader;
+        #[doc = "Field `SOFTWARE_HE_CONTROL_ENABLE` writer - Use the software HE_CONTROL word instead of the hardware-generated HE-Control value."]
+        pub type SoftwareHeControlEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 28 - Use the software HE_CONTROL word instead of the hardware-generated HE-Control value."]
+            #[inline(always)]
+            pub fn software_he_control_enable(&self) -> SoftwareHeControlEnableR {
+                SoftwareHeControlEnableR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 28 - Use the software HE_CONTROL word instead of the hardware-generated HE-Control value."]
+            #[inline(always)]
+            pub fn software_he_control_enable(
+                &mut self,
+            ) -> SoftwareHeControlEnableW<'_, HeControlConfigSpec> {
+                SoftwareHeControlEnableW::new(self, 28)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX,HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30,HIL_OPEN_HE_CONTROL_METADATA_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HeControlConfigSpec;
+        impl crate::RegisterSpec for HeControlConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`he_control_config::R`](R) reader structure"]
+        impl crate::Readable for HeControlConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`he_control_config::W`](W) writer structure"]
+        impl crate::Writable for HeControlConfigSpec {
             type Safety = crate::Unsafe;
         }
     }

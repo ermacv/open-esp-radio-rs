@@ -1,13 +1,13 @@
 //! Ownership boundary for MAC interface-address publication.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 /// Finite hardware capability needed to publish the two cold-path addresses.
 pub trait MacInterfaceAddressHardware {
     fn program_sta_ap_addresses(&mut self, station_address: [u8; 6], access_point_address: [u8; 6]);
 }
 
-impl MacInterfaceAddressHardware for RadioRegisters {
+impl MacInterfaceAddressHardware for ColdRadioRegisters {
     fn program_sta_ap_addresses(
         &mut self,
         station_address: [u8; 6],

@@ -1,6 +1,6 @@
 //! Ownership boundary for the direct pre-COEX tail of `hal_init`.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 /// OS-adapter slow-clock calibration reduced to the blob's 18-bit field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +27,7 @@ pub trait MacColdHalTailHardware {
     );
 }
 
-impl MacColdHalTailHardware for RadioRegisters {
+impl MacColdHalTailHardware for ColdRadioRegisters {
     fn initialize_hal_tail(
         &mut self,
         event_mask: u32,

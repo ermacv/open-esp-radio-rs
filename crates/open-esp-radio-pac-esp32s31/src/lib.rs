@@ -1,6 +1,9 @@
 #![no_std]
 
-use core::ptr::{read_volatile, write_volatile};
+use core::{
+    ops::{Deref, DerefMut},
+    ptr::{read_volatile, write_volatile},
+};
 
 mod agc;
 mod baseband;
@@ -57,7 +60,7 @@ pub use mac_he_ofdma::{
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
-pub use mac_interrupt::MacInterruptRegisters;
+pub use mac_interrupt::{MacInterruptRegisters, MacInterruptSetup};
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
@@ -222,15 +225,16 @@ impl Field32 {
     }
 }
 
-/// Unique logical owner of the ESP32-S31 radio register regions.
+/// Unique logical owner of the ESP32-S31 radio register regions after cold
+/// MAC initialization has completed.
 ///
-/// The generated [`svd::Peripherals`] singleton is kept private. Higher layers
-/// retain semantic sequencing and borrow this owner mutably; the only
-/// supported split is the one-shot, finite hard-interrupt capability.
+/// The generated [`svd::Peripherals`] singleton is kept private. This running
+/// owner deliberately has no typed access to the MAC interrupt enable/clear
+/// transaction; that disjoint state belongs to [`MacInterruptSetup`] and then
+/// [`MacInterruptRegisters`].
 pub struct RadioRegisters {
     peripherals: svd::Peripherals,
     wifi_baseband_enabled: bool,
-    mac_interrupt_taken: bool,
 }
 
 impl RadioRegisters {
@@ -246,24 +250,7 @@ impl RadioRegisters {
             // invariant required by `svd2rust::Peripherals::steal`.
             peripherals: unsafe { svd::Peripherals::steal() },
             wifi_baseband_enabled: false,
-            mac_interrupt_taken: false,
         }
-    }
-
-    /// Permanently split the hard-ISR register block from the task owner.
-    ///
-    /// The returned capability contains only MAC interrupt snapshot and
-    /// acknowledge operations. `None` prevents a second safe split.
-    pub fn take_mac_interrupt(&mut self) -> Option<MacInterruptRegisters> {
-        if self.mac_interrupt_taken {
-            return None;
-        }
-        self.mac_interrupt_taken = true;
-        // SAFETY: the generated singleton is already held by `self`, but this
-        // method permanently removes access to its private interrupt member
-        // from every typed `RadioRegisters` API. The returned finite
-        // capability is the sole safe owner of that disjoint register block.
-        Some(unsafe { MacInterruptRegisters::steal_from_radio_owner() })
     }
 
     /// Synchronize the owned Wi-Fi-enable image after a platform PAC update.
@@ -319,9 +306,104 @@ impl RadioRegisters {
     }
 }
 
+/// Pre-runtime radio owner that still controls the cold MAC interrupt fields.
+///
+/// PHY setup, cold MAC initialization and polling-only scan/authentication use
+/// this owner. Consuming [`into_running`](Self::into_running) permanently
+/// removes interrupt enable/clear operations from the ordinary task owner and
+/// returns a one-shot setup token for the later ISR handoff.
+pub struct ColdRadioRegisters {
+    registers: RadioRegisters,
+}
+
+impl ColdRadioRegisters {
+    /// Claim cold radio MMIO when the caller has established unique ownership.
+    ///
+    /// # Safety
+    ///
+    /// No other live owner may mutate the radio through raw pointers, ROM,
+    /// vendor code, another `RadioRegisters`, or another
+    /// `ColdRadioRegisters` value.
+    pub unsafe fn steal() -> Self {
+        Self {
+            // SAFETY: forwarded from the caller's unique cold-radio claim.
+            registers: unsafe { RadioRegisters::steal() },
+        }
+    }
+
+    /// Complete the one-way cold-to-running ownership transition.
+    ///
+    /// This operation itself performs no MMIO. The returned setup token keeps
+    /// MAC interrupts masked until its consuming activation transaction
+    /// creates the ISR-only [`MacInterruptRegisters`] capability.
+    pub fn into_running(self) -> (RadioRegisters, MacInterruptSetup) {
+        // SAFETY: `self` is consumed. `RadioRegisters` exposes no safe
+        // interrupt enable/clear operation, so the returned setup token is the
+        // only safe owner of that disjoint register transaction.
+        let setup = unsafe { MacInterruptSetup::steal_from_cold_radio_owner() };
+        (self.registers, setup)
+    }
+
+    /// Read the cold initializer's currently published interrupt mask.
+    pub fn mac_interrupt_enable(&self) -> u32 {
+        self.registers
+            .peripherals
+            .wifi_mac_interrupt
+            .enable()
+            .read()
+            .event_mask()
+            .bits()
+    }
+
+    /// Mask every MAC event and acknowledge the supplied cold event image.
+    pub fn mask_and_clear_mac_interrupts(&mut self, events: u32) {
+        let interrupt = &self.registers.peripherals.wifi_mac_interrupt;
+        // SAFETY: ENABLE is the complete full-width event bitmap and CLEAR is
+        // a full-width write-one-to-clear event image.
+        unsafe {
+            interrupt
+                .enable()
+                .write_with_zero(|w| w.event_mask().bits(0));
+            interrupt
+                .clear()
+                .write_with_zero(|w| w.events().bits(events));
+        }
+        device_fence();
+    }
+
+    /// Acknowledge a cold polling-phase event image without enabling the ISR.
+    pub fn clear_mac_interrupts(&mut self, events: u32) {
+        // SAFETY: CLEAR is a complete full-width write-one-to-clear bitmap.
+        unsafe {
+            self.registers
+                .peripherals
+                .wifi_mac_interrupt
+                .clear()
+                .write_with_zero(|w| w.events().bits(events))
+        };
+        device_fence();
+    }
+}
+
+impl Deref for ColdRadioRegisters {
+    type Target = RadioRegisters;
+
+    fn deref(&self) -> &Self::Target {
+        &self.registers
+    }
+}
+
+impl DerefMut for ColdRadioRegisters {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.registers
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{mac, power, Field32, RadioRegisters, Register32, RegisterAccess};
+    use super::{
+        mac, power, ColdRadioRegisters, Field32, RadioRegisters, Register32, RegisterAccess,
+    };
 
     fn assert_valid(register: Register32) {
         assert!(RadioRegisters::contains(register.address()));
@@ -358,12 +440,11 @@ mod tests {
     }
 
     #[test]
-    fn mac_interrupt_capability_can_only_be_split_once() {
+    fn cold_owner_is_consumed_by_interrupt_setup_split() {
         // SAFETY: this host test does not access MMIO and creates no second
-        // `RadioRegisters` value; it exercises only the local split state.
-        let mut registers = unsafe { RadioRegisters::steal() };
-        assert!(registers.take_mac_interrupt().is_some());
-        assert!(registers.take_mac_interrupt().is_none());
+        // radio owner; it exercises only the type-level ownership transition.
+        let registers = unsafe { ColdRadioRegisters::steal() };
+        let (_running, _setup) = registers.into_running();
     }
 
     #[test]
@@ -1025,7 +1106,7 @@ mod tests {
     fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = unsafe { RadioRegisters::steal() };
+        let mut registers = unsafe { ColdRadioRegisters::steal() };
         assert!(!registers.initialize_mac_hal_tail(0x19a8_79e0, 0x0004_0000));
         assert!(!registers.initialize_mac_hal_tail(0, u32::MAX));
     }

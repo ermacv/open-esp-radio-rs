@@ -1,8 +1,8 @@
 //! Generated-PAC ownership for the direct pre-COEX tail of `hal_init`.
 
-use super::RadioRegisters;
+use super::ColdRadioRegisters;
 
-impl RadioRegisters {
+impl ColdRadioRegisters {
     /// Apply the complete direct tail through `hal_timer_update_by_rtc`.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::hal_init`,
@@ -23,7 +23,8 @@ impl RadioRegisters {
         // SAFETY: complete hal_init stores the full constant image before any
         // remaining tail operation.
         unsafe {
-            self.peripherals
+            self.registers
+                .peripherals
                 .wifi_mac_interrupt
                 .enable()
                 .write_with_zero(|w| w.event_mask().bits(event_mask));
@@ -31,23 +32,25 @@ impl RadioRegisters {
 
         // This is deliberately a repeated edge: mac_txrx_init already set the
         // same bit, and complete hal_init samples and sets it again here.
-        self.peripherals
+        self.registers
+            .peripherals
             .wifi_mac_txrx_prefix
             .feature_edges()
             .modify(|_, w| w.third_enable_unknown().set_bit());
 
-        let csi = self.peripherals.wifi_mac_rx_csi_control.control();
+        let csi = self.registers.peripherals.wifi_mac_rx_csi_control.control();
         // SAFETY: both values fit their complete eight-bit fields. Keep the
         // fresh-read byte replacements separate and in blob order.
         csi.modify(|_, w| unsafe { w.hal_init_low_byte_unknown().bits(1) });
         csi.modify(|_, w| unsafe { w.hal_init_second_byte_unknown().bits(1) });
 
-        self.peripherals
+        self.registers
+            .peripherals
             .wifi_mac_rx_dma
             .rx_control()
             .modify(|_, w| w.hardware_beacon_reload_unknown().set_bit());
 
-        let rtc = &self.peripherals.wifi_mac_rtc_timer_update;
+        let rtc = &self.registers.peripherals.wifi_mac_rtc_timer_update;
         rtc.control()
             .modify(|_, w| w.rtc_update_enable_unknown().set_bit());
         // SAFETY: the explicit range check above proves the value fits the

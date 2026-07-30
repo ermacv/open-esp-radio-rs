@@ -1,6 +1,6 @@
 //! Ownership boundary for the complete cold COEX/PTI transaction.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 /// The four OSI coexistence event numbers queried by complete cold init.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ pub trait MacColdCoexHardware {
     fn initialize_cold_coex(&mut self, pti: MacColdCoexPti);
 }
 
-impl MacColdCoexHardware for RadioRegisters {
+impl MacColdCoexHardware for ColdRadioRegisters {
     fn initialize_cold_coex(&mut self, pti: MacColdCoexPti) {
         self.initialize_mac_coex(
             pti.rx_ack.value(),

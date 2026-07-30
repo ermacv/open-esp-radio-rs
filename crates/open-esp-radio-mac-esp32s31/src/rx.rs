@@ -8,7 +8,7 @@ use open_esp_radio_ieee80211::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::{ColdRadioRegisters, RadioRegisters};
 
 /// Semantic ownership boundary for the S31 RX descriptor walker.
 ///
@@ -71,6 +71,52 @@ impl RxDma for RadioRegisters {
 
     fn fence(&mut self) {
         RadioRegisters::fence(self);
+    }
+}
+
+impl RxDma for ColdRadioRegisters {
+    fn last_descriptor_low(&mut self) -> u32 {
+        RxDma::last_descriptor_low(&mut **self)
+    }
+
+    fn next_descriptor_low(&mut self) -> u32 {
+        RxDma::next_descriptor_low(&mut **self)
+    }
+
+    fn walker_enabled(&mut self) -> bool {
+        RxDma::walker_enabled(&mut **self)
+    }
+
+    fn reload_pending(&mut self) -> bool {
+        RxDma::reload_pending(&mut **self)
+    }
+
+    fn set_descriptor_high_window(&mut self, address_high: u16) {
+        RxDma::set_descriptor_high_window(&mut **self, address_high);
+    }
+
+    fn write_descriptor_base(&mut self, address: u32) {
+        RxDma::write_descriptor_base(&mut **self, address);
+    }
+
+    fn publish_walker_enable(&mut self) {
+        RxDma::publish_walker_enable(&mut **self);
+    }
+
+    fn request_reload(&mut self) {
+        RxDma::request_reload(&mut **self);
+    }
+
+    fn try_enable_walker(&mut self) -> bool {
+        RxDma::try_enable_walker(&mut **self)
+    }
+
+    fn try_disable_walker(&mut self) -> bool {
+        RxDma::try_disable_walker(&mut **self)
+    }
+
+    fn fence(&mut self) {
+        RxDma::fence(&mut **self);
     }
 }
 

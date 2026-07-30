@@ -1,6 +1,6 @@
 //! Ownership boundary for the finite cold MAC handshake prefix.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacColdStartError {
@@ -20,7 +20,7 @@ pub trait MacColdHandshakeHardware {
     ) -> Result<MacColdStartOutcome, MacColdStartError>;
 }
 
-impl MacColdHandshakeHardware for RadioRegisters {
+impl MacColdHandshakeHardware for ColdRadioRegisters {
     fn begin_cold_handshake(
         &mut self,
         sample_limit: u32,

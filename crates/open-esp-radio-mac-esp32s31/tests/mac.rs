@@ -27,12 +27,11 @@ use open_esp_radio_mac_esp32s31::{
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     registers::{
-        Mmio, MAC_INT_CLEAR, MAC_INT_ENABLE, MAC_INT_STATUS, RX_CONTROL, RX_DESCRIPTOR_BASE,
-        RX_ENABLE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD,
-        TX_CCA_CONTROL, TX_CCA_FORCE_MASK, TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0,
-        TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0, TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0,
-        TX_COMPLETE_Q0, TX_COMPLETE_STATE, TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE,
-        TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
+        Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR,
+        RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD, TX_CCA_CONTROL, TX_CCA_FORCE_MASK,
+        TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
+        TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
+        TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
         build_cold_ring, decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive,
@@ -69,6 +68,10 @@ enum Operation {
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
     ConfigureOpenPromiscuousReceive,
+    ReadInterruptStatus,
+    ReadInterruptEnable,
+    WriteInterruptEnable(u32),
+    ClearInterrupt(u32),
     Fence,
 }
 
@@ -76,6 +79,8 @@ enum Operation {
 struct MockMmio {
     words: BTreeMap<Register32, u32>,
     operations: Vec<Operation>,
+    interrupt_status: u32,
+    interrupt_enable: u32,
 }
 
 impl MockMmio {
@@ -167,13 +172,14 @@ impl RxDma for MockMmio {
 
 impl MacInterrupt for MockMmio {
     fn snapshot(&mut self) -> (u32, u32) {
-        let status = self.read32(MAC_INT_STATUS);
-        let enabled = self.read32(MAC_INT_ENABLE);
-        (status, enabled)
+        self.operations.push(Operation::ReadInterruptStatus);
+        self.operations.push(Operation::ReadInterruptEnable);
+        (self.interrupt_status, self.interrupt_enable)
     }
 
     fn acknowledge(&mut self, events: u32) {
-        self.write32(MAC_INT_CLEAR, events);
+        self.operations.push(Operation::ClearInterrupt(events));
+        self.interrupt_status &= !events;
         Mmio::fence(self);
     }
 }
@@ -302,8 +308,10 @@ impl MacColdHandshakeHardware for MockMmio {
                 });
             }
         };
-        self.write32(mac::INT_ENABLE, 0);
-        self.write32(mac::INT_CLEAR, u32::MAX);
+        self.interrupt_enable = 0;
+        self.interrupt_status = 0;
+        self.operations.push(Operation::WriteInterruptEnable(0));
+        self.operations.push(Operation::ClearInterrupt(u32::MAX));
         Ok(MacColdStartOutcome {
             handshake_samples: samples,
             handshake_value: value,
@@ -374,7 +382,9 @@ impl MacColdEnableHardware for MockMmio {
     fn enable_mac_interrupts(&mut self, event_mask: u32) {
         let current = self.read32(mac_init::R_4C00);
         self.write32(mac_init::R_4C00, current & !0x0000_00f0);
-        self.write32(mac::INT_ENABLE, event_mask);
+        self.interrupt_enable = event_mask;
+        self.operations
+            .push(Operation::WriteInterruptEnable(event_mask));
     }
 }
 
@@ -924,8 +934,8 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             Operation::Read(mac_init::HANDSHAKE),
             Operation::Write(mac_init::HANDSHAKE, 3),
             Operation::Read(mac_init::HANDSHAKE),
-            Operation::Write(mac::INT_ENABLE, 0),
-            Operation::Write(mac::INT_CLEAR, u32::MAX),
+            Operation::WriteInterruptEnable(0),
+            Operation::ClearInterrupt(u32::MAX),
         ]
     );
     assert_eq!(
@@ -995,13 +1005,13 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert!(mmio
         .operations()
         .contains(&Operation::ConfigureOpenPromiscuousReceive));
-    assert_eq!(mmio.words.get(&mac::INT_ENABLE), Some(&0x19a8_79e0));
+    assert_eq!(mmio.interrupt_enable, 0x19a8_79e0);
     assert!(mmio.operations().windows(3).any(|operations| {
         operations
             == [
                 Operation::Read(mac_init::R_4C00),
                 Operation::Write(mac_init::R_4C00, 0),
-                Operation::Write(mac::INT_ENABLE, 0x19a8_79e0),
+                Operation::WriteInterruptEnable(0x19a8_79e0),
             ]
     }));
     assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
@@ -1215,8 +1225,10 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
             Operation::Read(mac_init::HANDSHAKE),
         ]
     );
-    assert!(!mmio.words.contains_key(&mac::INT_ENABLE));
-    assert!(!mmio.words.contains_key(&mac::INT_CLEAR));
+    assert!(!mmio.operations().iter().any(|operation| matches!(
+        operation,
+        Operation::WriteInterruptEnable(_) | Operation::ClearInterrupt(_)
+    )));
 }
 
 #[test]
@@ -1908,11 +1920,8 @@ fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
 #[test]
 fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let mut mmio = MockMmio::default();
-    mmio.set(MAC_INT_ENABLE, u32::MAX);
-    mmio.set(
-        MAC_INT_STATUS,
-        MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS | 0x20,
-    );
+    mmio.interrupt_enable = u32::MAX;
+    mmio.interrupt_status = MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS | 0x20;
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
@@ -1924,7 +1933,7 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
     assert!(mmio
         .operations()
-        .contains(&Operation::Write(MAC_INT_CLEAR, snapshot.status)));
+        .contains(&Operation::ClearInterrupt(snapshot.status)));
 }
 
 #[test]

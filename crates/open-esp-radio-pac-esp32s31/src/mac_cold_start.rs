@@ -1,6 +1,6 @@
 //! Generated-PAC ownership for the cold MAC handshake prefix.
 
-use super::RadioRegisters;
+use super::ColdRadioRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacColdHandshakeOutcome {
@@ -14,7 +14,7 @@ pub struct MacColdHandshakeTimeout {
     pub observed: u32,
 }
 
-impl RadioRegisters {
+impl ColdRadioRegisters {
     /// Request cold MAC initialization, wait for READY, then mask and clear
     /// every MAC event.
     ///
@@ -26,7 +26,7 @@ impl RadioRegisters {
         &mut self,
         sample_limit: u32,
     ) -> Result<MacColdHandshakeOutcome, MacColdHandshakeTimeout> {
-        let handshake = self.peripherals.wifi_mac_cold_handshake.control();
+        let handshake = self.registers.peripherals.wifi_mac_cold_handshake.control();
         handshake.modify(|_, w| w.request().set_bit());
 
         let mut samples = 0;
@@ -44,7 +44,7 @@ impl RadioRegisters {
             }
         };
 
-        let interrupt = &self.peripherals.wifi_mac_interrupt;
+        let interrupt = &self.registers.peripherals.wifi_mac_interrupt;
         // SAFETY: both are complete full-register images from the recovered
         // prefix; CLEAR is write-only and accepts the sampled event bitmap.
         unsafe {

@@ -8,8 +8,9 @@ use open_esp_radio_ieee80211::trigger::{
     TriggerParseError, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
 };
 use open_esp_radio_pac_esp32s31::{
-    MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram,
-    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters, RadioRegisters,
+    ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
+    MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
+    RadioRegisters,
 };
 
 use crate::{
@@ -162,6 +163,52 @@ impl TxHardware for RadioRegisters {
 
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
         self.detach_completed_mac_tx(queue)
+    }
+}
+
+impl TxHardware for ColdRadioRegisters {
+    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+        TxHardware::prepare_legacy_tx(&mut **self, queue, program)
+    }
+
+    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
+        TxHardware::start_legacy_tx(&mut **self, queue, plcp0);
+    }
+
+    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+        TxHardware::prepare_ht_tx(&mut **self, queue, program)
+    }
+
+    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
+        TxHardware::start_ht_tx(&mut **self, queue, plcp0);
+    }
+
+    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
+        TxHardware::prepare_he_tx(&mut **self, queue, program)
+    }
+
+    fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
+        TxHardware::start_he_tx(&mut **self, queue, plcp0);
+    }
+
+    fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
+        TxHardware::he_tx_vector_snapshot(&**self, queue)
+    }
+
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+        TxHardware::take_tx_completion(&mut **self, queue)
+    }
+
+    fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
+        TxHardware::begin_tx_timeout_abort(&mut **self, queue)
+    }
+
+    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
+        TxHardware::finish_tx_timeout_abort(&mut **self, queue)
+    }
+
+    fn detach_completed_tx(&mut self, queue: u8) -> bool {
+        TxHardware::detach_completed_tx(&mut **self, queue)
     }
 }
 

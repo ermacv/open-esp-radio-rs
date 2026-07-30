@@ -1,7 +1,7 @@
 //! Ownership boundary for bounded complete `hal_he_init` transactions.
 
 use open_esp_radio_pac_esp32s31::{
-    MacTxPowerPair, MacTxPowerTable, RadioRegisters, MAC_TX_POWER_RATE_COUNT,
+    ColdRadioRegisters, MacTxPowerPair, MacTxPowerTable, MAC_TX_POWER_RATE_COUNT,
 };
 
 pub trait MacColdHeHardware {
@@ -43,7 +43,7 @@ pub fn run_tx_power_diagnostic_queries(source: &mut impl MacTxPowerSource) {
     }
 }
 
-impl MacColdHeHardware for RadioRegisters {
+impl MacColdHeHardware for ColdRadioRegisters {
     fn initialize_he_prefix(&mut self) {
         self.initialize_mac_he_prefix();
     }

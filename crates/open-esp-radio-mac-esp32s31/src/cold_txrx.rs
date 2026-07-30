@@ -1,6 +1,6 @@
 //! Ownership boundary for the complete cold `mac_txrx_init` transaction.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 /// Vendor MAC-delay jitter reduced to the only representable hardware range.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,7 +24,7 @@ pub trait MacColdTxRxHardware {
     fn initialize_txrx_suffix(&mut self);
 }
 
-impl MacColdTxRxHardware for RadioRegisters {
+impl MacColdTxRxHardware for ColdRadioRegisters {
     fn initialize_txrx_prefix(&mut self) {
         self.initialize_mac_txrx_prefix();
     }

@@ -7,10 +7,8 @@
 
 use crate::{Register32, RegisterAccess};
 
-pub const INT_ENABLE: Register32 = Register32::new(0x2010_4c40);
 pub const INT_RAW: Register32 = Register32::new(0x2010_4c44);
 pub const INT_STATUS: Register32 = Register32::new(0x2010_4c48);
-pub const INT_CLEAR: Register32 = Register32::new(0x2010_4c4c);
 
 /// RX descriptor-walker control.
 ///

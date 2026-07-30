@@ -6,7 +6,9 @@ extern crate std;
 use core::future::Future;
 use core::marker::PhantomData;
 
-pub use open_esp_radio_pac_esp32s31::{power as radio_registers, RadioRegisters, Register32};
+pub use open_esp_radio_pac_esp32s31::{
+    power as radio_registers, ColdRadioRegisters, RadioRegisters, Register32,
+};
 pub mod analog_i2c;
 pub mod pbus;
 pub mod phy_agc;
@@ -46,7 +48,7 @@ pub mod state {
 /// driver's register capability to the safe peripheral owner.
 pub struct Radio<P, State = state::Owned> {
     peripheral: P,
-    registers: RadioRegisters,
+    registers: ColdRadioRegisters,
     state: PhantomData<State>,
 }
 
@@ -85,7 +87,7 @@ impl<P> Radio<P, state::Owned> {
     pub unsafe fn claim(peripheral: P) -> Self {
         Self {
             peripheral,
-            registers: unsafe { RadioRegisters::steal() },
+            registers: unsafe { ColdRadioRegisters::steal() },
             state: PhantomData,
         }
     }
@@ -158,6 +160,16 @@ impl<P> Radio<P, state::Powered> {
     #[doc(hidden)]
     pub fn parts_mut(&mut self) -> (&mut P, &mut RadioRegisters) {
         (&mut self.peripheral, &mut self.registers)
+    }
+
+    /// Consume the powered owner at the cold-MAC/runtime boundary.
+    ///
+    /// The returned [`ColdRadioRegisters`] must complete cold MAC setup and
+    /// then be consumed by `ColdRadioRegisters::into_running` before a task can
+    /// install the finite hard-interrupt capability.
+    #[doc(hidden)]
+    pub fn into_parts(self) -> (P, ColdRadioRegisters) {
+        (self.peripheral, self.registers)
     }
 
     /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.

@@ -3376,11 +3376,21 @@ write-to-clear followed by the device fence. Production implements both edges
 through the generated `WIFI_MAC_INTERRUPT` peripheral; the host model retains
 the exact read/read/write/fence trace.
 
-`RadioRegisters::take_mac_interrupt` performs a one-way split and returns a
-non-constructible `MacInterruptRegisters` token only once. The HIL publishes
-that token before binding the interrupt and its handler is the sole mutable
-consumer. This replaces the application's former `InterruptMmio`, which could
-accept any compatibility `Register32` and performed raw volatile access.
+`ColdRadioRegisters::into_running` now consumes the complete cold owner and
+returns a runtime `RadioRegisters` plus a non-constructible,
+one-shot `MacInterruptSetup`. Cold handshake, scan and recovery are therefore
+the only phases that can publish or clear a task-side interrupt image.
+`MacInterruptSetup::activate` publishes the connected mask, clears stale
+events and consumes itself to create `MacInterruptRegisters`. The HIL installs
+that token in its final static storage before binding the CPU route; its
+handler is then the sole mutable consumer.
+
+The runtime `RadioRegisters` type has no interrupt-enable/clear method, and the
+two compatibility `Register32` identities for those addresses are no longer
+public. Read-only RAW/STATUS diagnostics remain available. This replaces both
+the application's former `InterruptMmio`, which accepted arbitrary register
+identities, and the intermediate boolean split that left cold interrupt
+methods reachable through the original task owner.
 
 The SVD records each address and the five presently identified event bits
 with source and confidence. This keeps the bit hypotheses reviewable at the

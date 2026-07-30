@@ -1,6 +1,6 @@
 //! Cross-layer ownership boundary for the PHY low-rate path.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::ColdRadioRegisters;
 
 /// Narrow PHY capability needed by the MAC cold-start policy.
 ///
@@ -10,7 +10,7 @@ pub trait MacLowRateHardware {
     fn disable_phy_low_rate(&mut self);
 }
 
-impl MacLowRateHardware for RadioRegisters {
+impl MacLowRateHardware for ColdRadioRegisters {
     fn disable_phy_low_rate(&mut self) {
         self.configure_phy_low_rate(false);
     }

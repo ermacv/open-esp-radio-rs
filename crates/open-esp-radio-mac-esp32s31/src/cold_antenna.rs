@@ -1,13 +1,13 @@
 //! Ownership boundary for the complete cold MAC antenna transaction.
 
-use open_esp_radio_pac_esp32s31::RadioRegisters;
+use open_esp_radio_pac_esp32s31::{ColdRadioRegisters, RadioRegisters};
 
 pub trait MacColdAntennaHardware {
     fn initialize_mac_antenna(&mut self);
 }
 
-impl MacColdAntennaHardware for RadioRegisters {
+impl MacColdAntennaHardware for ColdRadioRegisters {
     fn initialize_mac_antenna(&mut self) {
-        RadioRegisters::initialize_mac_antenna(self);
+        RadioRegisters::initialize_mac_antenna(&mut **self);
     }
 }

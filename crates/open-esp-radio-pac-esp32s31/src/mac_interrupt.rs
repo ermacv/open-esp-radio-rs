@@ -2,23 +2,58 @@
 
 use super::{device_fence, svd};
 
+/// One-shot task-side setup for the MAC interrupt handoff.
+///
+/// This token exists after the cold owner has been consumed but before the
+/// interrupt is routed to a CPU. Activating it publishes the final mask,
+/// clears stale events and consumes all task-side enable/clear access.
+pub struct MacInterruptSetup {
+    peripheral: svd::WifiMacInterrupt,
+}
+
+impl MacInterruptSetup {
+    pub(super) unsafe fn steal_from_cold_radio_owner() -> Self {
+        Self {
+            // SAFETY: `ColdRadioRegisters::into_running` consumes the only
+            // safe owner that can access interrupt enable/clear registers.
+            peripheral: unsafe { svd::WifiMacInterrupt::steal() },
+        }
+    }
+
+    /// Publish the runtime event mask and create the finite ISR capability.
+    ///
+    /// The CPU interrupt route must still be unbound while this transaction
+    /// executes. The returned value should be installed in its final static
+    /// storage before the platform route is enabled.
+    pub fn activate(self, event_mask: u32) -> MacInterruptRegisters {
+        // Preserve the HIL-qualified task order: publish the complete mask,
+        // acknowledge every stale event, then order both MMIO writes before
+        // the caller exposes the ISR capability.
+        unsafe {
+            self.peripheral
+                .enable()
+                .write_with_zero(|w| w.event_mask().bits(event_mask));
+            self.peripheral
+                .clear()
+                .write_with_zero(|w| w.events().bits(u32::MAX));
+        }
+        device_fence();
+        MacInterruptRegisters {
+            peripheral: self.peripheral,
+        }
+    }
+}
+
 /// Disjoint generated register capability intended for the hard MAC ISR.
 ///
-/// It is issued once by `RadioRegisters::take_mac_interrupt`; construction is
-/// crate-private so application code cannot manufacture another ISR owner.
+/// It is issued once by [`MacInterruptSetup::activate`]; construction is
+/// crate-private so application code cannot manufacture another ISR owner or
+/// retain task-side interrupt enable/clear access after activation.
 pub struct MacInterruptRegisters {
     peripheral: svd::WifiMacInterrupt,
 }
 
 impl MacInterruptRegisters {
-    pub(super) unsafe fn steal_from_radio_owner() -> Self {
-        Self {
-            // SAFETY: `RadioRegisters::take_mac_interrupt` enforces the
-            // one-way, single-issue split from the complete radio owner.
-            peripheral: unsafe { svd::WifiMacInterrupt::steal() },
-        }
-    }
-
     /// Sample status and enable in the recovered common-ISR order.
     ///
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_get_event` proves the

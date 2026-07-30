@@ -5,6 +5,7 @@
 //! Rust values, so no caller interprets a byte array by vendor offsets.
 
 use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
+use crate::tx::HeMcs;
 use open_esp_radio_pac_esp32s31::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
     RadioRegisters,
@@ -292,6 +293,44 @@ pub struct HeLowMetricReportFeatures {
     pub extended_range_single_user_permitted: bool,
 }
 
+/// Highest peer rate supplied to the association-time vendor rate policy.
+///
+/// The scalar is deliberately private: the values consumed by
+/// `rcGetHighestRateIdx` are data rates in half-megabit units, not PHY rate
+/// bytes or MCS indices. Constructors keep that temporary blob convention out
+/// of the application and make the negotiated capability family explicit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaRateControlPeerHighestRate(u32);
+
+impl StaRateControlPeerHighestRate {
+    /// Construct the one-spatial-stream HE20 maximum selected from the peer's
+    /// negotiated HE RX MCS/NSS map.
+    ///
+    /// ESP32-S31 supports HE MCS0 through MCS9, so an MCS0..11 peer is capped
+    /// by the caller at [`HeMcs::Mcs9`]. The finite values below are the
+    /// rounded half-megabit encodings accepted by complete
+    /// `_oracles/libpp.a[trc.o]::{rcGetHighestRateIdx,
+    /// rc11AXRate2SchedIdx}`: `17,34,51,68,104,137,154,172,206,229`.
+    pub const fn he20_one_spatial_stream(maximum_mcs: HeMcs) -> Self {
+        Self(match maximum_mcs {
+            HeMcs::Mcs0 => 17,
+            HeMcs::Mcs1 => 34,
+            HeMcs::Mcs2 => 51,
+            HeMcs::Mcs3 => 68,
+            HeMcs::Mcs4 => 104,
+            HeMcs::Mcs5 => 137,
+            HeMcs::Mcs6 => 154,
+            HeMcs::Mcs7 => 172,
+            HeMcs::Mcs8 => 206,
+            HeMcs::Mcs9 => 229,
+        })
+    }
+
+    const fn vendor_half_mbps(self) -> u32 {
+        self.0
+    }
+}
+
 /// Value-only association input to the recovered per-peer rate policy.
 ///
 /// [`StaLinkMetric`] keeps RSSI and noise floor from being confused with the
@@ -301,7 +340,7 @@ pub struct StaRateControlAssociationInput {
     pub phy: StaRateControlPhy,
     pub link_metric: StaLinkMetric,
     pub p2p: bool,
-    pub peer_highest_rate: Option<u32>,
+    pub peer_highest_rate: Option<StaRateControlPeerHighestRate>,
     /// Whether the peer's vendor LR rate list contains at least one local rate.
     ///
     /// Complete `libnet80211.a[ieee80211_phy.o]::
@@ -362,7 +401,9 @@ impl StaRateControlAssociation {
             StaRateControlPhy::He => (2, 7),
             StaRateControlPhy::Lora => (6, 0),
         };
-        let peer_highest_rate = input.peer_highest_rate.unwrap_or(0);
+        let peer_highest_rate = input
+            .peer_highest_rate
+            .map_or(0, StaRateControlPeerHighestRate::vendor_half_mbps);
         let selection = select_phy_mode(PhyModeSelectionInput {
             phy_type,
             he_type,
@@ -1150,6 +1191,18 @@ mod tests {
     }
 
     #[test]
+    fn typed_he_peer_maximum_covers_the_complete_mcs0_to_mcs9_table() {
+        let expected = [17, 34, 51, 68, 104, 137, 154, 172, 206, 229];
+        for (mcs, expected) in expected.into_iter().enumerate() {
+            let mcs = HeMcs::from_index(mcs as u8).unwrap();
+            assert_eq!(
+                StaRateControlPeerHighestRate::he20_one_spatial_stream(mcs).vendor_half_mbps(),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn phy_mode_selector_covers_legacy_p2p_ht_he_and_lora() {
         let dot11b = select_phy_mode(selection_input(0));
         assert_eq!(dot11b.current, schedule(RateScheduleKind::Dot11B, 3));
@@ -1222,7 +1275,9 @@ mod tests {
             phy: StaRateControlPhy::He,
             link_metric: StaLinkMetric::from_estimator(8),
             p2p: false,
-            peer_highest_rate: Some(229),
+            peer_highest_rate: Some(StaRateControlPeerHighestRate::he20_one_spatial_stream(
+                HeMcs::Mcs9,
+            )),
             long_range_rates_present: false,
             he_low_metric_report: HeLowMetricReportFeatures::default(),
         };

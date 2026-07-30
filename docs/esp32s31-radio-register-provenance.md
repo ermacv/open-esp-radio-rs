@@ -722,6 +722,30 @@ record byte `0x8b`, admits LoRa fallback schedules in `rcUpdatePhyMode`.
 None of these software/node offsets are MMIO, so they are documented in the
 typed Rust association owner rather than invented as SVD registers.
 
+The negotiated maximum-rate input is now connected as well. Complete
+`libnet80211.a[wl_cnx.o]::ic_set_sta` passes the peer rate frontier through
+`if_hwctrl.o::ic_set_trc`; complete
+`libpp.a[trc.o]::{rcGetHighestRateIdx,rc11AXRate2SchedIdx}` accepts the finite
+HE20 1SS half-megabit sequence
+`17,34,51,68,104,137,154,172,206,229`. The open association owner exposes a
+typed `StaRateControlPeerHighestRate::he20_one_spatial_stream(HeMcs)` instead
+of leaking those scalar encodings to the application. The STA path derives
+MCS7 or MCS9 from the AP's standard HE RX MCS/NSS map and caps MCS0..11 peers
+at the S31's MCS9 frontier.
+
+`HIL_OPEN_HE_MAX_RATE_INPUT_2026_07_30` used the complete open PHY/MAC on
+ESP32-S31 rev0 with the PSRAM-code/PSRAM-data profile and a nearby Android HE
+AP on channel 6. The AP advertised HE RX NSS1 MCS0..9, producing vendor
+maximum-rate value 229. The Rust association selected Dot11Ax schedule zero,
+rate byte `0x23`, and the live formatter emitted HE20 MCS9 LDPC with
+2xLTF/0.8-us GI at nominal 114.7 Mbit/s. TID0 AddBA admitted A-MSDU and the
+first 16-member aggregate received a complete BlockAck. After 6,069
+submissions the driver reported zero partial aggregates; only 30 additional
+aggregate attempts were required. Consecutive five-second Ethernet-payload
+samples reached 73.6, 79.0, 76.8, 78.4, 76.8 and 80.7 Mbit/s. This qualifies
+the missing association input and the zero-loss top schedule, not the still
+unported running A-MPDU rate-lowering policy.
+
 The first AGC slice is native as well. Complete ROM enable/disable edges,
 pinned RX-compensation writes, the DC-memory pulse, and the two PBus
 work-mode pulse segments now operate on generated fields. The one- and

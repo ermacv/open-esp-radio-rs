@@ -4,16 +4,16 @@ use super::RadioRegisters;
 
 /// Hardware-visible subset of one parsed HE20 peer.
 ///
-/// SOURCE: `migration/esp32s31-hybrid-runtime/src/he.rs`, checked against the
-/// pinned `_oracles/libnet80211.a` `ieee80211_parse_hecap` and
-/// `ieee80211_parse_heopr` leaves. The protocol crate owns parsing; this type
-/// keeps the chip-specific register transform inside the PAC.
+/// SOURCE: complete pinned `_oracles/libnet80211.a[ieee80211_he.o]`
+/// `ieee80211_parse_hecap`/`ieee80211_parse_heopr` callers and complete
+/// `_oracles/libpp.a[hal_mac_ctl.o]` leaves. The protocol crate owns parsing;
+/// this type keeps the chip-specific register transform inside the PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHe20PeerConfig {
     pub packet_padding_eight_us: u8,
     pub operation_parameters: u32,
     pub bss_color_information: u8,
-    pub extended_range_single_user: bool,
+    pub extended_range_single_user_disabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,11 +119,11 @@ impl RadioRegisters {
 
         init.ersu_and_vht_control().modify(|_, w| {
             w.auto_ack_allow_ersu()
-                .bit(!config.extended_range_single_user)
+                .bit(!config.extended_range_single_user_disabled)
         });
-        if !config.extended_range_single_user {
-            // The complete disabled leaf writes all four legacy ACK-rate
-            // bytes to 0x80.
+        if !config.extended_range_single_user_disabled {
+            // The complete ER-SU-permitted leaf writes all four baseline
+            // ACK-rate bytes to 0x80.
             // SAFETY: the complete recovered leaf publishes this whole word.
             unsafe {
                 init.ersu_ack_rate()

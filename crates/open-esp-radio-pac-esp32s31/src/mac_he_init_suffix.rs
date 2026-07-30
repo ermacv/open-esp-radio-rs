@@ -53,20 +53,20 @@ impl RadioRegisters {
         control.modify(|_, w| unsafe { w.bsr_aci_high_comparison_method().bits(1) });
     }
 
-    /// Apply the ER-SU state parsed from the associated BSS's HE Operation.
+    /// Apply the raw ER-SU-Disable bit parsed from the BSS's HE Operation.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac_ctl.o]`
     /// `hal_he_set_ersu` and
     /// `_oracles/libnet80211.a[ieee80211_he.o]`
-    /// `ieee80211_parse_heopr`. A true argument clears the blob-named
-    /// `AUTO_ACK_ALLOW_ERSU` bit; false sets it. The counterintuitive polarity
-    /// is instruction-exact. The false leaf additionally rewrites ACK-rate bytes,
-    /// already initialized by the complete cold HE suffix.
-    pub fn set_he_extended_range_single_user(&mut self, enabled: bool) {
+    /// `ieee80211_parse_heopr`, whose format string names complete-IE byte
+    /// five bit zero `ER-SU-Disable`. A true argument clears the blob-named
+    /// `AUTO_ACK_ALLOW_ERSU` bit; false sets it. The permitted leaf also
+    /// rewrites ACK-rate bytes already initialized by the cold HE suffix.
+    pub fn set_he_extended_range_single_user_disabled(&mut self, disabled: bool) {
         self.peripherals
             .wifi_mac_he_init_suffix
             .ersu_and_vht_control()
-            .modify(|_, w| w.auto_ack_allow_ersu().bit(!enabled));
+            .modify(|_, w| w.auto_ack_allow_ersu().bit(!disabled));
     }
 
     /// Publish the associated BSS's HE Default PE Duration.

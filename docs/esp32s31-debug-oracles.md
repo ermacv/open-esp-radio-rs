@@ -253,7 +253,14 @@ in the SVD and exposed through an integer-only PAC snapshot.
 
 The report-rate write path is also complete. `trc.o::trc_set_bf_report_rate`
 (size `0x52`) selects one of three policies from a signed link metric and two
-feature bytes at rate-control-record offsets `0x8f`/`0x90`. It first calls
+now-mapped peer values at temporary vendor-record offsets `0x8f`/`0x90`.
+Complete `wl_cnx.o::ic_set_sta` loads offset `0x8f` from the inversion of peer
+state bit `0x35c[10]`; complete `ieee80211_parse_heopr` both stores that bit
+from complete HE Operation IE byte five bit zero and names it
+`ER-SU-Disable` in its pinned format string. Thus the consumed nonzero value is
+ER-SU permitted. Offset `0x90` is HE PHY capability byte three bits 4:3,
+which complete `ieee80211_parse_hecap` names the receive DCM constellation;
+the report leaf only distinguishes zero from nonzero. It first calls
 `hal_mac_ctl.o::hal_he_set_bf_report_rate`, which publishes three replicated
 profiles at `0x20104464`, then tail-calls
 `hal_he_set_ersu_ack_rate` (size `0x4e`). That second leaf writes `0x80`, or
@@ -386,6 +393,16 @@ driver now owns this as `StaRateControlAssociation`: typed PHY family, signed
 link metric, schedule references and BF report profile, with no retained
 0x98-byte vendor C-layout record.
 
+The formerly generic schedule-extension boolean is also identified. Complete
+`libnet80211.a[ieee80211_phy.o]::ieee80211_setup_lr_rates` clears peer bytes
+`0x83..0x86`, stores the vendor LR-only flag at `0x83`, and increments the
+count of locally matched LR rates at `0x84`. `ic_set_sta` passes a pointer to
+that exact pair; `ic_set_trc` copies the count to temporary record byte
+`0x8b`, while a nonzero LR-only flag forces PHY type six. `rcUpdatePhyMode`
+tests the count to admit the LoRa fallback and the extra maximum indices.
+The Rust input is consequently named `long_range_rates_present`; it is not an
+HE capability and not a generic request for extended schedules.
+
 The noise-floor producer is independently complete. Rev0 ROM
 `phy_read_hw_noisefloor` at `0x2f827d72`, size `0x1a`, reads
 `0x2010708c[11:0]`, subtracts `0x1000`, sign-extends and arithmetic-shifts by
@@ -402,8 +419,14 @@ schedule 1, rate code `0x19`, maximum schedule 13, 16 schedule entries and BF
 report mode/rate 1/16. WPA2/CCMP, all three TID AddBA agreements, a
 three-subframe TX A-MPDU and DHCP then completed. A 100-packet ICMP run had
 zero loss and 3.692 ms mean RTT; the driver reported zero RX drops and
-duplicates. The low-metric record-byte gates remain deliberately unclaimed:
-metric 72 takes the complete `> 13` branch before they can affect the result.
+duplicates. That peer advertised ER-SU-Disable and no DCM receive
+constellation, so both low-metric gates were false. Metric 72 takes the
+complete `> 13` branch before those gates can affect the result; a capable,
+low-metric peer is still required to HIL-qualify their alternative branch.
+A reset repetition after the typed-polarity correction read HE Operation
+`0x010004`, logged `ersu_disabled=true`, `ersu_permitted=false`, retained
+hardware `AUTO_ACK_ALLOW_ERSU=false`, selected the same schedule/profile and
+again completed WPA2, all three AddBA agreements, TX A-MPDU and DHCP.
 
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for

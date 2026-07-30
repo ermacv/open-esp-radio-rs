@@ -44,13 +44,13 @@ pub fn he_default_packet_extension_duration(he_operation_ie: &[u8]) -> Option<u8
     Some(he_operation_ie[3] & 0x07)
 }
 
-/// Recover the ER-SU enable argument consumed by the ESP32-S31 MAC.
+/// Recover the HE Operation `ER-SU-Disable` bit consumed by the ESP32-S31.
 ///
 /// Complete
 /// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr`
-/// passes complete-IE byte five bit zero to `hal_he_set_ersu`; the latter
-/// clears the hardware's `ERSU_DISABLED` bit when this value is nonzero.
-pub fn he_extended_range_single_user_enabled(he_operation_ie: &[u8]) -> Option<bool> {
+/// logs complete-IE byte five bit zero as `ER-SU-Disable`, stores it at
+/// peer-state bit 10 and passes it unchanged to `hal_he_set_ersu`.
+pub fn he_extended_range_single_user_disabled(he_operation_ie: &[u8]) -> Option<bool> {
     if he_operation_ie.len() < 6
         || he_operation_ie[0] != 255
         || he_operation_ie[2] != HE_OPERATION_EXTENSION_ID
@@ -424,7 +424,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
 mod tests {
     use super::{
         best_matching_ssid, he_default_packet_extension_duration,
-        he_extended_range_single_user_enabled, parse_management, HtSecondaryChannel,
+        he_extended_range_single_user_disabled, parse_management, HtSecondaryChannel,
         ScanObservation, ScanRecord, ScanTable,
     };
 
@@ -444,15 +444,15 @@ mod tests {
     #[test]
     fn extracts_ersu_argument_from_complete_he_operation_ie() {
         assert_eq!(
-            he_extended_range_single_user_enabled(&[255, 4, 36, 0, 0, 1]),
+            he_extended_range_single_user_disabled(&[255, 4, 36, 0, 0, 1]),
             Some(true)
         );
         assert_eq!(
-            he_extended_range_single_user_enabled(&[255, 4, 36, 0, 0, 0]),
+            he_extended_range_single_user_disabled(&[255, 4, 36, 0, 0, 0]),
             Some(false)
         );
         assert_eq!(
-            he_extended_range_single_user_enabled(&[255, 2, 36, 0]),
+            he_extended_range_single_user_disabled(&[255, 2, 36, 0]),
             None
         );
     }

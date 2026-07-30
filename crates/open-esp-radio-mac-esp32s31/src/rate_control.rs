@@ -205,15 +205,20 @@ pub enum StaRateControlPhy {
     Lora,
 }
 
-/// Two exact HE peer gates consumed by the low-link-metric report-rate branch.
+/// Exact HE peer capabilities consumed by the low-link-metric report branch.
 ///
-/// Their record offsets are known, but their complete public 802.11 meanings
-/// are not yet proven. Naming only the behavior they gate prevents a caller
-/// from treating guessed node-layout names as established protocol semantics.
+/// SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::ic_set_sta` copies
+/// `!node[0x35c].bit(10)` and `node[0x348].bits(4:3)` into the scalar TRC
+/// input. Complete `ieee80211_parse_heopr` names the former source
+/// `ER-SU-Disable`; complete `ieee80211_parse_hecap` names the latter
+/// `dcm rx constellation`. Complete
+/// `_oracles/libpp.a[if_hwctrl.o]::ic_set_trc` stores those values at vendor
+/// record offsets `0x8f` and `0x90`, where `trc_set_bf_report_rate` tests
+/// them for nonzero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct HeLowMetricReportFeatures {
-    pub dcm: bool,
-    pub extended_range_single_user: bool,
+    pub dcm_receive_supported: bool,
+    pub extended_range_single_user_permitted: bool,
 }
 
 /// Value-only association input to the recovered per-peer rate policy.
@@ -226,7 +231,13 @@ pub struct StaRateControlAssociationInput {
     pub link_metric: StaLinkMetric,
     pub p2p: bool,
     pub peer_highest_rate: Option<u32>,
-    pub extended_schedules: bool,
+    /// Whether the peer's vendor LR rate list contains at least one local rate.
+    ///
+    /// Complete `libnet80211.a[ieee80211_phy.o]::
+    /// ieee80211_setup_lr_rates` owns the count at node offset `0x84`;
+    /// `ic_set_trc` copies it to record offset `0x8b`. It is not an HE
+    /// capability or a generic request for more schedules.
+    pub long_range_rates_present: bool,
     pub he_low_metric_report: HeLowMetricReportFeatures,
 }
 
@@ -286,12 +297,14 @@ impl StaRateControlAssociation {
             p2p: input.p2p,
             supplied_highest_rate: peer_highest_rate,
             use_supplied_highest_rate: input.peer_highest_rate.is_some(),
-            feature_enabled: input.extended_schedules,
+            long_range_rates_present: input.long_range_rates_present,
         });
         let beamforming_report = beamforming_report_rate_for_metric(
             i32::from(input.link_metric.value()),
-            input.he_low_metric_report.dcm,
-            input.he_low_metric_report.extended_range_single_user,
+            input.he_low_metric_report.dcm_receive_supported,
+            input
+                .he_low_metric_report
+                .extended_range_single_user_permitted,
         );
         Self {
             selection,
@@ -341,7 +354,7 @@ pub(crate) struct PhyModeSelectionInput {
     pub p2p: bool,
     pub supplied_highest_rate: u32,
     pub use_supplied_highest_rate: bool,
-    pub feature_enabled: bool,
+    pub long_range_rates_present: bool,
 }
 
 /// Complete scalar and schedule result of `rcUpdatePhyMode`.
@@ -479,9 +492,8 @@ const fn ht_metric_index(metric: i32) -> u8 {
 
 /// Safe schedule selector recovered from `libpp.a[trc.o]::rcUpdatePhyMode`.
 ///
-/// The result contains values only. The target adapter separately validates
-/// record provenance and projects these fields into the temporary 0x98-byte
-/// ABI record.
+/// The result contains values only and is retained directly by the
+/// Rust-owned association; no vendor record projection remains.
 #[inline(never)]
 pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection {
     let highest = highest_rate_index(
@@ -504,7 +516,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     schedule(RateScheduleKind::Dot11B, current_index),
                     schedule(RateScheduleKind::Dot11B, 3),
                     schedule(RateScheduleKind::Dot11B, 0),
-                    if input.feature_enabled { 5 } else { 3 },
+                    if input.long_range_rates_present { 5 } else { 3 },
                     6,
                     RateIndexMap::Dot11B,
                     None,
@@ -544,7 +556,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     schedule(kind, 0),
                     if input.p2p {
                         7
-                    } else if input.feature_enabled {
+                    } else if input.long_range_rates_present {
                         12
                     } else {
                         10
@@ -584,7 +596,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                         schedule(RateScheduleKind::BasicOfdm, 0)
                     },
                     schedule(kind, 0),
-                    if input.feature_enabled {
+                    if input.long_range_rates_present {
                         if he {
                             15
                         } else {
@@ -617,7 +629,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 schedule(RateScheduleKind::Dot11B, 3),
                 schedule(RateScheduleKind::Dot11B, 3),
                 schedule(RateScheduleKind::Dot11B, 0),
-                if input.feature_enabled { 5 } else { 3 },
+                if input.long_range_rates_present { 5 } else { 3 },
                 6,
                 RateIndexMap::Dot11B,
                 None,
@@ -627,7 +639,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
     PhyModeSelection {
         current,
         secondary,
-        fallback: if input.feature_enabled {
+        fallback: if input.long_range_rates_present {
             lora_fallback
         } else {
             secondary
@@ -930,7 +942,7 @@ mod tests {
             p2p: false,
             supplied_highest_rate: 0,
             use_supplied_highest_rate: false,
-            feature_enabled: false,
+            long_range_rates_present: false,
         }
     }
 
@@ -973,7 +985,7 @@ mod tests {
         let mut he_input = selection_input(4);
         he_input.he_type = 7;
         he_input.metric = 8;
-        he_input.feature_enabled = true;
+        he_input.long_range_rates_present = true;
         let he = select_phy_mode(he_input);
         assert_eq!(he.current, schedule(RateScheduleKind::Dot11Ax, 13));
         assert_eq!(he.maximum_index, 15);
@@ -992,10 +1004,10 @@ mod tests {
             link_metric: StaLinkMetric::from_estimator(20),
             p2p: false,
             peer_highest_rate: None,
-            extended_schedules: true,
+            long_range_rates_present: true,
             he_low_metric_report: HeLowMetricReportFeatures {
-                dcm: true,
-                extended_range_single_user: true,
+                dcm_receive_supported: true,
+                extended_range_single_user_permitted: true,
             },
         });
 
@@ -1023,7 +1035,7 @@ mod tests {
             link_metric: StaLinkMetric::from_estimator(8),
             p2p: false,
             peer_highest_rate: Some(229),
-            extended_schedules: false,
+            long_range_rates_present: false,
             he_low_metric_report: HeLowMetricReportFeatures::default(),
         };
         let ordinary = StaRateControlAssociation::new(input);
@@ -1037,8 +1049,8 @@ mod tests {
         );
 
         input.he_low_metric_report = HeLowMetricReportFeatures {
-            dcm: true,
-            extended_range_single_user: true,
+            dcm_receive_supported: true,
+            extended_range_single_user_permitted: true,
         };
         assert_eq!(
             StaRateControlAssociation::new(input).beamforming_report(),

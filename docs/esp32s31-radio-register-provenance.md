@@ -677,6 +677,27 @@ driver RX drops. This qualifies the read path and high-metric schedule branch;
 it does not assign protocol names to the still-unmapped low-metric vendor
 record bytes.
 
+## SVD v3.41: ER-SU polarity and complete rate-control inputs
+
+Complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr` has the pinned
+format string `ER-SU-Disable:%d` and passes complete HE Operation IE byte five
+bit zero unchanged to `hal_he_set_ersu`. The open protocol owner now retains
+that raw disable bit and derives `extended_range_single_user_permitted` by
+inversion. This removes the previous misleading enabled-name while preserving
+the already instruction-correct `AUTO_ACK_ALLOW_ERSU = !disabled` MMIO image.
+SVD v3.41 records the exact polarity in the register and source descriptions.
+
+The remaining post-association software inputs are now closed by complete
+blob paths too. `ic_set_sta` copies the inversion of peer bit `0x35c[10]` and
+HE PHY capability byte three bits 4:3 into the `ic_set_trc` scalar input;
+those become temporary record bytes `0x8f`/`0x90`, consumed as ER-SU permitted
+and nonzero DCM receive constellation by `trc_set_bf_report_rate`.
+Independently, complete `ieee80211_setup_lr_rates` proves peer byte `0x84` is
+the count of matched vendor LR rates. Its nonzero value, copied to temporary
+record byte `0x8b`, admits LoRa fallback schedules in `rcUpdatePhyMode`.
+None of these software/node offsets are MMIO, so they are documented in the
+typed Rust association owner rather than invented as SVD registers.
+
 The first AGC slice is native as well. Complete ROM enable/disable edges,
 pinned RX-compensation writes, the DC-memory pulse, and the two PBus
 work-mode pulse segments now operate on generated fields. The one- and

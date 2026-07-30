@@ -12,10 +12,9 @@ pub enum He20InstallError {
 /// Parse and install one associated HE20 peer without retaining vendor node
 /// layout or exposing raw MMIO above the PAC.
 ///
-/// SOURCE: the lifecycle and exact register transforms were promoted from
-/// `migration/esp32s31-hybrid-runtime/src/he.rs`; parsing was checked against
-/// pinned `_oracles/libnet80211.a` and the PAC leaves against
-/// `_oracles/libpp.a`.
+/// SOURCE: complete pinned `_oracles/libnet80211.a[ieee80211_he.o]`
+/// capability/operation parsers and `_oracles/libpp.a[hal_mac_ctl.o]`
+/// hardware leaves. The former migration copy is not an oracle.
 pub fn install_he20_peer(
     registers: &mut RadioRegisters,
     capability: &[u8],
@@ -31,7 +30,7 @@ pub fn install_he20_peer(
                 packet_padding_eight_us: state.packet_padding_eight_us,
                 operation_parameters: state.operation_parameters,
                 bss_color_information: state.bss_color_information,
-                extended_range_single_user: state.extended_range_single_user,
+                extended_range_single_user_disabled: state.extended_range_single_user_disabled,
             },
             state.rts_threshold,
         )

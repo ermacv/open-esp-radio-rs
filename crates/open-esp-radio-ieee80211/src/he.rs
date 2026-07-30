@@ -916,7 +916,19 @@ pub struct He20PeerState {
     pub bss_color_information: u8,
     pub basic_mcs_nss_map: u16,
     pub rts_threshold: Option<u16>,
-    pub extended_range_single_user: bool,
+    /// Raw HE Operation `ER-SU-Disable` bit.
+    ///
+    /// SOURCE: complete
+    /// `_oracles/libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr`
+    /// logs complete-IE byte five bit zero as `ER-SU-Disable`, stores it at
+    /// peer-state bit 10 and passes it unchanged to `hal_he_set_ersu`.
+    pub extended_range_single_user_disabled: bool,
+}
+
+impl He20PeerState {
+    pub const fn extended_range_single_user_permitted(self) -> bool {
+        !self.extended_range_single_user_disabled
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -990,10 +1002,11 @@ pub fn parse_he20_operation(element: &[u8]) -> Result<He20Operation, HeElementEr
 /// Recover the peer fields installed by the pinned HE capability and
 /// operation parsers.
 ///
-/// Evidence: `migration/esp32s31-hybrid-runtime/src/he.rs`, recovered by
-/// comparison with the pinned `ieee80211_parse_hecap` and
-/// `ieee80211_parse_heopr` blob leaves. This function is deliberately pure;
-/// the corresponding MMIO transforms are tracked separately in the S31 MAC.
+/// Primary evidence: complete pinned
+/// `_oracles/libnet80211.a[ieee80211_he.o]::{ieee80211_parse_hecap,
+/// ieee80211_parse_heopr}` bodies and their format strings. This function is
+/// deliberately pure; corresponding MMIO transforms are tracked separately
+/// in the S31 MAC.
 pub fn parse_he20_peer_state(
     capability: &[u8],
     operation: &[u8],
@@ -1040,7 +1053,7 @@ pub fn parse_he20_peer_state(
         bss_color_information: operation[6],
         basic_mcs_nss_map: u16::from_le_bytes([operation[7], operation[8]]),
         rts_threshold,
-        extended_range_single_user: operation[5] & 0x01 != 0,
+        extended_range_single_user_disabled: operation[5] & 0x01 != 0,
     })
 }
 
@@ -1472,7 +1485,8 @@ mod tests {
         assert_eq!(state.bss_color_information, 27);
         assert_eq!(state.basic_mcs_nss_map, 0xfffc);
         assert_eq!(state.rts_threshold, None);
-        assert!(state.extended_range_single_user);
+        assert!(state.extended_range_single_user_disabled);
+        assert!(!state.extended_range_single_user_permitted());
         assert!(!parse_he20_capabilities(&capability)
             .unwrap()
             .supports_one_ltf_800ns_gi());

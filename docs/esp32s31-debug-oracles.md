@@ -230,6 +230,29 @@ low-to-high byte RMWs at `0x20104404`. The MAC rate policy and PAC transaction
 now preserve this complete ordering. This closes report-rate selection; it
 does not yet implement sounding or compressed feedback generation.
 
+The complete `test_hal.o::esp_test_bf_set_feedback` function (size `0x182`)
+adds two test-control words, but not a production sounding path. Its zero
+enable branch clears `0x20104e00[23]`; the enabled branch sets that bit,
+publishes two seven-bit arguments in bits 13:0 and applies bounded selector
+cases zero through sixteen across bits 22:14 and companion bits
+`0x2010409c[3:2]`. These fields are recorded in the SVD with deliberately
+approximate submode names. The archive contains no selector enum names and no
+production caller, so exposing a semantic Rust setter would overstate the
+evidence.
+
+Complete `wdev.o::is_ndpa_to_dut` (size `0x7e`) closes the receive admission
+boundary before feedback generation. For an HE NDPA it extracts the six-bit
+Dialog Token from byte 16, walks four-byte STA Info words from byte 17 and
+matches each low eleven-bit AID against `hal_he_get_aid`. The allocation-free
+`open-esp-radio-ieee80211::ndpa` parser reproduces that geometry after the
+RX owner strips the four-byte FCS and rejects malformed partial STA Info.
+`HIL_OPEN_HE_NDPA_AX211_2026_07_30` then observed zero HE NDPA frames in four
+successive ten-second windows after the open driver associated with the
+controlled AX211 HE20 AP as AID 1. The same run completed WPA2, protected ARP
+and a three-subframe A-MPDU/BlockAck exchange. This is a negative sounding
+baseline for that AP configuration, not evidence that the parser or S31
+feedback hardware was exercised.
+
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
 HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field

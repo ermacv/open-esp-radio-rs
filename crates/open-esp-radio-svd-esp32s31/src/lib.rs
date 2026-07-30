@@ -14267,7 +14267,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn rx_field_control(&self) -> &RxFieldControl {
             &self.rx_field_control
         }
-        #[doc = "0x54 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW."]
+        #[doc = "0x54 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_bf clears bit two, then sets bit three through a separate fresh-read RMW. Complete esp_test_bf_set_feedback proves these same physical fields are the high-selector class and parity controls for its feedback modes; this is one canonical register identity rather than an address alias."]
         #[inline(always)]
         pub const fn bf_mode_control(&self) -> &BfModeControl {
             &self.bf_mode_control
@@ -14375,48 +14375,48 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_MODE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_mode_control`] module"]
+    #[doc = "BF_MODE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_bf clears bit two, then sets bit three through a separate fresh-read RMW. Complete esp_test_bf_set_feedback proves these same physical fields are the high-selector class and parity controls for its feedback modes; this is one canonical register identity rather than an address alias.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_mode_control`] module"]
     #[doc(alias = "BF_MODE_CONTROL")]
     pub type BfModeControl = crate::Reg<bf_mode_control::BfModeControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_bf clears bit two, then sets bit three through a separate fresh-read RMW. Complete esp_test_bf_set_feedback proves these same physical fields are the high-selector class and parity controls for its feedback modes; this is one canonical register identity rather than an address alias."]
     pub mod bf_mode_control {
         #[doc = "Register `BF_MODE_CONTROL` reader"]
         pub type R = crate::R<BfModeControlSpec>;
         #[doc = "Register `BF_MODE_CONTROL` writer"]
         pub type W = crate::W<BfModeControlSpec>;
-        #[doc = "Field `CLEAR_UNKNOWN` reader - "]
-        pub type ClearUnknownR = crate::BitReader;
-        #[doc = "Field `CLEAR_UNKNOWN` writer - "]
-        pub type ClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ENABLE_UNKNOWN` reader - "]
-        pub type EnableUnknownR = crate::BitReader;
-        #[doc = "Field `ENABLE_UNKNOWN` writer - "]
-        pub type EnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_SELECTOR_CLASS` reader - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, set exactly when selector is greater than nine. Complete hal_init_bf clears it."]
+        pub type HighSelectorClassR = crate::BitReader;
+        #[doc = "Field `HIGH_SELECTOR_CLASS` writer - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, set exactly when selector is greater than nine. Complete hal_init_bf clears it."]
+        pub type HighSelectorClassW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_SELECTOR_PARITY` reader - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, receives selector bit zero; selectors fifteen and sixteen clear it. Complete hal_init_bf sets it."]
+        pub type HighSelectorParityR = crate::BitReader;
+        #[doc = "Field `HIGH_SELECTOR_PARITY` writer - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, receives selector bit zero; selectors fifteen and sixteen clear it. Complete hal_init_bf sets it."]
+        pub type HighSelectorParityW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, set exactly when selector is greater than nine. Complete hal_init_bf clears it."]
             #[inline(always)]
-            pub fn clear_unknown(&self) -> ClearUnknownR {
-                ClearUnknownR::new(((self.bits >> 2) & 1) != 0)
+            pub fn high_selector_class(&self) -> HighSelectorClassR {
+                HighSelectorClassR::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bit 3"]
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, receives selector bit zero; selectors fifteen and sixteen clear it. Complete hal_init_bf sets it."]
             #[inline(always)]
-            pub fn enable_unknown(&self) -> EnableUnknownR {
-                EnableUnknownR::new(((self.bits >> 3) & 1) != 0)
+            pub fn high_selector_parity(&self) -> HighSelectorParityR {
+                HighSelectorParityR::new(((self.bits >> 3) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, set exactly when selector is greater than nine. Complete hal_init_bf clears it."]
             #[inline(always)]
-            pub fn clear_unknown(&mut self) -> ClearUnknownW<'_, BfModeControlSpec> {
-                ClearUnknownW::new(self, 2)
+            pub fn high_selector_class(&mut self) -> HighSelectorClassW<'_, BfModeControlSpec> {
+                HighSelectorClassW::new(self, 2)
             }
-            #[doc = "Bit 3"]
+            #[doc = "Bit 3 - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. For test feedback selector values eight through fourteen, receives selector bit zero; selectors fifteen and sixteen clear it. Complete hal_init_bf sets it."]
             #[inline(always)]
-            pub fn enable_unknown(&mut self) -> EnableUnknownW<'_, BfModeControlSpec> {
-                EnableUnknownW::new(self, 3)
+            pub fn high_selector_parity(&mut self) -> HighSelectorParityW<'_, BfModeControlSpec> {
+                HighSelectorParityW::new(self, 3)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init_bf clears bit 2, then sets bit 3 through a separate fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_init_bf clears bit two, then sets bit three through a separate fresh-read RMW. Complete esp_test_bf_set_feedback proves these same physical fields are the high-selector class and parity controls for its feedback modes; this is one canonical register identity rather than an address alias.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_mode_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_mode_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfModeControlSpec;
         impl crate::RegisterSpec for BfModeControlSpec {
             type Ux = u32;
@@ -16527,6 +16527,142 @@ pub mod wifi_mac_he_trigger_rx_diagnostics {
         }
         #[doc = "`read()` method returns [`packet_counts::R`](R) reader structure"]
         impl crate::Readable for PacketCountsSpec {}
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Test-only beamforming-feedback selector written by complete esp_test_bf_set_feedback. The write transforms and selector branches are exact; the public meaning of selector values zero through sixteen is not present in the archive, so only bounded functional names are assigned."]
+pub type WifiMacBeamformingFeedbackTest =
+    crate::Periph<wifi_mac_beamforming_feedback_test::RegisterBlock, 0x2010_4e00>;
+impl core::fmt::Debug for WifiMacBeamformingFeedbackTest {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacBeamformingFeedbackTest").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. Test-only beamforming-feedback selector written by complete esp_test_bf_set_feedback. The write transforms and selector branches are exact; the public meaning of selector values zero through sixteen is not present in the archive, so only bounded functional names are assigned."]
+pub mod wifi_mac_beamforming_feedback_test {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        configuration: Configuration,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. A zero enable argument clears ENABLE only. A nonzero argument first sets ENABLE, clears FEEDBACK_SUBMODE_B, replaces both seven-bit auxiliary arguments, then applies selector-dependent updates to the remaining submode fields. Selector sixteen replaces the complete word with ENABLE plus FEEDBACK_SUBMODE_B value one."]
+        #[inline(always)]
+        pub const fn configuration(&self) -> &Configuration {
+            &self.configuration
+        }
+    }
+    #[doc = "CONFIGURATION (rw) register accessor: SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. A zero enable argument clears ENABLE only. A nonzero argument first sets ENABLE, clears FEEDBACK_SUBMODE_B, replaces both seven-bit auxiliary arguments, then applies selector-dependent updates to the remaining submode fields. Selector sixteen replaces the complete word with ENABLE plus FEEDBACK_SUBMODE_B value one.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@configuration`] module"]
+    #[doc(alias = "CONFIGURATION")]
+    pub type Configuration = crate::Reg<configuration::ConfigurationSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. A zero enable argument clears ENABLE only. A nonzero argument first sets ENABLE, clears FEEDBACK_SUBMODE_B, replaces both seven-bit auxiliary arguments, then applies selector-dependent updates to the remaining submode fields. Selector sixteen replaces the complete word with ENABLE plus FEEDBACK_SUBMODE_B value one."]
+    pub mod configuration {
+        #[doc = "Register `CONFIGURATION` reader"]
+        pub type R = crate::R<ConfigurationSpec>;
+        #[doc = "Register `CONFIGURATION` writer"]
+        pub type W = crate::W<ConfigurationSpec>;
+        #[doc = "Field `AUXILIARY_ARGUMENT_LOW` reader - Low seven-bit argument passed as esp_test_bf_set_feedback argument two."]
+        pub type AuxiliaryArgumentLowR = crate::FieldReader;
+        #[doc = "Field `AUXILIARY_ARGUMENT_LOW` writer - Low seven-bit argument passed as esp_test_bf_set_feedback argument two."]
+        pub type AuxiliaryArgumentLowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `AUXILIARY_ARGUMENT_HIGH` reader - High seven-bit argument passed as esp_test_bf_set_feedback argument three."]
+        pub type AuxiliaryArgumentHighR = crate::FieldReader;
+        #[doc = "Field `AUXILIARY_ARGUMENT_HIGH` writer - High seven-bit argument passed as esp_test_bf_set_feedback argument three."]
+        pub type AuxiliaryArgumentHighW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `FEEDBACK_SUBMODE_A` reader - Three-bit selector-dependent field. Complete branches publish one for selector thirteen and five for selector fourteen."]
+        pub type FeedbackSubmodeAR = crate::FieldReader;
+        #[doc = "Field `FEEDBACK_SUBMODE_A` writer - Three-bit selector-dependent field. Complete branches publish one for selector thirteen and five for selector fourteen."]
+        pub type FeedbackSubmodeAW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `FEEDBACK_SELECTOR_LOW` reader - For selectors zero through seven this field receives the three-bit selector. The higher selector classes update it only partially or clear it."]
+        pub type FeedbackSelectorLowR = crate::FieldReader;
+        #[doc = "Field `FEEDBACK_SELECTOR_LOW` writer - For selectors zero through seven this field receives the three-bit selector. The higher selector classes update it only partially or clear it."]
+        pub type FeedbackSelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `FEEDBACK_SUBMODE_B` reader - Three-bit selector-dependent field. The common enabled prefix clears it; selectors twelve and sixteen publish one."]
+        pub type FeedbackSubmodeBR = crate::FieldReader;
+        #[doc = "Field `FEEDBACK_SUBMODE_B` writer - Three-bit selector-dependent field. The common enabled prefix clears it; selectors twelve and sixteen publish one."]
+        pub type FeedbackSubmodeBW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `ENABLE` reader - A nonzero enable argument sets this bit; zero clears it."]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - A nonzero enable argument sets this bit; zero clears it."]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:6 - Low seven-bit argument passed as esp_test_bf_set_feedback argument two."]
+            #[inline(always)]
+            pub fn auxiliary_argument_low(&self) -> AuxiliaryArgumentLowR {
+                AuxiliaryArgumentLowR::new((self.bits & 0x7f) as u8)
+            }
+            #[doc = "Bits 7:13 - High seven-bit argument passed as esp_test_bf_set_feedback argument three."]
+            #[inline(always)]
+            pub fn auxiliary_argument_high(&self) -> AuxiliaryArgumentHighR {
+                AuxiliaryArgumentHighR::new(((self.bits >> 7) & 0x7f) as u8)
+            }
+            #[doc = "Bits 14:16 - Three-bit selector-dependent field. Complete branches publish one for selector thirteen and five for selector fourteen."]
+            #[inline(always)]
+            pub fn feedback_submode_a(&self) -> FeedbackSubmodeAR {
+                FeedbackSubmodeAR::new(((self.bits >> 14) & 7) as u8)
+            }
+            #[doc = "Bits 17:19 - For selectors zero through seven this field receives the three-bit selector. The higher selector classes update it only partially or clear it."]
+            #[inline(always)]
+            pub fn feedback_selector_low(&self) -> FeedbackSelectorLowR {
+                FeedbackSelectorLowR::new(((self.bits >> 17) & 7) as u8)
+            }
+            #[doc = "Bits 20:22 - Three-bit selector-dependent field. The common enabled prefix clears it; selectors twelve and sixteen publish one."]
+            #[inline(always)]
+            pub fn feedback_submode_b(&self) -> FeedbackSubmodeBR {
+                FeedbackSubmodeBR::new(((self.bits >> 20) & 7) as u8)
+            }
+            #[doc = "Bit 23 - A nonzero enable argument sets this bit; zero clears it."]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 23) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:6 - Low seven-bit argument passed as esp_test_bf_set_feedback argument two."]
+            #[inline(always)]
+            pub fn auxiliary_argument_low(
+                &mut self,
+            ) -> AuxiliaryArgumentLowW<'_, ConfigurationSpec> {
+                AuxiliaryArgumentLowW::new(self, 0)
+            }
+            #[doc = "Bits 7:13 - High seven-bit argument passed as esp_test_bf_set_feedback argument three."]
+            #[inline(always)]
+            pub fn auxiliary_argument_high(
+                &mut self,
+            ) -> AuxiliaryArgumentHighW<'_, ConfigurationSpec> {
+                AuxiliaryArgumentHighW::new(self, 7)
+            }
+            #[doc = "Bits 14:16 - Three-bit selector-dependent field. Complete branches publish one for selector thirteen and five for selector fourteen."]
+            #[inline(always)]
+            pub fn feedback_submode_a(&mut self) -> FeedbackSubmodeAW<'_, ConfigurationSpec> {
+                FeedbackSubmodeAW::new(self, 14)
+            }
+            #[doc = "Bits 17:19 - For selectors zero through seven this field receives the three-bit selector. The higher selector classes update it only partially or clear it."]
+            #[inline(always)]
+            pub fn feedback_selector_low(&mut self) -> FeedbackSelectorLowW<'_, ConfigurationSpec> {
+                FeedbackSelectorLowW::new(self, 17)
+            }
+            #[doc = "Bits 20:22 - Three-bit selector-dependent field. The common enabled prefix clears it; selectors twelve and sixteen publish one."]
+            #[inline(always)]
+            pub fn feedback_submode_b(&mut self) -> FeedbackSubmodeBW<'_, ConfigurationSpec> {
+                FeedbackSubmodeBW::new(self, 20)
+            }
+            #[doc = "Bit 23 - A nonzero enable argument sets this bit; zero clears it."]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, ConfigurationSpec> {
+                EnableW::new(self, 23)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_TEST_BF_SET_FEEDBACK\\]; CONFIDENCE\\[instruction-exact-partial\\]. A zero enable argument clears ENABLE only. A nonzero argument first sets ENABLE, clears FEEDBACK_SUBMODE_B, replaces both seven-bit auxiliary arguments, then applies selector-dependent updates to the remaining submode fields. Selector sixteen replaces the complete word with ENABLE plus FEEDBACK_SUBMODE_B value one.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ConfigurationSpec;
+        impl crate::RegisterSpec for ConfigurationSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`configuration::R`](R) reader structure"]
+        impl crate::Readable for ConfigurationSpec {}
+        #[doc = "`write(|w| ..)` method takes [`configuration::W`](W) writer structure"]
+        impl crate::Writable for ConfigurationSpec {
+            type Safety = crate::Unsafe;
+        }
     }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_he_disable_obss_narrow_bw_ru writes either all ones or zero into the twenty-bit bitmap and independently sets or clears a five-bit class group and the global disable bit. The leaf name proves the aggregate disable function; individual bitmap/class identities remain approximate."]
@@ -24131,6 +24267,8 @@ pub struct Peripherals {
     pub wifi_mac_he_mu_edca_timer: WifiMacHeMuEdcaTimer,
     #[doc = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS"]
     pub wifi_mac_he_trigger_rx_diagnostics: WifiMacHeTriggerRxDiagnostics,
+    #[doc = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST"]
+    pub wifi_mac_beamforming_feedback_test: WifiMacBeamformingFeedbackTest,
     #[doc = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU"]
     pub wifi_mac_he_obss_narrow_band_ru: WifiMacHeObssNarrowBandRu,
     #[doc = "WIFI_MAC_TX_POWER_INIT"]
@@ -24220,6 +24358,7 @@ impl Peripherals {
             wifi_mac_he_buffer_status: WifiMacHeBufferStatus::steal(),
             wifi_mac_he_mu_edca_timer: WifiMacHeMuEdcaTimer::steal(),
             wifi_mac_he_trigger_rx_diagnostics: WifiMacHeTriggerRxDiagnostics::steal(),
+            wifi_mac_beamforming_feedback_test: WifiMacBeamformingFeedbackTest::steal(),
             wifi_mac_he_obss_narrow_band_ru: WifiMacHeObssNarrowBandRu::steal(),
             wifi_mac_tx_power_init: WifiMacTxPowerInit::steal(),
             wifi_mac_he_init_suffix: WifiMacHeInitSuffix::steal(),

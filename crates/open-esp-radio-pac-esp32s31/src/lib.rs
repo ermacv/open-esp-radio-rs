@@ -696,9 +696,18 @@ mod tests {
         let registers = unsafe { RadioRegisters::steal() };
         let init = &registers.peripherals.wifi_mac_he_init_prefix;
         assert_eq!(init.rx_field_control().as_ptr() as usize, 0x2010_4048);
+        assert_eq!(init.bf_mode_control().as_ptr() as usize, 0x2010_409c);
         assert_eq!(init.bf_report_rate().as_ptr() as usize, 0x2010_4464);
         assert_eq!(init.bf_timing_control().as_ptr() as usize, 0x2010_4c78);
         assert_eq!(init.tb_tx_control().as_ptr() as usize, 0x2010_4e04);
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_beamforming_feedback_test
+                .configuration()
+                .as_ptr() as usize,
+            0x2010_4e00
+        );
         assert_eq!(
             registers
                 .peripherals

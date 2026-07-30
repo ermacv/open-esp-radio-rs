@@ -45,9 +45,9 @@ impl RadioRegisters {
         init.bf_high_image()
             .modify(|_, w| unsafe { w.image_unknown().bits(0x690) });
         init.bf_mode_control()
-            .modify(|_, w| w.clear_unknown().clear_bit());
+            .modify(|_, w| w.high_selector_class().clear_bit());
         init.bf_mode_control()
-            .modify(|_, w| w.enable_unknown().set_bit());
+            .modify(|_, w| w.high_selector_parity().set_bit());
 
         // Complete hal_he_set_bf_report_rate(1, 0x10, 0, 0) derives signal
         // mode one, normalized rate zero, DCM false and ER-SU false, then

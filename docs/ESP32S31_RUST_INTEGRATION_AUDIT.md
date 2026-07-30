@@ -67,6 +67,19 @@ The remaining `complete_*` RF/baseband composition must move into the same
 module next. Keep diagnostics behind an optional no-op observation hook and do
 not add an Embassy dependency to the PHY core.
 
+A 2026-07-30 experiment copying the nested RX/TX calibration composition into
+separate public cross-crate `async fn`s was rejected. In the identical
+`psram-code-psram-data` image it moved the runtime text end from
+`0x500c1faa` to `0x500c248e`; consecutive reset-separated HE20 runs reported
+40 and 12,097 RX `BUFFER_FULL` events. Restoring the current single application
+port restored the exact `0x500c1faa` frontier and passed at 10.047-Mbit/s RX
+plus 66.169-Mbit/s TX with zero DMA starvation. The correlation is proven by
+the HIL runs; the suspected cause is changed nested-future/state layout, not
+yet a proven stack-overflow diagnosis. The next transfer should therefore move
+one complete `TargetPhyRegisterPort` state machine and add a compile-time
+future-size/frontier assertion instead of exposing every nested completion as
+an independent async API.
+
 ### 2. ESP-HAL platform adapter
 
 The former 742-line `esp32s31_rust::open_radio_platform` implementation of the

@@ -1872,6 +1872,7 @@ impl HeTriggerBasedTxConfig {
 pub struct HeAmpduTxConfig {
     rate: HeRate,
     ampdu_density: HtAmpduDensity,
+    txop_limit: HeEdcaTxopLimit,
     trigger_based: Option<HeTriggerBasedTxConfig>,
     pub bss_color: u8,
     pub spatial_reuse: u8,
@@ -1905,12 +1906,48 @@ impl HeAmpduTxConfig {
         subframes: u8,
         ampdu_density: HtAmpduDensity,
     ) -> Option<Self> {
-        if bss_color > 0x3f || aggregate_length == 0 || subframes == 0 || subframes > 32 {
+        Self::new_with_txop(
+            rate,
+            bss_color,
+            aggregate_length,
+            subframes,
+            ampdu_density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Construct an HE20 SU A-MPDU under the complete vendor duration gate.
+    ///
+    /// SOURCE: ROM rev0 `he_max_apep_length`, complete
+    /// `_oracles/libpp.a[trc.o]::rx11AXRate2AMPDULimit_update`, and complete
+    /// `_oracles/libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength`. The final
+    /// assembled APEP must satisfy the rate/GI-specific limit selected by the
+    /// negotiated EDCA TXOP; the peer's independent A-MPDU exponent is
+    /// enforced by the pinned DMA owner before this constructor is reached.
+    ///
+    /// SOURCE[HIL_OPEN_HE_RATE_APEP_GATE_2026_07_30]: live MCS9
+    /// 2xLTF/1.6-us runs qualified the resulting 31-MPDU ordinary and 30-MPDU
+    /// hardware-HE-Control frontiers with complete BlockAck.
+    pub const fn new_with_txop(
+        rate: HeRate,
+        bss_color: u8,
+        aggregate_length: u16,
+        subframes: u8,
+        ampdu_density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Option<Self> {
+        if bss_color > 0x3f
+            || aggregate_length == 0
+            || (aggregate_length as u32) > rate.maximum_apep_bytes(txop_limit)
+            || subframes == 0
+            || subframes > 32
+        {
             return None;
         }
         Some(Self {
             rate,
             ampdu_density,
+            txop_limit,
             trigger_based: None,
             bss_color,
             spatial_reuse: 0,
@@ -1948,6 +1985,10 @@ impl HeAmpduTxConfig {
         self.ampdu_density
     }
 
+    pub const fn txop_limit(self) -> HeEdcaTxopLimit {
+        self.txop_limit
+    }
+
     pub const fn protection_spacing(self) -> u16 {
         self.protection_spacing
     }
@@ -1976,6 +2017,7 @@ impl HeAmpduTxConfig {
             && self.spatial_reuse <= 0x0f
             && self.protection_spacing <= 0x03ff
             && self.aggregate_length != 0
+            && (self.aggregate_length as u32) <= self.rate.maximum_apep_bytes(self.txop_limit)
             && self.subframes != 0
             && self.subframes <= 32
             && self.aifsn <= 0x0f

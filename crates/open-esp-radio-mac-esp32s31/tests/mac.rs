@@ -2718,6 +2718,21 @@ fn he_default_apep_limit_matches_rom_and_the_blob_dcm_branch() {
 }
 
 #[test]
+fn he_ampdu_config_rejects_an_apep_above_the_selected_rate_limit() {
+    let gi_1600 = HeRate::ldpc(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf1600Ns);
+    assert!(
+        HeAmpduTxConfig::new(gi_1600, 27, 47_000, 31, HtAmpduDensity::NoRestriction,).is_some()
+    );
+    assert!(
+        HeAmpduTxConfig::new(gi_1600, 27, 47_001, 32, HtAmpduDensity::NoRestriction,).is_none()
+    );
+
+    let gi_800 = HeRate::ldpc(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
+    assert!(HeAmpduTxConfig::new(gi_800, 27, 50_000, 32, HtAmpduDensity::NoRestriction,).is_some());
+    assert!(HeAmpduTxConfig::new(gi_800, 27, 50_001, 32, HtAmpduDensity::NoRestriction,).is_none());
+}
+
+#[test]
 fn he_nonzero_edca_txop_apep_limits_match_the_complete_blob_producer() {
     // Complete rx11AXRate2AMPDULimit_update output for the standard WMM
     // voice TXOP of 47 * 32 us. Rows are 0.8/1.6/3.2-us GI.

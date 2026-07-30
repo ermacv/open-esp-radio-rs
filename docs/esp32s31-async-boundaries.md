@@ -1527,6 +1527,27 @@ first A-MPDU completion. The observed Best Effort TXOP was zero; all nonzero
 producer entries are covered independently by instruction-shaped exhaustive
 host comparison over the blob's complete 0..255 input domain.
 
+The same APEP policy must guard every production append, not only the fixed
+rate matrix. Before that ownership correction, the ordinary MCS9
+2xLTF/1.6-us path published 32 full-size MPDUs even though their assembled
+APEP exceeded the ROM limit of 47,000 bytes. All MPDUs were acknowledged, but
+the overlong PPDU took about 4.8 ms in hardware and delivered only about
+55--64 Mbit/s. The pinned DMA owner now evaluates the next assembled length
+before consuming a slot, CCMP packet number or sequence number. It admits 31
+ordinary MPDUs (46,996 APEP bytes in the exact host regression) and only 30
+when hardware inserts a four-byte HE-Control field into every MPDU. Separate
+live runs observed 31/31 and 30/30 BlockAck completion respectively, no
+partial aggregates, and maximum Ethernet payload totals of 45,632 and 44,160
+bytes. On the Android HE20 AP the ordinary path then measured approximately
+66--69 Mbit/s, matching the fixed-rate matrix on that AP rather than the
+higher FRITZ measurements.
+
+SOURCE[HIL_OPEN_HE_RATE_APEP_GATE_2026_07_30]: ESP32-S31 rev0,
+`open-radio-phy-prelude-hil`, complete open PHY/MAC, Android HE20 WPA2 hotspot
+on channel 6, MCS9 LDPC with 2xLTF/1.6-us GI, zero Best Effort TXOP, typed
+delimiter/MPDU/MIC/FCS accumulation, and direct DMA completion/BlockAck
+observations with and without hardware HE-Control insertion.
+
 The HE SU formatter now also owns the separate LDPC coding image. Complete
 `_oracles/libpp.a[hal_mac_tx.o]::mac_tx_set_hesig` loads
 `esp_wifi_cert_tx_bcc`, produces intermediate halfword `0x017f` for BCC or

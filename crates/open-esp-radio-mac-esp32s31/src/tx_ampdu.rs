@@ -17,9 +17,9 @@ use open_esp_radio_pac_esp32s31::{
 use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
     tx::{
-        decode_tx_completion, HeAmpduTxConfig, HeRate, HeSmpduTxConfig, HtAmpduDensity,
-        HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion, TxCookie, TxHardware,
-        TxSlotState,
+        decode_tx_completion, HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HeSmpduTxConfig,
+        HtAmpduDensity, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion,
+        TxCookie, TxHardware, TxSlotState,
     },
 };
 
@@ -806,6 +806,26 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         rate: HeRate,
         density: HtAmpduDensity,
     ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_he_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Check one HE frame against both peer and rate/TXOP APEP ceilings.
+    pub fn can_commit_he_frame_with_txop(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<bool, HtAmpduTxError> {
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))
             .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
@@ -815,7 +835,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let empty_delimiters = rate
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
+        if !self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
+            return Ok(false);
+        }
+        Ok(u32::from(self.length_after_append(psdu_length, false)?)
+            <= rate.maximum_apep_bytes(txop_limit))
     }
 
     /// Check one HE frame whose four-byte HE-Control is inserted by hardware.
@@ -830,6 +854,26 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         rate: HeRate,
         density: HtAmpduDensity,
     ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_hardware_he_control_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Check hardware HE-Control insertion under the same complete APEP gate.
+    pub fn can_commit_hardware_he_control_frame_with_txop(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<bool, HtAmpduTxError> {
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))
             .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
@@ -839,12 +883,16 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let _empty_delimiters = rate
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        self.can_commit_frame_with_hardware_he_control(
+        if !self.can_commit_frame_with_hardware_he_control(
             cookie,
             frame_length,
             hardware_mic_length,
             true,
-        )
+        )? {
+            return Ok(false);
+        }
+        Ok(u32::from(self.length_after_append(psdu_length, true)?)
+            <= rate.maximum_apep_bytes(txop_limit))
     }
 
     /// Commit the next encoded MPDU and its hardware-generated trailer.
@@ -949,6 +997,36 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         rate: HeRate,
         density: HtAmpduDensity,
     ) -> Result<(), HtAmpduTxError> {
+        self.commit_he_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Commit one HE MPDU under the complete rate/TXOP duration policy.
+    pub fn commit_he_frame_with_txop(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<(), HtAmpduTxError> {
+        if !self.as_ref().can_commit_he_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            txop_limit,
+        )? {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))
             .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
@@ -975,6 +1053,39 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         rate: HeRate,
         density: HtAmpduDensity,
     ) -> Result<(), HtAmpduTxError> {
+        self.commit_hardware_he_control_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Commit hardware HE-Control insertion under the complete duration gate.
+    pub fn commit_hardware_he_control_frame_with_txop(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<(), HtAmpduTxError> {
+        if !self
+            .as_ref()
+            .can_commit_hardware_he_control_frame_with_txop(
+                cookie,
+                frame_length,
+                hardware_mic_length,
+                rate,
+                density,
+                txop_limit,
+            )?
+        {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))
             .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
@@ -1026,7 +1137,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Commit a Trigger-eligible HE MPDU with hardware HE-Control insertion.
     pub fn commit_hardware_he_control_msdu_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cookie: TxCookie,
         frame_length: usize,
         hardware_mic_length: u8,
@@ -1034,17 +1145,40 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         rate: HeRate,
         density: HtAmpduDensity,
     ) -> Result<(), HtAmpduTxError> {
+        self.commit_hardware_he_control_msdu_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            msdu_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+        )
+    }
+
+    /// Commit Trigger metadata and HE-Control under a typed EDCA TXOP limit.
+    pub fn commit_hardware_he_control_msdu_frame_with_txop(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        msdu_length: usize,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<(), HtAmpduTxError> {
         let msdu_length = u16::try_from(msdu_length)
             .ok()
             .filter(|length| *length != 0)
             .ok_or(HtAmpduTxError::TriggerMsduLengthUnavailable)?;
         let index = usize::from(self.count);
-        self.as_mut().commit_hardware_he_control_frame(
+        self.as_mut().commit_hardware_he_control_frame_with_txop(
             cookie,
             frame_length,
             hardware_mic_length,
             rate,
             density,
+            txop_limit,
         )?;
         // SAFETY: the successful commit incremented count once while retaining
         // the same pinned allocation and exclusive software ownership.
@@ -3736,6 +3870,58 @@ mod tests {
         }
         assert_eq!(storage.frame_count(), 32);
         assert!(!storage.can_commit_frame(cookie, 100, 8, 0).unwrap());
+        storage.as_mut().cancel(cookie).unwrap();
+    }
+
+    #[test]
+    fn he_rate_duration_gate_prevents_an_oversized_dma_publication() {
+        let mut storage = HtAmpduTxStorage::<32, 1_600>::new();
+        // SAFETY: no address is published and the local is not moved while
+        // the pin exists.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        storage
+            .as_mut()
+            .configure_max_aggregate_bytes(u16::MAX)
+            .unwrap();
+        let density = HtAmpduDensity::NoRestriction;
+        let gi_1600 = HeRate::ldpc(
+            crate::tx::HeMcs::Mcs9,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        );
+        let cookie = storage.as_mut().begin().unwrap();
+        for _ in 0..31 {
+            assert!(storage
+                .can_commit_he_frame(cookie, 1_500, 8, gi_1600, density)
+                .unwrap());
+            storage
+                .as_mut()
+                .commit_he_frame(cookie, 1_500, 8, gi_1600, density)
+                .unwrap();
+        }
+        assert_eq!(storage.prepared_aggregate(cookie).unwrap().bytes, 46_996);
+        assert!(!storage
+            .can_commit_he_frame(cookie, 1_500, 8, gi_1600, density)
+            .unwrap());
+        assert_eq!(
+            storage
+                .as_mut()
+                .commit_he_frame(cookie, 1_500, 8, gi_1600, density),
+            Err(HtAmpduTxError::AggregateFull)
+        );
+        storage.as_mut().cancel(cookie).unwrap();
+
+        let gi_800 = HeRate::ldpc(
+            crate::tx::HeMcs::Mcs9,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        let cookie = storage.as_mut().begin().unwrap();
+        for _ in 0..32 {
+            storage
+                .as_mut()
+                .commit_he_frame(cookie, 1_500, 8, gi_800, density)
+                .unwrap();
+        }
+        assert_eq!(storage.prepared_aggregate(cookie).unwrap().bytes, 48_512);
         storage.as_mut().cancel(cookie).unwrap();
     }
 

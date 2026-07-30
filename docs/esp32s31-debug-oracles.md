@@ -316,15 +316,25 @@ implemented. This capture also makes the HIL boundary explicit: injecting
 NDPA alone cannot qualify beamformee behavior because the NDP between the
 announcement and report is semantically required.
 
-The same capture's frame 7624 closes the vendor HE association tail before
-that sounding exchange. The STA emits, in order, HT Capabilities, HE
+The same capture's frame 7624 closes the complete vendor HE association
+request before that sounding exchange. Before the existing HT/HE tail, the
+STA uses listen interval three and emits Supported Rates, an RSN element with
+SPP A-MSDU-capable bit `0x0400`, Power Capability `[-11,20]` and Extended
+Supported Rates in that exact order. Complete
+`libnet80211.a[ieee80211_output.o]::ieee80211_assoc_req_construct` anchors the
+ordering and conditionally calls
+`libnet80211.a[ieee80211_he.o]::ieee80211_add_power_cap`; that leaf obtains the
+minimum from `hal_get_tx_min_pwr` and the maximum from
+`hal_get_tx_pwr(16,1)`. Complete `libpp.a[hal_mac_ctl.o]::hal_he_init` anchors
+the installed minimum at -11. The remaining tail is HT Capabilities, HE
 Capabilities, HE UL MU Power Capabilities, WMM Information and Extended
 Capabilities. Complete
 `libnet80211.a[ieee80211_he.o]::ieee80211_add_ulmu_pwrcap` obtains the primary
 power index for MAC rates 16 through 25 and publishes the nine unsigned
 differences from rate 16 after Extension ID 60 and two reserved zero bytes.
-The open encoder now takes those calibrated indices through a typed,
-allocation-free Rust value; it retains no ROM callback or C-layout parameter.
+The open encoder now takes the minimum, maximum and calibrated indices through
+typed, allocation-free Rust values; it retains no ROM callback or C-layout
+parameter.
 `HIL_OPEN_HE_ASSOC_COMPLETE_FRITZ_2026_07_30` measured live indices
 `[20,20,20,20,19,19,18,18,16,15]`, hence differences
 `[0,0,0,1,1,2,2,4,5]`. The FRITZ accepted the first association request as
@@ -332,8 +342,17 @@ AID 21, and WPA2, protected ARP, TX/RX AddBA and the first three-subframe
 A-MPDU all completed with zero driver drops. A subsequent 175-packet,
 35-second ICMP uplink had zero loss and 3.667 ms mean RTT. Neither that uplink
 window nor the preceding idle observation contained an HE NDPA or Trigger;
-the complete capability tail is therefore HIL-qualified as an association
+the complete capability tail was therefore HIL-qualified as an association
 contract, not as proof of sounding or OFDMA scheduling.
+`HIL_OPEN_HE_ASSOC_COMPLETE_BODY_FRITZ_2026_07_30` then added the preceding
+listen interval, RSN, Power Capability and IE ordering from the same frame
+7624. The AP again accepted the first request, now as AID 16; WPA2, TX/RX
+AddBA and a three-subframe TX A-MPDU completed with zero driver drops, and a
+175-packet, 35-second ICMP uplink again had zero loss. The 48-second serial
+window still measured HE NDPA count zero and Trigger count zero. Thus matching
+the complete association body does not activate the missing sounding/OFDMA
+scheduler; the remaining boundary is post-association node, rate-control or
+traffic-ID lifecycle.
 
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for

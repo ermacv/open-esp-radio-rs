@@ -296,6 +296,26 @@ had beam, BFRP detection, NDP success and feedback status all clear and both
 timers zero. This is a negative sounding baseline for that AP configuration,
 not evidence that the parser or S31 feedback hardware was exercised.
 
+The preserved monitor capture `esp32s31-he-oracle-fixed-ch11.pcapng`
+(SHA-256
+`d50289842bd3cddbcebf3080c049cf6d6b387908b501b6b7333fbfb250e7abde`)
+supplies a positive, complete vendor-firmware air oracle. Frame 1374 is a
+21-byte FCS-stripped HE NDPA from BSSID `dc:15:c8:54:bc:1e` to the S31 at
+`30:ed:a0:f3:f6:d0`: Dialog Token `0x37` and STA Info word `0x0820001d`
+select AID 29, HE20 RU indices 0 through 8, feedback/Ng encoding zero,
+disambiguation one, codebook zero and Nc zero. Frame 1375 is the required
+following HE NDP. Frame 1376, 14.39 us later, is the S31's Action-No-Ack
+HE Compressed Beamforming and CQI response. Its 40-bit MIMO Control
+`0x0dc4008208` selects one column, two rows, 20 MHz, no grouping, codebook
+one, SU feedback, one first/final segment, RU indices 0 through 8 and the
+same Dialog Token; average-SNR byte `0x14` precedes an 80-byte feedback
+matrix. `open-esp-radio-ieee80211::ndpa` now reproduces the exact NDPA and
+parses that fixed response header without allocation. The matrix remains
+opaque until an instruction-level or standard-backed angle-layout owner is
+implemented. This capture also makes the HIL boundary explicit: injecting
+NDPA alone cannot qualify beamformee behavior because the NDP between the
+announcement and report is semantically required.
+
 `test_hal_rx_mu_sigb.o::dbg_dump_rx_sigb` reads `0x20104028`, but mixes that
 observation with an RX object and test-only parser state. It remains useful for
 HE-SIG-B layout and MU receive testing, but is not promoted to an MMIO field

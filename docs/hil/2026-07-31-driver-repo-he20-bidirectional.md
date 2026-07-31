@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.014 Mbit/s.
-- Concurrent open-radio TX floor: 64.906 Mbit/s.
-- Conservative sum: 74.920 Mbit/s.
+- Device direct-RX median: 10.013 Mbit/s.
+- Concurrent open-radio TX floor: 61.718 Mbit/s.
+- Conservative sum: 71.731 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,13 +49,13 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `35de87431dbfadc79ed7d21e8d686e6f308e31da68ccc16dfb6c1a6e5a218741`.
+  `7ae0d33ee778127623d835a117e4b6d0808fcfcb8143d574837df8f475811721`.
 - ESP application image SHA-256:
-  `f8da55f47c03f5b0b15c1d5b57a0b00226626d009dbf65109f05efda72e9fca5`.
+  `239e54c3662faaed04a06fd5cc16108087cf4dc3cfddde836378d7ad6c3ee0db`.
 - Packed stage-two runtime SHA-256:
-  `644021a24bee61cb3792ea7454b6e0f69623072210d06c521e0699baa70167f1`.
+  `ef2da7b5eab035c638f5301191fddd46d043bc9dbb198d4fb9009e0684233c3b`.
 - Qualification report SHA-256:
-  `05c07b3241924b66478aed5e5c21614c1531928fdb62ed7903995370cc9f6b63`.
+  `bae0d18eda86cbbbd9af5c7ebb818b57e60a176c3b6410b8ee5ad78496e3b214`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -74,9 +74,12 @@ now owns that negotiated TX state and all four EDCA contention windows, while
 selection and success/failure CW transitions. The HIL retains only platform
 entropy, DMA/IRQ waiting, PHY power application and Retry-bit publication.
 Board/bootstrap setup, credentials, synthetic traffic generation and evidence
-reporting also remain HIL concerns. The WPA2 executor orchestration is tracked
-separately and must be extracted before the old
-application HIL can be deleted.
+reporting also remain HIL concerns. `Wpa2StaSupplicant` now owns PTK renewal,
+M3 MIC verification, async key-data unwrap, strict GTK parsing and the exact
+pairwise/group `Wpa2StaKeyInstallRequest`. The HIL only executes that request
+against the two S31 hardware slots and reports one completion before receiving
+the authenticated M4 frame. WPA2 deadline/retry policy and the final connected
+dispatcher remain to extract before the old application HIL can be deleted.
 
 The same image now calls the PHY crate's `run_phy_register` through the
 driver-owned `TargetPhyRegisterPort`. The complete nested RF/baseband/channel
@@ -121,6 +124,16 @@ was the duplicate `key_data` GTK parser/type. The retained `Wpa2Gtk` zeroizes
 on drop and is now the same type accepted by `Wpa2KeyInstall`. Cold UART proved
 M1, M2, M3 MIC/decryption, pairwise and GTK installation, M4, protected ARP,
 DHCP and external-probe readiness before the strict traffic result above.
+
+The subsequent supplicant-runtime transfer removed the remaining PMK/PTK,
+M3 MIC, AES key-unwrap, GTK parser and state-ticket dispatch from the HIL.
+`Wpa2StaSupplicant::on_frame` now resolves all hardware-independent actions
+and returns one `Wpa2StaKeyInstallRequest` containing zeroizing pairwise/group
+keys plus the Message-3 receive sequence. The S31 executor borrows those keys
+only for the finite MAC slot writes, returns the private ticket through
+`complete_key_install`, and receives an authenticated Message 4. The exact
+image then booted, associated, completed WPA2/DHCP and passed the strict
+10.013-Mbit/s RX plus 61.718-Mbit/s concurrent-TX run recorded above.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

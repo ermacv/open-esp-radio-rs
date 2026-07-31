@@ -3,10 +3,13 @@
 //! Allocation-free WPA2-Personal protocol primitives.
 //!
 //! This is the active home for hardware-independent WPA2 code recovered in
-//! `migration/esp32s31-hybrid-runtime`. The first migrated boundary validates
-//! and classifies complete RSN EAPOL-Key packets. Cryptographic state and key
-//! installation remain separate from parsing and will move behind explicit
-//! ownership types as the open STA path reaches those protocol transitions.
+//! `migration/esp32s31-hybrid-runtime`. It validates and classifies complete
+//! RSN EAPOL-Key packets, owns the station/authenticator state machines and
+//! joins station PTK/MIC/key-data processing to typed key-install requests.
+//! Platform MAC crates remain responsible only for executing those requests.
+
+#[cfg(test)]
+extern crate std;
 
 pub mod aes;
 pub mod ap;
@@ -14,6 +17,7 @@ pub mod frames;
 pub mod keys;
 pub mod retry;
 pub mod state;
+pub mod supplicant;
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;

@@ -353,13 +353,15 @@ counter, supplicant nonce and exact Association RSN/RSNXE image; and
 `Wpa2TxFrame::authenticate` applies the PTK KCK MIC. The parallel root-level
 `Message2`/`Message4` builders and duplicate `key_data` GTK parser/type were
 deleted, so the parsed `Wpa2Gtk` is also the type consumed by
-`Wpa2KeyInstall`. A cold `psram-code-psram-data` boot proved M1, authenticated
-M2, verified/decrypted M3, pairwise and group-key installation, authenticated
-M4, protected ARP and DHCP. The following strict bidirectional run delivered
-10.014-Mbit/s RX plus a 64.906-Mbit/s concurrent TX floor with zero strict
-DMA-starvation failure. M3 crypto/key-install action orchestration, handshake
-deadlines/retries and the final connected dispatcher still remain in the HIL
-executor and must move without duplicating these canonical frame owners.
+`Wpa2KeyInstall`. `Wpa2StaSupplicant` now also owns PTK renewal, M3 MIC
+verification, async key-data unwrap, strict GTK parsing and the private state
+ticket joining one `Wpa2StaKeyInstallRequest` to its completion. The HIL only
+executes that request against the pairwise/group S31 hardware slots and then
+receives the authenticated M4 frame. The exact `psram-code-psram-data` image
+booted, associated, completed WPA2/DHCP, and its strict bidirectional run
+delivered 10.013-Mbit/s RX plus a 61.718-Mbit/s concurrent TX floor with zero
+strict DMA-starvation failure. Handshake deadlines/retries and the final
+connected dispatcher still remain in the HIL executor.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per

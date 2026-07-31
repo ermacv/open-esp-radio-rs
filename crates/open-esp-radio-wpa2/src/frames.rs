@@ -140,6 +140,11 @@ impl<const N: usize> OwnedAssociationSecurityIes<N> {
         let length = self.bytes[1] as usize + 2;
         &self.bytes[..length]
     }
+
+    pub fn rsnxe(&self) -> &[u8] {
+        let length = self.bytes[1] as usize + 2;
+        &self.bytes[length..self.len]
+    }
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]

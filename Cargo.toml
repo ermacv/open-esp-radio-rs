@@ -13,7 +13,7 @@ members = [
     "tools/pac-gen",
     "tools/hil-runner",
 ]
-exclude = ["hil/esp32s31"]
+exclude = ["hil/esp32s31", "hil/vendor-oracle/esp32s31"]
 resolver = "2"
 
 [workspace.package]

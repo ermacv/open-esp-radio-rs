@@ -9,6 +9,7 @@ description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
 serialport = { version = "4.8.1", default-features = false }
+sha2 = "0.10.9"
 
 [lints]
 workspace = true

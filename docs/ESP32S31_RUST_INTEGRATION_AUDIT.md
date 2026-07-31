@@ -1,12 +1,14 @@
-# `esp32s31_rust` integration audit
+# ESP32-S31 driver-repository HIL integration audit
 
 Audit date: 2026-07-31.
 
-The `esp32s31_rust` HIL application is not merely an example yet. Its
-`open_radio_phy_prelude_hil.rs` module is 11,000+ lines and still contains
-reusable PHY, MAC, STA and executor policy. Treating that module as the final
-home of end-to-end logic would leave the source-only driver incomplete and
-would force every application to reproduce recovered vendor ordering.
+The working HIL application, bootstrap, linker layout and Rust host runner now
+live in this repository under `hil/esp32s31`. Its copied `radio_hil.rs` module
+is still 11,000+ lines and contains reusable PHY, MAC and STA policy. Treating
+that module as the final home of end-to-end logic would leave the source-only
+driver incomplete and force every application to reproduce recovered vendor
+ordering. The neighboring `esp32s31_rust` copy remains only until crate/HIL
+parity makes its deletion mechanical.
 
 This audit distinguishes reusable driver behaviour from board wiring and HIL
 policy. Blob/ROM behaviour is promoted into the driver only with the same
@@ -311,7 +313,20 @@ selectors were deleted. A post-transfer remote-only
 concurrent TX with zero `BUFFER_FULL` and `FIFO_OVERFLOW`. Frame/RX ownership,
 WPA2 action dispatch and the final connected dispatcher remain to move.
 
-## Code that should remain in `esp32s31_rust`
+The post-response peer join is now driver-owned too.
+`StaPeerScanPolicy` retains the scan-derived association PHY, typed HT A-MPDU
+parameters, effective HE BSS color and atomically validated WMM policy.
+`StaPeerAssociationPlan` accepts only a successful response, applies a valid
+response WMM set as one all-or-nothing override, parses the HE20 peer once,
+and produces the peer QoS bit, link metric and initialized
+`StaRateControlAssociation` from one consistent view. The HIL deleted its
+duplicate raw capability-byte, WMM-to-TXOP, HE-operation and rate-control
+construction. Three host tests cover the HE20 plan, response-WMM precedence
+and rejection. The reset-separated PSRAM/PSRAM HE20 bidirectional regression
+then passed at 10.012-Mbit/s RX median plus a 67.726-Mbit/s concurrent TX floor
+with zero strict DMA-starvation failures.
+
+## Code that should remain in the driver-repository HIL
 
 - board resource selection, linker sections and the chosen memory profile;
 - SSID/passphrase, static IP and test-peer configuration;
@@ -325,27 +340,31 @@ establishes a stable register/field meaning, that identity should move to the
 SVD/PAC with blob/ROM/HIL provenance; the application should then use a typed
 diagnostic snapshot or delete the obsolete raw read.
 
-## Repository-wide survey
+## Old-repository retirement boundary
 
-The other open-radio consumers in `esp32s31_rust` do not contain another
-production driver implementation:
+The old open-radio consumers in `esp32s31_rust` do not contain another
+production driver implementation beyond the still-duplicated monolithic HIL:
 
 - `open_radio_frontier`, `open_radio_power_hil` and the small prelude binary
   are board ownership, crash-record and qualification entry points;
-- `open_radio_vendor_oracle_hil` deliberately links or wraps vendor/ROM
-  leaves and must never move into the source-only driver;
+- `open_radio_vendor_oracle_hil` has moved to the isolated
+  `hil/vendor-oracle/esp32s31` workspace. It deliberately links or wraps
+  vendor/ROM leaves and remains outside every source-only dependency graph;
 - `wifi_scan` contains closed-driver comparison and raw oracle probes. Stable
   register identities discovered there belong in SVD/PAC, but the probe
   program itself stays in the application;
-- `tools/xtask/open_radio*.rs` are host-side traffic generation, serial
-  capture and qualification policy, not firmware runtime;
+- the driver repository's `cargo hil` runner now owns build, flash,
+  bidirectional traffic and vendor-oracle entry points. Remaining old xtask
+  scenarios are deleted only after their strict gates are reproduced here;
 - linker placement, the PSRAM/PSRAM bootstrap and the 10,900-byte SRAM ISR
   frontier remain board/application responsibilities.
 
-Consequently bulk-copying another application file would be wrong. The next
-useful transfer is a typed MAC runtime state machine from the named functions
-above, followed by one complete PHY target executor and finally the STA link
-state machine.
+Consequently the old repository is not the place for further driver work. The
+next useful transfer is a typed MAC runtime state machine from the named
+functions above, followed by one complete PHY target executor and finally the
+STA link state machine. After those paths and the remaining strict HIL
+scenarios have parity here, the duplicated radio module, vendor oracle and old
+radio xtask support can be deleted from `esp32s31_rust` together.
 
 ## Transfer order
 

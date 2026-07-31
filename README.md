@@ -3,10 +3,11 @@
 Source-only Rust radio stack for Espressif chips, initially targeting
 ESP32-S31.
 
-The repository is designed to be consumed directly by `no_std` Rust
-applications. It does not link `esp-wifi-sys`, a vendor Wi-Fi archive, or a
-Wi-Fi/radio ROM ABI. The silicon boot ROM is outside this definition; the
-strict boundary concerns radio ownership and runtime calls.
+The public crates are designed to be consumed directly by `no_std` Rust
+applications. They and the default HIL do not link `esp-wifi-sys`, a vendor
+Wi-Fi archive, or a Wi-Fi/radio ROM ABI. The separately excluded vendor-oracle
+workspace is the only opt-in exception. The silicon boot ROM is outside this
+definition; the strict boundary concerns radio ownership and runtime calls.
 
 Current workspace layers:
 
@@ -79,11 +80,13 @@ archive decision, and
 tracks the remaining application-to-driver transfer. Git history preserves the
 exact pre-cleanup archive.
 
-Board policy, task spawning, linker placement and flashing belong in a
-separate application workspace. Reusable ESP-HAL singleton/trait wiring lives
-in the optional adapter crate above. The `esp32s31_rust` HIL project may
-depend on this repository for the open driver and on `esp-wifi-sys` for a
-closed-driver comparison profile; neither driver depends on the other.
+Board policy, task spawning, linker placement and flashing live in the
+repository-local [`hil/esp32s31`](hil/esp32s31) workspace. Reusable ESP-HAL
+singleton/trait wiring lives in the optional adapter crate above. The closed
+PHY comparison image lives in the separate, opt-in
+[`hil/vendor-oracle/esp32s31`](hil/vendor-oracle/esp32s31) workspace; neither
+the root workspace nor the source-only HIL resolves `esp-phy`, `esp-rtos` or
+`esp-wifi-sys`.
 
 No vendor ELF, static library, disassembly dump, generated proprietary header,
 or extracted binary table belongs in this repository.

@@ -1,9 +1,11 @@
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     env,
     error::Error,
     ffi::OsString,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -16,6 +18,7 @@ const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 const BOOTSTRAP_BIN: &str = "open-esp-radio-hil-esp32s31-bootstrap";
+const ORACLE_BIN: &str = "open-esp-radio-vendor-oracle-hil-esp32s31";
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
 const RUNTIME_CRC_OFFSET: usize = 40;
 const RUNTIME_HEADER_BYTES: usize = 44;
@@ -75,6 +78,7 @@ fn run() -> Result<()> {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
             _ => Err("usage: cargo hil traffic bidirectional <ipv4> [options]".into()),
         },
+        Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
             print_help();
             Ok(())
@@ -107,6 +111,8 @@ fn doctor(root: &std::path::Path) -> Result<()> {
     }
     ensure_no_old_application_dependency(root)?;
     println!("old_application_dependency=ABSENT");
+    ensure_vendor_oracle_isolated(root)?;
+    println!("vendor_oracle_default_graph=ABSENT");
     println!("result=PASS");
     Ok(())
 }
@@ -118,10 +124,222 @@ fn print_help() {
          cargo hil doctor\n\
          cargo hil build [boot-smoke|radio]\n\n\
          cargo hil flash [boot-smoke|radio|bidirectional] [--port /dev/ttyACM0]\n\
-         cargo hil traffic bidirectional <ipv4> [options]\n\n\
+         cargo hil traffic bidirectional <ipv4> [options]\n\
+         cargo hil oracle verify\n\
+         cargo hil oracle build\n\
+         cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \
          PSRAM/SRAM placement contract, and emits an ESP application image."
     );
+}
+
+struct OracleArtifacts {
+    output: PathBuf,
+    elf: PathBuf,
+    application_image: PathBuf,
+}
+
+fn oracle_command(root: &Path, arguments: Vec<String>) -> Result<()> {
+    let mut arguments = arguments.into_iter();
+    match arguments.next().as_deref() {
+        Some("verify") if arguments.next().is_none() => {
+            let count = verify_oracles(root)?;
+            println!("oracle_files={count}");
+            println!("oracle_identity=PASS");
+            Ok(())
+        }
+        Some("build") if arguments.next().is_none() => {
+            let artifacts = build_oracle(root)?;
+            println!("oracle_elf={}", artifacts.elf.display());
+            println!(
+                "application_image={}",
+                artifacts.application_image.display()
+            );
+            println!("oracle_build=PASS");
+            Ok(())
+        }
+        Some("flash") => {
+            let port = parse_oracle_flash_arguments(arguments)?;
+            let artifacts = build_oracle(root)?;
+            flash_oracle(root, &artifacts, &port)?;
+            println!("oracle_elf={}", artifacts.elf.display());
+            println!(
+                "application_image={}",
+                artifacts.application_image.display()
+            );
+            println!("port={}", port.display());
+            println!("oracle_flash=PASS");
+            Ok(())
+        }
+        _ => Err("usage: cargo hil oracle <verify|build|flash [--port /dev/ttyACM0]>".into()),
+    }
+}
+
+fn verify_oracles(root: &Path) -> Result<usize> {
+    let lock_path = root.join("hil/vendor-oracle/esp32s31/oracles.lock");
+    let lock = fs::read_to_string(&lock_path)?;
+    let mut verified = 0;
+    for (line_number, line) in lock.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut fields = line.split_whitespace();
+        let expected = fields
+            .next()
+            .ok_or_else(|| format!("{}:{} lacks a digest", lock_path.display(), line_number + 1))?;
+        let relative = fields
+            .next()
+            .ok_or_else(|| format!("{}:{} lacks a path", lock_path.display(), line_number + 1))?;
+        if fields.next().is_some()
+            || expected.len() != 64
+            || !expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(format!(
+                "{}:{} has an invalid SHA-256 record",
+                lock_path.display(),
+                line_number + 1
+            )
+            .into());
+        }
+        let relative_path = Path::new(relative);
+        if relative_path.is_absolute()
+            || relative_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(format!("oracle path escapes the repository: {relative}").into());
+        }
+        let path = root.join(relative_path);
+        let actual = sha256_file(&path)?;
+        if actual != expected.to_ascii_lowercase() {
+            return Err(format!(
+                "oracle identity mismatch for {}: expected {expected}, received {actual}",
+                path.display()
+            )
+            .into());
+        }
+        verified += 1;
+    }
+    if verified == 0 {
+        return Err(format!("{} contains no oracle identities", lock_path.display()).into());
+    }
+    Ok(verified)
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut input = fs::File::open(path)
+        .map_err(|error| format!("cannot open oracle {}: {error}", path.display()))?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = input.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn build_oracle(root: &Path) -> Result<OracleArtifacts> {
+    let count = verify_oracles(root)?;
+    eprintln!("oracle_identity=PASS files={count}");
+    let manifest = root.join("hil/vendor-oracle/esp32s31/Cargo.toml");
+    let output = root.join("target/hil/vendor-oracle/esp32s31");
+    let cargo_target = output.join("cargo");
+    let elf = cargo_target.join(TARGET).join("release").join(ORACLE_BIN);
+    let application_image = output.join("application.bin");
+    fs::create_dir_all(&output)?;
+
+    let libgcc = find_libgcc()?;
+    let libgcc_dir = libgcc
+        .parent()
+        .ok_or_else(|| format!("libgcc path has no parent: {}", libgcc.display()))?;
+    let mut cargo = cargo_command();
+    cargo
+        .args(["build", "--manifest-path"])
+        .arg(&manifest)
+        .args(["--release", "--target", TARGET, "--locked"])
+        .env("CARGO_TARGET_DIR", &cargo_target)
+        .env("ESP32S31_LIBGCC_DIR", libgcc_dir);
+    run_command(&mut cargo, "build isolated vendor PHY oracle")?;
+    require_file(&elf, "vendor-oracle ELF")?;
+
+    let partition_table = root.join("hil/esp32s31/partitions/hil.csv");
+    let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
+    save_image
+        .args([
+            "save-image",
+            "--chip",
+            "esp32s31",
+            "--flash-mode",
+            "qio",
+            "--flash-freq",
+            "80mhz",
+            "--flash-size",
+            "16mb",
+            "--mmu-page-size",
+            "65536",
+            "--partition-table",
+        ])
+        .arg(&partition_table)
+        .args(["--target-app-partition", "ota_0"])
+        .arg(&elf)
+        .arg(&application_image);
+    run_command(&mut save_image, "encode vendor-oracle application image")?;
+    audit_application_image(&application_image)?;
+
+    Ok(OracleArtifacts {
+        output,
+        elf,
+        application_image,
+    })
+}
+
+fn find_libgcc() -> Result<PathBuf> {
+    if let Some(directory) = env::var_os("ESP32S31_LIBGCC_DIR") {
+        let path = PathBuf::from(directory).join("libgcc.a");
+        require_file(&path, "Espressif libgcc")?;
+        return Ok(path);
+    }
+
+    let home = env::var_os("HOME").ok_or("HOME is not set; cannot locate Espressif GCC")?;
+    let root = PathBuf::from(home).join(".espressif/tools/riscv32-esp-elf");
+    let mut candidates = Vec::new();
+    collect_named_files(&root, "riscv32-esp-elf-gcc", &mut candidates)?;
+    candidates.sort();
+    let gcc = candidates
+        .pop()
+        .ok_or_else(|| format!("riscv32-esp-elf-gcc was not found below {}", root.display()))?;
+    let output = Command::new(gcc)
+        .args([
+            "-march=rv32imafc",
+            "-mabi=ilp32f",
+            "-print-libgcc-file-name",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err("Espressif GCC failed to locate libgcc".into());
+    }
+    let path = PathBuf::from(String::from_utf8(output.stdout)?.trim());
+    require_file(&path, "Espressif libgcc")?;
+    Ok(path)
+}
+
+fn collect_named_files(root: &Path, name: &str, output: &mut Vec<PathBuf>) -> Result<()> {
+    if !root.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_named_files(&path, name, output)?;
+        } else if path.file_name().and_then(|value| value.to_str()) == Some(name) {
+            output.push(path);
+        }
+    }
+    Ok(())
 }
 
 struct Artifacts {
@@ -291,6 +509,22 @@ fn parse_flash_arguments(
     Ok((scenario, port))
 }
 
+fn parse_oracle_flash_arguments(mut arguments: impl Iterator<Item = String>) -> Result<PathBuf> {
+    let mut port = env::var_os("ESPFLASH_PORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/dev/ttyACM0"));
+    while let Some(argument) = arguments.next() {
+        if argument != "--port" {
+            return Err(format!("unknown oracle flash argument `{argument}`").into());
+        }
+        port = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--port requires a serial device")?;
+    }
+    Ok(port)
+}
+
 fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
     let partition_csv = root.join("hil/esp32s31/partitions/hil.csv");
     let partition_bin = artifacts.output.join("partitions.bin");
@@ -324,6 +558,40 @@ fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
         &selector_bin,
         "hard-reset",
         "select HIL ota_0 image",
+    )
+}
+
+fn flash_oracle(root: &Path, artifacts: &OracleArtifacts, port: &Path) -> Result<()> {
+    let partition_csv = root.join("hil/esp32s31/partitions/hil.csv");
+    let partition_bin = artifacts.output.join("partitions.bin");
+    let selector_bin = artifacts.output.join("otadata-ota0-valid.bin");
+    let mut partition = Command::new(program_from_env("ESPFLASH", "espflash"));
+    partition
+        .args(["partition-table", "--to-binary", "--output"])
+        .arg(&partition_bin)
+        .arg(&partition_csv);
+    run_command(&mut partition, "encode vendor-oracle partition table")?;
+    fs::write(&selector_bin, ota0_selector_image())?;
+    write_flash_binary(
+        port,
+        PARTITION_TABLE_OFFSET,
+        &partition_bin,
+        "no-reset",
+        "write vendor-oracle partition table",
+    )?;
+    write_flash_binary(
+        port,
+        OTA_0_OFFSET,
+        &artifacts.application_image,
+        "no-reset",
+        "write vendor-oracle application",
+    )?;
+    write_flash_binary(
+        port,
+        OTA_SELECTOR_OFFSET,
+        &selector_bin,
+        "hard-reset",
+        "select vendor-oracle ota_0 image",
     )
 }
 
@@ -451,6 +719,34 @@ fn ensure_no_old_application_dependency(root: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn ensure_vendor_oracle_isolated(root: &Path) -> Result<()> {
+    for relative in [
+        "Cargo.lock",
+        "hil/esp32s31/Cargo.toml",
+        "hil/esp32s31/Cargo.lock",
+    ] {
+        let path = root.join(relative);
+        let contents = fs::read_to_string(&path)?;
+        for forbidden in [
+            "name = \"esp-phy\"",
+            "name = \"esp-rtos\"",
+            "name = \"esp-wifi-sys-esp32s31\"",
+        ] {
+            if contents.contains(forbidden) {
+                return Err(format!(
+                    "{} pulls `{forbidden}` into the source-only graph",
+                    path.display()
+                )
+                .into());
+            }
+        }
+    }
+    require_file(
+        &root.join("hil/vendor-oracle/esp32s31/Cargo.toml"),
+        "isolated vendor-oracle workspace",
+    )
 }
 
 fn pack_runtime(path: &Path) -> Result<u32> {
@@ -593,6 +889,7 @@ mod tests {
     fn repository_layout_contains_the_embedded_workspace() {
         let root = repository_root().unwrap();
         assert!(root.join("hil/esp32s31/Cargo.toml").is_file());
+        ensure_vendor_oracle_isolated(&root).unwrap();
     }
 
     #[test]

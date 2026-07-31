@@ -1,0 +1,21 @@
+[package]
+name = "open-esp-radio-vendor-oracle-hil-esp32s31"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[dependencies]
+embassy-executor.workspace = true
+embassy-time.workspace = true
+esp-bootloader-esp-idf = { workspace = true, features = ["embedded-storage", "esp32s31"] }
+esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
+esp-phy = { workspace = true, features = ["esp32s31"] }
+esp-rtos = { workspace = true, features = ["embassy", "esp32s31"] }
+open-esp-radio.workspace = true
+open-esp-radio-esp-hal-esp32s31 = { workspace = true, features = ["esp32s31"] }
+static_cell.workspace = true
+
+[lints.rust]
+unexpected_cfgs = "allow"

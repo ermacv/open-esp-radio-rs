@@ -16,4 +16,18 @@ reporting belong here. PHY/MAC/STA behavior belongs in `../../crates` and must
 be moved there before a new behavior is entered in the canonical feature
 ledger.
 
-The closed vendor oracle is never a default dependency of this workspace.
+The closed vendor oracle is never a dependency of this workspace. It is an
+explicitly excluded sibling workspace at `../vendor-oracle/esp32s31` and is
+reachable only through `cargo hil oracle ...`.
+
+Common commands from the repository root:
+
+```text
+cargo hil doctor
+cargo hil build bidirectional
+cargo hil flash bidirectional --port /dev/ttyACM0
+cargo hil traffic bidirectional <device-ip> --phy he20
+cargo hil oracle verify
+cargo hil oracle build
+cargo hil oracle flash --port /dev/ttyACM0
+```

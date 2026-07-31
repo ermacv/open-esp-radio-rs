@@ -58,16 +58,8 @@ pub const WPA2_KCK_LEN: usize = 16;
 pub const WPA2_KEK_LEN: usize = 16;
 pub const WPA2_KEY_DATA_CAPACITY: usize = 512;
 pub const WPA2_UNWRAPPED_KEY_DATA_CAPACITY: usize = WPA2_KEY_DATA_CAPACITY - 8;
-pub const WPA2_MESSAGE_2_CAPACITY: usize = 192;
-pub const WPA2_MESSAGE_4_LEN: usize = EAPOL_KEY_PACKET_LEN;
 
 const WPA2_PRF_LABEL: &[u8] = b"Pairwise key expansion";
-const KEY_INFO_DESCRIPTOR_VERSION_HMAC_SHA1: u16 = 2;
-const WPA2_MESSAGE_2_KEY_INFO: u16 =
-    KEY_INFO_PAIRWISE | KEY_INFO_MIC | KEY_INFO_DESCRIPTOR_VERSION_HMAC_SHA1;
-const WPA2_MESSAGE_4_KEY_INFO: u16 =
-    KEY_INFO_PAIRWISE | KEY_INFO_MIC | KEY_INFO_SECURE | KEY_INFO_DESCRIPTOR_VERSION_HMAC_SHA1;
-const WPA2_SUPPLICANT_EAPOL_PROTOCOL_VERSION: u8 = 1;
 const EAPOL_KEY_MIC_START: usize = 81;
 const EAPOL_KEY_MIC_END: usize = 97;
 
@@ -75,8 +67,6 @@ const EAPOL_KEY_MIC_END: usize = 97;
 pub enum Wpa2CryptoError {
     InvalidPassphraseLength,
     InvalidSsidLength,
-    InvalidRsnInformationElements,
-    OutputTooSmall,
 }
 
 /// Canonical addresses and nonces used by the WPA2 PRF-384.
@@ -168,101 +158,6 @@ impl Ptk {
 impl Drop for Ptk {
     fn drop(&mut self) {
         self.0.zeroize();
-    }
-}
-
-/// Owned, bounded EAPOL-Key Message 2. The MIC is already populated.
-pub struct Message2 {
-    len: usize,
-    bytes: [u8; WPA2_MESSAGE_2_CAPACITY],
-}
-
-impl Message2 {
-    pub fn build(
-        replay_counter: u64,
-        supplicant_nonce: [u8; 32],
-        association_security_ies: &[u8],
-        ptk: &Ptk,
-    ) -> Result<Self, Wpa2CryptoError> {
-        if association_security_ies.len() < 2
-            || association_security_ies[0] != 0x30
-            || association_security_ies[1] as usize + 2 > association_security_ies.len()
-        {
-            return Err(Wpa2CryptoError::InvalidRsnInformationElements);
-        }
-        let len = EAPOL_KEY_PACKET_LEN
-            .checked_add(association_security_ies.len())
-            .filter(|len| *len <= WPA2_MESSAGE_2_CAPACITY)
-            .ok_or(Wpa2CryptoError::OutputTooSmall)?;
-        let body_len = EAPOL_KEY_FIXED_LEN + association_security_ies.len();
-
-        let mut bytes = [0; WPA2_MESSAGE_2_CAPACITY];
-        bytes[0] = 1;
-        bytes[1] = EAPOL_PACKET_TYPE_KEY;
-        bytes[2..4].copy_from_slice(&(body_len as u16).to_be_bytes());
-        bytes[4] = RSN_KEY_DESCRIPTOR_TYPE;
-        bytes[5..7].copy_from_slice(&WPA2_MESSAGE_2_KEY_INFO.to_be_bytes());
-        bytes[9..17].copy_from_slice(&replay_counter.to_be_bytes());
-        bytes[17..49].copy_from_slice(&supplicant_nonce);
-        bytes[97..99].copy_from_slice(&(association_security_ies.len() as u16).to_be_bytes());
-        bytes[EAPOL_KEY_PACKET_LEN..len].copy_from_slice(association_security_ies);
-
-        let mut mac = Hmac::<Sha1>::new_from_slice(ptk.kck())
-            .expect("WPA2 KCK length is always accepted by HMAC");
-        mac.update(&bytes[..len]);
-        let digest = mac.finalize().into_bytes();
-        bytes[81..97].copy_from_slice(&digest[..16]);
-        Ok(Self { len, bytes })
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
-}
-
-impl Drop for Message2 {
-    fn drop(&mut self) {
-        self.bytes.zeroize();
-    }
-}
-
-/// Owned EAPOL-Key Message 4, authenticated with the pairwise KCK.
-pub struct Message4 {
-    bytes: [u8; WPA2_MESSAGE_4_LEN],
-}
-
-impl Message4 {
-    /// Builds the supplicant's fourth 4-way-handshake message.
-    ///
-    /// The working ESP station path emits EAPOL version 1 for supplicant
-    /// messages even when the authenticator's Message 3 uses version 2. Keep
-    /// that protocol choice inside this builder so callers cannot accidentally
-    /// mirror the authenticator's version into Message 4.
-    pub fn build(replay_counter: u64, ptk: &Ptk) -> Self {
-        let mut bytes = [0; WPA2_MESSAGE_4_LEN];
-        bytes[0] = WPA2_SUPPLICANT_EAPOL_PROTOCOL_VERSION;
-        bytes[1] = EAPOL_PACKET_TYPE_KEY;
-        bytes[2..4].copy_from_slice(&(EAPOL_KEY_FIXED_LEN as u16).to_be_bytes());
-        bytes[4] = RSN_KEY_DESCRIPTOR_TYPE;
-        bytes[5..7].copy_from_slice(&WPA2_MESSAGE_4_KEY_INFO.to_be_bytes());
-        bytes[9..17].copy_from_slice(&replay_counter.to_be_bytes());
-
-        let mut mac = Hmac::<Sha1>::new_from_slice(ptk.kck())
-            .expect("WPA2 KCK length is always accepted by HMAC");
-        mac.update(&bytes);
-        let digest = mac.finalize().into_bytes();
-        bytes[EAPOL_KEY_MIC_START..EAPOL_KEY_MIC_END].copy_from_slice(&digest[..16]);
-        Self { bytes }
-    }
-
-    pub fn as_bytes(&self) -> &[u8; WPA2_MESSAGE_4_LEN] {
-        &self.bytes
-    }
-}
-
-impl Drop for Message4 {
-    fn drop(&mut self) {
-        self.bytes.zeroize();
     }
 }
 
@@ -613,7 +508,16 @@ mod tests {
         let rsn = [
             0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
         ];
-        let message = Message2::build(7, context.supplicant_nonce, &rsn, &ptk).unwrap();
+        let security_ies =
+            frames::OwnedAssociationSecurityIes::<128>::try_copy_bytes(&rsn).unwrap();
+        let message = frames::Wpa2TxFrame::<512>::message2_with_security_ies(
+            context.authenticator_address,
+            7,
+            context.supplicant_nonce,
+            &security_ies,
+        )
+        .unwrap()
+        .authenticate(&ptk);
         let parsed = EapolKeyFrame::parse(message.as_bytes()).unwrap();
         assert_eq!(parsed.message(), EapolKeyMessage::PairwiseMessage2);
         assert_eq!(parsed.replay_counter(), 7);
@@ -621,14 +525,17 @@ mod tests {
         assert_ne!(parsed.mic(), &[0; 16]);
         assert_eq!(parsed.key_data(), &rsn);
 
-        let message4 = Message4::build(8, &ptk);
+        let message4 = frames::Wpa2TxFrame::<512>::message4(context.authenticator_address, 8)
+            .unwrap()
+            .authenticate(&ptk);
         let parsed4 = EapolKeyFrame::parse(message4.as_bytes()).unwrap();
         assert_eq!(parsed4.protocol_version(), 1);
         assert_eq!(parsed4.message(), EapolKeyMessage::PairwiseMessage4);
         assert_eq!(parsed4.replay_counter(), 8);
         assert!(parsed4.verify_mic(&ptk));
 
-        let mut changed = *message4.as_bytes();
+        let mut changed = [0; EAPOL_KEY_PACKET_LEN];
+        changed.copy_from_slice(message4.as_bytes());
         changed[17] ^= 1;
         assert!(!EapolKeyFrame::parse(&changed).unwrap().verify_mic(&ptk));
     }

@@ -1,11 +1,12 @@
 //! Fixed WPA2-CCMP EAPOL frame construction and GTK key-data parsing.
 
 use core::sync::atomic::{compiler_fence, Ordering};
+use hmac::Mac;
 
 use crate::state::{Wpa2ApState, Wpa2StaState, Wpa2Transmit, Wpa2TxMessage};
 use crate::{
-    EapolKeyFrame, Wpa2Interface, EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY,
-    RSN_KEY_DESCRIPTOR_TYPE,
+    EapolKeyFrame, Ptk, Wpa2Interface, EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN,
+    EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
 };
 
 pub const WPA2_RSN_IE_CAPACITY: usize = 64;
@@ -91,6 +92,20 @@ pub struct OwnedAssociationSecurityIes<const N: usize = WPA2_ASSOC_SECURITY_IES_
 }
 
 impl<const N: usize> OwnedAssociationSecurityIes<N> {
+    /// Copy the exact RSN IE plus optional RSNXE emitted by Association.
+    pub fn try_copy_bytes(bytes: &[u8]) -> Result<Self, Wpa2FrameError> {
+        if bytes.len() < 2 || bytes[0] != RSN_ELEMENT_ID {
+            return Err(Wpa2FrameError::InvalidRsnIe);
+        }
+        let rsn_len = bytes[1] as usize + 2;
+        let Some(rsn) = bytes.get(..rsn_len) else {
+            return Err(Wpa2FrameError::InvalidRsnIe);
+        };
+        let rsn = OwnedRsnIe::<WPA2_RSN_IE_CAPACITY>::try_copy(rsn)?;
+        let rsnxe = bytes.get(rsn_len..).ok_or(Wpa2FrameError::InvalidRsnxe)?;
+        Self::try_copy(&rsn, rsnxe)
+    }
+
     pub fn try_copy<const R: usize>(
         rsn_ie: &OwnedRsnIe<R>,
         rsnxe: &[u8],
@@ -468,7 +483,24 @@ impl<const N: usize> Wpa2TxFrame<N> {
         EapolKeyFrame::parse(self.as_bytes()).expect("Wpa2TxFrame is validated on construction")
     }
 
-    pub fn set_mic(&mut self, mic: &[u8; 16]) {
+    /// Authenticate a supplicant or authenticator action with the pairwise
+    /// KCK. The builder always initializes the MIC field to zero; clearing it
+    /// here as well makes repeated authentication deterministic.
+    pub fn authenticate(mut self, ptk: &Ptk) -> Self {
+        self.set_mic(&[0; 16]);
+        let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(ptk.kck())
+            .expect("WPA2 KCK length is always accepted by HMAC");
+        mac.update(self.as_bytes());
+        let digest = mac.finalize().into_bytes();
+        self.set_mic(
+            digest[..16]
+                .try_into()
+                .expect("SHA-1 MIC prefix is 16 bytes"),
+        );
+        self
+    }
+
+    fn set_mic(&mut self, mic: &[u8; 16]) {
         self.bytes[81..97].copy_from_slice(mic);
     }
 }
@@ -573,6 +605,24 @@ mod tests {
 
     fn association_ies() -> OwnedAssociationSecurityIes<22> {
         OwnedAssociationSecurityIes::try_copy(&rsn_ie(), &[]).unwrap()
+    }
+
+    #[test]
+    fn contiguous_association_security_ies_retain_exact_rsn_and_rsnxe() {
+        let rsn = rsn_ie();
+        let rsnxe = [RSNXE_ELEMENT_ID, 2, 0x20, 0x00];
+        let mut bytes = [0_u8; 26];
+        bytes[..22].copy_from_slice(rsn.as_bytes());
+        bytes[22..].copy_from_slice(&rsnxe);
+        let owned = OwnedAssociationSecurityIes::<128>::try_copy_bytes(&bytes).unwrap();
+        assert_eq!(owned.as_bytes(), &bytes);
+        assert_eq!(owned.rsn_ie(), rsn.as_bytes());
+
+        bytes[23] = 3;
+        assert_eq!(
+            OwnedAssociationSecurityIes::<128>::try_copy_bytes(&bytes),
+            Err(Wpa2FrameError::InvalidRsnxe)
+        );
     }
 
     #[test]

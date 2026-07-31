@@ -343,9 +343,23 @@ sequence consumption and response parser were deleted. Three host tests cover
 the deadline/schedule and sequence wrap, selected-peer success and filtering,
 disconnect and rejection. A cold boot received the successful response on
 attempt one, completed WPA2/DHCP, and the strict `psram-code-psram-data` HE20
-run then delivered 10.015-Mbit/s RX plus a 65.100-Mbit/s concurrent TX floor
-with zero strict DMA-starvation failure. WPA2 action dispatch and the final
-connected dispatcher remain to move.
+run then delivered the result recorded below. The remaining WPA2 executor and
+final connected dispatcher remain to move.
+
+The WPA2 supplicant transmit-frame boundary is now driver-owned as well.
+`Wpa2StaState` is the sole producer of the M2/M4 transmit action;
+`build_sta_action_frame` binds that action to the selected peer, replay
+counter, supplicant nonce and exact Association RSN/RSNXE image; and
+`Wpa2TxFrame::authenticate` applies the PTK KCK MIC. The parallel root-level
+`Message2`/`Message4` builders and duplicate `key_data` GTK parser/type were
+deleted, so the parsed `Wpa2Gtk` is also the type consumed by
+`Wpa2KeyInstall`. A cold `psram-code-psram-data` boot proved M1, authenticated
+M2, verified/decrypted M3, pairwise and group-key installation, authenticated
+M4, protected ARP and DHCP. The following strict bidirectional run delivered
+10.014-Mbit/s RX plus a 64.906-Mbit/s concurrent TX floor with zero strict
+DMA-starvation failure. M3 crypto/key-install action orchestration, handshake
+deadlines/retries and the final connected dispatcher still remain in the HIL
+executor and must move without duplicating these canonical frame owners.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per
@@ -358,7 +372,7 @@ exhaustion and sequence wrap, selected-peer success, disconnect retry and
 status rejection. The reset-separated PSRAM/PSRAM HE20 regression then passed
 at 10.005-Mbit/s RX plus a 66.460-Mbit/s concurrent TX floor with zero DMA
 starvation. Association ownership subsequently moved into the runtime above;
-WPA2 action dispatch and the final connected dispatcher remain to move.
+the remaining WPA2 executor and final connected dispatcher remain to move.
 
 The post-response peer join is now driver-owned too.
 `StaPeerScanPolicy` retains the scan-derived association PHY, typed HT A-MPDU

@@ -135,10 +135,12 @@ use open_esp_radio::{
         },
     },
     wpa2::{
-        EapolKeyFrame, Message2, Message4, OwnedEapolFrame, Pmk, Ptk,
-        PtkContext as CryptoPtkContext, Wpa2Interface,
+        EapolKeyFrame, OwnedEapolFrame, Pmk, Ptk, PtkContext as CryptoPtkContext, Wpa2Interface,
         aes::software_aes128_key_unwrap,
-        frames::parse_gtk_key_data,
+        frames::{
+            OwnedAssociationSecurityIes, Wpa2TxFrame, build_sta_action_frame,
+            parse_gtk_key_data,
+        },
         state::{Wpa2StaAction, Wpa2StaState, Wpa2TxMessage},
     },
 };
@@ -2424,7 +2426,7 @@ async fn transmit_eapol_message_4<M: Mmio + TxHardware>(
     storage: &mut TxStorage,
     station_address: [u8; 6],
     bssid: [u8; 6],
-    message: &Message4,
+    message: &Wpa2TxFrame,
     key_slot: &mut StaPairwiseCcmpSlot,
     sequence_number: u16,
     peer_qos: bool,
@@ -9056,6 +9058,17 @@ async fn await_wpa2_message_1(
     rate_control: &mut StaRateControlAssociation,
     sequences: &mut StaTxSequenceCounters,
 ) -> (bool, bool) {
+    let association_security_ies =
+        match OwnedAssociationSecurityIes::try_copy_bytes(association_security_ies) {
+            Ok(security_ies) => security_ies,
+            Err(error) => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL \
+                     stage=wpa2-association-security-ies error={error:?}"
+                ));
+                return (false, false);
+            }
+        };
     let mut handshake = match Wpa2StaState::new(station_address, bssid, supplicant_nonce) {
         Ok(handshake) => handshake,
         Err(error) => {
@@ -9144,24 +9157,26 @@ async fn await_wpa2_message_1(
                     authenticator_nonce: context.authenticator_nonce,
                     supplicant_nonce: context.supplicant_nonce,
                 });
-                if !matches!(
-                    handshake.complete_ptk::<512>(ticket, true),
+                let transmit = match handshake.complete_ptk::<512>(ticket, true) {
                     Ok(Wpa2StaAction::Transmit(transmit))
                         if transmit.message == Wpa2TxMessage::PairwiseMessage2
-                            && transmit.replay_counter == replay_counter
+                            && transmit.replay_counter == replay_counter =>
+                    {
+                        transmit
+                    }
+                    _ => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-state"
+                        ));
+                        return (true, false);
+                    }
+                };
+                let message2 = match build_sta_action_frame::<512, _>(
+                    &handshake,
+                    transmit,
+                    &association_security_ies,
                 ) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-state"
-                    ));
-                    return (true, false);
-                }
-                let message2 = match Message2::build(
-                    replay_counter,
-                    supplicant_nonce,
-                    association_security_ies,
-                    &ptk,
-                ) {
-                    Ok(message) => message,
+                    Ok(message) => message.authenticate(&ptk),
                     Err(error) => {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-build \
@@ -9230,8 +9245,7 @@ async fn await_wpa2_message_1(
                         association_id,
                         &mut ptk,
                         pmk,
-                        supplicant_nonce,
-                        association_security_ies,
+                        &association_security_ies,
                         attempt,
                         attempt == WPA2_MESSAGE_2_ATTEMPTS,
                         peer_qos,
@@ -9304,8 +9318,7 @@ async fn await_wpa2_message_3(
     association_id: u16,
     ptk: &mut Ptk,
     pmk: &Pmk,
-    supplicant_nonce: [u8; 32],
-    association_security_ies: &[u8],
+    association_security_ies: &OwnedAssociationSecurityIes,
     attempt: u16,
     final_attempt: bool,
     peer_qos: bool,
@@ -9377,11 +9390,11 @@ async fn await_wpa2_message_3(
                 Err(_) => continue,
             };
             let mut replacement_ptk = None;
-            let message2_replay = match &action {
+            let message2_transmit = match &action {
                 Wpa2StaAction::Transmit(transmit)
                     if transmit.message == Wpa2TxMessage::PairwiseMessage2 =>
                 {
-                    Some(transmit.replay_counter)
+                    Some(*transmit)
                 }
                 Wpa2StaAction::DerivePtk { ticket, context } => {
                     let replay_counter = key.replay_counter();
@@ -9391,35 +9404,38 @@ async fn await_wpa2_message_3(
                         authenticator_nonce: context.authenticator_nonce,
                         supplicant_nonce: context.supplicant_nonce,
                     });
-                    if !matches!(
-                        handshake.complete_ptk::<512>(*ticket, true),
+                    let transmit = match handshake.complete_ptk::<512>(*ticket, true) {
                         Ok(Wpa2StaAction::Transmit(transmit))
                             if transmit.message == Wpa2TxMessage::PairwiseMessage2
-                                && transmit.replay_counter == replay_counter
-                    ) {
-                        let _ = disable_receive(mmio);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL \
-                             stage=wpa2-message-2-refresh-state replay={replay_counter}"
-                        ));
-                        return false;
-                    }
+                                && transmit.replay_counter == replay_counter =>
+                        {
+                            transmit
+                        }
+                        _ => {
+                            let _ = disable_receive(mmio);
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL \
+                                 stage=wpa2-message-2-refresh-state replay={replay_counter}"
+                            ));
+                            return false;
+                        }
+                    };
                     replacement_ptk = Some(derived);
-                    Some(replay_counter)
+                    Some(transmit)
                 }
                 _ => None,
             };
-            if let Some(replay_counter) = message2_replay {
+            if let Some(transmit) = message2_transmit {
                 if let Some(derived) = replacement_ptk {
                     *ptk = derived;
                 }
-                let message2 = match Message2::build(
-                    replay_counter,
-                    supplicant_nonce,
+                let replay_counter = transmit.replay_counter;
+                let message2 = match build_sta_action_frame::<512, _>(
+                    handshake,
+                    transmit,
                     association_security_ies,
-                    ptk,
                 ) {
-                    Ok(message) => message,
+                    Ok(message) => message.authenticate(ptk),
                     Err(error) => {
                         let _ = disable_receive(mmio);
                         emergency_log(format_args!(
@@ -9604,20 +9620,24 @@ async fn await_wpa2_message_3(
                         return false;
                     }
                 };
-                if !matches!(
-                    handshake.complete_key_install::<512>(install_ticket, true),
-                    Ok(Wpa2StaAction::Transmit(transmit))
-                        if transmit.message == Wpa2TxMessage::PairwiseMessage4
-                            && transmit.replay_counter == key.replay_counter()
-                ) {
-                    let _ = disable_receive(mmio);
-                    key_slot.clear(mmio);
-                    group_slot.clear(mmio);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-key-install-state"
-                    ));
-                    return false;
-                }
+                let message4_transmit =
+                    match handshake.complete_key_install::<512>(install_ticket, true) {
+                        Ok(Wpa2StaAction::Transmit(transmit))
+                            if transmit.message == Wpa2TxMessage::PairwiseMessage4
+                                && transmit.replay_counter == key.replay_counter() =>
+                        {
+                            transmit
+                        }
+                        _ => {
+                            let _ = disable_receive(mmio);
+                            key_slot.clear(mmio);
+                            group_slot.clear(mmio);
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-key-install-state"
+                            ));
+                            return false;
+                        }
+                    };
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-group-key-install \
                      slot={} gtk_id={} valid={} control={:#010x}",
@@ -9631,7 +9651,23 @@ async fn await_wpa2_message_3(
                             .expect("fixed group slot metadata word"),
                     ),
                 ));
-                let message4 = Message4::build(key.replay_counter(), ptk);
+                let message4 = match build_sta_action_frame::<512, _>(
+                    handshake,
+                    message4_transmit,
+                    association_security_ies,
+                ) {
+                    Ok(message) => message.authenticate(ptk),
+                    Err(error) => {
+                        let _ = disable_receive(mmio);
+                        key_slot.clear(mmio);
+                        group_slot.clear(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-4-build \
+                             error={error:?}"
+                        ));
+                        return false;
+                    }
+                };
                 let message4_valid = EapolKeyFrame::parse(message4.as_bytes())
                     .is_ok_and(|frame| frame.verify_mic(ptk));
                 let _ = disable_receive(mmio);

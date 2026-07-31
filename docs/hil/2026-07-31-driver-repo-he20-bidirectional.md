@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.015 Mbit/s.
-- Concurrent open-radio TX floor: 65.100 Mbit/s.
-- Conservative sum: 75.115 Mbit/s.
+- Device direct-RX median: 10.014 Mbit/s.
+- Concurrent open-radio TX floor: 64.906 Mbit/s.
+- Conservative sum: 74.920 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,13 +49,13 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `0b273a3270e66b011561f6665725887a6d7ef1d323084e6f2426a0f134d2d5bc`.
+  `35de87431dbfadc79ed7d21e8d686e6f308e31da68ccc16dfb6c1a6e5a218741`.
 - ESP application image SHA-256:
-  `627467018660c0f82fed775b902f96f338935b1f52246c681d28eac36065ecff`.
+  `f8da55f47c03f5b0b15c1d5b57a0b00226626d009dbf65109f05efda72e9fca5`.
 - Packed stage-two runtime SHA-256:
-  `15f25e21b81ab1e06309d3304fbc3ae9034e2b52b9c2f04b8914dbffedd793cf`.
+  `644021a24bee61cb3792ea7454b6e0f69623072210d06c521e0699baa70167f1`.
 - Qualification report SHA-256:
-  `0d6a346e6baafe12d254fe07a32a1b59470a454df80a64d58921741b56ea727a`.
+  `05c07b3241924b66478aed5e5c21614c1531928fdb62ed7903995370cc9f6b63`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -110,6 +110,17 @@ cover the exact seven-attempt schedule and twelve-bit sequence wrap, the
 disconnect. A cold boot of this exact image received the successful
 Association response on attempt one, completed WPA2 and obtained
 `192.168.178.141/24` by DHCP before the strict run above passed.
+
+The same cold boot also qualifies the canonical WPA2 transmit-frame owner.
+`Wpa2StaState` produces the M2/M4 transmit action;
+`build_sta_action_frame` binds that action to the selected peer, supplicant
+nonce, replay counter and exact Association RSN/RSNXE image; and
+`Wpa2TxFrame::authenticate` supplies the HMAC-SHA1 MIC from the owned PTK.
+The former parallel `Message2` and `Message4` byte builders were deleted, as
+was the duplicate `key_data` GTK parser/type. The retained `Wpa2Gtk` zeroizes
+on drop and is now the same type accepted by `Wpa2KeyInstall`. Cold UART proved
+M1, M2, M3 MIC/decryption, pairwise and GTK installation, M4, protected ARP,
+DHCP and external-probe readiness before the strict traffic result above.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

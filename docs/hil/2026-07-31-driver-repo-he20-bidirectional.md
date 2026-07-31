@@ -36,8 +36,8 @@ cargo hil traffic bidirectional 192.168.178.141 \
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
 - Device direct-RX median: 10.012 Mbit/s.
-- Concurrent open-radio TX floor: 71.361 Mbit/s.
-- Conservative sum: 81.373 Mbit/s.
+- Concurrent open-radio TX floor: 65.814 Mbit/s.
+- Conservative sum: 75.826 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,11 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `bde1b2b49459543c521b203c0018c85839643ae62d716a1311e8ad1d286fa9e2`.
+  `61739287db84580e7f0cd03f27c994a8ff254861f5320da8087778c312c2f5df`.
 - ESP application image SHA-256:
-  `70d414f3741f194d2a64a235a826dd530730e0d3d244238863d96c0cdbe8cf02`.
+  `e1f99d31dc7691b6e8f2c127af58c77a60e1ce76cb9deaab06776951806ab40a`.
 - Packed stage-two runtime SHA-256:
-  `9124aa778033cb4737d1d7b6c918a640e557be999043cfab27df73baaeadd133`.
+  `09758f7e29026794098c935b8347456c5e699bcbd54f6cefe76c8d92f484f971`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -75,3 +75,11 @@ Board/bootstrap setup, credentials, synthetic traffic generation and evidence
 reporting also remain HIL concerns. The authentication/WPA2 executor
 orchestration is tracked separately and must be extracted before the old
 application HIL can be deleted.
+
+The same image now calls the PHY crate's `run_phy_register` instead of keeping
+a second copy of its lowering/advance loop in the HIL. Operation ordinals and
+crash-stage markers moved to `PreludePort::complete`, the actual hardware
+boundary. The encoded application shrank from 1,129,104 to 998,912 bytes while
+retaining the strict result above. Nested RF/baseband completion remains one
+application-local port until it can move as one complete type with a guarded
+future/layout frontier.

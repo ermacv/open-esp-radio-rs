@@ -208,6 +208,16 @@ The remaining `complete_*` RF/baseband composition must move into the same
 module next. Keep diagnostics behind an optional no-op observation hook and do
 not add an Embassy dependency to the PHY core.
 
+The HIL now at least consumes the existing canonical `run_phy_register`
+driver loop. Its former application copy of `step_local -> lower -> await ->
+advance_external` was deleted, while operation ordinals and crash stages moved
+to the real `PreludePort::complete` hardware boundary. This change reduced the
+encoded application from 1,129,104 to 998,912 bytes. A reset-separated
+PSRAM/PSRAM HE20 run then passed at 10.012-Mbit/s RX plus a 65.814-Mbit/s
+concurrent TX floor with zero strict DMA-starvation failure. `PreludePort` and
+its nested `complete_*` graph are still the remaining application copy; the
+rejected split-future warning below therefore continues to apply.
+
 A 2026-07-30 experiment copying the nested RX/TX calibration composition into
 separate public cross-crate `async fn`s was rejected. In the identical
 `psram-code-psram-data` image it moved the runtime text end from
@@ -386,7 +396,9 @@ radio xtask support can be deleted from `esp32s31_rust` together.
 3. Pinned `embassy-net` frame/A-MPDU lifetime owner — complete.
 4. Cooperative short-lived TX access to the unique PAC owner — complete,
    including strict zero-starvation bidirectional requalification.
-5. PHY target executor with injected delay/observation traits.
+5. PHY target executor with injected delay/observation traits — top-level
+   `run_phy_register` is consumed by HIL; the one-piece target port and its
+   nested RF/baseband composition remain.
 6. MAC TX runtime and protected A-MPDU retry owner — BlockAck decision,
    retained-sequence state, peer TX/EDCA policy and ordinary individual retry
    complete; aggregate construction and executor/hardware completion adapters

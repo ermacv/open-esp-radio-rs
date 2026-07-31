@@ -104,8 +104,8 @@ use open_esp_radio::{
             mac::{self as mac_pac, init as mac_registers},
         },
         phy::{
-            PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterLocalStep,
-            PhyRegisterPort, PhyRegisterTransition,
+            PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterPort,
+            PhyRegisterRunError, PhyRegisterTransition,
             phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
             phy_channel::{
                 PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
@@ -169,6 +169,7 @@ use open_esp_radio::{
                 PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion,
                 PhyTxIqMisPowerExternalBinding,
             },
+            run_phy_register,
             target_executor::{
                 HARDWARE_EDGE_LIMIT, PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c,
                 complete_dcode_i2c, complete_masked_i2c, complete_rfpll_i2c,
@@ -2564,7 +2565,10 @@ impl<
         &mut self,
         binding: PhyRegisterExternalBinding,
     ) -> Result<PhyRegisterCompletion, Self::Error> {
-        match binding {
+        DIAGNOSTIC_ACTION_ORDINAL.fetch_add(1, Ordering::AcqRel);
+        set_diagnostic_stage(110);
+        set_diagnostic_stage(120);
+        let result = match binding {
             PhyRegisterExternalBinding::Mmio(binding) => {
                 self.mmio += 1;
                 Ok(PhyRegisterCompletion::Mmio(
@@ -2582,11 +2586,12 @@ impl<
             }
             PhyRegisterExternalBinding::Rf(binding) => {
                 if self.rf_operations >= RF_OPERATION_LIMIT {
-                    return Err(PreludePortError::RfOperationLimit);
+                    Err(PreludePortError::RfOperationLimit)
+                } else {
+                    let completion = complete_rf(binding, self.radio).await?;
+                    self.rf_operations += 1;
+                    Ok(PhyRegisterCompletion::Rf(completion))
                 }
-                let completion = complete_rf(binding, self.radio).await?;
-                self.rf_operations += 1;
-                Ok(PhyRegisterCompletion::Rf(completion))
             }
             PhyRegisterExternalBinding::Baseband(binding) => {
                 let (platform, registers) = self.radio.parts_mut();
@@ -2600,7 +2605,7 @@ impl<
                     complete_temperature(binding, platform).await?,
                 ))
             }
-            PhyRegisterExternalBinding::FinalI2c(mut binding) => {
+            PhyRegisterExternalBinding::FinalI2c(mut binding) => 'final_i2c: {
                 for _ in 0..HARDWARE_EDGE_LIMIT {
                     match binding.action() {
                         PhyColdI2cAction::StartRead { .. } => {
@@ -2609,33 +2614,39 @@ impl<
                                 Err(PhyColdI2cError::BusyAtStart) => {
                                     Timer::after_micros(1).await;
                                 }
-                                Err(_) => return Err(PreludePortError::UnexpectedBinding),
+                                Err(_) => {
+                                    break 'final_i2c Err(PreludePortError::UnexpectedBinding);
+                                }
                             }
                         }
                         PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
                             Timer::after_micros(1).await;
-                            match binding
-                                .observe_target_edge(self.radio.parts_mut().0)
-                                .map_err(|_| PreludePortError::UnexpectedBinding)?
-                            {
-                                PhyColdI2cObservation::EdgeConsumed
-                                | PhyColdI2cObservation::StillPending => {}
+                            match binding.observe_target_edge(self.radio.parts_mut().0) {
+                                Ok(PhyColdI2cObservation::EdgeConsumed)
+                                | Ok(PhyColdI2cObservation::StillPending) => {}
+                                Err(_) => {
+                                    break 'final_i2c Err(PreludePortError::UnexpectedBinding);
+                                }
                             }
                         }
                         PhyColdI2cAction::Complete(_) => {
-                            return binding
+                            break 'final_i2c binding
                                 .into_completion()
                                 .map_err(|_| PreludePortError::UnexpectedBinding);
                         }
                         PhyColdI2cAction::StartWrite { .. }
                         | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                            return Err(PreludePortError::UnexpectedBinding);
+                            break 'final_i2c Err(PreludePortError::UnexpectedBinding);
                         }
                     }
                 }
-                Ok(binding.into_deadline_completion())
+                break 'final_i2c Ok(binding.into_deadline_completion());
             }
+        };
+        if result.is_ok() {
+            set_diagnostic_stage(130);
         }
+        result
     }
 }
 
@@ -3870,7 +3881,7 @@ where
         tx_storage.runtime_policy.he_bss_color(),
         RAW_FRAME_LENGTH as u16,
     )
-        .ok_or(ActiveScanTxError::Reserve(TxError::Invalid))?;
+    .ok_or(ActiveScanTxError::Reserve(TxError::Invalid))?;
     let power_profile = tx_storage
         .tx_power_profile
         .ok_or(ActiveScanTxError::MissingTxPowerProfile)?;
@@ -6850,8 +6861,7 @@ async fn connected_radio_loop(
                 rate_control.filtered_ack_snr(),
                 rx_ba_state,
             );
-            let best_effort_edca =
-                tx_storage.edca_parameters(LegacyTxQueue::BestEffort);
+            let best_effort_edca = tx_storage.edca_parameters(LegacyTxQueue::BestEffort);
             let best_effort_ecw_current = tx_storage
                 .runtime_policy
                 .contention_exponent(LegacyTxQueue::BestEffort);
@@ -11544,142 +11554,110 @@ pub async fn run(platform: EspHalRadioPeripheral, trng: Trng) {
     let mut port = PreludePort::new(&mut powered);
     loop {
         set_diagnostic_stage(100);
-        let step = match transition.step_local() {
-            Ok(step) => step,
+        let outcome = match run_phy_register(&mut transition, &mut port).await {
+            Ok(outcome) => outcome,
             Err(error) => {
+                match error {
+                    PhyRegisterRunError::Lowering(error) => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=lowering error={error:?}"
+                    )),
+                    PhyRegisterRunError::Port(error) => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=port error={error:?} \
+                         rf_operations={} baseband_operations={}",
+                        port.rf_operations, port.baseband_operations,
+                    )),
+                    PhyRegisterRunError::Transition(error) => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=transition error={error:?}"
+                    )),
+                    PhyRegisterRunError::Radio(error) => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=radio error={error:?}"
+                    )),
+                }
+                break;
+            }
+        };
+        set_diagnostic_stage(200);
+        let mut state = match transition.into_state() {
+            Ok(state) => state,
+            Err(_) => {
                 emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=transition error={error:?}"
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=take-state"
                 ));
                 break;
             }
         };
-        match step {
-            PhyRegisterLocalStep::StateAdvanced => {}
-            PhyRegisterLocalStep::External(action) => {
-                DIAGNOSTIC_ACTION_ORDINAL.fetch_add(1, Ordering::AcqRel);
-                set_diagnostic_stage(110);
-                let binding = match PhyRegisterExternalBinding::lower(action) {
-                    Ok(binding) => binding,
-                    Err(error) => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=lowering \
-                             action={action:?} error={error:?}"
-                        ));
-                        break;
-                    }
-                };
-                set_diagnostic_stage(120);
-                let completion = match port.complete(binding).await {
-                    Ok(completion) => completion,
-                    Err(error) => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=port error={error:?} \
-                             action={action:?} rf_operations={} baseband_operations={}",
-                            port.rf_operations, port.baseband_operations,
-                        ));
-                        break;
-                    }
-                };
-                set_diagnostic_stage(130);
-                if let Err(error) = transition.advance_external(completion) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=advance error={error:?}"
-                    ));
-                    break;
-                }
-            }
-            PhyRegisterLocalStep::Complete(outcome) => {
-                set_diagnostic_stage(200);
-                let mut state = match transition.into_state() {
-                    Ok(state) => state,
-                    Err(_) => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=take-state"
-                        ));
-                        break;
-                    }
-                };
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} \
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} \
                      mmio={} delays={} reset_samples={} rf_operations={} \
                      baseband_operations={}",
-                    outcome.full_calibration_performed,
-                    port.mmio,
-                    port.delays,
-                    port.reset_samples,
-                    port.rf_operations,
-                    port.baseband_operations,
-                ));
-                // `PreludePort` borrowed the complete radio while the PHY
-                // transition was active.  The transition is now finished, so
-                // release that borrow before lending the owned register block
-                // to the MAC/RX HIL.
-                drop(port);
-                // Match Espressif's `enable_phy_with_wifi_rx` lifecycle
-                // wrapper.  PHY registration may leave WIFI_ENABLE cleared;
-                // the powered radio owner must make RX/baseband live before
-                // channel selection and MAC startup.
-                powered.enable_wifi_rx();
-                let (platform, registers) = powered.parts_mut();
-                set_diagnostic_stage(210);
-                if let Err(error) =
-                    select_channel(&mut state, LISTEN_CHANNEL, 0, platform, registers).await
-                {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel \
+            outcome.full_calibration_performed,
+            port.mmio,
+            port.delays,
+            port.reset_samples,
+            port.rf_operations,
+            port.baseband_operations,
+        ));
+        // `PreludePort` borrowed the complete radio while the PHY
+        // transition was active.  The transition is now finished, so
+        // release that borrow before lending the owned register block
+        // to the MAC/RX HIL.
+        drop(port);
+        // Match Espressif's `enable_phy_with_wifi_rx` lifecycle
+        // wrapper.  PHY registration may leave WIFI_ENABLE cleared;
+        // the powered radio owner must make RX/baseband live before
+        // channel selection and MAC startup.
+        powered.enable_wifi_rx();
+        let (platform, registers) = powered.parts_mut();
+        set_diagnostic_stage(210);
+        if let Err(error) = select_channel(&mut state, LISTEN_CHANNEL, 0, platform, registers).await
+        {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel \
                          error={error:?}"
-                    ));
-                    break;
-                }
-                let parameter = state.parameter_image();
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=tx-calibration-parameter \
+            ));
+            break;
+        }
+        let parameter = state.parameter_image();
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL probe=tx-calibration-parameter \
                      references={:?} flags={:?} txdc={:?} txiq={:?} tail={:?}",
-                    &parameter[0x018..0x01e],
-                    &parameter[0x0a4..0x0a8],
-                    &parameter[0x0a8..0x0c8],
-                    &parameter[0x0d0..0x0e8],
-                    &parameter[0x18e..0x1a8],
-                ));
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=tx-calibration-mmio \
+            &parameter[0x018..0x01e],
+            &parameter[0x0a4..0x0a8],
+            &parameter[0x0a8..0x0c8],
+            &parameter[0x0d0..0x0e8],
+            &parameter[0x18e..0x1a8],
+        ));
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL probe=tx-calibration-mmio \
                      detector={:#010x}/{:#010x}/{:#010x} \
                      iq={:#010x}/{:#010x}/{:#010x} \
                      tone={:#010x} correction={:#010x}",
-                    read_diagnostic_mmio(0x2010_081c),
-                    read_diagnostic_mmio(0x2010_0820),
-                    read_diagnostic_mmio(0x2010_0830),
-                    read_diagnostic_mmio(0x2010_0848),
-                    read_diagnostic_mmio(0x2010_084c),
-                    read_diagnostic_mmio(0x2010_0850),
-                    read_diagnostic_mmio(0x2010_0870),
-                    read_diagnostic_mmio(0x2010_0890),
-                ));
-                set_diagnostic_stage(220);
-                let tx_power_profile = state
-                    .tx_target_power_profile()
-                    .with_maximum_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM);
-                let legacy_power =
-                    core::array::from_fn::<_, 4, _>(|rate| tx_power_profile.pair(rate as u8));
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=open-tx-power rates0_3={legacy_power:?}"
-                ));
-                powered
-                    .parts_mut()
-                    .0
-                    .install_phy_tx_power_profile(tx_power_profile);
-                set_diagnostic_stage(230);
-                let (platform, registers) = powered.into_parts();
-                let _ = run_promiscuous_rx_hil(&mut state, platform, registers, &trng).await;
-                break;
-            }
-            PhyRegisterLocalStep::Failed(error) => {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=radio error={error:?}"
-                ));
-                break;
-            }
-        }
+            read_diagnostic_mmio(0x2010_081c),
+            read_diagnostic_mmio(0x2010_0820),
+            read_diagnostic_mmio(0x2010_0830),
+            read_diagnostic_mmio(0x2010_0848),
+            read_diagnostic_mmio(0x2010_084c),
+            read_diagnostic_mmio(0x2010_0850),
+            read_diagnostic_mmio(0x2010_0870),
+            read_diagnostic_mmio(0x2010_0890),
+        ));
+        set_diagnostic_stage(220);
+        let tx_power_profile = state
+            .tx_target_power_profile()
+            .with_maximum_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM);
+        let legacy_power =
+            core::array::from_fn::<_, 4, _>(|rate| tx_power_profile.pair(rate as u8));
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL probe=open-tx-power rates0_3={legacy_power:?}"
+        ));
+        powered
+            .parts_mut()
+            .0
+            .install_phy_tx_power_profile(tx_power_profile);
+        set_diagnostic_stage(230);
+        let (platform, registers) = powered.into_parts();
+        let _ = run_promiscuous_rx_hil(&mut state, platform, registers, &trng).await;
+        break;
     }
     set_diagnostic_stage(250);
     halt()

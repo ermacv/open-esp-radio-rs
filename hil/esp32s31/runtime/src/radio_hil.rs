@@ -119,13 +119,13 @@ use open_esp_radio::{
         station::{
             AssociationRequest, AssociationRequestError, HeUlMuPowerCapability,
             HeUlMuPowerCapabilityError, OpenAuthenticationRequest,
-            STA_AUTHENTICATION_ATTEMPT_LIMIT, STA_PROTECTED_QOS_ETHERNET_HEADROOM,
-            STA_PROTECTED_QOS_ETHERNET_OVERHEAD, STA_RESPONSE_TIMEOUT_MS, StaActionFrame,
-            StaAssociationPhy, StaAssociationPreference, StaAssociationRetrySchedule, StaDataFrame,
-            StaPowerCapability, StaPowerCapabilityError, StaProtectedAmsduFrame,
-            StaProtectedDataFrame, StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters,
-            StationFrameError, parse_association_response, parse_open_authentication_response,
-            parse_sta_disconnect, select_sta_association, select_wpa2_psk_rsn,
+            STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
+            STA_RESPONSE_TIMEOUT_MS, StaActionFrame, StaAssociationPhy,
+            StaAssociationPreference, StaAssociationRetrySchedule, StaAuthenticationEvent,
+            StaAuthenticationFailure, StaAuthenticationRuntime, StaDataFrame, StaPowerCapability,
+            StaPowerCapabilityError, StaProtectedAmsduFrame, StaProtectedDataFrame,
+            StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters, StationFrameError,
+            parse_association_response, select_sta_association, select_wpa2_psk_rsn,
             sta_protected_amsdu_frame_length,
         },
         trigger::{
@@ -8274,12 +8274,7 @@ async fn authenticate_target(
         ));
         return false;
     }
-    // `hal_he_bsr_init` belongs to the vendor HE-node setup lifecycle rather
-    // than cold MAC init. Do not apply it before legacy authentication: a
-    // controlled HIL run with this single extra call made three consecutive
-    // directed auth frames finish with ACK-timeout status and produced no
-    // auth response, while broadcast receive remained healthy. It must be
-    // reintroduced only together with the owned post-association HE node.
+    // The vendor HE-node lifecycle remains deferred until Association.
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=sta-he-bsr deferred=post-association"
     ));
@@ -8296,9 +8291,19 @@ async fn authenticate_target(
         read_diagnostic_mmio(0x2010_40e4),
         read_diagnostic_mmio(0x2010_40f4),
     ));
-    let mut total_received_frames = 0_u32;
-    let mut final_disconnect = None;
-    for attempt in 0..STA_AUTHENTICATION_ATTEMPT_LIMIT {
+
+    let mut authentication =
+        StaAuthenticationRuntime::new(station_address, access_point.bssid);
+    loop {
+        let attempt = match authentication.begin_attempt(sequence) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error={error:?}"
+                ));
+                return false;
+            }
+        };
         let mut rx_ring =
             match start_live_rx_ring(mmio, rx_storage, descriptor_base, buffer_addresses).await {
                 Ok(ring) => ring,
@@ -8306,7 +8311,7 @@ async fn authenticate_target(
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-rx-arm \
                          attempt={} error={error:?}",
-                        attempt + 1,
+                        attempt.ordinal,
                     ));
                     return false;
                 }
@@ -8316,7 +8321,7 @@ async fn authenticate_target(
             tx_storage,
             station_address,
             access_point.bssid,
-            sequence.take(),
+            attempt.sequence_number,
         )
         .await
         {
@@ -8326,7 +8331,7 @@ async fn authenticate_target(
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-tx \
                      attempt={} error={error:?}",
-                    attempt + 1,
+                    attempt.ordinal,
                 ));
                 return false;
             }
@@ -8339,7 +8344,7 @@ async fn authenticate_target(
              plcp1={:#010x} pti={:#010x} power={:#010x} length={:#010x} \
              duration={:#010x} htsig={:#010x} ht_control={:#010x} \
              data_length={:#010x}",
-            attempt + 1,
+            attempt.ordinal,
             access_point.channel,
             access_point.bssid,
             completion.status,
@@ -8356,35 +8361,31 @@ async fn authenticate_target(
             read_diagnostic_mmio(0x2010_54e0),
             mmio.read32(TX_Q_POWER[LegacyTxQueue::Voice as usize]),
             mmio.read32(TX_Q_LENGTH_CONTROL[LegacyTxQueue::Voice as usize]),
-            // SOURCE: `_oracles/libpp.a[hal_mac_tx.o]` vector bank,
-            // confirmed by the promoted migration `lmac.rs` constants.
             read_diagnostic_mmio(0x2010_54dc),
             read_diagnostic_mmio(0x2010_54e8),
             read_diagnostic_mmio(0x2010_5504),
             read_diagnostic_mmio(0x2010_550c),
         ));
-        // PLCP format/ACK completion classification is only partially owned.
-        // Keep RX armed and use the addressed authentication response as the
-        // protocol-level success oracle.
 
-        let mut received_frames = 0_u32;
-        // Use the complete pinned vendor response timer for every attempt.
-        // A peer Disconnect ends this deadline immediately, matching the
-        // vendor `sta_recv_mgmt` transition back to state zero. A genuinely
-        // absent response still consumes the complete vendor timeout.
-        let mut peer_disconnect = None;
-        'response_wait: for _ in 0..STA_RESPONSE_TIMEOUT_MS {
+        let mut attempt_end = None;
+        'response_wait: for _ in 0..attempt.response_timeout_ms {
             for index in 0..RX_DESCRIPTOR_COUNT {
                 let Some(completed) = rx_ring.take_completed(index) else {
                     continue;
                 };
-                received_frames = received_frames.saturating_add(1);
+                if let Err(error) = authentication.observe_received_frame() {
+                    let _ = disable_receive(mmio);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error={error:?}"
+                    ));
+                    return false;
+                }
                 let segment = RxSegment {
                     descriptor_address: completed.descriptor_address(),
                     descriptor_word0: completed.word0(),
                     buffer: unsafe {
                         // RxRingLive transferred this completed descriptor and
-                        // its buffer to the sole radio task until recycle.
+                        // buffer to the sole radio task until recycle.
                         rx_storage.buffers[index].as_slice()
                     },
                     next_descriptor_address: completed.next_descriptor_address(),
@@ -8399,8 +8400,8 @@ async fn authenticate_target(
                         "OPEN_RADIO_PHY_HIL probe=sta-auth-rx-raw attempt={} frame={} \
                          descriptor={:#010x} fc={raw_fc:#06x} state={:#04x} \
                          internal={:#04x} da={:02x?} sa={:02x?}",
-                        attempt + 1,
-                        received_frames,
+                        attempt.ordinal,
+                        authentication.active_received_frames(),
                         completed.word0(),
                         raw[PUBLIC_HEADER_SIZE - 4],
                         raw[PUBLIC_HEADER_SIZE - 3],
@@ -8420,13 +8421,15 @@ async fn authenticate_target(
                     continue;
                 };
                 let management_subtype = frame[0] & 0xfc;
-                if management_subtype == 0xb0 || received_frames <= 3 {
+                if management_subtype == 0xb0
+                    || authentication.active_received_frames() <= 3
+                {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL probe=sta-auth-rx attempt={} frame={} \
                          subtype={:#04x} length={} da={:02x?} sa={:02x?} \
                          bssid={:02x?}",
-                        attempt + 1,
-                        received_frames,
+                        attempt.ordinal,
+                        authentication.active_received_frames(),
                         management_subtype,
                         extracted.length,
                         &frame[4..10],
@@ -8434,40 +8437,58 @@ async fn authenticate_target(
                         &frame[16..22],
                     ));
                 }
-                if let Some(disconnect) = parse_sta_disconnect(
-                    &frame[..extracted.length],
-                    station_address,
-                    access_point.bssid,
-                ) {
-                    peer_disconnect = Some(disconnect);
-                    break 'response_wait;
-                }
-                if let Some(response) = parse_open_authentication_response(
-                    &frame[..extracted.length],
-                    station_address,
-                    access_point.bssid,
-                ) {
-                    let _ = disable_receive(mmio);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result={} stage=sta-auth-response \
-                         attempt={} status={} frames={} bssid={:02x?}",
-                        if response.status_code == 0 {
-                            "PASS"
-                        } else {
-                            "FAIL"
-                        },
-                        attempt + 1,
-                        response.status_code,
-                        total_received_frames.saturating_add(received_frames),
-                        access_point.bssid,
-                    ));
-                    return response.status_code == 0;
+                let event = match authentication
+                    .observe_management_frame(&frame[..extracted.length])
+                {
+                    Ok(event) => event,
+                    Err(error) => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error={error:?}"
+                        ));
+                        return false;
+                    }
+                };
+                match event {
+                    StaAuthenticationEvent::Irrelevant => {}
+                    StaAuthenticationEvent::Authenticated {
+                        attempt,
+                        total_received_frames,
+                    } => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=PASS stage=sta-auth-response \
+                             attempt={attempt} status=0 frames={total_received_frames} \
+                             bssid={:02x?}",
+                            access_point.bssid,
+                        ));
+                        return true;
+                    }
+                    StaAuthenticationEvent::Failed {
+                        attempts,
+                        failure: StaAuthenticationFailure::Rejected { status_code },
+                        total_received_frames,
+                    } => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
+                             attempt={attempts} status={status_code} \
+                             frames={total_received_frames} bssid={:02x?}",
+                            access_point.bssid,
+                        ));
+                        return false;
+                    }
+                    event @ (StaAuthenticationEvent::Retry { .. }
+                    | StaAuthenticationEvent::Failed { .. }) => {
+                        attempt_end = Some(event);
+                        break 'response_wait;
+                    }
                 }
             }
 
             if let Err(error) = rx_ring.recycle_completed_half(mmio, |index| {
-                // SAFETY: RxRingLive invokes this only for a fully completed,
-                // detached half before republishing it to hardware.
+                // SAFETY: this callback runs only for a detached completed
+                // half before the ring republishes it to hardware.
                 unsafe { rx_storage.buffers[index].prepare_for_recycle() }
             }) {
                 let _ = disable_receive(mmio);
@@ -8489,49 +8510,89 @@ async fn authenticate_target(
         }
 
         let _ = disable_receive(mmio);
-        total_received_frames = total_received_frames.saturating_add(received_frames);
-        if let Some(disconnect) = peer_disconnect {
-            final_disconnect = Some(disconnect);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
-                 attempt={} error=peer-disconnect kind={:?} reason={} \
-                 frames={received_frames}",
-                attempt + 1,
-                disconnect.kind,
-                disconnect.reason_code,
-            ));
-        } else {
-            final_disconnect = None;
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
-                 attempt={} error=timeout timeout_ms={} \
-                 frames={received_frames}",
-                attempt + 1,
-                STA_RESPONSE_TIMEOUT_MS,
-            ));
+        let event = match attempt_end {
+            Some(event) => event,
+            None => match authentication.response_timed_out() {
+                Ok(event) => event,
+                Err(error) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error={error:?}"
+                    ));
+                    return false;
+                }
+            },
+        };
+        match event {
+            StaAuthenticationEvent::Retry {
+                attempt,
+                failure,
+                received_frames,
+                ..
+            } => {
+                match failure {
+                    StaAuthenticationFailure::Timeout => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
+                         attempt={attempt} error=timeout timeout_ms={} \
+                         frames={received_frames}",
+                        STA_RESPONSE_TIMEOUT_MS,
+                    )),
+                    StaAuthenticationFailure::PeerDisconnect(disconnect) => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
+                             attempt={attempt} error=peer-disconnect kind={:?} reason={} \
+                             frames={received_frames}",
+                            disconnect.kind, disconnect.reason_code,
+                        ));
+                    }
+                    StaAuthenticationFailure::Rejected { status_code } => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
+                             attempt={attempt} status={status_code}"
+                        ));
+                        return false;
+                    }
+                }
+            }
+            StaAuthenticationEvent::Failed {
+                attempts,
+                failure,
+                total_received_frames,
+            } => {
+                match failure {
+                    StaAuthenticationFailure::Timeout => emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response error=timeout \
+                         attempts={attempts} frames={total_received_frames} bssid={:02x?}",
+                        access_point.bssid,
+                    )),
+                    StaAuthenticationFailure::PeerDisconnect(disconnect) => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
+                             error=peer-disconnect kind={:?} reason={} attempts={attempts} \
+                             frames={total_received_frames} bssid={:02x?}",
+                            disconnect.kind, disconnect.reason_code, access_point.bssid,
+                        ));
+                    }
+                    StaAuthenticationFailure::Rejected { status_code } => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
+                             attempt={attempts} status={status_code} \
+                             frames={total_received_frames} bssid={:02x?}",
+                            access_point.bssid,
+                        ));
+                    }
+                }
+                return false;
+            }
+            StaAuthenticationEvent::Irrelevant
+            | StaAuthenticationEvent::Authenticated { .. } => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error=invalid-terminal"
+                ));
+                return false;
+            }
         }
     }
-
-    if let Some(disconnect) = final_disconnect {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
-             error=peer-disconnect kind={:?} reason={} attempts={} \
-             frames={total_received_frames} bssid={:02x?}",
-            disconnect.kind,
-            disconnect.reason_code,
-            STA_AUTHENTICATION_ATTEMPT_LIMIT,
-            access_point.bssid,
-        ));
-    } else {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response error=timeout \
-             attempts={} frames={total_received_frames} bssid={:02x?}",
-            STA_AUTHENTICATION_ATTEMPT_LIMIT, access_point.bssid,
-        ));
-    }
-    false
 }
-
 async fn associate_target(
     platform: &mut EspHalRadioPeripheral,
     mmio: &mut RadioRegisters,

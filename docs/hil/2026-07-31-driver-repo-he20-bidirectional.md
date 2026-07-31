@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.008 Mbit/s.
-- Concurrent open-radio TX floor: 69.758 Mbit/s.
-- Conservative sum: 79.766 Mbit/s.
+- Device direct-RX median: 10.005 Mbit/s.
+- Concurrent open-radio TX floor: 66.460 Mbit/s.
+- Conservative sum: 76.465 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,11 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `42387b138464580c00af89ba5d63a5c3302dd6ecc288c82d2e710793d008cf33`.
+  `b8a525c5858416e44f0f1b2989f870aa9ea61ff568f055d2ec9d14676d877597`.
 - ESP application image SHA-256:
-  `e38c35a1d89a7d2d6a007699e7b42eac196d481404b9df8558fb2df369465d63`.
+  `7d032bdb98d21cf038e60f9323b880b4e3e27d52cc8a66ebdf3dabcd53901b9d`.
 - Packed stage-two runtime SHA-256:
-  `0e8b3f16496debf5007c36afabcde63990b41548c9ac4099de6490b624cf8039`.
+  `76bfe3ffd079d62333091e94013ad224834b2c2c30eea22f9a8777c625633467`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -86,6 +86,16 @@ completion. The HIL now supplies only a zero-sized Embassy delay adapter and a
 diagnostic observer. The encoded application remains 998,912 bytes, the
 placement audit passed, and the reset-separated strict run produced the result
 above with zero `BUFFER_FULL` and zero `FIFO_OVERFLOW`.
+
+`StaAuthenticationRuntime` now owns the complete three-attempt Open
+Authentication epoch: one management sequence number per attempt, the
+vendor-proven 1,000-ms response deadline, peer response/deauthentication
+classification, retry decisions and terminal failure identity. The HIL keeps
+only RX-ring recycling, frame extraction, TX submission, the Embassy timer and
+diagnostic reporting. Three host tests cover timeout exhaustion, sequence
+wrap, peer success, deauthentication retry and status rejection. The strict
+connected run above proves the resulting Authentication, Association, WPA2 and
+traffic path on hardware.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

@@ -730,6 +730,201 @@ pub const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
 /// Bounded open Authentication attempts retained by the qualified STA path.
 pub const STA_AUTHENTICATION_ATTEMPT_LIMIT: u16 = 3;
 
+/// One uniquely numbered Open Authentication transmission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAuthenticationAttempt {
+    pub ordinal: u16,
+    pub sequence_number: u16,
+    pub response_timeout_ms: u32,
+}
+
+/// Protocol-level reason why one Authentication attempt ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAuthenticationFailure {
+    Timeout,
+    PeerDisconnect(StaDisconnect),
+    Rejected { status_code: u16 },
+}
+
+/// Result of observing a management frame or expiring an attempt deadline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAuthenticationEvent {
+    Irrelevant,
+    Authenticated {
+        attempt: u16,
+        total_received_frames: u32,
+    },
+    Retry {
+        attempt: u16,
+        failure: StaAuthenticationFailure,
+        received_frames: u32,
+        total_received_frames: u32,
+    },
+    Failed {
+        attempts: u16,
+        failure: StaAuthenticationFailure,
+        total_received_frames: u32,
+    },
+}
+
+/// Invalid executor interaction with [`StaAuthenticationRuntime`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAuthenticationRuntimeError {
+    AttemptAlreadyActive,
+    NoActiveAttempt,
+    Terminal,
+}
+
+/// Allocation-free owner of the ordinary Open Authentication retry epoch.
+///
+/// This type owns protocol policy and state only. A target executor arms RX,
+/// submits the returned sequence number, reports every received descriptor,
+/// and supplies extracted management frames. It therefore remains independent
+/// of Embassy, DMA layout and the ESP32-S31 MAC.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_sta.o]::
+/// ieee80211_sta_new_state` ordinary Authentication branch arms the 1,000-ms
+/// state timer. The three-attempt bound is the hardware-qualified open STA
+/// policy previously owned by the ESP32-S31 HIL.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAuthenticationRuntime {
+    local: [u8; 6],
+    bssid: [u8; 6],
+    attempts_started: u16,
+    active: bool,
+    terminal: bool,
+    received_frames: u32,
+    total_received_frames: u32,
+}
+
+impl StaAuthenticationRuntime {
+    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+        Self {
+            local,
+            bssid,
+            attempts_started: 0,
+            active: false,
+            terminal: false,
+            received_frames: 0,
+            total_received_frames: 0,
+        }
+    }
+
+    /// Start the next bounded attempt and consume exactly one management
+    /// sequence number. Hardware retransmission of the encoded request does
+    /// not call this method again.
+    pub fn begin_attempt(
+        &mut self,
+        sequence: &mut StaSequenceCounter,
+    ) -> Result<StaAuthenticationAttempt, StaAuthenticationRuntimeError> {
+        if self.terminal || self.attempts_started >= STA_AUTHENTICATION_ATTEMPT_LIMIT {
+            return Err(StaAuthenticationRuntimeError::Terminal);
+        }
+        if self.active {
+            return Err(StaAuthenticationRuntimeError::AttemptAlreadyActive);
+        }
+        self.attempts_started += 1;
+        self.active = true;
+        self.received_frames = 0;
+        Ok(StaAuthenticationAttempt {
+            ordinal: self.attempts_started,
+            sequence_number: sequence.take(),
+            response_timeout_ms: STA_RESPONSE_TIMEOUT_MS,
+        })
+    }
+
+    /// Account for one completed RX descriptor, including a frame which is
+    /// not a valid management input. This preserves the diagnostic count while
+    /// keeping frame parsing separately typed.
+    pub fn observe_received_frame(&mut self) -> Result<(), StaAuthenticationRuntimeError> {
+        if !self.active {
+            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
+        }
+        self.received_frames = self.received_frames.saturating_add(1);
+        Ok(())
+    }
+
+    /// Classify one extracted management frame for the active peer exchange.
+    pub fn observe_management_frame(
+        &mut self,
+        frame: &[u8],
+    ) -> Result<StaAuthenticationEvent, StaAuthenticationRuntimeError> {
+        if !self.active {
+            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
+        }
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
+            return Ok(self.finish_retryable(StaAuthenticationFailure::PeerDisconnect(disconnect)));
+        }
+        let Some(response) = parse_open_authentication_response(frame, self.local, self.bssid)
+        else {
+            return Ok(StaAuthenticationEvent::Irrelevant);
+        };
+        self.finish_attempt();
+        self.terminal = true;
+        if response.status_code == 0 {
+            Ok(StaAuthenticationEvent::Authenticated {
+                attempt: self.attempts_started,
+                total_received_frames: self.total_received_frames,
+            })
+        } else {
+            Ok(StaAuthenticationEvent::Failed {
+                attempts: self.attempts_started,
+                failure: StaAuthenticationFailure::Rejected {
+                    status_code: response.status_code,
+                },
+                total_received_frames: self.total_received_frames,
+            })
+        }
+    }
+
+    /// Expire the complete vendor state deadline for the active attempt.
+    pub fn response_timed_out(
+        &mut self,
+    ) -> Result<StaAuthenticationEvent, StaAuthenticationRuntimeError> {
+        if !self.active {
+            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
+        }
+        Ok(self.finish_retryable(StaAuthenticationFailure::Timeout))
+    }
+
+    pub const fn total_received_frames(&self) -> u32 {
+        self.total_received_frames
+            .saturating_add(self.received_frames)
+    }
+
+    pub const fn active_received_frames(&self) -> u32 {
+        self.received_frames
+    }
+
+    fn finish_retryable(&mut self, failure: StaAuthenticationFailure) -> StaAuthenticationEvent {
+        let received_frames = self.received_frames;
+        self.finish_attempt();
+        if self.attempts_started < STA_AUTHENTICATION_ATTEMPT_LIMIT {
+            StaAuthenticationEvent::Retry {
+                attempt: self.attempts_started,
+                failure,
+                received_frames,
+                total_received_frames: self.total_received_frames,
+            }
+        } else {
+            self.terminal = true;
+            StaAuthenticationEvent::Failed {
+                attempts: self.attempts_started,
+                failure,
+                total_received_frames: self.total_received_frames,
+            }
+        }
+    }
+
+    fn finish_attempt(&mut self) {
+        self.total_received_frames = self
+            .total_received_frames
+            .saturating_add(self.received_frames);
+        self.received_frames = 0;
+        self.active = false;
+    }
+}
+
 /// Compatibility schedule for Association retransmission inside the vendor
 /// one-second state deadline.
 ///
@@ -1857,6 +2052,27 @@ mod tests {
     const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
     const BSSID: [u8; 6] = [0x30, 0x05, 0x5c, 0x11, 0x22, 0x33];
 
+    fn authentication_response(status_code: u16) -> [u8; 30] {
+        let mut frame = [0_u8; 30];
+        frame[0..2].copy_from_slice(&OPEN_AUTHENTICATION_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[26..28].copy_from_slice(&OPEN_SYSTEM_RESPONSE_SEQUENCE.to_le_bytes());
+        frame[28..30].copy_from_slice(&status_code.to_le_bytes());
+        frame
+    }
+
+    fn deauthentication(reason_code: u16) -> [u8; MANAGEMENT_HEADER_LEN + 2] {
+        let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
+        frame[0..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&reason_code.to_le_bytes());
+        frame
+    }
+
     fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
         let mut record = ScanRecord::EMPTY;
         record.ssid[..4].copy_from_slice(b"test");
@@ -1933,13 +2149,7 @@ mod tests {
 
     #[test]
     fn parses_only_matching_open_authentication_response() {
-        let mut frame = [0_u8; 30];
-        frame[0] = 0xb0;
-        frame[4..10].copy_from_slice(&LOCAL);
-        frame[10..16].copy_from_slice(&BSSID);
-        frame[16..22].copy_from_slice(&BSSID);
-        frame[26..28].copy_from_slice(&2_u16.to_le_bytes());
-        frame[28..30].copy_from_slice(&17_u16.to_le_bytes());
+        let frame = authentication_response(17);
         assert_eq!(
             parse_open_authentication_response(&frame, LOCAL, BSSID),
             Some(OpenAuthenticationResponse { status_code: 17 })
@@ -1947,6 +2157,103 @@ mod tests {
         assert_eq!(
             parse_open_authentication_response(&frame, [0; 6], BSSID),
             None
+        );
+    }
+
+    #[test]
+    fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
+        let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+        let mut sequence = StaSequenceCounter::new(0x0ffe);
+
+        for ordinal in 1..=STA_AUTHENTICATION_ATTEMPT_LIMIT {
+            let attempt = runtime.begin_attempt(&mut sequence).unwrap();
+            assert_eq!(attempt.ordinal, ordinal);
+            assert_eq!(attempt.sequence_number, (0x0ffd + ordinal) & 0x0fff);
+            assert_eq!(attempt.response_timeout_ms, STA_RESPONSE_TIMEOUT_MS);
+            runtime.observe_received_frame().unwrap();
+            let event = runtime.response_timed_out().unwrap();
+            if ordinal < STA_AUTHENTICATION_ATTEMPT_LIMIT {
+                assert_eq!(
+                    event,
+                    StaAuthenticationEvent::Retry {
+                        attempt: ordinal,
+                        failure: StaAuthenticationFailure::Timeout,
+                        received_frames: 1,
+                        total_received_frames: u32::from(ordinal),
+                    }
+                );
+            } else {
+                assert_eq!(
+                    event,
+                    StaAuthenticationEvent::Failed {
+                        attempts: ordinal,
+                        failure: StaAuthenticationFailure::Timeout,
+                        total_received_frames: u32::from(ordinal),
+                    }
+                );
+            }
+        }
+        assert_eq!(
+            runtime.begin_attempt(&mut sequence),
+            Err(StaAuthenticationRuntimeError::Terminal)
+        );
+    }
+
+    #[test]
+    fn authentication_runtime_ignores_other_management_and_accepts_selected_peer() {
+        let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+        let mut sequence = StaSequenceCounter::new(7);
+        let attempt = runtime.begin_attempt(&mut sequence).unwrap();
+        runtime.observe_received_frame().unwrap();
+        assert_eq!(
+            runtime.observe_management_frame(&[0; 30]).unwrap(),
+            StaAuthenticationEvent::Irrelevant
+        );
+        runtime.observe_received_frame().unwrap();
+        assert_eq!(
+            runtime
+                .observe_management_frame(&authentication_response(0))
+                .unwrap(),
+            StaAuthenticationEvent::Authenticated {
+                attempt: attempt.ordinal,
+                total_received_frames: 2,
+            }
+        );
+        assert_eq!(runtime.total_received_frames(), 2);
+    }
+
+    #[test]
+    fn authentication_runtime_retries_disconnect_but_not_status_rejection() {
+        let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+        let mut sequence = StaSequenceCounter::new(0);
+        runtime.begin_attempt(&mut sequence).unwrap();
+        runtime.observe_received_frame().unwrap();
+        assert_eq!(
+            runtime
+                .observe_management_frame(&deauthentication(1))
+                .unwrap(),
+            StaAuthenticationEvent::Retry {
+                attempt: 1,
+                failure: StaAuthenticationFailure::PeerDisconnect(StaDisconnect {
+                    kind: StaDisconnectKind::Deauthentication,
+                    reason_code: 1,
+                }),
+                received_frames: 1,
+                total_received_frames: 1,
+            }
+        );
+
+        runtime.begin_attempt(&mut sequence).unwrap();
+        runtime.observe_received_frame().unwrap();
+        assert_eq!(
+            runtime
+                .observe_management_frame(&authentication_response(17))
+                .unwrap(),
+            StaAuthenticationEvent::Failed {
+                attempts: 2,
+                failure: StaAuthenticationFailure::Rejected { status_code: 17 },
+                total_received_frames: 2,
+            }
         );
     }
 

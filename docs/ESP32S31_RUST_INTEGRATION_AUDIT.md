@@ -341,6 +341,19 @@ selectors were deleted. A post-transfer remote-only
 concurrent TX with zero `BUFFER_FULL` and `FIFO_OVERFLOW`. Frame/RX ownership,
 WPA2 action dispatch and the final connected dispatcher remain to move.
 
+Open Authentication protocol ownership has now moved too.
+`StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per
+attempt and owns the three-attempt limit, complete vendor 1,000-ms response
+deadline, selected-peer Authentication/Deauthentication classification,
+retry reason and terminal result. The HIL is only its hardware executor: it
+arms and recycles the RX ring, submits the encoded request, extracts management
+frames and advances the Embassy timer. Three host tests cover timeout
+exhaustion and sequence wrap, selected-peer success, disconnect retry and
+status rejection. The reset-separated PSRAM/PSRAM HE20 regression then passed
+at 10.005-Mbit/s RX plus a 66.460-Mbit/s concurrent TX floor with zero DMA
+starvation. Association RX ownership, WPA2 action dispatch and the final
+connected dispatcher remain to move.
+
 The post-response peer join is now driver-owned too.
 `StaPeerScanPolicy` retains the scan-derived association PHY, typed HT A-MPDU
 parameters, effective HE BSS color and atomically validated WMM policy.

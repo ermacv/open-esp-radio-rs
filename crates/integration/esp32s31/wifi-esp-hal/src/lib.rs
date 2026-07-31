@@ -15,7 +15,7 @@ use esp_hal::{
     },
     rng::Rng,
 };
-use open_esp_radio::esp32s31::hal::{
+use open_esp_radio_esp32s31_hal::{
     PowerClockControl, PowerClockImages,
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
@@ -24,8 +24,8 @@ use open_esp_radio::esp32s31::hal::{
     power_detector_platform::PhyPowerDetectorPlatformControl,
     wifi_bb::PhyWifiBbControl,
 };
-use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
-use open_esp_radio::esp32s31::wifi::mac::init::{
+use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
+use open_esp_radio_esp32s31_wifi_mac::init::{
     MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacDelayEntropy,
     MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
 };

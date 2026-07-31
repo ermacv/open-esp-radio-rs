@@ -2,6 +2,7 @@
 name = "open-esp-radio-vendor-oracle-hil-esp32s31"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 build = "build.rs"

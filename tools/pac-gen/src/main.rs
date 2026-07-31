@@ -74,6 +74,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn format_generated(source: &str) -> Result<String, Box<dyn Error>> {
+    let source = format!("#![allow(clippy::empty_docs)]\n{source}");
     let mut child = Command::new("rustfmt")
         .args(["--edition", "2024", "--style-edition", "2024"])
         .stdin(Stdio::piped())

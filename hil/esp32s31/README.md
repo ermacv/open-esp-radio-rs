@@ -4,6 +4,13 @@ This is a private embedded workspace for qualifying the public driver crates.
 It is deliberately excluded from the root host workspace: normal
 `cargo test --workspace --all-targets` must not build target-only binaries.
 
+This directory is the test harness, not another radio-driver layer. It owns
+the concrete board clock tree, boot flow, flash and PSRAM placement, Embassy
+executor, and the full `embassy-net`/smoltcp application used for traffic
+tests. Reusable network-driver and ESP32-S31 platform bindings live under
+`../../crates/integration`; PAC/HAL/PHY/Wi-Fi behavior lives under
+`../../crates/esp32s31` and `../../crates/wifi`.
+
 The authoritative performance profile is `psram-code-psram-data`. Its image
 has two stages:
 

@@ -2,6 +2,7 @@
 name = "open-esp-radio-esp32s31-pac"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Source-described ESP32-S31 radio register access"

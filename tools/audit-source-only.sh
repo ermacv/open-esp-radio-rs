@@ -12,7 +12,7 @@ cd "$repo_root"
 # source text for particular identifiers or function spellings.
 cargo pac-gen --check
 
-RUSTUP_TOOLCHAIN=stable cargo build \
+cargo build \
     -p open-esp-radio-esp32s31-phy \
     --lib \
     --release \
@@ -40,7 +40,7 @@ comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 # The final artifact may refer to its source-only HAL/PAC dependencies and to
 # compiler/core support only. Radio ROM or vendor archive symbols fail closed.
 if rg -v \
-    '^(_R.*open_esp_radio_esp32s31_(hal|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
+    '^(_R.*open_esp_radio_esp32s31_(hal|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
     "$audit_dir/external"
 then
     echo "unexpected external symbol in source-only radio rlib" >&2
@@ -55,7 +55,7 @@ then
 fi
 
 dependency_tree="$(
-    RUSTUP_TOOLCHAIN=stable cargo tree \
+    cargo tree \
         -p open-esp-radio-esp32s31-phy \
         --target "$target_triple" \
         --prefix none

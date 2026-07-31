@@ -111,7 +111,7 @@ Hardware inspection also corrected the live RX extraction contract:
 The old migration copy was removed after qualification; Git history preserves
 it. New scan work must use the live MAC module.
 
-Planned split:
+Current crate split:
 
 - `open-esp-radio-esp32s31-pac`: typed register descriptions;
 - `open-esp-radio-esp32s31-hal`: ownership and finite register transactions;

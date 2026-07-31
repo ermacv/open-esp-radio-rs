@@ -12,8 +12,8 @@ pub const INT_STATUS: Register32 = Register32::new(0x2010_4c48);
 
 /// RX descriptor-walker control.
 ///
-/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
-/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE\[instruction-exact-and-hil].
 /// Bit 31 is the start/stop gate. Bit 0 is a self-clearing reload doorbell for
 /// appending descriptors to a live list; it is not used to publish the first
 /// cold list. The HIL sustained more than 7,000 receives and completed
@@ -32,8 +32,8 @@ pub mod rx_control {
 
 /// First RX descriptor address, expressed in the selected high-address window.
 ///
-/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
-/// CONFIDENCE[instruction-exact-and-hil]. The cold `wDev_AppendRxBlocks` path
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+/// CONFIDENCE\[instruction-exact-and-hil]. The cold `wDev_AppendRxBlocks` path
 /// writes this when the software list is empty. A live-list append normally
 /// links the accepted tail and uses
 /// [`rx_control::APPEND_DESCRIPTOR_RELOAD`].
@@ -42,16 +42,16 @@ pub const RX_DESCRIPTOR_BASE: Register32 =
 /// Current/next descriptor selected by the RX walker; zero denotes no current
 /// descriptor at the observed terminal frontier.
 ///
-/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
-/// CONFIDENCE[instruction-exact-and-hil]. ROM reads this after the reload bit
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+/// CONFIDENCE\[instruction-exact-and-hil]. ROM reads this after the reload bit
 /// clears and repairs the base only when it is zero and the accepted hardware
 /// tail has not reached the newly published software tail.
 pub const RX_NEXT_DESCRIPTOR: Register32 =
     Register32::described(0x2010_4088, RegisterAccess::ReadOnly, None);
 /// Last descriptor accepted by the RX walker.
 ///
-/// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
-/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
+/// SOURCE\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE\[instruction-exact-and-hil].
 /// ROM reconstructs the pointer from this register's low 20 bits and
 /// [`RX_LAST_DESCRIPTOR_HIGH`]'s high 12 bits. The HIL uses the accepted last
 /// descriptor to rotate ownership instead of assuming descriptor zero.
@@ -60,8 +60,8 @@ pub const RX_LAST_DESCRIPTOR: Register32 =
 pub const RX_CSI_CONFIG: Register32 = Register32::new(0x2010_4098);
 /// High address window shared by RX descriptor pointer registers.
 ///
-/// SOURCE[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
-/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-and-hil].
+/// SOURCE\[ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,
+/// HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE\[instruction-exact-and-hil].
 /// The open driver programs `0x2f00_0000` for internal SRAM descriptors; the
 /// pointer registers carry the low 20 address bits.
 pub const RX_LAST_DESCRIPTOR_HIGH: Register32 =
@@ -69,7 +69,7 @@ pub const RX_LAST_DESCRIPTOR_HIGH: Register32 =
 
 /// Per-interface hardware crypto controls for STA, AP and NAN.
 ///
-/// SOURCE[BLOB_LIBPP_HAL_CRYPTO_ENABLE]; the interface number selects one
+/// SOURCE\[BLOB_LIBPP_HAL_CRYPTO_ENABLE]; the interface number selects one
 /// adjacent word. Higher layers still own the algorithm-specific value.
 pub const CRYPTO_INTERFACE_CONTROL: [Register32; 3] = [
     Register32::described(0x2010_4800, RegisterAccess::ReadWrite, None),

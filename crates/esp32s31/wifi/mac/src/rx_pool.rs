@@ -133,7 +133,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// descriptor. The caller supplies only the storage-specific rearm
     /// operation; this method owns the ordering and the reload completion.
     ///
-    /// SOURCE[HIL_OPEN_HE20_RX_OWNERSHIP_2026_07_30]: in the
+    /// SOURCE\[HIL_OPEN_HE20_RX_OWNERSHIP_2026_07_30]: in the
     /// `psram-code-psram-data` profile, two reset-separated bidirectional
     /// HE20/MCS9 runs completed with `BUFFER_FULL=0` and `FIFO_OVERFLOW=0`.
     /// The proof run performed 5,147 RX-priority scheduling handoffs during

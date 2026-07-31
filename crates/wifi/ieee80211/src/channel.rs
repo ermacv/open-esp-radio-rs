@@ -164,6 +164,12 @@ impl ChannelState {
     }
 }
 
+impl Default for ChannelState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn selector_valid(channel: [u8; 2]) -> bool {
     (1..=CHANNEL_COUNT as u8).contains(&channel[0]) && channel[1] <= 2
 }

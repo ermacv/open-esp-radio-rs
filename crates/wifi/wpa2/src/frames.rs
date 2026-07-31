@@ -412,6 +412,7 @@ impl<const N: usize> Wpa2TxFrame<N> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build(
         interface: Wpa2Interface,
         peer: [u8; 6],

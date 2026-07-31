@@ -16,7 +16,7 @@ pub const fn next_tbtt_delay(send_tick: u32, interval: u32, now: u32) -> Option<
         1
     } else {
         let quotient = elapsed / interval;
-        quotient.wrapping_add((elapsed % interval != 0) as u32)
+        quotient.wrapping_add((!elapsed.is_multiple_of(interval)) as u32)
     };
     let advance = steps.wrapping_mul(interval);
     let next_tick = send_tick.wrapping_add(advance);

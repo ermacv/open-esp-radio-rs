@@ -266,6 +266,7 @@ pub const fn plan_data_encapsulation(
 /// Complete `_oracles/libpp.a[pp_he.o]::ppCalSubFrameLength` accounts for the
 /// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
 /// metadata remains outside this IEEE 802.11 encoder.
+#[allow(clippy::too_many_arguments)]
 pub const fn plan_data_encapsulation_with_he_control(
     role: DataInterfaceRole,
     bssid: [u8; 6],
@@ -491,7 +492,7 @@ pub fn decapsulate_amsdu_subframe(
 /// Copy one validated MSDU into caller-owned Ethernet storage.
 ///
 /// This finite copy/validation leaf is SRAM-resident on S31 PSRAM-code
-/// builds. SOURCE[HIL_OPEN_HE20_RX_RING_STARVATION_2026_07_29]: the complete
+/// builds. SOURCE\[HIL_OPEN_HE20_RX_RING_STARVATION_2026_07_29]: the complete
 /// post-CCMP receive path executed from PSRAM plateaued at 63.1..65.3 Mbit/s
 /// while the MAC reported an additional raw interrupt bit under load.
 #[inline(never)]

@@ -38,11 +38,12 @@ impl MacHeTid {
 /// wifi_he_get_hetb_tid_bitmap` and its four-byte table. The enum is the
 /// Rust-owned replacement for `g_wifi_menuconfig + 0x5c`; callers cannot
 /// manufacture the blob's invalid configuration values.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(u8)]
 pub enum MacHeTbTidLimit {
     One = 1,
     Two = 2,
+    #[default]
     Three = 3,
     Four = 4,
 }
@@ -60,14 +61,6 @@ impl MacHeTbTidLimit {
 
     pub const fn contains(self, tid: MacHeTid) -> bool {
         self.bitmap() & tid.mask() != 0
-    }
-}
-
-impl Default for MacHeTbTidLimit {
-    fn default() -> Self {
-        // This is the blob's fallback for an invalid menuconfig value and the
-        // observed normal configuration: TIDs 0, 5 and 7.
-        Self::Three
     }
 }
 

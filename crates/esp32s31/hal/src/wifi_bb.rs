@@ -22,7 +22,7 @@ pub trait PhyWifiBbControl {
 
 /// Clear both low Wi-Fi control bits before the open cold transition.
 ///
-/// SOURCE[`libphy.a[phy_init.o]::register_chipv7_phy`, size `0x1e6`].
+/// SOURCE\[`libphy.a[phy_init.o]::register_chipv7_phy`, size `0x1e6`].
 /// Bit 1 is independently identified by complete ROM
 /// `phy_wifi_enable_set`; bit 0 retains an `UNKNOWN` PAC name.
 pub fn prepare_cold_start(platform: &mut impl PhyWifiBbControl) {
@@ -51,7 +51,7 @@ pub fn enable_agc_register_update(platform: &mut impl PhyWifiBbControl) {
 
 /// Apply complete ROM `phy_mac_enable_bb`.
 ///
-/// SOURCE[rev0 ROM `phy_mac_enable_bb` at `0x2f82_7836`, size `0x2a`].
+/// SOURCE\[rev0 ROM `phy_mac_enable_bb` at `0x2f82_7836`, size `0x2a`].
 /// The three separate calls deliberately preserve its three fresh RMW edges.
 pub fn enable_mac_baseband(platform: &mut impl PhyWifiBbControl) {
     platform.set_mac_baseband_enabled(true);

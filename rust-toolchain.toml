@@ -1,4 +1,4 @@
 [toolchain]
-channel = "stable"
+channel = "1.97.1"
 targets = ["riscv32imafc-unknown-none-elf"]
-components = ["rust-src"]
+components = ["rust-src", "rustfmt", "clippy"]

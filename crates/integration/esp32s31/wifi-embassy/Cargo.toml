@@ -1,0 +1,18 @@
+[package]
+name = "open-esp-radio-esp32s31-wifi-embassy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Embassy runtime integration for the open ESP32-S31 Wi-Fi radio"
+
+[dependencies]
+open-esp-radio-embassy-net = { path = "../../network/embassy-net" }
+open-esp-radio-esp32s31-hal = { path = "../../../esp32s31/hal" }
+open-esp-radio-esp32s31-pac = { path = "../../../esp32s31/pac" }
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../esp32s31/wifi/mac" }
+open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+
+[lints]
+workspace = true

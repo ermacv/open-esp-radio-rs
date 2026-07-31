@@ -30,7 +30,7 @@ pub use embassy_sync::signal::Signal;
 
 use embassy_net_driver::{Capabilities, HardwareAddress, LinkState};
 use embassy_sync::{
-    channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
+    channel::{Channel, Receiver, Sender, TrySendError},
     waitqueue::GenericAtomicWaker,
 };
 
@@ -278,10 +278,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
 
     /// Takes the next Ethernet frame that the stack wants transmitted.
     pub fn try_receive_tx(&self) -> Option<EthernetFrame<FRAME_CAPACITY>> {
-        match self.tx.try_receive() {
-            Ok(frame) => Some(frame),
-            Err(TryReceiveError::Empty) => None,
-        }
+        self.tx.try_receive().ok()
     }
 
     /// Waits for the next Ethernet frame that the stack wants transmitted.
@@ -387,7 +384,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         self.tx
             .poll_ready_to_send(cx)
             .is_ready()
-            .then(|| TransmitToken {
+            .then_some(TransmitToken {
                 tx: self.tx,
                 _reservation: &mut self.tx_reservation,
             })

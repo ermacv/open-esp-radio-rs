@@ -38,11 +38,6 @@ use open_esp_radio::{
             run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
             target_executor::{PhyAsyncDelay, PhyTargetPortError},
         },
-        wifi::cooperative_tx::CooperativeTxHardware,
-        wifi::embassy_irq::EmbassyMacIrqRuntime,
-        wifi::embassy_tx::{
-            ReferencedAmpduIngressPolicy, ReferencedHtAmpduBatch, ReferencedHtAmpduError,
-        },
         wifi::mac::{
             crypto::{
                 StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp,
@@ -99,10 +94,18 @@ use open_esp_radio::{
             },
         },
     },
-    wifi::embassy_net::{
-        PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
-        PinnedResources as OpenRadioNetworkResources, PinnedTxFrame as OpenRadioNetworkTxFrame,
-        PinnedTxPool as OpenRadioNetworkTxPool,
+    integration::{
+        esp32s31::wifi_embassy::{
+            cooperative_tx::CooperativeTxHardware, embassy_irq::EmbassyMacIrqRuntime,
+            embassy_tx::{
+                ReferencedAmpduIngressPolicy, ReferencedHtAmpduBatch, ReferencedHtAmpduError,
+            },
+        },
+        network::embassy_net::{
+            PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
+            PinnedResources as OpenRadioNetworkResources,
+            PinnedTxFrame as OpenRadioNetworkTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
+        },
     },
     wifi::ieee80211::{
         data::{

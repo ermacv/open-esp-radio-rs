@@ -45,7 +45,7 @@ impl PhyTxTargetPowerPair {
 
 /// Rust-owned replacement for the target-power part of `phy_get_max_pwr`.
 ///
-/// SOURCE[`ROM_REV0_PHY_GET_MAX_PWR`]: complete rev0 ROM
+/// SOURCE\[`ROM_REV0_PHY_GET_MAX_PWR`]: complete rev0 ROM
 /// `phy_get_max_pwr` (0x2f82_49fe), `phy_get_target_pwr` (0x2f82_4976),
 /// `phy_wifi_get_target_power` (0x2f82_70fa), and `phy_rate_to_index`
 /// (0x2f82_491e), recovered from `_oracles/esp32s31_rev0_rom.elf`.

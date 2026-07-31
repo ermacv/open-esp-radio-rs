@@ -5,6 +5,7 @@ members = ["runtime"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.97.1"
 license = "MIT OR Apache-2.0"
 publish = false
 
@@ -16,7 +17,7 @@ esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-
 esp-phy = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform" }
 esp-rtos = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform" }
 open-esp-radio = { path = "../../../crates/radio" }
-open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../crates/esp32s31/wifi/esp-hal" }
+open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../crates/integration/esp32s31/wifi-esp-hal" }
 static_cell = "2.1.1"
 
 [profile.release]

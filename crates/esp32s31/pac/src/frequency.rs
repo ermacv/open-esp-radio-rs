@@ -32,7 +32,7 @@ const fn channel_cbw_fields(cbw: u8) -> ChannelCbwFields {
         }
     } else {
         let low = cbw & 0x0f;
-        let normalized = if low < 2 { 0 } else { low - 2 };
+        let normalized = low.saturating_sub(2);
         ChannelCbwFields {
             tx_offset: normalized,
             control_0: normalized & 3,

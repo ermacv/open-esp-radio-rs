@@ -2,6 +2,7 @@
 name = "open-esp-radio-hil-esp32s31-board"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 

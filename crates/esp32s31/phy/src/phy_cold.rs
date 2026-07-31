@@ -3103,7 +3103,7 @@ enum PhyColdPbusPhase {
 ///
 /// `Busy` after an observation preserves `AwaitCompletionEdge`; the binding
 /// does not retry, poll, or arrange another wake. An outer deadline may
-/// instead consume the binding through [`into_timeout_completion`].
+/// instead consume the binding through [`Self::into_timeout_completion`].
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyColdPbusBinding {
     outer_action: PhyRfInitPrefixAction,

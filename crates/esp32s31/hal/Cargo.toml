@@ -2,6 +2,7 @@
 name = "open-esp-radio-esp32s31-hal"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Ownership and async HAL boundaries for the ESP32-S31 radio"

@@ -10,7 +10,7 @@ use super::RadioRegisters;
 impl RadioRegisters {
     /// Enable or disable the recovered PHY calibration clock.
     ///
-    /// SOURCE[BLOB_LIBPHY_PHY_BB_INIT]; the complete parent sets this bit
+    /// SOURCE\[BLOB_LIBPHY_PHY_BB_INIT]; the complete parent sets this bit
     /// before executing the baseband calibration sequence.
     pub fn set_phy_calibration_clock(&mut self, enabled: bool) {
         self.peripherals
@@ -21,7 +21,7 @@ impl RadioRegisters {
 
     /// Open the three undocumented front-end and baseband radio clock gates.
     ///
-    /// SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK]; these are the first three
+    /// SOURCE\[ROM_REV0_PHY_OPEN_FE_BB_CLK]; these are the first three
     /// operations in the complete ROM body. Its fourth PMU operation belongs
     /// to the official platform PAC and is sequenced by the HAL.
     pub fn open_frontend_baseband_internal_clocks(&mut self) {
@@ -54,7 +54,7 @@ impl RadioRegisters {
 
     /// Close the recovered front-end and baseband clock gates.
     ///
-    /// SOURCE[BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; this is the exact inverse
+    /// SOURCE\[BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; this is the exact inverse
     /// three-operation blob leaf. It intentionally leaves PMU power policy to
     /// the surrounding lifecycle owner, matching the source.
     pub fn close_frontend_baseband_clocks(&mut self) {

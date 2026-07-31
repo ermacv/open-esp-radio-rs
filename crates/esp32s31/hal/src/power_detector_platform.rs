@@ -15,7 +15,7 @@ pub trait PhyPowerDetectorPlatformControl {
 
 /// Apply the final system-register edge of complete ROM `phy_pwdet_reg_init`.
 ///
-/// SOURCE[rev0 ROM `phy_pwdet_reg_init` at `0x2f82_634a`, size `0x5c`].
+/// SOURCE\[rev0 ROM `phy_pwdet_reg_init` at `0x2f82_634a`, size `0x5c`].
 pub fn select_initialization_mode(platform: &mut impl PhyPowerDetectorPlatformControl) {
     platform.select_power_detector_initialization_mode();
 }
@@ -23,14 +23,14 @@ pub fn select_initialization_mode(platform: &mut impl PhyPowerDetectorPlatformCo
 /// Apply the final system-register edge of complete ROM `phy_en_pwdet` through
 /// its complete `phy_pwdet_sar2_init` callee.
 ///
-/// SOURCE[rev0 ROM `phy_pwdet_sar2_init` at `0x2f82_63a6`, size `0x34`].
+/// SOURCE\[rev0 ROM `phy_pwdet_sar2_init` at `0x2f82_63a6`, size `0x34`].
 pub fn select_enabled_mode(platform: &mut impl PhyPowerDetectorPlatformControl) {
     platform.select_power_detector_initialization_mode();
 }
 
 /// Apply the system-register edge of complete ROM `phy_txcal_debuge_mode_`.
 ///
-/// SOURCE[rev0 ROM `phy_txcal_debuge_mode_` at `0x2f82_44fe`, size `0x56`].
+/// SOURCE\[rev0 ROM `phy_txcal_debuge_mode_` at `0x2f82_44fe`, size `0x56`].
 pub fn select_calibration_mode(platform: &mut impl PhyPowerDetectorPlatformControl) {
     platform.select_power_detector_calibration_mode();
 }

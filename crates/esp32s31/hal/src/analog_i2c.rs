@@ -17,7 +17,7 @@ pub trait PhyPmuControl {
 
 /// Apply the two PMU updates before the 100 us analog-I2C power delay.
 ///
-/// SOURCE[`libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`, offsets
+/// SOURCE\[`libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`, offsets
 /// `0x2e..0x4e`]. It clears `PMU.RF_PWC.XPD_RF_CIRCUIT`, then clears
 /// `PMU.IMM_HP_CK_POWER_0.TIE_HIGH_XPD_BB_I2C`.
 pub fn prepare_open_i2c_pre_delay(platform: &mut impl PhyPmuControl) {
@@ -27,7 +27,7 @@ pub fn prepare_open_i2c_pre_delay(platform: &mut impl PhyPmuControl) {
 
 /// Power the RF/analog-I2C circuits and release the peripheral-I2C reset.
 ///
-/// SOURCE[complete `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`]. When
+/// SOURCE\[complete `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`]. When
 /// analog-I2C was powered down, reset is explicitly asserted before release;
 /// this edge is deliberately not collapsed into one final write.
 pub fn complete_open_i2c_power_and_reset(platform: &mut impl PhyPmuControl) {
@@ -46,7 +46,7 @@ pub fn complete_open_i2c_power_and_reset(platform: &mut impl PhyPmuControl) {
 
 /// Complete the ROM frontend/baseband clock leaf after internal radio gates.
 ///
-/// SOURCE[complete rev0 ROM `phy_open_fe_bb_clk`]. The PMU update is the
+/// SOURCE\[complete rev0 ROM `phy_open_fe_bb_clk`]. The PMU update is the
 /// fourth and final operation; the first three undocumented radio gates are
 /// executed by the recovered radio PAC before this call.
 pub fn enable_frontend_baseband_power(platform: &mut impl PhyPmuControl) {

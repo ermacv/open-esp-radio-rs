@@ -73,7 +73,7 @@ impl Descriptor {
 
     /// Links a prepared chain after the current hardware-visible tail.
     ///
-    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
+    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
     /// `0x2f838a7e` stores the new head through the old tail's `next` word
     /// before calling `hal_mac_rx_set_dscr_reload`; the same ownership order
     /// is retained in `migration/esp32s31-hybrid-runtime/src/wdev.rs::

@@ -132,7 +132,7 @@ pub const CCMP_HEADER_SIZE: usize = 8;
 pub const CCMP_MIC_SIZE: usize = 8;
 /// Guard value restored by the ROM RX recycler at both DMA-buffer bounds.
 ///
-/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `_oracles/esp32s31_rev0_rom.elf`,
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `_oracles/esp32s31_rev0_rom.elf`,
 /// `wDev_AppendRxBlocks` at `0x2f838a7e`, complete size `0x132`, writes
 /// `0xdead_beef` at `buffer` and `buffer + descriptor_capacity`.
 /// The trailing word lives immediately after the descriptor-advertised
@@ -239,7 +239,7 @@ pub struct RxPhyInfo {
 
 /// PHY format published in the S31 RX-control prefix.
 ///
-/// SOURCE[ESP_WIFI_SYS_S31_RX_BB_FORMAT]: `esp-wifi-sys` commit
+/// SOURCE\[ESP_WIFI_SYS_S31_RX_BB_FORMAT]: `esp-wifi-sys` commit
 /// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
 /// `c/headers/esp32s31/esp_wifi_he_types.h::wifi_rx_bb_format_t`.
 /// The explicit `Unknown` case preserves forward compatibility instead of
@@ -367,7 +367,7 @@ impl HeGuardIntervalAndLtf {
 
 /// Typed HE SU signal fields captured from the S31 RX metadata.
 ///
-/// SOURCE[ESP_WIFI_SYS_S31_HE_SU_SIG]: `esp-wifi-sys` commit
+/// SOURCE\[ESP_WIFI_SYS_S31_HE_SU_SIG]: `esp-wifi-sys` commit
 /// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
 /// `c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h`: complete
 /// `esp_wifi_su_siga1_t` and packed `esp_wifi_su_siga2_t` layouts. The same
@@ -497,12 +497,12 @@ impl HeMuBandwidth {
 
 /// Typed HE MU common signal fields captured from S31 RX metadata.
 ///
-/// SOURCE[ESP_WIFI_SYS_S31_HE_MU_SIG]: `esp-wifi-sys` commit
+/// SOURCE\[ESP_WIFI_SYS_S31_HE_MU_SIG]: `esp-wifi-sys` commit
 /// `72b97e6fe55307aa92c8c1edf3fdb3f4df816e80`,
 /// `c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h`, complete
 /// `esp_wifi_mu_siga1_t` and packed `esp_wifi_mu_siga2_t` layouts.
 ///
-/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
+/// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
 /// `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`,
 /// instructions `0x4b4..0x586`. The format-five branch independently loads
 /// HE-SIG-A1 at RX-prefix offset `0x04` and HE-SIG-A2 at offsets `0x09..0x0a`,
@@ -567,9 +567,9 @@ impl HeMuSignal {
 
 /// Typed HE trigger-based common signal fields captured from RX metadata.
 ///
-/// SOURCE[ESP_WIFI_SYS_S31_HE_TB_SIG]: the pinned `esp-wifi-sys`
+/// SOURCE\[ESP_WIFI_SYS_S31_HE_TB_SIG]: the pinned `esp-wifi-sys`
 /// `esp_wifi_tb_siga1_t` and packed `esp_wifi_tb_siga2_t` layouts.
-/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
+/// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
 /// `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, instructions
 /// `0x412..0x4b2`, independently decodes the same prefix words for baseband
 /// format seven.
@@ -601,7 +601,7 @@ impl HeTriggerBasedSignal {
 
 /// Bounded HE-MU SIG-B view from one completed S31 RX buffer.
 ///
-/// SOURCE[BLOB_LIBPP_DBG_DUMP_RX_SIGB]: complete
+/// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_SIGB]: complete
 /// `_oracles/libpp.a[test_hal_rx_mu_sigb.o]::dbg_dump_rx_sigb`, size `0x1e6`.
 /// The blob reads the exact offsets used by [`decode_rx_he_mu_sig_b`]:
 /// bit length from `0x2a[7:5]` and `0x2b[6:0]`, presence at `0x2b[7]`,
@@ -914,7 +914,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// for the S31 ROM layout this means the two `0xdead_beef` sentinels. It is
     /// invoked only while the walker is confirmed stopped.
     ///
-    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
+    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
     /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR]; the rotated handoff is qualified
     /// by HIL_OPEN_RX_LIVE_APPEND_2026_07_27.
     pub fn prepare<M, F>(
@@ -1236,7 +1236,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 
     /// Complete one live-append doorbell before returning to frame processing.
     ///
-    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
+    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
     /// `0x2f83_8a7e` spins on `RX_CONTROL.APPEND_DESCRIPTOR_RELOAD` with the
     /// exact `0x186a1` bound, then immediately samples `RX_NEXT_DESCRIPTOR`
     /// and repairs `RX_DESCRIPTOR_BASE` from `last->next` when the old
@@ -1346,7 +1346,7 @@ fn relink_rotated_ring<const COUNT: usize>(
 
 /// Restores the two guard words required by the recovered RX recycle path.
 ///
-/// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS] and the preserved Rust transcription
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS] and the preserved Rust transcription
 /// in `migration/esp32s31-hybrid-runtime/src/wdev.rs::
 /// prepare_rx_recycle_chain`.
 ///

@@ -145,21 +145,12 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
         }
     }
 
-    fn storage_mut(&self) -> &mut [u8] {
-        // SAFETY: the slot-state/channel protocol gives the caller exclusive
-        // ownership. Stable storage belongs to a pinned `PinnedResources` and
-        // cannot be moved through any public API.
-        unsafe {
-            let bytes = &mut *self.bytes.get();
-            debug_assert_eq!(
-                core::mem::size_of_val(bytes),
-                HEADROOM + FRAME_CAPACITY + TRAILER
-            );
-            core::slice::from_raw_parts_mut(
-                ptr::addr_of_mut!(bytes.headroom).cast::<u8>(),
-                HEADROOM + FRAME_CAPACITY + TRAILER,
-            )
-        }
+    fn storage_mut_ptr(&self) -> *mut u8 {
+        self.bytes.get().cast::<u8>()
+    }
+
+    const fn storage_capacity(&self) -> usize {
+        HEADROOM + FRAME_CAPACITY + TRAILER
     }
 }
 
@@ -391,10 +382,10 @@ impl<
 > PinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
     fn poll_reserve_tx(&mut self, cx: &mut Context<'_>) -> bool {
-        if self.reserved_tx.is_none() {
-            if let Poll::Ready(index) = self.free_tx.poll_receive(cx) {
-                self.reserved_tx = Some(index);
-            }
+        if self.reserved_tx.is_none()
+            && let Poll::Ready(index) = self.free_tx.poll_receive(cx)
+        {
+            self.reserved_tx = Some(index);
         }
         self.reserved_tx.is_some()
     }
@@ -427,10 +418,10 @@ impl<
 > Drop for PinnedDevice<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
     fn drop(&mut self) {
-        if let Some(index) = self.reserved_tx.take() {
-            if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
-                unreachable!("reserved pinned TX index was lost");
-            }
+        if let Some(index) = self.reserved_tx.take()
+            && let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index)
+        {
+            unreachable!("reserved pinned TX index was lost");
         }
     }
 }
@@ -470,7 +461,12 @@ impl<
         );
         let index = self.index.take().expect("TX token consumed once");
         let slot = &self.slots[usize::from(index)];
-        let storage = slot.storage_mut();
+        // SAFETY: consuming the unique network token gives this call exclusive
+        // access to the slot selected by `index`. The slot remains pinned and
+        // no radio lease exists before `publish_ready`.
+        let storage = unsafe {
+            core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), slot.storage_capacity())
+        };
         let result = f(&mut storage[HEADROOM..HEADROOM + length]);
         slot.publish_ready(length);
         if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(index) {
@@ -685,12 +681,16 @@ impl<
 
     pub fn ethernet_mut(&mut self) -> &mut [u8] {
         let length = self.ethernet_length();
-        &mut self.slot().storage_mut()[HEADROOM..HEADROOM + length]
+        &mut self.storage_mut()[HEADROOM..HEADROOM + length]
     }
 
     /// Complete headroom + Ethernet capacity + hardware trailer allocation.
     pub fn storage_mut(&mut self) -> &mut [u8] {
-        self.slot().storage_mut()
+        let slot = self.slot();
+        // SAFETY: `&mut self` is the unique live radio lease for this slot.
+        // The state machine prevents a network token from existing until this
+        // lease is dropped, and the backing pool remains pinned throughout.
+        unsafe { core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), slot.storage_capacity()) }
     }
 
     pub const fn trailer_capacity(&self) -> usize {

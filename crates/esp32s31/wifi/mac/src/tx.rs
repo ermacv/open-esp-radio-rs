@@ -899,7 +899,7 @@ impl HeMcs {
 /// The blob's `esp_wifi_cert_tx_bcc` selector produces intermediate halfword
 /// `0x017f` for BCC and `0x01ff` for LDPC. Its final `>> 6` transformation
 /// changes the queue's HE-SIG-A2 control image from `0x105` to `0x107`.
-/// SOURCE[HIL_OPEN_HE20_LDPC_MATRIX_2026_07_30]: the open formatter's LDPC
+/// SOURCE\[HIL_OPEN_HE20_LDPC_MATRIX_2026_07_30]: the open formatter's LDPC
 /// image completed three 30-profile MCS0..9 by GI/LTF A-MPDU matrices against
 /// an LDPC-capable FRITZ peer with no failed profiles or terminal retries.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -2144,7 +2144,7 @@ impl HeAmpduTxConfig {
     /// negotiated EDCA TXOP; the peer's independent A-MPDU exponent is
     /// enforced by the pinned DMA owner before this constructor is reached.
     ///
-    /// SOURCE[HIL_OPEN_HE_RATE_APEP_GATE_2026_07_30]: live MCS9
+    /// SOURCE\[HIL_OPEN_HE_RATE_APEP_GATE_2026_07_30]: live MCS9
     /// 2xLTF/1.6-us runs qualified the resulting 31-MPDU ordinary and 30-MPDU
     /// hardware-HE-Control frontiers with complete BlockAck.
     pub const fn new_with_txop(

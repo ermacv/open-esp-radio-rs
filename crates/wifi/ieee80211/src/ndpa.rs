@@ -63,7 +63,7 @@ impl<'a> HeNdpa<'a> {
         if mpdu[16] & HE_MARKER == 0 {
             return Err(HeNdpaError::NotHe);
         }
-        if (mpdu.len() - NDPA_HEADER_SIZE) % HE_STA_INFO_SIZE != 0 {
+        if !(mpdu.len() - NDPA_HEADER_SIZE).is_multiple_of(HE_STA_INFO_SIZE) {
             return Err(HeNdpaError::MisalignedStationInfo);
         }
         Ok(Self { mpdu })
@@ -151,7 +151,7 @@ impl HeNdpaStationInfo {
 
 /// One owned HE NDPA STA Info field.
 ///
-/// SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: monitor capture
+/// SOURCE\[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: monitor capture
 /// `esp32s31-he-oracle-fixed-ch11.pcapng`, SHA-256
 /// `d50289842bd3cddbcebf3080c049cf6d6b387908b501b6b7333fbfb250e7abde`.
 /// Frame 1374 is a complete vendor AP-to-S31 HE20 NDPA. Its STA Info word
@@ -270,7 +270,7 @@ impl ExactSizeIterator for HeNdpaStationIterator<'_> {}
 
 /// One FCS-stripped HE Compressed Beamforming and CQI Action-No-Ack MPDU.
 ///
-/// SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: the same complete vendor
+/// SOURCE\[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: the same complete vendor
 /// sounding exchange as [`HeNdpaStationEncoding`]. Frame 1376 carries HE MIMO
 /// Control `0x0dc4008208`, one average-SNR byte and the complete borrowed
 /// feedback matrix. This parser deliberately does not interpret matrix angles;

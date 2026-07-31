@@ -384,7 +384,7 @@ impl HtAmpduTxCompletion {
     /// still contain the preceding successful bitmap, so those bits must not
     /// suppress an individual retry.
     ///
-    /// SOURCE[HIL_OPEN_HT_AMPDU_PARTIAL_2026_07_29]: live HT40 MCS7 SGI
+    /// SOURCE\[HIL_OPEN_HT_AMPDU_PARTIAL_2026_07_29]: live HT40 MCS7 SGI
     /// four-stream TX load produced successful partial BlockAck completions
     /// and status-five completions with stale nonzero bitmap words.
     pub const fn acknowledges(self, sequence: u16) -> bool {
@@ -409,7 +409,7 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// BlockAck and queue-detach edges complete. It does not use the vendor PP
 /// scheduler, allocate, or expose raw pointers to the application.
 ///
-/// SOURCE[HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]: ESP32-S31 rev0,
+/// SOURCE\[HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]: ESP32-S31 rev0,
 /// psram-code-psram-data, open PHY/MAC, HT40 MCS7 SGI. Four observed
 /// two-MPDU submissions from this pool each returned a BlockAck bitmap ending
 /// in `0x000f`, with no aggregate hardware timeout.

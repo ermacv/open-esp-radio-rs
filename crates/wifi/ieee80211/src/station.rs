@@ -938,7 +938,7 @@ impl StaAssociationRetrySchedule {
     pub const INTERVAL_MS: u32 = 160;
 
     pub const fn attempt_at(elapsed_ms: u32) -> Option<u16> {
-        if elapsed_ms < STA_RESPONSE_TIMEOUT_MS && elapsed_ms % Self::INTERVAL_MS == 0 {
+        if elapsed_ms < STA_RESPONSE_TIMEOUT_MS && elapsed_ms.is_multiple_of(Self::INTERVAL_MS) {
             Some((elapsed_ms / Self::INTERVAL_MS + 1) as u16)
         } else {
             None
@@ -1945,7 +1945,7 @@ impl StaProtectedAmsduFrame<'_> {
     /// CCMP-ready MPDU across a missing BlockAck bit and changes only retry
     /// metadata.
     ///
-    /// SOURCE[HIL_OPEN_HT40_AMSDU_BODY_REUSE_2026_07_29]:
+    /// SOURCE\[HIL_OPEN_HT40_AMSDU_BODY_REUSE_2026_07_29]:
     /// `esp32s31_rust` commit
     /// `8d69a294a5ab0f40f55313a292ca1d0fc1c4a853`,
     /// `firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs`. The

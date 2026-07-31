@@ -1,14 +1,211 @@
-//! Executor-neutral A-MPDU completion and retained-retry state.
+//! Executor-neutral transmit policy and bounded retry state.
 //!
 //! This module owns the finite policy between one detached hardware
 //! completion and the next publication decision. It deliberately does not
-//! wait for interrupts, access MMIO, mutate DMA storage or choose an EDCA
-//! backoff; those remain separate hardware/executor boundaries.
+//! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
+//! those remain separate hardware/executor boundaries.
 
-use crate::tx_ampdu::HtAmpduTxCompletion;
+use open_esp_radio_ieee80211::wmm::WmmParameterSet;
+
+use crate::{
+    edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
+    tx::{HtPeerAmpduParameters, LegacyTxQueue, TxPhyRate},
+    tx_ampdu::HtAmpduTxCompletion,
+};
 
 const IEEE80211_SEQUENCE_MASK: u16 = 0x0fff;
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
+
+/// Association-derived state used by all ordinary and aggregate TX paths.
+///
+/// The state is kept together so the HIL cannot accidentally update a peer's
+/// HT capability, BSS color and WMM contention policy through independent
+/// ad-hoc fields. Entropy is supplied by the platform at the point where a
+/// hardware queue is published.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaTxRuntimePolicy {
+    ht_ampdu: HtPeerAmpduParameters,
+    he_bss_color: u8,
+    edca: EdcaQueues,
+}
+
+impl StaTxRuntimePolicy {
+    /// Start with the same cold values as the complete vendor LMAC init.
+    pub const fn vendor_defaults() -> Self {
+        Self {
+            ht_ampdu: HtPeerAmpduParameters::from_capability_byte(0),
+            he_bss_color: 0,
+            edca: EdcaQueues::vendor_defaults(),
+        }
+    }
+
+    pub fn install_ht_ampdu(&mut self, parameters: HtPeerAmpduParameters) {
+        self.ht_ampdu = parameters;
+    }
+
+    pub const fn ht_ampdu(&self) -> HtPeerAmpduParameters {
+        self.ht_ampdu
+    }
+
+    /// Install the six-bit HE BSS color decoded from the peer's BSS Color IE.
+    pub fn install_he_bss_color(&mut self, bss_color: u8) {
+        self.he_bss_color = bss_color & 0x3f;
+    }
+
+    pub const fn he_bss_color(&self) -> u8 {
+        self.he_bss_color
+    }
+
+    /// Atomically validate and install all four WMM access categories.
+    pub fn install_wmm(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError> {
+        self.edca.configure_from_wmm(parameters)
+    }
+
+    pub fn contention_parameters(&self, queue: LegacyTxQueue) -> EdcaContentionParameters {
+        self.edca.queue(queue).parameters()
+    }
+
+    pub fn contention_exponent(&self, queue: LegacyTxQueue) -> u8 {
+        self.edca.queue(queue).current_exponent()
+    }
+
+    /// Select one hardware backoff slot from platform-provided entropy.
+    pub fn select_backoff(&self, queue: LegacyTxQueue, entropy: u32) -> u16 {
+        self.edca.select_slot(queue, entropy)
+    }
+
+    pub fn record_retry_failure(&mut self, queue: LegacyTxQueue) {
+        self.edca.record_retry_failure(queue);
+    }
+
+    pub fn record_success(&mut self, queue: LegacyTxQueue) {
+        self.edca.record_success(queue);
+    }
+
+    pub fn reset_terminal_exchange(&mut self, queue: LegacyTxQueue) {
+        self.edca.reset_terminal_exchange(queue);
+    }
+}
+
+impl Default for StaTxRuntimePolicy {
+    fn default() -> Self {
+        Self::vendor_defaults()
+    }
+}
+
+/// Invalid construction or a missing vendor retry-ladder entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnicastRetryError {
+    ZeroAttemptLimit,
+    RetryRateUnavailable { failed_attempts: u8 },
+}
+
+/// Driver-owned action after one ordinary MPDU attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnicastRetryDecision {
+    Complete,
+    /// Re-publish the same encoded MPDU after setting its Retry bit.
+    Retry,
+}
+
+/// One bounded ordinary-MPDU retry transaction.
+///
+/// The caller retains the encoded MPDU and its DMA storage. This type owns
+/// attempt counting, exact vendor rate-ladder selection and EDCA CW changes.
+pub struct UnicastRetryState {
+    queue: LegacyTxQueue,
+    initial_rate: TxPhyRate,
+    attempt_limit: u8,
+    attempt: u8,
+}
+
+impl UnicastRetryState {
+    pub const fn new(
+        queue: LegacyTxQueue,
+        initial_rate: TxPhyRate,
+        attempt_limit: u8,
+    ) -> Result<Self, UnicastRetryError> {
+        if attempt_limit == 0 {
+            return Err(UnicastRetryError::ZeroAttemptLimit);
+        }
+        Ok(Self {
+            queue,
+            initial_rate,
+            attempt_limit,
+            attempt: 1,
+        })
+    }
+
+    pub const fn attempt(&self) -> u8 {
+        self.attempt
+    }
+
+    /// Select the rate for the current publication.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcGetRate` and the exact
+    /// Rust-owned Dot11G/Dot11N schedule arenas. Explicit HT SGI MCS0..6 has
+    /// no independent vendor record, so it retains the requested rate. The
+    /// currently qualified HE ordinary path likewise retains its original
+    /// rate until the full vendor HE transition is promoted.
+    pub fn current_rate(&self) -> Result<TxPhyRate, UnicastRetryError> {
+        let failed_attempts = self.attempt - 1;
+        match self.initial_rate {
+            TxPhyRate::Legacy(rate) => rate
+                .vendor_retry_rate(failed_attempts)
+                .map(TxPhyRate::Legacy)
+                .ok_or(UnicastRetryError::RetryRateUnavailable { failed_attempts }),
+            TxPhyRate::Ht(rate) => Ok(rate
+                .vendor_retry_rate(failed_attempts)
+                .unwrap_or(TxPhyRate::Ht(rate))),
+            TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
+        }
+    }
+
+    /// Apply one detached hardware completion.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[lmac.o]::{lmacProcessTxComplete,
+    /// lmacProcessAckTimeout,lmacProcessShortRetryFail,
+    /// lmacProcessLongRetryFail}`. Status 0 succeeds; statuses 2 and 5 are
+    /// bounded retry candidates; every other status terminates the exchange.
+    pub fn observe_completion(
+        &mut self,
+        policy: &mut StaTxRuntimePolicy,
+        status: u8,
+    ) -> UnicastRetryDecision {
+        if status == 0 {
+            policy.record_success(self.queue);
+            return UnicastRetryDecision::Complete;
+        }
+        if matches!(status, 2 | 5) && self.attempt < self.attempt_limit {
+            policy.record_retry_failure(self.queue);
+            self.attempt += 1;
+            return UnicastRetryDecision::Retry;
+        }
+        policy.reset_terminal_exchange(self.queue);
+        UnicastRetryDecision::Complete
+    }
+
+    /// Treat a bounded software observation timeout like the vendor ACK/CTS
+    /// timeout path while publications remain in the transaction budget.
+    pub fn observe_hardware_timeout(
+        &mut self,
+        policy: &mut StaTxRuntimePolicy,
+    ) -> UnicastRetryDecision {
+        if self.attempt < self.attempt_limit {
+            policy.record_retry_failure(self.queue);
+            self.attempt += 1;
+            UnicastRetryDecision::Retry
+        } else {
+            policy.reset_terminal_exchange(self.queue);
+            UnicastRetryDecision::Complete
+        }
+    }
+
+    /// End ownership after a non-retryable executor or hardware error.
+    pub fn abort(&self, policy: &mut StaTxRuntimePolicy) {
+        policy.reset_terminal_exchange(self.queue);
+    }
+}
 
 /// Policy for retained A-MPDU retries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -207,9 +404,98 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 mod tests {
     use super::*;
     use crate::{
-        tx::{TxCompletion, TxCookie},
+        tx::{LegacyRate, TxCompletion, TxCookie},
         tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
     };
+
+    #[test]
+    fn sta_runtime_policy_owns_peer_and_vendor_edca_state() {
+        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        assert_eq!(policy.he_bss_color(), 0);
+        assert_eq!(
+            policy.contention_parameters(LegacyTxQueue::BestEffort),
+            EdcaContentionParameters::new(3, 4, 10).unwrap()
+        );
+        assert_eq!(policy.contention_exponent(LegacyTxQueue::BestEffort), 4);
+
+        policy.install_he_bss_color(0xff);
+        policy.install_ht_ampdu(HtPeerAmpduParameters::from_capability_byte(0x17));
+        assert_eq!(policy.he_bss_color(), 0x3f);
+        assert_eq!(
+            policy.ht_ampdu(),
+            HtPeerAmpduParameters::from_capability_byte(0x17)
+        );
+        assert_eq!(
+            policy.select_backoff(LegacyTxQueue::BestEffort, u32::MAX),
+            15
+        );
+    }
+
+    #[test]
+    fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
+        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        let queue = LegacyTxQueue::BestEffort;
+        let mut retry =
+            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm54M), 4).unwrap();
+
+        assert_eq!(
+            retry.current_rate(),
+            Ok(TxPhyRate::Legacy(LegacyRate::Ofdm54M))
+        );
+        assert_eq!(
+            retry.observe_completion(&mut policy, 5),
+            UnicastRetryDecision::Retry
+        );
+        assert_eq!(retry.attempt(), 2);
+        assert_eq!(policy.contention_exponent(queue), 5);
+        assert_eq!(
+            retry.current_rate(),
+            Ok(TxPhyRate::Legacy(LegacyRate::Ofdm54M))
+        );
+
+        assert_eq!(
+            retry.observe_completion(&mut policy, 2),
+            UnicastRetryDecision::Retry
+        );
+        assert_eq!(retry.attempt(), 3);
+        assert_eq!(policy.contention_exponent(queue), 6);
+        assert_eq!(
+            retry.current_rate(),
+            Ok(TxPhyRate::Legacy(LegacyRate::Ofdm48M))
+        );
+
+        assert_eq!(
+            retry.observe_completion(&mut policy, 0),
+            UnicastRetryDecision::Complete
+        );
+        assert_eq!(policy.contention_exponent(queue), 4);
+    }
+
+    #[test]
+    fn ordinary_retry_limit_and_abort_restore_the_minimum_cw() {
+        let queue = LegacyTxQueue::Voice;
+        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        let mut retry =
+            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm6M), 2).unwrap();
+        assert_eq!(
+            retry.observe_hardware_timeout(&mut policy),
+            UnicastRetryDecision::Retry
+        );
+        assert_eq!(policy.contention_exponent(queue), 3);
+        assert_eq!(
+            retry.observe_hardware_timeout(&mut policy),
+            UnicastRetryDecision::Complete
+        );
+        assert_eq!(policy.contention_exponent(queue), 2);
+
+        policy.record_retry_failure(queue);
+        retry.abort(&mut policy);
+        assert_eq!(policy.contention_exponent(queue), 2);
+        assert_eq!(
+            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm6M), 0).err(),
+            Some(UnicastRetryError::ZeroAttemptLimit)
+        );
+    }
 
     fn completion_with_tx(
         tx: TxCompletion,

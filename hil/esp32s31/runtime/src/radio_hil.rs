@@ -46,7 +46,7 @@ use open_esp_radio::{
                 install_sta_pairwise_ccmp,
             },
             descriptor::{DESCRIPTOR_BYTES, Descriptor, length as descriptor_length, rx_done},
-            edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
+            edca::{EdcaContentionParameters, EdcaParametersError},
             he::program_he20_peer_state,
             init::{
                 MAC_COLD_RX_INTERRUPT_MASK, StaPeerScanPolicy, StaWmmSource,
@@ -93,7 +93,10 @@ use open_esp_radio::{
                 TxBlockAckDialogTokenSequence, TxBlockAckResponse, TxBlockAckSession,
                 parse_block_ack_action,
             },
-            tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
+            tx_runtime::{
+                AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState,
+                StaTxRuntimePolicy, UnicastRetryDecision, UnicastRetryError, UnicastRetryState,
+            },
         },
         pac::{
             MacHeBeamformingDiagnostics, MacHeTxVectorSnapshot, MacInterruptRegisters,
@@ -998,9 +1001,7 @@ impl RxStorage {
 struct TxStorage {
     slot: Pin<&'static mut TxSlot<TX_BUFFER_SIZE>>,
     tx_power_profile: Option<PhyTxTargetPowerProfile>,
-    ht_ampdu: HtPeerAmpduParameters,
-    he_bss_color: u8,
-    edca: EdcaQueues,
+    runtime_policy: StaTxRuntimePolicy,
     attempts: u32,
     successes: u32,
     ack_timeouts: u32,
@@ -1019,9 +1020,7 @@ impl TxStorage {
         Self {
             slot,
             tx_power_profile: None,
-            ht_ampdu: HtPeerAmpduParameters::default(),
-            he_bss_color: 0,
-            edca: EdcaQueues::vendor_defaults(),
+            runtime_policy: StaTxRuntimePolicy::vendor_defaults(),
             attempts: 0,
             successes: 0,
             ack_timeouts: 0,
@@ -1048,31 +1047,31 @@ impl TxStorage {
     }
 
     fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
-        self.ht_ampdu = parameters;
+        self.runtime_policy.install_ht_ampdu(parameters);
     }
 
     fn install_he_bss_color(&mut self, bss_color: u8) {
-        self.he_bss_color = bss_color & 0x3f;
+        self.runtime_policy.install_he_bss_color(bss_color);
     }
 
     fn install_wmm_edca(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError> {
-        self.edca.configure_from_wmm(parameters)
+        self.runtime_policy.install_wmm(parameters)
     }
 
     fn edca_parameters(&self, queue: LegacyTxQueue) -> EdcaContentionParameters {
-        self.edca.queue(queue).parameters()
+        self.runtime_policy.contention_parameters(queue)
     }
 
     fn record_edca_retry_failure(&mut self, queue: LegacyTxQueue) {
-        self.edca.record_retry_failure(queue);
+        self.runtime_policy.record_retry_failure(queue);
     }
 
     fn record_edca_success(&mut self, queue: LegacyTxQueue) {
-        self.edca.record_success(queue);
+        self.runtime_policy.record_success(queue);
     }
 
     fn reset_terminal_edca_exchange(&mut self, queue: LegacyTxQueue) {
-        self.edca.reset_terminal_exchange(queue);
+        self.runtime_policy.reset_terminal_exchange(queue);
     }
 
     fn next_edca_backoff(&mut self, queue: LegacyTxQueue) -> u16 {
@@ -1084,7 +1083,8 @@ impl TxStorage {
         //
         // Entropy production stays platform-owned; the bounded EDCA state
         // and `(1 << current_exponent) - 1` selection live in the MAC crate.
-        self.edca.select_slot(queue, Rng::new().random())
+        self.runtime_policy
+            .select_backoff(queue, Rng::new().random())
     }
 }
 
@@ -1104,6 +1104,7 @@ enum ActiveScanTxError {
     MissingTxPowerProfile,
     Ampdu(HtAmpduTxError),
     AmpduRetry(AmpduRetryError),
+    UnicastRetry(UnicastRetryError),
 }
 
 // The full PSRAM/PSRAM profile keeps ordinary state external, but the Wi-Fi
@@ -3243,7 +3244,7 @@ async fn transmit_encoded_frame<M: Mmio + TxHardware>(
             config.data_power_alternate = data_power.alternate as u8;
             config.rts_power_primary = rts_power.primary as u8;
             config.rts_power_alternate = rts_power.alternate as u8;
-            config.protection_spacing = storage.ht_ampdu.protection_spacing();
+            config.protection_spacing = storage.runtime_policy.ht_ampdu().protection_spacing();
             config.scheduler_priority = scheduler_priority;
             config.pti = pti;
             config.pti_count = 1;
@@ -3383,27 +3384,13 @@ async fn transmit_encoded_unicast_with_retry<M: Mmio + TxHardware>(
     hardware_key_selector: u8,
     security_mic_length: usize,
 ) -> Result<TxCompletion, ActiveScanTxError> {
-    let mut attempt = 1_u8;
+    let mut retry = UnicastRetryState::new(queue, rate, UNICAST_TX_ATTEMPT_LIMIT)
+        .map_err(ActiveScanTxError::UnicastRetry)?;
     loop {
-        // The initial transmission has zero preceding failures. Subsequent
-        // attempts select from the exact recovered retry record when one
-        // exists. The explicit fixed-rate HIL can also select SGI MCS0..6;
-        // complete `libpp.a[trc.o]::rcUpdatePhyMode` has no independent
-        // Dot11N schedule records for those certification-only profiles.
-        // Retain that explicitly selected typed rate rather than panic or
-        // invent a vendor fallback. This changes only the PPDU rate/power
-        // image: the encoded MPDU, Sequence Control and CCMP PN remain
-        // unchanged below.
-        let attempt_rate = match rate {
-            TxPhyRate::Legacy(rate) => TxPhyRate::Legacy(
-                rate.vendor_retry_rate(attempt - 1)
-                    .expect("legacy retry record covers the bounded unicast attempts"),
-            ),
-            TxPhyRate::Ht(rate) => rate
-                .vendor_retry_rate(attempt - 1)
-                .unwrap_or(TxPhyRate::Ht(rate)),
-            TxPhyRate::He(rate) => TxPhyRate::He(rate),
-        };
+        let attempt = retry.attempt();
+        let attempt_rate = retry
+            .current_rate()
+            .map_err(ActiveScanTxError::UnicastRetry)?;
         match transmit_encoded_frame(
             mmio,
             storage,
@@ -3420,15 +3407,11 @@ async fn transmit_encoded_unicast_with_retry<M: Mmio + TxHardware>(
         .await
         {
             Ok(completion) => {
-                if completion.status == 0 {
-                    storage.record_edca_success(queue);
+                if retry.observe_completion(&mut storage.runtime_policy, completion.status)
+                    == UnicastRetryDecision::Complete
+                {
                     return Ok(completion);
                 }
-                if !matches!(completion.status, 2 | 5) || attempt == UNICAST_TX_ATTEMPT_LIMIT {
-                    storage.reset_terminal_edca_exchange(queue);
-                    return Ok(completion);
-                }
-                storage.record_edca_retry_failure(queue);
                 if !OPEN_RADIO_THROUGHPUT_BENCH {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=RETRY stage=unicast-tx \
@@ -3439,13 +3422,15 @@ async fn transmit_encoded_unicast_with_retry<M: Mmio + TxHardware>(
                 }
             }
             Err(error) => {
-                if error != ActiveScanTxError::HardwareTimedOut
-                    || attempt == UNICAST_TX_ATTEMPT_LIMIT
-                {
-                    storage.reset_terminal_edca_exchange(queue);
+                let decision = if error == ActiveScanTxError::HardwareTimedOut {
+                    retry.observe_hardware_timeout(&mut storage.runtime_policy)
+                } else {
+                    retry.abort(&mut storage.runtime_policy);
+                    UnicastRetryDecision::Complete
+                };
+                if decision == UnicastRetryDecision::Complete {
                     return Err(error);
                 }
-                storage.record_edca_retry_failure(queue);
                 if !OPEN_RADIO_THROUGHPUT_BENCH {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=RETRY stage=unicast-tx \
@@ -3464,7 +3449,6 @@ async fn transmit_encoded_unicast_with_retry<M: Mmio + TxHardware>(
         // already encoded MPDU is essential: Sequence Control and the CCMP PN
         // must not advance for a MAC-layer retransmission.
         storage.dma_buffer_mut()[TX_METADATA_SIZE + 1] |= 0x08;
-        attempt += 1;
     }
 }
 
@@ -3881,7 +3865,11 @@ where
         .map_err(ActiveScanTxError::Ampdu)?;
 
     let rate = HeRate::bcc_dcm(HeBccDcmMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns);
-    let mut config = HeSmpduTxConfig::new(rate, tx_storage.he_bss_color, RAW_FRAME_LENGTH as u16)
+    let mut config = HeSmpduTxConfig::new(
+        rate,
+        tx_storage.runtime_policy.he_bss_color(),
+        RAW_FRAME_LENGTH as u16,
+    )
         .ok_or(ActiveScanTxError::Reserve(TxError::Invalid))?;
     let power_profile = tx_storage
         .tx_power_profile
@@ -3990,7 +3978,7 @@ where
         // branch. This is a HIL-only formatter probe, not association policy.
         HtAmpduDensity::SixteenMicroseconds
     } else {
-        tx_storage.ht_ampdu.density()
+        tx_storage.runtime_policy.ht_ampdu().density()
     };
     let he_policy = he_commit_rate.map(|rate| (rate, he_density, he_txop_limit));
     let first_sequence = sequence.peek();
@@ -4275,7 +4263,7 @@ where
         let mut config = reserved_try!(
             HeAmpduTxConfig::new_with_txop(
                 rate,
-                tx_storage.he_bss_color,
+                tx_storage.runtime_policy.he_bss_color(),
                 aggregate.bytes,
                 aggregate.subframes,
                 he_density,
@@ -4330,7 +4318,7 @@ where
         config.data_power_alternate = data_power.alternate as u8;
         config.rts_power_primary = rts_power.primary as u8;
         config.rts_power_alternate = rts_power.alternate as u8;
-        config.protection_spacing = tx_storage.ht_ampdu.protection_spacing();
+        config.protection_spacing = tx_storage.runtime_policy.ht_ampdu().protection_spacing();
         config.scheduler_priority = LegacyTxQueue::BestEffort.vendor_data_scheduler_priority();
         config.pti = LegacyTxQueue::BestEffort.vendor_data_packet_priority();
         config.pti_count = 1;
@@ -4660,7 +4648,7 @@ where
     if (he_rate.is_some() && use_amsdu) || (ht_rate.is_some() && second.is_none()) {
         return Err(ActiveScanTxError::Reserve(TxError::Invalid));
     }
-    let he_density = tx_storage.ht_ampdu.density();
+    let he_density = tx_storage.runtime_policy.ht_ampdu().density();
     let first_sequence = sequence.peek();
     let mut batch = ReferencedHtAmpduBatch::begin(ampdu).map_err(ActiveScanTxError::Ampdu)?;
     let mut ethernet_bytes = 0_usize;
@@ -4952,7 +4940,7 @@ where
             config.data_power_alternate = data_power.alternate as u8;
             config.rts_power_primary = rts_power.primary as u8;
             config.rts_power_alternate = rts_power.alternate as u8;
-            config.protection_spacing = tx_storage.ht_ampdu.protection_spacing();
+            config.protection_spacing = tx_storage.runtime_policy.ht_ampdu().protection_spacing();
             config.scheduler_priority = LegacyTxQueue::BestEffort.vendor_data_scheduler_priority();
             config.pti = LegacyTxQueue::BestEffort.vendor_data_packet_priority();
             config.pti_count = 1;
@@ -4966,7 +4954,7 @@ where
         (None, Some(rate)) => {
             let mut config = HeAmpduTxConfig::new_with_txop(
                 rate,
-                tx_storage.he_bss_color,
+                tx_storage.runtime_policy.he_bss_color(),
                 aggregate.bytes,
                 aggregate.subframes,
                 he_density,
@@ -6862,7 +6850,11 @@ async fn connected_radio_loop(
                 rate_control.filtered_ack_snr(),
                 rx_ba_state,
             );
-            let best_effort_edca = tx_storage.edca.queue(LegacyTxQueue::BestEffort);
+            let best_effort_edca =
+                tx_storage.edca_parameters(LegacyTxQueue::BestEffort);
+            let best_effort_ecw_current = tx_storage
+                .runtime_policy
+                .contention_exponent(LegacyTxQueue::BestEffort);
             log::info!(
                 "OPEN_RADIO_PHY_HIL stage=tx-runtime \
                  code_address={} \
@@ -6878,10 +6870,10 @@ async fn connected_radio_loop(
                 tx_storage.ack_timeouts,
                 tx_storage.other_failures,
                 tx_storage.hardware_timeouts,
-                best_effort_edca.parameters().aifsn(),
-                best_effort_edca.parameters().minimum_exponent(),
-                best_effort_edca.current_exponent(),
-                best_effort_edca.parameters().maximum_exponent(),
+                best_effort_edca.aifsn(),
+                best_effort_edca.minimum_exponent(),
+                best_effort_ecw_current,
+                best_effort_edca.maximum_exponent(),
             );
             // Keep the critical performance split in a separate bounded log
             // record. The full RX/TX state record is intentionally verbose
@@ -9241,7 +9233,12 @@ async fn run_connected_network(
     ));
     tx_ampdu_storage
         .as_mut()
-        .configure_max_aggregate_bytes(tx_storage.ht_ampdu.maximum_aggregate_bytes())
+        .configure_max_aggregate_bytes(
+            tx_storage
+                .runtime_policy
+                .ht_ampdu()
+                .maximum_aggregate_bytes(),
+        )
         .expect("valid negotiated HT A-MPDU byte limit");
     let stack_resources = OPEN_RADIO_STACK_RESOURCES.init(StackResources::new());
     let mut seed = [0_u8; 8];

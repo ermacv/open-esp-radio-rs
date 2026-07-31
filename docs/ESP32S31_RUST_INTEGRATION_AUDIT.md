@@ -326,6 +326,18 @@ and rejection. The reset-separated PSRAM/PSRAM HE20 bidirectional regression
 then passed at 10.012-Mbit/s RX median plus a 67.726-Mbit/s concurrent TX floor
 with zero strict DMA-starvation failures.
 
+The ordinary TX runtime slice is now driver-owned as well.
+`StaTxRuntimePolicy` holds the negotiated HT A-MPDU parameters, six-bit HE BSS
+color and all four mutable EDCA contention windows. `UnicastRetryState` owns
+the bounded attempt count, exact recovered legacy/HT retry-rate choice and the
+success, ACK/CTS-timeout and terminal CW transitions. The HIL no longer
+contains that retry state machine; it supplies hardware RNG entropy, waits for
+DMA completion and sets the Retry bit on the retained encoded MPDU. Three new
+host tests cover the vendor defaults, exact rate/CW progression and terminal
+reset. A standalone reset-separated PSRAM/PSRAM HE20 regression then passed at
+10.012-Mbit/s RX median plus a 71.361-Mbit/s concurrent TX floor, with zero
+`BUFFER_FULL` or `FIFO_OVERFLOW` failures.
+
 ## Code that should remain in the driver-repository HIL
 
 - board resource selection, linker sections and the chosen memory profile;
@@ -375,9 +387,10 @@ radio xtask support can be deleted from `esp32s31_rust` together.
 4. Cooperative short-lived TX access to the unique PAC owner — complete,
    including strict zero-starvation bidirectional requalification.
 5. PHY target executor with injected delay/observation traits.
-6. MAC TX runtime and protected A-MPDU retry owner — BlockAck decision and
-   retained-sequence state complete; aggregate construction, EDCA/completion
-   adapters and individual retry remain.
+6. MAC TX runtime and protected A-MPDU retry owner — BlockAck decision,
+   retained-sequence state, peer TX/EDCA policy and ordinary individual retry
+   complete; aggregate construction and executor/hardware completion adapters
+   remain.
 7. STA link runtime.
 8. Optional `esp-hal` adapter — complete; Embassy executor adapter remains.
 9. Shrink the HIL file to configuration, test scenarios and reporting.

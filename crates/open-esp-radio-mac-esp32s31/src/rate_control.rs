@@ -4,8 +4,13 @@
 //! Association inputs, selected schedules and runtime retry state are separate
 //! Rust values, so no caller interprets a byte array by vendor offsets.
 
-use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
-use crate::tx::HeMcs;
+use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
+use crate::rx::HeGuardIntervalAndLtf;
+use crate::tx::{
+    HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion,
+    TxPhyRate,
+};
+use open_esp_radio_ieee80211::station::StaAssociationPhy;
 use open_esp_radio_pac_esp32s31::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
     RadioRegisters,
@@ -397,11 +402,7 @@ const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
         return 0;
     }
     let scaled = (((filtered_ack_snr - reference) >> 1) as u16 * 3) as u8;
-    if scaled > 32 {
-        32
-    } else {
-        scaled
-    }
+    if scaled > 32 { 32 } else { scaled }
 }
 
 const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
@@ -700,6 +701,83 @@ pub struct StaRateControlAssociation {
     ampdu_runtime: Option<AmpduRateControlState>,
 }
 
+/// Runtime-independent inputs that turn one recovered rate schedule into the
+/// exact PHY format published by the S31 TX owner.
+///
+/// The rate-control arena owns the current rate byte, while association state
+/// owns channel width, the peer-qualified HE LTF choice and LDPC capability.
+/// Keeping the join here prevents applications from interpreting the
+/// overlapping Dot11N/Dot11Ax byte domains themselves.
+///
+/// `ht_guard_interval_override` is an explicit certification/HIL override.
+/// Ordinary operation leaves it `None` and retains the guard interval selected
+/// by the recovered schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaTxRatePolicy {
+    pub association_phy: StaAssociationPhy,
+    pub high_throughput_enabled: bool,
+    pub fallback_legacy_rate: LegacyRate,
+    pub fallback_ht_mcs: HtMcs,
+    pub fallback_ht_guard_interval: HtGuardInterval,
+    pub ht_guard_interval_override: Option<HtGuardInterval>,
+    pub he_800ns_gi_ltf: HeGuardIntervalAndLtf,
+    pub peer_supports_ldpc: bool,
+}
+
+impl StaTxRatePolicy {
+    const fn ht_width(self) -> Option<HtChannelWidth> {
+        match self.association_phy {
+            StaAssociationPhy::Ht40 => Some(HtChannelWidth::Mhz40),
+            StaAssociationPhy::Ht20 | StaAssociationPhy::He20 => Some(HtChannelWidth::Mhz20),
+            StaAssociationPhy::Legacy => None,
+        }
+    }
+
+    /// Conservative data rate used when no owned schedule representation can
+    /// be published, including the still-proprietary Long Range arena.
+    pub const fn fallback_rate(self) -> TxPhyRate {
+        if !self.high_throughput_enabled {
+            return TxPhyRate::Legacy(self.fallback_legacy_rate);
+        }
+        let Some(channel_width) = self.ht_width() else {
+            return TxPhyRate::Legacy(self.fallback_legacy_rate);
+        };
+        TxPhyRate::Ht(HtRate::new(
+            self.fallback_ht_mcs,
+            self.fallback_ht_guard_interval,
+            channel_width,
+        ))
+    }
+
+    /// Decode one complete Rust-owned schedule and apply negotiated format
+    /// capabilities without exposing vendor rate bytes to the application.
+    pub fn rate_for_schedule(self, schedule: RateScheduleRef) -> TxPhyRate {
+        if !self.high_throughput_enabled {
+            return TxPhyRate::Legacy(self.fallback_legacy_rate);
+        }
+        let Some(ht_width) = self.ht_width() else {
+            return TxPhyRate::Legacy(self.fallback_legacy_rate);
+        };
+        let Some(rate) =
+            TxPhyRate::from_rate_control_schedule(schedule, ht_width, self.he_800ns_gi_ltf)
+        else {
+            return self.fallback_rate();
+        };
+        let rate = match (rate, self.ht_guard_interval_override) {
+            (TxPhyRate::Ht(rate), Some(guard_interval)) => {
+                TxPhyRate::Ht(HtRate::new(rate.mcs, guard_interval, rate.channel_width))
+            }
+            (rate, _) => rate,
+        };
+        match rate {
+            TxPhyRate::He(rate) if self.peer_supports_ldpc => {
+                TxPhyRate::He(HeRate::ldpc(rate.mcs(), rate.guard_interval_and_ltf()))
+            }
+            _ => rate,
+        }
+    }
+}
+
 impl StaRateControlAssociation {
     pub fn new(input: StaRateControlAssociationInput) -> Self {
         let (phy_type, he_type) = match input.phy {
@@ -787,6 +865,19 @@ impl StaRateControlAssociation {
         }
     }
 
+    /// PHY rate selected by the ordinary per-peer schedule.
+    pub fn tx_rate(&self, policy: StaTxRatePolicy) -> TxPhyRate {
+        policy.rate_for_schedule(self.current_schedule())
+    }
+
+    /// PHY rate selected by the independent A-MPDU schedule when available.
+    pub fn ampdu_tx_rate(&self, policy: StaTxRatePolicy) -> TxPhyRate {
+        policy.rate_for_schedule(
+            self.current_ampdu_schedule()
+                .unwrap_or_else(|| self.current_schedule()),
+        )
+    }
+
     pub const fn beamforming_report(&self) -> BeamformingReportRate {
         self.beamforming_report
     }
@@ -797,6 +888,16 @@ impl StaRateControlAssociation {
     /// sample and must not call this method.
     pub fn update_ack_snr(&mut self, sample: i8) {
         self.ack_snr.update(sample);
+    }
+
+    /// Consume the ACK-SNR sample, if any, from one typed TX completion.
+    ///
+    /// Failed completions are ignored by [`TxCompletion::ack_snr_sample`], so
+    /// callers cannot accidentally feed timeout metadata into the filter.
+    pub fn observe_tx_completion(&mut self, completion: TxCompletion) {
+        if let Some(sample) = completion.ack_snr_sample() {
+            self.update_ack_snr(sample);
+        }
     }
 
     pub const fn latest_ack_snr(&self) -> Option<i8> {
@@ -1051,11 +1152,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     RateScheduleKind::Dot11G
                 };
                 let mut current_index = if input.metric <= 11 {
-                    if input.p2p {
-                        7
-                    } else {
-                        10
-                    }
+                    if input.p2p { 7 } else { 10 }
                 } else if input.metric <= 16 {
                     5
                 } else if input.metric <= 21 {
@@ -1119,11 +1216,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     },
                     schedule(kind, 0),
                     if input.long_range_rates_present {
-                        if he {
-                            15
-                        } else {
-                            13
-                        }
+                        if he { 15 } else { 13 }
                     } else if he {
                         13
                     } else {
@@ -1184,11 +1277,7 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 5, 4,
             ];
-            if rate <= 42 {
-                MAP[rate as usize]
-            } else {
-                0xff
-            }
+            if rate <= 42 { MAP[rate as usize] } else { 0xff }
         }
         RateIndexMap::Dot11G => {
             const MAP: [u8; 43] = [
@@ -1196,11 +1285,7 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             ];
-            if rate <= 42 {
-                MAP[rate as usize]
-            } else {
-                0xff
-            }
+            if rate <= 42 { MAP[rate as usize] } else { 0xff }
         }
         RateIndexMap::Dot11N => match rate {
             0 => 11,
@@ -1319,6 +1404,17 @@ pub const fn beamforming_report_rate_for_metric(
 mod tests {
     use super::*;
     use crate::rate_schedule::{RateScheduleKind, RateScheduleRef};
+
+    const HE20_POLICY: StaTxRatePolicy = StaTxRatePolicy {
+        association_phy: StaAssociationPhy::He20,
+        high_throughput_enabled: true,
+        fallback_legacy_rate: LegacyRate::Ofdm54M,
+        fallback_ht_mcs: HtMcs::Mcs7,
+        fallback_ht_guard_interval: HtGuardInterval::Long800Ns,
+        ht_guard_interval_override: None,
+        he_800ns_gi_ltf: HeGuardIntervalAndLtf::TwoLtf800Ns,
+        peer_supports_ldpc: true,
+    };
 
     fn state() -> RateControlState {
         RateControlState {
@@ -1553,6 +1649,85 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn sta_tx_policy_joins_he_schedule_peer_ltf_and_ldpc() {
+        let rate = HE20_POLICY
+            .rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap());
+        assert_eq!(
+            rate,
+            TxPhyRate::He(HeRate::ldpc(
+                HeMcs::Mcs9,
+                HeGuardIntervalAndLtf::TwoLtf800Ns,
+            ))
+        );
+    }
+
+    #[test]
+    fn sta_tx_policy_keeps_hil_override_and_unknown_arena_explicit() {
+        let ht40 = StaTxRatePolicy {
+            association_phy: StaAssociationPhy::Ht40,
+            ht_guard_interval_override: Some(HtGuardInterval::Short400Ns),
+            peer_supports_ldpc: false,
+            ..HE20_POLICY
+        };
+        assert_eq!(
+            ht40.rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11N, 1).unwrap()),
+            TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
+        assert_eq!(
+            ht40.rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Lora, 0).unwrap()),
+            TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
+        assert_eq!(
+            StaTxRatePolicy {
+                high_throughput_enabled: false,
+                ..HE20_POLICY
+            }
+            .rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap()),
+            TxPhyRate::Legacy(LegacyRate::Ofdm54M)
+        );
+    }
+
+    #[test]
+    fn association_owns_ordinary_ampdu_and_completion_rate_transitions() {
+        let mut association = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy: StaRateControlPhy::He,
+            link_metric: StaLinkMetric::from_estimator(8),
+            p2p: false,
+            peer_highest_rate: None,
+            long_range_rates_present: false,
+            he_low_metric_report: HeLowMetricReportFeatures::default(),
+        });
+        assert_eq!(
+            association.tx_rate(HE20_POLICY),
+            HE20_POLICY.rate_for_schedule(association.current_schedule())
+        );
+        assert_eq!(
+            association.ampdu_tx_rate(HE20_POLICY),
+            HE20_POLICY.rate_for_schedule(association.current_ampdu_schedule().unwrap())
+        );
+        association.observe_tx_completion(TxCompletion {
+            cookie: crate::tx::TxCookie(1),
+            status: 0,
+            trigger_flow: false,
+            used_alternate: false,
+            auxiliary_a_word: 0,
+            auxiliary_b_word: 0,
+            auxiliary_c_word: 0,
+            primary_word: 0xeb << 16,
+            alternate_word: 0,
+        });
+        assert_eq!(association.latest_ack_snr(), Some(75));
     }
 
     #[test]

@@ -413,6 +413,11 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     descriptors: [Descriptor; SLOTS],
     buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
+    /// Stable backing allocation selected for each committed MPDU.
+    ///
+    /// Ordinary commits point into `buffers`; cache-TX commits point into a
+    /// separately pinned lease retained by the safe runtime wrapper.
+    buffer_addresses: [usize; SLOTS],
     frame_lengths: [u16; SLOTS],
     hardware_mic_lengths: [u8; SLOTS],
     /// Original MSDU length corresponding to each encoded MPDU.
@@ -447,6 +452,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         Self {
             descriptors: [const { Descriptor::new() }; SLOTS],
             buffers: [const { HtAmpduDmaBuffer::new() }; SLOTS],
+            buffer_addresses: [0; SLOTS],
             frame_lengths: [0; SLOTS],
             hardware_mic_lengths: [0; SLOTS],
             msdu_lengths: [0; SLOTS],
@@ -546,10 +552,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if self.state != TxSlotState::Reserved || self.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        // The byte-accounting contract is also used by the HE owner, whose
-        // rate-dependent duration limit can deliberately retain a
-        // one-subframe A-MPDU. The ordinary HT submit method still enforces
-        // its separate minimum-two batching policy.
+        // Both HT and HE can retain a one-subframe A-MPDU. Complete
+        // `_oracles/libpp.a[pp.o]::ppAssembleAMPDU` starts from the supplied
+        // chain head and iterates until its next pointer is null; it has no
+        // minimum-two branch.
         if self.count == 0 {
             return Err(HtAmpduTxError::TooFewFrames);
         }
@@ -600,10 +606,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             });
         }
         let frame_length = usize::from(self.frame_lengths[index]);
-        // SAFETY: the completed state has returned DMA ownership to this
-        // unique pool owner. The slice is immutable and remains bounded to the
-        // initialized encoded frame, excluding hardware trailer bytes.
-        let buffer = unsafe { &*self.buffers[index].0.get() };
+        let buffer_address = self.buffer_addresses[index];
+        let capacity = usize::from(self.descriptor_capacities[index]);
+        // SAFETY: an internal commit uses this pool's pinned allocation. A
+        // referenced commit requires its caller to retain the external pinned
+        // lease through completion/retry. The completed state has returned DMA
+        // ownership, and the slice is bounded to the validated descriptor
+        // capacity.
+        let buffer = unsafe { core::slice::from_raw_parts(buffer_address as *const u8, capacity) };
         Ok((
             &buffer[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + frame_length],
             self.hardware_mic_lengths[index],
@@ -638,9 +648,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         retry_mask: u32,
     ) -> Result<HtAmpduLength, HtAmpduTxError> {
         // SAFETY: the detached completion state proves exclusive CPU
-        // ownership. The pinned allocations themselves are not moved; bytes
-        // are copied between their fixed buffers and descriptors are rebuilt
-        // by the next `submit`.
+        // ownership. The pinned allocations themselves are not moved; backing
+        // addresses are compacted while descriptors are rebuilt by the next
+        // `submit`.
         let storage = unsafe { self.get_unchecked_mut() };
         if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
         {
@@ -673,17 +683,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 continue;
             }
             if destination != source {
-                let bytes = usize::from(storage.descriptor_capacities[source]);
-                // SAFETY: every committed descriptor capacity was validated
-                // against BUFFER_SIZE. Source and destination are distinct
-                // fixed array elements and therefore do not overlap.
-                unsafe {
-                    ptr::copy_nonoverlapping(
-                        storage.buffers[source].0.get().cast::<u8>(),
-                        storage.buffers[destination].0.get().cast::<u8>(),
-                        bytes,
-                    );
-                }
+                storage.buffer_addresses[destination] = storage.buffer_addresses[source];
                 storage.frame_lengths[destination] = storage.frame_lengths[source];
                 storage.hardware_mic_lengths[destination] = storage.hardware_mic_lengths[source];
                 storage.msdu_lengths[destination] = storage.msdu_lengths[source];
@@ -694,7 +694,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             }
             // Frame Control byte one starts after the private metadata prefix;
             // bit three is IEEE 802.11 Retry.
-            let buffer = unsafe { &mut *storage.buffers[destination].0.get() };
+            let buffer_address = storage.buffer_addresses[destination];
+            let capacity = usize::from(storage.descriptor_capacities[destination]);
+            // SAFETY: the detached completion state returned every retained
+            // backing allocation to software. Internal buffers are pinned by
+            // this owner; referenced buffers remain pinned by the wrapper
+            // required by `commit_referenced_frame`.
+            let buffer =
+                unsafe { core::slice::from_raw_parts_mut(buffer_address as *mut u8, capacity) };
             buffer[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
             destination += 1;
         }
@@ -719,7 +726,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         if SLOTS < 2
             || SLOTS > TX_AMPDU_SLOT_CAPACITY
-            || BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE + TX_FCS_SIZE as usize
+            || (BUFFER_SIZE != 0 && BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE + TX_FCS_SIZE as usize)
         {
             return Err(HtAmpduTxError::InvalidStorageGeometry {
                 slots: SLOTS,
@@ -760,6 +767,12 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if index >= SLOTS {
             return Err(HtAmpduTxError::Busy);
         }
+        if BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE {
+            return Err(HtAmpduTxError::InvalidStorageGeometry {
+                slots: SLOTS,
+                buffer_size: BUFFER_SIZE,
+            });
+        }
         let buffer = unsafe { &mut *storage.buffers[index].0.get() };
         Ok(&mut buffer[TX_AMPDU_METADATA_SIZE..])
     }
@@ -777,11 +790,33 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware_mic_length: u8,
         _empty_delimiters: u8,
     ) -> Result<bool, HtAmpduTxError> {
-        self.can_commit_frame_with_hardware_he_control(
+        self.can_commit_frame_in_capacity(
             cookie,
             frame_length,
             hardware_mic_length,
             false,
+            BUFFER_SIZE,
+        )
+    }
+
+    /// Check a frame against a separately owned DMA allocation.
+    ///
+    /// A descriptor-only storage uses `BUFFER_SIZE == 0`; its external
+    /// allocation capacity is supplied by the pinned lease instead of being
+    /// charged twice to the aggregate owner.
+    pub fn can_commit_referenced_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_frame_in_capacity(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            false,
+            dma_capacity,
         )
     }
 
@@ -791,6 +826,23 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         frame_length: usize,
         hardware_mic_length: u8,
         hardware_he_control: bool,
+    ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_frame_in_capacity(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            hardware_he_control,
+            BUFFER_SIZE,
+        )
+    }
+
+    fn can_commit_frame_in_capacity(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        hardware_he_control: bool,
+        buffer_capacity: usize,
     ) -> Result<bool, HtAmpduTxError> {
         if self.state != TxSlotState::Reserved || self.active != cookie {
             return Err(HtAmpduTxError::Stale);
@@ -813,7 +865,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         else {
             return Err(HtAmpduTxError::FrameTooLong);
         };
-        if descriptor_capacity > BUFFER_SIZE {
+        if descriptor_capacity > buffer_capacity {
             return Err(HtAmpduTxError::FrameTooLong);
         }
 
@@ -946,6 +998,89 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )
     }
 
+    /// Commit an MPDU already encoded in a separately pinned allocation.
+    ///
+    /// `dma_storage` begins with the private eight-byte S31 metadata prefix;
+    /// the encoded 802.11 frame must already occupy
+    /// `dma_storage[8..8 + frame_length]`. This is the descriptor half of the
+    /// vendor cache-TX/type-nine ESF path and performs no payload copy.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain exclusive ownership of the same allocation at
+    /// the same address until this batch has completed, detached, processed
+    /// BlockAck/retries and reached [`Self::release_completed`] or
+    /// [`Self::cancel`]. It must not mutate the allocation while hardware owns
+    /// the batch. A safe runtime wrapper is expected to enforce this by owning
+    /// the pinned frame lease beside this storage.
+    ///
+    /// SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
+    /// ieee80211_alloc_tx_buf` cache-TX/type-nine branch retains the netstack
+    /// buffer through `s_netstack_ref`; complete `_oracles/libpp.a[pp.o]::
+    /// ppAssembleAMPDU` links the existing ESF descriptors without copying
+    /// their payloads.
+    pub unsafe fn commit_referenced_frame(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        dma_storage: &mut [u8],
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: no address-bearing field is moved. The external lifetime
+        // and exclusivity invariant is supplied by this method's caller.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if !storage.can_commit_referenced_frame(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            dma_storage.len(),
+        )? {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
+        let index = usize::from(storage.count);
+        if index >= SLOTS {
+            return Err(HtAmpduTxError::Busy);
+        }
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let transfer_length = TX_AMPDU_METADATA_SIZE
+            .checked_add(usize::from(psdu_length))
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let descriptor_capacity = transfer_length
+            .checked_add(3)
+            .map(|length| length & !3)
+            .filter(|length| *length <= dma_storage.len())
+            .and_then(|length| u16::try_from(length).ok())
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+
+        storage.buffer_addresses[index] = dma_storage.as_mut_ptr().addr();
+        dma_storage[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
+        dma_storage[4] = empty_delimiters;
+        dma_storage[5..TX_AMPDU_METADATA_SIZE].fill(0);
+        let trailer_start = TX_AMPDU_METADATA_SIZE + frame_length;
+        dma_storage[trailer_start..transfer_length].fill(0);
+        dma_storage[transfer_length..usize::from(descriptor_capacity)].fill(0);
+        storage.frame_lengths[index] =
+            u16::try_from(frame_length).map_err(|_| HtAmpduTxError::FrameTooLong)?;
+        storage.hardware_mic_lengths[index] = hardware_mic_length;
+        storage.msdu_lengths[index] = 0;
+        storage.psdu_lengths[index] = psdu_length;
+        storage.hardware_he_control[index] = false;
+        storage.empty_delimiters[index] = empty_delimiters;
+        storage.descriptor_capacities[index] = descriptor_capacity;
+        storage.prepared_length = storage.length_after_append(psdu_length, false)?;
+        storage.count += 1;
+        Ok(())
+    }
+
     fn commit_frame_with_hardware_he_control(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -988,6 +1123,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ok_or(HtAmpduTxError::FrameTooLong)?;
 
         let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+        storage.buffer_addresses[index] = buffer.as_mut_ptr().addr();
         buffer[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
         buffer[4] = empty_delimiters;
         buffer[5..TX_AMPDU_METADATA_SIZE].fill(0);
@@ -1241,7 +1377,12 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        if storage.count < 2 {
+        // Complete `_oracles/libpp.a[pp.o]::ppAssembleAMPDU` accepts a
+        // one-element descriptor chain and stops at its null next pointer.
+        // Keep zero as the only invalid cardinality; batching two or more
+        // MPDUs is a scheduler optimization rather than a formatter
+        // invariant.
+        if storage.count == 0 {
             return Err(HtAmpduTxError::TooFewFrames);
         }
 
@@ -1253,7 +1394,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
         for index in 0..count {
             let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
-            let buffer_address = storage.buffers[index].0.get().addr() as u32;
+            let buffer_address = u32::try_from(storage.buffer_addresses[index]).unwrap_or(u32::MAX);
             let capacity = u32::from(storage.descriptor_capacities[index]);
             let transfer_length =
                 (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
@@ -1353,7 +1494,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
         for index in 0..count {
             let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
-            let buffer_address = storage.buffers[index].0.get().addr() as u32;
+            let buffer_address = u32::try_from(storage.buffer_addresses[index]).unwrap_or(u32::MAX);
             let capacity = u32::from(storage.descriptor_capacities[index]);
             let transfer_length =
                 (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
@@ -1466,7 +1607,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
 
         let descriptor_address = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
-        let buffer_address = storage.buffers[0].0.get().addr() as u32;
+        let buffer_address = u32::try_from(storage.buffer_addresses[0]).unwrap_or(u32::MAX);
         // HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29 captured the complete
         // vendor DMA word c0090040: capacity 64 and used length 36. Preserve
         // that bounded single-MPDU allocation geometry even though the
@@ -1488,7 +1629,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // trailing hardware-FCS bytes. The live vendor S-MPDU buffer started
         // with 0x0100_001c for a 24-byte frame: retain length 28, set metadata
         // bit 24, keep empty delimiters and byte-seven's optional term zero.
-        let buffer = unsafe { &mut *storage.buffers[0].0.get() };
+        // SAFETY: the committed backing is pinned by this storage or by the
+        // referenced-frame owner required by `commit_referenced_frame`.
+        let buffer = unsafe {
+            core::slice::from_raw_parts_mut(
+                storage.buffer_addresses[0] as *mut u8,
+                usize::from(storage.descriptor_capacities[0]),
+            )
+        };
         let metadata_length = u32::from(storage.psdu_lengths[0]);
         buffer[..4].copy_from_slice(&(metadata_length | 0x0100_0000).to_le_bytes());
         buffer[4] = 0;
@@ -2487,7 +2635,7 @@ pub unsafe fn restore_basic_ht_ampdu_chain(
     const DESCRIPTOR_SPATIAL_COUNT_OFFSET: usize = 0x2a;
     const DESCRIPTOR_CODING_COUNT_OFFSET: usize = 0x2e;
 
-    if chain.subframes < 2 || usize::from(chain.subframes) > TX_AMPDU_SLOT_CAPACITY {
+    if chain.subframes == 0 || usize::from(chain.subframes) > TX_AMPDU_SLOT_CAPACITY {
         return Err(BasicHtAmpduRestoreError::InvalidCount(chain.subframes));
     }
     let count = usize::from(chain.subframes);
@@ -3490,6 +3638,49 @@ mod tests {
     }
 
     #[test]
+    fn referenced_commit_uses_the_retained_allocation_without_copying_payload() {
+        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut external = [0xa5_u8; 256];
+        external[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 100].fill(0x5a);
+        // SAFETY: neither local is moved while the pin is live. The external
+        // allocation remains exclusively retained until `cancel` below, and
+        // no hardware ownership is published.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        unsafe {
+            storage
+                .as_mut()
+                .commit_referenced_frame(cookie, &mut external, 100, 8, 0)
+                .unwrap();
+        }
+
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                bytes: 116,
+                subframes: 1,
+            }
+        );
+        storage.as_mut().cancel(cookie).unwrap();
+        assert_eq!(
+            storage.buffer_addresses[0],
+            external.as_ptr().addr(),
+            "descriptor backing must remain the referenced allocation"
+        );
+
+        assert_eq!(u32::from_le_bytes(external[..4].try_into().unwrap()), 112);
+        assert_eq!(
+            &external[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 100],
+            &[0x5a; 100]
+        );
+        // The ordinary internal backing was not used as a staging buffer.
+        assert_eq!(
+            unsafe { (&*storage.buffers[0].0.get())[TX_AMPDU_METADATA_SIZE] },
+            0
+        );
+    }
+
+    #[test]
     fn owned_dma_pool_preserves_one_subframe_he_ampdu_length() {
         let mut storage = HtAmpduTxStorage::<2, 256>::new();
         // SAFETY: no address is published and the local is not moved while
@@ -3842,8 +4033,14 @@ mod tests {
         assert_eq!(storage.state(), TxSlotState::Reserved);
         unsafe {
             let storage = storage.as_ref().get_ref();
-            let first = &*storage.buffers[0].0.get();
-            let second = &*storage.buffers[1].0.get();
+            let first = core::slice::from_raw_parts(
+                storage.buffer_addresses[0] as *const u8,
+                usize::from(storage.descriptor_capacities[0]),
+            );
+            let second = core::slice::from_raw_parts(
+                storage.buffer_addresses[1] as *const u8,
+                usize::from(storage.descriptor_capacities[1]),
+            );
             assert_eq!(first[TX_AMPDU_METADATA_SIZE], 1);
             assert_eq!(second[TX_AMPDU_METADATA_SIZE], 3);
             assert_eq!(first[TX_AMPDU_METADATA_SIZE + 1], 0x49);

@@ -42,6 +42,7 @@ pub mod tx;
 pub mod tx_ampdu;
 pub mod tx_plcp;
 pub mod tx_policy;
+pub mod tx_runtime;
 
 // Preserve the qualified `mac::scan` path while the protocol owner moves to
 // its hardware-independent crate.

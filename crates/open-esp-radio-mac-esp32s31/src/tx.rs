@@ -4,8 +4,8 @@ use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
-    parse_trigger_user_spatial_stream, TriggerCommonInfo, TriggerFrame, TriggerGiLtf,
-    TriggerParseError, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
+    TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
+    TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_pac_esp32s31::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
@@ -14,9 +14,9 @@ use open_esp_radio_pac_esp32s31::{
 };
 
 use crate::{
-    descriptor::{descriptor_address_valid, tx_owned_word, Descriptor},
+    descriptor::{Descriptor, descriptor_address_valid, tx_owned_word},
     rate_control::dot11g_schedule_for_legacy_rate,
-    rate_schedule::{schedule_rate_after_failures, RateScheduleKind, RateScheduleRef},
+    rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
@@ -55,6 +55,35 @@ const HE_SMPDU_ENTRY_FLAGS: u8 = 1;
 const HE_SMPDU_DESCRIPTOR_FLAGS: u32 = 0xc040_7008;
 const HE_SU_A2_CONTROL_BCC: u16 = 0x0105;
 const HE_SU_A2_CONTROL_LDPC: u16 = 0x0107;
+
+/// Hardware lifetime class selected by the descriptor's A-MPDU-container bit.
+///
+/// This is not an EDCA access category or a management/data distinction.
+/// Complete `_oracles/libpp.a[lmac.o]::lmacSetTxFrame` tests descriptor flag
+/// `0x0040_0000`: clear loads `lmacConfMib + 0x08`, while set loads
+/// `lmacConfMib + 0x00`. Complete `lmacInit` initializes those two lifetimes
+/// to `0x400` and `0x600`, shifts the selected value left by ten, and passes it
+/// through `ppProcessLifeTime`. A freshly submitted direct queue image has one
+/// elapsed lifetime unit removed: `0x03ff` for a direct MPDU and `0x05ff` for
+/// an A-MPDU container.
+///
+/// These values apply only when encoding immediately before publication. A
+/// future queued scheduler must retain enqueue TSF and recompute the remaining
+/// lifetime instead of reusing these values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxLifetimeClass {
+    DirectMpdu,
+    AmpduContainer,
+}
+
+impl TxLifetimeClass {
+    pub const fn fresh_queue_timeout(self) -> u16 {
+        match self {
+            Self::DirectMpdu => 0x03ff,
+            Self::AmpduContainer => 0x05ff,
+        }
+    }
+}
 
 /// The four ordinary EDCA hardware queues recovered from `ppTxPkt`.
 ///
@@ -584,6 +613,59 @@ impl HtAmpduDensity {
             Self::EightMicroseconds => 8,
             Self::SixteenMicroseconds => 16,
         }
+    }
+}
+
+/// Complete runtime interpretation of one peer HT A-MPDU Parameters byte.
+///
+/// Keeping these three derived values together prevents upper layers from
+/// independently reimplementing the vendor exponent and spacing branches.
+/// The original byte is an association input, not a C-layout state image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtPeerAmpduParameters {
+    density: HtAmpduDensity,
+    protection_spacing: HtProtectionSpacing,
+    maximum_aggregate_bytes: u16,
+}
+
+impl HtPeerAmpduParameters {
+    /// Decode the peer's HT Capabilities A-MPDU Parameters byte.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcUpdateAMPDUParam`.
+    /// Bits 1:0 select exactly `0x1fff`, `0x3fff`, `0x7fff` or `0xffff`;
+    /// bits 4:2 select the retained IEEE density and its collapsed S31 queue
+    /// protection value.
+    pub const fn from_capability_byte(parameters: u8) -> Self {
+        let density = HtAmpduDensity::from_ampdu_parameters(parameters);
+        let maximum_aggregate_bytes = match parameters & 0x03 {
+            0 => 0x1fff,
+            1 => 0x3fff,
+            2 => 0x7fff,
+            _ => 0xffff,
+        };
+        Self {
+            density,
+            protection_spacing: HtProtectionSpacing::from_density(density),
+            maximum_aggregate_bytes,
+        }
+    }
+
+    pub const fn density(self) -> HtAmpduDensity {
+        self.density
+    }
+
+    pub const fn protection_spacing(self) -> HtProtectionSpacing {
+        self.protection_spacing
+    }
+
+    pub const fn maximum_aggregate_bytes(self) -> u16 {
+        self.maximum_aggregate_bytes
+    }
+}
+
+impl Default for HtPeerAmpduParameters {
+    fn default() -> Self {
+        Self::from_capability_byte(0)
     }
 }
 
@@ -1156,11 +1238,7 @@ impl HeRate {
             crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
         };
         let limit = row[self.mcs.index() as usize];
-        if self.dcm {
-            limit / 2
-        } else {
-            limit
-        }
+        if self.dcm { limit / 2 } else { limit }
     }
 
     /// Maximum APEP bytes for this rate and one EDCA TXOP limit.
@@ -1234,11 +1312,7 @@ impl HeRate {
         // f32 instruction sequence for all 256 values admitted by its WMM
         // parser, all three rows, and all ten MCS values.
         let limit = bytes as u32;
-        if self.dcm {
-            limit / 2
-        } else {
-            limit
-        }
+        if self.dcm { limit / 2 } else { limit }
     }
 
     /// Minimum HE A-MPDU subframe length for a negotiated density.
@@ -1654,7 +1728,7 @@ impl HtTxConfig {
             rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
-            timeout: 0x03ff,
+            timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
             interface: 0,
             scheduler_priority: 1,
             pti: 1,
@@ -1733,7 +1807,7 @@ impl HeSmpduTxConfig {
             rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
-            timeout: 0x03ff,
+            timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
             interface: 0,
             scheduler_priority: 1,
             pti: 1,
@@ -1811,7 +1885,7 @@ impl HtAmpduTxConfig {
             rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
-            timeout: 0x03ff,
+            timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
             interface: 0,
             scheduler_priority: 1,
             pti: 1,
@@ -1974,7 +2048,7 @@ impl HeAmpduTxConfig {
             rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
-            timeout: 0x03ff,
+            timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
             interface: 0,
             scheduler_priority: 1,
             pti: 1,
@@ -2026,6 +2100,56 @@ impl HeAmpduTxConfig {
     }
 }
 
+/// One negotiated aggregate queue vector, independent of HT versus HE format.
+///
+/// The descriptor/BlockAck owner needs the same three operations for both
+/// formats: inspect the selected PHY rate and key slot, then replace the
+/// aggregate geometry after retaining only the MPDUs missing from a BlockAck.
+/// Keeping that operation here avoids format-specific retry mutation in every
+/// upper runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AmpduTxConfig {
+    Ht(HtAmpduTxConfig),
+    He(HeAmpduTxConfig),
+}
+
+impl AmpduTxConfig {
+    pub const fn rate(self) -> TxPhyRate {
+        match self {
+            Self::Ht(config) => TxPhyRate::Ht(config.rate),
+            Self::He(config) => TxPhyRate::He(config.rate()),
+        }
+    }
+
+    pub const fn hardware_key_selector(self) -> u8 {
+        match self {
+            Self::Ht(config) => config.hardware_key_selector,
+            Self::He(config) => config.hardware_key_selector,
+        }
+    }
+
+    /// Replace only the fields that change after a partial BlockAck retry.
+    pub fn update_retained_retry(
+        &mut self,
+        aggregate_length: u16,
+        subframes: u8,
+        contention_window: u16,
+    ) {
+        match self {
+            Self::Ht(config) => {
+                config.aggregate_length = aggregate_length;
+                config.subframes = subframes;
+                config.contention_window = contention_window;
+            }
+            Self::He(config) => {
+                config.aggregate_length = aggregate_length;
+                config.subframes = subframes;
+                config.contention_window = contention_window;
+            }
+        }
+    }
+}
+
 impl LegacyTxConfig {
     /// Conservative 1-Mbit/s management-frame profile used by the first HIL.
     ///
@@ -2047,7 +2171,7 @@ impl LegacyTxConfig {
             rts_power_high: 8,
             aifsn: 2,
             contention_window: 0,
-            timeout: 0x03ff,
+            timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
             interface: 0,
             // Complete libpp.a[hal_mac.o,hal_coex.o] selects the unsigned
             // minimum of packet PTI 1 and coexistence event-one PTI 5.

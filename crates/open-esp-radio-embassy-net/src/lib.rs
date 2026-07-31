@@ -11,6 +11,11 @@
 //! This follows the ownership boundary proven by the migration runtime:
 //! descriptor and vendor-object pointers never escape into the network stack,
 //! and both directions apply explicit bounded backpressure.
+//!
+//! [`PinnedResources`] provides the high-throughput alternative: the network
+//! stack writes directly into a permanently located slot with caller-selected
+//! headroom and trailer space. The radio receives a lease to that same slot,
+//! so an IEEE 802.11 encoder can replace the prefix without copying payload.
 
 use core::{
     mem::MaybeUninit,
@@ -19,11 +24,20 @@ use core::{
     task::{Context, Poll},
 };
 
-use embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
+pub use embassy_net_driver::{Driver, TxToken};
+pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
+
+use embassy_net_driver::{Capabilities, HardwareAddress, LinkState};
 use embassy_sync::{
-    blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
     waitqueue::GenericAtomicWaker,
+};
+
+mod pinned;
+
+pub use pinned::{
+    PinnedDevice, PinnedRadioRunner, PinnedResources, PinnedTransmitToken, PinnedTxFrame,
+    PinnedTxPool,
 };
 
 /// Ethernet header length, excluding an FCS.
@@ -100,27 +114,27 @@ pub enum RxEnqueueError {
     QueueFull,
 }
 
-struct SharedLinkState<M: RawMutex> {
+pub(crate) struct SharedLinkState<M: RawMutex> {
     up: AtomicBool,
     waker: GenericAtomicWaker<M>,
 }
 
 impl<M: RawMutex> SharedLinkState<M> {
-    const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             up: AtomicBool::new(false),
             waker: GenericAtomicWaker::new(M::INIT),
         }
     }
 
-    fn set(&self, state: LinkState) {
+    pub(crate) fn set(&self, state: LinkState) {
         let up = state == LinkState::Up;
         if self.up.swap(up, Ordering::AcqRel) != up {
             self.waker.wake();
         }
     }
 
-    fn get(&self, cx: &mut Context<'_>) -> LinkState {
+    pub(crate) fn get(&self, cx: &mut Context<'_>) -> LinkState {
         // Register first, then load: a concurrent change either wakes this
         // waker or is observed by the following acquire load.
         self.waker.register(cx.waker());

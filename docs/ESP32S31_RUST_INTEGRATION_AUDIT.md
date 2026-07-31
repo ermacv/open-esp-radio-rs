@@ -1,6 +1,6 @@
 # `esp32s31_rust` integration audit
 
-Audit date: 2026-07-30.
+Audit date: 2026-07-31.
 
 The `esp32s31_rust` HIL application is not merely an example yet. Its
 `open_radio_phy_prelude_hil.rs` module is 11,000+ lines and still contains
@@ -44,6 +44,104 @@ wDev_AppendRxBlocks}` and
 `psram-code-psram-data` HE20/MCS9 HIL run delivered 10.036-Mbit/s RX plus
 67.942-Mbit/s TX, performed 5,147 RX-priority handoffs during TX preparation,
 and reported zero `BUFFER_FULL` and zero `FIFO_OVERFLOW`.
+
+The network-owned TX allocation and S31 A-MPDU descriptor owner are now joined
+by `open_esp_radio::esp32s31::embassy_tx::ReferencedHtAmpduBatch`. It moves a
+non-cloneable pinned `embassy-net` lease into the descriptor batch before the
+descriptor can become hardware-owned, retains the lease through BlockAck retry
+and detach, and returns it only after the DMA owner is free. Its bounded
+two-MSDU A-MSDU operation follows complete
+`_oracles/libnet80211.a[ieee80211_output.o]::ieee80211_encap_amsdu`: the second
+cache allocation is copied into the first and recycled before the first is
+published to A-MPDU DMA. The HIL application no longer owns this unsafe
+cross-crate lifetime proof.
+
+`open_esp_radio::esp32s31::cooperative_tx::CooperativeTxHardware` now owns the
+other reusable part of this boundary. It lends the application's unique
+`RadioRegisters` owner to one finite synchronous TX transaction at a time,
+without retaining a PAC borrow while the asynchronous aggregate waits for a
+completion edge. That lets the same task service RX before polling TX again,
+matching complete `_oracles/libpp.a[wdev.o]::wDev_ProcessFiq`.
+
+The application also no longer derives three independent runtime values from
+the negotiated HT A-MPDU capability byte. `HtPeerAmpduParameters` keeps the
+peer density, S31 protection spacing and `0x1fff/0x3fff/0x7fff/0xffff`
+aggregate limit in one MAC-owned value sourced from complete
+`_oracles/libpp.a[trc.o]::rcUpdateAMPDUParam`. `AmpduTxConfig` likewise owns
+the shared HT/HE retained-retry geometry mutation; the duplicate
+application-local enum was deleted.
+
+The join between the recovered rate-control schedule and the actual S31 TX
+format is also MAC-owned now. `StaTxRatePolicy` combines association width,
+the peer-qualified HE 800-ns LTF choice, payload-LDPC support and the explicit
+HT certification override; `StaRateControlAssociation::{tx_rate,
+ampdu_tx_rate}` selects the ordinary or independent A-MPDU schedule and
+fails back to a typed HT/legacy rate for the still-proprietary Long Range
+arena. The application no longer decodes overlapping Dot11N/Dot11Ax rate
+bytes, adds LDPC, or updates ACK-SNR directly. Environment variables only
+construct the value-only policy and remain HIL configuration.
+
+The post-transfer HE regression used the current standard
+`psram-code-psram-data` image against the channel-1 FRITZ HE20 peer. Four
+consecutive rounds each completed MCS0..9 at 2xLTF/0.8 us, 2xLTF/1.6 us and
+4xLTF/3.2 us: 30 profiles times 64 real A-MPDU submissions, zero failed
+profiles and zero terminal retries. Connected-path snapshots retained zero RX
+`BUFFER_FULL`/`FIFO_OVERFLOW`, MIC failures and parser/policy rejections. The
+new rate-policy owner therefore preserves both the HE formatter matrix and
+the RX-priority/DMA boundary.
+
+A following current-tree DCM regression associated with the controlled Linux
+HE20 peer advertising BPSK DCM receive. The HE S-MPDU oracle completed, then
+44 consecutive rounds each exercised MCS0 DCM at 2xLTF/0.8 us,
+2xLTF/1.6 us and 4xLTF/3.2 us. Every profile submitted 64 real A-MPDUs with
+zero errors, terminal retries or failed rounds. Application-owned
+profile-local telemetry bracketed each aggregate with the complete
+blob-derived RX statistics snapshot and counted RX IRQ/DMA staging separately;
+all profiles and four independent ten-second intervals retained zero
+`BUFFER_FULL` and zero `FIFO_OVERFLOW`. This telemetry remains HIL policy, not
+driver runtime, while the statistics decoder and RX ownership transaction
+remain driver-owned.
+
+The executor-neutral BlockAck decision is now also driver-owned as
+`open-esp-radio-mac-esp32s31::tx_runtime::AmpduRetryState`. Both the internal
+DMA A-MPDU path and the referenced `embassy-net` path use the same bounded
+owner for 12-bit sequence-number wrap, cumulative acknowledged/attempted MPDU
+accounting, partial-BlockAck retry masks, retained-sequence compaction, the
+four-attempt limit and the qualified HT-versus-HE one-missing-MPDU policy.
+The application still performs the deliberately separate operations: queue
+detach, DMA compaction, EDCA backoff selection, interrupt waiting and
+individual-MPDU transmission.
+
+Five host tests cover sequence wrap, stale BlockAck bits on a nonzero TX
+status, HT/HE single-MPDU divergence, the terminal attempt limit and
+DMA/state frame-count disagreement. A following current-tree
+`psram-code-psram-data` DCM HIL run completed forty full three-profile rounds,
+64 real A-MPDUs per profile. Profiles that encountered partial BlockAck
+reported 65 or 66 aggregate attempts for 64 submissions, proving the new
+driver state exercised retained retry on hardware; every profile retained
+zero retry failures and RX `BUFFER_FULL`. Four independent ten-second
+snapshots retained zero `FIFO_OVERFLOW`, MIC failure and RX/TX panic.
+
+A post-transfer `psram-code-psram-data` HT40/MCS7/SGI run sustained
+98.752--107.090 Mbit/s application uplink with 31--32 MPDUs and approximately
+225 us of preparation per 48,448-byte aggregate. The first concurrent
+25-Mbit/s downlink recheck delivered 26.2--26.4 Mbit/s downlink and
+62.1--77.3 Mbit/s uplink, but also observed 26 hardware `BUFFER_FULL` events.
+The cause was application instrumentation, not the transferred DMA contract:
+the direct-RX and concurrent-TX reporters called the synchronous ROM
+`ets_printf` path in the packet latency window. Moving periodic metrics to the
+existing bounded asynchronous USB logger eliminated the stall.
+
+The final reset-separated strict rerun offered 25.001 Mbit/s from the host and
+measured 25.006 Mbit/s median direct receive. Because the independent
+five-second TX windows are not timestamp-aligned with the host interval, the
+qualifier now reports their conservative minimum instead of a misleading
+median; the fully overlapping TX window delivered 68.276 Mbit/s, for a
+93.282-Mbit/s RX-median-plus-TX-floor. The final hardware delta reported zero
+`BUFFER_FULL`, zero `FIFO_OVERFLOW`, zero pairwise MIC failures and zero true
+parser/policy rejections. The ownership transfer is therefore build-,
+one-way-, and bidirectional-HIL-qualified. Diagnostic records may be dropped
+under pressure by design; radio ownership may no longer block behind logging.
 
 ## Reusable logic that still must move
 
@@ -96,19 +194,32 @@ application-owned. A post-transfer `psram-code-psram-data` run delivered
 The following application work is generic radio behaviour rather than a
 benchmark:
 
-- `TxStorage` EDCA, retry and completion state;
+- the production half of `TxStorage`: TX power, negotiated A-MPDU parameters,
+  EDCA retry state and completion ownership (the counters remain HIL policy);
 - `transmit_encoded_frame` and `transmit_encoded_unicast_with_retry`;
 - `transmit_protected_ethernet_frame`;
 - `append_protected_ethernet_ampdu_frame`;
 - `append_protected_ethernet_amsdu_ampdu_frame`;
-- `SelectedAmpduTxConfig`;
-- `transmit_protected_ethernet_ampdu`, including retained BlockAck retry.
+- `transmit_protected_ethernet_ampdu`, including retained BlockAck retry;
+- the policy-neutral part of
+  `transmit_referenced_protected_ethernet_ampdu`.
 
 Move this into a new MAC runtime module built over the existing `TxSlot`,
 `HtAmpduTxStorage`, rate-control and key-slot types. The caller supplies
 Ethernet frames, negotiated peer policy and an async TX-completion edge.
 Environment-variable matrix selection, synthetic payload generation and HIL
 report formatting stay in the application.
+
+The frame/descriptor lifetime half of the last item is already promoted as
+`ReferencedHtAmpduBatch`; `AmpduRetryState` now owns the shared BlockAck
+decision and retained-sequence transition. Aggregate construction, EDCA
+mutation around the returned decision, individual-retry execution and the
+completion-edge abstraction are the remaining halves. Schedule-to-format
+selection and ACK-SNR completion observation are already promoted through
+`StaTxRatePolicy`. Do not move the current function verbatim: it directly
+reads Embassy signals, timers, HIL counters and compile-time environment
+selections. Split each remaining driver-owned finite state transition from
+the executor adapter and report sink.
 
 ### 4. MAC bottom-half and priority
 
@@ -155,16 +266,43 @@ establishes a stable register/field meaning, that identity should move to the
 SVD/PAC with blob/ROM/HIL provenance; the application should then use a typed
 diagnostic snapshot or delete the obsolete raw read.
 
+## Repository-wide survey
+
+The other open-radio consumers in `esp32s31_rust` do not contain another
+production driver implementation:
+
+- `open_radio_frontier`, `open_radio_power_hil` and the small prelude binary
+  are board ownership, crash-record and qualification entry points;
+- `open_radio_vendor_oracle_hil` deliberately links or wraps vendor/ROM
+  leaves and must never move into the source-only driver;
+- `wifi_scan` contains closed-driver comparison and raw oracle probes. Stable
+  register identities discovered there belong in SVD/PAC, but the probe
+  program itself stays in the application;
+- `tools/xtask/open_radio*.rs` are host-side traffic generation, serial
+  capture and qualification policy, not firmware runtime;
+- linker placement, the PSRAM/PSRAM bootstrap and the 10,900-byte SRAM ISR
+  frontier remain board/application responsibilities.
+
+Consequently bulk-copying another application file would be wrong. The next
+useful transfer is a typed MAC runtime state machine from the named functions
+above, followed by one complete PHY target executor and finally the STA link
+state machine.
+
 ## Transfer order
 
 1. RX ownership transaction and non-copyable completion token — complete.
 2. Fixed RX token queue and ISR work ordering — complete; executor-neutral
    bottom-half scheduling remains.
-3. PHY target executor with injected delay/observation traits.
-4. MAC TX runtime and protected A-MPDU retry owner.
-5. STA link runtime.
-6. Optional `esp-hal` adapter — complete; Embassy executor adapter remains.
-7. Shrink the HIL file to configuration, test scenarios and reporting.
+3. Pinned `embassy-net` frame/A-MPDU lifetime owner — complete.
+4. Cooperative short-lived TX access to the unique PAC owner — complete,
+   including strict zero-starvation bidirectional requalification.
+5. PHY target executor with injected delay/observation traits.
+6. MAC TX runtime and protected A-MPDU retry owner — BlockAck decision and
+   retained-sequence state complete; aggregate construction, EDCA/completion
+   adapters and individual retry remain.
+7. STA link runtime.
+8. Optional `esp-hal` adapter — complete; Embassy executor adapter remains.
+9. Shrink the HIL file to configuration, test scenarios and reporting.
 
 Each stage first receives host tests in `open-esp-radio-rs`, then the
 application is changed to consume it, then the duplicated application logic is

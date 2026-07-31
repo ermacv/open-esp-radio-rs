@@ -251,6 +251,13 @@ const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
 pub const STA_PROTECTED_QOS_ETHERNET_OVERHEAD: usize =
     crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN + LLC_SNAP_HEADER_LEN
         - ETHERNET_HEADER_LEN;
+/// Prefix space that lets an Ethernet frame become a protected QoS MPDU
+/// without moving its payload.
+///
+/// If the Ethernet header starts at this offset, the Ethernet payload already
+/// begins at the final `QoS header + CCMP header + LLC/SNAP` boundary. The
+/// encoder only has to preserve DA/SA/EtherType and overwrite the prefix.
+pub const STA_PROTECTED_QOS_ETHERNET_HEADROOM: usize = STA_PROTECTED_QOS_ETHERNET_OVERHEAD;
 
 /// Monotonic twelve-bit owner for one IEEE 802.11 transmit sequence space.
 ///
@@ -427,6 +434,8 @@ pub enum StationFrameError {
     SequenceNumberOutOfRange,
     UserPriorityOutOfRange,
     HeControlRequiresQos,
+    AmsduRequiresQos,
+    EthernetHeadroomTooSmall { required: usize, available: usize },
     OutputTooSmall { required: usize },
 }
 
@@ -958,7 +967,14 @@ impl StaProtectedDataFrame<'_> {
         }
 
         let frame = &mut output[..required];
-        frame.fill(0);
+        // Every byte in the returned DMA image is initialized by one of the
+        // exact writes below. Do not clear the complete frame first: for a
+        // full 32-MPDU aggregate that redundant pass wrote roughly 48 KiB to
+        // PSRAM before immediately overwriting it with the real payload.
+        //
+        // SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
+        // ieee80211_encap_esfbuf` mutates the ESF header/headroom and retains
+        // the existing payload; it does not clear the complete MPDU.
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
         frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
         let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
@@ -967,6 +983,275 @@ impl StaProtectedDataFrame<'_> {
         frame[ccmp_end..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(self.payload);
         Ok(required)
+    }
+}
+
+/// Metadata for converting one owned Ethernet frame to a protected data MPDU
+/// in its existing allocation.
+///
+/// The buffer owner reserves prefix space before exposing the Ethernet slice
+/// to a network stack. Once the stack returns ownership, [`Self::encode_in_place`]
+/// replaces only the Ethernet header and reserved prefix. The payload is
+/// already at its final DMA offset and is never copied.
+///
+/// This is the chip-independent half of the vendor cache-TX ESF contract.
+/// Retaining the allocation until TX/BlockAck completion remains the
+/// responsibility of the chip-specific DMA owner.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
+/// ieee80211_alloc_tx_buf` type-nine branch stores the referenced netstack
+/// data pointer in the ESF DMA descriptor and calls `s_netstack_ref`.
+/// Complete `ieee80211_encap_esfbuf` mutates the ESF data boundary and writes
+/// the 802.11/LLC prefix without copying the retained payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaProtectedEthernetFrame {
+    pub bssid: [u8; 6],
+    pub sequence_number: u16,
+    pub user_priority: u8,
+    pub peer_qos: bool,
+    pub ccmp_header: [u8; CCMP_HEADER_LEN],
+}
+
+/// Location of an MPDU produced inside a larger owned allocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EncodedStaFrame {
+    pub offset: usize,
+    pub length: usize,
+}
+
+impl StaProtectedEthernetFrame {
+    /// Convert one Ethernet-II frame to a protected MPDU without moving its
+    /// payload.
+    ///
+    /// `ethernet_offset` points to the DA byte written by the network stack;
+    /// `ethernet_length` includes the fourteen-byte Ethernet header. On
+    /// success the returned region starts in the reserved headroom and ends at
+    /// exactly the same byte as the input Ethernet frame.
+    pub fn encode_in_place(
+        self,
+        storage: &mut [u8],
+        ethernet_offset: usize,
+        ethernet_length: usize,
+        he_control: DataHeControl,
+    ) -> Result<EncodedStaFrame, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        if self.user_priority > 7 {
+            return Err(StationFrameError::UserPriorityOutOfRange);
+        }
+        if !self.peer_qos
+            && matches!(
+                he_control,
+                DataHeControl::HardwareGeneratedBufferStatusReport
+            )
+        {
+            return Err(StationFrameError::HeControlRequiresQos);
+        }
+        if ethernet_length < ETHERNET_HEADER_LEN {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        }
+        let ethernet_end = ethernet_offset.checked_add(ethernet_length).ok_or(
+            StationFrameError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if storage.len() < ethernet_end {
+            return Err(StationFrameError::OutputTooSmall {
+                required: ethernet_end,
+            });
+        }
+
+        // Preserve the bytes that the new CCMP/LLC prefix overlaps before
+        // mutating the shared allocation.
+        let destination = storage[ethernet_offset..ethernet_offset + 6]
+            .try_into()
+            .expect("six-byte Ethernet destination");
+        let source = storage[ethernet_offset + 6..ethernet_offset + 12]
+            .try_into()
+            .expect("six-byte Ethernet source");
+        let ether_type =
+            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
+        let ethernet = ethernet_header(destination, source, ether_type);
+        let mut plan = plan_data_encapsulation_with_he_control(
+            DataInterfaceRole::Station,
+            self.bssid,
+            source,
+            ethernet,
+            self.user_priority,
+            self.peer_qos,
+            false,
+            he_control,
+        )
+        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        plan.header[1] |= 0x40;
+
+        let header_len = usize::from(plan.header_len);
+        let dma_header_len = plan.dma_header_len();
+        let prefix_len = dma_header_len + CCMP_HEADER_LEN + plan.llc_snap.len();
+        let headroom = prefix_len - ETHERNET_HEADER_LEN;
+        let frame_offset = ethernet_offset.checked_sub(headroom).ok_or(
+            StationFrameError::EthernetHeadroomTooSmall {
+                required: headroom,
+                available: ethernet_offset,
+            },
+        )?;
+        let frame_length = ethernet_length + headroom;
+        let frame_end =
+            frame_offset
+                .checked_add(frame_length)
+                .ok_or(StationFrameError::OutputTooSmall {
+                    required: usize::MAX,
+                })?;
+        debug_assert_eq!(frame_end, ethernet_end);
+        debug_assert_eq!(
+            frame_offset + prefix_len,
+            ethernet_offset + ETHERNET_HEADER_LEN
+        );
+
+        let frame = &mut storage[frame_offset..frame_end];
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
+        frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
+        frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
+
+        Ok(EncodedStaFrame {
+            offset: frame_offset,
+            length: frame_length,
+        })
+    }
+
+    /// Coalesce two Ethernet frames into one protected A-MSDU in the first
+    /// frame's allocation.
+    ///
+    /// The first Ethernet payload is moved forward inside `storage`; the
+    /// second frame is copied behind it. The returned MPDU starts at the same
+    /// offset as [`Self::encode_in_place`], so an S31 metadata word can remain
+    /// immediately before it. The caller may release the second frame as soon
+    /// as this method returns successfully.
+    ///
+    /// SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
+    /// ieee80211_encap_amsdu`. Its `.L940` branch uses `memmove` to grow the
+    /// first cache ESF in place; `.L950` copies the following ESF body into
+    /// that allocation and calls `ieee80211_recycle_cache_eb` immediately.
+    /// Thus vendor A-MSDU construction copies between netstack owners; only
+    /// the resulting MPDU remains referenced through A-MPDU/DMA completion.
+    pub fn encode_amsdu_pair_in_place(
+        self,
+        storage: &mut [u8],
+        ethernet_offset: usize,
+        ethernet_length: usize,
+        second_ethernet: &[u8],
+    ) -> Result<EncodedStaFrame, StationFrameError> {
+        validate_peer(self.bssid, self.sequence_number)?;
+        if self.user_priority > 7 {
+            return Err(StationFrameError::UserPriorityOutOfRange);
+        }
+        if !self.peer_qos {
+            return Err(StationFrameError::AmsduRequiresQos);
+        }
+        let ethernet_end = ethernet_offset.checked_add(ethernet_length).ok_or(
+            StationFrameError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if ethernet_length < ETHERNET_HEADER_LEN || second_ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        }
+        if storage.len() < ethernet_end {
+            return Err(StationFrameError::OutputTooSmall {
+                required: ethernet_end,
+            });
+        }
+
+        let first_header: [u8; ETHERNET_HEADER_LEN] = storage
+            [ethernet_offset..ethernet_offset + ETHERNET_HEADER_LEN]
+            .try_into()
+            .expect("Ethernet length checked above");
+        let source: [u8; 6] = first_header[6..12]
+            .try_into()
+            .expect("six-byte Ethernet source");
+        let required =
+            sta_protected_amsdu_pair_frame_length(ethernet_length, second_ethernet.len())?;
+        let frame_offset = ethernet_offset
+            .checked_sub(STA_PROTECTED_QOS_ETHERNET_HEADROOM)
+            .ok_or(StationFrameError::EthernetHeadroomTooSmall {
+                required: STA_PROTECTED_QOS_ETHERNET_HEADROOM,
+                available: ethernet_offset,
+            })?;
+        let frame_end =
+            frame_offset
+                .checked_add(required)
+                .ok_or(StationFrameError::OutputTooSmall {
+                    required: usize::MAX,
+                })?;
+        if storage.len() < frame_end {
+            return Err(StationFrameError::OutputTooSmall {
+                required: frame_end,
+            });
+        }
+
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::Station,
+            self.bssid,
+            source,
+            first_header,
+            self.user_priority,
+            true,
+            false,
+        )
+        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        plan.header[1] |= 0x40;
+        plan.header[24] |= 0x80;
+
+        let header_len = usize::from(plan.header_len);
+        debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
+        let first_subframe = frame_offset + header_len + CCMP_HEADER_LEN;
+        let first_payload_length = ethernet_length - ETHERNET_HEADER_LEN;
+        let first_payload_destination =
+            first_subframe + AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN;
+        storage.copy_within(
+            ethernet_offset + ETHERNET_HEADER_LEN..ethernet_end,
+            first_payload_destination,
+        );
+
+        storage[frame_offset..frame_offset + header_len]
+            .copy_from_slice(&plan.header[..header_len]);
+        storage[frame_offset + 22..frame_offset + 24]
+            .copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let ccmp_offset = frame_offset + header_len;
+        storage[ccmp_offset..ccmp_offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
+
+        let first_msdu_length = LLC_SNAP_HEADER_LEN + first_payload_length;
+        storage[first_subframe..first_subframe + 12].copy_from_slice(&first_header[..12]);
+        storage[first_subframe + 12..first_subframe + 14]
+            .copy_from_slice(&(first_msdu_length as u16).to_be_bytes());
+        let first_llc = first_subframe + AMSDU_SUBFRAME_HEADER_LEN;
+        storage[first_llc..first_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
+        storage[first_llc + 6..first_llc + 8].copy_from_slice(&first_header[12..14]);
+
+        let first_subframe_length =
+            AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + first_payload_length;
+        let first_padding = (4 - (first_subframe_length & 3)) & 3;
+        let second_subframe = first_subframe + first_subframe_length + first_padding;
+        storage[second_subframe - first_padding..second_subframe].fill(0);
+
+        let second_payload = &second_ethernet[ETHERNET_HEADER_LEN..];
+        let second_msdu_length = LLC_SNAP_HEADER_LEN + second_payload.len();
+        storage[second_subframe..second_subframe + 12].copy_from_slice(&second_ethernet[..12]);
+        storage[second_subframe + 12..second_subframe + 14]
+            .copy_from_slice(&(second_msdu_length as u16).to_be_bytes());
+        let second_llc = second_subframe + AMSDU_SUBFRAME_HEADER_LEN;
+        storage[second_llc..second_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
+        storage[second_llc + 6..second_llc + 8].copy_from_slice(&second_ethernet[12..14]);
+        let second_payload_offset = second_llc + LLC_SNAP_HEADER_LEN;
+        storage[second_payload_offset..second_payload_offset + second_payload.len()]
+            .copy_from_slice(second_payload);
+        debug_assert_eq!(second_payload_offset + second_payload.len(), frame_end);
+
+        Ok(EncodedStaFrame {
+            offset: frame_offset,
+            length: required,
+        })
     }
 }
 
@@ -1051,6 +1336,54 @@ pub fn sta_protected_amsdu_frame_length(
         });
     }
 
+    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        .checked_add(CCMP_HEADER_LEN)
+        .and_then(|length| length.checked_add(amsdu_length))
+        .ok_or(StationFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        })
+}
+
+/// Encoded protected-MPDU length for exactly two Ethernet MSDUs.
+///
+/// This is the non-mutating admission half of
+/// [`StaProtectedEthernetFrame::encode_amsdu_pair_in_place`]. It allows a
+/// bounded DMA owner to check both the 3,839-byte negotiated A-MSDU class and
+/// its allocation capacity before consuming sequence and CCMP numbers.
+pub fn sta_protected_amsdu_pair_frame_length(
+    first_ethernet_length: usize,
+    second_ethernet_length: usize,
+) -> Result<usize, StationFrameError> {
+    if first_ethernet_length < ETHERNET_HEADER_LEN || second_ethernet_length < ETHERNET_HEADER_LEN {
+        return Err(StationFrameError::EthernetFrameTooShort);
+    }
+    let first_subframe = first_ethernet_length
+        .checked_add(LLC_SNAP_HEADER_LEN)
+        .ok_or(StationFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        })?;
+    let second_subframe = second_ethernet_length
+        .checked_add(LLC_SNAP_HEADER_LEN)
+        .ok_or(StationFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        })?;
+    let first_padding = (4 - (first_subframe & 3)) & 3;
+    let amsdu_length = first_subframe
+        .checked_add(first_padding)
+        .and_then(|length| length.checked_add(second_subframe))
+        .ok_or(StationFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        })?;
+    if amsdu_length > HT_AMSDU_BASELINE_MAX_LEN {
+        return Err(StationFrameError::AmsduTooLong {
+            length: amsdu_length,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        });
+    }
     crate::data::IEEE80211_QOS_DATA_HEADER_LEN
         .checked_add(CCMP_HEADER_LEN)
         .and_then(|length| length.checked_add(amsdu_length))
@@ -1807,6 +2140,108 @@ mod tests {
     }
 
     #[test]
+    fn protected_data_frame_fully_overwrites_a_reused_dma_slot() {
+        let frame = StaProtectedDataFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: 0x123,
+            user_priority: 7,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ether_type: 0x888e,
+            payload: &[1, 2, 3],
+        };
+        let mut zeroed = [0_u8; 64];
+        let mut reused = [0xa5_u8; 64];
+
+        let zeroed_len = frame.encode(&mut zeroed).unwrap();
+        let reused_len = frame.encode(&mut reused).unwrap();
+
+        assert_eq!(reused_len, zeroed_len);
+        assert_eq!(&reused[..reused_len], &zeroed[..zeroed_len]);
+    }
+
+    #[test]
+    fn protected_ethernet_frame_reuses_payload_at_its_final_dma_offset() {
+        let ethernet = [
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 2, 3, 4, 5, 6, 7, 0x88, 0x8e, 1, 2, 3,
+        ];
+        let metadata = StaProtectedEthernetFrame {
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            sequence_number: 0x123,
+            user_priority: 7,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+        };
+        let mut expected = [0_u8; 64];
+        let expected_len = StaProtectedDataFrame {
+            source: ethernet[6..12].try_into().unwrap(),
+            bssid: metadata.bssid,
+            destination: ethernet[..6].try_into().unwrap(),
+            sequence_number: metadata.sequence_number,
+            user_priority: metadata.user_priority,
+            peer_qos: metadata.peer_qos,
+            ccmp_header: metadata.ccmp_header,
+            ether_type: u16::from_be_bytes([ethernet[12], ethernet[13]]),
+            payload: &ethernet[14..],
+        }
+        .encode(&mut expected)
+        .unwrap();
+
+        let mut storage = [0xa5_u8; 64];
+        storage[STA_PROTECTED_QOS_ETHERNET_HEADROOM
+            ..STA_PROTECTED_QOS_ETHERNET_HEADROOM + ethernet.len()]
+            .copy_from_slice(&ethernet);
+        let encoded = metadata
+            .encode_in_place(
+                &mut storage,
+                STA_PROTECTED_QOS_ETHERNET_HEADROOM,
+                ethernet.len(),
+                DataHeControl::Disabled,
+            )
+            .unwrap();
+
+        assert_eq!(
+            encoded,
+            EncodedStaFrame {
+                offset: 0,
+                length: 45
+            }
+        );
+        assert_eq!(encoded.length, expected_len);
+        assert_eq!(&storage[..encoded.length], &expected[..expected_len]);
+        // The three payload bytes began at offset 28 + 14 and remain at that
+        // exact address after the prefix conversion.
+        assert_eq!(&storage[42..45], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn protected_ethernet_frame_reports_missing_headroom_before_mutation() {
+        let ethernet = [
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 2, 3, 4, 5, 6, 7, 0x08, 0x00,
+        ];
+        let mut storage = [0xa5_u8; 64];
+        storage[27..27 + ethernet.len()].copy_from_slice(&ethernet);
+
+        assert_eq!(
+            StaProtectedEthernetFrame {
+                bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+                sequence_number: 0x123,
+                user_priority: 0,
+                peer_qos: true,
+                ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            }
+            .encode_in_place(&mut storage, 27, ethernet.len(), DataHeControl::Disabled),
+            Err(StationFrameError::EthernetHeadroomTooSmall {
+                required: STA_PROTECTED_QOS_ETHERNET_HEADROOM,
+                available: 27,
+            })
+        );
+        assert_eq!(&storage[27..27 + ethernet.len()], &ethernet);
+    }
+
+    #[test]
     fn protected_he_control_keeps_ccmp_immediately_after_qos() {
         let mut output = [0xa5; 64];
         let len = StaProtectedDataFrame {
@@ -1884,6 +2319,54 @@ mod tests {
         assert_eq!(second_decoded.ether_type, 0x88b5);
         assert_eq!(second_decoded.payload, &[4, 5, 6]);
         assert_eq!(subframes.next(), None);
+    }
+
+    #[test]
+    fn protected_amsdu_pair_encodes_in_first_ethernet_allocation() {
+        let first = [
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 2, 3, 4, 5, 6, 7, 0x08, 0x00, 1, 2, 3,
+        ];
+        let second = [
+            0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 8, 9, 10, 11, 12, 13, 0x88, 0xb5, 4, 5, 6,
+        ];
+        let ethernet_frames: [&[u8]; 2] = [&first, &second];
+        let metadata = StaProtectedEthernetFrame {
+            bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            sequence_number: 0x123,
+            user_priority: 7,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+        };
+        let mut expected = [0_u8; 96];
+        let expected_length = StaProtectedAmsduFrame {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: metadata.bssid,
+            sequence_number: metadata.sequence_number,
+            user_priority: metadata.user_priority,
+            ccmp_header: metadata.ccmp_header,
+            ethernet_frames: &ethernet_frames,
+        }
+        .encode(&mut expected)
+        .unwrap();
+
+        const ETHERNET_OFFSET: usize = STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+        let mut storage = [0xa5_u8; 128];
+        storage[ETHERNET_OFFSET..ETHERNET_OFFSET + first.len()].copy_from_slice(&first);
+        let encoded = metadata
+            .encode_amsdu_pair_in_place(&mut storage, ETHERNET_OFFSET, first.len(), &second)
+            .unwrap();
+
+        assert_eq!(encoded.offset, 0);
+        assert_eq!(encoded.length, expected_length);
+        assert_eq!(
+            &storage[..encoded.length],
+            &expected[..expected_length],
+            "in-place and owned encoders must emit identical MPDUs"
+        );
+        assert!(
+            storage[encoded.length..].iter().all(|byte| *byte == 0xa5),
+            "capacity beyond the encoded MPDU remains untouched"
+        );
     }
 
     #[test]

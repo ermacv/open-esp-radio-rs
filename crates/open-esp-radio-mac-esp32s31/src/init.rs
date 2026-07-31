@@ -27,7 +27,12 @@ pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
 pub use open_esp_radio_pac_esp32s31::{MacTxPowerPair, MacTxPowerTable};
 
-const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
+/// Complete event mask published by the recovered cold receive initializer.
+///
+/// Applications activate the disjoint ISR register capability only after
+/// installing their final handler storage, but the bit policy itself remains
+/// part of the MAC lifecycle recovered from `libpp.a[hal_mac.o]::hal_init`.
+pub const MAC_COLD_RX_INTERRUPT_MASK: u32 = 0x19a8_79e0;
 
 /// Official chip-platform capability required before touching MAC-local MMIO.
 ///

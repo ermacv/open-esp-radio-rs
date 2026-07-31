@@ -79,14 +79,11 @@ impl RadioRegisters {
 
     /// Publish one instruction-exact ROM force-test command in a fresh RMW edge.
     ///
-    /// Selector and path are semantic API fields and are range checked. The
-    /// value is deliberately not narrowed: RX-DCO passes signed halfword
-    /// images, and the complete ROM encoder retains their low eleven bits
-    /// while composing the physical command word.
-    pub fn publish_pbus_force_test(&mut self, selector: u8, path: u8, test_value: u16) -> bool {
-        if selector > 0x0f || path > 3 {
-            return false;
-        }
+    /// Like ROM, selector and path contribute only the bits retained by the
+    /// combined argument mask. The value is also deliberately not narrowed:
+    /// RX-DCO passes signed halfword images, and the complete encoder retains
+    /// their low eleven bits while composing the physical command word.
+    pub fn publish_pbus_force_test(&mut self, selector: u8, path: u8, test_value: u16) {
         self.peripherals.phy_pbus.command().modify(|r, w| {
             let command = pbus_force_test_command_image(r.bits(), selector, path, test_value);
             // SAFETY: `command` is the complete instruction-exact RMW image
@@ -94,7 +91,6 @@ impl RadioRegisters {
             // its argument mask are preserved from this same read edge.
             unsafe { w.bits(command) }
         });
-        true
     }
 
     /// Clear the force-test transaction bit after one completed observation.
@@ -112,14 +108,14 @@ impl RadioRegisters {
             0 if path_one => self
                 .peripherals
                 .phy_pbus
-                .read_result_4()
+                .read_result_3()
                 .read()
                 .result_window_2_unknown()
                 .bits(),
             0 => self
                 .peripherals
                 .phy_pbus
-                .read_result_4()
+                .read_result_3()
                 .read()
                 .result_window_1_unknown()
                 .bits(),
@@ -184,9 +180,15 @@ impl RadioRegisters {
                 .phy_pbus
                 .read_result_4()
                 .read()
+                .result_window_1_unknown()
+                .bits(),
+            _ => self
+                .peripherals
+                .phy_pbus
+                .read_result_4()
+                .read()
                 .result_window_0_unknown()
                 .bits(),
-            _ => return None,
         })
     }
 
@@ -219,6 +221,7 @@ impl RadioRegisters {
 #[cfg(test)]
 mod tests {
     use super::pbus_force_test_command_image;
+    use crate::power::phy_pbus;
 
     #[test]
     fn force_test_encoder_matches_complete_rom_images() {
@@ -234,5 +237,19 @@ mod tests {
         // `-251_i16 as u16 == 0xff05`. ROM keeps the low eleven value bits,
         // so their upper two bits combine with path one into physical path 3.
         assert_eq!(pbus_force_test_command_image(0, 3, 1, 0xff05), 0x0001_c14e);
+    }
+
+    #[test]
+    fn selector_zero_windows_belong_to_the_rom_a0_word() {
+        assert_eq!(phy_pbus::READ_RESULT_3.address(), 0x2010_08a0);
+        assert_eq!(
+            phy_pbus::read_result_3::RESULT_WINDOW_1_UNKNOWN.mask(),
+            0x0003_fe00
+        );
+        assert_eq!(
+            phy_pbus::read_result_3::RESULT_WINDOW_2_UNKNOWN.mask(),
+            0x07fc_0000
+        );
+        assert_eq!(phy_pbus::READ_RESULT_4.address(), 0x2010_08a4);
     }
 }

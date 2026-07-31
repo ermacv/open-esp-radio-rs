@@ -1365,6 +1365,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-hil-esp32s31-trace-probes"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-phy",
+]
+
+[[package]]
+name = "open-esp-radio-hil-esp32s31-trace-probes-elf"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-hil-esp32s31-trace-probes",
+]
+
+[[package]]
 name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 

@@ -3,6 +3,22 @@
 use super::RadioRegisters;
 
 impl RadioRegisters {
+    /// Apply all three ordered fresh-read updates of complete rev0 ROM
+    /// `phy_sifs_reg_init`.
+    pub fn initialize_phy_wifi_sifs(&mut self) {
+        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        // SAFETY: all complete ROM literals fit their generated fields.
+        callbacks
+            .delay_secondary()
+            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0xea) });
+        callbacks
+            .delay_primary()
+            .modify(|_, w| unsafe { w.rx_cck_delay().bits(0x3b8) });
+        callbacks
+            .delay_primary()
+            .modify(|_, w| unsafe { w.low_delay_unknown().bits(0xf0) });
+    }
+
     /// Apply all eighteen direct RMW edges before the first HE callback.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_mac.o]::mac_txrx_init`,

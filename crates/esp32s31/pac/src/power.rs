@@ -497,6 +497,8 @@ pub mod phy_frequency_channel_oracle {
         /// CONFIDENCE\[instruction-exact-semantics-from-symbol]. Complete phy_bb_cbw_chan_cfg
         /// performs two fresh-read CBW-derived replacements.
         pub const CBW_HIGH_UNKNOWN: Field32 = Field32::new(2, 3);
+        /// Complete ROM `phy_vht_support` replaces bit five from the caller low bit.
+        pub const VHT_SUPPORT: Field32 = Field32::new(5, 1);
     }
 }
 
@@ -665,13 +667,13 @@ pub mod phy_pbus {
     }
 
     /// SOURCE\[ROM_REV0_PHY_PBUS]; CONFIDENCE\[instruction-exact-packed-windows]. Selector 4 path
-    /// 1 reads window 0; other bits are not presently evidenced.
+    /// 1 reads window 0; selector 0 reads windows 1 or 2.
     pub const READ_RESULT_3: Register32 =
         Register32::described(0x201008a0, RegisterAccess::ReadOnly, None);
 
     /// Recovered fields of [`READ_RESULT_3`]. SOURCE\[ROM_REV0_PHY_PBUS];
-    /// CONFIDENCE\[instruction-exact-packed-windows]. Selector 4 path 1 reads window 0; other
-    /// bits are not presently evidenced.
+    /// CONFIDENCE\[instruction-exact-packed-windows]. Selector 4 path 1 reads window 0;
+    /// selector 0 reads windows 1 or 2.
     pub mod read_result_3 {
         use crate::Field32;
 
@@ -679,6 +681,10 @@ pub mod phy_pbus {
         /// CONFIDENCE\[instruction-exact-packed-windows]. Selector 4 path 1 reads window 0;
         /// other bits are not presently evidenced.
         pub const RESULT_WINDOW_0_UNKNOWN: Field32 = Field32::new(0, 9);
+        /// Selector 0 non-path-one result window.
+        pub const RESULT_WINDOW_1_UNKNOWN: Field32 = Field32::new(9, 9);
+        /// Selector 0 path-one result window.
+        pub const RESULT_WINDOW_2_UNKNOWN: Field32 = Field32::new(18, 9);
     }
 
     /// SOURCE\[ROM_REV0_PHY_PBUS]; CONFIDENCE\[instruction-exact-packed-windows]. Selector 5
@@ -688,9 +694,8 @@ pub mod phy_pbus {
         Register32::described(0x201008a4, RegisterAccess::ReadOnly, None);
 
     /// Recovered fields of [`READ_RESULT_4`]. SOURCE\[ROM_REV0_PHY_PBUS];
-    /// CONFIDENCE\[instruction-exact-packed-windows]. Selector 5 reads window 0, selector 0
-    /// non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window
-    /// 2.
+    /// CONFIDENCE\[instruction-exact-packed-windows]. Fallback selectors read window 0,
+    /// selector 5 reads window 1, and selector 4 non-path-one reads window 2.
     pub mod read_result_4 {
         use crate::Field32;
 
@@ -878,12 +883,25 @@ pub mod phy_agc_oracle {
     pub mod agc_antenna_control {
         use crate::Field32;
 
+        /// Complete ROM `phy_freq_band_reg_set` writes the inverse caller low bit.
+        pub const FREQUENCY_BAND_INVERSE: Field32 = Field32::new(5, 1);
         /// SOURCE\[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE\[instruction-exact-semantics-unknown].
         /// Complete phy_ant_init writes 0x34 into bits 17:11.
         pub const ANTENNA_INIT_UNKNOWN: Field32 = Field32::new(11, 7);
         /// SOURCE\[ROM_REV0_PHY_AGC]; CONFIDENCE\[instruction-exact-semantics-unknown].
         /// Instruction-exact AGC disable/enable gate.
         pub const AGC_DISABLE_UNKNOWN: Field32 = Field32::new(29, 1);
+    }
+
+    /// Complete ROM `phy_csidump_force_lltf_cfg` replaces bit fifteen.
+    pub const CSI_DUMP_FORCE_CONTROL: Register32 =
+        Register32::described(0x201070a4, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`CSI_DUMP_FORCE_CONTROL`].
+    pub mod csi_dump_force_control {
+        use crate::Field32;
+
+        pub const FORCE_LLTF: Field32 = Field32::new(15, 1);
     }
 
     /// SOURCE\[BLOB_LIBPHY_PHY_DC_MEM_CLR]; CONFIDENCE\[instruction-exact-semantics-unknown].
@@ -1643,6 +1661,19 @@ pub mod phy_baseband_config_oracle {
         pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(6, 3);
     }
 
+    /// Complete ROM `phy_bbtx_outfilter` performs three fresh RMWs.
+    pub const TX_OUTPUT_FILTER_CONTROL: Register32 =
+        Register32::described(0x20107440, RegisterAccess::ReadWrite, None);
+
+    /// Recovered fields of [`TX_OUTPUT_FILTER_CONTROL`].
+    pub mod tx_output_filter_control {
+        use crate::Field32;
+
+        pub const FILTER_INPUT_2: Field32 = Field32::new(4, 1);
+        pub const FILTER_INPUT_0: Field32 = Field32::new(5, 1);
+        pub const FILTER_INPUT_1: Field32 = Field32::new(6, 1);
+    }
+
     /// SOURCE\[BLOB_LIBPHY_PHY_BASEBAND_CONFIG];
     /// CONFIDENCE\[instruction-exact-semantics-from-symbol]. Complete phy_bb_txpwr_track
     /// publishes enable plus two initialization fields.
@@ -1787,10 +1818,8 @@ pub mod phy_baseband_config_oracle {
     pub mod baseband_init_7890 {
         use crate::Field32;
 
-        /// Field layout from SOURCE\[ROM_REV0_PHY_REGISTER_INITIALIZATION];
-        /// CONFIDENCE\[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
-        /// 25 then sets bit 24.
-        pub const INIT_MODE_UNKNOWN: Field32 = Field32::new(24, 2);
+        pub const HE_RU26_GOOD_RESPONSE_ENABLE: Field32 = Field32::new(24, 1);
+        pub const HE_RU26_GOOD_RESPONSE_DISABLE: Field32 = Field32::new(25, 1);
     }
 
     /// SOURCE\[ROM_REV0_PHY_REGISTER_INITIALIZATION];
@@ -1844,6 +1873,8 @@ pub mod phy_baseband_config_oracle {
         /// CONFIDENCE\[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bit
         /// 11.
         pub const INIT_CLEAR_UNKNOWN: Field32 = Field32::new(11, 1);
+        pub const LLTF_MASK_INPUT_1: Field32 = Field32::new(12, 1);
+        pub const LLTF_MASK_INPUT_0: Field32 = Field32::new(13, 1);
     }
 
     /// SOURCE\[ROM_REV0_PHY_REGISTER_INITIALIZATION];
@@ -1949,6 +1980,10 @@ pub mod phy_baseband_config_oracle {
         pub const WATCHDOG_CONTROL_UNKNOWN: Field32 = Field32::new(30, 1);
     }
 
+    /// Complete ROM `phy_bb_wdt_get_status` returns one full read.
+    pub const BASEBAND_WATCHDOG_STATUS: Register32 =
+        Register32::described(0x20107c08, RegisterAccess::ReadOnly, None);
+
     /// SOURCE\[ROM_REV0_PHY_REGISTER_INITIALIZATION];
     /// CONFIDENCE\[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets bit
     /// 31.
@@ -1962,6 +1997,8 @@ pub mod phy_baseband_config_oracle {
     pub mod baseband_watchdog_enable {
         use crate::Field32;
 
+        pub const WATCHDOG_TIMEOUT_CLEAR: Field32 = Field32::new(29, 1);
+        pub const WATCHDOG_INTERRUPT_ENABLE: Field32 = Field32::new(30, 1);
         /// Field layout from SOURCE\[ROM_REV0_PHY_REGISTER_INITIALIZATION];
         /// CONFIDENCE\[instruction-exact-semantics-from-symbol]. Complete phy_bb_wdg_cfg sets
         /// bit 31.
@@ -2562,7 +2599,7 @@ pub mod wifi_mac_rx_dma {
 }
 
 /// Complete generated register allow-list in ascending SVD order.
-pub const ALL: [Register32; 176] = [
+pub const ALL: [Register32; 179] = [
     phy_memory::COMMAND,
     phy_memory::DATA_0,
     phy_memory::DATA_1,
@@ -2643,6 +2680,7 @@ pub const ALL: [Register32; 176] = [
     phy_agc_oracle::AGC_SHARED_CONTROL,
     phy_agc_oracle::AGC_ANTENNA_CONTROL,
     phy_agc_oracle::DC_MEMORY_CONTROL,
+    phy_agc_oracle::CSI_DUMP_FORCE_CONTROL,
     phy_agc_oracle::RX_11B_PATH_CONTROL_0,
     phy_agc_oracle::AGC_UPDATE_7048_OPAQUE,
     phy_agc_oracle::AGC_SATURATION_CONTROL,
@@ -2685,6 +2723,7 @@ pub const ALL: [Register32; 176] = [
     phy_baseband_config_oracle::BASEBAND_INIT_7400,
     phy_baseband_config_oracle::BASEBAND_INIT_7428,
     phy_baseband_config_oracle::BASEBAND_INIT_743C,
+    phy_baseband_config_oracle::TX_OUTPUT_FILTER_CONTROL,
     phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_0,
     phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_1,
     phy_baseband_config_oracle::TX_POWER_TRACK_CONTROL_2,
@@ -2697,6 +2736,7 @@ pub const ALL: [Register32; 176] = [
     phy_baseband_config_oracle::BASEBAND_INIT_7980,
     phy_baseband_config_oracle::BASEBAND_INIT_7A28,
     phy_baseband_config_oracle::BASEBAND_TX_PA_CONTROL,
+    phy_baseband_config_oracle::BASEBAND_WATCHDOG_STATUS,
     phy_baseband_config_oracle::BASEBAND_TX_PA_TIMING,
     phy_baseband_config_oracle::BASEBAND_WATCHDOG_CONTROL,
     phy_baseband_config_oracle::BASEBAND_WATCHDOG_ENABLE,

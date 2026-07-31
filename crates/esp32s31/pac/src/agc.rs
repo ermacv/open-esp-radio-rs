@@ -39,6 +39,16 @@ impl RadioRegisters {
         }
     }
 
+    /// Read the complete ROM `phy_is_low_rate_enabled` status bit.
+    pub fn phy_low_rate_enabled(&self) -> bool {
+        self.peripherals
+            .phy_agc_oracle
+            .low_rate_primary_control()
+            .read()
+            .low_rate_enable_first()
+            .bit_is_set()
+    }
+
     /// Apply all fourteen internal MMIO edges of `phy_bb_agc_reg_update`.
     pub fn update_agc_baseband_registers(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
@@ -181,6 +191,35 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.low_unknown().bits(0x1e).high_unknown().bits(0x1e) });
     }
 
+    /// Apply complete rev0 ROM `phy_ant_dft_cfg`.
+    pub fn configure_antenna_diversity(&mut self, enabled: u32) {
+        self.peripherals
+            .phy_agc_oracle
+            .antenna_control_0()
+            .modify(|_, w| w.antenna_diversity_enable_unknown().bit(enabled & 1 != 0));
+    }
+
+    /// Apply complete rev0 ROM `phy_force_rx_gain`.
+    pub fn configure_forced_rx_gain(&mut self, enabled: u32, gain: u32) {
+        let control = self.peripherals.phy_agc_oracle.agc_shared_control();
+        // SAFETY: retaining the caller low byte fits the generated field.
+        control.modify(|_, w| unsafe { w.control_high_unknown().bits(gain as u8) });
+        control.modify(|_, w| w.pulse_unknown().bit(enabled & 1 != 0));
+    }
+
+    /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller
+    /// low-bit contract into a boolean ABI.
+    pub fn configure_rx_11b_low_rate(&mut self, input: u32) {
+        let enabled = input & 1 != 0;
+        let agc = &self.peripherals.phy_agc_oracle;
+        agc.low_rate_primary_control()
+            .modify(|_, w| w.low_rate_enable_first().bit(enabled));
+        agc.low_rate_primary_control()
+            .modify(|_, w| w.low_rate_enable_second().bit(enabled));
+        agc.low_rate_secondary_control()
+            .modify(|_, w| w.low_rate_enable().bit(enabled));
+    }
+
     /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.
     pub fn configure_rf_rx_saturation(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
@@ -229,6 +268,14 @@ impl RadioRegisters {
         }
     }
 
+    /// Select the complete pinned `phy_set_ftm_en` one-bit image.
+    pub fn set_ftm_enabled(&mut self, enabled: bool) {
+        self.peripherals
+            .phy_agc_oracle
+            .ftm_control()
+            .modify(|_, w| w.enable().bit(enabled));
+    }
+
     /// Apply complete pinned `phy_reg_update_new` and both finite children.
     pub fn update_agc_post_initialization(&mut self) {
         self.peripherals
@@ -245,7 +292,7 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.low_unknown().bits(0x17) });
         agc.post_init_rx_control()
             .modify(|_, w| unsafe { w.high_unknown().bits(0x17) });
-        agc.ftm_control().modify(|_, w| w.enable().set_bit());
+        self.set_ftm_enabled(true);
     }
 
     /// Apply either complete branch of rev0 ROM `phy_rx_11b_opt`.

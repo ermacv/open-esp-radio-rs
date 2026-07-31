@@ -260,7 +260,7 @@ impl PhyRxGainPublishTransition {
             }
             Step::WorkModePulseDelay { bank, .. } => PhyRxGainPublishAction::DelayMicros {
                 phase: PhyRxGainDelayPhase::PbusWorkModePulse { bank },
-                micros: 1,
+                micros: 2,
             },
             Step::WorkModePulseClear { bank, .. } => {
                 PhyRxGainPublishAction::ClearPbusWorkModePulse { bank }
@@ -460,7 +460,7 @@ impl PhyRxGainPublishTransition {
                         PhyRxGainDelayPhase::PbusWorkModePulse {
                             bank: completed_bank,
                         },
-                    micros: 1,
+                    micros: 2,
                 },
             ) if bank == completed_bank => Step::WorkModePulseClear { bank, failure },
             (
@@ -711,20 +711,11 @@ pub enum PhyRxGainInitFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainInitAction {
-    CaptureAndClearDcControl {
-        address: usize,
-        field_mask: u32,
-    },
+    CaptureAndClearDcControl,
     Dc(PhyRxGainDcAction),
-    RestoreDcControl {
-        address: usize,
-        field_mask: u32,
-        saved_field: u32,
-    },
+    RestoreDcControl { saved_field: u8 },
     Publish(PhyRxGainPublishAction),
-    ConfigureLimits {
-        wifi_last_index: u8,
-    },
+    ConfigureLimits { wifi_last_index: u8 },
     EnableIqCorrection,
     Complete(PhyRxGainInitOutcome),
     Failed(PhyRxGainInitFailure),
@@ -732,9 +723,9 @@ pub enum PhyRxGainInitAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainInitCompletion {
-    DcControlCleared { address: usize, saved_field: u32 },
+    DcControlCleared { saved_field: u8 },
     Dc(PhyRxGainDcCompletion),
-    DcControlRestored { address: usize, saved_field: u32 },
+    DcControlRestored { saved_field: u8 },
     Publish(PhyRxGainPublishCompletion),
     LimitsConfigured { wifi_last_index: u8 },
     IqCorrectionEnabled,
@@ -750,11 +741,11 @@ pub enum PhyRxGainInitTransitionError {
 enum InitStep {
     CaptureDcControl,
     Dc {
-        saved_field: u32,
+        saved_field: u8,
         transition: PhyRxGainDcTransition,
     },
     RestoreDcControl {
-        saved_field: u32,
+        saved_field: u8,
         outcome: PhyRxGainDcOutcome,
     },
     Publish(PhyRxGainPublishTransition),
@@ -815,17 +806,10 @@ impl PhyRxGainInitTransition {
 
     pub fn action(&self) -> PhyRxGainInitAction {
         match self.step {
-            InitStep::CaptureDcControl => PhyRxGainInitAction::CaptureAndClearDcControl {
-                address: crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS,
-                field_mask: crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK,
-            },
+            InitStep::CaptureDcControl => PhyRxGainInitAction::CaptureAndClearDcControl,
             InitStep::Dc { transition, .. } => PhyRxGainInitAction::Dc(transition.action()),
             InitStep::RestoreDcControl { saved_field, .. } => {
-                PhyRxGainInitAction::RestoreDcControl {
-                    address: crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS,
-                    field_mask: crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK,
-                    saved_field,
-                }
+                PhyRxGainInitAction::RestoreDcControl { saved_field }
             }
             InitStep::Publish(transition) => PhyRxGainInitAction::Publish(transition.action()),
             InitStep::Limits => PhyRxGainInitAction::ConfigureLimits {
@@ -849,11 +833,8 @@ impl PhyRxGainInitTransition {
         match (self.step, completion) {
             (
                 InitStep::CaptureDcControl,
-                PhyRxGainInitCompletion::DcControlCleared {
-                    address,
-                    saved_field,
-                },
-            ) if address == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS => {
+                PhyRxGainInitCompletion::DcControlCleared { saved_field },
+            ) => {
                 self.step = InitStep::Dc {
                     saved_field,
                     transition: PhyRxGainDcTransition::new(self.parameters.dc),
@@ -893,12 +874,9 @@ impl PhyRxGainInitTransition {
                     outcome,
                 },
                 PhyRxGainInitCompletion::DcControlRestored {
-                    address,
                     saved_field: completed_field,
                 },
-            ) if address == crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS
-                && completed_field == saved_field =>
-            {
+            ) if completed_field == saved_field => {
                 self.dc_outcome = Some(outcome);
                 self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
                     self.memory_with_dc(outcome),
@@ -951,7 +929,7 @@ pub struct PhyRxGainInitMmioBinding {
 impl PhyRxGainInitMmioBinding {
     pub fn new(action: PhyRxGainInitAction) -> Result<Self, PhyRxGainInitBindingError> {
         match action {
-            PhyRxGainInitAction::CaptureAndClearDcControl { .. }
+            PhyRxGainInitAction::CaptureAndClearDcControl
             | PhyRxGainInitAction::RestoreDcControl { .. }
             | PhyRxGainInitAction::ConfigureLimits { .. }
             | PhyRxGainInitAction::EnableIqCorrection => Ok(Self { action }),
@@ -969,37 +947,14 @@ impl PhyRxGainInitMmioBinding {
         registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
     ) -> PhyRxGainInitCompletion {
         match self.action {
-            PhyRxGainInitAction::CaptureAndClearDcControl {
-                address,
-                field_mask,
-            } => {
-                debug_assert_eq!(address, crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS);
-                debug_assert_eq!(
-                    field_mask,
-                    crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
-                );
+            PhyRxGainInitAction::CaptureAndClearDcControl => {
                 let saved_field =
                     open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(registers);
-                PhyRxGainInitCompletion::DcControlCleared {
-                    address,
-                    saved_field,
-                }
+                PhyRxGainInitCompletion::DcControlCleared { saved_field }
             }
-            PhyRxGainInitAction::RestoreDcControl {
-                address,
-                field_mask,
-                saved_field,
-            } => {
-                debug_assert_eq!(address, crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_ADDRESS);
-                debug_assert_eq!(
-                    field_mask,
-                    crate::phy_rx_gain_cal::PHY_RX_DC_CONTROL_FIELD_MASK
-                );
+            PhyRxGainInitAction::RestoreDcControl { saved_field } => {
                 open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers, saved_field);
-                PhyRxGainInitCompletion::DcControlRestored {
-                    address,
-                    saved_field,
-                }
+                PhyRxGainInitCompletion::DcControlRestored { saved_field }
             }
             PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
                 open_esp_radio_esp32s31_hal::phy_agc::configure_rx_gain_limits(
@@ -1159,6 +1114,33 @@ mod tests {
                 bank,
                 transaction,
             })
+        );
+    }
+
+    #[test]
+    fn work_mode_pulse_uses_the_vendor_two_microsecond_delay() {
+        let mut transition = PhyRxGainPublishTransition::new(parameters());
+        transition.step = Step::WorkModePulseDelay {
+            bank: PhyRxGainBank::Wifi,
+            failure: None,
+        };
+        assert_eq!(
+            transition.action(),
+            PhyRxGainPublishAction::DelayMicros {
+                phase: PhyRxGainDelayPhase::PbusWorkModePulse {
+                    bank: PhyRxGainBank::Wifi,
+                },
+                micros: 2,
+            }
+        );
+        assert_eq!(
+            transition.advance(PhyRxGainPublishCompletion::DelayElapsed {
+                phase: PhyRxGainDelayPhase::PbusWorkModePulse {
+                    bank: PhyRxGainBank::Wifi,
+                },
+                micros: 1,
+            }),
+            Err(PhyRxGainPublishTransitionError::WrongCompletion)
         );
     }
 }

@@ -16,24 +16,24 @@
 
 use crate::{phy_dc_iq::phy_linear_to_db, phy_pbus::PhyPbusForceTest};
 
-pub const PHY_PWDET_READY_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_baseband_config_oracle::
-        POWER_DETECTOR_SAR_CONTROL_STATUS
-        .address();
-pub const PHY_PWDET_READY_MASK: u32 =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_baseband_config_oracle::
-        power_detector_sar_control_status::SAR_READY
-        .mask();
-pub const PHY_PWDET_READY_VALUE: u32 = PHY_PWDET_READY_MASK;
-pub const PHY_PWDET_SAR_SAMPLE_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_baseband_config_oracle::
-        POWER_DETECTOR_SAR_RESULT
-        .address();
 // Complete rev0 ROM `phy_pwdet_ref_code+0x24` and `+0x50` load `a0 = 4`
 // before calling the runtime-table `phy_get_tone_sar_dout_` leaf. That leaf
 // repeats `phy_pwdet_tone_start`/`phy_read_sar_dout` exactly `a0` times and
 // returns the unsigned average.
 pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 4;
+
+/// Complete pinned `libphy.a` compatibility leaf.
+///
+/// The ESP32-S31 archive body is exactly one `ret` instruction; power-detector
+/// ownership is instead expressed by the surrounding Rust state machine.
+#[inline]
+pub const fn phy_pwdet_always_en() {}
+
+/// Complete pinned `libphy.a` compatibility leaf.
+///
+/// Like [`phy_pwdet_always_en`], the vendor body has no observable operation.
+#[inline]
+pub const fn phy_pwdet_onetime_en() {}
 
 const ENTER_PBUS_COUNT: u8 = 15;
 const EXIT_PBUS_COUNT: u8 = 7;
@@ -106,9 +106,6 @@ pub enum PhyPwdetAction {
     PollSarReady {
         measurement_index: u8,
         sample_index: u8,
-        address: usize,
-        mask: u32,
-        expected: u32,
     },
     ClearToneArm {
         measurement_index: u8,
@@ -117,7 +114,6 @@ pub enum PhyPwdetAction {
     ReadSarSample {
         measurement_index: u8,
         sample_index: u8,
-        address: usize,
     },
     StopTone,
     ConfigurePbusWorkMode,
@@ -156,8 +152,7 @@ pub enum PhyPwdetCompletion {
     SarReadySampled {
         measurement_index: u8,
         sample_index: u8,
-        address: usize,
-        register_value: u32,
+        ready: bool,
     },
     SarReadyDeadlineElapsed {
         measurement_index: u8,
@@ -170,8 +165,7 @@ pub enum PhyPwdetCompletion {
     SarSampled {
         measurement_index: u8,
         sample_index: u8,
-        address: usize,
-        register_value: u32,
+        value: u16,
     },
     ToneStopped,
     PbusWorkModeConfigured {
@@ -331,11 +325,6 @@ const fn terminal_step(terminal: PhyPwdetTerminal) -> PhyPwdetStep {
     }
 }
 
-/// Extract the exact upper 13-bit sample used by `phy_get_tone_sar_dout_`.
-pub const fn sar_sample_from_register(register_value: u32) -> u16 {
-    ((register_value >> 17) & 0x1fff) as u16
-}
-
 /// Reproduce `phy_get_sar_sig_ref` using explicit Rust-owned reference codes.
 pub const fn sar_signal_reference(sample: u16, reference_codes: [i16; 2]) -> [i16; 2] {
     let sample = sample.wrapping_add(25);
@@ -446,9 +435,6 @@ impl PhyPwdetTransition {
             } => PhyPwdetAction::PollSarReady {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_READY_ADDRESS,
-                mask: PHY_PWDET_READY_MASK,
-                expected: PHY_PWDET_READY_VALUE,
             },
             PhyPwdetStep::ClearToneArm {
                 measurement_index,
@@ -465,7 +451,6 @@ impl PhyPwdetTransition {
             } => PhyPwdetAction::ReadSarSample {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
             },
             PhyPwdetStep::WriteFinalReferenceControl => {
                 PhyPwdetAction::WriteReferenceControl { value: 0xaaaa }
@@ -612,11 +597,10 @@ impl PhyPwdetTransition {
                 PhyPwdetCompletion::SarReadySampled {
                     measurement_index: completed_measurement,
                     sample_index: completed_sample,
-                    address: PHY_PWDET_READY_ADDRESS,
-                    register_value,
+                    ready,
                 },
             ) if completed_measurement == measurement_index && completed_sample == sample_index => {
-                if register_value & PHY_PWDET_READY_MASK != PHY_PWDET_READY_VALUE {
+                if !ready {
                     PhyPwdetStep::PollSarReady {
                         measurement_index,
                         sample_index,
@@ -680,12 +664,10 @@ impl PhyPwdetTransition {
                 PhyPwdetCompletion::SarSampled {
                     measurement_index: completed_measurement,
                     sample_index: completed_sample,
-                    address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
-                    register_value,
+                    value,
                 },
             ) if completed_measurement == measurement_index && completed_sample == sample_index => {
-                let sample_sum =
-                    sample_sum.wrapping_add(u32::from(sar_sample_from_register(register_value)));
+                let sample_sum = sample_sum.wrapping_add(u32::from(value));
                 if sample_index + 1 != PHY_PWDET_SAMPLES_PER_REFERENCE {
                     PhyPwdetStep::ArmTone {
                         measurement_index,
@@ -804,7 +786,6 @@ pub enum PhyPwdetBindingError {
 pub struct PhyPwdetReadyBinding {
     measurement_index: u8,
     sample_index: u8,
-    address: usize,
 }
 
 impl PhyPwdetReadyBinding {
@@ -813,13 +794,9 @@ impl PhyPwdetReadyBinding {
             PhyPwdetAction::PollSarReady {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_READY_ADDRESS,
-                mask: PHY_PWDET_READY_MASK,
-                expected: PHY_PWDET_READY_VALUE,
             } => Ok(Self {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_READY_ADDRESS,
             }),
             _ => Err(PhyPwdetBindingError::NotReadyPoll),
         }
@@ -833,10 +810,7 @@ impl PhyPwdetReadyBinding {
         PhyPwdetCompletion::SarReadySampled {
             measurement_index: self.measurement_index,
             sample_index: self.sample_index,
-            address: self.address,
-            register_value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_ready(
-                registers,
-            ),
+            ready: open_esp_radio_esp32s31_hal::phy_power_detector::sample_ready(registers),
         }
     }
 }
@@ -942,14 +916,10 @@ impl PhyPwdetMmioBinding {
             PhyPwdetAction::ReadSarSample {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
             } => PhyPwdetCompletion::SarSampled {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
-                register_value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_sar(
-                    registers,
-                ),
+                value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_sar(registers),
             },
             PhyPwdetAction::StopTone => {
                 crate::radio_hal::stop_phy_power_detector_tone(registers);
@@ -987,7 +957,6 @@ pub enum PhyPwdetPbusObservation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPwdetPbusBindingError {
     NotPbusAction,
-    BusyAtStart,
     WrongEdge,
     AlreadyComplete,
     Incomplete,
@@ -1097,9 +1066,6 @@ fn map_pbus_hardware_error(
     error: crate::phy_pbus::PhyPbusHardwareBindingError,
 ) -> PhyPwdetPbusBindingError {
     match error {
-        crate::phy_pbus::PhyPbusHardwareBindingError::BusyAtStart => {
-            PhyPwdetPbusBindingError::BusyAtStart
-        }
         crate::phy_pbus::PhyPbusHardwareBindingError::WrongEdge => {
             PhyPwdetPbusBindingError::WrongEdge
         }
@@ -1252,8 +1218,7 @@ mod tests {
             .advance(PhyPwdetCompletion::SarReadySampled {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_READY_ADDRESS,
-                register_value: 0,
+                ready: false,
             })
             .unwrap();
         assert_eq!(transition.action(), poll);
@@ -1261,8 +1226,7 @@ mod tests {
             .advance(PhyPwdetCompletion::SarReadySampled {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_READY_ADDRESS,
-                register_value: PHY_PWDET_READY_VALUE,
+                ready: true,
             })
             .unwrap();
         transition
@@ -1275,8 +1239,7 @@ mod tests {
             .advance(PhyPwdetCompletion::SarSampled {
                 measurement_index,
                 sample_index,
-                address: PHY_PWDET_SAR_SAMPLE_ADDRESS,
-                register_value: u32::from(sample) << 17,
+                value: sample,
             })
             .unwrap();
     }
@@ -1454,8 +1417,7 @@ mod tests {
     }
 
     #[test]
-    fn pure_sar_translation_matches_rom_bit_and_unsigned_rules() {
-        assert_eq!(sar_sample_from_register(0x1fff << 17), 0x1fff);
+    fn pure_sar_translation_matches_rom_unsigned_rules() {
         assert_eq!(sar_signal_reference(100, [25, 75]), [100, 50]);
         assert_eq!(sar_signal_reference(0xffff, [0, -1]), [24, -1]);
     }
@@ -1535,9 +1497,6 @@ mod tests {
             PhyPwdetExternalBinding::lower(PhyPwdetAction::PollSarReady {
                 measurement_index: 0,
                 sample_index: 0,
-                address: PHY_PWDET_READY_ADDRESS,
-                mask: PHY_PWDET_READY_MASK,
-                expected: PHY_PWDET_READY_VALUE,
             }),
             Ok(PhyPwdetExternalBinding::Ready(_))
         ));

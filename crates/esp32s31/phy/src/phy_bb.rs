@@ -8,10 +8,16 @@
 //!
 //! The first complete child is
 //! `libphy.a[phy_tx_gain.o]::phy_set_tx_cfr_mem`, size `0x76`, called by the
-//! parent with exactly 32 entries. The reference reads the high byte of
-//! `0x2010_0408` once, then performs four finite MMIO accesses per entry. It
-//! has no callback, allocation, hidden software state, wait, delay, or
-//! hardware-dependent exit.
+//! parent with exactly 32 entries. The reference reads
+//! `TABLE_MEMORY_INDEX_SOURCE.BASE_INDEX` once, then performs four finite MMIO
+//! accesses per entry. It has no callback, allocation, hidden software state,
+//! wait, delay, or hardware-dependent exit.
+
+/// Complete pinned `libphy.a` compatibility leaf.
+///
+/// The ESP32-S31 `set_bb_wdg` body is exactly one `ret` instruction.
+#[inline]
+pub const fn set_bb_wdg() {}
 
 pub const PHY_TX_CFR_ENTRY_COUNT: u8 = 32;
 const PHY_TX_CFR_DATA_PREFIX_ENTRY_COUNT: u8 = 10;

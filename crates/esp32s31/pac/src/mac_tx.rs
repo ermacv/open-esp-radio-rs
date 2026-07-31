@@ -132,6 +132,17 @@ const fn physical_bank(queue: u8) -> usize {
 }
 
 impl RadioRegisters {
+    /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca` to the
+    /// two Wi-Fi MAC CCA fields through separate fresh-read updates.
+    pub fn set_phy_wifi_cca_enabled(&mut self, enabled: bool) {
+        let image = if enabled { 0 } else { 2 };
+        let control = self.peripherals.wifi_mac_tx_common.cca_control();
+        // SAFETY: both complete ROM encodings fit the generated two-bit
+        // fields.
+        control.modify(|_, w| unsafe { w.force().bits(image) });
+        control.modify(|_, w| unsafe { w.phy_aux_force().bits(image) });
+    }
+
     /// Sample the complete HE vector for one ordinary logical queue.
     ///
     /// SOURCE: the same generated-PAC identities and logical-to-physical

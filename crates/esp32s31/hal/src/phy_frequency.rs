@@ -75,13 +75,13 @@ pub fn clear_channel_switch(registers: &mut RadioRegisters) {
 
 /// Sample the channel parent's frequency-ready word exactly once.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_frequency_ready(registers: &mut RadioRegisters) -> u32 {
-    registers.sample_frequency_ready_image()
+pub fn sample_frequency_ready(registers: &mut RadioRegisters) -> bool {
+    registers.frequency_ready()
 }
 
 /// Apply complete rev0 ROM `phy_nrx_freq_set`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_nrx_frequency(registers: &mut RadioRegisters, frequency: u16) {
+pub fn configure_nrx_frequency(registers: &mut RadioRegisters, frequency: u32) {
     registers.configure_nrx_frequency(frequency);
 }
 
@@ -117,7 +117,7 @@ pub fn publish_tx_cap(registers: &mut RadioRegisters, value: u8) {
 
 /// Apply complete rev0 ROM `phy_bb_cbw_chan_cfg`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_channel_cbw(registers: &mut RadioRegisters, cbw: u8) {
+pub fn configure_channel_cbw(registers: &mut RadioRegisters, cbw: u32) {
     registers.configure_channel_cbw(cbw);
 }
 

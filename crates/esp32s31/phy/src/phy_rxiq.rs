@@ -470,6 +470,11 @@ fn decode_txiq_coefficient(value: u16) -> [i8; 2] {
     [gain, phase]
 }
 
+/// Exact non-I/O arithmetic of complete rev0 ROM `phy_abs_temp`.
+pub const fn phy_abs_temp(value: i32) -> u32 {
+    value.wrapping_abs() as u32
+}
+
 /// Exact non-I/O arithmetic from `phy_get_txiq_set`.
 pub fn adjusted_txiq_coefficient(
     parameters: PhyRxIqAdjustedTxParameters,
@@ -479,7 +484,7 @@ pub fn adjusted_txiq_coefficient(
     let temperature_delta = parameters
         .current_temperature
         .wrapping_sub(parameters.calibration_temperature) as i16;
-    let absolute_temperature = i32::from(temperature_delta).wrapping_abs();
+    let absolute_temperature = phy_abs_temp(i32::from(temperature_delta)) as i32;
     let temperature_correction = if absolute_temperature < 20 {
         temperature_delta / -3
     } else {
@@ -3015,6 +3020,13 @@ impl PhyRxIqInitExternalBinding {
 mod tests {
     use super::*;
 
+    #[test]
+    fn absolute_temperature_matches_rv32_wrapping_abs() {
+        assert_eq!(phy_abs_temp(0), 0);
+        assert_eq!(phy_abs_temp(-123), 123);
+        assert_eq!(phy_abs_temp(i32::MIN), 0x8000_0000);
+    }
+
     const POWER_REQUEST: PhyRxIqEstimatorRequest = PhyRxIqEstimatorRequest {
         identity: 7,
         control: 0x3ff,
@@ -3238,11 +3250,8 @@ mod tests {
 
     fn dco_completion(action: PhyRxDcoAction) -> PhyRxDcoCompletion {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl { address, .. } => {
-                PhyRxDcoCompletion::RxDcoControlMasked {
-                    address,
-                    saved_field: 0,
-                }
+            PhyRxDcoAction::MaskRxDcoControl => {
+                PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 0 }
             }
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
@@ -3256,14 +3265,9 @@ mod tests {
                 PhyRxDcoCompletion::DelayElapsed { iteration, micros }
             }
             PhyRxDcoAction::DcIq(action) => PhyRxDcoCompletion::DcIq(dc_iq_completion(action)),
-            PhyRxDcoAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            } => PhyRxDcoCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            },
+            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
+                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
+            }
             action => panic!("unexpected RX-DCO terminal: {action:?}"),
         }
     }
@@ -3646,10 +3650,7 @@ mod tests {
         ));
         assert!(matches!(
             PhyRxIqGainExternalBinding::lower(PhyRxIqGainAction::Dco(
-                PhyRxDcoAction::MaskRxDcoControl {
-                    address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS,
-                    clear_mask: crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK,
-                }
+                PhyRxDcoAction::MaskRxDcoControl
             )),
             Ok(PhyRxIqGainExternalBinding::Dco(_))
         ));

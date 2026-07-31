@@ -20,18 +20,19 @@ const fn bss_tx_offset(cbw: u8) -> u8 {
     }
 }
 
-const fn channel_cbw_fields(cbw: u8) -> ChannelCbwFields {
+const fn channel_cbw_fields(cbw: u32) -> ChannelCbwFields {
     let high = cbw >> 4;
     if high != 0 {
-        let normalized = high.wrapping_sub(1);
+        let normalized = high.wrapping_sub(1) as u8;
+        let low = cbw as u8 & 0x0f;
         ChannelCbwFields {
-            tx_offset: normalized,
-            control_0: normalized & 3,
-            control_1_high: (normalized >> 2) & 7,
+            tx_offset: low,
+            control_0: low & 3,
+            control_1_high: normalized & 7,
             control_1_low: normalized & 3,
         }
     } else {
-        let low = cbw & 0x0f;
+        let low = cbw as u8 & 0x0f;
         let normalized = low.saturating_sub(2);
         ChannelCbwFields {
             tx_offset: normalized,
@@ -42,11 +43,21 @@ const fn channel_cbw_fields(cbw: u8) -> ChannelCbwFields {
     }
 }
 
-fn nrx_frequency_image(shift_source: u32, previous: u32, frequency: u16) -> u32 {
-    assert!(frequency != 0, "NRX frequency must be nonzero");
+const fn rv32_signed_div(dividend: i32, divisor: i32) -> i32 {
+    if divisor == 0 {
+        -1
+    } else if dividend == i32::MIN && divisor == -1 {
+        i32::MIN
+    } else {
+        dividend / divisor
+    }
+}
+
+fn nrx_frequency_image(shift_source: u32, previous: u32, frequency: u32) -> u32 {
     let shift = shift_source >> 24;
-    let quotient = 0x50_u32.wrapping_shl(shift) / u32::from(frequency);
-    (previous & 0xff00_0000) | (quotient & 0x000f_ffff)
+    let numerator = 0x50_u32.wrapping_shl(shift) as i32;
+    let quotient = rv32_signed_div(numerator, frequency as i32) as u32;
+    (previous & 0xff00_0000) | (quotient & 0x00ff_ffff)
 }
 
 impl RadioRegisters {
@@ -192,17 +203,18 @@ impl RadioRegisters {
             .modify(|_, w| w.channel_switch_pulse().clear_bit());
     }
 
-    /// Sample the complete frequency-ready word exactly once.
-    pub fn sample_frequency_ready_image(&mut self) -> u32 {
+    /// Sample the generated frequency-ready field exactly once.
+    pub fn frequency_ready(&mut self) -> bool {
         self.peripherals
             .phy_frequency_channel_oracle
             .frequency_parameter_1_status()
             .read()
-            .bits()
+            .frequency_ready()
+            .bit_is_set()
     }
 
     /// Apply complete rev0 ROM `phy_nrx_freq_set`.
-    pub fn configure_nrx_frequency(&mut self, frequency: u16) {
+    pub fn configure_nrx_frequency(&mut self, frequency: u32) {
         let register = self
             .peripherals
             .phy_frequency_channel_oracle
@@ -214,7 +226,7 @@ impl RadioRegisters {
         let previous = register.read().bits();
         let image = nrx_frequency_image(shift_source, previous, frequency);
         // SAFETY: `image` is the complete instruction-derived register image:
-        // the second sample's high byte plus the bounded twenty-bit quotient.
+        // the second sample's high byte plus the masked RV32 signed quotient.
         unsafe {
             register.write_with_zero(|w| w.bits(image));
         }
@@ -226,14 +238,10 @@ impl RadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .nrx_frequency_control();
-        // SAFETY: the complete ROM body replaces the generated 20- and
-        // four-bit fields with these bounded constants in one fresh RMW.
-        register.modify(|_, w| unsafe {
-            w.frequency_quotient_or_init_low_unknown()
-                .bits(0x0004_33af)
-                .init_middle_unknown()
-                .bits(0)
-        });
+        // SAFETY: the complete ROM body replaces the generated twenty-four
+        // bit multifunction field with this bounded initialization image.
+        register
+            .modify(|_, w| unsafe { w.frequency_quotient_or_init_low_unknown().bits(0x0004_33af) });
         // SAFETY: 0x17 fits the generated five-bit field.
         register.modify(|_, w| unsafe { w.shift_low_or_init_high_unknown().bits(0x17) });
     }
@@ -268,14 +276,25 @@ impl RadioRegisters {
     }
 
     /// Apply the four fresh-read replacements of complete `phy_bb_cbw_chan_cfg`.
-    pub fn configure_channel_cbw(&mut self, cbw: u8) {
+    pub fn configure_channel_cbw(&mut self, cbw: u32) {
         let fields = channel_cbw_fields(cbw);
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        // SAFETY: all values are masked or branch-bounded to their generated
-        // four-, two-, three-, and two-bit field widths.
-        frequency
-            .channel_tx_offset_control()
-            .modify(|_, w| unsafe { w.channel_offset_unknown().bits(fields.tx_offset) });
+        // The ROM clears the low nibble and then ORs the complete normalized
+        // byte. Bits 7:4 overlap the low four bits of the independently named
+        // six-bit minimum-power field, so both generated fields participate in
+        // this single fresh-read RMW.
+        frequency.channel_tx_offset_control().modify(|r, w| {
+            // SAFETY: the first value is nibble-masked. The second preserves
+            // generated field bits 5:4 and replaces only bits 3:0.
+            unsafe {
+                w.channel_offset_unknown()
+                    .bits(fields.tx_offset & 0x0f)
+                    .minimum_power_index()
+                    .bits((r.minimum_power_index().bits() & 0x30) | (fields.tx_offset >> 4))
+            }
+        });
+        // SAFETY: the remaining values are masked or branch-bounded to their
+        // generated two-, three-, and two-bit field widths.
         frequency
             .channel_cbw_control_0()
             .modify(|_, w| unsafe { w.cbw_low_unknown().bits(fields.control_0) });
@@ -314,7 +333,9 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChannelCbwFields, bss_tx_offset, channel_cbw_fields, nrx_frequency_image};
+    use super::{
+        ChannelCbwFields, bss_tx_offset, channel_cbw_fields, nrx_frequency_image, rv32_signed_div,
+    };
 
     #[test]
     fn bss_offsets_retain_complete_rom_branches() {
@@ -348,19 +369,43 @@ mod tests {
         assert_eq!(
             channel_cbw_fields(0x50),
             ChannelCbwFields {
-                tx_offset: 4,
+                tx_offset: 0,
                 control_0: 0,
-                control_1_high: 1,
+                control_1_high: 4,
                 control_1_low: 0,
             }
+        );
+        assert_eq!(
+            channel_cbw_fields(0x53),
+            ChannelCbwFields {
+                tx_offset: 3,
+                control_0: 3,
+                control_1_high: 4,
+                control_1_low: 0,
+            }
+        );
+        assert_eq!(channel_cbw_fields(0x1_010), channel_cbw_fields(0x10));
+        assert_eq!(channel_cbw_fields(0x1_00f).tx_offset, 0x0f);
+    }
+
+    #[test]
+    fn nrx_image_preserves_second_high_byte_and_replaces_low_twenty_four_bits() {
+        assert_eq!(
+            nrx_frequency_image(0x0200_0000, 0xa5f0_1234, 2_462),
+            0xa500_0000
         );
     }
 
     #[test]
-    fn nrx_image_preserves_second_high_byte_and_clears_middle_nibble() {
+    fn nrx_division_matches_the_complete_rv32_input_domain() {
+        assert_eq!(rv32_signed_div(80, 0), -1);
+        assert_eq!(rv32_signed_div(i32::MIN, -1), i32::MIN);
+        assert_eq!(rv32_signed_div(-1_610_612_736, 7), -230_087_533);
+
+        assert_eq!(nrx_frequency_image(0, 0xa5f0_1234, 0), 0xa5ff_ffff);
         assert_eq!(
-            nrx_frequency_image(0x0200_0000, 0xa5f0_1234, 2_462),
-            0xa500_0000
+            nrx_frequency_image(0x1900_0000, 0xa5f0_1234, 7),
+            0xa549_2493
         );
     }
 }

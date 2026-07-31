@@ -13,6 +13,17 @@
 //! external completion. A missed lock remains ordinary outcome data; the
 //! non-terminating ROM search condition becomes a typed failure.
 
+/// Complete pinned `libphy.a` compatibility leaf; the ESP32-S31 body is one
+/// `ret` and does not touch shared RFPLL state.
+#[inline]
+pub const fn phy_bbpll_en_usb() {}
+
+/// Return the exact RF-calibration data version used by the pinned archive.
+#[inline]
+pub const fn phy_get_rf_cal_version() -> u32 {
+    100
+}
+
 use crate::phy_i2c::{PhyI2cAddress, analog_registers};
 
 const RFPLL_BLOCK: u8 = 0x62;
@@ -148,7 +159,7 @@ pub enum RfpllFrequencyCompletion {
     },
     ChannelSwitchCleared,
     ChannelReadyObserved {
-        value: u32,
+        ready: bool,
     },
     ChannelReadyTimedOut,
     NrxConfigured {
@@ -487,29 +498,21 @@ impl RfpllFrequencyTransition {
             {
                 RfpllFrequencyStep::ChannelStartDelay
             }
-            (
-                RfpllFrequencyStep::ChannelStartDelay,
-                RfpllFrequencyCompletion::DelayElapsed(1),
-            ) => RfpllFrequencyStep::ChannelClear,
-            (
-                RfpllFrequencyStep::ChannelClear,
-                RfpllFrequencyCompletion::ChannelSwitchCleared,
-            ) => RfpllFrequencyStep::ChannelSettleDelay,
+            (RfpllFrequencyStep::ChannelStartDelay, RfpllFrequencyCompletion::DelayElapsed(1)) => {
+                RfpllFrequencyStep::ChannelClear
+            }
+            (RfpllFrequencyStep::ChannelClear, RfpllFrequencyCompletion::ChannelSwitchCleared) => {
+                RfpllFrequencyStep::ChannelSettleDelay
+            }
             (
                 RfpllFrequencyStep::ChannelSettleDelay,
                 RfpllFrequencyCompletion::DelayElapsed(10),
             ) => RfpllFrequencyStep::ChannelReady { samples: 0 },
             (
                 RfpllFrequencyStep::ChannelReady { samples },
-                RfpllFrequencyCompletion::ChannelReadyObserved { value },
+                RfpllFrequencyCompletion::ChannelReadyObserved { ready },
             ) => {
-                if value
-                    & open_esp_radio_esp32s31_hal::radio_registers::
-                        phy_frequency_channel_oracle::frequency_parameter_1_status::
-                        FREQUENCY_READY
-                        .mask()
-                    != 0
-                {
+                if ready {
                     RfpllFrequencyStep::ChannelNrx
                 } else {
                     RfpllFrequencyStep::ChannelReady {
@@ -520,9 +523,11 @@ impl RfpllFrequencyTransition {
             (
                 RfpllFrequencyStep::ChannelReady { samples },
                 RfpllFrequencyCompletion::ChannelReadyTimedOut,
-            ) => RfpllFrequencyStep::Failed(
-                RfpllFrequencyFailure::FrequencyReadyDeadlineExceeded { samples },
-            ),
+            ) => {
+                RfpllFrequencyStep::Failed(RfpllFrequencyFailure::FrequencyReadyDeadlineExceeded {
+                    samples,
+                })
+            }
             (
                 RfpllFrequencyStep::ChannelNrx,
                 RfpllFrequencyCompletion::NrxConfigured { frequency_mhz },
@@ -924,7 +929,7 @@ impl RfpllFrequencyMmioBinding {
             }
             RfpllFrequencyAction::ReadChannelReady { .. } => {
                 RfpllFrequencyCompletion::ChannelReadyObserved {
-                    value: open_esp_radio_esp32s31_hal::phy_frequency::sample_frequency_ready(
+                    ready: open_esp_radio_esp32s31_hal::phy_frequency::sample_frequency_ready(
                         registers,
                     ),
                 }
@@ -932,7 +937,7 @@ impl RfpllFrequencyMmioBinding {
             RfpllFrequencyAction::ConfigureNrx { frequency_mhz } => {
                 open_esp_radio_esp32s31_hal::phy_frequency::configure_nrx_frequency(
                     registers,
-                    frequency_mhz,
+                    u32::from(frequency_mhz),
                 );
                 RfpllFrequencyCompletion::NrxConfigured { frequency_mhz }
             }
@@ -1214,7 +1219,7 @@ mod tests {
             RfpllFrequencyAction::ReadChannelReady { samples: 0 }
         );
         transition
-            .advance(RfpllFrequencyCompletion::ChannelReadyObserved { value: 1 << 8 })
+            .advance(RfpllFrequencyCompletion::ChannelReadyObserved { ready: true })
             .unwrap();
         assert_eq!(
             transition.action(),

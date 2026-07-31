@@ -13,7 +13,6 @@ fn main() {
         "OPEN_RADIO_FORCE_HT20",
         "OPEN_RADIO_FORCE_HE20",
         "OPEN_RADIO_FORCE_LEGACY_TX",
-        "OPEN_RADIO_FULL_SCAN",
         "OPEN_RADIO_HT_MCS",
         "OPEN_RADIO_HT_SGI",
         "OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM",

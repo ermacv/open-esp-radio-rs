@@ -124,12 +124,12 @@ pub fn read_signal_power(registers: &mut RadioRegisters) -> SignalPowerSnapshot 
     }
 }
 
-/// Read the shared activity/saturation status word exactly once.
+/// Sample the shared activity/saturation field exactly once.
 ///
 /// Complete pinned `libphy.a[phy_rx_cal.o]::phy_check_rx_sat`, size `0x76`,
 /// samples the PAC activity field exactly 100 times. The bounded repeat count
 /// remains in the caller-driven PHY transition.
 #[cfg(target_arch = "riscv32")]
-pub fn read_activity_status(registers: &mut RadioRegisters) -> u32 {
-    registers.read_iq_estimator_activity_image()
+pub fn sample_activity(registers: &mut RadioRegisters) -> bool {
+    registers.iq_estimator_active()
 }

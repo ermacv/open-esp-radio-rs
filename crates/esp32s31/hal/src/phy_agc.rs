@@ -26,6 +26,18 @@ pub fn set_enabled(registers: &mut RadioRegisters, enabled: bool) {
     registers.set_agc_enabled(enabled);
 }
 
+/// Select either complete ROM low-rate configuration leaf.
+#[cfg(target_arch = "riscv32")]
+pub fn set_low_rate_enabled(registers: &mut RadioRegisters, enabled: bool) {
+    registers.configure_phy_low_rate(enabled);
+}
+
+/// Read complete ROM `phy_is_low_rate_enabled`.
+#[cfg(target_arch = "riscv32")]
+pub fn low_rate_enabled(registers: &RadioRegisters) -> bool {
+    registers.phy_low_rate_enabled()
+}
+
 /// Apply all ten fresh-read updates of complete `phy_agc_reg_init`.
 #[cfg(target_arch = "riscv32")]
 pub fn initialize_registers(registers: &mut RadioRegisters, parameter_121: u8, parameter_120: u8) {
@@ -62,6 +74,24 @@ pub fn configure_antenna(registers: &mut RadioRegisters) {
     registers.configure_agc_antenna();
 }
 
+/// Apply complete rev0 ROM `phy_ant_dft_cfg`.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_antenna_diversity(registers: &mut RadioRegisters, enabled: u32) {
+    registers.configure_antenna_diversity(enabled);
+}
+
+/// Apply complete rev0 ROM `phy_force_rx_gain`.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_forced_rx_gain(registers: &mut RadioRegisters, enabled: u32, gain: u32) {
+    registers.configure_forced_rx_gain(enabled, gain);
+}
+
+/// Apply complete rev0 ROM `phy_rx11blr_cfg`.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_rx_11b_low_rate(registers: &mut RadioRegisters, input: u32) {
+    registers.configure_rx_11b_low_rate(input);
+}
+
 /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rf_rx_saturation(registers: &mut RadioRegisters, enabled: bool) {
@@ -78,6 +108,12 @@ pub fn configure_rx_gain_limits(registers: &mut RadioRegisters, wifi_last_index:
 #[cfg(target_arch = "riscv32")]
 pub fn set_saturation_gain(registers: &mut RadioRegisters, value: u32) {
     registers.set_agc_saturation_gain(value);
+}
+
+/// Apply complete pinned `libphy.a[phy_reg.o]::phy_set_ftm_en`.
+#[cfg(target_arch = "riscv32")]
+pub fn set_ftm_enabled(registers: &mut RadioRegisters, input: u32) {
+    registers.set_ftm_enabled(input & 1 != 0);
 }
 
 /// Apply complete pinned `phy_reg_update_new` and its finite children.

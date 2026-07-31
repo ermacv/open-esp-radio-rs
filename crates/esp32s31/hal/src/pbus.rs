@@ -8,10 +8,6 @@ use open_esp_radio_esp32s31_pac::RadioRegisters;
 pub enum PbusError {
     /// The hardware busy bit was set at the single allowed observation.
     Busy,
-    /// The caller supplied a selector outside the recovered four-bit field.
-    SelectorOutOfRange,
-    /// The caller supplied a path outside the recovered two-bit field.
-    PathOutOfRange,
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
@@ -69,36 +65,18 @@ pub fn configure_work_mode(registers: &mut RadioRegisters) -> bool {
     registers.wifi_baseband_is_enabled()
 }
 
-/// Publish one PBus force-test command after one fail-fast busy sample.
+/// Publish one PBus force-test command before the first busy sample.
 ///
 /// Basis: complete rev0 ROM `phy_pbus_force_test` at `0x2f824228`, size
 /// `0x42`. The combined argument mask and final transaction bit are exact.
 /// In particular, ROM accepts signed RX-DCO halfword images and retains their
 /// low eleven bits while composing the command; it does not reject values
-/// above the separately visible nine-bit PBus result window. Rust adds only
-/// the pre-publication busy rejection so ownership never overwrites an
-/// in-flight command.
+/// above the separately visible nine-bit PBus result window. Like ROM, this
+/// edge publishes first; completion sampling and its finite Rust deadline are
+/// owned by [`try_finish_force_test`].
 #[cfg(target_arch = "riscv32")]
-pub fn try_start_force_test(
-    registers: &mut RadioRegisters,
-    selector: u8,
-    path: u8,
-    test_value: u16,
-) -> Result<(), PbusError> {
-    if registers.pbus_is_busy() {
-        return Err(PbusError::Busy);
-    }
-    if selector > 0x0f {
-        return Err(PbusError::SelectorOutOfRange);
-    }
-    if path > 3 {
-        return Err(PbusError::PathOutOfRange);
-    }
-    let published = registers.publish_pbus_force_test(selector, path, test_value);
-    // The publication is the hardware edge, not a debug-only validation.
-    // SOURCE: rev0 ROM `phy_pbus_force_test` at 0x2f82_4228.
-    debug_assert!(published);
-    Ok(())
+pub fn start_force_test(registers: &mut RadioRegisters, selector: u8, path: u8, test_value: u16) {
+    registers.publish_pbus_force_test(selector, path, test_value);
 }
 
 /// Observe one force-test completion edge and clear its transaction bit.

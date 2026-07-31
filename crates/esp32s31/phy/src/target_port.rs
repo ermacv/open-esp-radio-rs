@@ -23,7 +23,7 @@ use crate::{
     },
     phy_cold::{
         PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-        PhyColdPbusError, PhyColdPbusObservation, PhyColdState,
+        PhyColdPbusObservation, PhyColdState,
     },
     phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
@@ -125,7 +125,7 @@ pub trait PhyTargetObserver {
         &mut self,
         _measurement_index: u8,
         _sample_index: u8,
-        _register_value: u32,
+        _sample_value: u16,
     ) {
     }
     fn rf_boundary(&mut self, _boundary: PhyRfBoundary) {}
@@ -961,11 +961,11 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 if let PhyPwdetCompletion::SarSampled {
                     measurement_index,
                     sample_index,
-                    register_value,
+                    value,
                     ..
                 } = completion
                 {
-                    observer.power_detector_sample(measurement_index, sample_index, register_value);
+                    observer.power_detector_sample(measurement_index, sample_index, value);
                 }
                 Ok(completion)
             }
@@ -1156,20 +1156,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyColdExternalBinding::Pbus(mut binding) => {
                 let registers = radio.registers_mut();
-                let mut started = false;
-                for _ in 0..HARDWARE_EDGE_LIMIT {
-                    match binding.start_target(registers) {
-                        Ok(()) => {
-                            started = true;
-                            break;
-                        }
-                        Err(PhyColdPbusError::BusyAtStart) => D::after_micros(1).await,
-                        Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
-                    }
-                }
-                if !started {
-                    return Err(PhyTargetPortError::HardwareEdgeTimedOut);
-                }
+                binding
+                    .start_target(registers)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
                 for _ in 0..HARDWARE_EDGE_LIMIT {
                     D::after_micros(1).await;
                     match binding

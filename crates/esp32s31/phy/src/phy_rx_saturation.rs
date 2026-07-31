@@ -12,10 +12,6 @@ use crate::phy_pbus::PhyPbusForceTest;
 
 pub const PHY_RX_SATURATION_DELAY_MICROS: u32 = 5;
 pub const PHY_RX_SATURATION_SAMPLE_COUNT: u8 = 100;
-pub const PHY_RX_SATURATION_STATUS_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_iq_estimator_oracle::ESTIMATOR_ACTIVITY_STATUS
-        .address();
-pub const PHY_RX_SATURATION_STATUS_MASK: u32 = 0x0030_0000;
 
 const PHY_RX_SATURATION_PBUS_COUNT: u8 = 11;
 
@@ -46,15 +42,8 @@ pub enum PhyRxSaturationOutcome {
 pub enum PhyRxSaturationAction {
     ConfigureDebugMode,
     ForcePbus(PhyPbusForceTest),
-    DelayMicros {
-        micros: u32,
-    },
-    SampleStatus {
-        address: usize,
-        activity_mask: u32,
-        sample_index: u8,
-        samples: u8,
-    },
+    DelayMicros { micros: u32 },
+    SampleStatus { sample_index: u8, samples: u8 },
     ConfigureWorkMode,
     Complete(PhyRxSaturationOutcome),
 }
@@ -64,14 +53,8 @@ pub enum PhyRxSaturationCompletion {
     DebugModeConfigured,
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
-    DelayElapsed {
-        micros: u32,
-    },
-    StatusSampled {
-        address: usize,
-        sample_index: u8,
-        register_value: u32,
-    },
+    DelayElapsed { micros: u32 },
+    StatusSampled { sample_index: u8, active: bool },
     CaptureTimedOut,
     WorkModeConfigured,
 }
@@ -128,8 +111,6 @@ impl PhyRxSaturationTransition {
             },
             PhyRxSaturationStep::Sample { sample_index, .. } => {
                 PhyRxSaturationAction::SampleStatus {
-                    address: PHY_RX_SATURATION_STATUS_ADDRESS,
-                    activity_mask: PHY_RX_SATURATION_STATUS_MASK,
                     sample_index,
                     samples: PHY_RX_SATURATION_SAMPLE_COUNT,
                 }
@@ -179,13 +160,11 @@ impl PhyRxSaturationTransition {
                     saturated_samples,
                 },
                 PhyRxSaturationCompletion::StatusSampled {
-                    address: PHY_RX_SATURATION_STATUS_ADDRESS,
                     sample_index: completed_index,
-                    register_value,
+                    active,
                 },
             ) if completed_index == sample_index => {
-                let saturated_samples = saturated_samples
-                    .wrapping_add((register_value & PHY_RX_SATURATION_STATUS_MASK != 0) as u8);
+                let saturated_samples = saturated_samples.wrapping_add(active as u8);
                 let next = sample_index + 1;
                 if next == PHY_RX_SATURATION_SAMPLE_COUNT {
                     PhyRxSaturationStep::WorkMode(PhyRxSaturationOutcome::Measured {
@@ -230,7 +209,6 @@ pub enum PhyRxSaturationSampleBindingError {
 /// itself performs one volatile read and cannot spin.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxSaturationSampleBinding {
-    address: usize,
     sample_index: u8,
 }
 
@@ -238,14 +216,9 @@ impl PhyRxSaturationSampleBinding {
     pub fn new(action: PhyRxSaturationAction) -> Result<Self, PhyRxSaturationSampleBindingError> {
         match action {
             PhyRxSaturationAction::SampleStatus {
-                address,
-                activity_mask: PHY_RX_SATURATION_STATUS_MASK,
                 sample_index,
                 samples: PHY_RX_SATURATION_SAMPLE_COUNT,
-            } if address == PHY_RX_SATURATION_STATUS_ADDRESS => Ok(Self {
-                address,
-                sample_index,
-            }),
+            } => Ok(Self { sample_index }),
             _ => Err(PhyRxSaturationSampleBindingError::NotStatusSample),
         }
     }
@@ -257,11 +230,8 @@ impl PhyRxSaturationSampleBinding {
         registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
     ) -> PhyRxSaturationCompletion {
         PhyRxSaturationCompletion::StatusSampled {
-            address: self.address,
             sample_index: self.sample_index,
-            register_value: open_esp_radio_esp32s31_hal::phy_iq_estimator::read_activity_status(
-                registers,
-            ),
+            active: open_esp_radio_esp32s31_hal::phy_iq_estimator::sample_activity(registers),
         }
     }
 }
@@ -474,21 +444,14 @@ mod tests {
             assert_eq!(
                 transition.action(),
                 PhyRxSaturationAction::SampleStatus {
-                    address: PHY_RX_SATURATION_STATUS_ADDRESS,
-                    activity_mask: PHY_RX_SATURATION_STATUS_MASK,
                     sample_index,
                     samples: PHY_RX_SATURATION_SAMPLE_COUNT,
                 }
             );
             transition
                 .advance(PhyRxSaturationCompletion::StatusSampled {
-                    address: PHY_RX_SATURATION_STATUS_ADDRESS,
                     sample_index,
-                    register_value: if sample_index < 7 {
-                        PHY_RX_SATURATION_STATUS_MASK
-                    } else {
-                        0
-                    },
+                    active: sample_index < 7,
                 })
                 .unwrap();
         }
@@ -509,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_rejects_wrong_address_and_index() {
+    fn sample_rejects_stale_index() {
         let mut transition = PhyRxSaturationTransition::new(0);
         transition
             .advance(PhyRxSaturationCompletion::DebugModeConfigured)
@@ -536,17 +499,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             transition.advance(PhyRxSaturationCompletion::StatusSampled {
-                address: PHY_RX_SATURATION_STATUS_ADDRESS + 4,
-                sample_index: 0,
-                register_value: PHY_RX_SATURATION_STATUS_MASK,
-            }),
-            Err(PhyRxSaturationTransitionError::InvalidCapture)
-        );
-        assert_eq!(
-            transition.advance(PhyRxSaturationCompletion::StatusSampled {
-                address: PHY_RX_SATURATION_STATUS_ADDRESS,
                 sample_index: 1,
-                register_value: PHY_RX_SATURATION_STATUS_MASK,
+                active: true,
             }),
             Err(PhyRxSaturationTransitionError::InvalidCapture)
         );
@@ -555,8 +509,6 @@ mod tests {
     #[test]
     fn sample_binding_accepts_only_exact_one_shot_poll_action() {
         let action = PhyRxSaturationAction::SampleStatus {
-            address: PHY_RX_SATURATION_STATUS_ADDRESS,
-            activity_mask: PHY_RX_SATURATION_STATUS_MASK,
             sample_index: 42,
             samples: PHY_RX_SATURATION_SAMPLE_COUNT,
         };
@@ -610,8 +562,6 @@ mod tests {
         ));
         assert!(matches!(
             PhyRxSaturationExternalBinding::lower(PhyRxSaturationAction::SampleStatus {
-                address: PHY_RX_SATURATION_STATUS_ADDRESS,
-                activity_mask: PHY_RX_SATURATION_STATUS_MASK,
                 sample_index: 0,
                 samples: PHY_RX_SATURATION_SAMPLE_COUNT,
             }),

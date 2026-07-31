@@ -49,7 +49,10 @@ impl RadioRegisters {
             .modify(|_, w| w.measurement_enable().bit(enabled));
     }
 
-    /// Sample the ready word and shared activity word exactly once each.
+    /// Sample readiness, and sample activity only while readiness is clear.
+    ///
+    /// Complete ROM `phy_iq_est_enable` returns immediately from a ready
+    /// observation. Its activity read belongs only to the not-ready branch.
     pub fn sample_iq_estimator_readiness(&mut self) -> (bool, bool) {
         let ready = self
             .peripherals
@@ -58,14 +61,15 @@ impl RadioRegisters {
             .read()
             .ready()
             .bit_is_set();
-        let activity = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .estimator_activity_status()
-            .read()
-            .activity_unknown()
-            .bits()
-            != 0;
+        let activity = !ready
+            && self
+                .peripherals
+                .phy_iq_estimator_oracle
+                .estimator_activity_status()
+                .read()
+                .activity_unknown()
+                .bits()
+                != 0;
         (ready, activity)
     }
 
@@ -167,16 +171,18 @@ impl RadioRegisters {
         [sum_i, difference_i, difference_q, sum_q]
     }
 
-    /// Read the complete shared estimator-activity register image once.
+    /// Sample the shared estimator-activity field once.
     ///
-    /// `phy_check_rx_sat` consumes the raw image after its own mask/shift;
-    /// the bounded 100-sample policy remains in the upper PHY transition.
-    pub fn read_iq_estimator_activity_image(&mut self) -> u32 {
+    /// The bounded 100-sample policy remains in the upper PHY transition;
+    /// physical register identity and field extraction remain in the PAC.
+    pub fn iq_estimator_active(&mut self) -> bool {
         self.peripherals
             .phy_iq_estimator_oracle
             .estimator_activity_status()
             .read()
+            .activity_unknown()
             .bits()
+            != 0
     }
 }
 

@@ -14,6 +14,22 @@
 //! Keeping the sparse nonzero bytes here avoids retaining the vendor object
 //! merely to obtain its initial data.
 
+/// Return the exact pinned ESP32-S31 RF-data record count.
+///
+/// This vendor constant is deliberately not derived from `PHY_PARAM_LEN`:
+/// the compiled archive returns 0x20c while its mutable parameter image is
+/// smaller.
+#[inline]
+pub const fn phy_get_rfdata_num() -> u32 {
+    0x20c
+}
+
+/// Complete pinned `libphy.a::phy_internal_delay` compatibility leaf.
+#[inline]
+pub const fn phy_internal_delay() -> u32 {
+    0
+}
+
 use crate::{
     phy_dc_iq::{
         PhyDcIqAccumulatorSnapshot, PhyDcIqAction, PhyDcIqCompletion, PhyDcIqEstimateRequest,
@@ -138,11 +154,29 @@ impl Default for PhyCalibrationRecord {
 ///
 /// The type deliberately is neither `Copy` nor `Clone`.  Moving it transfers
 /// ownership; duplicating the live radio state is not a supported operation.
-/// Alignment matches `.data.phy_param` in the pinned archive and permits a
-/// later direct ABI publication without changing the representation.
+/// The temporary backing image retains the alignment of `.data.phy_param` so
+/// not-yet-typed fields survive migration. Its layout is not a public state
+/// contract; consumers use semantic snapshots and outcomes.
 #[repr(C, align(4))]
 pub struct PhyColdState {
     parameter: [u8; PHY_PARAM_LEN],
+}
+
+/// Semantic view of the live 802.11p configuration.
+///
+/// The backing vendor image stays private so trace probes and future typed
+/// state owners do not depend on its migration-only byte offsets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyDot11pConfiguration {
+    pub enabled: u8,
+    pub configuration: u8,
+}
+
+/// Semantic view of the temperature-tracking debug parameters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyTemperatureTrackingDebug {
+    pub first: u8,
+    pub second: u8,
 }
 
 impl PhyColdState {
@@ -158,6 +192,79 @@ impl PhyColdState {
 
     pub const fn parameter_image(&self) -> &[u8; PHY_PARAM_LEN] {
         &self.parameter
+    }
+
+    /// Apply complete rev0 ROM `phy_txpwr_track_slow` to explicitly owned
+    /// state instead of the vendor `phy_param` global.
+    pub fn set_tx_power_tracking_slow(&mut self, value: u8) {
+        self.parameter[0x1ab] = value;
+    }
+
+    pub const fn tx_power_tracking_slow(&self) -> u8 {
+        self.parameter[0x1ab]
+    }
+
+    /// Apply complete pinned `libphy.a::phy_11p_set` to explicitly owned
+    /// state instead of the vendor `phy_param` global.
+    pub fn set_dot11p_configuration(&mut self, enabled: u8, configuration: u8) {
+        self.parameter[0x028] = enabled;
+        self.parameter[0x029] = configuration;
+    }
+
+    pub const fn dot11p_configuration(&self) -> PhyDot11pConfiguration {
+        PhyDot11pConfiguration {
+            enabled: self.parameter[0x028],
+            configuration: self.parameter[0x029],
+        }
+    }
+
+    /// Apply complete pinned `phy_current_level_set` to owned state.
+    pub fn set_current_level(&mut self, value: u8) {
+        self.parameter[0x02c] = value;
+    }
+
+    pub const fn current_level(&self) -> u8 {
+        self.parameter[0x02c]
+    }
+
+    /// Apply complete pinned `phy_bt_power_track` to the BT-owned parameter.
+    pub fn set_bt_power_tracking(&mut self, value: u8) {
+        self.parameter[0x00b] = value;
+    }
+
+    pub const fn bt_power_tracking(&self) -> u8 {
+        self.parameter[0x00b]
+    }
+
+    /// Apply complete pinned `phy_ble_set_chan_base` to the BLE-owned byte.
+    pub fn set_ble_channel_base(&mut self, value: u8) {
+        self.parameter[0x193] = value;
+    }
+
+    pub const fn ble_channel_base(&self) -> u8 {
+        self.parameter[0x193]
+    }
+
+    /// Apply complete pinned `phy_init_param_set` low-bit semantics.
+    pub fn set_initialization_parameter(&mut self, value: u32) {
+        self.parameter[0x196] = (value & 1) as u8;
+    }
+
+    pub const fn initialization_parameter(&self) -> bool {
+        self.parameter[0x196] != 0
+    }
+
+    /// Apply both owned state writes of complete `phy_track_temp_debug`.
+    pub fn set_temperature_tracking_debug(&mut self, first: u8, second: u8) {
+        self.parameter[0x1b0] = first;
+        self.parameter[0x1b1] = second;
+    }
+
+    pub const fn temperature_tracking_debug(&self) -> PhyTemperatureTrackingDebug {
+        PhyTemperatureTrackingDebug {
+            first: self.parameter[0x1b0],
+            second: self.parameter[0x1b1],
+        }
     }
 
     /// Snapshot the calibrated target-power state needed by cold MAC init.
@@ -197,14 +304,16 @@ impl PhyColdState {
         }
     }
 
-    /// Capture the explicit inputs and apply the sole software-state mutation
+    /// Capture the explicit inputs and apply the software-state mutation
     /// performed by pinned `phy_rx_table_init`.
     pub fn prepare_rx_table_init(&mut self) -> crate::phy_bb::PhyRxTableInitParameters {
-        let parameters = crate::phy_bb::PhyRxTableInitParameters {
+        let mut parameters = crate::phy_bb::PhyRxTableInitParameters {
             parameter_002: self.parameter[0x002],
             parameter_121: self.parameter[0x121],
         };
         self.parameter[0x120] = crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT;
+        self.parameter[0x121] = crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT;
+        parameters.parameter_121 = crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT;
         parameters
     }
 
@@ -2233,31 +2342,19 @@ fn lower_prefix_mmio_completion(
             )),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            }),
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl { saved_field }),
         )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
             XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                XtalDutyPrepareCompletion::RxDcoControlRestored {
-                    address,
-                    saved_field,
-                },
+                XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field },
             )),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
             XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                PhyRxDcoAction::RestoreRxDcoControl {
-                    address,
-                    saved_field,
-                    ..
-                },
+                PhyRxDcoAction::RestoreRxDcoControl { saved_field },
             )),
         )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
             XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
                 XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlRestored {
-                    address,
                     saved_field,
                 }),
             )),
@@ -2596,10 +2693,7 @@ pub enum PhyColdObservationRequest {
         maximum_cycles: u32,
     },
     ConfigurePbusWorkMode,
-    MaskRxDcoControl {
-        address: usize,
-        clear_mask: u32,
-    },
+    MaskRxDcoControl,
     ReadRxDcoPbus {
         selector: u8,
         path: u8,
@@ -2628,8 +2722,7 @@ pub enum PhyColdObservationResult {
         settle_required: bool,
     },
     RxDcoControlMasked {
-        address: usize,
-        saved_field: u32,
+        saved_field: u8,
     },
     RxDcoPbusRead {
         selector: u8,
@@ -2684,26 +2777,13 @@ impl PhyColdObservationBinding {
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigurePbusWorkMode),
             )) => PhyColdObservationRequest::ConfigurePbusWorkMode,
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl {
-                    address,
-                    clear_mask,
-                }),
+                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
             ))
             | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                    PhyRxDcoAction::MaskRxDcoControl {
-                        address,
-                        clear_mask,
-                    },
+                    PhyRxDcoAction::MaskRxDcoControl,
                 )),
-            )) if address == crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS
-                && clear_mask == crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK =>
-            {
-                PhyColdObservationRequest::MaskRxDcoControl {
-                    address,
-                    clear_mask,
-                }
-            }
+            )) => PhyColdObservationRequest::MaskRxDcoControl,
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
                     PhyRxDcoAction::ReadPbus { selector, path },
@@ -2794,37 +2874,24 @@ impl PhyColdObservationBinding {
             )),
             (
                 PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                    XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl {
-                        address,
-                        ..
-                    }),
+                    XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
                 )),
-                PhyColdObservationResult::RxDcoControlMasked {
-                    address: completed,
-                    saved_field,
-                },
-            ) if address == completed => Ok(PhyRfInitPrefixCompletion::XtalDuty(
+                PhyColdObservationResult::RxDcoControlMasked { saved_field },
+            ) => Ok(PhyRfInitPrefixCompletion::XtalDuty(
                 XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                    XtalDutyPrepareCompletion::RxDcoControlMasked {
-                        address,
-                        saved_field,
-                    },
+                    XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field },
                 )),
             )),
             (
                 PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                     XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                        PhyRxDcoAction::MaskRxDcoControl { address, .. },
+                        PhyRxDcoAction::MaskRxDcoControl,
                     )),
                 )),
-                PhyColdObservationResult::RxDcoControlMasked {
-                    address: completed,
-                    saved_field,
-                },
-            ) if address == completed => Ok(PhyRfInitPrefixCompletion::XtalDuty(
+                PhyColdObservationResult::RxDcoControlMasked { saved_field },
+            ) => Ok(PhyRfInitPrefixCompletion::XtalDuty(
                 XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
                     XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlMasked {
-                        address,
                         saved_field,
                     }),
                 )),
@@ -3004,13 +3071,10 @@ impl PhyColdObservationBinding {
                     open_esp_radio_esp32s31_hal::pbus::configure_work_mode(registers);
                 self.into_completion(PhyColdObservationResult::PbusWorkMode { settle_required })
             }
-            PhyColdObservationRequest::MaskRxDcoControl { address, .. } => {
+            PhyColdObservationRequest::MaskRxDcoControl => {
                 let saved_field =
                     open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(registers);
-                self.into_completion(PhyColdObservationResult::RxDcoControlMasked {
-                    address,
-                    saved_field,
-                })
+                self.into_completion(PhyColdObservationResult::RxDcoControlMasked { saved_field })
             }
             PhyColdObservationRequest::ReadRxDcoPbus { selector, path } => {
                 let value = u32::from(
@@ -3087,7 +3151,6 @@ pub enum PhyColdPbusHardwareResult {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyColdPbusError {
-    BusyAtStart,
     WrongEdge,
     AlreadyComplete,
 }
@@ -3188,16 +3251,12 @@ impl PhyColdPbusBinding {
                 PhyColdPbusError::WrongEdge
             });
         }
-        open_esp_radio_esp32s31_hal::pbus::try_start_force_test(
+        open_esp_radio_esp32s31_hal::pbus::start_force_test(
             registers,
             self.transaction.selector(),
             self.transaction.path(),
             self.transaction.value(),
-        )
-        .map_err(|error| match error {
-            open_esp_radio_esp32s31_hal::pbus::PbusError::Busy => PhyColdPbusError::BusyAtStart,
-            _ => PhyColdPbusError::WrongEdge,
-        })?;
+        );
         self.started()
     }
 
@@ -3218,7 +3277,6 @@ impl PhyColdPbusBinding {
             Err(open_esp_radio_esp32s31_hal::pbus::PbusError::Busy) => {
                 self.observe_result(PhyColdPbusHardwareResult::Busy)
             }
-            Err(_) => Err(PhyColdPbusError::WrongEdge),
         }
     }
 
@@ -3436,7 +3494,8 @@ mod tests {
         PhyColdI2cTransaction, PhyColdLoweringError, PhyColdMmioBinding, PhyColdObservationBinding,
         PhyColdObservationRequest, PhyColdObservationResult, PhyColdPbusAction, PhyColdPbusBinding,
         PhyColdPbusHardwareResult, PhyColdPbusObservation, PhyColdState, PhyColdTimerBinding,
-        initial_parameter_image, phy_sdm_deadline_expired,
+        PhyDot11pConfiguration, PhyTemperatureTrackingDebug, initial_parameter_image,
+        phy_sdm_deadline_expired,
     };
     use crate::phy_dc_iq::{
         PhyDcIqAccumulatorSnapshot, PhyDcIqAction, PhyDcIqCompletion, PhyDcIqDelayPhase,
@@ -3495,6 +3554,49 @@ mod tests {
     }
 
     #[test]
+    fn slow_tx_power_tracking_mutates_only_the_owned_vendor_byte() {
+        let mut state = PhyColdState::new();
+        let before = *state.parameter_image();
+        state.set_tx_power_tracking_slow(0x5a);
+        let after = state.parameter_image();
+        assert_eq!(after[0x1ab], 0x5a);
+        assert_eq!(&after[..0x1ab], &before[..0x1ab]);
+        assert_eq!(&after[0x1ac..], &before[0x1ac..]);
+    }
+
+    #[test]
+    fn semantic_state_views_do_not_expose_vendor_offsets() {
+        let mut state = PhyColdState::new();
+        state.set_dot11p_configuration(1, 0x5a);
+        state.set_current_level(0x34);
+        state.set_bt_power_tracking(0x12);
+        state.set_ble_channel_base(0x56);
+        state.set_initialization_parameter(u32::MAX);
+        state.set_temperature_tracking_debug(0x78, 0x9a);
+        state.set_tx_power_tracking_slow(0xbc);
+
+        assert_eq!(
+            state.dot11p_configuration(),
+            PhyDot11pConfiguration {
+                enabled: 1,
+                configuration: 0x5a,
+            }
+        );
+        assert_eq!(state.current_level(), 0x34);
+        assert_eq!(state.bt_power_tracking(), 0x12);
+        assert_eq!(state.ble_channel_base(), 0x56);
+        assert!(state.initialization_parameter());
+        assert_eq!(
+            state.temperature_tracking_debug(),
+            PhyTemperatureTrackingDebug {
+                first: 0x78,
+                second: 0x9a,
+            }
+        );
+        assert_eq!(state.tx_power_tracking_slow(), 0xbc);
+    }
+
+    #[test]
     fn state_is_aligned_unique_storage_with_the_exact_abi_size() {
         assert_eq!(PHY_COLD_PARAMETER_LEN, 0x1fc);
         assert_eq!(core::mem::size_of::<PhyColdState>(), 0x1fc);
@@ -3503,7 +3605,7 @@ mod tests {
     }
 
     #[test]
-    fn rx_table_preparation_mutates_only_the_explicit_owned_parameter() {
+    fn rx_table_preparation_reproduces_the_vendor_halfword_store() {
         let mut image = initial_parameter_image();
         image[0x121] = 0x4e;
         image[0x120] = 0xa5;
@@ -3513,11 +3615,11 @@ mod tests {
             state.prepare_rx_table_init(),
             crate::phy_bb::PhyRxTableInitParameters {
                 parameter_002: 0xbf,
-                parameter_121: 0x4e,
+                parameter_121: 0x4f,
             }
         );
         assert_eq!(state.parameter_image()[0x120], 0x4f);
-        assert_eq!(state.parameter_image()[0x121], 0x4e);
+        assert_eq!(state.parameter_image()[0x121], 0x4f);
     }
 
     #[test]
@@ -4383,45 +4485,19 @@ mod tests {
     }
 
     #[test]
-    fn nested_sampled_edges_are_one_shot_identity_bound_observations() {
+    fn nested_sampled_edges_are_one_shot_semantic_observations() {
         let mask_action = PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl {
-                address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS,
-                clear_mask: crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK,
-            }),
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
         ));
         let mask = PhyColdObservationBinding::new(mask_action).unwrap();
+        assert_eq!(mask.request(), PhyColdObservationRequest::MaskRxDcoControl);
         assert_eq!(
-            mask.request(),
-            PhyColdObservationRequest::MaskRxDcoControl {
-                address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS,
-                clear_mask: crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK,
-            }
-        );
-        assert_eq!(
-            mask.into_completion(PhyColdObservationResult::RxDcoControlMasked {
-                address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0x0080_0000,
-            }),
+            mask.into_completion(PhyColdObservationResult::RxDcoControlMasked { saved_field: 2 }),
             Ok(PhyRfInitPrefixCompletion::XtalDuty(
                 XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                    XtalDutyPrepareCompletion::RxDcoControlMasked {
-                        address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS,
-                        saved_field: 0x0080_0000,
-                    }
+                    XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 2 }
                 ))
             ))
-        );
-        assert_eq!(
-            PhyColdObservationBinding::new(PhyRfInitPrefixAction::XtalDuty(
-                XtalDutyCalibrationAction::Pass(XtalDutyPassAction::Prepare(
-                    XtalDutyPrepareAction::MaskRxDcoControl {
-                        address: crate::phy_rx_dco::RX_DCO_CONTROL_ADDRESS + 4,
-                        clear_mask: crate::phy_rx_dco::RX_DCO_CONTROL_FIELD_MASK,
-                    }
-                ))
-            )),
-            Err(PhyColdLoweringError::UnsupportedAction)
         );
 
         let pbus_action = PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(

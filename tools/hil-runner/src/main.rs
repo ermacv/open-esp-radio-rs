@@ -496,20 +496,15 @@ impl Scenario {
     const fn environment(self) -> &'static [(&'static str, &'static str)] {
         match self {
             Self::BootSmoke | Self::Radio => &[],
-            Self::Bidirectional => &[
-                ("OPEN_RADIO_RAW_MAC_BENCH", "1"),
-                ("OPEN_RADIO_FULL_SCAN", "1"),
-            ],
-            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_FULL_SCAN", "1")],
+            Self::Bidirectional => &[("OPEN_RADIO_RAW_MAC_BENCH", "1")],
+            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
             Self::Amsdu => &[
                 ("OPEN_RADIO_RAW_MAC_BENCH", "1"),
                 ("OPEN_RADIO_AMSDU_BENCH", "1"),
-                ("OPEN_RADIO_FULL_SCAN", "1"),
             ],
             Self::NetworkAmsdu => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_NETWORK_AMSDU_BENCH", "1"),
-                ("OPEN_RADIO_FULL_SCAN", "1"),
             ],
             Self::HeMcsGiMatrix => &[("OPEN_RADIO_HE_MATRIX_HIL", "1")],
             Self::HeLdpcMatrix => &[("OPEN_RADIO_HE_LDPC_HIL", "1")],
@@ -1081,7 +1076,7 @@ mod tests {
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {
-                if variable.starts_with("OPEN_RADIO_") && variable != &"OPEN_RADIO_FULL_SCAN" {
+                if variable.starts_with("OPEN_RADIO_") {
                     assert!(SCENARIO_ENVIRONMENT.contains(variable));
                 }
             }

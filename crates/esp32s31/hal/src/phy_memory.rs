@@ -41,6 +41,12 @@ pub fn configure_table_memory_base_index(registers: &mut RadioRegisters, index: 
     registers.configure_table_memory_base_index(index);
 }
 
+/// Apply complete rev0 ROM `phy_force_pwr_index`.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_forced_power_index(registers: &mut RadioRegisters, enabled: u32, index: u32) {
+    registers.configure_forced_power_index(enabled, index);
+}
+
 /// Publish one TX-CFR memory entry and its complete commit pulse.
 ///
 /// Basis: complete S31 `libphy.a[phy_tx_gain.o]::phy_set_tx_cfr_mem`, size

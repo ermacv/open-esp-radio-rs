@@ -112,6 +112,18 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.base_index().bits(index) });
     }
 
+    /// Apply complete rev0 ROM `phy_force_pwr_index` through its two ordered
+    /// fresh-read field replacements.
+    pub fn configure_forced_power_index(&mut self, enabled: u32, index: u32) {
+        let control = self
+            .peripherals
+            .phy_clock_oracle
+            .table_memory_index_source();
+        control.modify(|_, w| w.force_power_enable().bit(enabled & 1 != 0));
+        // SAFETY: retaining the low six bits fits the generated field.
+        control.modify(|_, w| unsafe { w.forced_power_index().bits(index as u8 & 0x3f) });
+    }
+
     /// Publish one TX-CFR entry and its complete set/clear commit pulse.
     pub fn program_tx_cfr_entry(&mut self, data: u32, index: u8) {
         // SAFETY: the full-width OPAQUE_DATA field accepts every u32 image.

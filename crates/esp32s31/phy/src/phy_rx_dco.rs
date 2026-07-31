@@ -14,12 +14,6 @@ use crate::phy_dc_iq::{
 pub use crate::phy_dc_iq::{PhyDcIqEstimate, PhyDcIqEstimateRequest};
 use crate::phy_pbus::PhyPbusForceTest;
 
-pub const RX_DCO_CONTROL_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_rx_dco_oracle::CONTROL.address();
-pub const RX_DCO_CONTROL_FIELD_MASK: u32 =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_rx_dco_oracle::control::CALIBRATION_CONTROL_UNKNOWN
-        .mask();
-
 const MAX_ITERATIONS: u8 = 12;
 const RX_DC_MINIMUM_MAX_ATTEMPTS: u8 = 8;
 
@@ -64,38 +58,25 @@ pub enum PhyRxDcoFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcoAction {
-    MaskRxDcoControl {
-        address: usize,
-        clear_mask: u32,
-    },
-    ReadPbus {
-        selector: u8,
-        path: u8,
-    },
+    MaskRxDcoControl,
+    ReadPbus { selector: u8, path: u8 },
     ForcePbus(PhyPbusForceTest),
-    DelayMicros {
-        iteration: u8,
-        micros: u32,
-    },
+    DelayMicros { iteration: u8, micros: u32 },
     DcIq(PhyDcIqAction),
-    RestoreRxDcoControl {
-        address: usize,
-        field_mask: u32,
-        saved_field: u32,
-    },
+    RestoreRxDcoControl { saved_field: u8 },
     Complete(PhyRxDcoOutcome),
     Failed(PhyRxDcoFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcoCompletion {
-    RxDcoControlMasked { address: usize, saved_field: u32 },
+    RxDcoControlMasked { saved_field: u8 },
     PbusRead { selector: u8, path: u8, value: u32 },
     PbusForceCompleted(PhyPbusForceTest),
     PbusForceTimedOut(PhyPbusForceTest),
     DelayElapsed { iteration: u8, micros: u32 },
     DcIq(PhyDcIqCompletion),
-    RxDcoControlRestored { address: usize, saved_field: u32 },
+    RxDcoControlRestored { saved_field: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,31 +290,31 @@ impl PhyRxDcMinimumExternalBinding {
 enum PhyRxDcoStep {
     MaskControl,
     ReadPbus {
-        saved_field: u32,
+        saved_field: u8,
     },
     SetupPbus {
-        saved_field: u32,
+        saved_field: u8,
         index: u8,
     },
     ForceI {
-        saved_field: u32,
+        saved_field: u8,
     },
     ForceQ {
-        saved_field: u32,
+        saved_field: u8,
     },
     Delay {
-        saved_field: u32,
+        saved_field: u8,
     },
     Measure {
-        saved_field: u32,
+        saved_field: u8,
         transition: PhyDcIqEstimateTransition,
     },
     RestoreSuccess {
-        saved_field: u32,
+        saved_field: u8,
         outcome: PhyRxDcoOutcome,
     },
     RestoreFailure {
-        saved_field: u32,
+        saved_field: u8,
         failure: PhyRxDcoFailure,
     },
     Complete(PhyRxDcoOutcome),
@@ -446,10 +427,7 @@ impl PhyRxDcoTransition {
 
     pub const fn action(self) -> PhyRxDcoAction {
         match self.step {
-            PhyRxDcoStep::MaskControl => PhyRxDcoAction::MaskRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
-            },
+            PhyRxDcoStep::MaskControl => PhyRxDcoAction::MaskRxDcoControl,
             PhyRxDcoStep::ReadPbus { .. } => PhyRxDcoAction::ReadPbus {
                 selector: 1,
                 path: 2,
@@ -472,25 +450,21 @@ impl PhyRxDcoTransition {
             PhyRxDcoStep::Measure { transition, .. } => PhyRxDcoAction::DcIq(transition.action()),
             PhyRxDcoStep::RestoreSuccess { saved_field, .. }
             | PhyRxDcoStep::RestoreFailure { saved_field, .. } => {
-                PhyRxDcoAction::RestoreRxDcoControl {
-                    address: RX_DCO_CONTROL_ADDRESS,
-                    field_mask: RX_DCO_CONTROL_FIELD_MASK,
-                    saved_field,
-                }
+                PhyRxDcoAction::RestoreRxDcoControl { saved_field }
             }
             PhyRxDcoStep::Complete(outcome) => PhyRxDcoAction::Complete(outcome),
             PhyRxDcoStep::Failed(failure) => PhyRxDcoAction::Failed(failure),
         }
     }
 
-    fn pbus_failure(&mut self, saved_field: u32, transaction: PhyPbusForceTest) {
+    fn pbus_failure(&mut self, saved_field: u8, transaction: PhyPbusForceTest) {
         self.step = PhyRxDcoStep::RestoreFailure {
             saved_field,
             failure: PhyRxDcoFailure::PbusForceTimedOut(transaction),
         };
     }
 
-    fn accept_estimate(&mut self, saved_field: u32, estimate: PhyDcIqEstimate) {
+    fn accept_estimate(&mut self, saved_field: u8, estimate: PhyDcIqEstimate) {
         let i_within = estimate.i.wrapping_abs() <= self.threshold;
         let q_within = estimate.q.wrapping_abs() <= self.threshold;
         let completed_iterations = self.iteration + 1;
@@ -554,13 +528,9 @@ impl PhyRxDcoTransition {
         completion: PhyRxDcoCompletion,
     ) -> Result<(), PhyRxDcoTransitionError> {
         match (self.step, completion) {
-            (
-                PhyRxDcoStep::MaskControl,
-                PhyRxDcoCompletion::RxDcoControlMasked {
-                    address: RX_DCO_CONTROL_ADDRESS,
-                    saved_field,
-                },
-            ) if saved_field & !RX_DCO_CONTROL_FIELD_MASK == 0 => {
+            (PhyRxDcoStep::MaskControl, PhyRxDcoCompletion::RxDcoControlMasked { saved_field })
+                if saved_field <= 3 =>
+            {
                 self.step = PhyRxDcoStep::ReadPbus { saved_field };
             }
             (
@@ -678,7 +648,6 @@ impl PhyRxDcoTransition {
                     outcome,
                 },
                 PhyRxDcoCompletion::RxDcoControlRestored {
-                    address: RX_DCO_CONTROL_ADDRESS,
                     saved_field: completed_field,
                 },
             ) if saved_field == completed_field => {
@@ -690,7 +659,6 @@ impl PhyRxDcoTransition {
                     failure,
                 },
                 PhyRxDcoCompletion::RxDcoControlRestored {
-                    address: RX_DCO_CONTROL_ADDRESS,
                     saved_field: completed_field,
                 },
             ) if saved_field == completed_field => {
@@ -719,7 +687,7 @@ pub struct PhyRxDcoMmioBinding {
 impl PhyRxDcoMmioBinding {
     pub fn new(action: PhyRxDcoAction) -> Result<Self, PhyRxDcoBindingError> {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl { .. }
+            PhyRxDcoAction::MaskRxDcoControl
             | PhyRxDcoAction::ReadPbus { .. }
             | PhyRxDcoAction::RestoreRxDcoControl { .. } => Ok(Self { action }),
             _ => Err(PhyRxDcoBindingError::UnsupportedAction),
@@ -732,11 +700,7 @@ impl PhyRxDcoMmioBinding {
         registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
     ) -> PhyRxDcoCompletion {
         match self.action {
-            PhyRxDcoAction::MaskRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
-            } => PhyRxDcoCompletion::RxDcoControlMasked {
-                address: RX_DCO_CONTROL_ADDRESS,
+            PhyRxDcoAction::MaskRxDcoControl => PhyRxDcoCompletion::RxDcoControlMasked {
                 saved_field: open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(
                     registers,
                 ),
@@ -754,16 +718,9 @@ impl PhyRxDcoMmioBinding {
                     u32::from(result.unwrap_or(0))
                 },
             },
-            PhyRxDcoAction::RestoreRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                field_mask: RX_DCO_CONTROL_FIELD_MASK,
-                saved_field,
-            } => {
+            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
                 open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers, saved_field);
-                PhyRxDcoCompletion::RxDcoControlRestored {
-                    address: RX_DCO_CONTROL_ADDRESS,
-                    saved_field,
-                }
+                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
             }
             _ => unreachable!(),
         }
@@ -946,12 +903,9 @@ mod tests {
         }
     }
 
-    fn complete_until_measurement(transition: &mut PhyRxDcoTransition, saved_field: u32) {
+    fn complete_until_measurement(transition: &mut PhyRxDcoTransition, saved_field: u8) {
         transition
-            .advance(PhyRxDcoCompletion::RxDcoControlMasked {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field,
-            })
+            .advance(PhyRxDcoCompletion::RxDcoControlMasked { saved_field })
             .unwrap();
         transition
             .advance(PhyRxDcoCompletion::PbusRead {
@@ -1014,7 +968,7 @@ mod tests {
     #[test]
     fn early_success_restores_control_field_before_completion() {
         let mut transition = PhyRxDcoTransition::new(PhyRxDcoRequest::XTAL_DUTY);
-        complete_until_measurement(&mut transition, 0x0080_0000);
+        complete_until_measurement(&mut transition, 2);
         complete_one_measurement(
             &mut transition,
             PhyDcIqEstimate {
@@ -1024,22 +978,12 @@ mod tests {
             },
         );
 
-        let PhyRxDcoAction::RestoreRxDcoControl {
-            address,
-            field_mask,
-            saved_field,
-        } = transition.action()
-        else {
+        let PhyRxDcoAction::RestoreRxDcoControl { saved_field } = transition.action() else {
             panic!("RX-DCO control restoration was not requested");
         };
-        assert_eq!(address, RX_DCO_CONTROL_ADDRESS);
-        assert_eq!(field_mask, RX_DCO_CONTROL_FIELD_MASK);
-        assert_eq!(saved_field, 0x0080_0000);
+        assert_eq!(saved_field, 2);
         transition
-            .advance(PhyRxDcoCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            })
+            .advance(PhyRxDcoCompletion::RxDcoControlRestored { saved_field })
             .unwrap();
 
         let PhyRxDcoAction::Complete(outcome) = transition.action() else {
@@ -1071,10 +1015,7 @@ mod tests {
             panic!("bounded RX-DCO loop did not request restoration");
         };
         transition
-            .advance(PhyRxDcoCompletion::RxDcoControlRestored {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0,
-            })
+            .advance(PhyRxDcoCompletion::RxDcoControlRestored { saved_field: 0 })
             .unwrap();
         let PhyRxDcoAction::Complete(outcome) = transition.action() else {
             panic!("bounded RX-DCO loop did not complete");
@@ -1087,10 +1028,7 @@ mod tests {
     fn pbus_timeout_restores_control_field_before_typed_failure() {
         let mut transition = PhyRxDcoTransition::new(PhyRxDcoRequest::XTAL_DUTY);
         transition
-            .advance(PhyRxDcoCompletion::RxDcoControlMasked {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0x0040_0000,
-            })
+            .advance(PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 1 })
             .unwrap();
         transition
             .advance(PhyRxDcoCompletion::PbusRead {
@@ -1107,16 +1045,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             transition.action(),
-            PhyRxDcoAction::RestoreRxDcoControl {
-                saved_field: 0x0040_0000,
-                ..
-            }
+            PhyRxDcoAction::RestoreRxDcoControl { saved_field: 1, .. }
         ));
         transition
-            .advance(PhyRxDcoCompletion::RxDcoControlRestored {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0x0040_0000,
-            })
+            .advance(PhyRxDcoCompletion::RxDcoControlRestored { saved_field: 1 })
             .unwrap();
         assert_eq!(
             transition.action(),

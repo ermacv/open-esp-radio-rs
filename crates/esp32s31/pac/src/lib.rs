@@ -768,6 +768,53 @@ mod tests {
     }
 
     #[test]
+    fn generated_phy_feature_and_watchdog_fields_match_complete_rom_leaves() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let agc = &registers.peripherals.phy_agc_oracle;
+        let frequency = &registers.peripherals.phy_frequency_channel_oracle;
+        let baseband = &registers.peripherals.phy_baseband_config_oracle;
+
+        assert_eq!(agc.csi_dump_force_control().as_ptr() as usize, 0x2010_70a4);
+        assert_eq!(
+            frequency.channel_cbw_control_1().as_ptr() as usize,
+            0x2010_7ce4
+        );
+        assert_eq!(
+            baseband.tx_output_filter_control().as_ptr() as usize,
+            0x2010_7440
+        );
+        assert_eq!(
+            baseband.baseband_watchdog_status().as_ptr() as usize,
+            0x2010_7c08
+        );
+
+        assert_eq!(
+            power::phy_agc_oracle::agc_antenna_control::FREQUENCY_BAND_INVERSE.mask(),
+            1 << 5
+        );
+        assert_eq!(
+            power::phy_agc_oracle::csi_dump_force_control::FORCE_LLTF.mask(),
+            1 << 15
+        );
+        assert_eq!(
+            power::phy_frequency_channel_oracle::channel_cbw_control_1::VHT_SUPPORT.mask(),
+            1 << 5
+        );
+        assert_eq!(
+            power::phy_baseband_config_oracle::baseband_watchdog_enable::WATCHDOG_TIMEOUT_CLEAR
+                .mask(),
+            1 << 29
+        );
+        assert_eq!(
+            power::phy_baseband_config_oracle::baseband_watchdog_enable::WATCHDOG_INTERRUPT_ENABLE
+                .mask(),
+            1 << 30
+        );
+    }
+
+    #[test]
     fn generated_last_rx_buffer_table_matches_complete_leaf_geometry() {
         // SAFETY: this host test inspects generated register pointers only and
         // performs no volatile access.

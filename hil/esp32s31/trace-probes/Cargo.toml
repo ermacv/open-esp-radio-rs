@@ -1,0 +1,17 @@
+[package]
+name = "open-esp-radio-hil-esp32s31-trace-probes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+open-esp-radio-esp32s31-hal.workspace = true
+open-esp-radio-esp32s31-phy.workspace = true
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[lints.rust]
+unexpected_cfgs = "allow"

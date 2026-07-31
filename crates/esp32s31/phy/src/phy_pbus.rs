@@ -227,7 +227,6 @@ pub enum PhyPbusHardwareObservation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusHardwareBindingError {
-    BusyAtStart,
     WrongEdge,
     AlreadyComplete,
     Incomplete,
@@ -314,18 +313,12 @@ impl PhyPbusHardwareBinding {
                 PhyPbusHardwareBindingError::WrongEdge
             });
         }
-        open_esp_radio_esp32s31_hal::pbus::try_start_force_test(
+        open_esp_radio_esp32s31_hal::pbus::start_force_test(
             registers,
             self.transaction.selector(),
             self.transaction.path(),
             self.transaction.value(),
-        )
-        .map_err(|error| match error {
-            open_esp_radio_esp32s31_hal::pbus::PbusError::Busy => {
-                PhyPbusHardwareBindingError::BusyAtStart
-            }
-            _ => PhyPbusHardwareBindingError::WrongEdge,
-        })?;
+        );
         self.started()
     }
 
@@ -346,7 +339,6 @@ impl PhyPbusHardwareBinding {
             Err(open_esp_radio_esp32s31_hal::pbus::PbusError::Busy) => {
                 self.observe_completed(false)
             }
-            Err(_) => Err(PhyPbusHardwareBindingError::WrongEdge),
         }
     }
 

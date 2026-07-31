@@ -1299,6 +1299,10 @@ name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
 [[package]]
+name = "open-esp-radio-vendor-oracle-esp32s31-trace-elf"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-vendor-oracle-hil-esp32s31"
 version = "0.1.0"
 dependencies = [

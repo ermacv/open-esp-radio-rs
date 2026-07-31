@@ -23,15 +23,6 @@ use crate::{
     },
 };
 
-pub const PHY_FREQUENCY_READY_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_frequency_channel_oracle::
-        FREQUENCY_PARAMETER_1_STATUS
-        .address();
-pub const PHY_FREQUENCY_READY_MASK: u32 =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_frequency_channel_oracle::
-        frequency_parameter_1_status::FREQUENCY_READY
-        .mask();
-
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
 // Pinned `phy_tx_gain.o` `.rodata` slices at offsets 0x6c, 0x90 and 0xb4.
@@ -249,8 +240,6 @@ pub enum PhyChipChannelAction {
     },
     ClearFrequencySwitch,
     AwaitFrequencyReadyEdge {
-        address: usize,
-        mask: u32,
         samples: u32,
     },
     ConfigureNrx {
@@ -303,8 +292,7 @@ pub enum PhyChipChannelCompletion {
     },
     FrequencySwitchCleared,
     FrequencyReadyObserved {
-        address: usize,
-        value: u32,
+        ready: bool,
     },
     FrequencyReadyTimedOut,
     NrxConfigured {
@@ -522,11 +510,7 @@ impl PhyChipChannelTransition {
                 micros: 10,
             },
             Step::AwaitFrequencyReady { samples } => {
-                PhyChipChannelAction::AwaitFrequencyReadyEdge {
-                    address: PHY_FREQUENCY_READY_ADDRESS,
-                    mask: PHY_FREQUENCY_READY_MASK,
-                    samples,
-                }
+                PhyChipChannelAction::AwaitFrequencyReadyEdge { samples }
             }
             Step::ConfigureNrxFirst | Step::ConfigureNrxSecond => {
                 PhyChipChannelAction::ConfigureNrx {
@@ -635,12 +619,9 @@ impl PhyChipChannelTransition {
             ) => Step::AwaitFrequencyReady { samples: 0 },
             (
                 Step::AwaitFrequencyReady { samples },
-                PhyChipChannelCompletion::FrequencyReadyObserved {
-                    address: PHY_FREQUENCY_READY_ADDRESS,
-                    value,
-                },
+                PhyChipChannelCompletion::FrequencyReadyObserved { ready },
             ) => {
-                if value & PHY_FREQUENCY_READY_MASK != 0 {
+                if ready {
                     Step::ConfigureNrxFirst
                 } else {
                     Step::AwaitFrequencyReady {
@@ -852,10 +833,9 @@ impl PhyChipChannelMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_frequency::clear_channel_switch(registers);
                 PhyChipChannelCompletion::FrequencySwitchCleared
             }
-            PhyChipChannelAction::AwaitFrequencyReadyEdge { address, .. } => {
+            PhyChipChannelAction::AwaitFrequencyReadyEdge { .. } => {
                 PhyChipChannelCompletion::FrequencyReadyObserved {
-                    address,
-                    value: open_esp_radio_esp32s31_hal::phy_frequency::sample_frequency_ready(
+                    ready: open_esp_radio_esp32s31_hal::phy_frequency::sample_frequency_ready(
                         registers,
                     ),
                 }
@@ -863,7 +843,7 @@ impl PhyChipChannelMmioBinding {
             PhyChipChannelAction::ConfigureNrx { frequency_mhz } => {
                 open_esp_radio_esp32s31_hal::phy_frequency::configure_nrx_frequency(
                     registers,
-                    frequency_mhz,
+                    u32::from(frequency_mhz),
                 );
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz }
             }
@@ -886,7 +866,10 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::TxCapCommandMemoryPublished { value }
             }
             PhyChipChannelAction::ConfigureChannelCbw { cbw } => {
-                open_esp_radio_esp32s31_hal::phy_frequency::configure_channel_cbw(registers, cbw);
+                open_esp_radio_esp32s31_hal::phy_frequency::configure_channel_cbw(
+                    registers,
+                    u32::from(cbw),
+                );
                 PhyChipChannelCompletion::ChannelCbwConfigured { cbw }
             }
             PhyChipChannelAction::ClearDcMemory => {
@@ -1257,11 +1240,8 @@ mod tests {
             PhyChipChannelAction::ClearFrequencySwitch => {
                 PhyChipChannelCompletion::FrequencySwitchCleared
             }
-            PhyChipChannelAction::AwaitFrequencyReadyEdge { address, mask, .. } => {
-                PhyChipChannelCompletion::FrequencyReadyObserved {
-                    address,
-                    value: if ready { mask } else { 0 },
-                }
+            PhyChipChannelAction::AwaitFrequencyReadyEdge { .. } => {
+                PhyChipChannelCompletion::FrequencyReadyObserved { ready }
             }
             PhyChipChannelAction::ConfigureNrx { frequency_mhz } => {
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz }

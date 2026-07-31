@@ -121,23 +121,21 @@ pub fn trigger_sar(registers: &mut RadioRegisters) {
     registers.trigger_power_detector_sar();
 }
 
-/// Read one power-detector readiness register image.
+/// Read the power-detector readiness state through its SVD field.
 ///
 /// Complete rev0 ROM `phy_get_tone_sar_dout_` at `0x2f82_66da`, size `0x40`,
 /// samples `POWER_DETECTOR_SAR_CONTROL_STATUS`; repetition and deadline
 /// ownership remain in the Rust async state machine.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_ready(registers: &mut RadioRegisters) -> u32 {
-    registers.power_detector_ready_image()
+pub fn sample_ready(registers: &mut RadioRegisters) -> bool {
+    registers.power_detector_ready()
 }
 
-/// Read one power-detector SAR result register image.
+/// Read one power-detector SAR sample through its SVD field.
 ///
 /// Complete rev0 ROM `phy_get_tone_sar_dout_` at `0x2f82_66da`, size `0x40`,
 /// consumes the upper thirteen-bit sample from `POWER_DETECTOR_SAR_RESULT`.
-/// Extraction is retained by the caller to preserve its existing transition
-/// observation.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_sar(registers: &mut RadioRegisters) -> u32 {
-    registers.power_detector_sar_image()
+pub fn sample_sar(registers: &mut RadioRegisters) -> u16 {
+    registers.power_detector_sar_sample()
 }

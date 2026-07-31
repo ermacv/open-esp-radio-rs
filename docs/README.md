@@ -19,8 +19,8 @@ provenance, not instructions.
   implemented/HIL-qualified capability ledger.
 - [Integration backlog](INTEGRATION_BACKLOG.md) — reusable runtime logic that
   still resides in the ESP32-S31 HIL application.
-- [PHY parity index](phy/README.md) — current scope, parity inventory and open
-  findings for the chip-level PHY.
+- [PHY binary parity](phy/README.md) — entry point to the compiled verifier and
+  its machine-generated open-work report.
 
 Current status documents must state when they were last verified. Update them
 when code ownership, public paths, qualification state or listed counts
@@ -28,9 +28,8 @@ change; do not append completed chronology to a live backlog.
 
 ## Research and qualification evidence
 
-- [`phy/audit/`](phy/audit/README.md) and the linked PHY ledgers contain
-  instruction-level vendor/ROM comparisons. Individual audit pages are
-  evidence snapshots; their summary and open-state index is `phy/README.md`.
+- The [compiled PHY verifier](../tools/phy-trace/README.md) inventories vendor
+  functions and reports instruction-level parity gaps directly from binaries.
 - [Register provenance](esp32s31-radio-register-provenance.md) records the
   basis and confidence for recovered register descriptions.
 - [Debug oracles](esp32s31-debug-oracles.md) records comparison-only symbol and

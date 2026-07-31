@@ -3741,7 +3741,7 @@ pub mod phy_frequency_channel_oracle {
         pub const fn channel_tx_offset_control(&self) -> &ChannelTxOffsetControl {
             &self.channel_tx_offset_control
         }
-        #[doc = "0x7848 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient."]
+        #[doc = "0x7848 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte and writes a twenty-four-bit quotient. Initialization writes the same complete low twenty-four-bit region with its own image."]
         #[inline(always)]
         pub const fn nrx_frequency_control(&self) -> &NrxFrequencyControl {
             &self.nrx_frequency_control
@@ -3751,7 +3751,7 @@ pub mod phy_frequency_channel_oracle {
         pub const fn channel_cbw_control_0(&self) -> &ChannelCbwControl0 {
             &self.channel_cbw_control_0
         }
-        #[doc = "0x7ce4 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements."]
+        #[doc = "0x7ce4 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements; complete phy_vht_support independently replaces bit five."]
         #[inline(always)]
         pub const fn channel_cbw_control_1(&self) -> &ChannelCbwControl1 {
             &self.channel_cbw_control_1
@@ -4358,10 +4358,10 @@ pub mod phy_frequency_channel_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "NRX_FREQUENCY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient.\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_frequency_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nrx_frequency_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_frequency_control`] module"]
+    #[doc = "NRX_FREQUENCY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte and writes a twenty-four-bit quotient. Initialization writes the same complete low twenty-four-bit region with its own image.\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_frequency_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nrx_frequency_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nrx_frequency_control`] module"]
     #[doc(alias = "NRX_FREQUENCY_CONTROL")]
     pub type NrxFrequencyControl = crate::Reg<nrx_frequency_control::NrxFrequencyControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte and writes a twenty-four-bit quotient. Initialization writes the same complete low twenty-four-bit region with its own image."]
     pub mod nrx_frequency_control {
         #[doc = "Register `NRX_FREQUENCY_CONTROL` reader"]
         pub type R = crate::R<NrxFrequencyControlSpec>;
@@ -4370,11 +4370,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN` reader - "]
         pub type FrequencyQuotientOrInitLowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN` writer - "]
-        pub type FrequencyQuotientOrInitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `INIT_MIDDLE_UNKNOWN` reader - "]
-        pub type InitMiddleUnknownR = crate::FieldReader;
-        #[doc = "Field `INIT_MIDDLE_UNKNOWN` writer - "]
-        pub type InitMiddleUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type FrequencyQuotientOrInitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         #[doc = "Field `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN` reader - "]
         pub type ShiftLowOrInitHighUnknownR = crate::FieldReader;
         #[doc = "Field `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN` writer - "]
@@ -4384,17 +4380,12 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `SHIFT_HIGH_UNKNOWN` writer - "]
         pub type ShiftHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl R {
-            #[doc = "Bits 0:19"]
+            #[doc = "Bits 0:23"]
             #[inline(always)]
             pub fn frequency_quotient_or_init_low_unknown(
                 &self,
             ) -> FrequencyQuotientOrInitLowUnknownR {
-                FrequencyQuotientOrInitLowUnknownR::new(self.bits & 0x000f_ffff)
-            }
-            #[doc = "Bits 20:23"]
-            #[inline(always)]
-            pub fn init_middle_unknown(&self) -> InitMiddleUnknownR {
-                InitMiddleUnknownR::new(((self.bits >> 20) & 0x0f) as u8)
+                FrequencyQuotientOrInitLowUnknownR::new(self.bits & 0x00ff_ffff)
             }
             #[doc = "Bits 24:28"]
             #[inline(always)]
@@ -4408,19 +4399,12 @@ pub mod phy_frequency_channel_oracle {
             }
         }
         impl W {
-            #[doc = "Bits 0:19"]
+            #[doc = "Bits 0:23"]
             #[inline(always)]
             pub fn frequency_quotient_or_init_low_unknown(
                 &mut self,
             ) -> FrequencyQuotientOrInitLowUnknownW<'_, NrxFrequencyControlSpec> {
                 FrequencyQuotientOrInitLowUnknownW::new(self, 0)
-            }
-            #[doc = "Bits 20:23"]
-            #[inline(always)]
-            pub fn init_middle_unknown(
-                &mut self,
-            ) -> InitMiddleUnknownW<'_, NrxFrequencyControlSpec> {
-                InitMiddleUnknownW::new(self, 20)
             }
             #[doc = "Bits 24:28"]
             #[inline(always)]
@@ -4435,7 +4419,7 @@ pub mod phy_frequency_channel_oracle {
                 ShiftHighUnknownW::new(self, 29)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte, clears bits 23:20, and writes a twenty-bit quotient.\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_frequency_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nrx_frequency_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte and writes a twenty-four-bit quotient. Initialization writes the same complete low twenty-four-bit region with its own image.\n\nYou can [`read`](crate::Reg::read) this register and get [`nrx_frequency_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nrx_frequency_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct NrxFrequencyControlSpec;
         impl crate::RegisterSpec for NrxFrequencyControlSpec {
             type Ux = u32;
@@ -4486,10 +4470,10 @@ pub mod phy_frequency_channel_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CHANNEL_CBW_CONTROL_1 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_cbw_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_cbw_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_cbw_control_1`] module"]
+    #[doc = "CHANNEL_CBW_CONTROL_1 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements; complete phy_vht_support independently replaces bit five.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_cbw_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_cbw_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_cbw_control_1`] module"]
     #[doc(alias = "CHANNEL_CBW_CONTROL_1")]
     pub type ChannelCbwControl1 = crate::Reg<channel_cbw_control_1::ChannelCbwControl1Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements; complete phy_vht_support independently replaces bit five."]
     pub mod channel_cbw_control_1 {
         #[doc = "Register `CHANNEL_CBW_CONTROL_1` reader"]
         pub type R = crate::R<ChannelCbwControl1Spec>;
@@ -4503,6 +4487,10 @@ pub mod phy_frequency_channel_oracle {
         pub type CbwHighUnknownR = crate::FieldReader;
         #[doc = "Field `CBW_HIGH_UNKNOWN` writer - "]
         pub type CbwHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `VHT_SUPPORT` reader - "]
+        pub type VhtSupportR = crate::BitReader;
+        #[doc = "Field `VHT_SUPPORT` writer - "]
+        pub type VhtSupportW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -4513,6 +4501,11 @@ pub mod phy_frequency_channel_oracle {
             #[inline(always)]
             pub fn cbw_high_unknown(&self) -> CbwHighUnknownR {
                 CbwHighUnknownR::new(((self.bits >> 2) & 7) as u8)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn vht_support(&self) -> VhtSupportR {
+                VhtSupportR::new(((self.bits >> 5) & 1) != 0)
             }
         }
         impl W {
@@ -4526,8 +4519,13 @@ pub mod phy_frequency_channel_oracle {
             pub fn cbw_high_unknown(&mut self) -> CbwHighUnknownW<'_, ChannelCbwControl1Spec> {
                 CbwHighUnknownW::new(self, 2)
             }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn vht_support(&mut self) -> VhtSupportW<'_, ChannelCbwControl1Spec> {
+                VhtSupportW::new(self, 5)
+            }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_cbw_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_cbw_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements; complete phy_vht_support independently replaces bit five.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_cbw_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_cbw_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ChannelCbwControl1Spec;
         impl crate::RegisterSpec for ChannelCbwControl1Spec {
             type Ux = u32;
@@ -4594,12 +4592,12 @@ pub mod phy_pbus {
         pub const fn read_result_2(&self) -> &ReadResult2 {
             &self.read_result_2
         }
-        #[doc = "0x20 - SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; other bits are not presently evidenced."]
+        #[doc = "0x20 - SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; selector 0 non-path-one reads window 1 and path one reads window 2."]
         #[inline(always)]
         pub const fn read_result_3(&self) -> &ReadResult3 {
             &self.read_result_3
         }
-        #[doc = "0x24 - SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 5 reads window 0, selector 0 non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window 2."]
+        #[doc = "0x24 - SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selectors above five fall back to window 0, selector 5 reads window 1, and selector 4 non-path-one reads window 2."]
         #[inline(always)]
         pub const fn read_result_4(&self) -> &ReadResult4 {
             &self.read_result_4
@@ -4959,23 +4957,37 @@ pub mod phy_pbus {
         #[doc = "`read()` method returns [`read_result_2::R`](R) reader structure"]
         impl crate::Readable for ReadResult2Spec {}
     }
-    #[doc = "READ_RESULT_3 (r) register accessor: SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; other bits are not presently evidenced.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@read_result_3`] module"]
+    #[doc = "READ_RESULT_3 (r) register accessor: SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; selector 0 non-path-one reads window 1 and path one reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@read_result_3`] module"]
     #[doc(alias = "READ_RESULT_3")]
     pub type ReadResult3 = crate::Reg<read_result_3::ReadResult3Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; other bits are not presently evidenced."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; selector 0 non-path-one reads window 1 and path one reads window 2."]
     pub mod read_result_3 {
         #[doc = "Register `READ_RESULT_3` reader"]
         pub type R = crate::R<ReadResult3Spec>;
         #[doc = "Field `RESULT_WINDOW_0_UNKNOWN` reader - "]
         pub type ResultWindow0UnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `RESULT_WINDOW_1_UNKNOWN` reader - "]
+        pub type ResultWindow1UnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `RESULT_WINDOW_2_UNKNOWN` reader - "]
+        pub type ResultWindow2UnknownR = crate::FieldReader<u16>;
         impl R {
             #[doc = "Bits 0:8"]
             #[inline(always)]
             pub fn result_window_0_unknown(&self) -> ResultWindow0UnknownR {
                 ResultWindow0UnknownR::new((self.bits & 0x01ff) as u16)
             }
+            #[doc = "Bits 9:17"]
+            #[inline(always)]
+            pub fn result_window_1_unknown(&self) -> ResultWindow1UnknownR {
+                ResultWindow1UnknownR::new(((self.bits >> 9) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 18:26"]
+            #[inline(always)]
+            pub fn result_window_2_unknown(&self) -> ResultWindow2UnknownR {
+                ResultWindow2UnknownR::new(((self.bits >> 18) & 0x01ff) as u16)
+            }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; other bits are not presently evidenced.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 4 path 1 reads window 0; selector 0 non-path-one reads window 1 and path one reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ReadResult3Spec;
         impl crate::RegisterSpec for ReadResult3Spec {
             type Ux = u32;
@@ -4983,10 +4995,10 @@ pub mod phy_pbus {
         #[doc = "`read()` method returns [`read_result_3::R`](R) reader structure"]
         impl crate::Readable for ReadResult3Spec {}
     }
-    #[doc = "READ_RESULT_4 (r) register accessor: SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 5 reads window 0, selector 0 non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@read_result_4`] module"]
+    #[doc = "READ_RESULT_4 (r) register accessor: SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selectors above five fall back to window 0, selector 5 reads window 1, and selector 4 non-path-one reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_4::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@read_result_4`] module"]
     #[doc(alias = "READ_RESULT_4")]
     pub type ReadResult4 = crate::Reg<read_result_4::ReadResult4Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 5 reads window 0, selector 0 non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window 2."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selectors above five fall back to window 0, selector 5 reads window 1, and selector 4 non-path-one reads window 2."]
     pub mod read_result_4 {
         #[doc = "Register `READ_RESULT_4` reader"]
         pub type R = crate::R<ReadResult4Spec>;
@@ -5013,7 +5025,7 @@ pub mod phy_pbus {
                 ResultWindow2UnknownR::new(((self.bits >> 18) & 0x01ff) as u16)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selector 5 reads window 0, selector 0 non-path-1 reads window 1, and selector 0 path 1 or selector 4 non-path-1 reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact\\]. Selectors above five fall back to window 0, selector 5 reads window 1, and selector 4 non-path-one reads window 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`read_result_4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ReadResult4Spec;
         impl crate::RegisterSpec for ReadResult4Spec {
             type Ux = u32;
@@ -5212,39 +5224,40 @@ pub mod phy_agc_oracle {
         agc_gain_limit_low: AgcGainLimitLow,
         _reserved10: [u8; 0x08],
         rx_compensation_high_control: RxCompensationHighControl,
-        _reserved11: [u8; 0x60],
+        csi_dump_force_control: CsiDumpForceControl,
+        _reserved12: [u8; 0x5c],
         rx_11b_window_control: Rx11bWindowControl,
-        _reserved12: [u8; 0x0c],
+        _reserved13: [u8; 0x0c],
         saturation_gain_high: SaturationGainHigh,
-        _reserved13: [u8; 0x04],
+        _reserved14: [u8; 0x04],
         antenna_control_0: AntennaControl0,
         antenna_control_2: AntennaControl2,
         rx_11b_path_control_1: Rx11bPathControl1,
         agc_init_high_control: AgcInitHighControl,
-        _reserved17: [u8; 0x10],
+        _reserved18: [u8; 0x10],
         rx_gain_limit_control: RxGainLimitControl,
-        _reserved18: [u8; 0x0764],
+        _reserved19: [u8; 0x0764],
         agc_update_78a4_opaque: AgcUpdate78a4Opaque,
-        _reserved19: [u8; 0x20],
+        _reserved20: [u8; 0x20],
         post_init_rx_control: PostInitRxControl,
-        _reserved20: [u8; 0x0480],
+        _reserved21: [u8; 0x0480],
         ftm_control: FtmControl,
-        _reserved21: [u8; 0x02b4],
+        _reserved22: [u8; 0x02b4],
         rx_11b_mode_control: Rx11bModeControl,
-        _reserved22: [u8; 0x08],
+        _reserved23: [u8; 0x08],
         agc_update_8010_opaque: AgcUpdate8010Opaque,
-        _reserved23: [u8; 0x04],
+        _reserved24: [u8; 0x04],
         agc_update_8018_opaque: AgcUpdate8018Opaque,
         agc_update_801c_opaque: AgcUpdate801cOpaque,
         agc_update_8020_opaque: AgcUpdate8020Opaque,
-        _reserved26: [u8; 0x04],
+        _reserved27: [u8; 0x04],
         agc_update_8028_opaque: AgcUpdate8028Opaque,
         agc_update_802c_opaque: AgcUpdate802cOpaque,
-        _reserved28: [u8; 0x30],
+        _reserved29: [u8; 0x30],
         low_rate_primary_control: LowRatePrimaryControl,
-        _reserved29: [u8; 0x0c],
+        _reserved30: [u8; 0x0c],
         agc_update_8070_opaque: AgcUpdate8070Opaque,
-        _reserved30: [u8; 0x04],
+        _reserved31: [u8; 0x04],
         agc_update_8078_control: AgcUpdate8078Control,
         low_rate_secondary_control: LowRateSecondaryControl,
     }
@@ -5254,12 +5267,12 @@ pub mod phy_agc_oracle {
         pub const fn agc_parameter_control(&self) -> &AgcParameterControl {
             &self.agc_parameter_control
         }
-        #[doc = "0x702c - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table."]
+        #[doc = "0x702c - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_force_rx_gain, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table."]
         #[inline(always)]
         pub const fn agc_shared_control(&self) -> &AgcSharedControl {
             &self.agc_shared_control
         }
-        #[doc = "0x7030 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable and antenna initialization bodies."]
+        #[doc = "0x7030 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable, antenna initialization and frequency-band selection bodies."]
         #[inline(always)]
         pub const fn agc_antenna_control(&self) -> &AgcAntennaControl {
             &self.agc_antenna_control
@@ -5304,6 +5317,11 @@ pub mod phy_agc_oracle {
         pub const fn rx_compensation_high_control(&self) -> &RxCompensationHighControl {
             &self.rx_compensation_high_control
         }
+        #[doc = "0x70a4 - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_csidump_force_lltf_cfg replaces bit fifteen from the caller low bit."]
+        #[inline(always)]
+        pub const fn csi_dump_force_control(&self) -> &CsiDumpForceControl {
+            &self.csi_dump_force_control
+        }
         #[doc = "0x7104 - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update writes the full word; phy_rx_11b_opt and phy_reg_update_new replace the same low nine-bit field with independently evidenced values."]
         #[inline(always)]
         pub const fn rx_11b_window_control(&self) -> &Rx11bWindowControl {
@@ -5314,7 +5332,7 @@ pub mod phy_agc_oracle {
         pub const fn saturation_gain_high(&self) -> &SaturationGainHigh {
             &self.saturation_gain_high
         }
-        #[doc = "0x711c - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups."]
+        #[doc = "0x711c - SOURCE\\[ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups; complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
         #[inline(always)]
         pub const fn antenna_control_0(&self) -> &AntennaControl0 {
             &self.antenna_control_0
@@ -5389,7 +5407,7 @@ pub mod phy_agc_oracle {
         pub const fn agc_update_802c_opaque(&self) -> &AgcUpdate802cOpaque {
             &self.agc_update_802c_opaque
         }
-        #[doc = "0x8060 - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order."]
+        #[doc = "0x8060 - SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit."]
         #[inline(always)]
         pub const fn low_rate_primary_control(&self) -> &LowRatePrimaryControl {
             &self.low_rate_primary_control
@@ -5404,7 +5422,7 @@ pub mod phy_agc_oracle {
         pub const fn agc_update_8078_control(&self) -> &AgcUpdate8078Control {
             &self.agc_update_8078_control
         }
-        #[doc = "0x807c - SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in both complete low-rate leaves."]
+        #[doc = "0x807c - SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg."]
         #[inline(always)]
         pub const fn low_rate_secondary_control(&self) -> &LowRateSecondaryControl {
             &self.low_rate_secondary_control
@@ -5467,10 +5485,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_SHARED_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_shared_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_shared_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_shared_control`] module"]
+    #[doc = "AGC_SHARED_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_force_rx_gain, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_shared_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_shared_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_shared_control`] module"]
     #[doc(alias = "AGC_SHARED_CONTROL")]
     pub type AgcSharedControl = crate::Reg<agc_shared_control::AgcSharedControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_force_rx_gain, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table."]
     pub mod agc_shared_control {
         #[doc = "Register `AGC_SHARED_CONTROL` reader"]
         pub type R = crate::R<AgcSharedControlSpec>;
@@ -5484,13 +5502,13 @@ pub mod phy_agc_oracle {
         pub type RxGainIndexUnknownR = crate::FieldReader;
         #[doc = "Field `RX_GAIN_INDEX_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
         pub type RxGainIndexUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
-        #[doc = "Field `PULSE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode."]
+        #[doc = "Field `PULSE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
         pub type PulseUnknownR = crate::BitReader;
-        #[doc = "Field `PULSE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode."]
+        #[doc = "Field `PULSE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
         pub type PulseUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONTROL_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23."]
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
         pub type ControlHighUnknownR = crate::FieldReader;
-        #[doc = "Field `CONTROL_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23."]
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
         pub type ControlHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
             #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
@@ -5503,12 +5521,12 @@ pub mod phy_agc_oracle {
             pub fn rx_gain_index_unknown(&self) -> RxGainIndexUnknownR {
                 RxGainIndexUnknownR::new(((self.bits >> 8) & 0x7f) as u8)
             }
-            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode."]
+            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
             #[inline(always)]
             pub fn pulse_unknown(&self) -> PulseUnknownR {
                 PulseUnknownR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23."]
+            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
             #[inline(always)]
             pub fn control_high_unknown(&self) -> ControlHighUnknownR {
                 ControlHighUnknownR::new(((self.bits >> 24) & 0xff) as u8)
@@ -5529,12 +5547,12 @@ pub mod phy_agc_oracle {
             ) -> RxGainIndexUnknownW<'_, AgcSharedControlSpec> {
                 RxGainIndexUnknownW::new(self, 8)
             }
-            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode."]
+            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
             #[inline(always)]
             pub fn pulse_unknown(&mut self) -> PulseUnknownW<'_, AgcSharedControlSpec> {
                 PulseUnknownW::new(self, 23)
             }
-            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23."]
+            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
             #[inline(always)]
             pub fn control_high_unknown(
                 &mut self,
@@ -5542,7 +5560,7 @@ pub mod phy_agc_oracle {
                 ControlHighUnknownW::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_shared_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_shared_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE,BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_force_rx_gain, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_shared_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_shared_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcSharedControlSpec;
         impl crate::RegisterSpec for AgcSharedControlSpec {
             type Ux = u32;
@@ -5554,15 +5572,19 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_ANTENNA_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable and antenna initialization bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_antenna_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_antenna_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_antenna_control`] module"]
+    #[doc = "AGC_ANTENNA_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable, antenna initialization and frequency-band selection bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_antenna_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_antenna_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_antenna_control`] module"]
     #[doc(alias = "AGC_ANTENNA_CONTROL")]
     pub type AgcAntennaControl = crate::Reg<agc_antenna_control::AgcAntennaControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable and antenna initialization bodies."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable, antenna initialization and frequency-band selection bodies."]
     pub mod agc_antenna_control {
         #[doc = "Register `AGC_ANTENNA_CONTROL` reader"]
         pub type R = crate::R<AgcAntennaControlSpec>;
         #[doc = "Register `AGC_ANTENNA_CONTROL` writer"]
         pub type W = crate::W<AgcAntennaControlSpec>;
+        #[doc = "Field `FREQUENCY_BAND_INVERSE` reader - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_band_reg_set writes the inverse of the caller low bit."]
+        pub type FrequencyBandInverseR = crate::BitReader;
+        #[doc = "Field `FREQUENCY_BAND_INVERSE` writer - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_band_reg_set writes the inverse of the caller low bit."]
+        pub type FrequencyBandInverseW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `ANTENNA_INIT_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
         pub type AntennaInitUnknownR = crate::FieldReader;
         #[doc = "Field `ANTENNA_INIT_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
@@ -5572,6 +5594,11 @@ pub mod phy_agc_oracle {
         #[doc = "Field `AGC_DISABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact AGC disable/enable gate."]
         pub type AgcDisableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bit 5 - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_band_reg_set writes the inverse of the caller low bit."]
+            #[inline(always)]
+            pub fn frequency_band_inverse(&self) -> FrequencyBandInverseR {
+                FrequencyBandInverseR::new(((self.bits >> 5) & 1) != 0)
+            }
             #[doc = "Bits 11:17 - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
             #[inline(always)]
             pub fn antenna_init_unknown(&self) -> AntennaInitUnknownR {
@@ -5584,6 +5611,13 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {
+            #[doc = "Bit 5 - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_band_reg_set writes the inverse of the caller low bit."]
+            #[inline(always)]
+            pub fn frequency_band_inverse(
+                &mut self,
+            ) -> FrequencyBandInverseW<'_, AgcAntennaControlSpec> {
+                FrequencyBandInverseW::new(self, 5)
+            }
             #[doc = "Bits 11:17 - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
             #[inline(always)]
             pub fn antenna_init_unknown(
@@ -5597,7 +5631,7 @@ pub mod phy_agc_oracle {
                 AgcDisableUnknownW::new(self, 29)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable and antenna initialization bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_antenna_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_antenna_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Shared word updated independently by complete AGC enable/disable, antenna initialization and frequency-band selection bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_antenna_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_antenna_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcAntennaControlSpec;
         impl crate::RegisterSpec for AgcAntennaControlSpec {
             type Ux = u32;
@@ -5606,6 +5640,45 @@ pub mod phy_agc_oracle {
         impl crate::Readable for AgcAntennaControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`agc_antenna_control::W`](W) writer structure"]
         impl crate::Writable for AgcAntennaControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CSI_DUMP_FORCE_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_csidump_force_lltf_cfg replaces bit fifteen from the caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`csi_dump_force_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`csi_dump_force_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@csi_dump_force_control`] module"]
+    #[doc(alias = "CSI_DUMP_FORCE_CONTROL")]
+    pub type CsiDumpForceControl = crate::Reg<csi_dump_force_control::CsiDumpForceControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_csidump_force_lltf_cfg replaces bit fifteen from the caller low bit."]
+    pub mod csi_dump_force_control {
+        #[doc = "Register `CSI_DUMP_FORCE_CONTROL` reader"]
+        pub type R = crate::R<CsiDumpForceControlSpec>;
+        #[doc = "Register `CSI_DUMP_FORCE_CONTROL` writer"]
+        pub type W = crate::W<CsiDumpForceControlSpec>;
+        #[doc = "Field `FORCE_LLTF` reader - "]
+        pub type ForceLltfR = crate::BitReader;
+        #[doc = "Field `FORCE_LLTF` writer - "]
+        pub type ForceLltfW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn force_lltf(&self) -> ForceLltfR {
+                ForceLltfR::new(((self.bits >> 15) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn force_lltf(&mut self) -> ForceLltfW<'_, CsiDumpForceControlSpec> {
+                ForceLltfW::new(self, 15)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_csidump_force_lltf_cfg replaces bit fifteen from the caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`csi_dump_force_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`csi_dump_force_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CsiDumpForceControlSpec;
+        impl crate::RegisterSpec for CsiDumpForceControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`csi_dump_force_control::R`](R) reader structure"]
+        impl crate::Readable for CsiDumpForceControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`csi_dump_force_control::W`](W) writer structure"]
+        impl crate::Writable for CsiDumpForceControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -6034,10 +6107,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ANTENNA_CONTROL_0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_control_0`] module"]
+    #[doc = "ANTENNA_CONTROL_0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups; complete phy_ant_dft_cfg replaces bit 11 with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_control_0`] module"]
     #[doc(alias = "ANTENNA_CONTROL_0")]
     pub type AntennaControl0 = crate::Reg<antenna_control_0::AntennaControl0Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups; complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
     pub mod antenna_control_0 {
         #[doc = "Register `ANTENNA_CONTROL_0` reader"]
         pub type R = crate::R<AntennaControl0Spec>;
@@ -6047,6 +6120,10 @@ pub mod phy_agc_oracle {
         pub type LowClearUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init clears bits 10:0."]
         pub type LowClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+        pub type AntennaDiversityEnableUnknownR = crate::BitReader;
+        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+        pub type AntennaDiversityEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BIT_12_CLEAR_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
         pub type Bit12ClearUnknownR = crate::BitReader;
         #[doc = "Field `BIT_12_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
@@ -6056,6 +6133,11 @@ pub mod phy_agc_oracle {
             #[inline(always)]
             pub fn low_clear_unknown(&self) -> LowClearUnknownR {
                 LowClearUnknownR::new((self.bits & 0x07ff) as u16)
+            }
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+            #[inline(always)]
+            pub fn antenna_diversity_enable_unknown(&self) -> AntennaDiversityEnableUnknownR {
+                AntennaDiversityEnableUnknownR::new(((self.bits >> 11) & 1) != 0)
             }
             #[doc = "Bit 12 - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
             #[inline(always)]
@@ -6069,13 +6151,20 @@ pub mod phy_agc_oracle {
             pub fn low_clear_unknown(&mut self) -> LowClearUnknownW<'_, AntennaControl0Spec> {
                 LowClearUnknownW::new(self, 0)
             }
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+            #[inline(always)]
+            pub fn antenna_diversity_enable_unknown(
+                &mut self,
+            ) -> AntennaDiversityEnableUnknownW<'_, AntennaControl0Spec> {
+                AntennaDiversityEnableUnknownW::new(self, 11)
+            }
             #[doc = "Bit 12 - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
             #[inline(always)]
             pub fn bit_12_clear_unknown(&mut self) -> Bit12ClearUnknownW<'_, AntennaControl0Spec> {
                 Bit12ClearUnknownW::new(self, 12)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups; complete phy_ant_dft_cfg replaces bit 11 with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AntennaControl0Spec;
         impl crate::RegisterSpec for AntennaControl0Spec {
             type Ux = u32;
@@ -6645,11 +6734,11 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "LOW_RATE_PRIMARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_primary_control`] module"]
+    #[doc = "LOW_RATE_PRIMARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_primary_control`] module"]
     #[doc(alias = "LOW_RATE_PRIMARY_CONTROL")]
     pub type LowRatePrimaryControl =
         crate::Reg<low_rate_primary_control::LowRatePrimaryControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit."]
     pub mod low_rate_primary_control {
         #[doc = "Register `LOW_RATE_PRIMARY_CONTROL` reader"]
         pub type R = crate::R<LowRatePrimaryControlSpec>;
@@ -6691,7 +6780,7 @@ pub mod phy_agc_oracle {
                 LowRateEnableSecondW::new(self, 11)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct LowRatePrimaryControlSpec;
         impl crate::RegisterSpec for LowRatePrimaryControlSpec {
             type Ux = u32;
@@ -6703,11 +6792,11 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "LOW_RATE_SECONDARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in both complete low-rate leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_secondary_control`] module"]
+    #[doc = "LOW_RATE_SECONDARY_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_secondary_control`] module"]
     #[doc(alias = "LOW_RATE_SECONDARY_CONTROL")]
     pub type LowRateSecondaryControl =
         crate::Reg<low_rate_secondary_control::LowRateSecondaryControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in both complete low-rate leaves."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg."]
     pub mod low_rate_secondary_control {
         #[doc = "Register `LOW_RATE_SECONDARY_CONTROL` reader"]
         pub type R = crate::R<LowRateSecondaryControlSpec>;
@@ -6731,7 +6820,7 @@ pub mod phy_agc_oracle {
                 LowRateEnableW::new(self, 11)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in both complete low-rate leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_LOW_RATE,ROM_REV0_PHY_RX11BLR_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_secondary_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_secondary_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct LowRateSecondaryControlSpec;
         impl crate::RegisterSpec for LowRateSecondaryControlSpec {
             type Ux = u32;
@@ -6799,40 +6888,49 @@ pub mod phy_baseband_config_oracle {
         baseband_init_7428: BasebandInit7428,
         _reserved28: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
-        _reserved29: [u8; 0x14],
+        tx_output_filter_control: TxOutputFilterControl,
+        _reserved30: [u8; 0x10],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved33: [u8; 0x03a4],
+        _reserved34: [u8; 0x04],
+        hccfr_control: HccfrControl,
+        hccfr_value: HccfrValue,
+        _reserved36: [u8; 0x08],
+        iccfr_force_control: IccfrForceControl,
+        iccfr_enable_control: IccfrEnableControl,
+        _reserved38: [u8; 0x0388],
         baseband_init_7808: BasebandInit7808,
-        _reserved34: [u8; 0x84],
+        _reserved39: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved35: [u8; 0x48],
+        _reserved40: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved36: [u8; 0x04],
+        _reserved41: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved37: [u8; 0x24],
+        _reserved42: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved38: [u8; 0x70],
+        _reserved43: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved39: [u8; 0xa4],
+        _reserved44: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved40: [u8; 0x01d4],
+        _reserved45: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved41: [u8; 0x2c],
+        _reserved46: [u8; 0x04],
+        baseband_watchdog_status: BasebandWatchdogStatus,
+        _reserved47: [u8; 0x24],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved42: [u8; 0x08],
+        _reserved48: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved45: [u8; 0x08],
+        _reserved51: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved46: [u8; 0x18],
+        _reserved52: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved47: [u8; 0x38],
+        _reserved53: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved48: [u8; 0x24],
+        _reserved54: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -6886,7 +6984,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn front_end_clear_control(&self) -> &FrontEndClearControl {
             &self.front_end_clear_control
         }
-        #[doc = "0x448 - SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
+        #[doc = "0x448 - SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_DAC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set and phy_dac_rate_set publish rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
         #[inline(always)]
         pub const fn adc_rate_and_front_end_control(&self) -> &AdcRateAndFrontEndControl {
             &self.adc_rate_and_front_end_control
@@ -6981,6 +7079,11 @@ pub mod phy_baseband_config_oracle {
         pub const fn baseband_init_743c(&self) -> &BasebandInit743c {
             &self.baseband_init_743c
         }
+        #[doc = "0x7440 - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bbtx_outfilter replaces bits five, six and four through three independent fresh-read RMWs."]
+        #[inline(always)]
+        pub const fn tx_output_filter_control(&self) -> &TxOutputFilterControl {
+            &self.tx_output_filter_control
+        }
         #[doc = "0x7454 - SOURCE\\[BLOB_LIBPHY_PHY_BASEBAND_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_txpwr_track publishes enable plus two initialization fields."]
         #[inline(always)]
         pub const fn tx_power_track_control_0(&self) -> &TxPowerTrackControl0 {
@@ -7001,12 +7104,32 @@ pub mod phy_baseband_config_oracle {
         pub const fn tx_power_track_control_3(&self) -> &TxPowerTrackControl3 {
             &self.tx_power_track_control_3
         }
+        #[doc = "0x7468 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces bit 22 with the low bit of its first argument."]
+        #[inline(always)]
+        pub const fn hccfr_control(&self) -> &HccfrControl {
+            &self.hccfr_control
+        }
+        #[doc = "0x746c - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces the low twelve bits with its second argument."]
+        #[inline(always)]
+        pub const fn hccfr_value(&self) -> &HccfrValue {
+            &self.hccfr_value
+        }
+        #[doc = "0x7478 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr publishes five fields through five separately ordered fresh-read RMWs."]
+        #[inline(always)]
+        pub const fn iccfr_force_control(&self) -> &IccfrForceControl {
+            &self.iccfr_force_control
+        }
+        #[doc = "0x747c - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes three to bits 26:25 for a zero argument and clears them for a nonzero argument."]
+        #[inline(always)]
+        pub const fn iccfr_enable_control(&self) -> &IccfrEnableControl {
+            &self.iccfr_enable_control
+        }
         #[doc = "0x7808 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init replaces bits 13:7 with 0x60."]
         #[inline(always)]
         pub const fn baseband_init_7808(&self) -> &BasebandInit7808 {
             &self.baseband_init_7808
         }
-        #[doc = "0x7890 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 25 then sets bit 24."]
+        #[doc = "0x7890 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
         #[inline(always)]
         pub const fn baseband_init_7890(&self) -> &BasebandInit7890 {
             &self.baseband_init_7890
@@ -7021,7 +7144,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn baseband_init_78e4(&self) -> &BasebandInit78e4 {
             &self.baseband_init_78e4
         }
-        #[doc = "0x790c - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 11."]
+        #[doc = "0x790c - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
         #[inline(always)]
         pub const fn baseband_init_790c(&self) -> &BasebandInit790c {
             &self.baseband_init_790c
@@ -7036,10 +7159,15 @@ pub mod phy_baseband_config_oracle {
         pub const fn baseband_init_7a28(&self) -> &BasebandInit7a28 {
             &self.baseband_init_7a28
         }
-        #[doc = "0x7c00 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11."]
+        #[doc = "0x7c00 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11; complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
         #[inline(always)]
         pub const fn baseband_tx_pa_control(&self) -> &BasebandTxPaControl {
             &self.baseband_tx_pa_control
+        }
+        #[doc = "0x7c08 - SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_wdt_get_status returns one unrestricted full-word read."]
+        #[inline(always)]
+        pub const fn baseband_watchdog_status(&self) -> &BasebandWatchdogStatus {
+            &self.baseband_watchdog_status
         }
         #[doc = "0x7c30 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e."]
         #[inline(always)]
@@ -7051,7 +7179,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn baseband_watchdog_control(&self) -> &BasebandWatchdogControl {
             &self.baseband_watchdog_control
         }
-        #[doc = "0x7c40 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31."]
+        #[doc = "0x7c40 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31. The standalone watchdog leaves replace bits 31 and 30 and set timeout-clear bit 29."]
         #[inline(always)]
         pub const fn baseband_watchdog_enable(&self) -> &BasebandWatchdogEnable {
             &self.baseband_watchdog_enable
@@ -7076,7 +7204,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn baseband_init_7ca8(&self) -> &BasebandInit7ca8 {
             &self.baseband_init_7ca8
         }
-        #[doc = "0x7cd0 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init and phy_btbb_wifi_bb_cfg2 set the low and high nibbles."]
+        #[doc = "0x7cd0 - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_BTBB_WIFI_BB_CFG2\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
         #[inline(always)]
         pub const fn baseband_init_7cd0(&self) -> &BasebandInit7cd0 {
             &self.baseband_init_7cd0
@@ -7886,11 +8014,11 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
+    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_DAC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set and phy_dac_rate_set publish rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
     #[doc(alias = "ADC_RATE_AND_FRONT_END_CONTROL")]
     pub type AdcRateAndFrontEndControl =
         crate::Reg<adc_rate_and_front_end_control::AdcRateAndFrontEndControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_DAC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set and phy_dac_rate_set publish rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order."]
     pub mod adc_rate_and_front_end_control {
         #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` reader"]
         pub type R = crate::R<AdcRateAndFrontEndControlSpec>;
@@ -7938,7 +8066,7 @@ pub mod phy_baseband_config_oracle {
                 AdcRateHighOrFrontEndControlUnknownW::new(self, 1)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set publishes rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_ADC_RATE,ROM_REV0_PHY_DAC_RATE,ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_FE_REG_UPDATE\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_adc_rate_set and phy_dac_rate_set publish rate bit zero into bits 1 and 0 through separate RMW edges. Front-end initialization and update set the same bits in their independently evidenced order.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AdcRateAndFrontEndControlSpec;
         impl crate::RegisterSpec for AdcRateAndFrontEndControlSpec {
             type Ux = u32;
@@ -8890,6 +9018,74 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "TX_OUTPUT_FILTER_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bbtx_outfilter replaces bits five, six and four through three independent fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_output_filter_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_output_filter_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_output_filter_control`] module"]
+    #[doc(alias = "TX_OUTPUT_FILTER_CONTROL")]
+    pub type TxOutputFilterControl =
+        crate::Reg<tx_output_filter_control::TxOutputFilterControlSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bbtx_outfilter replaces bits five, six and four through three independent fresh-read RMWs."]
+    pub mod tx_output_filter_control {
+        #[doc = "Register `TX_OUTPUT_FILTER_CONTROL` reader"]
+        pub type R = crate::R<TxOutputFilterControlSpec>;
+        #[doc = "Register `TX_OUTPUT_FILTER_CONTROL` writer"]
+        pub type W = crate::W<TxOutputFilterControlSpec>;
+        #[doc = "Field `FILTER_INPUT_2` reader - "]
+        pub type FilterInput2R = crate::BitReader;
+        #[doc = "Field `FILTER_INPUT_2` writer - "]
+        pub type FilterInput2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FILTER_INPUT_0` reader - "]
+        pub type FilterInput0R = crate::BitReader;
+        #[doc = "Field `FILTER_INPUT_0` writer - "]
+        pub type FilterInput0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FILTER_INPUT_1` reader - "]
+        pub type FilterInput1R = crate::BitReader;
+        #[doc = "Field `FILTER_INPUT_1` writer - "]
+        pub type FilterInput1W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn filter_input_2(&self) -> FilterInput2R {
+                FilterInput2R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn filter_input_0(&self) -> FilterInput0R {
+                FilterInput0R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn filter_input_1(&self) -> FilterInput1R {
+                FilterInput1R::new(((self.bits >> 6) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn filter_input_2(&mut self) -> FilterInput2W<'_, TxOutputFilterControlSpec> {
+                FilterInput2W::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn filter_input_0(&mut self) -> FilterInput0W<'_, TxOutputFilterControlSpec> {
+                FilterInput0W::new(self, 5)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn filter_input_1(&mut self) -> FilterInput1W<'_, TxOutputFilterControlSpec> {
+                FilterInput1W::new(self, 6)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bbtx_outfilter replaces bits five, six and four through three independent fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_output_filter_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_output_filter_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxOutputFilterControlSpec;
+        impl crate::RegisterSpec for TxOutputFilterControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_output_filter_control::R`](R) reader structure"]
+        impl crate::Readable for TxOutputFilterControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tx_output_filter_control::W`](W) writer structure"]
+        impl crate::Writable for TxOutputFilterControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "TX_POWER_TRACK_CONTROL_0 (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_BASEBAND_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_txpwr_track publishes enable plus two initialization fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_power_track_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_power_track_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_power_track_control_0`] module"]
     #[doc(alias = "TX_POWER_TRACK_CONTROL_0")]
     pub type TxPowerTrackControl0 = crate::Reg<tx_power_track_control_0::TxPowerTrackControl0Spec>;
@@ -9194,6 +9390,218 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "HCCFR_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces bit 22 with the low bit of its first argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`hccfr_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hccfr_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hccfr_control`] module"]
+    #[doc(alias = "HCCFR_CONTROL")]
+    pub type HccfrControl = crate::Reg<hccfr_control::HccfrControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces bit 22 with the low bit of its first argument."]
+    pub mod hccfr_control {
+        #[doc = "Register `HCCFR_CONTROL` reader"]
+        pub type R = crate::R<HccfrControlSpec>;
+        #[doc = "Register `HCCFR_CONTROL` writer"]
+        pub type W = crate::W<HccfrControlSpec>;
+        #[doc = "Field `ENABLE` reader - "]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - "]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 22) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, HccfrControlSpec> {
+                EnableW::new(self, 22)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces bit 22 with the low bit of its first argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`hccfr_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hccfr_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HccfrControlSpec;
+        impl crate::RegisterSpec for HccfrControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hccfr_control::R`](R) reader structure"]
+        impl crate::Readable for HccfrControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hccfr_control::W`](W) writer structure"]
+        impl crate::Writable for HccfrControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "HCCFR_VALUE (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces the low twelve bits with its second argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`hccfr_value::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hccfr_value::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hccfr_value`] module"]
+    #[doc(alias = "HCCFR_VALUE")]
+    pub type HccfrValue = crate::Reg<hccfr_value::HccfrValueSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces the low twelve bits with its second argument."]
+    pub mod hccfr_value {
+        #[doc = "Register `HCCFR_VALUE` reader"]
+        pub type R = crate::R<HccfrValueSpec>;
+        #[doc = "Register `HCCFR_VALUE` writer"]
+        pub type W = crate::W<HccfrValueSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u16>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new((self.bits & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:11"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, HccfrValueSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr replaces the low twelve bits with its second argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`hccfr_value::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hccfr_value::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HccfrValueSpec;
+        impl crate::RegisterSpec for HccfrValueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hccfr_value::R`](R) reader structure"]
+        impl crate::Readable for HccfrValueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hccfr_value::W`](W) writer structure"]
+        impl crate::Writable for HccfrValueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ICCFR_FORCE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr publishes five fields through five separately ordered fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`iccfr_force_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iccfr_force_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iccfr_force_control`] module"]
+    #[doc(alias = "ICCFR_FORCE_CONTROL")]
+    pub type IccfrForceControl = crate::Reg<iccfr_force_control::IccfrForceControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr publishes five fields through five separately ordered fresh-read RMWs."]
+    pub mod iccfr_force_control {
+        #[doc = "Register `ICCFR_FORCE_CONTROL` reader"]
+        pub type R = crate::R<IccfrForceControlSpec>;
+        #[doc = "Register `ICCFR_FORCE_CONTROL` writer"]
+        pub type W = crate::W<IccfrForceControlSpec>;
+        #[doc = "Field `FORCE_ENABLE` reader - "]
+        pub type ForceEnableR = crate::BitReader;
+        #[doc = "Field `FORCE_ENABLE` writer - "]
+        pub type ForceEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FORCE_VALUE` reader - "]
+        pub type ForceValueR = crate::FieldReader<u16>;
+        #[doc = "Field `FORCE_VALUE` writer - "]
+        pub type ForceValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `FORCE_MODE_LOW` reader - "]
+        pub type ForceModeLowR = crate::BitReader;
+        #[doc = "Field `FORCE_MODE_LOW` writer - "]
+        pub type ForceModeLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FORCE_MODE_HIGH` reader - "]
+        pub type ForceModeHighR = crate::BitReader;
+        #[doc = "Field `FORCE_MODE_HIGH` writer - "]
+        pub type ForceModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FORCE_TRIGGER` reader - "]
+        pub type ForceTriggerR = crate::BitReader;
+        #[doc = "Field `FORCE_TRIGGER` writer - "]
+        pub type ForceTriggerW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn force_enable(&self) -> ForceEnableR {
+                ForceEnableR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:12"]
+            #[inline(always)]
+            pub fn force_value(&self) -> ForceValueR {
+                ForceValueR::new(((self.bits >> 1) & 0x0fff) as u16)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn force_mode_low(&self) -> ForceModeLowR {
+                ForceModeLowR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn force_mode_high(&self) -> ForceModeHighR {
+                ForceModeHighR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn force_trigger(&self) -> ForceTriggerR {
+                ForceTriggerR::new(((self.bits >> 15) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn force_enable(&mut self) -> ForceEnableW<'_, IccfrForceControlSpec> {
+                ForceEnableW::new(self, 0)
+            }
+            #[doc = "Bits 1:12"]
+            #[inline(always)]
+            pub fn force_value(&mut self) -> ForceValueW<'_, IccfrForceControlSpec> {
+                ForceValueW::new(self, 1)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn force_mode_low(&mut self) -> ForceModeLowW<'_, IccfrForceControlSpec> {
+                ForceModeLowW::new(self, 13)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn force_mode_high(&mut self) -> ForceModeHighW<'_, IccfrForceControlSpec> {
+                ForceModeHighW::new(self, 14)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn force_trigger(&mut self) -> ForceTriggerW<'_, IccfrForceControlSpec> {
+                ForceTriggerW::new(self, 15)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr publishes five fields through five separately ordered fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`iccfr_force_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iccfr_force_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct IccfrForceControlSpec;
+        impl crate::RegisterSpec for IccfrForceControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`iccfr_force_control::R`](R) reader structure"]
+        impl crate::Readable for IccfrForceControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`iccfr_force_control::W`](W) writer structure"]
+        impl crate::Writable for IccfrForceControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ICCFR_ENABLE_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes three to bits 26:25 for a zero argument and clears them for a nonzero argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`iccfr_enable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iccfr_enable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iccfr_enable_control`] module"]
+    #[doc(alias = "ICCFR_ENABLE_CONTROL")]
+    pub type IccfrEnableControl = crate::Reg<iccfr_enable_control::IccfrEnableControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes three to bits 26:25 for a zero argument and clears them for a nonzero argument."]
+    pub mod iccfr_enable_control {
+        #[doc = "Register `ICCFR_ENABLE_CONTROL` reader"]
+        pub type R = crate::R<IccfrEnableControlSpec>;
+        #[doc = "Register `ICCFR_ENABLE_CONTROL` writer"]
+        pub type W = crate::W<IccfrEnableControlSpec>;
+        #[doc = "Field `GATE` reader - "]
+        pub type GateR = crate::FieldReader;
+        #[doc = "Field `GATE` writer - "]
+        pub type GateW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 25:26"]
+            #[inline(always)]
+            pub fn gate(&self) -> GateR {
+                GateR::new(((self.bits >> 25) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 25:26"]
+            #[inline(always)]
+            pub fn gate(&mut self) -> GateW<'_, IccfrEnableControlSpec> {
+                GateW::new(self, 25)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes three to bits 26:25 for a zero argument and clears them for a nonzero argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`iccfr_enable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iccfr_enable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct IccfrEnableControlSpec;
+        impl crate::RegisterSpec for IccfrEnableControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`iccfr_enable_control::R`](R) reader structure"]
+        impl crate::Readable for IccfrEnableControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`iccfr_enable_control::W`](W) writer structure"]
+        impl crate::Writable for IccfrEnableControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "BASEBAND_INIT_7808 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7808::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7808::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7808`] module"]
     #[doc(alias = "BASEBAND_INIT_7808")]
     pub type BasebandInit7808 = crate::Reg<baseband_init_7808::BasebandInit7808Spec>;
@@ -9233,34 +9641,52 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7890 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 25 then sets bit 24.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7890`] module"]
+    #[doc = "BASEBAND_INIT_7890 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7890`] module"]
     #[doc(alias = "BASEBAND_INIT_7890")]
     pub type BasebandInit7890 = crate::Reg<baseband_init_7890::BasebandInit7890Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 25 then sets bit 24."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
     pub mod baseband_init_7890 {
         #[doc = "Register `BASEBAND_INIT_7890` reader"]
         pub type R = crate::R<BasebandInit7890Spec>;
         #[doc = "Register `BASEBAND_INIT_7890` writer"]
         pub type W = crate::W<BasebandInit7890Spec>;
-        #[doc = "Field `INIT_MODE_UNKNOWN` reader - "]
-        pub type InitModeUnknownR = crate::FieldReader;
-        #[doc = "Field `INIT_MODE_UNKNOWN` writer - "]
-        pub type InitModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `HE_RU26_GOOD_RESPONSE_ENABLE` reader - "]
+        pub type HeRu26GoodResponseEnableR = crate::BitReader;
+        #[doc = "Field `HE_RU26_GOOD_RESPONSE_ENABLE` writer - "]
+        pub type HeRu26GoodResponseEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HE_RU26_GOOD_RESPONSE_DISABLE` reader - "]
+        pub type HeRu26GoodResponseDisableR = crate::BitReader;
+        #[doc = "Field `HE_RU26_GOOD_RESPONSE_DISABLE` writer - "]
+        pub type HeRu26GoodResponseDisableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 24:25"]
+            #[doc = "Bit 24"]
             #[inline(always)]
-            pub fn init_mode_unknown(&self) -> InitModeUnknownR {
-                InitModeUnknownR::new(((self.bits >> 24) & 3) as u8)
+            pub fn he_ru26_good_response_enable(&self) -> HeRu26GoodResponseEnableR {
+                HeRu26GoodResponseEnableR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn he_ru26_good_response_disable(&self) -> HeRu26GoodResponseDisableR {
+                HeRu26GoodResponseDisableR::new(((self.bits >> 25) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 24:25"]
+            #[doc = "Bit 24"]
             #[inline(always)]
-            pub fn init_mode_unknown(&mut self) -> InitModeUnknownW<'_, BasebandInit7890Spec> {
-                InitModeUnknownW::new(self, 24)
+            pub fn he_ru26_good_response_enable(
+                &mut self,
+            ) -> HeRu26GoodResponseEnableW<'_, BasebandInit7890Spec> {
+                HeRu26GoodResponseEnableW::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn he_ru26_good_response_disable(
+                &mut self,
+            ) -> HeRu26GoodResponseDisableW<'_, BasebandInit7890Spec> {
+                HeRu26GoodResponseDisableW::new(self, 25)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 25 then sets bit 24.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BasebandInit7890Spec;
         impl crate::RegisterSpec for BasebandInit7890Spec {
             type Ux = u32;
@@ -9350,34 +9776,78 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_790C (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 11.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_790c`] module"]
+    #[doc = "BASEBAND_INIT_790C (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_790c`] module"]
     #[doc(alias = "BASEBAND_INIT_790C")]
     pub type BasebandInit790c = crate::Reg<baseband_init_790c::BasebandInit790cSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 11."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
     pub mod baseband_init_790c {
         #[doc = "Register `BASEBAND_INIT_790C` reader"]
         pub type R = crate::R<BasebandInit790cSpec>;
         #[doc = "Register `BASEBAND_INIT_790C` writer"]
         pub type W = crate::W<BasebandInit790cSpec>;
+        #[doc = "Field `CHANNEL_DUMP_VALUE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
+        pub type ChannelDumpValueUnknownR = crate::FieldReader;
+        #[doc = "Field `CHANNEL_DUMP_VALUE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
+        pub type ChannelDumpValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
         pub type InitClearUnknownR = crate::BitReader;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
         pub type InitClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LLTF_MASK_INPUT_1` reader - "]
+        pub type LltfMaskInput1R = crate::BitReader;
+        #[doc = "Field `LLTF_MASK_INPUT_1` writer - "]
+        pub type LltfMaskInput1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LLTF_MASK_INPUT_0` reader - "]
+        pub type LltfMaskInput0R = crate::BitReader;
+        #[doc = "Field `LLTF_MASK_INPUT_0` writer - "]
+        pub type LltfMaskInput0W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 4:7 - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
+            #[inline(always)]
+            pub fn channel_dump_value_unknown(&self) -> ChannelDumpValueUnknownR {
+                ChannelDumpValueUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
             #[doc = "Bit 11"]
             #[inline(always)]
             pub fn init_clear_unknown(&self) -> InitClearUnknownR {
                 InitClearUnknownR::new(((self.bits >> 11) & 1) != 0)
             }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn lltf_mask_input_1(&self) -> LltfMaskInput1R {
+                LltfMaskInput1R::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn lltf_mask_input_0(&self) -> LltfMaskInput0R {
+                LltfMaskInput0R::new(((self.bits >> 13) & 1) != 0)
+            }
         }
         impl W {
+            #[doc = "Bits 4:7 - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
+            #[inline(always)]
+            pub fn channel_dump_value_unknown(
+                &mut self,
+            ) -> ChannelDumpValueUnknownW<'_, BasebandInit790cSpec> {
+                ChannelDumpValueUnknownW::new(self, 4)
+            }
             #[doc = "Bit 11"]
             #[inline(always)]
             pub fn init_clear_unknown(&mut self) -> InitClearUnknownW<'_, BasebandInit790cSpec> {
                 InitClearUnknownW::new(self, 11)
             }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn lltf_mask_input_1(&mut self) -> LltfMaskInput1W<'_, BasebandInit790cSpec> {
+                LltfMaskInput1W::new(self, 12)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn lltf_mask_input_0(&mut self) -> LltfMaskInput0W<'_, BasebandInit790cSpec> {
+                LltfMaskInput0W::new(self, 13)
+            }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init clears bit 11.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BasebandInit790cSpec;
         impl crate::RegisterSpec for BasebandInit790cSpec {
             type Ux = u32;
@@ -9467,10 +9937,10 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_TX_PA_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_tx_pa_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_tx_pa_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_tx_pa_control`] module"]
+    #[doc = "BASEBAND_TX_PA_CONTROL (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11; complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_tx_pa_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_tx_pa_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_tx_pa_control`] module"]
     #[doc(alias = "BASEBAND_TX_PA_CONTROL")]
     pub type BasebandTxPaControl = crate::Reg<baseband_tx_pa_control::BasebandTxPaControlSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11; complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
     pub mod baseband_tx_pa_control {
         #[doc = "Register `BASEBAND_TX_PA_CONTROL` reader"]
         pub type R = crate::R<BasebandTxPaControlSpec>;
@@ -9484,6 +9954,10 @@ pub mod phy_baseband_config_oracle {
         pub type PaOnFieldUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `PA_ON_FIELD_UNKNOWN` writer - "]
         pub type PaOnFieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `CHANNEL_DUMP_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
+        pub type ChannelDumpEnableUnknownR = crate::BitReader;
+        #[doc = "Field `CHANNEL_DUMP_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
+        pub type ChannelDumpEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 9"]
             #[inline(always)]
@@ -9494,6 +9968,11 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn pa_on_field_unknown(&self) -> PaOnFieldUnknownR {
                 PaOnFieldUnknownR::new(((self.bits >> 11) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 30 - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
+            #[inline(always)]
+            pub fn channel_dump_enable_unknown(&self) -> ChannelDumpEnableUnknownR {
+                ChannelDumpEnableUnknownR::new(((self.bits >> 30) & 1) != 0)
             }
         }
         impl W {
@@ -9511,8 +9990,15 @@ pub mod phy_baseband_config_oracle {
             ) -> PaOnFieldUnknownW<'_, BasebandTxPaControlSpec> {
                 PaOnFieldUnknownW::new(self, 11)
             }
+            #[doc = "Bit 30 - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
+            #[inline(always)]
+            pub fn channel_dump_enable_unknown(
+                &mut self,
+            ) -> ChannelDumpEnableUnknownW<'_, BasebandTxPaControlSpec> {
+                ChannelDumpEnableUnknownW::new(self, 30)
+            }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_tx_pa_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_tx_pa_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11; complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_tx_pa_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_tx_pa_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BasebandTxPaControlSpec;
         impl crate::RegisterSpec for BasebandTxPaControlSpec {
             type Ux = u32;
@@ -9523,6 +10009,27 @@ pub mod phy_baseband_config_oracle {
         impl crate::Writable for BasebandTxPaControlSpec {
             type Safety = crate::Unsafe;
         }
+    }
+    #[doc = "BASEBAND_WATCHDOG_STATUS (r) register accessor: SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_wdt_get_status returns one unrestricted full-word read.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_watchdog_status`] module"]
+    #[doc(alias = "BASEBAND_WATCHDOG_STATUS")]
+    pub type BasebandWatchdogStatus =
+        crate::Reg<baseband_watchdog_status::BasebandWatchdogStatusSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_wdt_get_status returns one unrestricted full-word read."]
+    pub mod baseband_watchdog_status {
+        #[doc = "Register `BASEBAND_WATCHDOG_STATUS` reader"]
+        pub type R = crate::R<BasebandWatchdogStatusSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_wdt_get_status returns one unrestricted full-word read.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BasebandWatchdogStatusSpec;
+        impl crate::RegisterSpec for BasebandWatchdogStatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`baseband_watchdog_status::R`](R) reader structure"]
+        impl crate::Readable for BasebandWatchdogStatusSpec {}
     }
     #[doc = "BASEBAND_TX_PA_TIMING (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_bb_reg_init clears bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_tx_pa_timing::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_tx_pa_timing::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_tx_pa_timing`] module"]
     #[doc(alias = "BASEBAND_TX_PA_TIMING")]
@@ -9639,21 +10146,39 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_WATCHDOG_ENABLE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_watchdog_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_watchdog_enable`] module"]
+    #[doc = "BASEBAND_WATCHDOG_ENABLE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31. The standalone watchdog leaves replace bits 31 and 30 and set timeout-clear bit 29.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_watchdog_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_watchdog_enable`] module"]
     #[doc(alias = "BASEBAND_WATCHDOG_ENABLE")]
     pub type BasebandWatchdogEnable =
         crate::Reg<baseband_watchdog_enable::BasebandWatchdogEnableSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31. The standalone watchdog leaves replace bits 31 and 30 and set timeout-clear bit 29."]
     pub mod baseband_watchdog_enable {
         #[doc = "Register `BASEBAND_WATCHDOG_ENABLE` reader"]
         pub type R = crate::R<BasebandWatchdogEnableSpec>;
         #[doc = "Register `BASEBAND_WATCHDOG_ENABLE` writer"]
         pub type W = crate::W<BasebandWatchdogEnableSpec>;
+        #[doc = "Field `WATCHDOG_TIMEOUT_CLEAR` reader - "]
+        pub type WatchdogTimeoutClearR = crate::BitReader;
+        #[doc = "Field `WATCHDOG_TIMEOUT_CLEAR` writer - "]
+        pub type WatchdogTimeoutClearW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `WATCHDOG_INTERRUPT_ENABLE` reader - "]
+        pub type WatchdogInterruptEnableR = crate::BitReader;
+        #[doc = "Field `WATCHDOG_INTERRUPT_ENABLE` writer - "]
+        pub type WatchdogInterruptEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `WATCHDOG_ENABLE` reader - "]
         pub type WatchdogEnableR = crate::BitReader;
         #[doc = "Field `WATCHDOG_ENABLE` writer - "]
         pub type WatchdogEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn watchdog_timeout_clear(&self) -> WatchdogTimeoutClearR {
+                WatchdogTimeoutClearR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn watchdog_interrupt_enable(&self) -> WatchdogInterruptEnableR {
+                WatchdogInterruptEnableR::new(((self.bits >> 30) & 1) != 0)
+            }
             #[doc = "Bit 31"]
             #[inline(always)]
             pub fn watchdog_enable(&self) -> WatchdogEnableR {
@@ -9661,13 +10186,27 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn watchdog_timeout_clear(
+                &mut self,
+            ) -> WatchdogTimeoutClearW<'_, BasebandWatchdogEnableSpec> {
+                WatchdogTimeoutClearW::new(self, 29)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn watchdog_interrupt_enable(
+                &mut self,
+            ) -> WatchdogInterruptEnableW<'_, BasebandWatchdogEnableSpec> {
+                WatchdogInterruptEnableW::new(self, 30)
+            }
             #[doc = "Bit 31"]
             #[inline(always)]
             pub fn watchdog_enable(&mut self) -> WatchdogEnableW<'_, BasebandWatchdogEnableSpec> {
                 WatchdogEnableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_watchdog_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_wdg_cfg sets bit 31. The standalone watchdog leaves replace bits 31 and 30 and set timeout-clear bit 29.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_watchdog_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BasebandWatchdogEnableSpec;
         impl crate::RegisterSpec for BasebandWatchdogEnableSpec {
             type Ux = u32;
@@ -9819,10 +10358,10 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7CD0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init and phy_btbb_wifi_bb_cfg2 set the low and high nibbles.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7cd0`] module"]
+    #[doc = "BASEBAND_INIT_7CD0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_BTBB_WIFI_BB_CFG2\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7cd0`] module"]
     #[doc(alias = "BASEBAND_INIT_7CD0")]
     pub type BasebandInit7cd0 = crate::Reg<baseband_init_7cd0::BasebandInit7cd0Spec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init and phy_btbb_wifi_bb_cfg2 set the low and high nibbles."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_BTBB_WIFI_BB_CFG2\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
     pub mod baseband_init_7cd0 {
         #[doc = "Register `BASEBAND_INIT_7CD0` reader"]
         pub type R = crate::R<BasebandInit7cd0Spec>;
@@ -9860,7 +10399,7 @@ pub mod phy_baseband_config_oracle {
                 InitHighUnknownW::new(self, 16)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_reg_init and phy_btbb_wifi_bb_cfg2 set the low and high nibbles.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_BTBB_WIFI_BB_CFG2\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BasebandInit7cd0Spec;
         impl crate::RegisterSpec for BasebandInit7cd0Spec {
             type Ux = u32;
@@ -10410,7 +10949,7 @@ pub mod phy_clock_oracle {
         pub const fn fe_clock_gate_opaque(&self) -> &FeClockGateOpaque {
             &self.fe_clock_gate_opaque
         }
-        #[doc = "0x408 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared high-byte base index configured by PHY front-end initialization, then sampled before CFR and gain-memory publication; other fields remain unknown."]
+        #[doc = "0x408 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_FORCE_PWR_INDEX,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared word contains the table-memory base index and the complete phy_force_pwr_index controls."]
         #[inline(always)]
         pub const fn table_memory_index_source(&self) -> &TableMemoryIndexSource {
             &self.table_memory_index_source
@@ -10449,21 +10988,39 @@ pub mod phy_clock_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TABLE_MEMORY_INDEX_SOURCE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared high-byte base index configured by PHY front-end initialization, then sampled before CFR and gain-memory publication; other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@table_memory_index_source`] module"]
+    #[doc = "TABLE_MEMORY_INDEX_SOURCE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_FORCE_PWR_INDEX,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared word contains the table-memory base index and the complete phy_force_pwr_index controls.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@table_memory_index_source`] module"]
     #[doc(alias = "TABLE_MEMORY_INDEX_SOURCE")]
     pub type TableMemoryIndexSource =
         crate::Reg<table_memory_index_source::TableMemoryIndexSourceSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared high-byte base index configured by PHY front-end initialization, then sampled before CFR and gain-memory publication; other fields remain unknown."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_FORCE_PWR_INDEX,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared word contains the table-memory base index and the complete phy_force_pwr_index controls."]
     pub mod table_memory_index_source {
         #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` reader"]
         pub type R = crate::R<TableMemoryIndexSourceSpec>;
         #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` writer"]
         pub type W = crate::W<TableMemoryIndexSourceSpec>;
+        #[doc = "Field `FORCED_POWER_INDEX` reader - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
+        pub type ForcedPowerIndexR = crate::FieldReader;
+        #[doc = "Field `FORCED_POWER_INDEX` writer - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
+        pub type ForcedPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `FORCE_POWER_ENABLE` reader - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
+        pub type ForcePowerEnableR = crate::BitReader;
+        #[doc = "Field `FORCE_POWER_ENABLE` writer - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
+        pub type ForcePowerEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BASE_INDEX` reader - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
         pub type BaseIndexR = crate::FieldReader;
         #[doc = "Field `BASE_INDEX` writer - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
         pub type BaseIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
+            #[doc = "Bits 17:22 - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
+            #[inline(always)]
+            pub fn forced_power_index(&self) -> ForcedPowerIndexR {
+                ForcedPowerIndexR::new(((self.bits >> 17) & 0x3f) as u8)
+            }
+            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
+            #[inline(always)]
+            pub fn force_power_enable(&self) -> ForcePowerEnableR {
+                ForcePowerEnableR::new(((self.bits >> 23) & 1) != 0)
+            }
             #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
             #[inline(always)]
             pub fn base_index(&self) -> BaseIndexR {
@@ -10471,13 +11028,27 @@ pub mod phy_clock_oracle {
             }
         }
         impl W {
+            #[doc = "Bits 17:22 - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
+            #[inline(always)]
+            pub fn forced_power_index(
+                &mut self,
+            ) -> ForcedPowerIndexW<'_, TableMemoryIndexSourceSpec> {
+                ForcedPowerIndexW::new(self, 17)
+            }
+            #[doc = "Bit 23 - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
+            #[inline(always)]
+            pub fn force_power_enable(
+                &mut self,
+            ) -> ForcePowerEnableW<'_, TableMemoryIndexSourceSpec> {
+                ForcePowerEnableW::new(self, 23)
+            }
             #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
             #[inline(always)]
             pub fn base_index(&mut self) -> BaseIndexW<'_, TableMemoryIndexSourceSpec> {
                 BaseIndexW::new(self, 24)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared high-byte base index configured by PHY front-end initialization, then sampled before CFR and gain-memory publication; other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,ROM_REV0_PHY_FORCE_PWR_INDEX,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Shared word contains the table-memory base index and the complete phy_force_pwr_index controls.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TableMemoryIndexSourceSpec;
         impl crate::RegisterSpec for TableMemoryIndexSourceSpec {
             type Ux = u32;
@@ -11851,14 +12422,14 @@ pub mod wifi_mac_key_table {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by MAC transmit queues."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate."]
 pub type WifiMacTxCommon = crate::Periph<wifi_mac_tx_common::RegisterBlock, 0x2010_4c5c>;
 impl core::fmt::Debug for WifiMacTxCommon {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacTxCommon").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared CCA, timeout and completion state used by MAC transmit queues."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate."]
 pub mod wifi_mac_tx_common {
     #[repr(C)]
     #[doc = "Register block"]
@@ -11871,7 +12442,7 @@ pub mod wifi_mac_tx_common {
         complete_state: CompleteState,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads."]
         #[inline(always)]
         pub const fn cca_control(&self) -> &CcaControl {
             &self.cca_control
@@ -11897,10 +12468,10 @@ pub mod wifi_mac_tx_common {
             &self.complete_state
         }
     }
-    #[doc = "CCA_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control`] module"]
+    #[doc = "CCA_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control`] module"]
     #[doc(alias = "CCA_CONTROL")]
     pub type CcaControl = crate::Reg<cca_control::CcaControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads."]
     pub mod cca_control {
         #[doc = "Register `CCA_CONTROL` reader"]
         pub type R = crate::R<CcaControlSpec>;
@@ -11909,36 +12480,50 @@ pub mod wifi_mac_tx_common {
         #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - "]
         pub type ControlLowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - "]
-        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
-        #[doc = "Field `FORCE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        #[doc = "Field `PHY_AUX_FORCE` reader - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        pub type PhyAuxForceR = crate::FieldReader;
+        #[doc = "Field `PHY_AUX_FORCE` writer - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        pub type PhyAuxForceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `FORCE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
         pub type ForceR = crate::FieldReader;
-        #[doc = "Field `FORCE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+        #[doc = "Field `FORCE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
         pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
-            #[doc = "Bits 0:29"]
+            #[doc = "Bits 0:27"]
             #[inline(always)]
             pub fn control_low_unknown(&self) -> ControlLowUnknownR {
-                ControlLowUnknownR::new(self.bits & 0x3fff_ffff)
+                ControlLowUnknownR::new(self.bits & 0x0fff_ffff)
             }
-            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+            #[doc = "Bits 28:29 - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[inline(always)]
+            pub fn phy_aux_force(&self) -> PhyAuxForceR {
+                PhyAuxForceR::new(((self.bits >> 28) & 3) as u8)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
             #[inline(always)]
             pub fn force(&self) -> ForceR {
                 ForceR::new(((self.bits >> 30) & 3) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:29"]
+            #[doc = "Bits 0:27"]
             #[inline(always)]
             pub fn control_low_unknown(&mut self) -> ControlLowUnknownW<'_, CcaControlSpec> {
                 ControlLowUnknownW::new(self, 0)
             }
-            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue; value zero releases the force."]
+            #[doc = "Bits 28:29 - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[inline(always)]
+            pub fn phy_aux_force(&mut self) -> PhyAuxForceW<'_, CcaControlSpec> {
+                PhyAuxForceW::new(self, 28)
+            }
+            #[doc = "Bits 30:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
             #[inline(always)]
             pub fn force(&mut self) -> ForceW<'_, CcaControlSpec> {
                 ForceW::new(self, 30)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Global TX CCA control; timeout abort forces and later clears the high two-bit field.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CcaControlSpec;
         impl crate::RegisterSpec for CcaControlSpec {
             type Ux = u32;
@@ -20434,12 +21019,12 @@ pub mod wifi_mac_txrx_callbacks {
         pub const fn bb_rx_hang_control(&self) -> &BbRxHangControl {
             &self.bb_rx_hang_control
         }
-        #[doc = "0x808 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces WDEV_TXCCK_DELAY through a separate RMW."]
+        #[doc = "0x808 - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field."]
         #[inline(always)]
         pub const fn delay_secondary(&self) -> &DelaySecondary {
             &self.delay_secondary
         }
-        #[doc = "0x80c - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21."]
+        #[doc = "0x80c - SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
         #[inline(always)]
         pub const fn delay_primary(&self) -> &DelayPrimary {
             &self.delay_primary
@@ -21006,10 +21591,10 @@ pub mod wifi_mac_txrx_callbacks {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DELAY_SECONDARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces WDEV_TXCCK_DELAY through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_secondary`] module"]
+    #[doc = "DELAY_SECONDARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_secondary`] module"]
     #[doc(alias = "DELAY_SECONDARY")]
     pub type DelaySecondary = crate::Reg<delay_secondary::DelaySecondarySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces WDEV_TXCCK_DELAY through a separate RMW."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field."]
     pub mod delay_secondary {
         #[doc = "Register `DELAY_SECONDARY` reader"]
         pub type R = crate::R<DelaySecondarySpec>;
@@ -21047,7 +21632,7 @@ pub mod wifi_mac_txrx_callbacks {
                 HighDelayUnknownW::new(self, 21)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, then replaces WDEV_TXCCK_DELAY through a separate RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DelaySecondarySpec;
         impl crate::RegisterSpec for DelaySecondarySpec {
             type Ux = u32;
@@ -21059,10 +21644,10 @@ pub mod wifi_mac_txrx_callbacks {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DELAY_PRIMARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_primary`] module"]
+    #[doc = "DELAY_PRIMARY (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_primary`] module"]
     #[doc(alias = "DELAY_PRIMARY")]
     pub type DelayPrimary = crate::Reg<delay_primary::DelayPrimarySpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
     pub mod delay_primary {
         #[doc = "Register `DELAY_PRIMARY` reader"]
         pub type R = crate::R<DelayPrimarySpec>;
@@ -21114,7 +21699,7 @@ pub mod wifi_mac_txrx_callbacks {
                 HighDelayUnknownW::new(self, 21)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DelayPrimarySpec;
         impl crate::RegisterSpec for DelayPrimarySpec {
             type Ux = u32;

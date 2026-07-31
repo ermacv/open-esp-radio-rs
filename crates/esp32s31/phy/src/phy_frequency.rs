@@ -11,6 +11,14 @@
 //! SRAM. Every hardware-memory publication is an identity-bound finite MMIO
 //! action completed by the caller.
 
+/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+#[inline]
+pub const fn phy_freq_mem_backup() {}
+
+/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+#[inline]
+pub const fn phy_freq_offset_set() {}
+
 use crate::{
     phy_i2c::PhyI2cAddress,
     phy_rfpll::{
@@ -156,6 +164,14 @@ pub struct PhyFrequencyTableTransition {
     word_index: u8,
 }
 
+/// Exact non-I/O arithmetic of complete rev0 ROM
+/// `phy_get_freq_mem_addr`: `base + index * stride + offset`, retained to the
+/// sixteen-bit frequency-memory address domain.
+pub const fn phy_get_freq_mem_addr(base: u32, stride: u32, index: u32, offset: u32) -> u16 {
+    base.wrapping_add(index.wrapping_mul(stride))
+        .wrapping_add(offset) as u16
+}
+
 impl PhyFrequencyTableTransition {
     pub const fn new(request: PhyFrequencyTableRequest) -> Self {
         Self {
@@ -166,9 +182,12 @@ impl PhyFrequencyTableTransition {
     }
 
     const fn address(self) -> u16 {
-        PHY_RF_FREQUENCY_MEMORY_BASE
-            .wrapping_add((self.entry_index as u16).wrapping_mul(PHY_FREQUENCY_MEMORY_ENTRY_STRIDE))
-            .wrapping_add((self.word_index as u16).wrapping_mul(PHY_FREQUENCY_MEMORY_WORD_STRIDE))
+        phy_get_freq_mem_addr(
+            PHY_RF_FREQUENCY_MEMORY_BASE as u32,
+            PHY_FREQUENCY_MEMORY_ENTRY_STRIDE as u32,
+            self.entry_index as u32,
+            self.word_index as u32 * PHY_FREQUENCY_MEMORY_WORD_STRIDE as u32,
+        )
     }
 
     pub const fn action(self) -> PhyFrequencyTableAction {
@@ -1277,6 +1296,15 @@ mod tests {
         low_frequency_cap: 0x0c8,
         high_frequency_cap: 0x118,
     };
+
+    #[test]
+    fn frequency_memory_address_matches_wrapping_rom_arithmetic() {
+        assert_eq!(super::phy_get_freq_mem_addr(0x20, 7, 84, 6), 0x272);
+        assert_eq!(
+            super::phy_get_freq_mem_addr(0xffff_ffff, 0xffff_ffff, 2, 3),
+            0
+        );
+    }
 
     #[test]
     fn crystal_duty_preserves_both_unsigned_vendor_boundaries() {

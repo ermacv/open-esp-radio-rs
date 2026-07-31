@@ -162,8 +162,14 @@ SECTIONS
   __runtime_data_load_start = LOADADDR(.data);
   __runtime_data_load_end = LOADADDR(.data) + SIZEOF(.data);
 
+  /* PSRAM code is exposed through 64 KiB MMU pages. Keep even a small
+     runtime backed by one complete page; otherwise the bootstrap can hand
+     execution to an address whose final cache/MMU page is only partially
+     represented by the relocated payload. Larger radio images keep their
+     natural size instead of being rounded up on every build. */
   .runtime.payload_end ALIGN(__runtime_data_load_end, 16) : ALIGN(16)
   {
+    . = MAX(., ORIGIN(RUNTIME_CODE) + 0x10000 - 1);
     /* Keep one real byte after the final alignment. llvm-objcopy emits flat
        binaries from section contents, so an empty trailing alignment gap
        would otherwise be omitted from the embedded payload. */

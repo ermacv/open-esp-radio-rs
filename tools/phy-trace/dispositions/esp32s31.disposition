@@ -1,0 +1,56 @@
+# Every inventory function resolves through these fail-closed defaults. A new
+# vendor symbol is therefore visible as not-yet-ported instead of disappearing
+# from the report. Protocol remains unknown until a reviewed family rule or an
+# exact function entry classifies it.
+default-disposition not-yet-ported
+default-protocol unknown
+
+# Protocol classification is independent of implementation status. Keep the
+# shared PHY/RF functions unknown until their actual cross-protocol ownership
+# is established; names alone are not enough to call them Wi-Fi.
+protocol-prefix rom phy_wifi_ wifi
+protocol-prefix archive phy_wifi_ wifi
+protocol-prefix rom phy_11p_ wifi
+protocol-prefix archive phy_11p_ wifi
+protocol-prefix rom phy_bt_ bluetooth
+protocol-prefix archive phy_bt_ bluetooth
+protocol-prefix rom bt_ bluetooth
+protocol-prefix archive bt_ bluetooth
+protocol-prefix rom phy_ble_ ble
+protocol-prefix archive phy_ble_ ble
+protocol-prefix rom ble_ ble
+protocol-prefix archive ble_ ble
+protocol-prefix rom phy_coex_ coex
+protocol-prefix archive phy_coex_ coex
+protocol-prefix rom coex_ coex
+protocol-prefix archive coex_ coex
+protocol-prefix rom phy_154_ ieee802154
+protocol-prefix archive phy_154_ ieee802154
+
+# The complete cold-registration graph already has a single Rust owner and
+# successful hardware evidence. These entries describe implementation only:
+# until a semantic transition contract is executable, they remain
+# IMPLEMENTED-UNQUALIFIED and do not satisfy the completion gate.
+function archive register_chipv7_phy
+disposition replaced-by-composition
+protocol shared
+rust-component open_esp_radio_esp32s31_phy::phy_register::PhyRegisterTransition
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md
+
+function archive phy_rf_init
+disposition state-transition
+protocol shared
+rust-component open_esp_radio_esp32s31_phy::phy_cold::PhyRfColdInit
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md
+
+function archive phy_bb_init
+disposition state-transition
+protocol shared
+rust-component open_esp_radio_esp32s31_phy::phy_bb::PhyBbInitTransition
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md
+
+function archive phy_chip_set_chan
+disposition state-transition
+protocol shared
+rust-component open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelTransition
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md

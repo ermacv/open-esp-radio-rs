@@ -27,6 +27,10 @@ The closed vendor oracle is never a dependency of this workspace. It is an
 explicitly excluded sibling workspace at `../vendor-oracle/esp32s31` and is
 reachable only through `cargo hil oracle ...`.
 
+The `trace-probes` member is another test-only artifact. It contains retained
+LTO wrappers used by `cargo phy-trace` to compare compiled PAC/HAL leaves with
+vendor ELF/archive symbols; it is not linked into board firmware.
+
 Common commands from the repository root:
 
 ```text
@@ -81,6 +85,10 @@ external HIL configuration. They are intentionally not written to
 `scenario.txt`, because that file must not capture credentials. A scenario
 name selects the workload and artifact identity; it does not claim that the
 connected AP can satisfy every cell in that workload.
+
+STA connection scans all ESP32-S31 2.4-GHz channels automatically.
+`OPEN_RADIO_STA_CHANNEL` is only a preferred first-channel hint for controlled
+setups; a stale hint cannot pin the connection to the wrong channel.
 
 The root-owned AP/monitor helper and its narrow sudo policy live in
 `tools/open-radio-net`. Reinstall it from this repository after changing the

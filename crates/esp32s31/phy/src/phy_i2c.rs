@@ -14,6 +14,44 @@
 //! installed around those ROM leaves. Neither oracle is linked into the
 //! firmware.
 
+/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+#[inline]
+pub const fn phy_get_i2c_data() {}
+
+/// Complete pinned target hook; the ESP32-S31 archive body is one `ret`.
+#[inline]
+pub const fn phy_i2c_enter_critical() {}
+
+/// Complete pinned target hook; the ESP32-S31 archive body is one `ret`.
+#[inline]
+pub const fn phy_i2c_exit_critical() {}
+
+/// Initialize the six-byte master-memory descriptor exactly as the pinned
+/// archive leaf.
+#[inline]
+pub fn phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) {
+    configuration[0] = 0;
+    configuration[1] = 0;
+    configuration[3] = 1;
+    configuration[4] = 0x2c;
+    configuration[2] = 1;
+    configuration[5] = 1;
+}
+
+/// Initialize the command-memory descriptor and its two-word mode value.
+#[inline]
+pub fn phy_i2c_master_command_mem_cfg(configuration: &mut [u8; 8], mode: &mut u32) {
+    configuration[3] = 1;
+    configuration[4] = 1;
+    configuration[5] = 1;
+    configuration[7] = 1;
+    configuration[0] = 0;
+    configuration[1] = 0;
+    configuration[2] = 0;
+    configuration[6] = 0x2c;
+    *mode = 2;
+}
+
 use crate::phy_frequency::{
     PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion,
     PhyChannelFrequencyInitControl, PhyChannelFrequencyInitFailure, PhyChannelFrequencyInitOutcome,
@@ -182,8 +220,18 @@ const fn read_result(command: u32) -> u8 {
     (command >> 16) as u8
 }
 
+/// Exact non-I/O arithmetic of complete rev0 ROM `phy_encode_i2c_master`.
+pub const fn phy_encode_i2c_master(block: u32, register: u32, value: u32) -> u32 {
+    block | register.wrapping_shl(8) | value.wrapping_shl(16)
+}
+
+/// Safe fixed-size replacement for complete rev0 ROM `phy_byte_to_word`.
+pub const fn phy_byte_to_word(bytes: &[u8; 4]) -> u32 {
+    u32::from_le_bytes(*bytes)
+}
+
 const fn encode_master_command(block: u8, register: u8, value: u8) -> u32 {
-    block as u32 | ((register as u32) << 8) | ((value as u32) << 16)
+    phy_encode_i2c_master(block as u32, register as u32, value as u32)
 }
 
 // Complete command order recovered from
@@ -2874,6 +2922,19 @@ mod tests {
         PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion,
         PhyChannelFrequencyInitControl, PhyFrequencyI2cAction, PhyFrequencyI2cCompletion,
     };
+
+    #[test]
+    fn pure_rom_word_encoders_preserve_full_input_arithmetic() {
+        assert_eq!(super::phy_encode_i2c_master(0x67, 3, 0xab), 0x00ab_0367);
+        assert_eq!(
+            super::phy_encode_i2c_master(0xffff_ffff, 0xffff_ffff, 0xffff_ffff),
+            0xffff_ffff
+        );
+        assert_eq!(
+            super::phy_byte_to_word(&[0x67, 0x03, 0xab, 0x5a]),
+            0x5aab_0367
+        );
+    }
     use crate::phy_param::PHY_PARAM_LEN;
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -2993,11 +3054,8 @@ mod tests {
 
     fn complete_rx_dco(action: PhyRxDcoAction) -> PhyRxDcoCompletion {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl { address, .. } => {
-                PhyRxDcoCompletion::RxDcoControlMasked {
-                    address,
-                    saved_field: 0,
-                }
+            PhyRxDcoAction::MaskRxDcoControl => {
+                PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 0 }
             }
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
@@ -3011,14 +3069,9 @@ mod tests {
                 PhyRxDcoCompletion::DelayElapsed { iteration, micros }
             }
             PhyRxDcoAction::DcIq(action) => PhyRxDcoCompletion::DcIq(complete_dc_iq(action)),
-            PhyRxDcoAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            } => PhyRxDcoCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            },
+            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
+                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
+            }
             action => panic!("unexpected terminal RX-DCO action: {action:?}"),
         }
     }
@@ -3101,23 +3154,15 @@ mod tests {
             XtalDutyPrepareAction::ForcePbus(transaction) => {
                 XtalDutyPrepareCompletion::PbusForceCompleted(transaction)
             }
-            XtalDutyPrepareAction::MaskRxDcoControl { address, .. } => {
-                XtalDutyPrepareCompletion::RxDcoControlMasked {
-                    address,
-                    saved_field: 0x0040_0000,
-                }
+            XtalDutyPrepareAction::MaskRxDcoControl => {
+                XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 1 }
             }
             XtalDutyPrepareAction::RxDco(action) => {
                 XtalDutyPrepareCompletion::RxDco(complete_rx_dco(action))
             }
-            XtalDutyPrepareAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            } => XtalDutyPrepareCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            },
+            XtalDutyPrepareAction::RestoreRxDcoControl { saved_field } => {
+                XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field }
+            }
             action => panic!("unexpected terminal preparation action: {action:?}"),
         }
     }

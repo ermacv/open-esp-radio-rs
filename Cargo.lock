@@ -1011,6 +1011,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1117,6 +1126,16 @@ dependencies = [
  "roxmltree",
  "svd-parser",
  "svd2rust",
+]
+
+[[package]]
+name = "open-esp-radio-phy-trace"
+version = "0.1.0"
+dependencies = [
+ "object",
+ "roxmltree",
+ "rv-asm",
+ "sha2",
 ]
 
 [[package]]
@@ -1353,6 +1372,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "rv-asm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5713b6e431d860b0c0a95e410df4a859c3579db2b6e98470ae9e69658da59a38"
 
 [[package]]
 name = "ryu"

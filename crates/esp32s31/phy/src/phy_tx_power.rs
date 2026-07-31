@@ -1240,13 +1240,10 @@ mod tests {
             PhyToneSarAction::PollReady {
                 measurement,
                 sample,
-                address,
-                ..
             } => PhyToneSarCompletion::ReadySampled {
                 measurement,
                 sample,
-                address,
-                register_value: crate::phy_pwdet::PHY_PWDET_READY_VALUE,
+                ready: true,
             },
             PhyToneSarAction::ClearTone {
                 measurement,
@@ -1258,12 +1255,10 @@ mod tests {
             PhyToneSarAction::ReadSar {
                 measurement,
                 sample,
-                address,
             } => PhyToneSarCompletion::SarRead {
                 measurement,
                 sample,
-                address,
-                register_value: u32::from(value) << 17,
+                value,
             },
             terminal => panic!("unexpected terminal action {terminal:?}"),
         }

@@ -12,6 +12,13 @@
 //! register ordering and arithmetic as caller-driven actions. It can advance
 //! only from externally delivered readiness/timer completions.
 
+/// Split one packed DC value exactly as pinned archive `get_dc_value`.
+#[inline]
+pub fn get_dc_value(output: &mut [u16; 2], value: u32) {
+    output[0] = (value >> 16) as u16;
+    output[1] = value as u16;
+}
+
 const LINEAR_TO_DB_FRACTION: [u8; 16] =
     [0, 4, 8, 12, 16, 19, 22, 25, 28, 31, 34, 36, 39, 41, 44, 46];
 

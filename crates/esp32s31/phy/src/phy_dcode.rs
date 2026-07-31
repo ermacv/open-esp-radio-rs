@@ -17,10 +17,6 @@ use crate::phy_rfpll::{
 };
 
 pub const PHY_DCODE_FREQUENCY_CODES: [u8; 4] = [115, 116, 117, 118];
-pub const PHY_NRX_FREQUENCY_CONTROL_ADDRESS: usize =
-    open_esp_radio_esp32s31_hal::radio_registers::phy_frequency_channel_oracle::
-        NRX_FREQUENCY_CONTROL
-        .address();
 
 const RFPLL_BLOCK: u8 = 0x62;
 const CKGEN_WRITES: [(u8, u8, u8, u8); 4] = [
@@ -57,7 +53,6 @@ pub enum PhyDcodeAction {
     Rfpll(RfpllFrequencyAction),
     ConfigureNrx {
         frequency_code: u8,
-        address: usize,
     },
     WriteMasked {
         address: PhyI2cAddress,
@@ -79,7 +74,6 @@ pub enum PhyDcodeCompletion {
     Rfpll(RfpllFrequencyCompletion),
     NrxConfigured {
         frequency_code: u8,
-        address: usize,
     },
     MaskedWrite {
         address: PhyI2cAddress,
@@ -156,7 +150,6 @@ impl PhyDcodeTransition {
             PhyDcodeStep::Rfpll { transition, .. } => PhyDcodeAction::Rfpll(transition.action()),
             PhyDcodeStep::ConfigureNrx { calibration_index } => PhyDcodeAction::ConfigureNrx {
                 frequency_code: PHY_DCODE_FREQUENCY_CODES[calibration_index as usize],
-                address: PHY_NRX_FREQUENCY_CONTROL_ADDRESS,
             },
             PhyDcodeStep::ResetCkgen { write_index, .. } => {
                 let (register, high_bit, low_bit, value) = CKGEN_WRITES[write_index as usize];
@@ -215,10 +208,7 @@ impl PhyDcodeTransition {
             }
             (
                 PhyDcodeStep::ConfigureNrx { calibration_index },
-                PhyDcodeCompletion::NrxConfigured {
-                    frequency_code,
-                    address: PHY_NRX_FREQUENCY_CONTROL_ADDRESS,
-                },
+                PhyDcodeCompletion::NrxConfigured { frequency_code },
             ) if frequency_code == PHY_DCODE_FREQUENCY_CODES[calibration_index as usize] => {
                 PhyDcodeStep::ResetCkgen {
                     calibration_index,
@@ -306,19 +296,12 @@ pub enum PhyDcodeBindingError {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyDcodeMmioBinding {
     frequency_code: u8,
-    address: usize,
 }
 
 impl PhyDcodeMmioBinding {
     pub fn new(action: PhyDcodeAction) -> Result<Self, PhyDcodeBindingError> {
         match action {
-            PhyDcodeAction::ConfigureNrx {
-                frequency_code,
-                address,
-            } if address == PHY_NRX_FREQUENCY_CONTROL_ADDRESS => Ok(Self {
-                frequency_code,
-                address,
-            }),
+            PhyDcodeAction::ConfigureNrx { frequency_code } => Ok(Self { frequency_code }),
             _ => Err(PhyDcodeBindingError::UnsupportedAction),
         }
     }
@@ -330,11 +313,10 @@ impl PhyDcodeMmioBinding {
     ) -> PhyDcodeCompletion {
         open_esp_radio_esp32s31_hal::phy_frequency::configure_nrx_frequency(
             registers,
-            u16::from(self.frequency_code),
+            u32::from(self.frequency_code),
         );
         PhyDcodeCompletion::NrxConfigured {
             frequency_code: self.frequency_code,
-            address: self.address,
         }
     }
 }
@@ -511,7 +493,6 @@ mod tests {
         assert_eq!(
             transition.advance(PhyDcodeCompletion::NrxConfigured {
                 frequency_code: PHY_DCODE_FREQUENCY_CODES[0],
-                address: PHY_NRX_FREQUENCY_CONTROL_ADDRESS,
             }),
             Err(PhyDcodeTransitionError::WrongCompletion)
         );
@@ -530,18 +511,11 @@ mod tests {
             },
         };
 
-        let PhyDcodeAction::ConfigureNrx {
-            frequency_code,
-            address,
-        } = transition.action()
-        else {
+        let PhyDcodeAction::ConfigureNrx { frequency_code } = transition.action() else {
             panic!("expected NRX action");
         };
         transition
-            .advance(PhyDcodeCompletion::NrxConfigured {
-                frequency_code,
-                address,
-            })
+            .advance(PhyDcodeCompletion::NrxConfigured { frequency_code })
             .unwrap();
 
         for _ in 0..4 {
@@ -632,7 +606,6 @@ mod tests {
         assert!(matches!(
             PhyDcodeExternalBinding::lower(PhyDcodeAction::ConfigureNrx {
                 frequency_code: PHY_DCODE_FREQUENCY_CODES[0],
-                address: PHY_NRX_FREQUENCY_CONTROL_ADDRESS,
             }),
             Ok(PhyDcodeExternalBinding::Mmio(_))
         ));

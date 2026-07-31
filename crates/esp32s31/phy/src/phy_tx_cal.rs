@@ -5,6 +5,19 @@
 //! delay and a synchronous SAR callback. Rust exposes both as one externally
 //! completed operation per transition step.
 
+/// Complete pinned debug helper; this ESP32-S31 archive always returns zero.
+#[inline]
+pub const fn get_bias_ref_code() -> u32 {
+    0
+}
+
+/// Apply complete pinned `phy_tx_atten_comp` wrapping byte arithmetic.
+#[inline]
+pub fn phy_tx_atten_comp(values: &mut [u8; 3]) {
+    values[1] = values[1].wrapping_add(3);
+    values[2] = values[2].wrapping_add(4);
+}
+
 use crate::{
     phy_dc_iq::phy_linear_to_db,
     phy_i2c::{
@@ -361,9 +374,6 @@ pub enum PhyToneSarAction {
     PollReady {
         measurement: u8,
         sample: u8,
-        address: usize,
-        mask: u32,
-        expected: u32,
     },
     ClearTone {
         measurement: u8,
@@ -372,7 +382,6 @@ pub enum PhyToneSarAction {
     ReadSar {
         measurement: u8,
         sample: u8,
-        address: usize,
     },
     Complete(PhyToneSarOutcome),
     Failed(PhyToneSarFailure),
@@ -397,8 +406,7 @@ pub enum PhyToneSarCompletion {
     ReadySampled {
         measurement: u8,
         sample: u8,
-        address: usize,
-        register_value: u32,
+        ready: bool,
     },
     ReadyDeadlineElapsed {
         measurement: u8,
@@ -411,8 +419,7 @@ pub enum PhyToneSarCompletion {
     SarRead {
         measurement: u8,
         sample: u8,
-        address: usize,
-        register_value: u32,
+        value: u16,
     },
 }
 
@@ -501,9 +508,6 @@ impl PhyToneSarTransition {
             ToneSarStep::Poll => PhyToneSarAction::PollReady {
                 measurement,
                 sample,
-                address: crate::phy_pwdet::PHY_PWDET_READY_ADDRESS,
-                mask: crate::phy_pwdet::PHY_PWDET_READY_MASK,
-                expected: crate::phy_pwdet::PHY_PWDET_READY_VALUE,
             },
             ToneSarStep::Clear => PhyToneSarAction::ClearTone {
                 measurement,
@@ -512,7 +516,6 @@ impl PhyToneSarTransition {
             ToneSarStep::Read => PhyToneSarAction::ReadSar {
                 measurement,
                 sample,
-                address: crate::phy_pwdet::PHY_PWDET_SAR_SAMPLE_ADDRESS,
             },
             ToneSarStep::Complete(outcome) => PhyToneSarAction::Complete(outcome),
             ToneSarStep::Failed(failure) => PhyToneSarAction::Failed(failure),
@@ -565,13 +568,10 @@ impl PhyToneSarTransition {
                 PhyToneSarCompletion::ReadySampled {
                     measurement: completed,
                     sample: completed_sample,
-                    address: crate::phy_pwdet::PHY_PWDET_READY_ADDRESS,
-                    register_value,
+                    ready,
                 },
             ) if completed == measurement && completed_sample == sample => {
-                if register_value & crate::phy_pwdet::PHY_PWDET_READY_MASK
-                    == crate::phy_pwdet::PHY_PWDET_READY_VALUE
-                {
+                if ready {
                     if self.request.clear_tone_after_ready {
                         ToneSarStep::Clear
                     } else {
@@ -605,15 +605,10 @@ impl PhyToneSarTransition {
                 PhyToneSarCompletion::SarRead {
                     measurement: completed,
                     sample: completed_sample,
-                    address: crate::phy_pwdet::PHY_PWDET_SAR_SAMPLE_ADDRESS,
-                    register_value,
+                    value,
                 },
             ) if completed == measurement && completed_sample == sample => {
-                self.sum =
-                    self.sum
-                        .wrapping_add(u32::from(crate::phy_pwdet::sar_sample_from_register(
-                            register_value,
-                        )));
+                self.sum = self.sum.wrapping_add(u32::from(value));
                 if self.sample + 1 == self.request.samples {
                     ToneSarStep::Complete(PhyToneSarOutcome {
                         request: self.request,
@@ -1455,15 +1450,10 @@ impl PhyToneSarMmioBinding {
             PhyToneSarAction::PollReady {
                 measurement,
                 sample,
-                address,
-                ..
             } => PhyToneSarCompletion::ReadySampled {
                 measurement,
                 sample,
-                address,
-                register_value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_ready(
-                    registers,
-                ),
+                ready: open_esp_radio_esp32s31_hal::phy_power_detector::sample_ready(registers),
             },
             PhyToneSarAction::ClearTone {
                 measurement,
@@ -1478,14 +1468,10 @@ impl PhyToneSarMmioBinding {
             PhyToneSarAction::ReadSar {
                 measurement,
                 sample,
-                address,
             } => PhyToneSarCompletion::SarRead {
                 measurement,
                 sample,
-                address,
-                register_value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_sar(
-                    registers,
-                ),
+                value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_sar(registers),
             },
             _ => unreachable!(),
         }
@@ -1907,10 +1893,6 @@ impl PhyTxCapExternalBinding {
 mod tests {
     use super::*;
 
-    fn register(sample: u16) -> u32 {
-        u32::from(sample) << 17
-    }
-
     fn tone_sar_completion(action: PhyToneSarAction, value: u16) -> PhyToneSarCompletion {
         match action {
             PhyToneSarAction::ArmTone {
@@ -1941,13 +1923,10 @@ mod tests {
             PhyToneSarAction::PollReady {
                 measurement,
                 sample,
-                address,
-                ..
             } => PhyToneSarCompletion::ReadySampled {
                 measurement,
                 sample,
-                address,
-                register_value: crate::phy_pwdet::PHY_PWDET_READY_VALUE,
+                ready: true,
             },
             PhyToneSarAction::ClearTone {
                 measurement,
@@ -1959,12 +1938,10 @@ mod tests {
             PhyToneSarAction::ReadSar {
                 measurement,
                 sample,
-                address,
             } => PhyToneSarCompletion::SarRead {
                 measurement,
                 sample,
-                address,
-                register_value: register(value),
+                value,
             },
             action => panic!("unexpected terminal tone/SAR action: {action:?}"),
         }
@@ -2208,9 +2185,6 @@ mod tests {
             PhyToneSarExternalBinding::lower(PhyToneSarAction::PollReady {
                 measurement: 0,
                 sample: 0,
-                address: 0x2010_0858,
-                mask: 1,
-                expected: 1,
             }),
             Ok(PhyToneSarExternalBinding::Mmio(_))
         ));

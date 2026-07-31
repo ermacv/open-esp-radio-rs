@@ -33,6 +33,10 @@ const fn clear_power_detector_enable_field(field: u8, bit: u8) -> u8 {
     field & !bit
 }
 
+const fn low_bit(input: u32) -> bool {
+    input & 1 != 0
+}
+
 const fn txdc_power_detector_images(table: u32, control: u32) -> (u8, u32, u32, u32) {
     let saved_table_low = table as u8;
     let saved_control_field = control & 0x0000_0ff0;
@@ -46,14 +50,6 @@ const fn txdc_power_detector_images(table: u32, control: u32) -> (u8, u32, u32, 
     )
 }
 
-const fn clear_baseband_mode_high(value: u8) -> u8 {
-    value & !2
-}
-
-const fn set_baseband_mode_low(value: u8) -> u8 {
-    value | 1
-}
-
 const fn clear_baseband_tail_low(value: u8) -> u8 {
     value & !3
 }
@@ -62,13 +58,43 @@ const fn clear_baseband_tail_high(value: u8) -> u8 {
     value & !4
 }
 
-const fn decode_noise_floor_dbm(raw_low_twelve: u16) -> i8 {
+const fn decode_noise_floor_quarter_db(raw_low_twelve: u16) -> i32 {
     // Complete ROM `phy_read_hw_noisefloor` subtracts 0x1000 from the
-    // masked field unconditionally, sign-extends and shifts by two. Complete
-    // blob `wDev_GetNoiseFloor` then adds two, shifts by two and stores a byte.
+    // masked field unconditionally, sign-extends and shifts by two.
     let signed_sixteenth_db = (raw_low_twelve & 0x0fff) as i32 - 0x1000;
-    let quarter_db = signed_sixteenth_db >> 2;
+    signed_sixteenth_db >> 2
+}
+
+const fn quarter_db_to_dbm(quarter_db: i32) -> i8 {
+    // Complete blob `wDev_GetNoiseFloor` consumes the quarter-dB ROM result,
+    // adds two, shifts by two and stores a byte.
     ((quarter_db + 2) >> 2) as i8
+}
+
+const fn tx_iq_gain_field(coefficient: i8) -> u8 {
+    // Complete ROM `phy_txiq_set_reg` deliberately excludes the most
+    // negative two's-complement endpoint before publishing the six-bit
+    // field. This differs from merely retaining the low bits of an `i8`.
+    let saturated = if coefficient < -31 {
+        -31
+    } else if coefficient > 31 {
+        31
+    } else {
+        coefficient
+    };
+    saturated as u8 & 0x3f
+}
+
+const fn tx_iq_phase_field(coefficient: i8) -> u8 {
+    // The seven-bit phase field has the analogous symmetric ROM range.
+    let saturated = if coefficient < -63 {
+        -63
+    } else if coefficient > 63 {
+        63
+    } else {
+        coefficient
+    };
+    saturated as u8 & 0x7f
 }
 
 impl RadioRegisters {
@@ -174,6 +200,78 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.track_value_0_unknown().bits(0xe6) });
     }
 
+    /// Publish both fields of complete pinned `phy_config_hccfr` in order.
+    pub fn configure_hccfr(&mut self, enabled: u32, value: u32) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.hccfr_control()
+            .modify(|_, w| w.enable().bit(low_bit(enabled)));
+        // SAFETY: the input is explicitly retained to the generated 12-bit
+        // field, matching the complete RV32 body.
+        bb.hccfr_value()
+            .modify(|_, w| unsafe { w.value().bits(value as u16 & 0x0fff) });
+    }
+
+    /// Apply either complete branch of pinned `phy_iccfr_en`.
+    pub fn configure_iccfr_gate(&mut self, input: u32) {
+        let gate = if input == 0 { 3 } else { 0 };
+        // SAFETY: both branch images fit the generated two-bit field.
+        self.peripherals
+            .phy_baseband_config_oracle
+            .iccfr_enable_control()
+            .modify(|_, w| unsafe { w.gate().bits(gate) });
+    }
+
+    /// Publish all five fields and the tail gate of pinned `phy_force_iccfr`.
+    pub fn configure_forced_iccfr(&mut self, mode: u32, enabled: u32, value: u32) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .iccfr_force_control();
+        control.modify(|_, w| w.force_mode_high().bit(low_bit(mode)));
+        control.modify(|_, w| w.force_enable().bit(low_bit(enabled)));
+        control.modify(|_, w| w.force_trigger().set_bit());
+        control.modify(|_, w| w.force_mode_low().bit(low_bit(mode)));
+        // SAFETY: the input is explicitly retained to the generated 12-bit
+        // field, matching the complete RV32 body.
+        control.modify(|_, w| unsafe { w.force_value().bits(value as u16 & 0x0fff) });
+        self.configure_iccfr_gate(enabled);
+    }
+
+    /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.
+    pub fn configure_bt_wifi_baseband(&mut self) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .baseband_init_7cd0()
+            .modify(|r, w| {
+                // SAFETY: OR with 0x0b and the fixed high-nibble image both
+                // remain inside the generated four-bit fields.
+                unsafe {
+                    w.init_low_unknown()
+                        .bits(r.init_low_unknown().bits() | 0x0b)
+                        .init_high_unknown()
+                        .bits(0x0f)
+                }
+            });
+    }
+
+    /// Apply complete rev0 ROM `phy_chan_dump_cfg`.
+    pub fn configure_channel_dump(&mut self, value: u32, enabled: u32, mode: u32) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        // SAFETY: the caller value is explicitly retained to the generated
+        // four-bit field.
+        bb.baseband_init_790c()
+            .modify(|_, w| unsafe { w.channel_dump_value_unknown().bits(value as u8 & 0x0f) });
+        bb.baseband_init_790c()
+            .modify(|_, w| w.init_clear_unknown().bit(mode & 1 != 0));
+        bb.baseband_tx_pa_control()
+            .modify(|_, w| w.channel_dump_enable_unknown().bit(enabled & 1 != 0));
+    }
+
+    /// Apply complete rev0 ROM `phy_dac_rate_set`.
+    pub fn configure_dac_rate(&mut self, rate: u32) {
+        self.configure_adc_rate(rate);
+    }
+
     /// Configure both I²C TX-rate fields and the four gain-compensation bytes.
     pub fn configure_i2c_tx_rate(&mut self) {
         let rate = self
@@ -200,6 +298,96 @@ impl RadioRegisters {
             .modify(|_, w| w.watchdog_enable().set_bit());
     }
 
+    /// Replace the standalone PHY VHT-support bit through one fresh RMW.
+    pub fn set_vht_support(&mut self, input: u32) {
+        self.peripherals
+            .phy_frequency_channel_oracle
+            .channel_cbw_control_1()
+            .modify(|_, w| w.vht_support().bit(low_bit(input)));
+    }
+
+    /// Replace the PHY CSI-dump force-LLTF bit through one fresh RMW.
+    pub fn set_csi_dump_force_lltf(&mut self, input: u32) {
+        self.peripherals
+            .phy_agc_oracle
+            .csi_dump_force_control()
+            .modify(|_, w| w.force_lltf().bit(low_bit(input)));
+    }
+
+    /// Apply complete ROM `phy_hemu_ru26_good_res`.
+    pub fn configure_he_ru26_good_response(&mut self) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .baseband_init_7890();
+        control.modify(|_, w| w.he_ru26_good_response_enable().set_bit());
+        control.modify(|_, w| w.he_ru26_good_response_disable().clear_bit());
+    }
+
+    /// Apply complete ROM `phy_freq_band_reg_set` and its VHT tail.
+    pub fn set_frequency_band(&mut self, input: u32) {
+        let selected = low_bit(input);
+        self.peripherals
+            .phy_agc_oracle
+            .agc_antenna_control()
+            .modify(|_, w| w.frequency_band_inverse().bit(!selected));
+        self.set_vht_support(input);
+    }
+
+    /// Apply the three fresh RMWs of complete ROM `phy_bbtx_outfilter`.
+    pub fn configure_tx_output_filter(&mut self, input_0: u32, input_1: u32, input_2: u32) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .tx_output_filter_control();
+        control.modify(|_, w| w.filter_input_0().bit(low_bit(input_0)));
+        control.modify(|_, w| w.filter_input_1().bit(low_bit(input_1)));
+        control.modify(|_, w| w.filter_input_2().bit(low_bit(input_2)));
+    }
+
+    /// Replace the baseband watchdog reset-enable bit.
+    pub fn set_baseband_watchdog_reset_enabled(&mut self, input: u32) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .baseband_watchdog_enable()
+            .modify(|_, w| w.watchdog_enable().bit(low_bit(input)));
+    }
+
+    /// Replace the baseband watchdog interrupt-enable bit.
+    pub fn set_baseband_watchdog_interrupt_enabled(&mut self, input: u32) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .baseband_watchdog_enable()
+            .modify(|_, w| w.watchdog_interrupt_enable().bit(low_bit(input)));
+    }
+
+    /// Set the baseband watchdog timeout-clear bit through one fresh RMW.
+    pub fn clear_baseband_watchdog_timeout(&mut self) {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .baseband_watchdog_enable()
+            .modify(|_, w| w.watchdog_timeout_clear().set_bit());
+    }
+
+    /// Return the complete standalone baseband watchdog status word.
+    pub fn baseband_watchdog_status(&mut self) -> u32 {
+        self.peripherals
+            .phy_baseband_config_oracle
+            .baseband_watchdog_status()
+            .read()
+            .bits()
+    }
+
+    /// Apply both fresh RMWs of complete ROM `phy_lltf_mask_en`.
+    pub fn configure_lltf_mask(&mut self, input_0: u32, input_1: u32) {
+        let control = self
+            .peripherals
+            .phy_baseband_config_oracle
+            .baseband_init_790c();
+        control.modify(|_, w| w.lltf_mask_input_0().bit(low_bit(input_0)));
+        control.modify(|_, w| w.lltf_mask_input_1().bit(low_bit(input_1)));
+    }
+
     /// Enable all four recovered automatic noise-floor controls.
     pub fn configure_noise_floor_auto(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
@@ -222,6 +410,12 @@ impl RadioRegisters {
     /// `_oracles/libpp.a[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, applies
     /// `(quarter_db + 2) >> 2` and retains the result as a signed byte.
     pub fn read_noise_floor_dbm(&self) -> i8 {
+        quarter_db_to_dbm(self.read_noise_floor_quarter_db())
+    }
+
+    /// Read the exact signed quarter-dB result returned by complete rev0 ROM
+    /// `phy_read_hw_noisefloor`.
+    pub fn read_noise_floor_quarter_db(&self) -> i32 {
         let raw = self
             .peripherals
             .phy_baseband_config_oracle
@@ -229,7 +423,7 @@ impl RadioRegisters {
             .read()
             .signed_sixteenth_db_code()
             .bits();
-        decode_noise_floor_dbm(raw)
+        decode_noise_floor_quarter_db(raw)
     }
 
     /// Apply all six ordered PA-on configuration operations.
@@ -283,20 +477,10 @@ impl RadioRegisters {
             .modify(|_, w| w.init_clear_unknown().clear_bit());
 
         // Complete ROM updates the adjacent mode bits through separate reads.
-        bb.baseband_init_7890().modify(|r, w| {
-            // SAFETY: the helper maps a generated two-bit field to itself.
-            unsafe {
-                w.init_mode_unknown()
-                    .bits(clear_baseband_mode_high(r.init_mode_unknown().bits()))
-            }
-        });
-        bb.baseband_init_7890().modify(|r, w| {
-            // SAFETY: the helper maps a generated two-bit field to itself.
-            unsafe {
-                w.init_mode_unknown()
-                    .bits(set_baseband_mode_low(r.init_mode_unknown().bits()))
-            }
-        });
+        bb.baseband_init_7890()
+            .modify(|_, w| w.he_ru26_good_response_disable().clear_bit());
+        bb.baseband_init_7890()
+            .modify(|_, w| w.he_ru26_good_response_enable().set_bit());
         bb.baseband_init_7a28()
             .modify(|_, w| w.init_clear_unknown().clear_bit());
         // SAFETY: 0x0f is the complete image of each four-bit field.
@@ -463,21 +647,24 @@ impl RadioRegisters {
         control.modify(|_, w| w.sar_trigger().set_bit());
     }
 
-    /// Read one complete power-detector readiness register image.
-    pub fn power_detector_ready_image(&mut self) -> u32 {
+    /// Read the SVD-described power-detector readiness field.
+    pub fn power_detector_ready(&mut self) -> bool {
         self.peripherals
             .phy_baseband_config_oracle
             .power_detector_sar_control_status()
             .read()
+            .sar_ready()
             .bits()
+            == 0b111
     }
 
-    /// Read one complete power-detector SAR result image.
-    pub fn power_detector_sar_image(&mut self) -> u32 {
+    /// Read the SVD-described power-detector SAR sample field.
+    pub fn power_detector_sar_sample(&mut self) -> u16 {
         self.peripherals
             .phy_baseband_config_oracle
             .power_detector_sar_result()
             .read()
+            .sar_sample()
             .bits()
     }
 
@@ -628,6 +815,20 @@ impl RadioRegisters {
 
     /// Stop both tone paths and restore the two DAC-scale fields.
     pub fn stop_power_detector_tone(&mut self) {
+        self.stop_calibration_tone_paths();
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0xff) });
+        bb.dac_scale_control()
+            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0xff) });
+    }
+
+    /// Stop both tone paths without changing their DAC-scale fields.
+    ///
+    /// This is the complete pinned `libphy.a` `phy_stop_tx_tone_new` leaf.
+    /// The longer ROM `phy_stop_tx_tone(1)` composes this exact prefix with
+    /// two additional DAC-scale restores in [`Self::stop_power_detector_tone`].
+    pub fn stop_calibration_tone_paths(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         bb.tone_path_0_control()
             .modify(|_, w| w.tone_enable_or_arm().clear_bit());
@@ -635,10 +836,6 @@ impl RadioRegisters {
             .modify(|_, w| w.tone_enable_or_arm().clear_bit());
         bb.front_end_and_tone_stop_control()
             .modify(|_, w| unsafe { w.tone_stop_control_unknown().bits(3) });
-        bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0xff) });
-        bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0xff) });
     }
 
     /// Enter or complete the TX-IQ correction phase with one fresh RMW.
@@ -675,26 +872,33 @@ impl RadioRegisters {
             });
     }
 
-    /// Publish one signed TX-IQ gain coefficient using the ROM truncation.
+    /// Publish one signed TX-IQ gain coefficient using the ROM saturation.
     pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
         self.peripherals
             .phy_baseband_config_oracle
             .iq_correction_aux()
             .modify(|_, w| {
-                // SAFETY: the complete ROM leaf retains the low six bits of
-                // the signed byte. Masking reproduces that bounded encoding.
-                unsafe { w.tx_iq_gain_coefficient().bits(coefficient as u8 & 0x3f) }
+                // SAFETY: the helper saturates to [-31, 31], then returns the
+                // complete ROM leaf's six-bit two's-complement field image.
+                unsafe {
+                    w.tx_iq_gain_coefficient()
+                        .bits(tx_iq_gain_field(coefficient))
+                }
             });
     }
 
-    /// Publish one signed TX-IQ phase coefficient using the ROM truncation.
+    /// Publish one signed TX-IQ phase coefficient using the ROM saturation.
     pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
         self.peripherals
             .phy_baseband_config_oracle
             .iq_correction_aux()
             .modify(|_, w| {
-                // SAFETY: the complete ROM leaf retains the low seven bits.
-                unsafe { w.tx_iq_phase_coefficient().bits(coefficient as u8 & 0x7f) }
+                // SAFETY: the helper saturates to [-63, 63], then returns the
+                // complete ROM leaf's seven-bit two's-complement field image.
+                unsafe {
+                    w.tx_iq_phase_coefficient()
+                        .bits(tx_iq_phase_field(coefficient))
+                }
             });
     }
 
@@ -884,18 +1088,21 @@ impl RadioRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_baseband_mode_high, clear_baseband_tail_high, clear_baseband_tail_low,
-        clear_power_detector_enable_field, decode_noise_floor_dbm, set_baseband_mode_low,
-        tone_path_image, txdc_power_detector_images, txiq_first_mismatch_image,
+        clear_baseband_tail_high, clear_baseband_tail_low, clear_power_detector_enable_field,
+        decode_noise_floor_quarter_db, low_bit, quarter_db_to_dbm, tone_path_image,
+        tx_iq_gain_field, tx_iq_phase_field, txdc_power_detector_images, txiq_first_mismatch_image,
         txiq_second_mismatch_image,
     };
 
     #[test]
     fn noise_floor_decode_reproduces_both_complete_arithmetic_shifts() {
         // -96 dBm is encoded as -1536 sixteenth-dB, or low twelve bits 0xa00.
-        assert_eq!(decode_noise_floor_dbm(0x0a00), -96);
-        assert_eq!(decode_noise_floor_dbm(0x0fff), 0);
-        assert_eq!(decode_noise_floor_dbm(0x0000), 0);
+        assert_eq!(decode_noise_floor_quarter_db(0x0a00), -384);
+        assert_eq!(decode_noise_floor_quarter_db(0x0fff), -1);
+        assert_eq!(decode_noise_floor_quarter_db(0x0000), -1024);
+        assert_eq!(quarter_db_to_dbm(-384), -96);
+        assert_eq!(quarter_db_to_dbm(-1), 0);
+        assert_eq!(quarter_db_to_dbm(-1024), 0);
     }
 
     #[test]
@@ -907,9 +1114,15 @@ mod tests {
     }
 
     #[test]
+    fn standalone_feature_inputs_retain_only_the_vendor_low_bit() {
+        assert!(!low_bit(0));
+        assert!(low_bit(1));
+        assert!(!low_bit(2));
+        assert!(low_bit(u32::MAX));
+    }
+
+    #[test]
     fn baseband_partial_field_edges_preserve_unselected_bits() {
-        assert_eq!(clear_baseband_mode_high(3), 1);
-        assert_eq!(set_baseband_mode_low(2), 3);
         assert_eq!(clear_baseband_tail_low(7), 4);
         assert_eq!(clear_baseband_tail_high(7), 3);
     }
@@ -937,5 +1150,22 @@ mod tests {
         );
         assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, true), 0xa8ae_c020);
         assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, false), 0xa1ae_c020);
+    }
+
+    #[test]
+    fn txiq_coefficient_fields_apply_complete_rom_saturation() {
+        assert_eq!(tx_iq_gain_field(-128), 0x21);
+        assert_eq!(tx_iq_gain_field(-32), 0x21);
+        assert_eq!(tx_iq_gain_field(-31), 0x21);
+        assert_eq!(tx_iq_gain_field(0), 0x00);
+        assert_eq!(tx_iq_gain_field(31), 0x1f);
+        assert_eq!(tx_iq_gain_field(127), 0x1f);
+
+        assert_eq!(tx_iq_phase_field(-128), 0x41);
+        assert_eq!(tx_iq_phase_field(-64), 0x41);
+        assert_eq!(tx_iq_phase_field(-63), 0x41);
+        assert_eq!(tx_iq_phase_field(0), 0x00);
+        assert_eq!(tx_iq_phase_field(63), 0x3f);
+        assert_eq!(tx_iq_phase_field(127), 0x3f);
     }
 }

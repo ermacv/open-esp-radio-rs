@@ -78,7 +78,8 @@ pub(crate) fn configure_phy_registers(
 ///
 /// The unique [`crate::phy_cold::PhyColdState`] owner must call
 /// `prepare_rx_table_init` before executing this action. That explicit local
-/// step performs the reference's `phy_param[0x120] = 0x4f` mutation. This leaf
+/// step performs the reference's `*(u16 *)(phy_param + 0x120) = 0x4f4f`
+/// mutation. This leaf
 /// then publishes exactly 79 gain entries and runs the already complete
 /// register-init, AGC-update and AGC-enable suffix.
 #[cfg(target_arch = "riscv32")]
@@ -324,9 +325,7 @@ pub(crate) fn configure_phy_adc_rate(registers: &mut RadioRegisters, rate: u32) 
 /// loop, callback, or mutable software-state access.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_front_end_registers(registers: &mut RadioRegisters) {
-    registers.initialize_front_end_prefix();
-    open_esp_radio_esp32s31_hal::phy_memory::configure_table_memory_base_index(registers, 0xa0);
-    registers.initialize_front_end_suffix();
+    open_esp_radio_esp32s31_hal::phy_baseband::initialize_front_end(registers);
 }
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
@@ -338,7 +337,7 @@ pub(crate) fn configure_phy_front_end_registers(registers: &mut RadioRegisters) 
 /// mutable software-state access.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_front_end_update(registers: &mut RadioRegisters) {
-    registers.update_front_end();
+    open_esp_radio_esp32s31_hal::phy_baseband::update_front_end(registers);
 }
 
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.

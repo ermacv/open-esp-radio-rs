@@ -9,6 +9,10 @@
 //! signed accumulator values. This module preserves that order but exposes
 //! both one-microsecond intervals and readiness as external completions.
 
+/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+#[inline]
+pub const fn noise_check_loop() {}
+
 use crate::phy_dc_iq::{PhyDcIqDelayPhase, PhyDcIqEnablePhase, PhyDcIqReadinessSnapshot};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

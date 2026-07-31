@@ -2156,10 +2156,6 @@ impl PhyTxIqInitExternalBinding {
 mod tests {
     use super::*;
 
-    fn sar_register(sample: u16) -> u32 {
-        u32::from(sample) << 17
-    }
-
     fn tone_completion(action: PhyToneSarAction, sample_value: u16) -> PhyToneSarCompletion {
         match action {
             PhyToneSarAction::ArmTone {
@@ -2190,13 +2186,10 @@ mod tests {
             PhyToneSarAction::PollReady {
                 measurement,
                 sample,
-                address,
-                ..
             } => PhyToneSarCompletion::ReadySampled {
                 measurement,
                 sample,
-                address,
-                register_value: crate::phy_pwdet::PHY_PWDET_READY_VALUE,
+                ready: true,
             },
             PhyToneSarAction::ClearTone {
                 measurement,
@@ -2208,12 +2201,10 @@ mod tests {
             PhyToneSarAction::ReadSar {
                 measurement,
                 sample,
-                address,
             } => PhyToneSarCompletion::SarRead {
                 measurement,
                 sample,
-                address,
-                register_value: sar_register(sample_value),
+                value: sample_value,
             },
             terminal => panic!("unexpected tone terminal: {terminal:?}"),
         }

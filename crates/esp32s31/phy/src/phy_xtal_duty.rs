@@ -13,7 +13,7 @@ use crate::{
     },
     phy_rx_dco::{
         PhyRxDcoAction, PhyRxDcoCompletion, PhyRxDcoFailure, PhyRxDcoOutcome, PhyRxDcoRequest,
-        PhyRxDcoTransition, RX_DCO_CONTROL_ADDRESS, RX_DCO_CONTROL_FIELD_MASK,
+        PhyRxDcoTransition,
     },
     phy_signal_power::{
         PhySignalPowerAction, PhySignalPowerCompletion, PhySignalPowerFailure,
@@ -471,16 +471,11 @@ pub enum XtalDutyPrepareAction {
     ForcePbus(PhyPbusForceTest),
     /// Read the register once, preserve bits 23:22 in Rust, and clear them in
     /// the same serialized radio-owner operation.
-    MaskRxDcoControl {
-        address: usize,
-        clear_mask: u32,
-    },
+    MaskRxDcoControl,
     /// Complete Rust-owned RX-DCO and IQ-estimator graph.
     RxDco(PhyRxDcoAction),
     RestoreRxDcoControl {
-        address: usize,
-        field_mask: u32,
-        saved_field: u32,
+        saved_field: u8,
     },
     Complete(PhyRxDcoOutcome),
     Failed(XtalDutyHardwareFailure),
@@ -504,13 +499,11 @@ pub enum XtalDutyPrepareCompletion {
     PbusForceCompleted(PhyPbusForceTest),
     PbusForceTimedOut(PhyPbusForceTest),
     RxDcoControlMasked {
-        address: usize,
-        saved_field: u32,
+        saved_field: u8,
     },
     RxDco(PhyRxDcoCompletion),
     RxDcoControlRestored {
-        address: usize,
-        saved_field: u32,
+        saved_field: u8,
     },
 }
 
@@ -530,15 +523,15 @@ enum XtalDutyPrepareStep {
     PbusForce(u8),
     MaskRxDcoControl,
     RxDco {
-        saved_field: u32,
+        saved_field: u8,
         transition: PhyRxDcoTransition,
     },
     RestoreRxDcoControl {
-        saved_field: u32,
+        saved_field: u8,
         outcome: PhyRxDcoOutcome,
     },
     RestoreRxDcoControlAfterFailure {
-        saved_field: u32,
+        saved_field: u8,
         failure: PhyRxDcoFailure,
     },
     Complete(PhyRxDcoOutcome),
@@ -592,20 +585,13 @@ impl XtalDutyPrepareTransition {
             XtalDutyPrepareStep::PbusForce(index) => XtalDutyPrepareAction::ForcePbus(
                 prepare_pbus_transaction(index, self.parameter.pbus_rx_path_value),
             ),
-            XtalDutyPrepareStep::MaskRxDcoControl => XtalDutyPrepareAction::MaskRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
-            },
+            XtalDutyPrepareStep::MaskRxDcoControl => XtalDutyPrepareAction::MaskRxDcoControl,
             XtalDutyPrepareStep::RxDco { transition, .. } => {
                 XtalDutyPrepareAction::RxDco(transition.action())
             }
             XtalDutyPrepareStep::RestoreRxDcoControl { saved_field, .. }
             | XtalDutyPrepareStep::RestoreRxDcoControlAfterFailure { saved_field, .. } => {
-                XtalDutyPrepareAction::RestoreRxDcoControl {
-                    address: RX_DCO_CONTROL_ADDRESS,
-                    field_mask: RX_DCO_CONTROL_FIELD_MASK,
-                    saved_field,
-                }
+                XtalDutyPrepareAction::RestoreRxDcoControl { saved_field }
             }
             XtalDutyPrepareStep::Complete(outcome) => XtalDutyPrepareAction::Complete(outcome),
             XtalDutyPrepareStep::Failed(failure) => XtalDutyPrepareAction::Failed(failure),
@@ -676,11 +662,8 @@ impl XtalDutyPrepareTransition {
             }
             (
                 XtalDutyPrepareStep::MaskRxDcoControl,
-                XtalDutyPrepareCompletion::RxDcoControlMasked {
-                    address: RX_DCO_CONTROL_ADDRESS,
-                    saved_field,
-                },
-            ) if saved_field & !RX_DCO_CONTROL_FIELD_MASK == 0 => XtalDutyPrepareStep::RxDco {
+                XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field },
+            ) if saved_field <= 3 => XtalDutyPrepareStep::RxDco {
                 saved_field,
                 transition: PhyRxDcoTransition::new(PhyRxDcoRequest::XTAL_DUTY),
             },
@@ -717,7 +700,6 @@ impl XtalDutyPrepareTransition {
                     outcome,
                 },
                 XtalDutyPrepareCompletion::RxDcoControlRestored {
-                    address: RX_DCO_CONTROL_ADDRESS,
                     saved_field: completed_field,
                 },
             ) if saved_field == completed_field => XtalDutyPrepareStep::Complete(outcome),
@@ -727,7 +709,6 @@ impl XtalDutyPrepareTransition {
                     failure,
                 },
                 XtalDutyPrepareCompletion::RxDcoControlRestored {
-                    address: RX_DCO_CONTROL_ADDRESS,
                     saved_field: completed_field,
                 },
             ) if saved_field == completed_field => {
@@ -1311,9 +1292,7 @@ mod tests {
     };
     use crate::phy_pbus::PhyPbusForceTest;
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
-    use crate::phy_rx_dco::{
-        PhyRxDcoAction, PhyRxDcoCompletion, RX_DCO_CONTROL_ADDRESS, RX_DCO_CONTROL_FIELD_MASK,
-    };
+    use crate::phy_rx_dco::{PhyRxDcoAction, PhyRxDcoCompletion};
     use crate::phy_signal_power::{
         PhySignalPowerAccumulatorSnapshot, PhySignalPowerAction, PhySignalPowerCompletion,
     };
@@ -1468,11 +1447,8 @@ mod tests {
 
     fn complete_rx_dco_action(action: PhyRxDcoAction) -> PhyRxDcoCompletion {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl { address, .. } => {
-                PhyRxDcoCompletion::RxDcoControlMasked {
-                    address,
-                    saved_field: 0,
-                }
+            PhyRxDcoAction::MaskRxDcoControl => {
+                PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 0 }
             }
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
@@ -1486,14 +1462,9 @@ mod tests {
                 PhyRxDcoCompletion::DelayElapsed { iteration, micros }
             }
             PhyRxDcoAction::DcIq(action) => PhyRxDcoCompletion::DcIq(complete_dc_iq_action(action)),
-            PhyRxDcoAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            } => PhyRxDcoCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            },
+            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
+                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
+            }
             action => panic!("unexpected terminal RX-DCO action: {action:?}"),
         }
     }
@@ -1576,23 +1547,15 @@ mod tests {
             XtalDutyPrepareAction::ForcePbus(transaction) => {
                 XtalDutyPrepareCompletion::PbusForceCompleted(transaction)
             }
-            XtalDutyPrepareAction::MaskRxDcoControl { address, .. } => {
-                XtalDutyPrepareCompletion::RxDcoControlMasked {
-                    address,
-                    saved_field: 0x0080_0000,
-                }
+            XtalDutyPrepareAction::MaskRxDcoControl => {
+                XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 2 }
             }
             XtalDutyPrepareAction::RxDco(action) => {
                 XtalDutyPrepareCompletion::RxDco(complete_rx_dco_action(action))
             }
-            XtalDutyPrepareAction::RestoreRxDcoControl {
-                address,
-                saved_field,
-                ..
-            } => XtalDutyPrepareCompletion::RxDcoControlRestored {
-                address,
-                saved_field,
-            },
+            XtalDutyPrepareAction::RestoreRxDcoControl { saved_field } => {
+                XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field }
+            }
             action => panic!("unexpected terminal preparation action: {action:?}"),
         }
     }
@@ -1879,25 +1842,13 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(
-            transition.action(),
-            XtalDutyPrepareAction::MaskRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
-            }
-        );
+        assert_eq!(transition.action(), XtalDutyPrepareAction::MaskRxDcoControl);
         transition
-            .advance(XtalDutyPrepareCompletion::RxDcoControlMasked {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0x0080_0000,
-            })
+            .advance(XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 2 })
             .unwrap();
         assert_eq!(
             transition.action(),
-            XtalDutyPrepareAction::RxDco(PhyRxDcoAction::MaskRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                clear_mask: RX_DCO_CONTROL_FIELD_MASK,
-            })
+            XtalDutyPrepareAction::RxDco(PhyRxDcoAction::MaskRxDcoControl)
         );
         while let XtalDutyPrepareAction::RxDco(action) = transition.action() {
             transition
@@ -1918,17 +1869,10 @@ mod tests {
         };
         assert_eq!(
             transition.action(),
-            XtalDutyPrepareAction::RestoreRxDcoControl {
-                address: RX_DCO_CONTROL_ADDRESS,
-                field_mask: RX_DCO_CONTROL_FIELD_MASK,
-                saved_field: 0x0080_0000,
-            }
+            XtalDutyPrepareAction::RestoreRxDcoControl { saved_field: 2 }
         );
         transition
-            .advance(XtalDutyPrepareCompletion::RxDcoControlRestored {
-                address: RX_DCO_CONTROL_ADDRESS,
-                saved_field: 0x0080_0000,
-            })
+            .advance(XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field: 2 })
             .unwrap();
         assert_eq!(
             transition.action(),

@@ -5,6 +5,8 @@ members = [
     "bootstrap",
     "runtime",
     "runtime-support",
+    "trace-probes",
+    "trace-probes-elf",
 ]
 
 [workspace.package]
@@ -30,6 +32,8 @@ esp-sync = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_info"] }
 open-esp-radio = { path = "../../crates/radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../crates/integration/esp32s31/wifi-esp-hal" }
+open-esp-radio-esp32s31-hal = { path = "../../crates/esp32s31/hal" }
+open-esp-radio-esp32s31-phy = { path = "../../crates/esp32s31/phy" }
 portable-atomic = { version = "1.11", default-features = false }
 static_cell = "2.1.1"
 

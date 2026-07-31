@@ -681,7 +681,11 @@ const fn selected_max_tx_power_quarter_dbm(value: Option<&str>) -> i8 {
 // open and vendor power-table encodings are fully equivalent.
 const OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM: i8 =
     selected_max_tx_power_quarter_dbm(option_env!("OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM"));
-const SCAN_DWELL_MS: u32 = 100;
+// A common 100-TU beacon interval is 102.4 ms. The old 100-ms dwell could
+// therefore miss an AP even during a full-domain scan when the wildcard
+// probe response was lost. Cover almost two complete beacon intervals while
+// keeping a bounded scan across all supported 2.4-GHz channels.
+const SCAN_DWELL_MS: u32 = 200;
 const PERF_AP_PROFILE: bool = option_env!("OPEN_RADIO_PERF_AP").is_some()
     || OPEN_RADIO_HE_MATRIX_HIL
     || OPEN_RADIO_HE_DCM_HIL
@@ -716,21 +720,21 @@ const LISTEN_CHANNEL: u16 = selected_sta_channel(
     option_env!("OPEN_RADIO_STA_CHANNEL"),
     if PERF_AP_PROFILE { 11 } else { 6 },
 );
-const SCAN_CHANNELS: [u8; 13] = [11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13];
-// A full-domain performance survey is available explicitly, while the normal
-// connection loop keeps the pinned channel-6 fast path. Forcing CBW40 against
-// an HT Operation IE that forbids it is never valid; every parsed target still
-// passes through `ht40_secondary_channel`.
-const AUTH_DIAGNOSTIC_CHANNEL_COUNT: usize = if option_env!("OPEN_RADIO_FULL_SCAN").is_some() {
-    SCAN_CHANNELS.len()
-} else {
-    1
-};
-const fn auth_diagnostic_channel(index: usize) -> u8 {
-    if AUTH_DIAGNOSTIC_CHANNEL_COUNT == 1 {
-        LISTEN_CHANNEL as u8
+const STA_SCAN_CHANNEL_COUNT: usize = 13;
+// `OPEN_RADIO_STA_CHANNEL` remains a useful first-channel hint for controlled
+// HIL setups, but it must never pin an ordinary connection. Scan that channel
+// first and then every other ESP32-S31 2.4-GHz channel exactly once.
+const fn sta_scan_channel(index: usize) -> u8 {
+    let preferred = LISTEN_CHANNEL as u8;
+    if index == 0 {
+        preferred
     } else {
-        SCAN_CHANNELS[index]
+        let sequential = index as u8;
+        if sequential >= preferred {
+            sequential + 1
+        } else {
+            sequential
+        }
     }
 }
 const STA_TARGET_SSID: &[u8] = if let Some(ssid) = option_env!("OPEN_RADIO_STA_SSID") {
@@ -1320,16 +1324,15 @@ impl PhyTargetObserver for HilPhyObserver {
         &mut self,
         measurement_index: u8,
         sample_index: u8,
-        register_value: u32,
+        sample_value: u16,
     ) {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL probe=pwdet-sample measurement={} sample={} \
-             raw={:#010x} value={} tone={:#010x}/{:#010x}/{:#010x} \
+             value={} tone={:#010x}/{:#010x}/{:#010x} \
              sar={:#010x}/{:#010x} reference={:#010x}",
             measurement_index,
             sample_index,
-            register_value,
-            open_esp_radio::esp32s31::phy::phy_pwdet::sar_sample_from_register(register_value),
+            sample_value,
             read_diagnostic_mmio(0x2010_040c),
             read_diagnostic_mmio(0x2010_041c),
             read_diagnostic_mmio(0x2010_0420),
@@ -9719,8 +9722,8 @@ async fn run_promiscuous_rx_hil(
     let mut tx_failures = 0_u32;
     let mut active_tx_available = true;
     let mut ring_epochs = 0_u32;
-    for channel_index in 0..AUTH_DIAGNOSTIC_CHANNEL_COUNT {
-        let channel = auth_diagnostic_channel(channel_index);
+    for channel_index in 0..STA_SCAN_CHANNEL_COUNT {
+        let channel = sta_scan_channel(channel_index);
         if let Err(error) =
             switch_channel_with_mac_restart(state, u16::from(channel), 0, platform, mmio).await
         {
@@ -9862,7 +9865,7 @@ async fn run_promiscuous_rx_hil(
             channel_summary.records - records_before,
         ));
 
-        if channel_index + 1 != AUTH_DIAGNOSTIC_CHANNEL_COUNT {
+        if channel_index + 1 != STA_SCAN_CHANNEL_COUNT {
             if let Err(error) = build_cold_ring(
                 &storage.descriptors,
                 descriptor_base,
@@ -9882,7 +9885,7 @@ async fn run_promiscuous_rx_hil(
     // reconfigure either PHY or MAC; it only returns ownership of the stopped
     // walker to Rust, rebuilds the same ring, and republishes it.
     if raw_frames == 0 {
-        let channel = auth_diagnostic_channel(0);
+        let channel = sta_scan_channel(0);
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL stage=rx-dma-rearm-start channel={channel} \
              control={:#010x} base={:#010x} next={:#010x} last={:#010x} \
@@ -9973,7 +9976,7 @@ async fn run_promiscuous_rx_hil(
     // If republishing the DMA edge alone did not recover it, reset only
     // WIFIMAC, repeat MAC initialization, and retain the calibrated PHY.
     if raw_frames == 0 {
-        let channel = auth_diagnostic_channel(0);
+        let channel = sta_scan_channel(0);
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL stage=mac-rx-recovery-start channel={channel} \
              control={:#010x} base={:#010x} next={:#010x} last={:#010x} \
@@ -10090,7 +10093,7 @@ async fn run_promiscuous_rx_hil(
 
     let summary = scan_table.summary();
     let rx_dma_pass = summary.records != 0 && raw_frames != 0;
-    let active_scan_pass = tx_completions >= AUTH_DIAGNOSTIC_CHANNEL_COUNT as u32
+    let active_scan_pass = tx_completions >= STA_SCAN_CHANNEL_COUNT as u32
         && probe_responses != 0
         && tx_failures == 0;
     let target = best_matching_ssid(scan_table.records(), STA_TARGET_SSID).copied();
@@ -10204,7 +10207,7 @@ async fn run_promiscuous_rx_hil(
              tx_completions={tx_completions} tx_failures={tx_failures} \
              probe_responses={probe_responses} \
              records={} observed_frames={} raw_frames={} dropped={} ring_epochs={ring_epochs}",
-            AUTH_DIAGNOSTIC_CHANNEL_COUNT,
+            STA_SCAN_CHANNEL_COUNT,
             summary.records,
             summary.observed_frames,
             raw_frames,
@@ -10216,7 +10219,7 @@ async fn run_promiscuous_rx_hil(
              dma=sram tx_completions={tx_completions} tx_failures={tx_failures} \
              probe_responses={probe_responses} records={} observed_frames={} \
              raw_frames={} dropped={} ring_epochs={ring_epochs}",
-            AUTH_DIAGNOSTIC_CHANNEL_COUNT,
+            STA_SCAN_CHANNEL_COUNT,
             summary.records,
             summary.observed_frames,
             raw_frames,
@@ -10228,7 +10231,7 @@ async fn run_promiscuous_rx_hil(
              tx_completions={tx_completions} tx_failures={tx_failures} \
              probe_responses={probe_responses} \
              records={} observed_frames={} raw_frames={} dropped={} ring_epochs={ring_epochs}",
-            AUTH_DIAGNOSTIC_CHANNEL_COUNT,
+            STA_SCAN_CHANNEL_COUNT,
             summary.records,
             summary.observed_frames,
             raw_frames,

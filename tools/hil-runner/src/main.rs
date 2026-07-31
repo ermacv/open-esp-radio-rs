@@ -28,6 +28,18 @@ const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 const OTA_0_OFFSET: u32 = 0x1_0000;
 const OTA_DATA_SIZE: usize = 0x2000;
 
+const SCENARIO_ENVIRONMENT: &[&str] = &[
+    "OPEN_RADIO_RAW_MAC_BENCH",
+    "OPEN_RADIO_TX_BENCH",
+    "OPEN_RADIO_AMSDU_BENCH",
+    "OPEN_RADIO_NETWORK_AMSDU_BENCH",
+    "OPEN_RADIO_HE_MATRIX_HIL",
+    "OPEN_RADIO_HE_LDPC_HIL",
+    "OPEN_RADIO_HE_DCM_HIL",
+    "OPEN_RADIO_HE_TB_HIL",
+    "OPEN_RADIO_HE_DELIMITER_HIL",
+];
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
@@ -43,6 +55,10 @@ fn run() -> Result<()> {
             println!("{QUALIFIED_PROFILE}");
             Ok(())
         }
+        Some("scenarios") if arguments.next().is_none() => {
+            print_scenarios();
+            Ok(())
+        }
         Some("doctor") if arguments.next().is_none() => doctor(&root),
         Some("build") => {
             let scenario = arguments
@@ -51,7 +67,7 @@ fn run() -> Result<()> {
                 .transpose()?
                 .unwrap_or(Scenario::BootSmoke);
             if arguments.next().is_some() {
-                return Err("usage: cargo hil build [boot-smoke|radio]".into());
+                return Err("usage: cargo hil build [scenario]".into());
             }
             let artifacts = build(&root, scenario)?;
             println!("profile={QUALIFIED_PROFILE}");
@@ -124,9 +140,10 @@ fn print_help() {
     println!(
         "Open ESP radio HIL\n\n\
          cargo hil profiles\n\
+         cargo hil scenarios\n\
          cargo hil doctor\n\
-         cargo hil build [boot-smoke|radio]\n\n\
-         cargo hil flash [boot-smoke|radio|bidirectional] [--port /dev/ttyACM0]\n\
+         cargo hil build [scenario]\n\n\
+         cargo hil flash [scenario] [--port /dev/ttyACM0]\n\
          cargo hil traffic bidirectional <ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
@@ -134,8 +151,31 @@ fn print_help() {
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \
-         PSRAM/SRAM placement contract, and emits an ESP application image."
+         PSRAM/SRAM placement contract, and emits an ESP application image.\n\
+         Run `cargo hil scenarios` for the firmware scenario list."
     );
+}
+
+fn print_scenarios() {
+    for scenario in Scenario::ALL {
+        println!("{:<22} {}", scenario.argument(), scenario.description());
+    }
+}
+
+fn scenario_manifest(scenario: Scenario) -> String {
+    let mut manifest = format!(
+        "profile={QUALIFIED_PROFILE}\nscenario={}\nartifact={}\nruntime_feature={}\n",
+        scenario.argument(),
+        scenario.name(),
+        scenario.runtime_feature(),
+    );
+    for (variable, value) in scenario.environment() {
+        manifest.push_str(variable);
+        manifest.push('=');
+        manifest.push_str(value);
+        manifest.push('\n');
+    }
+    manifest
 }
 
 struct OracleArtifacts {
@@ -360,15 +400,64 @@ enum Scenario {
     BootSmoke,
     Radio,
     Bidirectional,
+    UdpTx,
+    Amsdu,
+    NetworkAmsdu,
+    HeMcsGiMatrix,
+    HeLdpcMatrix,
+    HeDcmMatrix,
+    HeTb,
+    HeDelimiter,
 }
 
 impl Scenario {
+    const ALL: [Self; 11] = [
+        Self::BootSmoke,
+        Self::Radio,
+        Self::Bidirectional,
+        Self::UdpTx,
+        Self::Amsdu,
+        Self::NetworkAmsdu,
+        Self::HeMcsGiMatrix,
+        Self::HeLdpcMatrix,
+        Self::HeDcmMatrix,
+        Self::HeTb,
+        Self::HeDelimiter,
+    ];
+
     fn parse(value: &str) -> Result<Self> {
         match value {
             "boot-smoke" => Ok(Self::BootSmoke),
             "radio" | "open-radio-hil" => Ok(Self::Radio),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
-            _ => Err(format!("unsupported HIL scenario `{value}`").into()),
+            "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
+            "amsdu" | "open-radio-amsdu" => Ok(Self::Amsdu),
+            "network-amsdu" | "open-radio-network-amsdu" => Ok(Self::NetworkAmsdu),
+            "he-mcs-gi-matrix" | "open-radio-he-mcs-gi-matrix" => Ok(Self::HeMcsGiMatrix),
+            "he-ldpc-matrix" | "open-radio-he-ldpc-matrix" => Ok(Self::HeLdpcMatrix),
+            "he-dcm-matrix" | "open-radio-he-dcm-matrix" => Ok(Self::HeDcmMatrix),
+            "he-tb" | "open-radio-he-tb" => Ok(Self::HeTb),
+            "he-delimiter" | "open-radio-he-delimiter" => Ok(Self::HeDelimiter),
+            _ => Err(format!(
+                "unsupported HIL scenario `{value}`; run `cargo hil scenarios` for the list"
+            )
+            .into()),
+        }
+    }
+
+    const fn argument(self) -> &'static str {
+        match self {
+            Self::BootSmoke => "boot-smoke",
+            Self::Radio => "radio",
+            Self::Bidirectional => "bidirectional",
+            Self::UdpTx => "udp-tx",
+            Self::Amsdu => "amsdu",
+            Self::NetworkAmsdu => "network-amsdu",
+            Self::HeMcsGiMatrix => "he-mcs-gi-matrix",
+            Self::HeLdpcMatrix => "he-ldpc-matrix",
+            Self::HeDcmMatrix => "he-dcm-matrix",
+            Self::HeTb => "he-tb",
+            Self::HeDelimiter => "he-delimiter",
         }
     }
 
@@ -377,13 +466,72 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::Bidirectional => "open-radio-bidirectional",
+            Self::UdpTx => "open-radio-udp-tx",
+            Self::Amsdu => "open-radio-amsdu",
+            Self::NetworkAmsdu => "open-radio-network-amsdu",
+            Self::HeMcsGiMatrix => "open-radio-he-mcs-gi-matrix",
+            Self::HeLdpcMatrix => "open-radio-he-ldpc-matrix",
+            Self::HeDcmMatrix => "open-radio-he-dcm-matrix",
+            Self::HeTb => "open-radio-he-tb",
+            Self::HeDelimiter => "open-radio-he-delimiter",
         }
     }
 
     const fn runtime_feature(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke",
-            Self::Radio | Self::Bidirectional => "open-radio-hil",
+            Self::Radio
+            | Self::Bidirectional
+            | Self::UdpTx
+            | Self::Amsdu
+            | Self::NetworkAmsdu
+            | Self::HeMcsGiMatrix
+            | Self::HeLdpcMatrix
+            | Self::HeDcmMatrix
+            | Self::HeTb
+            | Self::HeDelimiter => "open-radio-hil",
+        }
+    }
+
+    const fn environment(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::BootSmoke | Self::Radio => &[],
+            Self::Bidirectional => &[
+                ("OPEN_RADIO_RAW_MAC_BENCH", "1"),
+                ("OPEN_RADIO_FULL_SCAN", "1"),
+            ],
+            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_FULL_SCAN", "1")],
+            Self::Amsdu => &[
+                ("OPEN_RADIO_RAW_MAC_BENCH", "1"),
+                ("OPEN_RADIO_AMSDU_BENCH", "1"),
+                ("OPEN_RADIO_FULL_SCAN", "1"),
+            ],
+            Self::NetworkAmsdu => &[
+                ("OPEN_RADIO_TX_BENCH", "1"),
+                ("OPEN_RADIO_NETWORK_AMSDU_BENCH", "1"),
+                ("OPEN_RADIO_FULL_SCAN", "1"),
+            ],
+            Self::HeMcsGiMatrix => &[("OPEN_RADIO_HE_MATRIX_HIL", "1")],
+            Self::HeLdpcMatrix => &[("OPEN_RADIO_HE_LDPC_HIL", "1")],
+            Self::HeDcmMatrix => &[("OPEN_RADIO_HE_DCM_HIL", "1")],
+            Self::HeTb => &[("OPEN_RADIO_HE_TB_HIL", "1")],
+            Self::HeDelimiter => &[("OPEN_RADIO_HE_DELIMITER_HIL", "1")],
+        }
+    }
+
+    const fn description(self) -> &'static str {
+        match self {
+            Self::BootSmoke => "bootstrap, Flash/PSRAM and runtime smoke test",
+            Self::Radio => "baseline open PHY/MAC/STA/WPA2 HIL",
+            Self::Bidirectional => "synthetic raw-MAC uplink plus host downlink",
+            Self::UdpTx => "embassy-net device-to-host UDP throughput",
+            Self::Amsdu => "synthetic A-MSDU/A-MPDU ownership path",
+            Self::NetworkAmsdu => "copy-free embassy-net A-MSDU/A-MPDU path",
+            Self::HeMcsGiMatrix => "HE SU MCS0..9 and GI/LTF matrix",
+            Self::HeLdpcMatrix => "HE SU LDPC MCS/GI matrix",
+            Self::HeDcmMatrix => "HE DCM constellation/GI matrix",
+            Self::HeTb => "Trigger-based HE-TB transmit path",
+            Self::HeDelimiter => "HE delimiter and empty-delimiter matrix",
         }
     }
 }
@@ -397,6 +545,7 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
     let runtime_target = output.join("cargo/runtime");
     let bootstrap_target = output.join("cargo/bootstrap");
     fs::create_dir_all(&output)?;
+    fs::write(output.join("scenario.txt"), scenario_manifest(scenario))?;
 
     let runtime_elf = runtime_target
         .join(TARGET)
@@ -421,14 +570,13 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
         .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target);
-    add_local_esp_hal_patches(&mut runtime, root);
-    if scenario == Scenario::Bidirectional {
-        runtime
-            .env("OPEN_RADIO_RAW_MAC_BENCH", "1")
-            // A benchmark image must not silently depend on the AP remaining
-            // on the channel selected by an earlier HIL invocation.
-            .env("OPEN_RADIO_FULL_SCAN", "1");
+    for variable in SCENARIO_ENVIRONMENT {
+        runtime.env_remove(variable);
     }
+    for (variable, value) in scenario.environment() {
+        runtime.env(variable, value);
+    }
+    add_local_esp_hal_patches(&mut runtime, root);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
 
@@ -902,6 +1050,51 @@ mod tests {
         assert_eq!(Scenario::parse("boot-smoke").unwrap(), Scenario::BootSmoke);
         assert_eq!(Scenario::parse("radio").unwrap(), Scenario::Radio);
         assert_eq!(Scenario::Radio.name(), "open-radio-hil");
+        assert_eq!(
+            Scenario::parse("he-dcm-matrix").unwrap(),
+            Scenario::HeDcmMatrix
+        );
+        assert_eq!(Scenario::HeDcmMatrix.name(), "open-radio-he-dcm-matrix");
+    }
+
+    #[test]
+    fn scenario_arguments_and_artifact_names_are_unique() {
+        for (index, scenario) in Scenario::ALL.iter().enumerate() {
+            for other in &Scenario::ALL[index + 1..] {
+                assert_ne!(scenario.argument(), other.argument());
+                assert_ne!(scenario.name(), other.name());
+            }
+        }
+    }
+
+    #[test]
+    fn scenario_environment_selects_one_reproducible_mode() {
+        assert!(Scenario::Radio.environment().is_empty());
+        assert_eq!(
+            Scenario::HeLdpcMatrix.environment(),
+            &[("OPEN_RADIO_HE_LDPC_HIL", "1")]
+        );
+        assert!(
+            Scenario::NetworkAmsdu
+                .environment()
+                .contains(&("OPEN_RADIO_TX_BENCH", "1"))
+        );
+        for scenario in Scenario::ALL {
+            for (variable, _) in scenario.environment() {
+                if variable.starts_with("OPEN_RADIO_") && variable != &"OPEN_RADIO_FULL_SCAN" {
+                    assert!(SCENARIO_ENVIRONMENT.contains(variable));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn scenario_manifest_records_identity_without_external_configuration() {
+        let manifest = scenario_manifest(Scenario::HeDcmMatrix);
+        assert!(manifest.contains("scenario=he-dcm-matrix\n"));
+        assert!(manifest.contains("artifact=open-radio-he-dcm-matrix\n"));
+        assert!(manifest.contains("OPEN_RADIO_HE_DCM_HIL=1\n"));
+        assert!(!manifest.contains("OPEN_RADIO_STA_PASSWORD"));
     }
 
     #[test]

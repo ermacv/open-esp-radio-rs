@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.012 Mbit/s.
-- Concurrent open-radio TX floor: 67.636 Mbit/s.
-- Conservative sum: 77.648 Mbit/s.
+- Device direct-RX median: 10.011 Mbit/s.
+- Concurrent open-radio TX floor: 68.788 Mbit/s.
+- Conservative sum: 78.799 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,11 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `97b4767d27efa6fbfb9cc6fda4fcb2850558708be55b116347b219446b0f2076`.
+  `74fc8aa35ec1b3d3345df84a1116857139e96d197a2788518991bda5fed5c09e`.
 - ESP application image SHA-256:
-  `d8d8f11d35bee786ca574084cb4dcac58190f5fda0078c3bfe15249ed8f2a964`.
+  `a646792aec0856ccfd63ea75de8a62ff1dab6a01d8e67391f2d26fb787bed9ce`.
 - Packed stage-two runtime SHA-256:
-  `d049e1a29405e6573b49c3618783fd867c0ec3022b250aea3e4266adcf3632d4`.
+  `9f81a63c844e6c3b787b7c55d0213e8588e062b4cf459a59a5784177c2a2e033`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -61,8 +61,10 @@ The bulky UART log and binaries remain generated artifacts under
 ## Ownership boundary
 
 Reusable rate, aggregate, retry, pinned-frame and Embassy network ownership is
-already in the driver crates named in the feature ledger. The HIL runtime
-retains only board/bootstrap setup, credentials, synthetic traffic generation
-and evidence reporting. The still-monolithic STA orchestration is tracked
-separately and must be extracted before the old application HIL can be
-deleted.
+already in the driver crates named in the feature ledger. The final run also
+used the driver-owned `select_sta_association` channel/CBW decision and
+`StaAssociationRetrySchedule`; their former HIL copies were deleted before
+qualification. The HIL runtime retains board/bootstrap setup, credentials,
+synthetic traffic generation and evidence reporting. The remaining
+authentication/association/WPA2 executor orchestration is tracked separately
+and must be extracted before the old application HIL can be deleted.

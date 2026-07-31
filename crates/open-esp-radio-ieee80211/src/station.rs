@@ -628,6 +628,129 @@ pub enum StaAssociationPhy {
     He20,
 }
 
+impl StaAssociationPhy {
+    pub const fn bandwidth_mhz(self) -> u8 {
+        match self {
+            Self::Ht40 => 40,
+            Self::Legacy | Self::Ht20 | Self::He20 => 20,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Ht20 => "ht20",
+            Self::Ht40 => "ht40",
+            Self::He20 => "he20",
+        }
+    }
+}
+
+/// Caller policy applied before constructing one STA association request.
+///
+/// These are preferences rather than unchecked PHY claims. `PreferHe20`
+/// still falls back when the peer does not advertise the complete HE20 MCS9
+/// contract; `ForceHt20` is retained as the diagnostic negative-control mode
+/// and may subsequently be rejected by [`AssociationRequest::encode`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationPreference {
+    Automatic,
+    PreferHe20,
+    ForceHt20,
+}
+
+/// Complete scan-to-channel decision consumed by the PHY channel transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAssociationSelection {
+    pub phy: StaAssociationPhy,
+    pub primary_channel: u8,
+    /// Primary channel number for 20 MHz, center frequency in MHz for HT40.
+    pub channel_or_frequency: u16,
+    /// Recovered ESP32-S31 CBW encoding: 0=20 MHz, 2=above, 3=below.
+    pub cbw: u8,
+}
+
+/// Select the strongest open-driver PHY supported by one scanned peer.
+///
+/// Automatic mode prefers the 150-Mbit/s one-stream HT40 path when the peer's
+/// HT Capabilities and HT Operation agree on a usable secondary channel. HE
+/// remains 20-MHz-only because the complete ESP32-S31 vendor HE capability
+/// builder advertises a zero HE Channel Width Set. Otherwise the selection is
+/// HE20 MCS9 or the conservative HT20 fallback.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_he.o]::
+/// ieee80211_add_hecap` and the complete HT Capabilities/Operation IEs retained
+/// by [`ScanRecord::ht40_secondary_channel`]. The above/below CBW values are
+/// independently recovered from rev0 ROM `phy_bb_bss_cbw40`.
+pub fn select_sta_association(
+    access_point: &ScanRecord,
+    preference: StaAssociationPreference,
+) -> StaAssociationSelection {
+    let he20_supported = parse_he20_capabilities(access_point.he_capability_ie_bytes())
+        .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
+        && parse_he20_operation(access_point.he_operation_ie_bytes()).is_ok();
+    let phy = if preference == StaAssociationPreference::PreferHe20 && he20_supported {
+        StaAssociationPhy::He20
+    } else if preference == StaAssociationPreference::ForceHt20 {
+        StaAssociationPhy::Ht20
+    } else if access_point.ht40_secondary_channel().is_some() {
+        StaAssociationPhy::Ht40
+    } else if he20_supported {
+        StaAssociationPhy::He20
+    } else {
+        StaAssociationPhy::Ht20
+    };
+
+    let primary_frequency = 2_407 + u16::from(access_point.channel) * 5;
+    let (channel_or_frequency, cbw) = if phy == StaAssociationPhy::Ht40 {
+        match access_point.ht40_secondary_channel() {
+            Some(crate::scan::HtSecondaryChannel::Above) => (primary_frequency + 10, 2),
+            Some(crate::scan::HtSecondaryChannel::Below) => (primary_frequency - 10, 3),
+            None => (u16::from(access_point.channel), 0),
+        }
+    } else {
+        (u16::from(access_point.channel), 0)
+    };
+    StaAssociationSelection {
+        phy,
+        primary_channel: access_point.channel,
+        channel_or_frequency,
+        cbw,
+    }
+}
+
+/// Vendor state timer used by ordinary Authentication and Association.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_sta.o]::
+/// ieee80211_sta_new_state`, ordinary non-mesh auth branch `.L347` and
+/// association branch `.L353`, both arm their software timer with immediate
+/// `0x3e8`.
+pub const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
+
+/// Bounded open Authentication attempts retained by the qualified STA path.
+pub const STA_AUTHENTICATION_ATTEMPT_LIMIT: u16 = 3;
+
+/// Compatibility schedule for Association retransmission inside the vendor
+/// one-second state deadline.
+///
+/// This 160-ms cadence comes from the hardware-qualified pre-transfer open
+/// STA runtime, not from a recovered vendor timer body. It remains explicit so
+/// later blob comparison can replace one policy value without changing the
+/// executor loop.
+pub struct StaAssociationRetrySchedule;
+
+impl StaAssociationRetrySchedule {
+    pub const INTERVAL_MS: u32 = 160;
+
+    pub const fn attempt_at(elapsed_ms: u32) -> Option<u16> {
+        if elapsed_ms < STA_RESPONSE_TIMEOUT_MS && elapsed_ms % Self::INTERVAL_MS == 0 {
+            Some((elapsed_ms / Self::INTERVAL_MS + 1) as u16)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssociationRequest<'a> {
     pub source: [u8; 6],
@@ -1977,6 +2100,55 @@ mod tests {
         .unwrap();
         let phy_start = length - HT40_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
         assert_eq!(&output[phy_start..phy_start + 4], &[45, 26, 0x6e, 0]);
+    }
+
+    #[test]
+    fn association_selection_owns_phy_and_center_channel_policy() {
+        let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        record.channel = 6;
+        record.ht_capability_ie_present = true;
+        record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 0x02, 0]);
+        record.ht_operation_ie_present = true;
+        record.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
+        record.he_capability_ie[..HE20_VENDOR_MCS9_CAPABILITY_IE.len()]
+            .copy_from_slice(&HE20_VENDOR_MCS9_CAPABILITY_IE);
+        record.he_capability_ie_len = HE20_VENDOR_MCS9_CAPABILITY_IE.len() as u8;
+        let he_operation = [255, 7, 36, 0, 0, 0, 1, 0xfd, 0xff];
+        record.he_operation_ie[..he_operation.len()].copy_from_slice(&he_operation);
+        record.he_operation_ie_len = he_operation.len() as u8;
+
+        let automatic = select_sta_association(&record, StaAssociationPreference::Automatic);
+        assert_eq!(automatic.phy, StaAssociationPhy::Ht40);
+        assert_eq!(automatic.primary_channel, 6);
+        assert_eq!(automatic.channel_or_frequency, 2_447);
+        assert_eq!(automatic.cbw, 2);
+
+        let he20 = select_sta_association(&record, StaAssociationPreference::PreferHe20);
+        assert_eq!(he20.phy, StaAssociationPhy::He20);
+        assert_eq!(he20.channel_or_frequency, 6);
+        assert_eq!(he20.cbw, 0);
+
+        let ht20 = select_sta_association(&record, StaAssociationPreference::ForceHt20);
+        assert_eq!(ht20.phy, StaAssociationPhy::Ht20);
+        assert_eq!(ht20.channel_or_frequency, 6);
+        assert_eq!(ht20.cbw, 0);
+    }
+
+    #[test]
+    fn association_retry_schedule_is_finite_inside_vendor_deadline() {
+        let mut attempts = [0_u16; 7];
+        let mut count = 0;
+        for elapsed_ms in 0..=STA_RESPONSE_TIMEOUT_MS {
+            if let Some(attempt) = StaAssociationRetrySchedule::attempt_at(elapsed_ms) {
+                attempts[count] = attempt;
+                count += 1;
+            }
+        }
+        assert_eq!(count, attempts.len());
+        assert_eq!(attempts, [1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(StaAssociationRetrySchedule::attempt_at(159), None);
+        assert_eq!(StaAssociationRetrySchedule::attempt_at(1_000), None);
+        assert_eq!(STA_AUTHENTICATION_ATTEMPT_LIMIT, 3);
     }
 
     #[test]

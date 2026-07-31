@@ -300,6 +300,17 @@ runtime. It should own explicit states such as
 and return typed actions/deadlines. It must not know the test SSID, UART,
 Embassy sockets or benchmark addresses.
 
+The first scan-to-association slice is now driver-owned. The IEEE 802.11 crate
+selects Automatic/HE20-preferred/forced-HT20 mode, validates the peer's HE20
+MCS9 or HT40 geometry, produces the exact primary/center-channel plus rev0 CBW
+tuple, and owns the one-second vendor response deadline and finite 160-ms
+Association compatibility schedule. `associate_target` now has one scheduled
+TX branch instead of separate initial/retry copies, and its local PHY/channel
+selectors were deleted. A post-transfer remote-only
+`psram-code-psram-data` HE20 run delivered 10.011-Mbit/s RX plus 68.788-Mbit/s
+concurrent TX with zero `BUFFER_FULL` and `FIFO_OVERFLOW`. Frame/RX ownership,
+WPA2 action dispatch and the final connected dispatcher remain to move.
+
 ## Code that should remain in `esp32s31_rust`
 
 - board resource selection, linker sections and the chosen memory profile;

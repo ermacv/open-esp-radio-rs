@@ -191,16 +191,18 @@ use open_esp_radio::{
         he::{HeDcmConstellation, HeMcsNssSupport, parse_he20_capabilities, parse_he20_operation},
         management::{ProbeRequest, ProbeRequestError},
         ndpa::HeNdpa,
-        scan::{HtSecondaryChannel, best_matching_ssid},
+        scan::best_matching_ssid,
         station::{
             AssociationRequest, AssociationRequestError, HeUlMuPowerCapability,
             HeUlMuPowerCapabilityError, OpenAuthenticationRequest,
-            STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
-            StaActionFrame, StaAssociationPhy, StaDataFrame, StaPowerCapability,
-            StaPowerCapabilityError, StaProtectedAmsduFrame, StaProtectedDataFrame,
-            StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters, StationFrameError,
-            parse_association_response, parse_open_authentication_response, parse_sta_disconnect,
-            select_wpa2_psk_rsn, sta_protected_amsdu_frame_length,
+            STA_AUTHENTICATION_ATTEMPT_LIMIT, STA_PROTECTED_QOS_ETHERNET_HEADROOM,
+            STA_PROTECTED_QOS_ETHERNET_OVERHEAD, STA_RESPONSE_TIMEOUT_MS, StaActionFrame,
+            StaAssociationPhy, StaAssociationPreference, StaAssociationRetrySchedule, StaDataFrame,
+            StaPowerCapability, StaPowerCapabilityError, StaProtectedAmsduFrame,
+            StaProtectedDataFrame, StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters,
+            StationFrameError, parse_association_response, parse_open_authentication_response,
+            parse_sta_disconnect, select_sta_association, select_wpa2_psk_rsn,
+            sta_protected_amsdu_frame_length,
         },
         trigger::{
             TriggerCommonInfo, parse_trigger_frame, parse_trigger_user_ru,
@@ -821,11 +823,6 @@ const STA_TARGET_SSID: &[u8] = if let Some(ssid) = option_env!("OPEN_RADIO_STA_S
 } else {
     b"FRITZ!Box 7530 FN"
 };
-// SOURCE: `_oracles/libnet80211.a[ieee80211_sta.o]::
-// ieee80211_sta_new_state`, ordinary non-mesh auth branch `.L347` and
-// association branch `.L353`, both arm their software timer with immediate
-// `0x3e8`. Retransmission remains bounded to three attempts.
-const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
 // SOURCE: `_oracles/libnet80211.a[ieee80211_output.o]` passes coexistence
 // event 5 in complete `ieee80211_send_probereq` and event 6 in complete
 // `ieee80211_send_mgmt` for Authentication/Association.
@@ -2979,7 +2976,7 @@ async fn transmit_association_request<M: Mmio + TxHardware>(
     access_point: &ScanRecord,
     sequence_number: u16,
 ) -> Result<TxCompletion, ActiveScanTxError> {
-    let phy = sta_association_phy(access_point);
+    let phy = select_sta_association(access_point, STA_ASSOCIATION_PREFERENCE).phy;
     let (power_capability, he_ul_mu_power) = if phy == StaAssociationPhy::He20 {
         let profile = storage
             .tx_power_profile
@@ -3043,47 +3040,14 @@ async fn transmit_association_request<M: Mmio + TxHardware>(
     .await
 }
 
-fn sta_association_phy(access_point: &ScanRecord) -> StaAssociationPhy {
-    // Prefer the 150-Mbit/s one-stream HT40 path over the vendor-exact
-    // 108.3-Mbit/s HE20/MCS9 path when the BSS really permits a secondary
-    // channel. The S31 vendor `ieee80211_add_hecap` implementation writes zero
-    // to complete HE Capabilities IE byte 9 (HE PHY Channel Width Set), so its
-    // own HE advertisement is 20-MHz-only; 40 MHz is advertised through HT.
-    //
-    // SOURCE: `_oracles/libnet80211.a[ieee80211_he.o]::
-    // ieee80211_add_hecap`, instructions 0x86/0xb2 and 0x200, plus
-    // `ScanRecord::ht40_secondary_channel`'s HT Capabilities/Operation gate.
-    let he20_supported = parse_he20_capabilities(access_point.he_capability_ie_bytes())
-        .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
-        && parse_he20_operation(access_point.he_operation_ie_bytes()).is_ok();
-    if (option_env!("OPEN_RADIO_FORCE_HE20").is_some() || OPEN_RADIO_HE_TB_HIL) && he20_supported {
-        StaAssociationPhy::He20
+const STA_ASSOCIATION_PREFERENCE: StaAssociationPreference =
+    if option_env!("OPEN_RADIO_FORCE_HE20").is_some() || OPEN_RADIO_HE_TB_HIL {
+        StaAssociationPreference::PreferHe20
     } else if option_env!("OPEN_RADIO_FORCE_HT20").is_some() {
-        StaAssociationPhy::Ht20
-    } else if access_point.ht40_secondary_channel().is_some() {
-        StaAssociationPhy::Ht40
-    } else if he20_supported {
-        StaAssociationPhy::He20
+        StaAssociationPreference::ForceHt20
     } else {
-        StaAssociationPhy::Ht20
-    }
-}
-
-const fn association_bandwidth_mhz(phy: StaAssociationPhy) -> u8 {
-    match phy {
-        StaAssociationPhy::Ht40 => 40,
-        StaAssociationPhy::Legacy | StaAssociationPhy::Ht20 | StaAssociationPhy::He20 => 20,
-    }
-}
-
-const fn association_phy_name(phy: StaAssociationPhy) -> &'static str {
-    match phy {
-        StaAssociationPhy::Legacy => "legacy",
-        StaAssociationPhy::Ht20 => "ht20",
-        StaAssociationPhy::Ht40 => "ht40",
-        StaAssociationPhy::He20 => "he20",
-    }
-}
+        StaAssociationPreference::Automatic
+    };
 
 const fn configured_sta_tx_rate_policy(
     association_phy: StaAssociationPhy,
@@ -7599,7 +7563,7 @@ async fn connected_radio_loop(
                              plcp1={:#010x} he_a1={:#010x} he_a2={:#010x} \
                              he_control={:#010x} he_control_sw={} \
                              power={:#010x}",
-                            association_phy_name(association_phy),
+                            association_phy.name(),
                             report.rate.code(),
                             report.rate.nominal_kbps(),
                             report.subframes,
@@ -7808,8 +7772,8 @@ async fn connected_radio_loop(
                      ampdu_limit={OPEN_RADIO_AMPDU_LIMIT} \
                      ampdu_coalesce_us={TX_AMPDU_COALESCE_US} \
                      amsdu_body_reuse={raw_mac_amsdu_slots_initialized}",
-                    association_bandwidth_mhz(association_phy),
-                    association_phy_name(association_phy),
+                    association_phy.bandwidth_mhz(),
+                    association_phy.name(),
                     raw_mac_rate.code(),
                     raw_mac_rate.nominal_kbps(),
                 ));
@@ -9112,7 +9076,7 @@ async fn run_open_radio_udp_tx_benchmark(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
              e={send_errors} p={} w={} r={} g={} x={} l={} a={}",
             OPEN_RADIO_TX_BENCH_RATE_KBPS.unwrap_or(0),
-            association_bandwidth_mhz(association_phy),
+            association_phy.bandwidth_mhz(),
             data_tx_rate.nominal_kbps(),
             match data_tx_rate {
                 TxPhyRate::He(rate) => rate.guard_interval_and_ltf().encoding(),
@@ -9171,8 +9135,8 @@ async fn run_open_radio_udp_rx_benchmark(
          port={OPEN_RADIO_UDP_RX_PORT} queue={OPEN_RADIO_UDP_RX_QUEUE_DEPTH} \
          payload_capacity={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
          bandwidth_mhz={} phy={} rate_code={:#04x} rate_kbps={}",
-        association_bandwidth_mhz(association_phy),
-        association_phy_name(association_phy),
+        association_phy.bandwidth_mhz(),
+        association_phy.name(),
         data_tx_rate.code(),
         data_tx_rate.nominal_kbps(),
     ));
@@ -9223,8 +9187,8 @@ async fn run_open_radio_udp_rx_benchmark(
              terminal={} bandwidth_mhz={} phy={} \
              rate_code={:#04x} rate_kbps={}",
             u8::from(terminal_seen),
-            association_bandwidth_mhz(association_phy),
-            association_phy_name(association_phy),
+            association_phy.bandwidth_mhz(),
+            association_phy.name(),
             data_tx_rate.code(),
             data_tx_rate.nominal_kbps(),
         ));
@@ -9316,8 +9280,8 @@ async fn run_connected_network(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-start \
          frame_capacity={NETWORK_FRAME_CAPACITY} queue_depth={NETWORK_QUEUE_DEPTH} \
          bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={}",
-        association_bandwidth_mhz(association_phy),
-        association_phy_name(association_phy),
+        association_phy.bandwidth_mhz(),
+        association_phy.name(),
         data_tx_rate.code(),
         data_tx_rate.nominal_kbps(),
     ));
@@ -9366,21 +9330,10 @@ async fn authenticate_target(
     access_point: ScanRecord,
     sequence: &mut StaSequenceCounter,
 ) -> bool {
-    let primary_frequency = 2_407 + u16::from(access_point.channel) * 5;
-    let association_phy = sta_association_phy(&access_point);
-    let (channel_or_frequency, cbw) = if association_phy == StaAssociationPhy::Ht40 {
-        match access_point.ht40_secondary_channel() {
-            Some(HtSecondaryChannel::Above) => (primary_frequency + 10, 2),
-            Some(HtSecondaryChannel::Below) => (primary_frequency - 10, 3),
-            None => (u16::from(access_point.channel), 0),
-        }
-    } else {
-        // Legacy, HT20 and HE20 all tune the advertised primary channel with
-        // the 20-MHz CBW encoding. Merely finding a secondary-channel HT
-        // Operation IE must not force a profile that deliberately selected
-        // HT20 onto the 40-MHz center frequency.
-        (u16::from(access_point.channel), 0)
-    };
+    let selection = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE);
+    let association_phy = selection.phy;
+    let channel_or_frequency = selection.channel_or_frequency;
+    let cbw = selection.cbw;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=sta-channel-select primary={} \
          channel_or_frequency={channel_or_frequency} cbw={cbw} phy={association_phy:?} \
@@ -9426,7 +9379,7 @@ async fn authenticate_target(
     ));
     let mut total_received_frames = 0_u32;
     let mut final_disconnect = None;
-    for attempt in 0..3_u16 {
+    for attempt in 0..STA_AUTHENTICATION_ATTEMPT_LIMIT {
         let mut rx_ring =
             match start_live_rx_ring(mmio, rx_storage, descriptor_base, buffer_addresses).await {
                 Ok(ring) => ring,
@@ -9643,15 +9596,18 @@ async fn authenticate_target(
     if let Some(disconnect) = final_disconnect {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
-             error=peer-disconnect kind={:?} reason={} attempts=3 \
+             error=peer-disconnect kind={:?} reason={} attempts={} \
              frames={total_received_frames} bssid={:02x?}",
-            disconnect.kind, disconnect.reason_code, access_point.bssid,
+            disconnect.kind,
+            disconnect.reason_code,
+            STA_AUTHENTICATION_ATTEMPT_LIMIT,
+            access_point.bssid,
         ));
     } else {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response error=timeout \
-             attempts=3 frames={total_received_frames} bssid={:02x?}",
-            access_point.bssid,
+             attempts={} frames={total_received_frames} bssid={:02x?}",
+            STA_AUTHENTICATION_ATTEMPT_LIMIT, access_point.bssid,
         ));
     }
     false
@@ -9732,34 +9688,9 @@ async fn associate_target(
             }
         };
 
-    let completion = match transmit_association_request(
-        mmio,
-        tx_storage,
-        station_address,
-        &access_point,
-        sequences.take_non_qos(),
-    )
-    .await
-    {
-        Ok(completion) => completion,
-        Err(error) => {
-            let _ = disable_receive(mmio);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-tx error={error:?}"
-            ));
-            return (false, false, false);
-        }
-    };
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL stage=sta-assoc-tx channel={} bssid={:02x?} \
-         status={} primary={:#010x}",
-        access_point.channel, access_point.bssid, completion.status, completion.primary_word,
-    ));
-
     let mut received_frames = 0_u32;
     for tick in 0..STA_RESPONSE_TIMEOUT_MS {
-        if tick != 0 && tick % 160 == 0 {
-            let attempt = tick / 160 + 1;
+        if let Some(attempt) = StaAssociationRetrySchedule::attempt_at(tick) {
             let completion = match transmit_association_request(
                 mmio,
                 tx_storage,
@@ -9853,7 +9784,8 @@ async fn associate_target(
                     let _ = disable_receive(mmio);
                     return (false, false, false);
                 }
-                let association_phy = sta_association_phy(&access_point);
+                let association_phy =
+                    select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
                 if let Some(parameters) = response.wmm_parameters {
                     if let Err(error) = tx_storage.install_wmm_edca(parameters) {
                         let _ = disable_receive(mmio);

@@ -26,6 +26,7 @@ use core::{
 
 pub use embassy_net_driver::{Driver, TxToken};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
+pub use embassy_sync::signal::Signal;
 
 use embassy_net_driver::{Capabilities, HardwareAddress, LinkState};
 use embassy_sync::{

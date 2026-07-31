@@ -18,7 +18,7 @@ use crate::{
     descriptor::{descriptor_address_valid, dma_range_valid, tx_owned_word, Descriptor, BIT_30},
     tx::{
         decode_tx_completion, HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HeSmpduTxConfig,
-        HtAmpduDensity, HtAmpduTxConfig, HtProtectionSpacing, LegacyTxQueue, TxCompletion,
+        HtAmpduDensity, HtAmpduTxConfig, HtProtectionSpacing, HtRate, LegacyTxQueue, TxCompletion,
         TxCookie, TxHardware, TxSlotState,
     },
 };
@@ -820,6 +820,61 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )
     }
 
+    /// Check one HT MPDU against both negotiated storage and the exact
+    /// rate-dependent `rx11NRate2AMPDULimit` ceiling.
+    pub fn can_commit_ht_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+        rate: HtRate,
+    ) -> Result<bool, HtAmpduTxError> {
+        if !self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
+            return Ok(false);
+        }
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        match rate.vendor_ampdu_byte_limit() {
+            Some(limit) => Ok(self.length_after_append(psdu_length, false)? <= limit),
+            None => Ok(true),
+        }
+    }
+
+    /// Descriptor-only counterpart of [`Self::can_commit_ht_frame`].
+    pub fn can_commit_referenced_ht_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        _empty_delimiters: u8,
+        rate: HtRate,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        if !self.can_commit_referenced_frame(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            dma_capacity,
+        )? {
+            return Ok(false);
+        }
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        match rate.vendor_ampdu_byte_limit() {
+            Some(limit) => Ok(self.length_after_append(psdu_length, false)? <= limit),
+            None => Ok(true),
+        }
+    }
+
     fn can_commit_frame_with_hardware_he_control(
         &self,
         cookie: TxCookie,
@@ -918,6 +973,64 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
         if !self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
+            return Ok(false);
+        }
+        Ok(u32::from(self.length_after_append(psdu_length, false)?)
+            <= rate.maximum_apep_bytes(txop_limit))
+    }
+
+    /// Check one referenced HE frame using the blob-derived delimiter policy.
+    ///
+    /// This is the descriptor-only/cache-TX counterpart of
+    /// [`Self::can_commit_he_frame`]. The frame capacity belongs to the pinned
+    /// network lease rather than this aggregate owner.
+    pub fn can_commit_referenced_he_frame(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        self.can_commit_referenced_he_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            HeEdcaTxopLimit::DEFAULT,
+            dma_capacity,
+        )
+    }
+
+    /// Check one referenced HE frame against allocation, APEP and TXOP limits.
+    pub fn can_commit_referenced_he_frame_with_txop(
+        &self,
+        cookie: TxCookie,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let _empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        if !self.can_commit_frame_in_capacity(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            false,
+            dma_capacity,
+        )? {
             return Ok(false);
         }
         Ok(u32::from(self.length_after_append(psdu_length, false)?)
@@ -1081,6 +1194,44 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         Ok(())
     }
 
+    /// Commit one referenced HT MPDU under the exact rate-dependent ceiling.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the same pinned allocation invariant as
+    /// [`Self::commit_referenced_frame`].
+    pub unsafe fn commit_referenced_ht_frame(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+        dma_storage: &mut [u8],
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+        rate: HtRate,
+    ) -> Result<(), HtAmpduTxError> {
+        if !self.as_ref().can_commit_referenced_ht_frame(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+            rate,
+            dma_storage.len(),
+        )? {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
+        // SAFETY: the caller supplied the external allocation invariant, and
+        // the complete HT rate ceiling was checked above.
+        unsafe {
+            self.as_mut().commit_referenced_frame(
+                cookie,
+                dma_storage,
+                frame_length,
+                hardware_mic_length,
+                empty_delimiters,
+            )
+        }
+    }
+
     fn commit_frame_with_hardware_he_control(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1203,6 +1354,95 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
         self.commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
+    }
+
+    /// Commit one HE MPDU already encoded in a separately pinned allocation.
+    ///
+    /// This preserves the exact HE delimiter and TXOP gates of
+    /// [`Self::commit_he_frame_with_txop`] while using the vendor cache-TX
+    /// ownership model represented by [`Self::commit_referenced_frame`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the allocation lifetime and exclusivity
+    /// invariant documented by [`Self::commit_referenced_frame`].
+    pub unsafe fn commit_referenced_he_frame(
+        self: Pin<&mut Self>,
+        cookie: TxCookie,
+        dma_storage: &mut [u8],
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+    ) -> Result<(), HtAmpduTxError> {
+        // SAFETY: forwarded unchanged to the TXOP-aware implementation.
+        unsafe {
+            self.commit_referenced_he_frame_with_txop(
+                cookie,
+                dma_storage,
+                frame_length,
+                hardware_mic_length,
+                rate,
+                density,
+                HeEdcaTxopLimit::DEFAULT,
+            )
+        }
+    }
+
+    /// Commit one referenced HE MPDU under the complete rate/TXOP policy.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[pp_he.o]::{ppCalDeliNum,
+    /// ppCalTxHEAMPDULength,ppCheckTxHEAMPDUlength}` supplies delimiter and
+    /// duration accounting. Complete
+    /// `_oracles/libnet80211.a[ieee80211_output.o]::ieee80211_alloc_tx_buf`
+    /// and `_oracles/libpp.a[pp.o]::ppAssembleAMPDU` retain and link the
+    /// cache-TX allocation instead of copying it into aggregate storage.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain exclusive ownership of `dma_storage` at its
+    /// current address until the batch is detached and released or cancelled.
+    pub unsafe fn commit_referenced_he_frame_with_txop(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+        dma_storage: &mut [u8],
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<(), HtAmpduTxError> {
+        if !self.as_ref().can_commit_referenced_he_frame_with_txop(
+            cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            txop_limit,
+            dma_storage.len(),
+        )? {
+            return Err(HtAmpduTxError::AggregateFull);
+        }
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        // SAFETY: the caller supplied the external allocation invariant, and
+        // the complete HE policy was checked before forwarding the commit.
+        unsafe {
+            self.as_mut().commit_referenced_frame(
+                cookie,
+                dma_storage,
+                frame_length,
+                hardware_mic_length,
+                empty_delimiters,
+            )
+        }
     }
 
     /// Commit one HE MPDU with a hardware-inserted HE-Control field.
@@ -3678,6 +3918,123 @@ mod tests {
             unsafe { (&*storage.buffers[0].0.get())[TX_AMPDU_METADATA_SIZE] },
             0
         );
+    }
+
+    #[test]
+    fn referenced_he_commit_uses_external_capacity_with_descriptor_only_storage() {
+        let mut storage = HtAmpduTxStorage::<2, 0>::new();
+        let mut first = [0xa5_u8; 256];
+        let mut second = [0x5a_u8; 256];
+        let rate = HeRate::bcc_dcm(
+            crate::tx::HeBccDcmMcs::Mcs3,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        // SAFETY: the local storage and both external allocations remain at
+        // stable addresses until the Reserved batch is cancelled.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let cookie = storage.as_mut().begin().unwrap();
+        for external in [&mut first, &mut second] {
+            unsafe {
+                storage
+                    .as_mut()
+                    .commit_referenced_he_frame(
+                        cookie,
+                        external,
+                        16,
+                        8,
+                        rate,
+                        HtAmpduDensity::SixteenMicroseconds,
+                    )
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(storage.empty_delimiters[..2], [1, 1]);
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                bytes: 68,
+                subframes: 2,
+            }
+        );
+        assert_eq!(first[4], 1);
+        assert_eq!(second[4], 1);
+        assert_eq!(storage.buffer_addresses[0], first.as_ptr().addr());
+        assert_eq!(storage.buffer_addresses[1], second.as_ptr().addr());
+        storage.as_mut().cancel(cookie).unwrap();
+    }
+
+    #[test]
+    fn referenced_ht_commit_stops_at_the_vendor_rate_byte_ceiling() {
+        let mut storage = HtAmpduTxStorage::<8, 0>::new();
+        let mut external = [[0xa5_u8; 1_600]; 8];
+        let mcs0_sgi = HtRate::new(
+            crate::tx::HtMcs::Mcs0,
+            crate::tx::HtGuardInterval::Short400Ns,
+            crate::tx::HtChannelWidth::Mhz40,
+        );
+        // SAFETY: the local storage and all eight external allocations remain
+        // at stable, exclusively retained addresses until `cancel`.
+        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        storage
+            .as_mut()
+            .configure_max_aggregate_bytes(u16::MAX)
+            .unwrap();
+        let cookie = storage.as_mut().begin().unwrap();
+
+        for frame in external.iter_mut().take(6) {
+            unsafe {
+                storage
+                    .as_mut()
+                    .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs0_sgi)
+                    .unwrap();
+            }
+        }
+        assert_eq!(
+            storage.prepared_aggregate(cookie).unwrap(),
+            HtAmpduLength {
+                bytes: 9_096,
+                subframes: 6,
+            }
+        );
+        assert!(!storage
+            .can_commit_referenced_ht_frame(cookie, 1_500, 8, 0, mcs0_sgi, external[6].len())
+            .unwrap());
+        assert_eq!(
+            unsafe {
+                storage.as_mut().commit_referenced_ht_frame(
+                    cookie,
+                    &mut external[6],
+                    1_500,
+                    8,
+                    0,
+                    mcs0_sgi,
+                )
+            },
+            Err(HtAmpduTxError::AggregateFull)
+        );
+        assert_eq!(storage.frame_count(), 6);
+        storage.as_mut().cancel(cookie).unwrap();
+
+        // The complete oracle table uses zero for SGI MCS7. That means this
+        // particular leaf adds no ceiling: the peer/static limit still
+        // permits a seventh MPDU.
+        let mcs7_sgi = HtRate::new(
+            crate::tx::HtMcs::Mcs7,
+            crate::tx::HtGuardInterval::Short400Ns,
+            crate::tx::HtChannelWidth::Mhz40,
+        );
+        let cookie = storage.as_mut().begin().unwrap();
+        for frame in external.iter_mut().take(7) {
+            unsafe {
+                storage
+                    .as_mut()
+                    .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs7_sgi)
+                    .unwrap();
+            }
+        }
+        assert_eq!(storage.frame_count(), 7);
+        storage.as_mut().cancel(cookie).unwrap();
     }
 
     #[test]

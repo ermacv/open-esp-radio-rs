@@ -5,25 +5,25 @@ use open_esp_radio_ieee80211::trigger::{
     parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_mac_esp32s31::{
-    crypto::{CcmpKeyHardware, CryptoKeyError, install_sta_group_ccmp, install_sta_pairwise_ccmp},
+    crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp, CcmpKeyHardware, CryptoKeyError},
     descriptor::{
-        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
-        dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
+        descriptor_address_valid, dma_range_valid, length, rx_armed_word, rx_rearm_word, size,
+        tx_owned_word, Descriptor, BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
     },
     init::{
-        MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware,
-        MacColdCoexHardware, MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware,
-        MacColdHalTailHardware, MacColdHandshakeHardware, MacColdHeHardware,
-        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
-        MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacSlowClockCalibration,
-        MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair, MacTxPowerSource,
-        MacTxPowerTable, StaLinkRxPolicyHardware, configure_sta_link_receive_policy,
-        initialize_promiscuous_receive,
+        configure_sta_link_receive_policy, initialize_promiscuous_receive, MacClockControl,
+        MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware, MacColdCoexHardware,
+        MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware, MacColdHalTailHardware,
+        MacColdHandshakeHardware, MacColdHeHardware, MacColdLastRxBufferHardware,
+        MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartError, MacColdStartOutcome,
+        MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware,
+        MacLowRateHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
+        MacSnifferHardware, MacTxPowerPair, MacTxPowerSource, MacTxPowerTable,
+        StaLinkRxPolicyHardware,
     },
     irq::{
-        IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS,
-        MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterrupt, handle_mac_irq,
+        handle_mac_irq, IrqDisposition, IrqState, IrqWork, MacInterrupt, MAC_INT_COLLISION,
+        MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     registers::{
@@ -31,31 +31,31 @@ use open_esp_radio_mac_esp32s31::{
         RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD, TX_CCA_CONTROL, TX_CCA_FORCE_MASK,
         TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
         TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
-        TX_Q_ENABLE_VALID, TX_Q0_CONTROL, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
+        TX_Q0_CONTROL, TX_Q_ENABLE_VALID, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
     },
     rx::{
+        build_cold_ring, decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive,
+        enable_receive, extract_ccmp_data, extract_control, extract_data, extract_management,
+        first_segment_layout, prepare_recycled_buffer, publish_cold_ring, rearm_descriptor,
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
-        HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
-        RxBasebandFormat, RxDma, RxError, RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo,
-        RxRingError, RxRingStopped, RxSegment, build_cold_ring, decode_rx_he_mu_sig_b,
-        decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data, extract_control,
-        extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
-        publish_cold_ring, rearm_descriptor,
+        HeTriggerBasedSignal, RxBasebandFormat, RxDma, RxError, RxHe20MuSigBUsersError,
+        RxIngressConfig, RxPhyInfo, RxRingError, RxRingStopped, RxSegment, INGRESS_STRICT_DUMP,
+        INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
     },
     tx::{
+        he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
         AmpduTxConfig, HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs,
         HeMcs, HeRate, HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate,
         HeTriggerScheduledRateError, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth,
         HtGuardInterval, HtMcs, HtPeerAmpduParameters, HtProtectionSpacing, HtRate, HtTxConfig,
         LegacyRate, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxError, TxHardware,
-        TxLifetimeClass, TxPhyRate, TxSlot, TxSlotState, he_ampdu_q0_image, he_smpdu_q0_image,
-        ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
+        TxLifetimeClass, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use open_esp_radio_pac_esp32s31::{
+    mac::{self, init as mac_init},
     MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
     MacTxCompletionRegisters, Register32,
-    mac::{self, init as mac_init},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1003,10 +1003,9 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
                     Operation::Write(mac_init::R_4098, 0x0800_0000),
                 ]
     }));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::ConfigureOpenPromiscuousReceive)
-    );
+    assert!(mmio
+        .operations()
+        .contains(&Operation::ConfigureOpenPromiscuousReceive));
     assert_eq!(mmio.interrupt_enable, 0x19a8_79e0);
     assert!(mmio.operations().windows(3).any(|operations| {
         operations
@@ -1114,11 +1113,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         }
     }
     assert_eq!(expected_cold_rx_policy.len(), 62);
-    assert!(
-        mmio.operations()
-            .windows(expected_cold_rx_policy.len())
-            .any(|operations| operations == expected_cold_rx_policy)
-    );
+    assert!(mmio
+        .operations()
+        .windows(expected_cold_rx_policy.len())
+        .any(|operations| operations == expected_cold_rx_policy));
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
     assert!(mmio.operations().windows(8).any(|operations| {
         operations
@@ -1159,17 +1157,15 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         0x19a8_79e0,
         MacSlowClockCalibration::from_osi_value(0),
     )));
-    assert!(
-        mmio.operations()
-            .iter()
-            .any(|operation| matches!(operation, Operation::InitializeColdCoex(_)))
-    );
+    assert!(mmio
+        .operations()
+        .iter()
+        .any(|operation| matches!(operation, Operation::InitializeColdCoex(_))));
     assert!(mmio.operations().contains(&Operation::InitializeHePrefix));
-    assert!(
-        mmio.operations()
-            .iter()
-            .any(|operation| matches!(operation, Operation::InitializeTxPower(_)))
-    );
+    assert!(mmio
+        .operations()
+        .iter()
+        .any(|operation| matches!(operation, Operation::InitializeTxPower(_))));
     assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
     let mut expected_platform = vec![
         PlatformOperation::EnableWifiMacClocks,
@@ -2039,10 +2035,9 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let event = state.try_take().unwrap();
     assert_eq!(event.mac_pending, MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::ClearInterrupt(snapshot.status))
-    );
+    assert!(mmio
+        .operations()
+        .contains(&Operation::ClearInterrupt(snapshot.status)));
 }
 
 #[test]
@@ -2166,10 +2161,9 @@ fn tx_slot_reproduces_the_migration_timeout_abort_order() {
         mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
         0,
     );
-    assert!(
-        mmio.operations()
-            .contains(&Operation::Write(TX_STATE_CLEAR, timeout_mask))
-    );
+    assert!(mmio
+        .operations()
+        .contains(&Operation::Write(TX_STATE_CLEAR, timeout_mask)));
 
     let invalidation = mmio
         .operations()
@@ -2237,6 +2231,8 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
     assert_eq!(sgi.power_lookup_code(), 23);
     assert_eq!(lgi.nominal_kbps(), 135_000);
     assert_eq!(sgi.nominal_kbps(), 150_000);
+    assert_eq!(lgi.vendor_ampdu_byte_limit(), Some(65_535));
+    assert_eq!(sgi.vendor_ampdu_byte_limit(), None);
     assert_eq!(sgi.vendor_rts_rate(), LegacyRate::Ofdm24M);
     assert_eq!(sgi.vendor_retry_rate(0), Some(TxPhyRate::Ht(sgi)));
     assert_eq!(
@@ -2260,6 +2256,15 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
         )
         .vendor_rts_rate(),
         LegacyRate::Ofdm6M,
+    );
+    assert_eq!(
+        HtRate::new(
+            HtMcs::Mcs0,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz20,
+        )
+        .vendor_ampdu_byte_limit(),
+        Some(9_600),
     );
     assert_eq!(
         HtRate::new(

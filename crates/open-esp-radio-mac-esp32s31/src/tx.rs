@@ -4,8 +4,8 @@ use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
-    TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
-    TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
+    parse_trigger_user_spatial_stream, TriggerCommonInfo, TriggerFrame, TriggerGiLtf,
+    TriggerParseError, TriggerRuAllocation, TriggerType, TriggerUserSpatialStreamInfo,
 };
 use open_esp_radio_pac_esp32s31::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
@@ -14,9 +14,9 @@ use open_esp_radio_pac_esp32s31::{
 };
 
 use crate::{
-    descriptor::{Descriptor, descriptor_address_valid, tx_owned_word},
+    descriptor::{descriptor_address_valid, tx_owned_word, Descriptor},
     rate_control::dot11g_schedule_for_legacy_rate,
-    rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
+    rate_schedule::{schedule_rate_after_failures, RateScheduleKind, RateScheduleRef},
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
@@ -753,6 +753,27 @@ impl HtRate {
         table[self.mcs.index() as usize]
     }
 
+    /// Additional rate-dependent A-MPDU byte ceiling used by the vendor.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::
+    /// rx11NRate2AMPDULimit` and its complete 18-entry halfword table. The
+    /// selector consumes only the HT rate code; width is therefore not an
+    /// independent input. A zero table cell means that this leaf contributes
+    /// no additional ceiling, leaving the negotiated/static A-MPDU limit in
+    /// force.
+    pub const fn vendor_ampdu_byte_limit(self) -> Option<u16> {
+        const LIMITS: [u16; 18] = [
+            6_490, 9_600, 19_200, 25_600, 43_200, 50_000, 57_600, 65_535, 0, 6_490, 9_600, 19_200,
+            25_600, 43_200, 50_000, 57_600, 65_535, 0,
+        ];
+        let index = self.code().wrapping_sub(0x10) as usize;
+        if index >= LIMITS.len() || LIMITS[index] == 0 {
+            None
+        } else {
+            Some(LIMITS[index])
+        }
+    }
+
     /// Select one exact vendor Dot11N retry-ladder attempt.
     ///
     /// The recovered table has explicit records for every LGI MCS0..7 and for
@@ -1238,7 +1259,11 @@ impl HeRate {
             crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => &GI_3200,
         };
         let limit = row[self.mcs.index() as usize];
-        if self.dcm { limit / 2 } else { limit }
+        if self.dcm {
+            limit / 2
+        } else {
+            limit
+        }
     }
 
     /// Maximum APEP bytes for this rate and one EDCA TXOP limit.
@@ -1312,7 +1337,11 @@ impl HeRate {
         // f32 instruction sequence for all 256 values admitted by its WMM
         // parser, all three rows, and all ten MCS values.
         let limit = bytes as u32;
-        if self.dcm { limit / 2 } else { limit }
+        if self.dcm {
+            limit / 2
+        } else {
+            limit
+        }
     }
 
     /// Minimum HE A-MPDU subframe length for a negotiated density.

@@ -4,7 +4,7 @@
 //! Association inputs, selected schedules and runtime retry state are separate
 //! Rust values, so no caller interprets a byte array by vendor offsets.
 
-use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
+use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
 use crate::rx::HeGuardIntervalAndLtf;
 use crate::tx::{
     HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion,
@@ -402,7 +402,11 @@ const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
         return 0;
     }
     let scaled = (((filtered_ack_snr - reference) >> 1) as u16 * 3) as u8;
-    if scaled > 32 { 32 } else { scaled }
+    if scaled > 32 {
+        32
+    } else {
+        scaled
+    }
 }
 
 const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
@@ -709,9 +713,9 @@ pub struct StaRateControlAssociation {
 /// Keeping the join here prevents applications from interpreting the
 /// overlapping Dot11N/Dot11Ax byte domains themselves.
 ///
-/// `ht_guard_interval_override` is an explicit certification/HIL override.
-/// Ordinary operation leaves it `None` and retains the guard interval selected
-/// by the recovered schedule.
+/// The HT and HE MCS/guard-interval overrides are explicit certification/HIL
+/// controls. Ordinary operation leaves them `None` and retains the values
+/// selected by the recovered schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaTxRatePolicy {
     pub association_phy: StaAssociationPhy,
@@ -719,7 +723,15 @@ pub struct StaTxRatePolicy {
     pub fallback_legacy_rate: LegacyRate,
     pub fallback_ht_mcs: HtMcs,
     pub fallback_ht_guard_interval: HtGuardInterval,
+    /// Fixed typed MCS for certification; `None` keeps schedule ownership.
+    pub ht_mcs_override: Option<HtMcs>,
     pub ht_guard_interval_override: Option<HtGuardInterval>,
+    /// Fixed standard HE-SU MCS for certification; `None` keeps the Dot11Ax
+    /// schedule selection.
+    pub he_mcs_override: Option<HeMcs>,
+    /// Fixed HE-SU GI/LTF selector for certification. DCM and trigger-based
+    /// profiles use their own typed rate owners instead of this SU override.
+    pub he_guard_interval_and_ltf_override: Option<HeGuardIntervalAndLtf>,
     pub he_800ns_gi_ltf: HeGuardIntervalAndLtf,
     pub peer_supports_ldpc: bool,
 }
@@ -742,11 +754,15 @@ impl StaTxRatePolicy {
         let Some(channel_width) = self.ht_width() else {
             return TxPhyRate::Legacy(self.fallback_legacy_rate);
         };
-        TxPhyRate::Ht(HtRate::new(
-            self.fallback_ht_mcs,
-            self.fallback_ht_guard_interval,
-            channel_width,
-        ))
+        let mcs = match self.ht_mcs_override {
+            Some(mcs) => mcs,
+            None => self.fallback_ht_mcs,
+        };
+        let guard_interval = match self.ht_guard_interval_override {
+            Some(guard_interval) => guard_interval,
+            None => self.fallback_ht_guard_interval,
+        };
+        TxPhyRate::Ht(HtRate::new(mcs, guard_interval, channel_width))
     }
 
     /// Decode one complete Rust-owned schedule and apply negotiated format
@@ -763,11 +779,19 @@ impl StaTxRatePolicy {
         else {
             return self.fallback_rate();
         };
-        let rate = match (rate, self.ht_guard_interval_override) {
-            (TxPhyRate::Ht(rate), Some(guard_interval)) => {
-                TxPhyRate::Ht(HtRate::new(rate.mcs, guard_interval, rate.channel_width))
-            }
-            (rate, _) => rate,
+        let rate = match rate {
+            TxPhyRate::Ht(rate) => TxPhyRate::Ht(HtRate::new(
+                self.ht_mcs_override.unwrap_or(rate.mcs),
+                self.ht_guard_interval_override
+                    .unwrap_or(rate.guard_interval),
+                rate.channel_width,
+            )),
+            TxPhyRate::He(rate) => TxPhyRate::He(HeRate::new(
+                self.he_mcs_override.unwrap_or(rate.mcs()),
+                self.he_guard_interval_and_ltf_override
+                    .unwrap_or(rate.guard_interval_and_ltf()),
+            )),
+            rate => rate,
         };
         match rate {
             TxPhyRate::He(rate) if self.peer_supports_ldpc => {
@@ -1152,7 +1176,11 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     RateScheduleKind::Dot11G
                 };
                 let mut current_index = if input.metric <= 11 {
-                    if input.p2p { 7 } else { 10 }
+                    if input.p2p {
+                        7
+                    } else {
+                        10
+                    }
                 } else if input.metric <= 16 {
                     5
                 } else if input.metric <= 21 {
@@ -1216,7 +1244,11 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     },
                     schedule(kind, 0),
                     if input.long_range_rates_present {
-                        if he { 15 } else { 13 }
+                        if he {
+                            15
+                        } else {
+                            13
+                        }
                     } else if he {
                         13
                     } else {
@@ -1277,7 +1309,11 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 5, 4,
             ];
-            if rate <= 42 { MAP[rate as usize] } else { 0xff }
+            if rate <= 42 {
+                MAP[rate as usize]
+            } else {
+                0xff
+            }
         }
         RateIndexMap::Dot11G => {
             const MAP: [u8; 43] = [
@@ -1285,7 +1321,11 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             ];
-            if rate <= 42 { MAP[rate as usize] } else { 0xff }
+            if rate <= 42 {
+                MAP[rate as usize]
+            } else {
+                0xff
+            }
         }
         RateIndexMap::Dot11N => match rate {
             0 => 11,
@@ -1334,20 +1374,6 @@ pub(crate) const fn dot11g_schedule_for_legacy_rate(rate: u8) -> Option<RateSche
         None
     } else {
         RateScheduleRef::new(RateScheduleKind::Dot11G, index)
-    }
-}
-
-/// Exact fixed table behind the vendor `rx11NRate2AMPDULimit` leaf.
-pub(crate) const fn ampdu_limit_for_rate(rate: u8) -> u16 {
-    const LIMITS: [u16; 18] = [
-        6490, 9600, 19200, 25600, 43200, 50000, 57600, 65535, 0, 6490, 9600, 19200, 25600, 43200,
-        50000, 57600, 65535, 0,
-    ];
-    let index = rate.wrapping_sub(0x10) as usize;
-    if index < LIMITS.len() {
-        LIMITS[index]
-    } else {
-        0
     }
 }
 
@@ -1411,7 +1437,10 @@ mod tests {
         fallback_legacy_rate: LegacyRate::Ofdm54M,
         fallback_ht_mcs: HtMcs::Mcs7,
         fallback_ht_guard_interval: HtGuardInterval::Long800Ns,
+        ht_mcs_override: None,
         ht_guard_interval_override: None,
+        he_mcs_override: None,
+        he_guard_interval_and_ltf_override: None,
         he_800ns_gi_ltf: HeGuardIntervalAndLtf::TwoLtf800Ns,
         peer_supports_ldpc: true,
     };
@@ -1680,11 +1709,23 @@ mod tests {
                 HtChannelWidth::Mhz40,
             ))
         );
+        let fixed_mcs = StaTxRatePolicy {
+            ht_mcs_override: Some(HtMcs::Mcs3),
+            ..ht40
+        };
+        assert_eq!(
+            fixed_mcs.rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11N, 1).unwrap()),
+            TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs3,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
         assert_eq!(
             ht40.rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Lora, 0).unwrap()),
             TxPhyRate::Ht(HtRate::new(
                 HtMcs::Mcs7,
-                HtGuardInterval::Long800Ns,
+                HtGuardInterval::Short400Ns,
                 HtChannelWidth::Mhz40,
             ))
         );
@@ -1696,6 +1737,59 @@ mod tests {
             .rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap()),
             TxPhyRate::Legacy(LegacyRate::Ofdm54M)
         );
+    }
+
+    #[test]
+    fn sta_tx_policy_fixed_ht_matrix_preserves_negotiated_width() {
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11N, 1).unwrap();
+        for association_phy in [StaAssociationPhy::Ht20, StaAssociationPhy::Ht40] {
+            let width = match association_phy {
+                StaAssociationPhy::Ht20 => HtChannelWidth::Mhz20,
+                StaAssociationPhy::Ht40 => HtChannelWidth::Mhz40,
+                _ => unreachable!(),
+            };
+            for mcs_index in 0..=7 {
+                let mcs = HtMcs::from_index(mcs_index).unwrap();
+                for guard_interval in [HtGuardInterval::Long800Ns, HtGuardInterval::Short400Ns] {
+                    let policy = StaTxRatePolicy {
+                        association_phy,
+                        ht_mcs_override: Some(mcs),
+                        ht_guard_interval_override: Some(guard_interval),
+                        peer_supports_ldpc: false,
+                        ..HE20_POLICY
+                    };
+                    assert_eq!(
+                        policy.rate_for_schedule(schedule),
+                        TxPhyRate::Ht(HtRate::new(mcs, guard_interval, width))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sta_tx_policy_fixed_he_su_matrix_preserves_peer_coding() {
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap();
+        let gi_ltf_values = [
+            HeGuardIntervalAndLtf::OneLtf800Ns,
+            HeGuardIntervalAndLtf::TwoLtf800Ns,
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            HeGuardIntervalAndLtf::FourLtf3200Ns,
+        ];
+        for mcs_index in 0..=9 {
+            let mcs = HeMcs::from_index(mcs_index).unwrap();
+            for guard_interval_and_ltf in gi_ltf_values {
+                let policy = StaTxRatePolicy {
+                    he_mcs_override: Some(mcs),
+                    he_guard_interval_and_ltf_override: Some(guard_interval_and_ltf),
+                    ..HE20_POLICY
+                };
+                assert_eq!(
+                    policy.rate_for_schedule(schedule),
+                    TxPhyRate::He(HeRate::ldpc(mcs, guard_interval_and_ltf))
+                );
+            }
+        }
     }
 
     #[test]
@@ -1966,9 +2060,5 @@ mod tests {
         assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x23), 0);
         assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x2a), 14);
         assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x28), 0xff);
-        assert_eq!(ampdu_limit_for_rate(0x10), 6490);
-        assert_eq!(ampdu_limit_for_rate(0x17), 65535);
-        assert_eq!(ampdu_limit_for_rate(0x21), 0);
-        assert_eq!(ampdu_limit_for_rate(0x22), 0);
     }
 }

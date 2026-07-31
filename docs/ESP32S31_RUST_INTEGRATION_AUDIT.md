@@ -223,19 +223,26 @@ the executor adapter and report sink.
 
 ### 4. MAC bottom-half and priority
 
-`ConnectedRxStagingQueue`, the RX-first outer `select`, and
-`yield_to_pending_rx_bottom_half` reconstruct the vendor
-FIQ/PP-task priority:
+`RxFrameQueue`, `IrqState`, the RX-first outer `select`, and
+`yield_to_pending_rx_bottom_half` reconstruct the vendor FIQ/PP-task
+priority:
 
 - complete `wDev_ProcessFiq` services RX success before TX completion;
 - complete `lmacRxDone` posts PP event 17;
 - long A-MPDU preparation must yield after a finite MPDU unit when RX work is
   already pending.
 
-The fixed token queue belongs in the MAC runtime. Embassy `Signal`/`select`
-wiring belongs in the future Embassy adapter. The core API should expose
-durable `RxPending`/`TxComplete` edges and the required RX-before-TX poll
-order, not import Embassy directly.
+The fixed token queue already lives in `open-esp-radio-mac-esp32s31`.
+`EmbassyMacIrqRuntime` now joins the executor-neutral `IrqState` to two
+coalescing Embassy wakes, owns the RX/TX interrupt classification and counts
+RX publications. The application no longer implements `IrqSink` or maps raw
+MAC bits itself. Its concurrent wait polls `wait_rx` before the TX future, as
+required by the adapter contract.
+
+The remaining application-owned part is the connected-frame protocol
+dispatcher invoked after an RX wake. Its Trigger, NDPA, AddBA, CCMP and
+`embassy-net` routing policy belongs in the future STA runtime rather than in
+the interrupt adapter.
 
 ### 5. STA link runtime
 

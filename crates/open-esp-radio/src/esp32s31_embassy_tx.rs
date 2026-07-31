@@ -11,7 +11,10 @@ use open_esp_radio_ieee80211::{
     },
 };
 use open_esp_radio_mac_esp32s31::{
-    tx::{HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState},
+    tx::{
+        HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate,
+        LegacyTxQueue, TxCookie, TxSlotState,
+    },
     tx_ampdu::{
         HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage,
         TX_AMPDU_METADATA_SIZE,
@@ -142,15 +145,42 @@ impl<
         &self,
         ethernet_length: usize,
         hardware_mic_length: u8,
-        _empty_delimiters: u8,
+        empty_delimiters: u8,
+        rate: HtRate,
     ) -> Result<bool, HtAmpduTxError> {
         let frame_length = ethernet_length
             .checked_add(open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        self.storage.can_commit_referenced_frame(
+        self.storage.can_commit_referenced_ht_frame(
             self.cookie,
             frame_length,
             hardware_mic_length,
+            empty_delimiters,
+            rate,
+            HEADROOM + FRAME_CAPACITY + TRAILER,
+        )
+    }
+
+    /// Check a network-owned Ethernet frame against the complete HE APEP,
+    /// TXOP and pinned-allocation limits without consuming its sequence or PN.
+    pub fn can_push_he(
+        &self,
+        ethernet_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<bool, HtAmpduTxError> {
+        let frame_length = ethernet_length
+            .checked_add(open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        self.storage.can_commit_referenced_he_frame_with_txop(
+            self.cookie,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            txop_limit,
             HEADROOM + FRAME_CAPACITY + TRAILER,
         )
     }
@@ -160,13 +190,17 @@ impl<
         first_ethernet_length: usize,
         second_ethernet_length: usize,
         hardware_mic_length: u8,
+        empty_delimiters: u8,
+        rate: HtRate,
     ) -> Result<bool, ReferencedHtAmpduError> {
         let frame_length =
             sta_protected_amsdu_pair_frame_length(first_ethernet_length, second_ethernet_length)?;
-        Ok(self.storage.can_commit_referenced_frame(
+        Ok(self.storage.can_commit_referenced_ht_frame(
             self.cookie,
             frame_length,
             hardware_mic_length,
+            empty_delimiters,
+            rate,
             HEADROOM + FRAME_CAPACITY + TRAILER,
         )?)
     }
@@ -179,6 +213,7 @@ impl<
         metadata: StaProtectedEthernetFrame,
         hardware_mic_length: u8,
         empty_delimiters: u8,
+        rate: HtRate,
     ) -> Result<EncodedStaFrame, ReferencedHtAmpduError> {
         if self.count >= SLOTS {
             return Err(ReferencedHtAmpduError::BatchFull);
@@ -209,12 +244,66 @@ impl<
         // hardware state transition and does not return it before the MAC
         // storage reaches Free.
         unsafe {
-            self.storage.as_mut().commit_referenced_frame(
+            self.storage.as_mut().commit_referenced_ht_frame(
                 self.cookie,
                 &mut frame.storage_mut()[dma_offset..],
                 encoded.length,
                 hardware_mic_length,
                 empty_delimiters,
+                rate,
+            )?;
+        }
+        self.frames[self.count] = Some(frame);
+        self.count += 1;
+        Ok(encoded)
+    }
+
+    /// Encode one network-owned Ethernet frame in place and append its pinned
+    /// allocation to an HE A-MPDU without a staging copy.
+    pub fn push_he(
+        &mut self,
+        mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        metadata: StaProtectedEthernetFrame,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<EncodedStaFrame, ReferencedHtAmpduError> {
+        if self.count >= SLOTS {
+            return Err(ReferencedHtAmpduError::BatchFull);
+        }
+        let ethernet_offset = frame.ethernet_offset();
+        let ethernet_length = frame.ethernet_length();
+        let encoded = metadata.encode_in_place(
+            frame.storage_mut(),
+            ethernet_offset,
+            ethernet_length,
+            DataHeControl::Disabled,
+        )?;
+        let Some(dma_offset) = encoded.offset.checked_sub(TX_AMPDU_METADATA_SIZE) else {
+            return Err(ReferencedHtAmpduError::DmaPrefixGeometry {
+                encoded_offset: encoded.offset,
+                metadata_size: TX_AMPDU_METADATA_SIZE,
+            });
+        };
+        if dma_offset & 3 != 0 {
+            return Err(ReferencedHtAmpduError::DmaPrefixGeometry {
+                encoded_offset: encoded.offset,
+                metadata_size: TX_AMPDU_METADATA_SIZE,
+            });
+        }
+
+        // SAFETY: this batch takes ownership of the pinned lease immediately
+        // after commit and retains it through detach, BlockAck and retries.
+        unsafe {
+            self.storage.as_mut().commit_referenced_he_frame_with_txop(
+                self.cookie,
+                &mut frame.storage_mut()[dma_offset..],
+                encoded.length,
+                hardware_mic_length,
+                rate,
+                density,
+                txop_limit,
             )?;
         }
         self.frames[self.count] = Some(frame);
@@ -239,6 +328,7 @@ impl<
         metadata: StaProtectedEthernetFrame,
         hardware_mic_length: u8,
         empty_delimiters: u8,
+        rate: HtRate,
     ) -> Result<EncodedStaFrame, ReferencedHtAmpduError> {
         if self.count >= SLOTS {
             return Err(ReferencedHtAmpduError::BatchFull);
@@ -269,12 +359,13 @@ impl<
         // allocation is no longer referenced after the in-place encoder
         // returns, so dropping it now follows the vendor recycle edge.
         unsafe {
-            self.storage.as_mut().commit_referenced_frame(
+            self.storage.as_mut().commit_referenced_ht_frame(
                 self.cookie,
                 &mut first.storage_mut()[dma_offset..],
                 encoded.length,
                 hardware_mic_length,
                 empty_delimiters,
+                rate,
             )?;
         }
         self.frames[self.count] = Some(first);
@@ -292,6 +383,17 @@ impl<
         self.storage
             .as_mut()
             .submit(hardware, self.cookie, queue, config)
+    }
+
+    pub fn submit_he<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        queue: LegacyTxQueue,
+        config: HeAmpduTxConfig,
+    ) -> Result<(), HtAmpduTxError> {
+        self.storage
+            .as_mut()
+            .submit_he(hardware, self.cookie, queue, config)
     }
 
     pub fn acknowledge_completion<H: HtAmpduHardware>(
@@ -376,6 +478,7 @@ mod tests {
         Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool, TxToken as _,
     };
     use open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+    use open_esp_radio_mac_esp32s31::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
 
     use super::*;
 
@@ -384,6 +487,11 @@ mod tests {
     const TRAILER: usize = 12;
     const QUEUE_DEPTH: usize = 2;
     const FRAME_LENGTH: usize = 17;
+    const HT_RATE: HtRate = HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Short400Ns,
+        HtChannelWidth::Mhz40,
+    );
 
     fn context() -> Context<'static> {
         Context::from_waker(Waker::noop())
@@ -443,6 +551,7 @@ mod tests {
                     },
                     8,
                     0,
+                    HT_RATE,
                 )
                 .unwrap();
             assert_eq!(encoded.offset, TX_AMPDU_METADATA_SIZE);
@@ -456,6 +565,67 @@ mod tests {
         drop(batch);
         assert_eq!(tx_storage_backing.state(), TxSlotState::Free);
         assert!(device.transmit(&mut context()).is_some());
+    }
+
+    #[test]
+    fn descriptor_only_batch_encodes_he_delimiters_in_the_pinned_network_frame() {
+        type NetworkResources =
+            PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+        type NetworkPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(NetworkResources::new()));
+        let pool = NetworkPool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+            NetworkPool::new(),
+        )));
+        let (mut device, radio) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+        send_test_frame(&mut device, 1);
+
+        let frame = radio.try_receive_tx().unwrap();
+        let mut tx_storage_backing = HtAmpduTxStorage::<2, 0>::new();
+        // SAFETY: no descriptor is published, and the pinned storage remains
+        // stationary until the batch cancels on drop.
+        let tx_storage = unsafe { Pin::new_unchecked(&mut tx_storage_backing) };
+        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage).unwrap();
+        let rate = HeRate::bcc_dcm(
+            open_esp_radio_mac_esp32s31::tx::HeBccDcmMcs::Mcs0,
+            open_esp_radio_mac_esp32s31::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        );
+        assert!(batch
+            .can_push_he(
+                frame.len(),
+                8,
+                rate,
+                HtAmpduDensity::SixteenMicroseconds,
+                HeEdcaTxopLimit::DEFAULT,
+            )
+            .unwrap());
+        let encoded = batch
+            .push_he(
+                frame,
+                StaProtectedEthernetFrame {
+                    bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+                    sequence_number: 10,
+                    user_priority: 0,
+                    peer_qos: true,
+                    ccmp_header: [10, 0, 0, 0x20, 0, 0, 0, 0],
+                },
+                8,
+                rate,
+                HtAmpduDensity::SixteenMicroseconds,
+                HeEdcaTxopLimit::DEFAULT,
+            )
+            .unwrap();
+        assert_eq!(batch.frame_count(), 1);
+        let psdu_length = u16::try_from(encoded.length + 8 + 4).unwrap();
+        let expected_empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, HtAmpduDensity::SixteenMicroseconds)
+            .unwrap();
+        assert_eq!(
+            batch.prepared_empty_delimiters(0).unwrap(),
+            expected_empty_delimiters
+        );
+        assert_eq!(batch.prepared_aggregate().unwrap().subframes, 1);
+        drop(batch);
+        assert_eq!(tx_storage_backing.state(), TxSlotState::Free);
     }
 
     #[test]
@@ -491,6 +661,7 @@ mod tests {
                 },
                 8,
                 0,
+                HT_RATE,
             )
             .unwrap();
         assert_eq!(encoded.offset, TX_AMPDU_METADATA_SIZE);

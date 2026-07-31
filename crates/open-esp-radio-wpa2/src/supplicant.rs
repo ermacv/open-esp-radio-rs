@@ -17,6 +17,77 @@ use crate::{
     Pmk, Ptk, PtkContext, Wpa2Interface,
 };
 
+/// Hardware-qualified open-STA compatibility window for the first EAPOL-Key
+/// message. The numeric value is retained from the pre-transfer HIL policy;
+/// it is not claimed as a recovered vendor constant.
+pub const WPA2_STA_MESSAGE1_TIMEOUT_MS: u32 = 3_000;
+
+/// Complete window after the original Message 2 transmission.
+///
+/// SOURCE: complete `_oracles/libwpa_supplicant.a[wpa.c.obj]::
+/// wpa_supplicant_process_1_of_4` emits one Message 2 and does not register a
+/// retransmission timeout. A repeated Message 1 instead re-enters through
+/// `wpa_sm_rx_eapol` and produces another Message 2. The six-second value
+/// preserves the two former three-second HIL receive windows without
+/// inventing a station-originated Message 2 retry.
+pub const WPA2_STA_MESSAGE3_TIMEOUT_MS: u32 = 6_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2StaResponseWait {
+    Message1,
+    Message3,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2StaDeadlineEvent {
+    Pending,
+    Expired {
+        wait: Wpa2StaResponseWait,
+        elapsed_ms: u32,
+    },
+}
+
+/// Finite millisecond deadline owned independently from Embassy or a hardware
+/// alarm. A target calls [`Self::finish_millisecond`] after servicing all RX
+/// completions for that interval.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Wpa2StaResponseDeadline {
+    wait: Wpa2StaResponseWait,
+    elapsed_ms: u32,
+}
+
+impl Wpa2StaResponseDeadline {
+    pub const fn new(wait: Wpa2StaResponseWait) -> Self {
+        Self {
+            wait,
+            elapsed_ms: 0,
+        }
+    }
+
+    pub const fn elapsed_ms(&self) -> u32 {
+        self.elapsed_ms
+    }
+
+    pub fn finish_millisecond(&mut self) -> Wpa2StaDeadlineEvent {
+        self.elapsed_ms = self.elapsed_ms.saturating_add(1);
+        if self.elapsed_ms >= self.timeout_ms() {
+            Wpa2StaDeadlineEvent::Expired {
+                wait: self.wait,
+                elapsed_ms: self.elapsed_ms,
+            }
+        } else {
+            Wpa2StaDeadlineEvent::Pending
+        }
+    }
+
+    const fn timeout_ms(&self) -> u32 {
+        match self.wait {
+            Wpa2StaResponseWait::Message1 => WPA2_STA_MESSAGE1_TIMEOUT_MS,
+            Wpa2StaResponseWait::Message3 => WPA2_STA_MESSAGE3_TIMEOUT_MS,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Wpa2StaSupplicantError {
     State(Wpa2StateError),
@@ -447,5 +518,33 @@ mod tests {
             ))
         ));
         assert_eq!(supplicant.phase(), Wpa2StaPhase::Failed);
+    }
+
+    #[test]
+    fn response_deadlines_preserve_total_wait_without_spontaneous_m2_retry() {
+        let mut message1 = Wpa2StaResponseDeadline::new(Wpa2StaResponseWait::Message1);
+        for elapsed in 1..WPA2_STA_MESSAGE1_TIMEOUT_MS {
+            assert_eq!(message1.finish_millisecond(), Wpa2StaDeadlineEvent::Pending);
+            assert_eq!(message1.elapsed_ms(), elapsed);
+        }
+        assert_eq!(
+            message1.finish_millisecond(),
+            Wpa2StaDeadlineEvent::Expired {
+                wait: Wpa2StaResponseWait::Message1,
+                elapsed_ms: WPA2_STA_MESSAGE1_TIMEOUT_MS,
+            }
+        );
+
+        let mut message3 = Wpa2StaResponseDeadline::new(Wpa2StaResponseWait::Message3);
+        for _ in 1..WPA2_STA_MESSAGE3_TIMEOUT_MS {
+            assert_eq!(message3.finish_millisecond(), Wpa2StaDeadlineEvent::Pending);
+        }
+        assert_eq!(
+            message3.finish_millisecond(),
+            Wpa2StaDeadlineEvent::Expired {
+                wait: Wpa2StaResponseWait::Message3,
+                elapsed_ms: WPA2_STA_MESSAGE3_TIMEOUT_MS,
+            }
+        );
     }
 }

@@ -139,7 +139,10 @@ use open_esp_radio::{
         aes::Wpa2SoftwareAes,
         frames::Wpa2TxFrame,
         keys::Wpa2KeyKind,
-        supplicant::{Wpa2StaSupplicant, Wpa2StaSupplicantAction},
+        supplicant::{
+            Wpa2StaDeadlineEvent, Wpa2StaResponseDeadline, Wpa2StaResponseWait,
+            Wpa2StaSupplicant, Wpa2StaSupplicantAction,
+        },
     },
 };
 use open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral;
@@ -754,13 +757,10 @@ const STA_TARGET_SSID: &[u8] = if let Some(ssid) = option_env!("OPEN_RADIO_STA_S
 // selecting the numerically smaller scheduler value, min(1, 5) = 1.
 const VENDOR_MANAGEMENT_SCHEDULER_PRIORITY: u8 = 1;
 const VENDOR_MANAGEMENT_PACKET_PRIORITY: u8 = 1;
-const WPA2_MESSAGE_1_TIMEOUT_MS: u32 = 3_000;
-const WPA2_MESSAGE_3_TIMEOUT_MS: u32 = 3_000;
 const WPA2_PROTECTED_ARP_TIMEOUT_MS: u32 = 1_500;
 const WPA2_CONTROLLED_PORT_SETTLE_MS: u64 = 10;
 const WPA2_PROTECTED_ARP_ATTEMPTS: u8 = 3;
 const WPA2_PROTECTED_ARP_RETRY_DELAY_MS: u64 = 20;
-const WPA2_MESSAGE_2_ATTEMPTS: u16 = 2;
 // Migration installs both keys before queueing M4, but keeps STA EAPOL on its
 // measured plaintext layout until the M4 TX-done edge opens the controlled
 // port. Protected M4 remains a useful explicit negative control experiment.
@@ -9073,8 +9073,9 @@ async fn await_wpa2_message_1(
         }
     };
     let mut key_unwrap = Wpa2SoftwareAes::new();
+    let mut response_deadline = Wpa2StaResponseDeadline::new(Wpa2StaResponseWait::Message1);
     let mut received_frames = 0_u32;
-    for _ in 0..WPA2_MESSAGE_1_TIMEOUT_MS {
+    loop {
         for index in 0..RX_DESCRIPTOR_COUNT {
             let Some(completed) = rx_ring.take_completed(index) else {
                 continue;
@@ -9155,85 +9156,78 @@ async fn await_wpa2_message_1(
                      replay={} bssid={bssid:02x?}",
                     replay_counter,
                 ));
-                for attempt in 1..=WPA2_MESSAGE_2_ATTEMPTS {
-                    let message3_rx_ring = match start_live_rx_ring(
-                        mmio,
-                        rx_storage,
-                        descriptor_base,
-                        buffer_addresses,
-                    )
-                    .await
-                    {
-                        Ok(ring) => ring,
-                        Err(error) => {
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-rx-arm \
-                                 attempt={attempt} error={error:?}"
-                            ));
-                            return (true, false);
-                        }
-                    };
-                    let completion = match transmit_unprotected_eapol(
-                        mmio,
-                        tx_storage,
-                        station_address,
-                        bssid,
-                        message2.as_bytes(),
-                        sequences.take_non_qos(),
-                    )
-                    .await
-                    {
-                        Ok(completion) => completion,
-                        Err(error) => {
-                            let _ = disable_receive(mmio);
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-tx \
-                                 attempt={attempt} error={error:?}"
-                            ));
-                            return (true, false);
-                        }
-                    };
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-2-tx \
-                         attempt={attempt} replay={replay_counter} status={} primary={:#010x}",
-                        completion.status, completion.primary_word,
-                    ));
-                    if await_wpa2_message_3(
-                        platform,
-                        mmio,
-                        interrupt_setup,
-                        rx_storage,
-                        descriptor_base,
-                        buffer_addresses,
-                        frame,
-                        ethernet,
-                        network_device,
-                        network_runner,
-                        tx_storage,
-                        station_address,
-                        bssid,
-                        association_id,
-                        pmk,
-                        &mut key_unwrap,
-                        attempt,
-                        attempt == WPA2_MESSAGE_2_ATTEMPTS,
-                        peer_qos,
-                        association_phy,
-                        peer_supports_one_ltf_800ns_gi,
-                        peer_supports_ldpc,
-                        peer_dcm_receive,
-                        best_effort_txop,
-                        message3_rx_ring,
-                        &mut handshake,
-                        rate_control,
-                        sequences,
-                    )
-                    .await
-                    {
-                        return (true, true);
+                let message3_rx_ring = match start_live_rx_ring(
+                    mmio,
+                    rx_storage,
+                    descriptor_base,
+                    buffer_addresses,
+                )
+                .await
+                {
+                    Ok(ring) => ring,
+                    Err(error) => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-rx-arm \
+                             error={error:?}"
+                        ));
+                        return (true, false);
                     }
-                }
-                return (true, false);
+                };
+                let completion = match transmit_unprotected_eapol(
+                    mmio,
+                    tx_storage,
+                    station_address,
+                    bssid,
+                    message2.as_bytes(),
+                    sequences.take_non_qos(),
+                )
+                .await
+                {
+                    Ok(completion) => completion,
+                    Err(error) => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-tx \
+                             error={error:?}"
+                        ));
+                        return (true, false);
+                    }
+                };
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-2-tx \
+                     replay={replay_counter} status={} primary={:#010x}",
+                    completion.status, completion.primary_word,
+                ));
+                let message3 = await_wpa2_message_3(
+                    platform,
+                    mmio,
+                    interrupt_setup,
+                    rx_storage,
+                    descriptor_base,
+                    buffer_addresses,
+                    frame,
+                    ethernet,
+                    network_device,
+                    network_runner,
+                    tx_storage,
+                    station_address,
+                    bssid,
+                    association_id,
+                    pmk,
+                    &mut key_unwrap,
+                    peer_qos,
+                    association_phy,
+                    peer_supports_one_ltf_800ns_gi,
+                    peer_supports_ldpc,
+                    peer_dcm_receive,
+                    best_effort_txop,
+                    message3_rx_ring,
+                    &mut handshake,
+                    rate_control,
+                    sequences,
+                )
+                .await;
+                return (true, message3);
             }
         }
 
@@ -9258,12 +9252,19 @@ async fn await_wpa2_message_1(
             return (false, false);
         }
         Timer::after_millis(1).await;
+        if matches!(
+            response_deadline.finish_millisecond(),
+            Wpa2StaDeadlineEvent::Expired { .. }
+        ) {
+            break;
+        }
     }
 
     let _ = disable_receive(mmio);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-1 error=timeout \
-         frames={received_frames} bssid={bssid:02x?}"
+         elapsed_ms={} frames={received_frames} bssid={bssid:02x?}",
+        response_deadline.elapsed_ms(),
     ));
     (false, false)
 }
@@ -9285,8 +9286,6 @@ async fn await_wpa2_message_3(
     association_id: u16,
     pmk: &Pmk,
     key_unwrap: &mut Wpa2SoftwareAes,
-    attempt: u16,
-    final_attempt: bool,
     peer_qos: bool,
     association_phy: StaAssociationPhy,
     peer_supports_one_ltf_800ns_gi: bool,
@@ -9298,8 +9297,9 @@ async fn await_wpa2_message_3(
     rate_control: &mut StaRateControlAssociation,
     sequences: &mut StaTxSequenceCounters,
 ) -> bool {
+    let mut response_deadline = Wpa2StaResponseDeadline::new(Wpa2StaResponseWait::Message3);
     let mut received_frames = 0_u32;
-    for _ in 0..WPA2_MESSAGE_3_TIMEOUT_MS {
+    loop {
         for index in 0..RX_DESCRIPTOR_COUNT {
             let Some(completed) = rx_ring.take_completed(index) else {
                 continue;
@@ -9782,19 +9782,19 @@ async fn await_wpa2_message_3(
             return false;
         }
         Timer::after_millis(1).await;
+        if matches!(
+            response_deadline.finish_millisecond(),
+            Wpa2StaDeadlineEvent::Expired { .. }
+        ) {
+            break;
+        }
     }
     let _ = disable_receive(mmio);
-    if final_attempt {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-3 error=timeout \
-             attempt={attempt} frames={received_frames} bssid={bssid:02x?}"
-        ));
-    } else {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=wpa2-message-3-timeout attempt={attempt} \
-             frames={received_frames} bssid={bssid:02x?}"
-        ));
-    }
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-3 error=timeout \
+         elapsed_ms={} frames={received_frames} bssid={bssid:02x?}",
+        response_deadline.elapsed_ms(),
+    ));
     false
 }
 

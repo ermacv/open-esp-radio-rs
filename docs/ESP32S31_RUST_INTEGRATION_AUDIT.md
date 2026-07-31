@@ -357,11 +357,15 @@ deleted, so the parsed `Wpa2Gtk` is also the type consumed by
 verification, async key-data unwrap, strict GTK parsing and the private state
 ticket joining one `Wpa2StaKeyInstallRequest` to its completion. The HIL only
 executes that request against the pairwise/group S31 hardware slots and then
-receives the authenticated M4 frame. The exact `psram-code-psram-data` image
-booted, associated, completed WPA2/DHCP, and its strict bidirectional run
-delivered 10.013-Mbit/s RX plus a 61.718-Mbit/s concurrent TX floor with zero
-strict DMA-starvation failure. Handshake deadlines/retries and the final
-connected dispatcher still remain in the HIL executor.
+receives the authenticated M4 frame. `Wpa2StaResponseDeadline` owns the M1/M3
+finite waits, and the HIL no longer originates a second timed M2. This matches
+complete vendor `wpa.c.obj`: `wpa_supplicant_process_1_of_4` emits M2 without
+registering a retry timer, while a repeated M1 re-enters through
+`wpa_sm_rx_eapol`. The exact `psram-code-psram-data` image booted, associated,
+completed WPA2/DHCP, and its strict bidirectional run delivered 10.012-Mbit/s
+RX plus a 67.935-Mbit/s concurrent TX floor with zero strict DMA-starvation
+failure. Only the final connected dispatcher still remains in the HIL
+executor.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per

@@ -138,7 +138,7 @@ use open_esp_radio::{
         EapolKeyFrame, Message2, Message4, OwnedEapolFrame, Pmk, Ptk,
         PtkContext as CryptoPtkContext, Wpa2Interface,
         aes::software_aes128_key_unwrap,
-        key_data::parse_gtk_key_data,
+        frames::parse_gtk_key_data,
         state::{Wpa2StaAction, Wpa2StaState, Wpa2TxMessage},
     },
 };

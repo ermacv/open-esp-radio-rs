@@ -11,7 +11,6 @@
 pub mod aes;
 pub mod ap;
 pub mod frames;
-pub mod key_data;
 pub mod keys;
 pub mod retry;
 pub mod state;

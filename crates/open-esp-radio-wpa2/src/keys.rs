@@ -4,7 +4,7 @@
 //! Hardware slot selection remains in the chip MAC crate; this module owns
 //! key material, slot identity, replacement, and zeroization.
 
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{frames::Wpa2Gtk, Ptk, Wpa2Interface};
 
@@ -17,6 +17,7 @@ pub enum Wpa2KeyKind {
 }
 
 /// A CCMP temporal key with the word alignment required by the ESP32-S31 MAC.
+#[derive(Zeroize, ZeroizeOnDrop)]
 #[repr(C, align(4))]
 pub struct AlignedCcmpKey {
     bytes: [u8; WPA2_TK_LEN],
@@ -41,12 +42,6 @@ impl AlignedCcmpKey {
 
     pub fn is_word_aligned(&self) -> bool {
         self.bytes.as_ptr().addr() & 3 == 0
-    }
-}
-
-impl Drop for AlignedCcmpKey {
-    fn drop(&mut self) {
-        self.bytes.zeroize();
     }
 }
 

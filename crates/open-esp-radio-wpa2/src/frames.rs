@@ -1,7 +1,7 @@
 //! Fixed WPA2-CCMP EAPOL frame construction and GTK key-data parsing.
 
-use core::sync::atomic::{compiler_fence, Ordering};
 use hmac::Mac;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::state::{Wpa2ApState, Wpa2StaState, Wpa2Transmit, Wpa2TxMessage};
 use crate::{
@@ -142,6 +142,7 @@ impl<const N: usize> OwnedAssociationSecurityIes<N> {
     }
 }
 
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Wpa2Gtk {
     key_id: u8,
     transmit: bool,
@@ -177,15 +178,7 @@ impl Wpa2Gtk {
     }
 }
 
-impl Drop for Wpa2Gtk {
-    fn drop(&mut self) {
-        for byte in &mut self.key {
-            unsafe { core::ptr::write_volatile(byte, 0) };
-        }
-        compiler_fence(Ordering::SeqCst);
-    }
-}
-
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Wpa2PlainKeyData<const N: usize = WPA2_PLAIN_KEY_DATA_CAPACITY> {
     len: usize,
     bytes: [u8; N],
@@ -231,15 +224,6 @@ impl<const N: usize> Wpa2PlainKeyData<N> {
 
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
-    }
-}
-
-impl<const N: usize> Drop for Wpa2PlainKeyData<N> {
-    fn drop(&mut self) {
-        for byte in &mut self.bytes {
-            unsafe { core::ptr::write_volatile(byte, 0) };
-        }
-        compiler_fence(Ordering::SeqCst);
     }
 }
 

@@ -17,7 +17,7 @@ pub mod state;
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const EAPOL_HEADER_LEN: usize = 4;
 pub const EAPOL_KEY_FIXED_LEN: usize = 95;
@@ -79,6 +79,7 @@ pub struct PtkContext {
 }
 
 /// Pairwise master key. The bytes cannot be formatted and are cleared on drop.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Pmk([u8; 32]);
 
 impl Pmk {
@@ -126,13 +127,8 @@ impl Pmk {
     }
 }
 
-impl Drop for Pmk {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
 /// WPA2 pairwise transient key material (KCK | KEK | TK), cleared on drop.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Ptk([u8; WPA2_PTK_LEN]);
 
 impl Ptk {
@@ -152,12 +148,6 @@ impl Ptk {
         self.0[32..48]
             .try_into()
             .expect("CCMP temporal key is PTK bytes 32..48")
-    }
-}
-
-impl Drop for Ptk {
-    fn drop(&mut self) {
-        self.0.zeroize();
     }
 }
 

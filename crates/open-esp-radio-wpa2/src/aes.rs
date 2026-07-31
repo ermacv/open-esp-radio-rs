@@ -7,7 +7,7 @@ use ::aes::{
     cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit},
     Aes128,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::WPA2_UNWRAPPED_KEY_DATA_CAPACITY;
 
@@ -21,6 +21,7 @@ pub enum SoftwareAesKeyUnwrapError {
 }
 
 /// Fixed owned plaintext returned by an async key-unwrap backend.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Wpa2UnwrappedKeyData {
     len: usize,
     bytes: [u8; WPA2_UNWRAPPED_KEY_DATA_CAPACITY],
@@ -29,12 +30,6 @@ pub struct Wpa2UnwrappedKeyData {
 impl Wpa2UnwrappedKeyData {
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
-    }
-}
-
-impl Drop for Wpa2UnwrappedKeyData {
-    fn drop(&mut self) {
-        self.bytes.zeroize();
     }
 }
 

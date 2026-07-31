@@ -172,7 +172,7 @@ use open_esp_radio::{
             run_phy_register,
             target_executor::{
                 HARDWARE_EDGE_LIMIT, PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c,
-                complete_dcode_i2c, complete_masked_i2c, complete_rfpll_i2c,
+                complete_dcode_i2c, complete_final_i2c, complete_masked_i2c, complete_rfpll_i2c,
                 complete_rx_dc_calibration_pbus, complete_rx_dco_pbus, complete_rx_gain_dc_pbus,
                 complete_rx_gain_publish_pbus, complete_rx_saturation_pbus,
                 complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c, complete_rxiq_gain_pbus,
@@ -2605,42 +2605,8 @@ impl<
                     complete_temperature(binding, platform).await?,
                 ))
             }
-            PhyRegisterExternalBinding::FinalI2c(mut binding) => 'final_i2c: {
-                for _ in 0..HARDWARE_EDGE_LIMIT {
-                    match binding.action() {
-                        PhyColdI2cAction::StartRead { .. } => {
-                            match binding.start_target(self.radio.parts_mut().0) {
-                                Ok(()) => {}
-                                Err(PhyColdI2cError::BusyAtStart) => {
-                                    Timer::after_micros(1).await;
-                                }
-                                Err(_) => {
-                                    break 'final_i2c Err(PreludePortError::UnexpectedBinding);
-                                }
-                            }
-                        }
-                        PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
-                            Timer::after_micros(1).await;
-                            match binding.observe_target_edge(self.radio.parts_mut().0) {
-                                Ok(PhyColdI2cObservation::EdgeConsumed)
-                                | Ok(PhyColdI2cObservation::StillPending) => {}
-                                Err(_) => {
-                                    break 'final_i2c Err(PreludePortError::UnexpectedBinding);
-                                }
-                            }
-                        }
-                        PhyColdI2cAction::Complete(_) => {
-                            break 'final_i2c binding
-                                .into_completion()
-                                .map_err(|_| PreludePortError::UnexpectedBinding);
-                        }
-                        PhyColdI2cAction::StartWrite { .. }
-                        | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                            break 'final_i2c Err(PreludePortError::UnexpectedBinding);
-                        }
-                    }
-                }
-                break 'final_i2c Ok(binding.into_deadline_completion());
+            PhyRegisterExternalBinding::FinalI2c(binding) => {
+                complete_final_i2c::<EmbassyPhyDelay>(binding, self.radio.parts_mut().0).await
             }
         };
         if result.is_ok() {

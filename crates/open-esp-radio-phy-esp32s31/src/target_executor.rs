@@ -15,6 +15,7 @@ use crate::{
     phy_dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
     phy_i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
     phy_pbus::PhyPbusHardwareObservation,
+    phy_register::{PhyRegisterCompletion, PhyRegisterFinalI2cBinding},
     phy_rfpll::{RfpllFrequencyCompletion, RfpllFrequencyI2cBinding},
     phy_rx_dco::{PhyRxDcoCompletion, PhyRxDcoPbusBinding},
     phy_rx_gain::{PhyRxGainPublishCompletion, PhyRxGainPublishPbusBinding},
@@ -63,6 +64,47 @@ pub enum PhyTargetPortError {
     HardwareEdgeTimedOut,
     RfOperationLimit,
     UnexpectedBinding,
+}
+
+/// Complete the registration tail's bounded read-only PHY-I2C transaction.
+///
+/// This leaf is deliberately distinct from the general I2C executor: the
+/// recovered registration tail permits only a read, and exhausting the
+/// deadline produces a typed transition completion rather than an executor
+/// error. Applications must not reinterpret a write action or select another
+/// polling bound at this boundary.
+pub async fn complete_final_i2c<D: PhyAsyncDelay>(
+    mut binding: PhyRegisterFinalI2cBinding,
+    platform: &mut impl PhyI2cMasterControl,
+) -> Result<PhyRegisterCompletion, PhyTargetPortError> {
+    for _ in 0..HARDWARE_EDGE_LIMIT {
+        match binding.action() {
+            PhyColdI2cAction::StartRead { .. } => match binding.start_target(platform) {
+                Ok(()) => {}
+                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+            },
+            PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
+                D::after_micros(1).await;
+                match binding
+                    .observe_target_edge(platform)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+                {
+                    PhyColdI2cObservation::EdgeConsumed | PhyColdI2cObservation::StillPending => {}
+                }
+            }
+            PhyColdI2cAction::Complete(_) => {
+                return binding
+                    .into_completion()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding);
+            }
+            PhyColdI2cAction::StartWrite { .. }
+            | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
+                return Err(PhyTargetPortError::UnexpectedBinding);
+            }
+        }
+    }
+    Ok(binding.into_deadline_completion())
 }
 
 macro_rules! define_i2c_executor {

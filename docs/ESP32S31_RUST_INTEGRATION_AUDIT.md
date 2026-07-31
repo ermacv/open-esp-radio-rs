@@ -218,6 +218,13 @@ concurrent TX floor with zero strict DMA-starvation failure. `PreludePort` and
 its nested `complete_*` graph are still the remaining application copy; the
 rejected split-future warning below therefore continues to apply.
 
+The final registration PHY-I2C edge has also moved into
+`target_executor::complete_final_i2c`. Its read-only action set, fixed
+10,000-edge bound and deadline completion are now driver policy; the HIL arm
+is one injected Embassy-delay call. The following PSRAM/PSRAM HE20 run passed
+at 10.010-Mbit/s RX plus a 65.386-Mbit/s concurrent TX floor with zero DMA
+starvation.
+
 A 2026-07-30 experiment copying the nested RX/TX calibration composition into
 separate public cross-crate `async fn`s was rejected. In the identical
 `psram-code-psram-data` image it moved the runtime text end from

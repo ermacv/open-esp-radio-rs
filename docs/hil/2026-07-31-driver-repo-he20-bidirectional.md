@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.012 Mbit/s.
-- Concurrent open-radio TX floor: 65.814 Mbit/s.
-- Conservative sum: 75.826 Mbit/s.
+- Device direct-RX median: 10.010 Mbit/s.
+- Concurrent open-radio TX floor: 65.386 Mbit/s.
+- Conservative sum: 75.396 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,11 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `61739287db84580e7f0cd03f27c994a8ff254861f5320da8087778c312c2f5df`.
+  `be0050b4d1372a58d1e0354e250ea8713dc808f8d5a3f95185fbf94f79296382`.
 - ESP application image SHA-256:
-  `e1f99d31dc7691b6e8f2c127af58c77a60e1ce76cb9deaab06776951806ab40a`.
+  `c64c52b129a709c634f25ba6fbfc44ef1e836df94b30b75c9b90e45c61175229`.
 - Packed stage-two runtime SHA-256:
-  `09758f7e29026794098c935b8347456c5e699bcbd54f6cefe76c8d92f484f971`.
+  `605aa8b29a2b0760f5e8feb504926cc9568ee406dbf0f157a708d4ed6e03d3a1`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -83,3 +83,8 @@ boundary. The encoded application shrank from 1,129,104 to 998,912 bytes while
 retaining the strict result above. Nested RF/baseband completion remains one
 application-local port until it can move as one complete type with a guarded
 future/layout frontier.
+
+The registration tail's read-only PHY-I2C loop is no longer part of that
+application port. `complete_final_i2c` owns its fixed 10,000-edge bound,
+read-only invariant and deadline-as-transition-completion semantics in the PHY
+target executor; HIL supplies only the Embassy delay and platform I2C owner.

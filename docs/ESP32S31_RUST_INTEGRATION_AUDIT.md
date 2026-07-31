@@ -102,6 +102,26 @@ all profiles and four independent ten-second intervals retained zero
 driver runtime, while the statistics decoder and RX ownership transaction
 remain driver-owned.
 
+The connected DCM path also exposed an ownership error at the application/
+driver boundary. The application removed two pinned network leases before
+checking the ROM-derived HE APEP limit. At MCS0 DCM, the 1,850-byte limit
+admits one full-size protected Ethernet MPDU but not two; the rejected second
+lease escaped through the generic 54-Mbit/s legacy spill path.
+`ReferencedAmpduIngressPolicy` now owns this decision next to
+`ReferencedHtAmpduBatch`: HT may prefetch the pair required by this adapter,
+whereas HE begins with one lease and claims every subsequent lease only after
+`can_push_he` validates the exact APEP/TXOP and allocation capacity. The
+application retains only the HIL traffic source and its optional offered-load
+pacing.
+
+The reset-separated post-transfer `psram-code-psram-data` qualification used
+BCC DCM MCS0, 2xLTF/0.8 us and simultaneous traffic. It delivered
+1.002 Mbit/s downlink and a conservative 0.749-Mbit/s uplink floor with
+`spill=0`, zero `BUFFER_FULL` and zero `FIFO_OVERFLOW`. Fifteen consecutive
+Linux station-statistics samples independently decoded the uplink as
+4.3-Mbit/s HE-MCS0 DCM. The immutable contract and artifact hashes are in
+`docs/hil/2026-07-31-he20-dcm-connected.md`.
+
 The executor-neutral BlockAck decision is now also driver-owned as
 `open-esp-radio-mac-esp32s31::tx_runtime::AmpduRetryState`. Both the internal
 DMA A-MPDU path and the referenced `embassy-net` path use the same bounded

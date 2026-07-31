@@ -13,13 +13,59 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_mac_esp32s31::{
     tx::{
         HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate,
-        LegacyTxQueue, TxCookie, TxSlotState,
+        LegacyTxQueue, TxCookie, TxPhyRate, TxSlotState,
     },
     tx_ampdu::{
         HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage,
         TX_AMPDU_METADATA_SIZE,
     },
 };
+
+/// Initial queue-admission policy for a referenced A-MPDU transaction.
+///
+/// HT needs two MPDUs before it can publish the aggregate format used by this
+/// adapter. HE can publish one MPDU, so it must claim only the first pinned
+/// network lease initially. [`ReferencedHtAmpduBatch::can_push_he`] then
+/// checks the exact rate/TXOP APEP ceiling before the caller removes another
+/// lease from its queue.
+///
+/// This distinction is observable at low DCM rates: MCS0 DCM admits one
+/// full-size Ethernet frame under the ROM-derived 1,850-byte APEP limit but
+/// not two. Prefetching the second lease before that check previously forced
+/// it through an unrelated legacy spill path.
+///
+/// SOURCE: ROM rev0 `he_max_apep_length`, complete
+/// `_oracles/libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength`, and
+/// HIL_OPEN_HE20_DCM_CONNECTED_2026_07_31.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReferencedAmpduIngressPolicy {
+    HtPrefetchPair,
+    HeStartSingleThenCheck,
+}
+
+impl ReferencedAmpduIngressPolicy {
+    pub const fn for_rate(rate: TxPhyRate) -> Option<Self> {
+        match rate {
+            TxPhyRate::Legacy(_) => None,
+            TxPhyRate::Ht(_) => Some(Self::HtPrefetchPair),
+            TxPhyRate::He(_) => Some(Self::HeStartSingleThenCheck),
+        }
+    }
+
+    /// Whether the outer queue owner may claim a second lease before the
+    /// referenced batch has performed its per-frame capacity check.
+    pub const fn prefetch_second(self) -> bool {
+        matches!(self, Self::HtPrefetchPair)
+    }
+
+    /// Whether the currently claimed prefix is sufficient to begin a batch.
+    pub const fn ready(self, second_is_present: bool) -> bool {
+        match self {
+            Self::HtPrefetchPair => second_is_present,
+            Self::HeStartSingleThenCheck => true,
+        }
+    }
+}
 
 /// Failure while preparing a referenced/cache-TX A-MPDU batch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -478,7 +524,7 @@ mod tests {
         Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool, TxToken as _,
     };
     use open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-    use open_esp_radio_mac_esp32s31::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
+    use open_esp_radio_mac_esp32s31::tx::{HtChannelWidth, HtGuardInterval, HtMcs, LegacyRate};
 
     use super::*;
 
@@ -492,6 +538,28 @@ mod tests {
         HtGuardInterval::Short400Ns,
         HtChannelWidth::Mhz40,
     );
+
+    #[test]
+    fn ingress_policy_claims_ht_pair_but_leaves_he_tail_for_capacity_check() {
+        let ht = ReferencedAmpduIngressPolicy::for_rate(TxPhyRate::Ht(HT_RATE)).expect("HT policy");
+        assert!(ht.prefetch_second());
+        assert!(!ht.ready(false));
+        assert!(ht.ready(true));
+
+        let he = ReferencedAmpduIngressPolicy::for_rate(TxPhyRate::He(HeRate::bcc_dcm(
+            open_esp_radio_mac_esp32s31::tx::HeBccDcmMcs::Mcs0,
+            open_esp_radio_mac_esp32s31::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+        )))
+        .expect("HE policy");
+        assert!(!he.prefetch_second());
+        assert!(he.ready(false));
+        assert!(he.ready(true));
+
+        assert_eq!(
+            ReferencedAmpduIngressPolicy::for_rate(TxPhyRate::Legacy(LegacyRate::Ofdm54M)),
+            None
+        );
+    }
 
     fn context() -> Context<'static> {
         Context::from_waker(Waker::noop())

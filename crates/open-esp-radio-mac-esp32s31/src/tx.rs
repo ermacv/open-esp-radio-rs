@@ -2,6 +2,7 @@
 
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
 
+use open_esp_radio_ieee80211::he::HeDcmConstellation;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
     parse_trigger_user_spatial_stream, TriggerCommonInfo, TriggerFrame, TriggerGiLtf,
@@ -1391,6 +1392,68 @@ impl HeRate {
         } else {
             Some(delimiters as u8)
         }
+    }
+}
+
+/// A standard-valid HE SU DCM rate suitable for a capability-gated override.
+///
+/// `HeRate` also represents ordinary non-DCM HE rates. Keeping the DCM
+/// subset in this newtype prevents a rate-policy caller from publishing a
+/// nominally "DCM" override whose HE-SIG-A DCM bit is actually clear.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeDcmRate(HeRate);
+
+impl HeDcmRate {
+    pub const fn bcc(
+        mcs: HeBccDcmMcs,
+        guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Self {
+        Self(HeRate::bcc_dcm(mcs, guard_interval_and_ltf))
+    }
+
+    pub const fn ldpc(
+        mcs: HeLdpcDcmMcs,
+        guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
+    ) -> Self {
+        Self(HeRate::ldpc_dcm(mcs, guard_interval_and_ltf))
+    }
+
+    pub const fn rate(self) -> HeRate {
+        self.0
+    }
+
+    /// Smallest DCM constellation the receiving peer must advertise.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[trc.o]::rcGetDCMMaxRate` maps peer
+    /// capability levels BPSK/QPSK/16-QAM to MCS0/MCS1/MCS3. ROM
+    /// `he_rates_dcm_ru_242` adds MCS4 only in the separately typed LDPC
+    /// column, which still uses 16-QAM.
+    pub const fn required_peer_constellation(self) -> HeDcmConstellation {
+        match self.0.mcs() {
+            HeMcs::Mcs0 => HeDcmConstellation::Bpsk,
+            HeMcs::Mcs1 => HeDcmConstellation::Qpsk,
+            HeMcs::Mcs3 | HeMcs::Mcs4 => HeDcmConstellation::Qam16,
+            // The private field and typed constructors make these variants
+            // unreachable. Fail closed nonetheless if that invariant changes:
+            // no peer advertises support for an invalid DCM MCS.
+            HeMcs::Mcs2 | HeMcs::Mcs5 | HeMcs::Mcs6 | HeMcs::Mcs7 | HeMcs::Mcs8 | HeMcs::Mcs9 => {
+                HeDcmConstellation::NotSupported
+            }
+        }
+    }
+
+    pub const fn is_supported_by(
+        self,
+        peer_receive: HeDcmConstellation,
+        peer_supports_ldpc: bool,
+    ) -> bool {
+        let constellation_supported = match self.required_peer_constellation() {
+            HeDcmConstellation::NotSupported => false,
+            HeDcmConstellation::Bpsk => peer_receive.supports_bpsk(),
+            HeDcmConstellation::Qpsk => peer_receive.supports_qpsk(),
+            HeDcmConstellation::Qam16 => peer_receive.supports_16qam(),
+        };
+        constellation_supported && (!self.0.is_ldpc() || peer_supports_ldpc)
     }
 }
 

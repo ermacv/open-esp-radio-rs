@@ -18,6 +18,35 @@ Status meanings:
   exists.
 - **not implemented**: no complete open path exists.
 
+## Qualification ledger
+
+This is the canonical index of completed and blocked HIL cells. Do not repeat
+an identical cell merely to rediscover its status. Repeat it only when at
+least one of these inputs changes:
+
+- driver code on the named path;
+- PHY/MAC register definition used by that path;
+- `esp-hal`/PAC/bootstrap revision or memory placement;
+- peer hardware, firmware or advertised capability;
+- traffic shape or a stricter acceptance gate.
+
+Every newly qualified behavior must update this table after its reusable
+logic has moved from the HIL application into a driver crate. The application
+may retain board setup, credentials, traffic generation and reporting only.
+Detailed raw captures may stay in the application artifact directory, but the
+committed record must contain the exact vector, result, artifact hashes and
+the driver API that now owns the behavior.
+
+| Qualification ID | Exact cell and authoritative result | Driver owner / retained evidence | Repeat only when |
+|---|---|---|---|
+| `HIL_OPEN_HT40_SGI_BIDIRECTIONAL_2026_07_30` | HT40 MCS7, 400-ns GI, A-MPDU/BlockAck, `psram-code-psram-data`: 25.006-Mbit/s RX median plus 68.276-Mbit/s concurrent TX floor; zero final `BUFFER_FULL`/`FIFO_OVERFLOW`. | `HtRate`, `HtAmpduTxStorage`, `AmpduRetryState`, `ReferencedHtAmpduBatch`; detailed result in [`ESP32S31_RUST_INTEGRATION_AUDIT.md`](ESP32S31_RUST_INTEGRATION_AUDIT.md). | HT formatter, A-MPDU ownership, retry/IRQ ordering, peer or memory profile changes. |
+| `HIL_OPEN_HE20_MCS_GI_MATRIX_2026_07_31` | HE SU MCS0..9 at selectors 1/2/3: four complete 30-cell rounds, 64 real A-MPDUs per cell, no failed profile, terminal retry or RX DMA starvation. | `HeRate`, `HeAmpduTxConfig`, `StaTxRatePolicy`; detailed result in [`ESP32S31_RUST_INTEGRATION_AUDIT.md`](ESP32S31_RUST_INTEGRATION_AUDIT.md). | HE formatter/rate policy/APEP/BlockAck path or peer changes. |
+| `HIL_OPEN_HE20_GI0_PEER_REJECT_2026_07_31` | Negative cell: the controlled AX211 AP advertises `one_ltf_800ns_gi=false`; selector 0 completes association/AddBA but every data A-MPDU receives no valid BlockAck. This is a capability rejection, not an open-driver positive HIL. | `StaTxRatePolicy` retains selector 0 as a typed value but must capability-gate it. | Use a peer that advertises selector 0, or change capability parsing. |
+| `HIL_OPEN_HE20_DCM_MATRIX_2026_07_31` | Raw BCC DCM MCS0 at selectors 1/2/3: 44 complete three-cell rounds, 64 A-MPDUs per cell, no failed profile, terminal retry, `BUFFER_FULL` or `FIFO_OVERFLOW`. | `HeRate::{bcc_dcm,ampdu_empty_delimiters,maximum_apep_bytes}`, HE TX formatter; detailed result in [`ESP32S31_RUST_INTEGRATION_AUDIT.md`](ESP32S31_RUST_INTEGRATION_AUDIT.md). | DCM formatter/APEP/delimiter logic or peer changes. |
+| `HIL_OPEN_HE20_DCM_CONNECTED_2026_07_31` | Connected BCC DCM MCS0, selector 1, 20 MHz, A-MPDU/BlockAck and simultaneous traffic: RX 1.002 Mbit/s, TX floor 0.749 Mbit/s, `spill=0`, zero DMA starvation. Linux independently reported every sampled uplink vector as `4.3 MBit/s HE-MCS 0 HE-DCM 1`. | `HeDcmRate`, `StaTxRatePolicy`, `ReferencedAmpduIngressPolicy`; immutable record in [`hil/2026-07-31-he20-dcm-connected.md`](hil/2026-07-31-he20-dcm-connected.md). | DCM rate policy, referenced-batch ingress, peer DCM capability, pacing shape or memory profile changes. |
+| `HIL_OPEN_HE_TRIGGER_ABSENT_AX211_2026_07_31` | Sustained HE SU on the current Linux AX211 AP produced zero Trigger frames and zero HE-TB transmissions. Repeating ordinary traffic against the same AP cannot qualify OFDMA. | Trigger parser/scheduled-rate/queue types are implemented; missing boundary is an external valid Trigger producer. | AP/firmware gains Trigger scheduling or a different controllable Trigger source is connected. |
+| `HIL_OPEN_HE_SOUNDING_ABSENT_2026_07_31` | Current FRITZ and Linux AP scenarios produced no open-path NDPA/sounding exchange despite successful HE association, AddBA and traffic. | NDPA parser/encoder and report-rate programming are implemented; sounding activation remains open. | AP/sounding policy or running feedback scheduler changes. |
+
 ## 802.11ax
 
 | Datasheet capability | Open-driver status | Current evidence and missing boundary |

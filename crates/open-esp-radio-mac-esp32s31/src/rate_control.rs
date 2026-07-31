@@ -7,9 +7,10 @@
 use crate::rate_schedule::{schedule_state, RateScheduleKind, RateScheduleRef};
 use crate::rx::HeGuardIntervalAndLtf;
 use crate::tx::{
-    HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion,
-    TxPhyRate,
+    HeDcmRate, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate,
+    TxCompletion, TxPhyRate,
 };
+use open_esp_radio_ieee80211::he::HeDcmConstellation;
 use open_esp_radio_ieee80211::station::StaAssociationPhy;
 use open_esp_radio_pac_esp32s31::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
@@ -732,8 +733,12 @@ pub struct StaTxRatePolicy {
     /// Fixed HE-SU GI/LTF selector for certification. DCM and trigger-based
     /// profiles use their own typed rate owners instead of this SU override.
     pub he_guard_interval_and_ltf_override: Option<HeGuardIntervalAndLtf>,
+    /// Exact typed DCM certification rate. It takes precedence over the
+    /// ordinary HE MCS/GI overrides only when the peer capability admits it.
+    pub he_dcm_override: Option<HeDcmRate>,
     pub he_800ns_gi_ltf: HeGuardIntervalAndLtf,
     pub peer_supports_ldpc: bool,
+    pub peer_dcm_receive: HeDcmConstellation,
 }
 
 impl StaTxRatePolicy {
@@ -765,6 +770,13 @@ impl StaTxRatePolicy {
         TxPhyRate::Ht(HtRate::new(mcs, guard_interval, channel_width))
     }
 
+    pub const fn he_dcm_override_is_supported(self) -> bool {
+        match self.he_dcm_override {
+            Some(rate) => rate.is_supported_by(self.peer_dcm_receive, self.peer_supports_ldpc),
+            None => true,
+        }
+    }
+
     /// Decode one complete Rust-owned schedule and apply negotiated format
     /// capabilities without exposing vendor rate bytes to the application.
     pub fn rate_for_schedule(self, schedule: RateScheduleRef) -> TxPhyRate {
@@ -786,15 +798,18 @@ impl StaTxRatePolicy {
                     .unwrap_or(rate.guard_interval),
                 rate.channel_width,
             )),
-            TxPhyRate::He(rate) => TxPhyRate::He(HeRate::new(
-                self.he_mcs_override.unwrap_or(rate.mcs()),
-                self.he_guard_interval_and_ltf_override
-                    .unwrap_or(rate.guard_interval_and_ltf()),
-            )),
+            TxPhyRate::He(rate) => match self.he_dcm_override {
+                Some(dcm) if self.he_dcm_override_is_supported() => TxPhyRate::He(dcm.rate()),
+                _ => TxPhyRate::He(HeRate::new(
+                    self.he_mcs_override.unwrap_or(rate.mcs()),
+                    self.he_guard_interval_and_ltf_override
+                        .unwrap_or(rate.guard_interval_and_ltf()),
+                )),
+            },
             rate => rate,
         };
         match rate {
-            TxPhyRate::He(rate) if self.peer_supports_ldpc => {
+            TxPhyRate::He(rate) if self.peer_supports_ldpc && !rate.is_dcm() => {
                 TxPhyRate::He(HeRate::ldpc(rate.mcs(), rate.guard_interval_and_ltf()))
             }
             _ => rate,
@@ -1441,8 +1456,10 @@ mod tests {
         ht_guard_interval_override: None,
         he_mcs_override: None,
         he_guard_interval_and_ltf_override: None,
+        he_dcm_override: None,
         he_800ns_gi_ltf: HeGuardIntervalAndLtf::TwoLtf800Ns,
         peer_supports_ldpc: true,
+        peer_dcm_receive: HeDcmConstellation::Bpsk,
     };
 
     fn state() -> RateControlState {
@@ -1790,6 +1807,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn sta_tx_policy_dcm_override_is_capability_gated_and_preserves_coding() {
+        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, 0).unwrap();
+        let gi = HeGuardIntervalAndLtf::TwoLtf800Ns;
+        let bpsk = HeDcmRate::bcc(crate::tx::HeBccDcmMcs::Mcs0, gi);
+        let bpsk_policy = StaTxRatePolicy {
+            he_dcm_override: Some(bpsk),
+            peer_dcm_receive: HeDcmConstellation::Bpsk,
+            ..HE20_POLICY
+        };
+        assert!(bpsk_policy.he_dcm_override_is_supported());
+        assert_eq!(
+            bpsk_policy.rate_for_schedule(schedule),
+            TxPhyRate::He(bpsk.rate())
+        );
+        assert!(!bpsk.rate().is_ldpc());
+
+        let qpsk = HeDcmRate::bcc(crate::tx::HeBccDcmMcs::Mcs1, gi);
+        let unsupported_qpsk = StaTxRatePolicy {
+            he_dcm_override: Some(qpsk),
+            peer_dcm_receive: HeDcmConstellation::Bpsk,
+            ..HE20_POLICY
+        };
+        assert!(!unsupported_qpsk.he_dcm_override_is_supported());
+        let TxPhyRate::He(fallback) = unsupported_qpsk.rate_for_schedule(schedule) else {
+            panic!("HE association retains the ordinary HE schedule");
+        };
+        assert!(!fallback.is_dcm());
+
+        let supported_qpsk = StaTxRatePolicy {
+            peer_dcm_receive: HeDcmConstellation::Qpsk,
+            ..unsupported_qpsk
+        };
+        assert_eq!(
+            supported_qpsk.rate_for_schedule(schedule),
+            TxPhyRate::He(qpsk.rate())
+        );
+
+        let ldpc_16qam = HeDcmRate::ldpc(crate::tx::HeLdpcDcmMcs::Mcs4, gi);
+        let no_ldpc = StaTxRatePolicy {
+            he_dcm_override: Some(ldpc_16qam),
+            peer_dcm_receive: HeDcmConstellation::Qam16,
+            peer_supports_ldpc: false,
+            ..HE20_POLICY
+        };
+        assert!(!no_ldpc.he_dcm_override_is_supported());
+        let with_ldpc = StaTxRatePolicy {
+            peer_supports_ldpc: true,
+            ..no_ldpc
+        };
+        assert!(with_ldpc.he_dcm_override_is_supported());
+        assert_eq!(
+            with_ldpc.rate_for_schedule(schedule),
+            TxPhyRate::He(ldpc_16qam.rate())
+        );
     }
 
     #[test]

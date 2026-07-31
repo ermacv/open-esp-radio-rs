@@ -122,6 +122,15 @@ Linux station-statistics samples independently decoded the uplink as
 4.3-Mbit/s HE-MCS0 DCM. The immutable contract and artifact hashes are in
 `docs/hil/2026-07-31-he20-dcm-connected.md`.
 
+The separately qualified LDPC DCM MCS0 cell passed the same connected
+contract at 1.001 Mbit/s downlink plus a 0.749-Mbit/s uplink floor, again with
+`spill=0` and zero RX DMA starvation. The strict device evidence required both
+`he_dcm=1` and `he_ldpc=1`; Linux independently decoded all fifteen sampled
+uplink vectors as 4.3-Mbit/s HE-MCS0 DCM. No application policy was promoted
+for this cell because the typed constructor and both peer capability gates
+already lived in `HeDcmRate` and `StaTxRatePolicy` before the run. Details are
+in `docs/hil/2026-07-31-he20-dcm-ldpc-connected.md`.
+
 The executor-neutral BlockAck decision is now also driver-owned as
 `open-esp-radio-mac-esp32s31::tx_runtime::AmpduRetryState`. Both the internal
 DMA A-MPDU path and the referenced `embassy-net` path use the same bounded

@@ -1,32 +1,51 @@
 # Documentation
 
-Start with the documents in this section. Audit logs are retained for
-traceability, but they are not all current design instructions.
+Documentation is divided by maintenance contract. Current documents describe
+the checked-in workspace. Evidence records preserve a result at a named date
+and are not silently rewritten to match later API paths. Archive reports are
+provenance, not instructions.
 
-## Maintained documents
+## Current architecture and policy
 
-- [Architecture](ARCHITECTURE.md) — crate boundaries and dependency direction.
+- [Architecture](ARCHITECTURE.md) — crate boundaries, protocol/chip scope,
+  dependency direction and the separate test-harness layer.
 - [Public source policy](SOURCE_POLICY.md) — allowed and excluded inputs.
-- [ESP32-S31 feature status](ESP32S31_WIFI_FEATURE_STATUS.md) — implemented and
-  hardware-qualified capabilities.
-- [PHY port status](PHY_PORT_STATUS.md) — current PHY scope and limitations.
-- [PAC/MMIO/unsafe audit](PAC_AND_UNSAFE_AUDIT.md) — generated PAC and ownership
-  boundary.
-- [Driver/HIL integration audit](ESP32S31_RUST_INTEGRATION_AUDIT.md) — remaining
-  reusable logic in the HIL application.
+- [PAC/MMIO/unsafe audit](PAC_AND_UNSAFE_AUDIT.md) — current register and
+  memory-ownership boundary.
 
-## Technical reference
+## Current status and backlog
 
-- [`phy/`](phy/README.md) contains the maintained PHY parity inventory and its
-  per-function evidence.
+- [ESP32-S31 Wi-Fi feature status](ESP32S31_WIFI_FEATURE_STATUS.md) — canonical
+  implemented/HIL-qualified capability ledger.
+- [Integration backlog](INTEGRATION_BACKLOG.md) — reusable runtime logic that
+  still resides in the ESP32-S31 HIL application.
+- [PHY parity index](phy/README.md) — current scope, parity inventory and open
+  findings for the chip-level PHY.
+
+Current status documents must state when they were last verified. Update them
+when code ownership, public paths, qualification state or listed counts
+change; do not append completed chronology to a live backlog.
+
+## Research and qualification evidence
+
+- [`phy/audit/`](phy/audit/README.md) and the linked PHY ledgers contain
+  instruction-level vendor/ROM comparisons. Individual audit pages are
+  evidence snapshots; their summary and open-state index is `phy/README.md`.
 - [Register provenance](esp32s31-radio-register-provenance.md) records the
   basis and confidence for recovered register descriptions.
 - [Debug oracles](esp32s31-debug-oracles.md) records comparison-only symbol and
-  descriptor evidence.
-- [`hil/`](hil/) contains dated, immutable hardware qualification records.
+  descriptor evidence, including evidence relevant to future radio protocols.
+- [`hil/`](hil/README.md) contains dated, immutable hardware qualification
+  records and their reproduction contracts.
 
-## Historical material
+Historical paths inside an evidence record describe the tested revision. If a
+current path is needed, add a clearly marked note rather than rewriting the
+original command or result.
 
-[`archive/`](archive/README.md) contains completed transfer reports and
-vendor-library analyses. These files explain how the current code was derived;
-they do not define the current crate layout or verification workflow.
+## Historical archive
+
+[`archive/`](archive/README.md) contains completed transfer reports, superseded
+audits and vendor-library analyses. No archive document defines the current
+crate layout, API or verification workflow. Git history is sufficient for
+small transfer bookkeeping; retain large reports only when they carry unique
+reverse-engineering evidence.

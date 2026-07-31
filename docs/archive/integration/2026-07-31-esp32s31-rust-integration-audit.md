@@ -1,5 +1,11 @@
 # ESP32-S31 driver-repository HIL integration audit
 
+> Historical snapshot. This report records the incremental transfer state on
+> 2026-07-31 and is not the current implementation backlog. Paths, completion
+> claims and next steps below describe different points within that transfer.
+> See [`../../INTEGRATION_BACKLOG.md`](../../INTEGRATION_BACKLOG.md) for current
+> work and [`../../hil/README.md`](../../hil/README.md) for immutable HIL records.
+
 Audit date: 2026-07-31.
 
 The working HIL application, bootstrap, linker layout and Rust host runner now

@@ -6,7 +6,7 @@ while the HAL owns finite transactions.
 
 ## Recovered SVD and PAC
 
-The recovered SVD contains 54 radio peripherals in total. Ten are the current
+The recovered SVD contains 55 radio peripherals in total. Ten are the current
 PHY set, containing 123 register declarations and 228 explicitly represented
 field declarations. Dimensioned arrays, such as the 45-entry I2C command RAM,
 are counted once in these declaration totals:
@@ -138,18 +138,19 @@ exact register traces. RXIQ gain/phase publication is correctly saturated by
 the owning PHY transition before the PAC RMW; this differs from the defective
 TXIQ extrema path.
 
-BBPLL calibration remains a lower-layer integration proof gap. The HAL
-preserves the zero/nonzero encodings but delegates the actual RMW of
-`0x2010f818[3:2]` to `PhyI2cMasterControl`, whose target implementation is
-outside this repository. ROM `phy_bbpll_recal` additionally requires a
+BBPLL calibration retains a lower-layer instruction-parity proof gap. The HAL
+preserves the zero/nonzero encodings and delegates the actual RMW of
+`0x2010f818[3:2]` to `PhyI2cMasterControl`; its ESP32-S31 target implementation
+now lives in `crates/integration/esp32s31/wifi-esp-hal`. ROM
+`phy_bbpll_recal` additionally requires a
 discarded fresh read between its mode-two write and the mode-one child's
 fresh read; no Rust leaf composes that exact trace.
 
-The same external-backend limitation applies to three more ROM leaves:
-digital BSS bandwidth, PHY-I2C master register initialization and MAC
-baseband enable. Their HAL calls preserve the recovered logical values and
-operation count, but `PhyWifiBbControl`/`PhyI2cMasterControl` implementations
-are required before physical fresh-RMW parity can be claimed.
+The same parity limitation applies to three more ROM leaves: digital BSS
+bandwidth, PHY-I2C master register initialization and MAC baseband enable.
+Their `PhyWifiBbControl`/`PhyI2cMasterControl` target methods exist in the
+ESP-HAL integration crate, but the complete physical fresh-RMW traces remain
+to be closed against their ROM bodies.
 
 Direct PAC leaves exactly match ROM AGC enable/disable and baseband watchdog
 configuration. CCA enable/disable, general RX-filter mode and the FE TX/RX

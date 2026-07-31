@@ -5,6 +5,9 @@
 
 # ESP32-S31 open-radio frontier
 
+> Historical snapshot retained for provenance. It does not describe the
+> current crate hierarchy, API paths, or HIL entry points.
+
 `open-radio-frontier` is the first isolated firmware consumer of
 `open-esp-radio-rs`. It establishes the dependency and ownership boundary
 without pretending that the complete target PHY executor already exists.

@@ -5,7 +5,31 @@ pinned ESP32-S31 vendor implementation. It is an audit of observable radio
 behaviour, not a claim that Rust type or function boundaries must resemble the
 vendor ABI.
 
-Audit baseline: 2026-07-30.
+Function-audit baseline: 2026-07-30. Workspace inventory and qualification
+references verified on 2026-07-31.
+
+## Scope and qualification
+
+The PHY crate stays at chip scope rather than under `wifi/`. RFPLL, TXDC,
+PWDET, I/Q and gain-calibration machinery contains shared operations and
+distinct Wi-Fi/BT banks. Only the Wi-Fi cold-init and channel paths are
+currently integrated and HIL-qualified. A future Bluetooth, BLE or 802.15.4
+consumer must establish which algorithms are genuinely shared before a
+protocol-neutral crate is extracted.
+
+The source-only cold path owns the radio power/clock transition, PHY prelude,
+RF initialization, Wi-Fi calibration/baseband graph, channel selection and
+the hand-off to the Wi-Fi MAC RX ring. It does not link `esp-wifi-sys`, vendor
+archives, or vendor radio symbols. The vendor's unconditional
+`phy_bt_tx_gain_init` child is deliberately absent because its calibrated rows
+and final gain-memory bank are Bluetooth-specific.
+
+Hardware qualification includes repeated open cold-init reception and an
+allocation-free passive scan over channels 1 through 13. The scan received
+real frames and decoded SSID, BSSID, RSSI, channel, RSN, HT and HE data while
+retuning through the Rust-owned channel transition. These results qualify the
+named Wi-Fi profile; they do not imply complete vendor lifecycle or Bluetooth
+parity.
 
 ## Pinned evidence
 
@@ -13,7 +37,7 @@ Audit baseline: 2026-07-30.
 | --- | --- | --- |
 | `_oracles/libphy.a` | `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223` | ESP32-S31 vendor archive parents and target-specific leaves |
 | `_oracles/esp32s31_rev0_rom.elf` | local container `d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542`; canonical container `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87` | revision-zero ROM algorithms and finite MMIO leaves |
-| `svd/esp32s31-radio.svd` | `67c81a8bfdfac7b5c0dd2aef3b782b92a97e261eeb535356c037c628fd495b59` | recovered register identities, fields, masks and provenance at audit completion |
+| `svd/esp32s31-radio.svd` | `0dfbdb36fbb64cf88a5cdfe04c77bd34906b056bf50b0b2abe3649cd0370ac2f` | current v3.44 recovered register identities, fields, masks and provenance |
 
 The archive contains 21 members. Fifteen members define 161 externally visible
 code symbols; six members define no externally visible code symbol. Of the 161
@@ -50,6 +74,14 @@ The detailed pages are:
 - [PAC and HAL layer inventory](pac-hal-layer.md);
 - [Rust PHY functional inventory](rust-phy-layer.md);
 - [behaviour comparison and open findings](behavior-parity.md).
+
+The [per-function pages under `audit/`](audit/README.md) preserve the
+integration state observed at the function-audit baseline. In particular, a
+statement that a target binding was then outside this repository is historical
+evidence, not a current crate-location claim. Current ownership is described by
+[`pac-hal-layer.md`](pac-hal-layer.md), the
+[architecture](../ARCHITECTURE.md), and the current
+[PAC/unsafe audit](../PAC_AND_UNSAFE_AUDIT.md).
 
 ## Status vocabulary
 
@@ -114,7 +146,8 @@ cargo test -p open-esp-radio-esp32s31-phy \
   -p open-esp-radio-esp32s31-pac
 ```
 
-At this baseline the command passed 207 PHY, 18 HAL and 64 PAC unit tests.
+At the current workspace checkpoint the command passes 209 PHY, 18 HAL and 66
+PAC unit tests (293 total).
 Warnings were present, but there were no failed tests.
 
 ## Maintenance rule

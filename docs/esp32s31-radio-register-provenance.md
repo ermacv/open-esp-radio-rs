@@ -1,5 +1,10 @@
 # ESP32-S31 radio register provenance
 
+This is an evidence log, not an API guide. Sections retain the revision and
+reasoning available when a register was promoted. The current canonical
+machine-readable map is `svd/esp32s31-radio.svd`; current ownership rules are
+in [the PAC/MMIO audit](PAC_AND_UNSAFE_AUDIT.md).
+
 This register pass separates three questions that were previously mixed in
 raw constants:
 
@@ -1717,6 +1722,40 @@ set. The controlled AP advertised disabled BSS color `0x99`, so retaining
 `BSS_COLOR_ENABLE=0` is the correct separate outcome. Trigger-based
 transmission still requires a nonzero Trigger/TB counter under an injected
 Basic Trigger.
+
+## SVD v3.42: ACK-SNR and public aperture evidence
+
+SVD v3.42 records the successful-completion ACK-SNR byte in the per-queue
+primary TX status word. Complete `hal_mac_get_txq_complete` copies bits 23:16
+to the result, and complete rate control consumes that encoded byte after a
+successful transmission. Open HIL independently exercised the recovered
+ACK-SNR path.
+
+The same revision adds the public ESP32-S31 modem register-base header as
+aperture evidence for PHY-I2C command RAM. The complete blob remains the
+source for the command-word layout; the public header proves the containing
+memory identity. This is intentionally a two-source claim rather than using a
+cross-chip register map as S31 field evidence.
+
+## SVD v3.44: HE-Control DMA and diagnostic contracts
+
+SVD v3.44 closes the per-queue HE-Control publication boundary. Complete blob
+functions prove the four-byte software image, its enable RMW and the separate
+hardware-generated path. Vendor and open HIL prove that hardware inserts the
+HE-Control field between QoS Control and CCMP without a DMA-buffer placeholder,
+while the APEP calculation accounts for the extra four bytes.
+
+The intervening diagnostic work also adds instruction-sourced interrupt,
+PHY-I2C/PBus debug and CSI identities, plus Bluetooth RF/PA delay field names
+where a complete BLE checker supplies semantics. These identities are useful
+to future BT/BLE work but do not make the current Wi-Fi PHY graph a Bluetooth
+implementation.
+
+Later v3.44 refinements add the station-TSF load transaction, complete Wi-Fi
+power-interrupt status/clear semantics and the normal receive BlockAck window
+field. Their authoritative source and confidence tags live beside the fields
+in `svd/esp32s31-radio.svd`. As of 2026-07-31 that file is version 3.44 with
+SHA-256 `0dfbdb36fbb64cf88a5cdfe04c77bd34906b056bf50b0b2abe3649cd0370ac2f`.
 
 ## Cross-chip comparison
 

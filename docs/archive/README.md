@@ -5,6 +5,8 @@ provenance. Paths, package names and commands inside a report may describe the
 repository state at the time of that work.
 
 - [`migration/`](migration/) — repository transfer and Rust ownership migration.
+- [`integration/`](integration/) — superseded integration-transfer audits.
+- [`hil/`](hil/) — superseded HIL frontier narratives.
 - [`vendor-analysis/`](vendor-analysis/) — historical heap, async-runtime and
   linked-state analysis of vendor archives.
 

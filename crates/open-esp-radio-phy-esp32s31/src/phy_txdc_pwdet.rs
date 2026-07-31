@@ -664,10 +664,16 @@ impl PhyTxDcPwdetTransition {
                 micros: 1,
             },
             RootStep::WorkModePulse(_) => PhyTxDcPwdetAction::ConfigurePbusWorkModePulse,
-            RootStep::WorkModePulseDelay(_) => PhyTxDcPwdetAction::DelayMicros {
-                phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
-                micros: 1,
-            },
+            RootStep::WorkModePulseDelay(_) => {
+                // SOURCE: complete rev0 ROM
+                // `_oracles/esp32s31_rev0_rom.elf::phy_pbus_force_mode(0)`
+                // holds the second work-mode pulse for two microseconds. This
+                // cleanup is reached by archive `phy_txdc_cal_pwdet_init`.
+                PhyTxDcPwdetAction::DelayMicros {
+                    phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
+                    micros: 2,
+                }
+            }
             RootStep::WorkModePulseClear(_) => PhyTxDcPwdetAction::ClearPbusWorkModePulse,
             RootStep::ClockOff(_) => PhyTxDcPwdetAction::ConfigureTxClock { enabled: false },
             RootStep::Restore(_) => PhyTxDcPwdetAction::RestoreRegisters {
@@ -863,7 +869,7 @@ impl PhyTxDcPwdetTransition {
                 RootStep::WorkModePulseDelay(terminal),
                 PhyTxDcPwdetCompletion::DelayElapsed {
                     phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
-                    micros: 1,
+                    micros: 2,
                 },
             ) => self.step = RootStep::WorkModePulseClear(terminal),
             (
@@ -1409,6 +1415,72 @@ mod tests {
                 PhyPbusForceTest::new(1, 2, expected),
                 PhyPbusForceTest::new(1, 2, TX_BB_GAIN[index])
             );
+        }
+    }
+
+    #[test]
+    fn root_cleanup_uses_the_complete_rom_work_mode_pulse() {
+        let mut transition = PhyTxDcPwdetTransition::new(PhyTxDcPwdetParameters {
+            dco: [[0; 4]; 3],
+            clear_tone_after_ready: false,
+        });
+        let mut inject_initial_failure = true;
+        loop {
+            let completion = match transition.action() {
+                PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
+                    power_table_low: 0,
+                    power_control_field: 0,
+                },
+                PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
+                    PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
+                }
+                PhyTxDcPwdetAction::ConfigurePowerDetector => {
+                    PhyTxDcPwdetCompletion::PowerDetectorConfigured
+                }
+                PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
+                    PhyTxDcPwdetCompletion::PbusDebugModeConfigured
+                }
+                PhyTxDcPwdetAction::ForcePbus(transaction) if inject_initial_failure => {
+                    inject_initial_failure = false;
+                    PhyTxDcPwdetCompletion::PbusTimedOut(transaction)
+                }
+                PhyTxDcPwdetAction::ForcePbus(transaction) => {
+                    PhyTxDcPwdetCompletion::PbusCompleted(transaction)
+                }
+                PhyTxDcPwdetAction::ConfigureTone {
+                    enabled,
+                    selector,
+                    attenuation,
+                } => PhyTxDcPwdetCompletion::ToneConfigured {
+                    enabled,
+                    selector,
+                    attenuation,
+                },
+                PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
+                    PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
+                        settle_required: true,
+                    }
+                }
+                PhyTxDcPwdetAction::DelayMicros {
+                    phase: PhyTxDcPwdetDelayPhase::WorkMode,
+                    micros,
+                } => PhyTxDcPwdetCompletion::DelayElapsed {
+                    phase: PhyTxDcPwdetDelayPhase::WorkMode,
+                    micros,
+                },
+                PhyTxDcPwdetAction::ConfigurePbusWorkModePulse => {
+                    PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured
+                }
+                PhyTxDcPwdetAction::DelayMicros {
+                    phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
+                    micros,
+                } => {
+                    assert_eq!(micros, 2);
+                    break;
+                }
+                action => panic!("unexpected cleanup action {action:?}"),
+            };
+            transition.advance(completion).unwrap();
         }
     }
 

@@ -35,7 +35,7 @@ one or more finite HAL leaves.
 
 | Layer | Current inventory | Audit meaning |
 | --- | ---: | --- |
-| Vendor archive | 161 external code symbols | Complete symbol inventory; cold Wi-Fi roots disassembled with relocations |
+| Vendor archive | 161 external code symbols | Complete symbol and direct-body instruction/relocation inventory |
 | Revision-zero ROM | 305 external `phy_*` code symbols | Complete symbol inventory; reachable cold Wi-Fi algorithms mapped by Rust module |
 | Recovered SVD/PAC | 10 PHY peripherals, 123 register declarations, 228 field declarations | Address/field ownership and access-width evidence; not by itself proof of transaction order |
 | Rust HAL | 15 non-`lib.rs` modules | Finite ownership-bound leaves for the currently reached PHY graph |
@@ -77,11 +77,13 @@ The newer all-function requirement uses the stricter
 [instruction-audit method](audit-method.md). At the current checkpoint:
 
 - all 466 target archive and ROM PHY functions are inventoried;
-- 17 archive functions are strictly closed;
-- 44 additional archive functions have complete direct bodies recorded but
+- all 161 archive function bodies have been inspected instruction by
+  instruction;
+- 112 archive functions and 92 ROM functions are strictly closed;
+- 49 additional archive functions have complete direct bodies recorded but
   retain child or Rust trace proofs;
-- two ROM functions have complete direct bodies recorded;
-- 403 functions remain unreviewed under the strict all-branch criterion.
+- eight ROM functions have complete direct bodies recorded;
+- 205 functions remain unreviewed under the strict all-branch criterion.
 
 These numbers are maintained in
 [function-audit-ledger.md](function-audit-ledger.md). Earlier profile-matched

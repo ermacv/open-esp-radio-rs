@@ -9,6 +9,7 @@ use super::{device_fence, svd};
 /// clears stale events and consumes all task-side enable/clear access.
 pub struct MacInterruptSetup {
     peripheral: svd::WifiMacInterrupt,
+    power_peripheral: svd::WifiMacPowerInterrupt,
 }
 
 impl MacInterruptSetup {
@@ -17,6 +18,10 @@ impl MacInterruptSetup {
             // SAFETY: `ColdRadioRegisters::into_running` consumes the only
             // safe owner that can access interrupt enable/clear registers.
             peripheral: unsafe { svd::WifiMacInterrupt::steal() },
+            // SAFETY: the same consumed cold owner uniquely owns the disjoint
+            // WDEVPWR bank. It is transferred with the MAC bank so both ISR
+            // capabilities exist before either CPU route is exposed.
+            power_peripheral: unsafe { svd::WifiMacPowerInterrupt::steal() },
         }
     }
 
@@ -25,7 +30,7 @@ impl MacInterruptSetup {
     /// The CPU interrupt route must still be unbound while this transaction
     /// executes. The returned value should be installed in its final static
     /// storage before the platform route is enabled.
-    pub fn activate(self, event_mask: u32) -> MacInterruptRegisters {
+    pub fn activate(self, event_mask: u32) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
         // Preserve the HIL-qualified task order: publish the complete mask,
         // acknowledge every stale event, then order both MMIO writes before
         // the caller exposes the ISR capability.
@@ -38,9 +43,43 @@ impl MacInterruptSetup {
                 .write_with_zero(|w| w.events().bits(u32::MAX));
         }
         device_fence();
-        MacInterruptRegisters {
-            peripheral: self.peripheral,
-        }
+        (
+            MacInterruptRegisters {
+                peripheral: self.peripheral,
+            },
+            MacPowerInterruptRegisters {
+                peripheral: self.power_peripheral,
+            },
+        )
+    }
+}
+
+/// Disjoint generated register capability intended for the hard power ISR.
+///
+/// This bank is split from the cold owner together with
+/// [`MacInterruptRegisters`]. Ordinary [`super::RadioRegisters`] therefore
+/// cannot race its STATUS/CLEAR transaction from task context.
+pub struct MacPowerInterruptRegisters {
+    peripheral: svd::WifiMacPowerInterrupt,
+}
+
+impl MacPowerInterruptRegisters {
+    /// Sample the masked WDEVPWR event image and acknowledge that exact image.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_pwr.o]::
+    /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`; complete
+    /// `hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
+    pub fn acknowledge_pending_power_interrupts(&mut self) -> u32 {
+        let events = self.peripheral.status().read().events().bits();
+        // SAFETY: CLEAR is the instruction-proven full-width W1C event image;
+        // writing the status snapshot is the complete recovered transaction.
+        unsafe {
+            self.peripheral
+                .clear()
+                .write_with_zero(|w| w.events().bits(events))
+        };
+        device_fence();
+        events
     }
 }
 

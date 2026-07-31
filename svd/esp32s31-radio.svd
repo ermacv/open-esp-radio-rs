@@ -2641,6 +2641,33 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>WIFI_MAC_STA_TSF_LOAD</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW.</description>
+      <baseAddress>0x2010d814</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOAD_STATION_TSF</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>VALUE_LOW</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Low 32 bits written first by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>VALUE_HIGH</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. High 32 bits written second by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_RTC_TIMER_UPDATE</name>
       <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-partial]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value.</description>
       <baseAddress>0x2010d830</baseAddress>
@@ -2992,12 +3019,13 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_POWER_INTERRUPT</name>
-      <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP]; CONFIDENCE[instruction-exact-partial]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics.</description>
+      <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT]; CONFIDENCE[instruction-exact]. WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction.</description>
       <baseAddress>0x2010d8b4</baseAddress>
       <registers>
         <register><name>ENABLE</name><description>WDEVPWR_ENABLE diagnostic snapshot.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENT_MASK</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
         <register><name>RAW</name><description>WDEVPWR_RAW diagnostic snapshot.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
-        <register><name>STATUS</name><description>WDEVPWR_STATUS diagnostic snapshot.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>STATUS</name><description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT]; CONFIDENCE[instruction-exact]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>CLEAR</name><description>SOURCE[BLOB_LIBPP_HAL_PWR_INTERRUPT]; CONFIDENCE[instruction-exact]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events.</description><addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access><modifiedWriteValues>oneToClear</modifiedWriteValues><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
       </registers>
     </peripheral>
     <peripheral>
@@ -3520,9 +3548,10 @@
       <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_get_event body, size 0x0a.</source>
       <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_clr_event body, size 0x0a; writes the supplied event bitmap to the clear register.</source>
       <source id="BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_mac_interrupt_clr_watchdog body, size 0x16.</source>
+      <source id="BLOB_LIBPP_HAL_PWR_INTERRUPT">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o hal_pwr_interrupt_get_event body, size 0x0a, reads 0x2010d8bc; complete hal_pwr_interrupt_clr_event body, size 0x0a, stores its full event argument to 0x2010d8c0.</source>
       <source id="BLOB_LIBPP_WDEV_PROCESS_FIQ">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete wdev.o wDev_ProcessFiq body, size 0x1ae, including MAC event-mask dispatch and event-clear call graph.</source>
       <source id="BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete color-collision branch reached from wdev.o wDev_ProcessFiq and the independently named dbg_read_color_collision register decode.</source>
-      <source id="BLOB_LIBPP_HAL_TSF">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_enable_sta_tsf size 0x26, hal_disable_sta_tsf size 0x22 and hal_set_sta_tsf_wakeup size 0x32.</source>
+      <source id="BLOB_LIBPP_HAL_TSF">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_set_sta_tsf size 0x1e, hal_enable_sta_tsf size 0x26, hal_disable_sta_tsf size 0x22 and hal_set_sta_tsf_wakeup size 0x32.</source>
       <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o pwr_hal_set_mac_modem_state_wakeup_protect_enable size 0x14 and disable size 0x16, plus their shared control-word leaves.</source>
       <source id="BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_set_mmss_and_aid body, size 0x82.</source>
       <source id="BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_bssid_init size 0x4c, hal_he_bssid_deinit size 0x1e and hal_he_set_power_save size 0x36. Interface-zero init performs four ordered fresh-read RMW edges: set WDEV_HE_BSSID0_CONF bit 31, clear bits 30:29, set WDEV_RX_POWER_SAVE_CONF bit 29, then set bit 28. _oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f; complete wl_cnx.o cnx_connect_to_bss size 0x2b6 calls interface-zero init after associated-STA receive policy when the peer and cipher admit HE, before clearing the color bitmap and calling hal_he_set_bss_color.</source>

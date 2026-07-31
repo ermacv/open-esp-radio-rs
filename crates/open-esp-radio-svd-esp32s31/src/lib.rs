@@ -19532,6 +19532,131 @@ pub mod wifi_mac_antenna_init {
         }
     }
 }
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW."]
+pub type WifiMacStaTsfLoad = crate::Periph<wifi_mac_sta_tsf_load::RegisterBlock, 0x2010_d814>;
+impl core::fmt::Debug for WifiMacStaTsfLoad {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacStaTsfLoad").finish()
+    }
+}
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW."]
+pub mod wifi_mac_sta_tsf_load {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+        value_low: ValueLow,
+        value_high: ValueHigh,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Low 32 bits written first by complete hal_set_sta_tsf."]
+        #[inline(always)]
+        pub const fn value_low(&self) -> &ValueLow {
+            &self.value_low
+        }
+        #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. High 32 bits written second by complete hal_set_sta_tsf."]
+        #[inline(always)]
+        pub const fn value_high(&self) -> &ValueHigh {
+            &self.value_high
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `LOAD_STATION_TSF` reader - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+        pub type LoadStationTsfR = crate::BitReader;
+        #[doc = "Field `LOAD_STATION_TSF` writer - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+        pub type LoadStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+            #[inline(always)]
+            pub fn load_station_tsf(&self) -> LoadStationTsfR {
+                LoadStationTsfR::new(((self.bits >> 4) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+            #[inline(always)]
+            pub fn load_station_tsf(&mut self) -> LoadStationTsfW<'_, ControlSpec> {
+                LoadStationTsfW::new(self, 4)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "VALUE_LOW (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Low 32 bits written first by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_low::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_low`] module"]
+    #[doc(alias = "VALUE_LOW")]
+    pub type ValueLow = crate::Reg<value_low::ValueLowSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Low 32 bits written first by complete hal_set_sta_tsf."]
+    pub mod value_low {
+        #[doc = "Register `VALUE_LOW` writer"]
+        pub type W = crate::W<ValueLowSpec>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, ValueLowSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Low 32 bits written first by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_low::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueLowSpec;
+        impl crate::RegisterSpec for ValueLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`value_low::W`](W) writer structure"]
+        impl crate::Writable for ValueLowSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "VALUE_HIGH (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. High 32 bits written second by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_high::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_high`] module"]
+    #[doc(alias = "VALUE_HIGH")]
+    pub type ValueHigh = crate::Reg<value_high::ValueHighSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. High 32 bits written second by complete hal_set_sta_tsf."]
+    pub mod value_high {
+        #[doc = "Register `VALUE_HIGH` writer"]
+        pub type W = crate::W<ValueHighSpec>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, ValueHighSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. High 32 bits written second by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_high::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueHighSpec;
+        impl crate::RegisterSpec for ValueHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`value_high::W`](W) writer structure"]
+        impl crate::Writable for ValueHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
 pub type WifiMacRtcTimerUpdate =
     crate::Periph<wifi_mac_rtc_timer_update::RegisterBlock, 0x2010_d830>;
@@ -21822,7 +21947,7 @@ pub mod wifi_mac_interrupt {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics."]
+#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction."]
 pub type WifiMacPowerInterrupt =
     crate::Periph<wifi_mac_power_interrupt::RegisterBlock, 0x2010_d8b4>;
 impl core::fmt::Debug for WifiMacPowerInterrupt {
@@ -21830,7 +21955,7 @@ impl core::fmt::Debug for WifiMacPowerInterrupt {
         f.debug_struct("WifiMacPowerInterrupt").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact-partial\\]. WDEVPWR interrupt bank named by complete print_isr_regs. The function reads ENABLE, RAW and STATUS, so this diagnostic view is deliberately read-only until a writer proves acknowledgement and enable semantics."]
+#[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction."]
 pub mod wifi_mac_power_interrupt {
     #[repr(C)]
     #[doc = "Register block"]
@@ -21838,6 +21963,7 @@ pub mod wifi_mac_power_interrupt {
         enable: Enable,
         raw: Raw,
         status: Status,
+        clear: Clear,
     }
     impl RegisterBlock {
         #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot."]
@@ -21850,10 +21976,15 @@ pub mod wifi_mac_power_interrupt {
         pub const fn raw(&self) -> &Raw {
             &self.raw
         }
-        #[doc = "0x08 - WDEVPWR_STATUS diagnostic snapshot."]
+        #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event."]
         #[inline(always)]
         pub const fn status(&self) -> &Status {
             &self.status
+        }
+        #[doc = "0x0c - SOURCE\\[BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events."]
+        #[inline(always)]
+        pub const fn clear(&self) -> &Clear {
+            &self.clear
         }
     }
     #[doc = "ENABLE (r) register accessor: WDEVPWR_ENABLE diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
@@ -21904,10 +22035,10 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
         impl crate::Readable for RawSpec {}
     }
-    #[doc = "STATUS (r) register accessor: WDEVPWR_STATUS diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc = "STATUS (r) register accessor: SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
     #[doc(alias = "STATUS")]
     pub type Status = crate::Reg<status::StatusSpec>;
-    #[doc = "WDEVPWR_STATUS diagnostic snapshot."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event."]
     pub mod status {
         #[doc = "Register `STATUS` reader"]
         pub type R = crate::R<StatusSpec>;
@@ -21920,13 +22051,40 @@ pub mod wifi_mac_power_interrupt {
                 EventsR::new(self.bits)
             }
         }
-        #[doc = "WDEVPWR_STATUS diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StatusSpec;
         impl crate::RegisterSpec for StatusSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`status::R`](R) reader structure"]
         impl crate::Readable for StatusSpec {}
+    }
+    #[doc = "CLEAR (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
+    #[doc(alias = "CLEAR")]
+    pub type Clear = crate::Reg<clear::ClearSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events."]
+    pub mod clear {
+        #[doc = "Register `CLEAR` writer"]
+        pub type W = crate::W<ClearSpec>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, ClearSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_PWR_INTERRUPT\\]; CONFIDENCE\\[instruction-exact\\]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClearSpec;
+        impl crate::RegisterSpec for ClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
+        impl crate::Writable for ClearSpec {
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
+        }
     }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Cold MAC initialization request/ready handshake at the complete hal_init prefix."]
@@ -26052,6 +26210,8 @@ pub struct Peripherals {
     pub wifi_mac_coex_init: WifiMacCoexInit,
     #[doc = "WIFI_MAC_ANTENNA_INIT"]
     pub wifi_mac_antenna_init: WifiMacAntennaInit,
+    #[doc = "WIFI_MAC_STA_TSF_LOAD"]
+    pub wifi_mac_sta_tsf_load: WifiMacStaTsfLoad,
     #[doc = "WIFI_MAC_RTC_TIMER_UPDATE"]
     pub wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate,
     #[doc = "WIFI_MAC_TXRX_PREFIX"]
@@ -26139,6 +26299,7 @@ impl Peripherals {
             wifi_mac_he_init_suffix: WifiMacHeInitSuffix::steal(),
             wifi_mac_coex_init: WifiMacCoexInit::steal(),
             wifi_mac_antenna_init: WifiMacAntennaInit::steal(),
+            wifi_mac_sta_tsf_load: WifiMacStaTsfLoad::steal(),
             wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate::steal(),
             wifi_mac_txrx_prefix: WifiMacTxrxPrefix::steal(),
             wifi_mac_txrx_callbacks: WifiMacTxrxCallbacks::steal(),

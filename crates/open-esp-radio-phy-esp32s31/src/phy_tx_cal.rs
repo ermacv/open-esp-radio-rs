@@ -196,10 +196,17 @@ impl PhyTxCalibrationEnvironmentTransition {
             EnvironmentStep::WorkModePulse => {
                 PhyTxCalibrationEnvironmentAction::ConfigurePbusWorkModePulse
             }
-            EnvironmentStep::WorkModePulseDelay => PhyTxCalibrationEnvironmentAction::DelayMicros {
-                phase: PhyTxCalibrationEnvironmentDelayPhase::PbusWorkModePulse,
-                micros: 1,
-            },
+            EnvironmentStep::WorkModePulseDelay => {
+                // SOURCE: complete rev0 ROM
+                // `_oracles/esp32s31_rev0_rom.elf::phy_pbus_force_mode(0)`
+                // holds the second work-mode pulse for two microseconds. This
+                // exit is reached by archive `phy_tx_cap_init`,
+                // `phy_tx_pwctrl_init`, `phy_txdc_cal_pwdet_init` and TXIQ.
+                PhyTxCalibrationEnvironmentAction::DelayMicros {
+                    phase: PhyTxCalibrationEnvironmentDelayPhase::PbusWorkModePulse,
+                    micros: 2,
+                }
+            }
             EnvironmentStep::WorkModePulseClear => {
                 PhyTxCalibrationEnvironmentAction::ClearPbusWorkModePulse
             }
@@ -295,7 +302,7 @@ impl PhyTxCalibrationEnvironmentTransition {
                 EnvironmentStep::WorkModePulseDelay,
                 PhyTxCalibrationEnvironmentCompletion::DelayElapsed {
                     phase: PhyTxCalibrationEnvironmentDelayPhase::PbusWorkModePulse,
-                    micros: 1,
+                    micros: 2,
                 },
             ) => EnvironmentStep::WorkModePulseClear,
             (
@@ -1983,6 +1990,57 @@ mod tests {
     #[test]
     fn power_db_uses_explicit_reference_codes() {
         assert_eq!(phy_tx_power_db(100, [90, 110], 4), 40);
+    }
+
+    #[test]
+    fn tx_calibration_exit_uses_the_complete_rom_work_mode_pulse() {
+        let parameters = PhyTxCalibrationParameters {
+            pbus_tx_path_value: 0,
+            pbus_rx_path_value: 0,
+            dco: [0; 4],
+        };
+        let mut transition = PhyTxCalibrationEnvironmentTransition::exit(parameters);
+        transition
+            .advance(PhyTxCalibrationEnvironmentCompletion::ToneStopped)
+            .unwrap();
+        transition
+            .advance(PhyTxCalibrationEnvironmentCompletion::TxClockConfigured { enabled: false })
+            .unwrap();
+        for index in 0..=6 {
+            let transaction = tx_work_pbus(index, parameters);
+            assert_eq!(
+                transition.action(),
+                PhyTxCalibrationEnvironmentAction::ForcePbus(transaction)
+            );
+            transition
+                .advance(PhyTxCalibrationEnvironmentCompletion::PbusCompleted(
+                    transaction,
+                ))
+                .unwrap();
+        }
+        transition
+            .advance(
+                PhyTxCalibrationEnvironmentCompletion::PbusWorkModeConfigured {
+                    settle_required: true,
+                },
+            )
+            .unwrap();
+        transition
+            .advance(PhyTxCalibrationEnvironmentCompletion::DelayElapsed {
+                phase: PhyTxCalibrationEnvironmentDelayPhase::PbusWorkMode,
+                micros: 1,
+            })
+            .unwrap();
+        transition
+            .advance(PhyTxCalibrationEnvironmentCompletion::PbusWorkModePulseConfigured)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyTxCalibrationEnvironmentAction::DelayMicros {
+                phase: PhyTxCalibrationEnvironmentDelayPhase::PbusWorkModePulse,
+                micros: 2,
+            }
+        );
     }
 
     #[test]

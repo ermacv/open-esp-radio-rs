@@ -70,6 +70,7 @@ counter comparison or error return:
 | `phy_wait_freq_set_busy` | `0x2f824fc6` | waits for bit 8 at `0x20100028` to become set |
 | `phy_chip_i2c_readReg_org` | `0x2f829ffa` | waits for PHY-I2C host busy bit 25 to clear after publication |
 | `phy_chip_i2c_writeReg` | `0x2f82a30e` | waits for busy bit 25 both before and after publication |
+| `phy_i2c_paral_write` | `0x2f82a150` | after publishing two parallel commands, waits independently for bit 25 of `0x2010f800` and `0x2010f804` to clear |
 | `phy_pbus_force_test` | `0x2f824228` | waits for the PBus status word's sign/busy bit to clear |
 | `phy_pwdet_wait_idle` | `0x2f82664c` | waits for the detector state field to equal 7 |
 | `phy_iq_est_enable` | `0x2f8289d4` | waits for estimator completion; its 16-bit diagnostic counter is never used as a limit |
@@ -134,3 +135,10 @@ In particular, `phy_rfpll_cap_init_cal` is bounded in the inspected ROM body;
 it is not evidence of an infinite capacitor-search loop. Vendor bugs should be
 added here only after the complete body, its data geometry and relevant caller
 contract have been checked.
+
+Archive `phy_cal_param_track` compares the Wi-Fi temperature delta against
+`phy_param + 0x1f8` but explicitly stores the new temperature at `+0x48`;
+its symmetric BT branch compares and stores `+0x1fa`. This is suspicious and
+can appear to make Wi-Fi recalibration repeat. It is not yet classified as a
+vendor defect because the complete register-relevant child graph has not yet
+proved that no child updates `+0x1f8`.

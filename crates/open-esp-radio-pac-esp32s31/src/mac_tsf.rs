@@ -3,6 +3,38 @@
 use super::{device_fence, RadioRegisters};
 
 impl RadioRegisters {
+    /// Publish a station TSF value and enable the station TSF scheduler.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_tsf.o]`: `hal_set_sta_tsf`
+    /// writes the low word, writes the high word and then asserts bit four at
+    /// `0x2010_d814` through a fresh-read RMW. Complete
+    /// `hal_enable_sta_tsf` performs two further fresh-read RMWs at
+    /// `0x2010_d858`: first it sets bits 27 and 31, then it replaces bits
+    /// 22:19 with one.
+    pub fn start_station_tsf(&mut self, value: u64) {
+        let load = &self.peripherals.wifi_mac_sta_tsf_load;
+        // SAFETY: each `u32` exactly fills the generated 32-bit VALUE field.
+        unsafe {
+            load.value_low()
+                .write_with_zero(|w| w.value().bits(value as u32));
+            load.value_high()
+                .write_with_zero(|w| w.value().bits((value >> 32) as u32));
+        }
+        load.control().modify(|_, w| w.load_station_tsf().set_bit());
+
+        let control = self.peripherals.wifi_mac_rtc_timer_update.sta_tsf_control();
+        control.modify(|_, w| {
+            w.sta_tsf_enable_low()
+                .set_bit()
+                .sta_tsf_enable_high()
+                .set_bit()
+        });
+        // SAFETY: one is the instruction-exact mode selected by
+        // `hal_enable_sta_tsf` and fits the generated four-bit field.
+        control.modify(|_, w| unsafe { w.sta_tsf_mode().bits(1) });
+        device_fence();
+    }
+
     /// Disable modem-state wakeup protection for an always-awake STA.
     ///
     /// SOURCE: complete

@@ -25,8 +25,9 @@ The audited default profile is:
 - uncontended PHY-I2C and eventually-ready hardware.
 
 Within that profile, the restored arithmetic, tables, finite MMIO operations
-and ordering are well covered by source comments and 289 passing PAC/HAL/PHY
-unit tests. One unconditional vendor child is still absent:
+and ordering are well covered by source comments and unit tests, but the
+strict audit has since found reached RX-gain differences that those tests did
+not detect. One unconditional vendor child is also absent:
 `phy_bt_tx_gain_init`.
 
 ## Primary parent comparison
@@ -71,7 +72,34 @@ For a fresh parameter image, the vendor parent calls:
 The Rust parent retains this order except for item 10. Diagnostic-only print
 branches with fixed debug argument zero are not represented.
 
+This earlier sequence-level statement does not imply transaction parity:
+strict review of items 14 and 16 found the parameter-byte, guard-offset and
+PBus-delay defects recorded below.
+
 ## Findings
+
+### PHY-PARITY-000: RX gain cold path is not transaction-equivalent
+
+Severity: **high; reached default cold path**.
+
+Complete `phy_rx_table_init` stores halfword `0x4f4f` at
+`phy_param + 0x120`, setting both bytes `0x120` and `0x121`. Rust sets only
+byte `0x120`, preserves the old byte `0x121`, and supplies that old value to
+the following AGC register initializer.
+
+Complete `phy_set_rx_gain_table` reads and updates its `0x80/0x200` guard bits
+in the word at `phy_param + 0xa4`. The active Rust owner reads and commits
+those flags at `+0xb4`, sixteen bytes later. It also omits the vendor's
+unconditional read of `0x20100434` on cached paths.
+
+Finally, each vendor `phy_wr_rx_gain_mem_new` cleanup reaches
+`phy_pbus_force_mode(0)`, which holds the work-mode pulse for `2 µs`. The Rust
+RX-gain publisher requests only `1 µs` before clearing the pulse. The PAC/HAL
+set and clear operations are correct; the duration supplied by the PHY
+transition is not.
+
+These are open-code defects, not vendor errors. Exact instruction evidence is
+in [the `phy_rx_gain.o` audit](audit/libphy-phy_rx_gain.md).
 
 ### PHY-PARITY-001: unconditional BT gain child is absent
 
@@ -121,7 +149,9 @@ backup in the top-level graph.
 
 Consequences are different startup latency and calibration reuse across boots.
 The current implementation only matches the vendor’s forced/full-calibration
-branch.
+branch. The complete parent branches, 508-byte payload copy and 130-word
+checksum are recorded in
+[the `phy_init.o` audit](audit/libphy-phy_init.md).
 
 ### PHY-PARITY-003: non-default channel branches are missing or rejected
 
@@ -237,6 +267,23 @@ tracking, and most BT/BLE-specific parents are absent. Some shared leaves exist
 because cold Wi-Fi reaches them, but no complete Rust lifecycle owner
 corresponds to these vendor roots.
 
+The complete `phy_init.o` audit fixes the shutdown and wakeup boundary:
+`phy_close_fe_bb_clk`, `phy_xpd_rf_new`, `phy_close_rf`, and the 392-byte
+`phy_wakeup_init` composition are all absent. In particular, wakeup uses the
+parallel `phy_i2c_init2` path and restores frequency, PBus, TX-cap, CBW and
+channel state; rerunning cold initialization is not the same transaction
+trace.
+
+All nine `phy_track.o` bodies are now instruction-audited. The missing
+software layer includes four temperature-band TXRF I²C profiles, thresholded
+Wi-Fi and BT gain regeneration, RFPLL tracking, RX/dcode recalibration and
+radio-specific TXDC/PWDET recalibration. Hardware background-power enablement
+does not reproduce those parent traces. The vendor Wi-Fi branch compares
+against temperature offset `0x1f8` but explicitly commits offset `0x48`;
+this remains a defect candidate rather than an accepted exception until every
+child is proved not to update `0x1f8`. See
+[the `phy_track.o` audit](audit/libphy-phy_track.md).
+
 ### PHY-PARITY-010: diagnostic output is intentionally absent
 
 Severity: **no radio-state impact for audited fixed-debug branches**.
@@ -246,6 +293,246 @@ audited parent passes debug zero or when the branch has no hardware or
 parameter-state effect. This differs at the logging ABI but not at the
 qualified radio-state boundary. Debug entry points such as `phy_reg_check`,
 `phy_i2c_check` and `phy_cal_print` are not ported.
+
+The complete debug-member audit makes this boundary exact:
+`phy_reg_check` performs 1933 ordered word loads from 21 fixed MMIO ranges,
+`phy_i2c_check` performs 168 ordered logical-bank reads, and
+`phy_pbus_print` performs eleven selector/path reads. `phy_cal_print` is not
+read-only: it also reaches VDD33 and temperature measurement and conditionally
+rewrites the 32-entry Wi-Fi gain memory. No current Rust root reproduces those
+traces. See [the `phy_debug.o` audit](audit/libphy-phy_debug.md).
+
+### PHY-PARITY-011: complete PHY-I2C surface is narrower
+
+Severity: **high for paths that select parallel initialization; default cold
+command-RAM path unaffected**.
+
+Rust exactly publishes the 45 command-RAM words and represents the 26 writes
+of `phy_i2c_init1`. It does not implement `phy_i2c_init2`, whose vendor body
+sets the shared read-mask field, publishes 22 pairs of PHY-I2C write commands,
+and restores the host-map field. Five nonzero read-mask inputs below logical
+block `0x61` are also absent from `PhyI2cAddress`.
+
+The chip-level `PhyI2cMasterControl` is an integration trait with no
+implementation in this repository. Consequently the action graph and HAL
+contract exist, but source in this repository alone does not prove that the
+host-map RMW and command words are executed on target. The exact arrays and
+register order are recorded in
+[the `phy_i2c.o` audit](audit/libphy-phy_i2c.md).
+
+The same target-binding gap keeps ROM `phy_bbpll_cal` open: the Boolean
+encodings are correct, but the implementation of the required fresh RMW at
+`0x2010f818` is external. The separate ROM `phy_bbpll_recal` is not ported;
+between its mode-two write and mode-one child it performs an additional fresh
+read whose value is discarded. Two independently scheduled Boolean actions
+are not an exact substitute for this contiguous trace. See
+[the ROM RXIQ/BBPLL audit](audit/rom-rxiq-bbpll-control-leaves.md).
+
+### PHY-PARITY-012: general tone and CFR controls are not complete
+
+Severity: **medium for calibration/debug extensions; reached one-path tone
+profiles remain covered**.
+
+Rust's calibration-tone leaf reproduces the archive call profiles currently
+used by cold calibration, where the second tone path is all zero. Vendor
+`phy_start_tx_tone_step_new` accepts six arguments and programs both path
+images. Rust has no representation for nonzero second-path enable, selector,
+or step values. The separate archive `phy_stop_tx_tone_new` and ICCFR/HCCFR
+control functions are also absent.
+
+The older ROM `phy_start_tx_tone_step` also accepts two complete paths. Its
+reached enabled first-path profile is represented, including DAC and gain
+disable, but its both-paths-disabled branch is not one exact Rust operation.
+That branch delays five microseconds, restores the stop bits, calls the
+installed gain callback and restores two DAC-scale bytes. The Rust TX-DC
+composition adds two arm-bit-clearing RMWs after its archive-style restore.
+
+The exact masks and ordering are recorded in
+[the `phy_reg.o` audit](audit/libphy-phy_reg.md) and
+[the ROM tone audit](audit/rom-tone-fe-agc-leaves.md). These are ordinary
+coverage gaps, not vendor-defect exceptions.
+
+### PHY-PARITY-013: shared TX-calibration PBus pulse is one microsecond short
+
+Severity: **high for cold analog-calibration trace parity**.
+
+Complete ROM `phy_pbus_force_mode(0)`, reached by
+`phy_txcal_work_mode`, delays 2 microseconds after asserting the second
+work-mode pulse. Rust `PhyTxCalibrationEnvironmentTransition` and the
+TXDC/PWDET cleanup delay only 1 microsecond. This affects the reached
+`phy_tx_cap_init`, `phy_tx_pwctrl_init`, `phy_txdc_cal_pwdet_init` and TXIQ
+child graph. The dedicated `phy_txdc` transition already uses the correct
+2-microsecond pulse and is not affected.
+
+This is the same lower timing contract exposed by the RX-gain audit, but a
+separate shared Rust owner. It is not a vendor defect. See
+[the `phy_tx_cal.o` audit](audit/libphy-phy_tx_cal.md).
+
+### PHY-PARITY-014: RX-calibration cleanup and standalone domains differ
+
+Severity: **high for reached cold cleanup; medium outside the cold input
+domain**.
+
+Complete `phy_set_rx_gain_cal_dc_new` reaches
+`phy_pbus_force_mode(0)` after each bank. Rust
+`PhyRxGainDcTransition` expands that tail, but holds its second conditional
+work-mode pulse for one microsecond instead of the vendor's two. This is a
+reached cold-path timing mismatch.
+
+Complete `phy_check_rx_sat` reaches the same ROM work-mode child after its 100
+status samples. `PhyRxSaturationMmioBinding` invokes the correct initial HAL
+leaf, but discards its `wifi_baseband_is_enabled` result. When that result is
+true, Rust omits the vendor's one-microsecond settle delay, pulse assertion,
+two-microsecond pulse delay and pulse clear. Its eleven-command setup,
+five-microsecond delay, 100 reads and one-way saturation flag otherwise match.
+
+Two standalone input domains are also narrower. Vendor
+`phy_pbus_rx_dco_cal_1step_new` sign-extends its two caller DCO halfwords
+before correction and clamping; Rust retains them as unsigned values, which
+differs for negative halfword images. Vendor `phy_set_rx_gain_cal_iq_new`
+accepts a nonzero first input that saves, clears and restores an I2C bit and
+uses a caller-supplied tone selector. Rust owns only the zero/`0x80` cold
+profile.
+
+None of these differences is a vendor defect. Exact branches and transaction
+order are recorded in
+[the `phy_rx_cal.o` audit](audit/libphy-phy_rx_cal.md).
+
+### PHY-PARITY-015: PBus selector zero uses the wrong result register
+
+Severity: **high for any selector-zero result consumer**.
+
+Complete ROM `phy_pbus_rd_addr` uses `0x201008a0` for selector zero,
+independently of the path input. Its companion shift helper selects bit 9 for
+non-path-one and bit 18 for path one. Rust `read_pbus_result` instead reads
+those windows from `0x201008a4`; the recovered SVD and PAC contain the same
+incorrect address claim. Selectors 1 through 5 match the ROM tables.
+
+This is an ordinary Rust/SVD defect, not a vendor exception. The jump-table
+words, expanded address/shift map and complete read body are recorded in
+[the ROM PBus audit](audit/rom-pbus-core.md).
+
+### PHY-PARITY-016: Rust adds a PBus read before every command
+
+Severity: **medium under unique ownership; observable transaction mismatch**.
+
+ROM `phy_pbus_force_test` freshly reads and publishes the command word before
+its first `BUSY` sample. Rust `try_start_force_test` first reads `BUSY`, then
+publishes only if that sample is clear. On a ready bus this is still one
+additional MMIO read. On a busy bus Rust returns a typed failure while ROM
+overwrites the command image and polls.
+
+Replacing the unbounded post-publication ROM loop with executor-owned samples
+and a deadline is justified by `VENDOR-ROBUSTNESS-001`. The pre-publication
+sample is separate: it changes the successful register trace and is therefore
+not covered by that exception. Every composite Rust helper that uses the
+binding inherits this difference even when its selector/path/value tuples
+match. See [the ROM PBus audit](audit/rom-pbus-core.md).
+
+### PHY-PARITY-017: estimator completion performs one extra MMIO read
+
+Severity: **medium; reached by cold analog calibration**.
+
+ROM `phy_iq_est_enable` reads `0x2010047c` for readiness. Only when readiness
+is clear does it then read activity from `0x201008d0` and update its diagnostic
+counter. A ready observation returns without the activity read. Rust
+`sample_iq_estimator_readiness` unconditionally reads both words, including
+on the final ready observation.
+
+Response-indexed async polling and a finite deadline can preserve successful
+ROM ordering while avoiding the documented unbounded wait. This additional
+completed-state read is not required by that safety change and violates the
+strict no-invented-transaction rule. It propagates through
+`phy_dc_iq_est`, `phy_rxdc_est_min`, both RX-DCO calibrators and their archive
+parents. The complete instruction proof is in
+[the ROM DC/IQ and RX-DCO audit](audit/rom-dc-iq-rx-dco.md).
+
+### PHY-PARITY-018: packed TX-IQ extrema bypass vendor saturation
+
+Severity: **medium; input-dependent coefficient error**.
+
+ROM `phy_get_iq_value` decodes gain to `[-32,31]` and phase to `[-64,63]`.
+ROM `phy_txiq_set_reg` then saturates the values to `[-31,31]` and
+`[-63,63]` before writing bits 5:0 or 12:6 of `0x20100c0c`. Rust decodes the
+same ranges, but its PAC setters only mask the `i8`.
+
+For packed gain `-32`, vendor writes field image `0x21` (`-31`) while Rust
+writes `0x20`. For phase `-64`, vendor writes `0x41` (`-63`) while Rust
+writes `0x40`. This closes archive `phy_set_lb_txiq_new` as a mismatch and is
+not a vendor-defect exception. See
+[the ROM DC/IQ and RX-DCO audit](audit/rom-dc-iq-rx-dco.md).
+
+### PHY-PARITY-019: same-named ROM and archive control leaves are not interchangeable
+
+Severity: **medium for callers bound directly to the ROM versions**.
+
+Three adjacent ROM functions differ materially from their closest
+archive/Rust operations:
+
+- ROM `phy_fe_reg_update` performs the same first three RMWs as the archive
+  function, then appends two fresh DAC-scale RMWs. Rust correctly implements
+  the installed archive function and therefore does not match the standalone
+  ROM function.
+- ROM `phy_txgain_comp_pacfg_(nonzero)` restores the four bytes of
+  `0x20100410` to `[fd,f8,fd,fb]`. The archive replacement and Rust use
+  `[00,fa,ff,00]`. Their zero branches both perform the same two full-word
+  zero stores.
+- ROM `phy_force_rx_gain_trig` conditionally replaces the high byte of
+  `0x2010702c`, pulses bit 23 around a one-microsecond delay, and has no Rust
+  implementation.
+
+These differences are not classified as vendor defects. They show why each
+bound function body must be audited instead of treating an archive `_new`
+replacement as proof for a same-named ROM symbol. The instruction traces are
+in [the ROM tone/front-end/AGC audit](audit/rom-tone-fe-agc-leaves.md).
+
+### PHY-PARITY-020: older ROM RX compensation uses a different constant
+
+Severity: **low for the current archive-bound graph; high for direct ROM-leaf
+substitution**.
+
+ROM `phy_set_rx_comp_` writes byte `0xeb` to the low byte of `0x2010702c`
+and the high byte of `0x201070a0`. The installed archive
+`phy_set_rx_comp_new` writes `0xed` to both locations, and Rust correctly
+implements the archive version reached by channel setup.
+
+This is not evidence that either vendor constant is erroneous. It is another
+versioned function-body difference, so the Rust/archive match cannot be used
+as proof for the standalone ROM symbol. The same audit also finds the ROM CCA
+pair, RX-filter selector and FE TX/RX reset pulse unported. See
+[the ROM AGC/CCA/channel audit](audit/rom-agc-cca-channel-leaves.md).
+
+### PHY-PARITY-021: NRX frequency division changed signedness and zero handling
+
+Severity: **medium outside the reached positive-frequency profile**.
+
+ROM `phy_nrx_freq_set` samples `0x20107848` twice, computes a shifted
+numerator, and applies signed RV32 `div` with the full caller word. Rust
+preserves the two reads and final write, but accepts a nonzero `u16` and uses
+unsigned `u32` division.
+
+For divisor zero, RISC-V produces quotient `0xffffffff`, so ROM still writes
+low field image `0x000fffff`; Rust asserts before the write. Shifted
+numerators with bit 31 set also distinguish signed from unsigned division,
+and full-word divisors are absent from the Rust API. This is a normal
+complete-domain mismatch, not a vendor-defect exception. See
+[the ROM FBW/force-control audit](audit/rom-fbw-force-control-leaves.md).
+
+### PHY-PARITY-022: channel-CBW helper narrows an unmasked ROM word path
+
+Severity: **low for byte-valued channel owners; observable for standalone
+full-word calls**.
+
+ROM `phy_bb_cbw_chan_cfg` accepts a full word. When its high portion is
+nonzero, it subtracts one, zero-extends the low byte, clears only bits 3:0 of
+`0x20104400`, and ORs the entire normalized byte. Values above `0x0f` can
+therefore set bits 7:4. Rust accepts `u8` and publishes through a four-bit PAC
+field, while otherwise preserving the four RMW operations.
+
+The reached channel owner supplies a byte and is unaffected. Complete
+standalone function parity is still a mismatch, not a vendor-defect
+exception. See
+[the ROM CBW/feature/watchdog audit](audit/rom-cbw-feature-watchdog-leaves.md).
 
 ## What is currently safe to claim
 
@@ -258,6 +545,8 @@ not yet claim:
 - calibration-record lifecycle parity;
 - channel 14 or 802.11p PHY parity;
 - general frequency-table count, signed-offset or descriptor-control parity;
+- `phy_i2c_init2` or the complete vendor PHY-I2C input domain;
+- general dual-path tone, ICCFR or HCCFR parity;
 - BT/BLE/coexistence PHY initialization parity;
 - wakeup, shutdown or runtime tracking parity;
 - identical failure behaviour on stuck hardware.

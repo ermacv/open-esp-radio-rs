@@ -60,7 +60,7 @@ pub use mac_he_ofdma::{
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
-pub use mac_interrupt::{MacInterruptRegisters, MacInterruptSetup};
+pub use mac_interrupt::{MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters};
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
@@ -229,9 +229,10 @@ impl Field32 {
 /// MAC initialization has completed.
 ///
 /// The generated [`svd::Peripherals`] singleton is kept private. This running
-/// owner deliberately has no typed access to the MAC interrupt enable/clear
-/// transaction; that disjoint state belongs to [`MacInterruptSetup`] and then
-/// [`MacInterruptRegisters`].
+/// owner deliberately has no typed access to the MAC interrupt enable/clear or
+/// WDEVPWR status/clear transactions. Those disjoint banks belong to
+/// [`MacInterruptSetup`] and then to [`MacInterruptRegisters`] plus
+/// [`MacPowerInterruptRegisters`].
 pub struct RadioRegisters {
     peripherals: svd::Peripherals,
     wifi_baseband_enabled: bool,
@@ -310,8 +311,8 @@ impl RadioRegisters {
 ///
 /// PHY setup, cold MAC initialization and polling-only scan/authentication use
 /// this owner. Consuming [`into_running`](Self::into_running) permanently
-/// removes interrupt enable/clear operations from the ordinary task owner and
-/// returns a one-shot setup token for the later ISR handoff.
+/// removes MAC and WDEVPWR interrupt operations from the ordinary task owner
+/// and returns a one-shot setup token for the later dual-ISR handoff.
 pub struct ColdRadioRegisters {
     registers: RadioRegisters,
 }
@@ -335,11 +336,12 @@ impl ColdRadioRegisters {
     ///
     /// This operation itself performs no MMIO. The returned setup token keeps
     /// MAC interrupts masked until its consuming activation transaction
-    /// creates the ISR-only [`MacInterruptRegisters`] capability.
+    /// creates the ISR-only [`MacInterruptRegisters`] and
+    /// [`MacPowerInterruptRegisters`] capabilities.
     pub fn into_running(self) -> (RadioRegisters, MacInterruptSetup) {
         // SAFETY: `self` is consumed. `RadioRegisters` exposes no safe
-        // interrupt enable/clear operation, so the returned setup token is the
-        // only safe owner of that disjoint register transaction.
+        // MAC or WDEVPWR interrupt operation, so the returned setup token is
+        // the only safe owner of both disjoint register transactions.
         let setup = unsafe { MacInterruptSetup::steal_from_cold_radio_owner() };
         (self.registers, setup)
     }
@@ -640,6 +642,25 @@ mod tests {
     }
 
     #[test]
+    fn generated_station_tsf_load_matches_complete_hal_tsf_geometry() {
+        // SAFETY: this host test inspects generated register pointers only and
+        // performs no volatile access.
+        let registers = unsafe { RadioRegisters::steal() };
+        let load = &registers.peripherals.wifi_mac_sta_tsf_load;
+        assert_eq!(load.control().as_ptr() as usize, 0x2010_d814);
+        assert_eq!(load.value_low().as_ptr() as usize, 0x2010_d818);
+        assert_eq!(load.value_high().as_ptr() as usize, 0x2010_d81c);
+        assert_eq!(
+            registers
+                .peripherals
+                .wifi_mac_rtc_timer_update
+                .sta_tsf_control()
+                .as_ptr() as usize,
+            0x2010_d858
+        );
+    }
+
+    #[test]
     fn generated_cold_handshake_matches_complete_hal_init_prefix() {
         // SAFETY: this host test inspects a generated register pointer only
         // and performs no volatile access.
@@ -721,6 +742,7 @@ mod tests {
         assert_eq!(power.enable().as_ptr() as usize, 0x2010_d8b4);
         assert_eq!(power.raw().as_ptr() as usize, 0x2010_d8b8);
         assert_eq!(power.status().as_ptr() as usize, 0x2010_d8bc);
+        assert_eq!(power.clear().as_ptr() as usize, 0x2010_d8c0);
 
         assert_eq!(
             registers

@@ -16,14 +16,29 @@ use crate::{
     phy_i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
     phy_pbus::PhyPbusHardwareObservation,
     phy_rfpll::{RfpllFrequencyCompletion, RfpllFrequencyI2cBinding},
+    phy_rx_dco::{PhyRxDcoCompletion, PhyRxDcoPbusBinding},
+    phy_rx_gain::{PhyRxGainPublishCompletion, PhyRxGainPublishPbusBinding},
+    phy_rx_gain_cal::{
+        PhyRxDcCalibrationCompletion, PhyRxDcCalibrationPbusBinding, PhyRxGainDcCompletion,
+        PhyRxGainDcPbusBinding,
+    },
+    phy_rx_saturation::{PhyRxSaturationCompletion, PhyRxSaturationPbusBinding},
     phy_rxiq::{
         PhyRxIqAdjustedTxCompletion, PhyRxIqAdjustedTxI2cBinding, PhyRxIqGainCompletion,
-        PhyRxIqGainI2cBinding, PhyRxIqInitCompletion, PhyRxIqInitI2cBinding,
+        PhyRxIqGainI2cBinding, PhyRxIqGainPbusBinding, PhyRxIqInitCompletion,
+        PhyRxIqInitI2cBinding, PhyRxIqInitPbusBinding,
     },
     phy_temperature::{PhyTemperatureCompletion, PhyTemperatureI2cBinding},
     phy_tx_cal::{PhyTxCalibrationEnvironmentCompletion, PhyTxCalibrationEnvironmentPbusBinding},
     phy_tx_power::{PhyTxPowerCompletion, PhyTxPowerI2cBinding},
-    phy_txiq::{PhyTxIqInitCompletion, PhyTxIqInitI2cBinding},
+    phy_txdc_pwdet::{
+        PhyTxDcPwdetCompletion, PhyTxDcPwdetPbusBinding, PhyTxDcPwdetSearchCompletion,
+        PhyTxDcPwdetSearchPbusBinding,
+    },
+    phy_txiq::{
+        PhyTxIqCalibrationCompletion, PhyTxIqInitCompletion, PhyTxIqInitI2cBinding,
+        PhyTxIqPbusBinding,
+    },
 };
 
 /// Maximum number of one-microsecond samples used for a finite hardware edge.
@@ -124,6 +139,47 @@ macro_rules! define_pbus_executor {
     };
 }
 
+// These bindings model a PBus timeout as an ordinary completion consumed by
+// their parent transition. Keep the finite wait and the timeout conversion in
+// the driver: an application must not be able to silently select a different
+// polling bound or turn the recovered fallback path into an executor error.
+macro_rules! define_timeout_pbus_executor {
+    ($function:ident, $binding:ty, $completion:ty) => {
+        pub async fn $function<D: PhyAsyncDelay>(
+            mut binding: $binding,
+            registers: &mut RadioRegisters,
+        ) -> Result<$completion, PhyTargetPortError> {
+            let mut started = false;
+            for _ in 0..HARDWARE_EDGE_LIMIT {
+                if binding.start_target(registers).is_ok() {
+                    started = true;
+                    break;
+                }
+                D::after_micros(1).await;
+            }
+            if !started {
+                return Ok(binding.into_timeout_completion());
+            }
+
+            for _ in 0..HARDWARE_EDGE_LIMIT {
+                D::after_micros(1).await;
+                match binding
+                    .observe_target_edge(registers)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+                {
+                    PhyPbusHardwareObservation::EdgeConsumed => {
+                        return binding
+                            .into_completion()
+                            .map_err(|_| PhyTargetPortError::UnexpectedBinding);
+                    }
+                    PhyPbusHardwareObservation::StillPending => {}
+                }
+            }
+            Ok(binding.into_timeout_completion())
+        }
+    };
+}
+
 define_i2c_executor!(
     complete_rfpll_i2c,
     RfpllFrequencyI2cBinding,
@@ -174,4 +230,54 @@ define_pbus_executor!(
     complete_tx_calibration_environment_pbus,
     PhyTxCalibrationEnvironmentPbusBinding,
     PhyTxCalibrationEnvironmentCompletion
+);
+define_timeout_pbus_executor!(
+    complete_tx_dc_pwdet_search_pbus,
+    PhyTxDcPwdetSearchPbusBinding,
+    PhyTxDcPwdetSearchCompletion
+);
+define_timeout_pbus_executor!(
+    complete_tx_dc_pwdet_pbus,
+    PhyTxDcPwdetPbusBinding,
+    PhyTxDcPwdetCompletion
+);
+define_timeout_pbus_executor!(
+    complete_txiq_pbus,
+    PhyTxIqPbusBinding,
+    PhyTxIqCalibrationCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rx_dco_pbus,
+    PhyRxDcoPbusBinding,
+    PhyRxDcoCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rxiq_gain_pbus,
+    PhyRxIqGainPbusBinding,
+    PhyRxIqGainCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rxiq_init_pbus,
+    PhyRxIqInitPbusBinding,
+    PhyRxIqInitCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rx_saturation_pbus,
+    PhyRxSaturationPbusBinding,
+    PhyRxSaturationCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rx_dc_calibration_pbus,
+    PhyRxDcCalibrationPbusBinding,
+    PhyRxDcCalibrationCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rx_gain_dc_pbus,
+    PhyRxGainDcPbusBinding,
+    PhyRxGainDcCompletion
+);
+define_timeout_pbus_executor!(
+    complete_rx_gain_publish_pbus,
+    PhyRxGainPublishPbusBinding,
+    PhyRxGainPublishCompletion
 );

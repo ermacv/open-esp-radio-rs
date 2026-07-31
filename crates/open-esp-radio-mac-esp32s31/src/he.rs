@@ -24,6 +24,29 @@ pub fn install_he20_peer(
     bssid_index: u8,
 ) -> Result<He20PeerState, He20InstallError> {
     let state = parse_he20_peer_state(capability, operation).map_err(He20InstallError::Element)?;
+    program_he20_peer_state(
+        registers,
+        state,
+        association_id,
+        minimum_mpdu_start_spacing,
+        bssid_index,
+    )?;
+    Ok(state)
+}
+
+/// Install an already parsed HE20 peer plan.
+///
+/// Association orchestration parses one immutable peer view before touching
+/// hardware. Reusing that value here guarantees that rate control, HE-SIG
+/// color/ER-SU policy and the programmed S31 registers cannot be derived from
+/// different parses of mutable application storage.
+pub fn program_he20_peer_state(
+    registers: &mut RadioRegisters,
+    state: He20PeerState,
+    association_id: u16,
+    minimum_mpdu_start_spacing: u8,
+    bssid_index: u8,
+) -> Result<(), He20InstallError> {
     registers
         .program_he20_peer(
             MacHe20PeerConfig {
@@ -39,5 +62,5 @@ pub fn install_he20_peer(
         .program_he20_association(association_id, minimum_mpdu_start_spacing, bssid_index)
         .map_err(He20InstallError::Hardware)?;
     registers.initialize_he_buffer_status_report();
-    Ok(state)
+    Ok(())
 }

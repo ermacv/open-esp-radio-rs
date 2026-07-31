@@ -24,7 +24,10 @@ use crate::interface_address::program_cold_receive_addresses;
 pub use crate::interface_address::MacInterfaceAddressHardware;
 pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
-pub use crate::sta_link_policy::{configure_sta_link_receive_policy, StaLinkRxPolicyHardware};
+pub use crate::sta_link_policy::{
+    configure_sta_link_receive_policy, StaLinkRxPolicyHardware, StaPeerAssociationPlan,
+    StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmPolicy, StaWmmSource,
+};
 pub use open_esp_radio_pac_esp32s31::{MacTxPowerPair, MacTxPowerTable};
 
 /// Complete event mask published by the recovered cold receive initializer.

@@ -21,7 +21,7 @@ use open_esp_radio::esp32s31::{
     pac::{MacHeTbTidLimit, MacHeTid, MacHeTriggerTxQueueSnapshot},
     phy::PhyTxTargetPowerProfile,
 };
-use open_esp_radio::ieee80211::wmm::{WmmAccessCategory, WmmParameterSet};
+use open_esp_radio::ieee80211::wmm::WmmParameterSet;
 use open_esp_radio::{
     embassy_net::{
         PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
@@ -47,17 +47,13 @@ use open_esp_radio::{
             },
             descriptor::{DESCRIPTOR_BYTES, Descriptor, length as descriptor_length, rx_done},
             edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
-            he::install_he20_peer,
+            he::program_he20_peer_state,
             init::{
-                MAC_COLD_RX_INTERRUPT_MASK, configure_sta_link_receive_policy,
-                initialize_promiscuous_receive,
+                MAC_COLD_RX_INTERRUPT_MASK, StaPeerScanPolicy, StaWmmSource,
+                configure_sta_link_receive_policy, initialize_promiscuous_receive,
             },
             irq::handle_mac_irq,
-            rate_control::{
-                AmpduRateDecision, HeLowMetricReportFeatures, StaLinkMetric,
-                StaRateControlAssociation, StaRateControlAssociationInput,
-                StaRateControlPeerHighestRate, StaRateControlPhy, StaTxRatePolicy,
-            },
+            rate_control::{AmpduRateDecision, StaRateControlAssociation, StaTxRatePolicy},
             rate_schedule::schedule_state,
             registers::{
                 MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
@@ -188,7 +184,7 @@ use open_esp_radio::{
             DataDecapError, DataHeControl, DataInterfaceRole, amsdu_subframes,
             decapsulate_amsdu_subframe, decapsulate_data,
         },
-        he::{HeDcmConstellation, HeMcsNssSupport, parse_he20_capabilities, parse_he20_operation},
+        he::HeDcmConstellation,
         management::{ProbeRequest, ProbeRequestError},
         ndpa::HeNdpa,
         scan::best_matching_ssid,
@@ -1051,8 +1047,8 @@ impl TxStorage {
             .expect("ordinary TX DMA buffer is borrowed only while free")
     }
 
-    fn install_ht_ampdu_parameters(&mut self, parameters: u8) {
-        self.ht_ampdu = HtPeerAmpduParameters::from_capability_byte(parameters);
+    fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
+        self.ht_ampdu = parameters;
     }
 
     fn install_he_bss_color(&mut self, bss_color: u8) {
@@ -9629,42 +9625,26 @@ async fn associate_target(
     supplicant_nonce: [u8; 32],
     sequences: &mut StaTxSequenceCounters,
 ) -> (bool, bool, bool) {
-    // HT Capabilities is stored as the complete IE, so byte four is payload
-    // byte two: the A-MPDU Parameters field consumed by rcUpdateAMPDUParam.
-    // SOURCE: complete `_oracles/libpp.a[trc.o]::rcUpdateAMPDUParam` and
-    // `[hal_mac_tx.o]::mac_tx_set_htsig`; HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29
-    // observed the resulting value 40 repeated in all three queue fields.
-    let ht_ampdu_parameters = access_point
-        .ht_capability_ie_bytes()
-        .map_or(0, |capability| capability[4]);
-    tx_storage.install_ht_ampdu_parameters(ht_ampdu_parameters);
-    let mut best_effort_txop = match access_point.wmm_parameters() {
-        Some(parameters) => {
-            if let Err(error) = tx_storage.install_wmm_edca(parameters) {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
-                     source=scan error={error:?}"
-                ));
-                return (false, false, false);
-            }
-            HeEdcaTxopLimit::from_units_32_us(
-                parameters
-                    .access_category(WmmAccessCategory::BestEffort)
-                    .txop_limit_units_32_us,
-            )
-            // A standard value wider than the vendor parser can retain is
-            // still bounded rather than silently truncated or unlimited.
-            .unwrap_or(HeEdcaTxopLimit::MAXIMUM_SUPPORTED)
+    let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
+    let peer_scan_policy = match StaPeerScanPolicy::new(&access_point) {
+        Ok(policy) => policy,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-peer-scan-policy error={error:?}"
+            ));
+            return (false, false, false);
         }
-        None => HeEdcaTxopLimit::DEFAULT,
     };
-    if let Ok(operation) = parse_he20_operation(access_point.he_operation_ie_bytes()) {
-        // SOURCE: complete `_oracles/libnet80211.a[ieee80211_he.o]::
-        // ieee80211_parse_heopr` and `_oracles/libpp.a[hal_mac_ctl.o]::
-        // {hal_he_set_bss_color,hal_he_get_bss_color}`. HE Operation bit
-        // seven disables BSS coloring even though bits 5:0 retain a numeric
-        // color; the TX formatter must then publish color zero in HE-SIG-A1.
-        tx_storage.install_he_bss_color(operation.effective_bss_color());
+    tx_storage.install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
+    tx_storage.install_he_bss_color(peer_scan_policy.he_bss_color);
+    if let Some(parameters) = peer_scan_policy.wmm.parameters() {
+        if let Err(error) = tx_storage.install_wmm_edca(parameters) {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
+                 source=scan error={error:?}"
+            ));
+            return (false, false, false);
+        }
     }
     // Keep both 32-frame queues out of the task stack. Passing
     // `NetworkResources::new()` to `StaticCell::init` materializes a temporary
@@ -9784,61 +9764,6 @@ async fn associate_target(
                     let _ = disable_receive(mmio);
                     return (false, false, false);
                 }
-                let association_phy =
-                    select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
-                if let Some(parameters) = response.wmm_parameters {
-                    if let Err(error) = tx_storage.install_wmm_edca(parameters) {
-                        let _ = disable_receive(mmio);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
-                             source=association-response error={error:?}"
-                        ));
-                        return (false, false, false);
-                    }
-                    best_effort_txop = HeEdcaTxopLimit::from_units_32_us(
-                        parameters
-                            .access_category(WmmAccessCategory::BestEffort)
-                            .txop_limit_units_32_us,
-                    )
-                    .unwrap_or(HeEdcaTxopLimit::MAXIMUM_SUPPORTED);
-                }
-                let he_peer_state = if association_phy == StaAssociationPhy::He20 {
-                    match install_he20_peer(
-                        mmio,
-                        access_point.he_capability_ie_bytes(),
-                        access_point.he_operation_ie_bytes(),
-                        response.association_id,
-                        0,
-                        0,
-                    ) {
-                        Ok(state) => {
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=PASS stage=sta-he20-peer \
-                                 max_rate_code={} padding_8us={} operation={:#08x} \
-                                 color={:#04x} basic_mcs={:#06x} \
-                                 ersu_disabled={} ersu_permitted={}",
-                                state.max_rate_code,
-                                state.packet_padding_eight_us,
-                                state.operation_parameters,
-                                state.bss_color_information,
-                                state.basic_mcs_nss_map,
-                                state.extended_range_single_user_disabled,
-                                state.extended_range_single_user_permitted(),
-                            ));
-                            Some(state)
-                        }
-                        Err(error) => {
-                            let _ = disable_receive(mmio);
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-he20-peer \
-                                 error={error:?}"
-                            ));
-                            return (false, false, false);
-                        }
-                    }
-                } else {
-                    None
-                };
                 let selected_rsn = match select_wpa2_psk_rsn(&access_point) {
                     Ok(rsn) => rsn,
                     Err(error) => {
@@ -9849,8 +9774,69 @@ async fn associate_target(
                         return (true, false, false);
                     }
                 };
-                let peer_he_capabilities =
-                    parse_he20_capabilities(access_point.he_capability_ie_bytes()).ok();
+                let noise_floor_dbm = mmio.read_noise_floor_dbm();
+                let mut peer_plan = match peer_scan_policy.complete(
+                    &access_point,
+                    &response,
+                    association_phy,
+                    noise_floor_dbm,
+                ) {
+                    Ok(plan) => plan,
+                    Err(error) => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL \
+                             stage=sta-peer-association-plan error={error:?}"
+                        ));
+                        return (false, false, false);
+                    }
+                };
+                tx_storage.install_ht_ampdu_policy(peer_plan.ht_ampdu);
+                tx_storage.install_he_bss_color(peer_plan.he_bss_color);
+                if peer_plan.wmm.source() == StaWmmSource::AssociationResponse {
+                    let Some(parameters) = peer_plan.wmm.parameters() else {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
+                             source=association-response error=missing-parameters"
+                        ));
+                        return (false, false, false);
+                    };
+                    if let Err(error) = tx_storage.install_wmm_edca(parameters) {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
+                             source=association-response error={error:?}"
+                        ));
+                        return (false, false, false);
+                    }
+                }
+                if let Some(state) = peer_plan.he_peer_state {
+                    if let Err(error) =
+                        program_he20_peer_state(mmio, state, response.association_id, 0, 0)
+                    {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-he20-peer \
+                             error={error:?}"
+                        ));
+                        return (false, false, false);
+                    }
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=PASS stage=sta-he20-peer \
+                         max_rate_code={} padding_8us={} operation={:#08x} \
+                         color={:#04x} basic_mcs={:#06x} \
+                         ersu_disabled={} ersu_permitted={}",
+                        state.max_rate_code,
+                        state.packet_padding_eight_us,
+                        state.operation_parameters,
+                        state.bss_color_information,
+                        state.basic_mcs_nss_map,
+                        state.extended_range_single_user_disabled,
+                        state.extended_range_single_user_permitted(),
+                    ));
+                }
+                let peer_he_capabilities = peer_plan.he_capabilities;
                 if let Some(capability) = peer_he_capabilities {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=OBSERVE stage=he20-peer-capabilities \
@@ -9870,64 +9856,18 @@ async fn associate_target(
                         capability.non_triggered_cqi_feedback,
                     ));
                 }
-                // SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::
-                // ic_set_sta` names the two scalar inputs `rssi` and `nf`,
-                // constructs the per-peer TRC input and calls `ic_set_trc`.
-                // Complete `_oracles/libpp.a[if_hwctrl.o]::ic_set_trc`
-                // narrows `rssi - nf` to a signed byte before
-                // `rcUpdatePhyMode`; complete rev0 ROM
-                // `phy_read_hw_noisefloor` reads 0x2010708c for that noise
-                // floor. Complete `ic_set_sta` also proves that the low-metric
-                // gates are the inversion of HE Operation ER-SU-Disable and
-                // nonzero HE PHY DCM_MAX_CONST_RX. The remaining schedule
-                // extension input is not HE: it is the vendor LR-rate count
-                // at node offset 0x84, so a standard FRITZ association leaves
-                // it false.
-                let noise_floor_dbm = mmio.read_noise_floor_dbm();
-                let link_metric =
-                    StaLinkMetric::from_rssi_and_noise_floor(access_point.rssi, noise_floor_dbm);
-                let rate_control_phy = match association_phy {
-                    StaAssociationPhy::Legacy => StaRateControlPhy::Dot11G,
-                    StaAssociationPhy::Ht20 | StaAssociationPhy::Ht40 => StaRateControlPhy::Ht,
-                    StaAssociationPhy::He20 => StaRateControlPhy::He,
-                };
-                // SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::
-                // ic_set_sta` supplies the negotiated maximum rate to
-                // `ic_set_trc`; complete `_oracles/libpp.a[trc.o]::
-                // rc11AXRate2SchedIdx` maps HE20 1SS rates 172 and 229 to the
-                // MCS7 and MCS9 frontiers. The HE RX MCS/NSS map is the AP
-                // capability that constrains our uplink. ESP32-S31 stops at
-                // MCS9 even when the peer advertises MCS0..11.
-                let peer_highest_rate = if association_phy == StaAssociationPhy::He20 {
-                    peer_he_capabilities.and_then(|capability| {
-                        let maximum_mcs = match capability.receive_nss1 {
-                            HeMcsNssSupport::Mcs0To7 => HeMcs::Mcs7,
-                            HeMcsNssSupport::Mcs0To9 | HeMcsNssSupport::Mcs0To11 => HeMcs::Mcs9,
-                            HeMcsNssSupport::NotSupported => return None,
-                        };
-                        Some(StaRateControlPeerHighestRate::he20_one_spatial_stream(
-                            maximum_mcs,
-                        ))
-                    })
-                } else {
-                    None
-                };
-                let mut rate_control =
-                    StaRateControlAssociation::new(StaRateControlAssociationInput {
-                        phy: rate_control_phy,
-                        link_metric,
-                        p2p: false,
-                        peer_highest_rate,
-                        long_range_rates_present: false,
-                        he_low_metric_report: HeLowMetricReportFeatures {
-                            dcm_receive_supported: peer_he_capabilities.is_some_and(|capability| {
-                                capability.dcm_receive_constellation()
-                                    != HeDcmConstellation::NotSupported
-                            }),
-                            extended_range_single_user_permitted: he_peer_state
-                                .is_some_and(|state| state.extended_range_single_user_permitted()),
-                        },
+                let peer_qos = peer_plan.peer_qos;
+                let best_effort_txop = peer_plan.wmm.best_effort_txop();
+                let peer_supports_short_guard_interval = peer_he_capabilities
+                    .is_some_and(|capability| capability.supports_one_ltf_800ns_gi());
+                let peer_supports_ldpc = peer_he_capabilities
+                    .is_some_and(|capability| capability.supports_ldpc_coding_in_payload());
+                let peer_dcm_constellation = peer_he_capabilities
+                    .map_or(HeDcmConstellation::NotSupported, |capability| {
+                        capability.dcm_receive_constellation()
                     });
+                let link_metric = peer_plan.link_metric;
+                let rate_control = &mut peer_plan.rate_control;
                 if let Err(error) = rate_control.program_hardware(mmio) {
                     let _ = disable_receive(mmio);
                     emergency_log(format_args!(
@@ -9975,17 +9915,13 @@ async fn associate_target(
                     selected_rsn.as_bytes(),
                     access_point.rsn_ie_bytes(),
                     access_point.rsnxe_bytes(),
-                    response.wmm,
+                    peer_qos,
                     association_phy,
-                    peer_he_capabilities
-                        .is_some_and(|capability| capability.supports_one_ltf_800ns_gi()),
-                    peer_he_capabilities
-                        .is_some_and(|capability| capability.supports_ldpc_coding_in_payload()),
-                    peer_he_capabilities.map_or(HeDcmConstellation::NotSupported, |capability| {
-                        capability.dcm_receive_constellation()
-                    }),
+                    peer_supports_short_guard_interval,
+                    peer_supports_ldpc,
+                    peer_dcm_constellation,
                     best_effort_txop,
-                    &mut rate_control,
+                    rate_control,
                     sequences,
                 )
                 .await;

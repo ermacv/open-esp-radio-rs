@@ -1,0 +1,393 @@
+#![no_main]
+#![no_std]
+
+#[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
+compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
+#[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
+compile_error!("boot-smoke and open-radio-hil are mutually exclusive scenarios");
+#[cfg(all(feature = "code-flash", feature = "code-psram"))]
+compile_error!("code-flash and code-psram are mutually exclusive");
+#[cfg(not(any(feature = "code-flash", feature = "code-psram")))]
+compile_error!("select code-flash or code-psram");
+#[cfg(all(feature = "profile-psram-data", feature = "profile-sram-data"))]
+compile_error!("profile-psram-data and profile-sram-data are mutually exclusive");
+#[cfg(not(any(feature = "profile-psram-data", feature = "profile-sram-data")))]
+compile_error!("select profile-psram-data or profile-sram-data");
+
+use core::{
+    arch::{asm, global_asm},
+    ffi::CStr,
+    ptr,
+};
+
+#[cfg(feature = "boot-smoke")]
+use embassy_time::{Duration, Timer};
+use esp_hal::{
+    interrupt::software::SoftwareInterruptControl,
+    timer::{OneShotTimer, timg::TimerGroup},
+};
+use open_esp_radio_hil_esp32s31_runtime_support::Executor;
+use static_cell::StaticCell;
+
+#[cfg(feature = "open-radio-hil")]
+mod console;
+#[cfg(feature = "open-radio-hil")]
+mod radio_hil;
+
+const DATA_SENTINEL: u32 = 0x5353_31d2;
+const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
+const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
+const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
+
+#[cfg(feature = "code-flash")]
+const PROFILE_CODE_START: u32 = 0x4000_0140;
+#[cfg(feature = "code-flash")]
+const PROFILE_CODE_END: u32 = 0x4400_0000;
+#[cfg(feature = "code-psram")]
+const PROFILE_CODE_START: u32 = 0x5001_0000;
+#[cfg(feature = "code-psram")]
+const PROFILE_CODE_END: u32 = 0x5100_0000;
+
+#[cfg(feature = "profile-psram-data")]
+const PROFILE_DATA_START: u32 = 0x5000_0000;
+#[cfg(feature = "profile-psram-data")]
+const PROFILE_DATA_END: u32 = 0x5100_0000;
+#[cfg(feature = "profile-sram-data")]
+const PROFILE_DATA_START: u32 = INTERNAL_SRAM_START;
+#[cfg(feature = "profile-sram-data")]
+const PROFILE_DATA_END: u32 = INTERNAL_SRAM_END;
+
+static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
+static mut BSS_PROBE: u32 = 0;
+
+#[used]
+#[unsafe(link_section = ".isr.rodata.profile_probe")]
+static ISR_RODATA_PROBE: u32 = 0x4953_5231;
+#[used]
+#[unsafe(link_section = ".critical.data.profile_probe")]
+static mut CRITICAL_DATA_PROBE: u32 = 0x4352_5431;
+#[used]
+#[unsafe(link_section = ".dma.data.profile_probe")]
+static mut DMA_DATA_PROBE: u32 = 0x444d_4131;
+#[used]
+#[unsafe(link_section = ".dma.bss.profile_probe")]
+static mut DMA_BSS_PROBE: u32 = 0;
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".critical.data.stack_guard")]
+static mut __stack_chk_guard: u32 = 0xDEED_BAAD;
+
+unsafe extern "C" {
+    fn ets_install_usb_printf();
+    fn ets_printf(format: *const core::ffi::c_char, ...) -> i32;
+
+    static __runtime_image_start: u8;
+    static __runtime_payload_end: u8;
+    static __runtime_bss_start: u8;
+    static __runtime_bss_end: u8;
+    static __runtime_data_load_start: u8;
+    static __runtime_data_start: u8;
+    static __runtime_data_end: u8;
+    static __runtime_data_bss_start: u8;
+    static __runtime_data_bss_end: u8;
+    static __runtime_isr_start: u8;
+    static __runtime_isr_end: u8;
+    static __runtime_dma_data_start: u8;
+    static __runtime_dma_data_end: u8;
+    static __runtime_dma_bss_start: u8;
+    static __runtime_dma_bss_end: u8;
+    static _stack_end: u8;
+}
+
+// Stage two does not return through the bootloader reset entry. It owns data,
+// BSS, the SRAM interrupt closure and vector registers, and initializes each
+// one before entering Rust or enabling interrupts.
+global_asm!(
+    r#"
+    .section .text._start, "ax", @progbits
+    .balign 4
+    .global _runtime_start
+    .type _runtime_start, @function
+_runtime_start:
+    .option push
+    .option norelax
+    la gp, __global_pointer$
+    la a0, __runtime_data_load_start
+    la a1, __runtime_data_start
+    la a2, __runtime_data_end
+1:
+    beq a1, a2, 2f
+    lw a3, 0(a0)
+    sw a3, 0(a1)
+    addi a0, a0, 4
+    addi a1, a1, 4
+    j 1b
+2:
+    la a0, __runtime_data_bss_start
+    la a1, __runtime_data_bss_end
+3:
+    beq a0, a1, 4f
+    sw zero, 0(a0)
+    addi a0, a0, 4
+    j 3b
+4:
+    la a0, __runtime_isr_load_start
+    la a1, __runtime_isr_start
+    la a2, __runtime_isr_end
+5:
+    beq a1, a2, 6f
+    lw a3, 0(a0)
+    sw a3, 0(a1)
+    addi a0, a0, 4
+    addi a1, a1, 4
+    j 5b
+6:
+    la a0, __runtime_critical_data_load_start
+    la a1, __runtime_critical_data_start
+    la a2, __runtime_critical_data_end
+7:
+    beq a1, a2, 8f
+    lw a3, 0(a0)
+    sw a3, 0(a1)
+    addi a0, a0, 4
+    addi a1, a1, 4
+    j 7b
+8:
+    la a0, __runtime_critical_bss_start
+    la a1, __runtime_critical_bss_end
+9:
+    beq a0, a1, 10f
+    sw zero, 0(a0)
+    addi a0, a0, 4
+    j 9b
+10:
+    la a0, __runtime_dma_data_load_start
+    la a1, __runtime_dma_data_start
+    la a2, __runtime_dma_data_end
+11:
+    beq a1, a2, 12f
+    lw a3, 0(a0)
+    sw a3, 0(a1)
+    addi a0, a0, 4
+    addi a1, a1, 4
+    j 11b
+12:
+    la a0, __runtime_dma_bss_start
+    la a1, __runtime_dma_bss_end
+13:
+    beq a0, a1, 14f
+    sw zero, 0(a0)
+    addi a0, a0, 4
+    j 13b
+14:
+    la a0, __runtime_hot_text_load_start
+    la a1, __runtime_hot_text_start
+    la a2, __runtime_hot_text_end
+15:
+    beq a1, a2, 16f
+    lw a3, 0(a0)
+    sw a3, 0(a1)
+    addi a0, a0, 4
+    addi a1, a1, 4
+    j 15b
+16:
+    fence.i
+    la t0, _vector_table
+    ori t0, t0, 3
+    csrw mtvec, t0
+    la t0, _mtvt_table
+    csrw 0x307, t0
+    .option pop
+    li t0, 0x6000
+    csrrs zero, mstatus, t0
+    fscsr zero
+    tail runtime_main
+    .size _runtime_start, . - _runtime_start
+"#
+);
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    #[cfg(feature = "open-radio-hil")]
+    {
+        let (stage, action) = radio_hil::diagnostic_snapshot();
+        console::emergency_log(format_args!(
+            "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
+        ));
+        let (mcause, mepc, mtval): (usize, usize, usize);
+        unsafe {
+            asm!("csrr {0}, mcause", out(reg) mcause);
+            asm!("csrr {0}, mepc", out(reg) mepc);
+            asm!("csrr {0}, mtval", out(reg) mtval);
+        }
+        console::panic_report(mcause, mepc, mtval);
+    }
+    #[cfg(feature = "boot-smoke")]
+    let _ = info;
+    print(c"OPEN_RADIO_HIL runtime=PANIC\r\n");
+    halt()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn runtime_main() -> ! {
+    unsafe { ets_install_usb_printf() };
+    print(c"OPEN_RADIO_HIL runtime=START profile=psram-code-psram-data\r\n");
+
+    validate_runtime_layout();
+
+    let peripherals =
+        esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
+    unsafe { esp_hal::interrupt::reinitialize_vectoring_after_handoff() };
+
+    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    let timer_group = TimerGroup::new(peripherals.TIMG0);
+    open_esp_radio_hil_esp32s31_runtime_support::init(OneShotTimer::new(timer_group.timer0));
+    let executor = EXECUTOR.init(Executor::new(software_interrupts.software_interrupt0));
+
+    // Bootstrap intentionally hands MIE over clear. Timer and software wake
+    // interrupt ownership is complete at this point.
+    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+
+    #[cfg(feature = "boot-smoke")]
+    executor.run(|spawner| {
+        let Ok(task) = boot_smoke() else {
+            fail(c"OPEN_RADIO_HIL runtime=FAIL reason=task-allocation\r\n");
+        };
+        spawner.spawn(task);
+    });
+
+    #[cfg(feature = "open-radio-hil")]
+    {
+        console::init_logger();
+        use esp_hal::rng::{Trng, TrngSource};
+        let trng_source = TrngSource::new(peripherals.RNG);
+        let trng = Trng::try_new()
+            .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
+        let radio = open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral::new(
+            peripherals.WIFI,
+            peripherals.MODEM_SYSCON,
+            peripherals.MODEM_LPCON,
+            peripherals.HP_SYS_CLKRST,
+            peripherals.PMU,
+            peripherals.LP_AON_CLK_RST,
+            peripherals.LP_PERI,
+            peripherals.LP_TSENS,
+            peripherals.I2C_ANA_MST,
+        );
+        let usb = peripherals.USB_DEVICE;
+        executor.run(|spawner| {
+            let Ok(logger) = console::logger_task(usb) else {
+                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
+            };
+            spawner.spawn(logger);
+            let Ok(hil) = open_radio_hil_task(radio, trng, trng_source) else {
+                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
+            };
+            spawner.spawn(hil);
+        })
+    }
+}
+
+#[cfg(feature = "boot-smoke")]
+#[embassy_executor::task]
+async fn boot_smoke() {
+    print(c"OPEN_RADIO_HIL embassy=START\r\n");
+    Timer::after(Duration::from_millis(50)).await;
+    print(c"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS\r\n");
+    loop {
+        Timer::after(Duration::from_secs(60)).await;
+    }
+}
+
+#[cfg(feature = "open-radio-hil")]
+#[embassy_executor::task]
+async fn open_radio_hil_task(
+    radio: open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral,
+    trng: esp_hal::rng::Trng,
+    _trng_source: esp_hal::rng::TrngSource<'static>,
+) {
+    radio_hil::run(radio, trng).await;
+}
+
+fn validate_runtime_layout() {
+    let image_start = symbol(ptr::addr_of!(__runtime_image_start));
+    let payload_end = symbol(ptr::addr_of!(__runtime_payload_end));
+    let bss_start = symbol(ptr::addr_of!(__runtime_bss_start));
+    let bss_end = symbol(ptr::addr_of!(__runtime_bss_end));
+    let data_load_start = symbol(ptr::addr_of!(__runtime_data_load_start));
+    let data_start = symbol(ptr::addr_of!(__runtime_data_start));
+    let data_end = symbol(ptr::addr_of!(__runtime_data_end));
+    let runtime_bss_start = symbol(ptr::addr_of!(__runtime_data_bss_start));
+    let runtime_bss_end = symbol(ptr::addr_of!(__runtime_data_bss_end));
+    let isr_start = symbol(ptr::addr_of!(__runtime_isr_start));
+    let isr_end = symbol(ptr::addr_of!(__runtime_isr_end));
+    let dma_data_start = symbol(ptr::addr_of!(__runtime_dma_data_start));
+    let dma_data_end = symbol(ptr::addr_of!(__runtime_dma_data_end));
+    let dma_bss_start = symbol(ptr::addr_of!(__runtime_dma_bss_start));
+    let dma_bss_end = symbol(ptr::addr_of!(__runtime_dma_bss_end));
+    let stack_bottom = symbol(ptr::addr_of!(_stack_end));
+    let stack = current_stack_pointer();
+
+    let initialized_data = unsafe { ptr::addr_of!(INITIALIZED_DATA).read_volatile() };
+    let bss_probe = unsafe { ptr::addr_of!(BSS_PROBE).read_volatile() };
+    let isr_probe = unsafe { ptr::addr_of!(ISR_RODATA_PROBE).read_volatile() };
+    let critical_probe = unsafe { ptr::addr_of!(CRITICAL_DATA_PROBE).read_volatile() };
+    let dma_probe = unsafe { ptr::addr_of!(DMA_DATA_PROBE).read_volatile() };
+    let dma_bss_probe = unsafe { ptr::addr_of!(DMA_BSS_PROBE).read_volatile() };
+
+    if image_start != PROFILE_CODE_START
+        || payload_end <= image_start
+        || payload_end > PROFILE_CODE_END
+        || data_load_start < PROFILE_CODE_START
+        || data_load_start >= payload_end
+        || data_end < data_start
+        || runtime_bss_end < runtime_bss_start
+        || bss_end < bss_start
+        || !(PROFILE_DATA_START..PROFILE_DATA_END).contains(&data_start)
+        || !(PROFILE_DATA_START..=PROFILE_DATA_END).contains(&runtime_bss_end)
+        || !range_in_internal_sram(isr_start, isr_end)
+        || !range_in_internal_sram(dma_data_start, dma_data_end)
+        || !range_in_internal_sram(dma_bss_start, dma_bss_end)
+        || !(stack_bottom..INTERNAL_STACK_END).contains(&stack)
+        || !stack.is_multiple_of(16)
+        || initialized_data != DATA_SENTINEL
+        || bss_probe != 0
+        || isr_probe != 0x4953_5231
+        || critical_probe != 0x4352_5431
+        || dma_probe != 0x444d_4131
+        || dma_bss_probe != 0
+    {
+        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=layout\r\n");
+    }
+    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma=SRAM stack=SRAM\r\n");
+}
+
+fn range_in_internal_sram(start: u32, end: u32) -> bool {
+    start >= INTERNAL_SRAM_START && end >= start && end <= INTERNAL_SRAM_END
+}
+
+fn symbol(address: *const u8) -> u32 {
+    address as usize as u32
+}
+
+fn current_stack_pointer() -> u32 {
+    let value: usize;
+    unsafe { asm!("mv {value}, sp", value = out(reg) value, options(nomem, nostack)) };
+    value as u32
+}
+
+fn print(message: &'static CStr) {
+    unsafe { ets_printf(message.as_ptr()) };
+}
+
+fn fail(message: &'static CStr) -> ! {
+    print(message);
+    halt()
+}
+
+fn halt() -> ! {
+    loop {
+        unsafe { asm!("wfi", options(nomem, nostack)) };
+    }
+}

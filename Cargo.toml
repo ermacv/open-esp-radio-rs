@@ -11,7 +11,9 @@ members = [
     "crates/open-esp-radio-svd-esp32s31",
     "crates/open-esp-radio-wpa2",
     "tools/pac-gen",
+    "tools/hil-runner",
 ]
+exclude = ["hil/esp32s31"]
 resolver = "2"
 
 [workspace.package]

@@ -364,8 +364,13 @@ registering a retry timer, while a repeated M1 re-enters through
 `wpa_sm_rx_eapol`. The exact `psram-code-psram-data` image booted, associated,
 completed WPA2/DHCP, and its strict bidirectional run delivered 10.012-Mbit/s
 RX plus a 67.935-Mbit/s concurrent TX floor with zero strict DMA-starvation
-failure. Only the final connected dispatcher still remains in the HIL
-executor.
+failure. The next connected slice moved the vendor-ordered TID 0/7/5 TX
+BlockAck sessions, shared Dialog Token sequence, independent alarms and
+ADDBA/DELBA response routing into `StaTxBlockAckSessions`. Its reset-separated
+qualification made all three 32-entry agreements operational and delivered
+10.011-Mbit/s RX plus a 63.660-Mbit/s concurrent TX floor. RX BlockAck
+agreement ownership and the remaining connected event/route dispatcher are
+still in the HIL executor.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per

@@ -3257,6 +3257,178 @@ pub struct TxBlockAckSession {
     phase: TxBlockAckPhase,
 }
 
+/// TX BlockAck TIDs started by the vendor STA connection-complete path.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[wl_cnx.o]::cnx_auth_done`
+/// invokes `ieee80211_ampdu_request` for TIDs 0, 7 and 5 in this order.
+pub const STA_TX_BLOCK_ACK_TIDS: [u8; 3] = [0, 7, 5];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTxBlockAckSessionsError {
+    UnsupportedTid(u8),
+    MalformedResponse,
+    UnexpectedDialogToken(u8),
+    Session { tid: u8, error: TxBlockAckError },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaTxBlockAckResponse {
+    pub tid: u8,
+    pub response: TxBlockAckResponse,
+}
+
+/// Fixed, allocation-free owner for all TX BlockAck agreements created when
+/// an S31 station enters the connected state.
+///
+/// The three sessions deliberately share one Dialog Token sequence while
+/// retaining independent negotiation generations and alarms. This is the
+/// ownership boundary recovered from the vendor connection-complete path;
+/// an executor supplies timestamps and transmits the returned action body.
+pub struct StaTxBlockAckSessions {
+    sessions: [TxBlockAckSession; 3],
+    alarms: [Option<TxBlockAckAlarm>; 3],
+    dialog_tokens: TxBlockAckDialogTokenSequence,
+}
+
+impl StaTxBlockAckSessions {
+    pub const fn new(
+        window: u16,
+        negotiation_timeout_us: u32,
+        tid0_amsdu: bool,
+    ) -> Result<Self, TxBlockAckError> {
+        let tid0 = match TxBlockAckSession::new(TxBlockAckConfig {
+            tid: 0,
+            window,
+            timeout_tu: 0,
+            negotiation_timeout_us,
+            amsdu: tid0_amsdu,
+        }) {
+            Ok(session) => session,
+            Err(error) => return Err(error),
+        };
+        let tid7 = match TxBlockAckSession::new(TxBlockAckConfig {
+            tid: 7,
+            window,
+            timeout_tu: 0,
+            negotiation_timeout_us,
+            amsdu: false,
+        }) {
+            Ok(session) => session,
+            Err(error) => return Err(error),
+        };
+        let tid5 = match TxBlockAckSession::new(TxBlockAckConfig {
+            tid: 5,
+            window,
+            timeout_tu: 0,
+            negotiation_timeout_us,
+            amsdu: false,
+        }) {
+            Ok(session) => session,
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            sessions: [tid0, tid7, tid5],
+            alarms: [None; 3],
+            dialog_tokens: TxBlockAckDialogTokenSequence::new(),
+        })
+    }
+
+    /// Begin one of the three recovered STA negotiations.
+    ///
+    /// The returned request owns its encoded action body. Its alarm is stored
+    /// internally so a caller cannot accidentally pair it with another TID.
+    pub fn begin(
+        &mut self,
+        tid: u8,
+        starting_sequence: u16,
+        now_us: u64,
+    ) -> Result<AddbaRequest, StaTxBlockAckSessionsError> {
+        let index =
+            sta_tx_block_ack_index(tid).ok_or(StaTxBlockAckSessionsError::UnsupportedTid(tid))?;
+        let dialog_token = self.dialog_tokens.take();
+        let request = self.sessions[index]
+            .begin_with_dialog_token(starting_sequence, now_us, dialog_token)
+            .map_err(|error| StaTxBlockAckSessionsError::Session { tid, error })?;
+        self.alarms[index] = Some(request.alarm);
+        Ok(request)
+    }
+
+    /// Route one ADDBA response by the shared Dialog Token and update exactly
+    /// one session. A terminal response also consumes that session's alarm.
+    pub fn on_response(
+        &mut self,
+        body: &[u8],
+    ) -> Result<StaTxBlockAckResponse, StaTxBlockAckSessionsError> {
+        let response_token = *body
+            .get(2)
+            .ok_or(StaTxBlockAckSessionsError::MalformedResponse)?;
+        let index = self
+            .sessions
+            .iter()
+            .position(|session| session.awaiting_dialog_token() == Some(response_token))
+            .ok_or(StaTxBlockAckSessionsError::UnexpectedDialogToken(
+                response_token,
+            ))?;
+        let tid = STA_TX_BLOCK_ACK_TIDS[index];
+        let response = self.sessions[index]
+            .on_response(body)
+            .map_err(|error| StaTxBlockAckSessionsError::Session { tid, error })?;
+        self.alarms[index] = None;
+        Ok(StaTxBlockAckResponse { tid, response })
+    }
+
+    /// Consume at most one due alarm. Repeated calls drain simultaneous
+    /// expirations without placing an unbounded loop inside the state owner.
+    pub fn expire_next(&mut self, now_us: u64) -> Option<u8> {
+        for (index, tid) in STA_TX_BLOCK_ACK_TIDS.into_iter().enumerate() {
+            let Some(alarm) = self.alarms[index] else {
+                continue;
+            };
+            if now_us < alarm.deadline_us {
+                continue;
+            }
+            self.alarms[index] = None;
+            if self.sessions[index].on_alarm(alarm) {
+                return Some(tid);
+            }
+        }
+        None
+    }
+
+    /// Stop the recovered session for `tid` and invalidate its alarm.
+    pub fn stop(&mut self, tid: u8) -> bool {
+        let Some(index) = sta_tx_block_ack_index(tid) else {
+            return false;
+        };
+        self.sessions[index].stop();
+        self.alarms[index] = None;
+        true
+    }
+
+    pub const fn operational(&self, tid: u8) -> Option<OperationalTxBlockAck> {
+        let Some(index) = sta_tx_block_ack_index(tid) else {
+            return None;
+        };
+        self.sessions[index].operational()
+    }
+
+    pub const fn alarm(&self, tid: u8) -> Option<TxBlockAckAlarm> {
+        let Some(index) = sta_tx_block_ack_index(tid) else {
+            return None;
+        };
+        self.alarms[index]
+    }
+}
+
+const fn sta_tx_block_ack_index(tid: u8) -> Option<usize> {
+    match tid {
+        0 => Some(0),
+        7 => Some(1),
+        5 => Some(2),
+        _ => None,
+    }
+}
+
 /// Opaque index of one statically owned TX frame.
 ///
 /// The strict S31 data path has exactly 32 fixed TX slots. Keeping only their
@@ -4791,6 +4963,66 @@ mod tests {
         assert_eq!(tokens.take().value(), 62);
         assert_eq!(tokens.take().value(), 0);
         assert_eq!(tokens.take().value(), 1);
+    }
+
+    #[test]
+    fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
+        let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
+        let tid0 = sessions.begin(0, 0x100, 0).unwrap();
+        let tid7 = sessions.begin(7, 0x200, 0).unwrap();
+        let tid5 = sessions.begin(5, 0x300, 0).unwrap();
+        assert_eq!(
+            [tid0.dialog_token, tid7.dialog_token, tid5.dialog_token],
+            [1, 2, 3]
+        );
+        assert_eq!(sessions.alarm(0), Some(tid0.alarm));
+        assert_eq!(sessions.alarm(7), Some(tid7.alarm));
+        assert_eq!(sessions.alarm(5), Some(tid5.alarm));
+
+        let parameters = encode_ba_parameters(7, 16, false).to_le_bytes();
+        let response = [
+            3,
+            1,
+            tid7.dialog_token,
+            0,
+            0,
+            parameters[0],
+            parameters[1],
+            0,
+            0,
+        ];
+        assert_eq!(
+            sessions.on_response(&response),
+            Ok(StaTxBlockAckResponse {
+                tid: 7,
+                response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+                    tid: 7,
+                    window: 16,
+                    timeout_tu: 0,
+                    starting_sequence: 0x200,
+                    amsdu: false,
+                }),
+            })
+        );
+        assert_eq!(sessions.alarm(7), None);
+        assert_eq!(sessions.expire_next(100_000), Some(0));
+        assert_eq!(sessions.expire_next(100_000), Some(5));
+        assert_eq!(sessions.expire_next(100_000), None);
+        assert!(sessions.operational(7).is_some());
+    }
+
+    #[test]
+    fn station_sessions_reject_unowned_tid_and_stale_dialog_token() {
+        let mut sessions = StaTxBlockAckSessions::new(32, 100_000, false).unwrap();
+        assert_eq!(
+            sessions.begin(3, 0, 0),
+            Err(StaTxBlockAckSessionsError::UnsupportedTid(3))
+        );
+        assert_eq!(
+            sessions.on_response(&[3, 1, 42, 0, 0, 0, 0, 0, 0]),
+            Err(StaTxBlockAckSessionsError::UnexpectedDialogToken(42))
+        );
+        assert!(!sessions.stop(3));
     }
 
     #[test]

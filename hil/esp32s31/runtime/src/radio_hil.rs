@@ -84,9 +84,8 @@ use open_esp_radio::{
             },
             tx_ampdu::{
                 BlockAckAction, HtAmpduLengthAccumulator, HtAmpduTxCompletion, HtAmpduTxError,
-                HtAmpduTxStorage, TxBlockAckAlarm, TxBlockAckConfig, TxBlockAckDialogToken,
-                TxBlockAckDialogTokenSequence, TxBlockAckResponse, TxBlockAckSession,
-                parse_block_ack_action,
+                HtAmpduTxStorage, StaTxBlockAckResponse, StaTxBlockAckSessions,
+                TxBlockAckResponse, parse_block_ack_action,
             },
             tx_runtime::{
                 AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState,
@@ -4417,18 +4416,17 @@ async fn start_tx_block_ack_negotiation(
     bssid: [u8; 6],
     sequences: &mut StaTxSequenceCounters,
     connected_started: Instant,
-    session: &mut TxBlockAckSession,
-    dialog_token: TxBlockAckDialogToken,
+    sessions: &mut StaTxBlockAckSessions,
     tid: u8,
-) -> Option<TxBlockAckAlarm> {
+) {
     let action_sequence = sequences.take_non_qos();
     let starting_sequence = sequences
         .peek_qos(tid)
         .expect("fixed BlockAck TID has a sequence-number owner");
-    let request = match session.begin_with_dialog_token(
+    let request = match sessions.begin(
+        tid,
         starting_sequence,
         connected_started.elapsed().as_micros(),
-        dialog_token,
     ) {
         Ok(request) => request,
         Err(error) => {
@@ -4436,7 +4434,7 @@ async fn start_tx_block_ack_negotiation(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-begin \
                  tid={tid} error={error:?}"
             ));
-            return None;
+            return;
         }
     };
     let frame_length = match (StaActionFrame {
@@ -4449,12 +4447,12 @@ async fn start_tx_block_ack_negotiation(
     {
         Ok(length) => length,
         Err(error) => {
-            session.stop();
+            sessions.stop(tid);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-encode \
                  tid={tid} error={error:?}"
             ));
-            return None;
+            return;
         }
     };
     let descriptor_capacity = (frame_length + TX_METADATA_SIZE + TX_FCS_SIZE + 3) & !3;
@@ -4479,24 +4477,21 @@ async fn start_tx_block_ack_negotiation(
                  tid={tid} dialog_token={} window={} starting_sequence={}",
                 request.dialog_token, TX_AMPDU_FRAME_COUNT, request.starting_sequence,
             ));
-            Some(request.alarm)
         }
         Ok(completion) => {
-            session.stop();
+            sessions.stop(tid);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-request \
                  tid={tid} status={}",
                 completion.status,
             ));
-            None
         }
         Err(error) => {
-            session.stop();
+            sessions.stop(tid);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-request \
                  tid={tid} error={error:?}"
             ));
-            None
         }
     }
 }
@@ -4676,34 +4671,12 @@ async fn connected_radio_loop(
         Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
     > = None;
     let mut he_queue_snapshot_reported = false;
-    let mut tx_block_ack = TxBlockAckSession::new(TxBlockAckConfig {
-        tid: 0,
-        window: TX_AMPDU_FRAME_COUNT as u16,
-        timeout_tu: 0,
-        negotiation_timeout_us: 500_000,
-        amsdu: OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
-    })
-    .expect("fixed TX BlockAck configuration");
-    let mut tx_block_ack_tid7 = TxBlockAckSession::new(TxBlockAckConfig {
-        tid: 7,
-        window: TX_AMPDU_FRAME_COUNT as u16,
-        timeout_tu: 0,
-        negotiation_timeout_us: 500_000,
-        amsdu: false,
-    })
-    .expect("fixed TID7 TX BlockAck configuration");
-    let mut tx_block_ack_tid5 = TxBlockAckSession::new(TxBlockAckConfig {
-        tid: 5,
-        window: TX_AMPDU_FRAME_COUNT as u16,
-        timeout_tu: 0,
-        negotiation_timeout_us: 500_000,
-        amsdu: false,
-    })
-    .expect("fixed TID5 TX BlockAck configuration");
-    let mut tx_block_ack_dialog_tokens = TxBlockAckDialogTokenSequence::new();
-    let mut tx_block_ack_alarm = None;
-    let mut tx_block_ack_tid7_alarm = None;
-    let mut tx_block_ack_tid5_alarm = None;
+    let mut tx_block_ack = StaTxBlockAckSessions::new(
+        TX_AMPDU_FRAME_COUNT as u16,
+        500_000,
+        OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
+    )
+    .expect("fixed three-TID TX BlockAck configuration");
     let connected_started = Instant::now();
     let mut tx_ampdu_submissions = 0_u32;
     let mut tx_ampdu_partial = 0_u32;
@@ -4974,7 +4947,7 @@ async fn connected_radio_loop(
         // 0, 7 and 5 in this exact order. The complete
         // `_oracles/libnet80211.a[ieee80211_ht.o]` leaf obtains a shared
         // modulo-63 Dialog Token and builds an independent session per TID.
-        tx_block_ack_alarm = start_tx_block_ack_negotiation(
+        start_tx_block_ack_negotiation(
             mmio,
             tx_storage,
             station_address,
@@ -4982,31 +4955,28 @@ async fn connected_radio_loop(
             sequences,
             connected_started,
             &mut tx_block_ack,
-            tx_block_ack_dialog_tokens.take(),
             0,
         )
         .await;
-        tx_block_ack_tid7_alarm = start_tx_block_ack_negotiation(
+        start_tx_block_ack_negotiation(
             mmio,
             tx_storage,
             station_address,
             bssid,
             sequences,
             connected_started,
-            &mut tx_block_ack_tid7,
-            tx_block_ack_dialog_tokens.take(),
+            &mut tx_block_ack,
             7,
         )
         .await;
-        tx_block_ack_tid5_alarm = start_tx_block_ack_negotiation(
+        start_tx_block_ack_negotiation(
             mmio,
             tx_storage,
             station_address,
             bssid,
             sequences,
             connected_started,
-            &mut tx_block_ack_tid5,
-            tx_block_ack_dialog_tokens.take(),
+            &mut tx_block_ack,
             5,
         )
         .await;
@@ -5203,29 +5173,11 @@ async fn connected_radio_loop(
                     }
                     Some(BlockAckAction::AddbaResponse { .. }) => {
                         let response_token = action_body[2];
-                        let selected = if tx_block_ack.awaiting_dialog_token()
-                            == Some(response_token)
-                        {
-                            Some((&mut tx_block_ack, &mut tx_block_ack_alarm))
-                        } else if tx_block_ack_tid7.awaiting_dialog_token() == Some(response_token)
-                        {
-                            Some((&mut tx_block_ack_tid7, &mut tx_block_ack_tid7_alarm))
-                        } else if tx_block_ack_tid5.awaiting_dialog_token() == Some(response_token)
-                        {
-                            Some((&mut tx_block_ack_tid5, &mut tx_block_ack_tid5_alarm))
-                        } else {
-                            None
-                        };
-                        let Some((session, alarm)) = selected else {
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
-                                 dialog_token={response_token} error=unexpected-dialog-token"
-                            ));
-                            continue;
-                        };
-                        match session.on_response(action_body) {
-                            Ok(TxBlockAckResponse::Operational(agreement)) => {
-                                *alarm = None;
+                        match tx_block_ack.on_response(action_body) {
+                            Ok(StaTxBlockAckResponse {
+                                response: TxBlockAckResponse::Operational(agreement),
+                                ..
+                            }) => {
                                 if association_phy == StaAssociationPhy::He20 {
                                     // SOURCE[BLOB_LIBNET80211_HE_TID_BITMAP]:
                                     // complete HE AddBA/DELBA lifecycle updates
@@ -5245,8 +5197,10 @@ async fn connected_radio_loop(
                                     agreement.amsdu,
                                 ));
                             }
-                            Ok(TxBlockAckResponse::Rejected(status)) => {
-                                *alarm = None;
+                            Ok(StaTxBlockAckResponse {
+                                response: TxBlockAckResponse::Rejected(status),
+                                ..
+                            }) => {
                                 emergency_log(format_args!(
                                     "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
                                      dialog_token={response_token} status={status}"
@@ -5279,21 +5233,7 @@ async fn connected_radio_loop(
                         } else {
                             // The peer is the BA recipient, so this tears down
                             // the matching transmit agreement.
-                            match tid {
-                                0 => {
-                                    tx_block_ack.stop();
-                                    tx_block_ack_alarm = None;
-                                }
-                                7 => {
-                                    tx_block_ack_tid7.stop();
-                                    tx_block_ack_tid7_alarm = None;
-                                }
-                                5 => {
-                                    tx_block_ack_tid5.stop();
-                                    tx_block_ack_tid5_alarm = None;
-                                }
-                                _ => {}
-                            }
+                            tx_block_ack.stop(tid);
                             if association_phy == StaAssociationPhy::He20 {
                                 let tid =
                                     MacHeTid::new(tid).expect("DELBA parser admitted an IEEE TID");
@@ -5448,20 +5388,11 @@ async fn connected_radio_loop(
         }
 
         let now_us = connected_started.elapsed().as_micros();
-        for (tid, session, alarm_slot) in [
-            (0, &mut tx_block_ack, &mut tx_block_ack_alarm),
-            (7, &mut tx_block_ack_tid7, &mut tx_block_ack_tid7_alarm),
-            (5, &mut tx_block_ack_tid5, &mut tx_block_ack_tid5_alarm),
-        ] {
-            if alarm_slot.is_some_and(|alarm| now_us >= alarm.deadline_us) {
-                let alarm = alarm_slot.take().unwrap();
-                if session.on_alarm(alarm) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
-                         tid={tid} error=timeout"
-                    ));
-                }
-            }
+        while let Some(tid) = tx_block_ack.expire_next(now_us) {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
+                 tid={tid} error=timeout"
+            ));
         }
 
         if let Some((pending_index, request)) = pending_rx_addba
@@ -6204,7 +6135,7 @@ async fn connected_radio_loop(
         if !lan_probe_sent
             && OPEN_RADIO_LAN_PROBE_READY.load(Ordering::Acquire)
             && (!matches!(connected_data_rate, TxPhyRate::He(_))
-                || tx_block_ack.operational().is_some())
+                || tx_block_ack.operational(0).is_some())
         {
             lan_probe_sent = true;
             let local_ipv4 = OPEN_RADIO_LOCAL_IPV4.load(Ordering::Acquire).to_be_bytes();
@@ -6253,7 +6184,7 @@ async fn connected_radio_loop(
 
         if OPEN_RADIO_RAW_MAC_BENCH
             && tx_block_ack
-                .operational()
+                .operational(0)
                 .is_some_and(|agreement| !OPEN_RADIO_AMSDU_BENCH || agreement.amsdu)
         {
             // The synthetic data source owns only benchmark airtime, not the
@@ -6405,11 +6336,6 @@ async fn connected_radio_loop(
                                 &mut pending_rx_addba,
                                 &mut active_rx_addba,
                                 &mut tx_block_ack,
-                                &mut tx_block_ack_alarm,
-                                &mut tx_block_ack_tid7,
-                                &mut tx_block_ack_tid7_alarm,
-                                &mut tx_block_ack_tid5,
-                                &mut tx_block_ack_tid5_alarm,
                                 &mut duplicate_filter,
                                 &mut direct_udp_benchmark,
                                 &mut received,
@@ -6700,7 +6626,7 @@ async fn connected_radio_loop(
 
         match select(network_runner.receive_tx(), Timer::after_millis(1)).await {
             Either::First(owned) => {
-                if let Some(agreement) = tx_block_ack.operational() {
+                if let Some(agreement) = tx_block_ack.operational(0) {
                     let agreement_amsdu = agreement.amsdu;
                     let ingress_policy =
                         ReferencedAmpduIngressPolicy::for_rate(connected_ampdu_rate)
@@ -6858,11 +6784,6 @@ async fn connected_radio_loop(
                                             &mut pending_rx_addba,
                                             &mut active_rx_addba,
                                             &mut tx_block_ack,
-                                            &mut tx_block_ack_alarm,
-                                            &mut tx_block_ack_tid7,
-                                            &mut tx_block_ack_tid7_alarm,
-                                            &mut tx_block_ack_tid5,
-                                            &mut tx_block_ack_tid5_alarm,
                                             &mut duplicate_filter,
                                             &mut direct_udp_benchmark,
                                             &mut received,
@@ -7208,12 +7129,7 @@ fn service_benchmark_rx_during_tx(
     association_phy: StaAssociationPhy,
     pending_rx_addba: &mut [Option<PendingRxAddba>; 8],
     active_rx_addba: &mut [Option<ActiveRxAddba>; 8],
-    tx_block_ack: &mut TxBlockAckSession,
-    tx_block_ack_alarm: &mut Option<TxBlockAckAlarm>,
-    tx_block_ack_tid7: &mut TxBlockAckSession,
-    tx_block_ack_tid7_alarm: &mut Option<TxBlockAckAlarm>,
-    tx_block_ack_tid5: &mut TxBlockAckSession,
-    tx_block_ack_tid5_alarm: &mut Option<TxBlockAckAlarm>,
+    tx_block_ack: &mut StaTxBlockAckSessions,
     duplicate_filter: &mut StaRxDuplicateFilter,
     benchmark: &mut DirectUdpRxBenchmark,
     received: &mut u32,
@@ -7362,25 +7278,11 @@ fn service_benchmark_rx_during_tx(
                 }
                 Some(BlockAckAction::AddbaResponse { .. }) => {
                     let response_token = action_body[2];
-                    let selected = if tx_block_ack.awaiting_dialog_token() == Some(response_token) {
-                        Some((&mut *tx_block_ack, &mut *tx_block_ack_alarm))
-                    } else if tx_block_ack_tid7.awaiting_dialog_token() == Some(response_token) {
-                        Some((&mut *tx_block_ack_tid7, &mut *tx_block_ack_tid7_alarm))
-                    } else if tx_block_ack_tid5.awaiting_dialog_token() == Some(response_token) {
-                        Some((&mut *tx_block_ack_tid5, &mut *tx_block_ack_tid5_alarm))
-                    } else {
-                        None
-                    };
-                    let Some((session, alarm)) = selected else {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
-                             dialog_token={response_token} error=unexpected-dialog-token"
-                        ));
-                        continue;
-                    };
-                    match session.on_response(action_body) {
-                        Ok(TxBlockAckResponse::Operational(agreement)) => {
-                            *alarm = None;
+                    match tx_block_ack.on_response(action_body) {
+                        Ok(StaTxBlockAckResponse {
+                            response: TxBlockAckResponse::Operational(agreement),
+                            ..
+                        }) => {
                             if association_phy == StaAssociationPhy::He20 {
                                 let tid = MacHeTid::new(agreement.tid)
                                     .expect("BlockAck parser admitted an IEEE TID");
@@ -7396,8 +7298,10 @@ fn service_benchmark_rx_during_tx(
                                 agreement.amsdu,
                             ));
                         }
-                        Ok(TxBlockAckResponse::Rejected(status)) => {
-                            *alarm = None;
+                        Ok(StaTxBlockAckResponse {
+                            response: TxBlockAckResponse::Rejected(status),
+                            ..
+                        }) => {
                             emergency_log(format_args!(
                                 "OPEN_RADIO_PHY_HIL result=FAIL stage=tx-addba-response \
                                  dialog_token={response_token} status={status}"
@@ -7424,21 +7328,7 @@ fn service_benchmark_rx_during_tx(
                             active_rx_addba[hardware_index] = None;
                         }
                     } else {
-                        match tid {
-                            0 => {
-                                tx_block_ack.stop();
-                                *tx_block_ack_alarm = None;
-                            }
-                            7 => {
-                                tx_block_ack_tid7.stop();
-                                *tx_block_ack_tid7_alarm = None;
-                            }
-                            5 => {
-                                tx_block_ack_tid5.stop();
-                                *tx_block_ack_tid5_alarm = None;
-                            }
-                            _ => {}
-                        }
+                        tx_block_ack.stop(tid);
                         if association_phy == StaAssociationPhy::He20 {
                             let tid =
                                 MacHeTid::new(tid).expect("DELBA parser admitted an IEEE TID");

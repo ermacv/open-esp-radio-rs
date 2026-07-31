@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.012 Mbit/s.
-- Concurrent open-radio TX floor: 67.935 Mbit/s.
-- Conservative sum: 77.947 Mbit/s.
+- Device direct-RX median: 10.011 Mbit/s.
+- Concurrent open-radio TX floor: 63.660 Mbit/s.
+- Conservative sum: 73.671 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,13 +49,13 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `78d215e8f792d01989ed4a9980dad9cf3742bb048da6e3f15df75b955ef4d581`.
+  `32d55733bc6a467c22f94135d49884a5edd71a54cf5a6556c81ee7e884ee4831`.
 - ESP application image SHA-256:
-  `a4f480dda8204f9419103ac156173f906656804449c6718aea562c1ea46fd9c7`.
+  `0e894bf1030d399fd953ee7cb74ba6d65504c7515091e81b6ae8a22d63c49434`.
 - Packed stage-two runtime SHA-256:
-  `bec58540af37858c34d78d8d1ea652986df172f2b24d629b88fe7d85973bd37f`.
+  `db11b111f3ad99ffbc05080d06420436c4aa21d6b68aa703a9751721ce5900b1`.
 - Qualification report SHA-256:
-  `396d9ffc190052d03975810d4187f68d8564780cc61627b62044f94fd0d5ff19`.
+  `01aba5c945150a7ef06d60cc1be9844d61eb826a5877f0b8eabdb146bdbc41a2`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -82,8 +82,11 @@ the authenticated M4 frame. `Wpa2StaResponseDeadline` now owns both finite
 response windows. The HIL's spontaneous second M2 was deleted: complete vendor
 `wpa.c.obj` sends M2 only from `wpa_supplicant_process_1_of_4`, while a repeated
 M1 re-enters through `wpa_sm_rx_eapol` and the driver state emits the response.
-Only the final connected dispatcher remains to extract before the old
-application HIL can be deleted.
+The connected path now also uses one `StaTxBlockAckSessions` owner for the
+vendor TID order 0/7/5, shared Dialog Token sequence, independent alarms and
+ADDBA/DELBA routing. RX agreement ownership and the remaining connected
+event/route dispatcher still need extraction before the application HIL can
+become only a platform executor.
 
 The same image now calls the PHY crate's `run_phy_register` through the
 driver-owned `TargetPhyRegisterPort`. The complete nested RF/baseband/channel
@@ -136,8 +139,8 @@ and returns one `Wpa2StaKeyInstallRequest` containing zeroizing pairwise/group
 keys plus the Message-3 receive sequence. The S31 executor borrows those keys
 only for the finite MAC slot writes, returns the private ticket through
 `complete_key_install`, and receives an authenticated Message 4. The exact
-image then booted, associated, completed WPA2/DHCP and passed the strict
-10.012-Mbit/s RX plus 67.935-Mbit/s concurrent-TX run recorded above.
+image then booted, associated, completed WPA2/DHCP and passed the strict run
+recorded above.
 
 The final timing transfer replaced both HIL millisecond loop bounds with
 `Wpa2StaResponseDeadline`. The Message-3 window retains the same total six
@@ -145,6 +148,13 @@ seconds as the former two three-second receive attempts, but no longer emits a
 timer-originated M2 that the vendor supplicant never produces. A reset-separated
 cold trace showed one M1, one successful M2, immediate M3, key installation,
 M4, protected ARP and DHCP before the strict result above.
+
+The connected BlockAck transfer replaced three HIL-owned sessions, three
+alarm slots and manual response-token selection with one fixed driver owner.
+The reset-separated trace proved ADDBA requests with Dialog Tokens 1, 2 and 3
+for TIDs 0, 7 and 5, followed by three operational 32-entry agreements. DHCP,
+the external ARP probe and the strict 10.011-Mbit/s RX plus 63.660-Mbit/s
+concurrent-TX run then passed with no DMA-starvation failure.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

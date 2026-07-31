@@ -254,7 +254,7 @@ The records contained real SSID, BSSID, RSSI, channel, RSN, HT, and HE data.
 At each channel transition the HIL confirms that `RX_ENABLE` is clear before
 rebuilding the list, retunes through `PhyChipChannelTransition`, and only then
 republishes DMA ownership. The scanner and management-frame parser are live
-`open-esp-radio-mac-esp32s31` modules; the copy under `migration/` is no
+`open-esp-radio-esp32s31-wifi-mac` modules; the copy under `migration/` is no
 longer the application path.
 
 The generated radio clock/power PAC was then qualified with
@@ -844,7 +844,7 @@ The remaining reusable code that must move is, in priority order:
 
 1. `PreludePort` PHY composition. Its pure `complete_*` dispatchers currently
    compose the already-promoted finite I2C/PBus leaves in the application.
-   They belong in `open-esp-radio-phy-esp32s31::target_executor`, with an
+   They belong in `open-esp-radio-esp32s31-phy::target_executor`, with an
    optional observer supplied by HIL for ROM/MMIO comparisons. Raw snapshots
    and the revision-pinned ROM equivalence call must remain in this repository.
 2. The connected TX service. `TxStorage`, single-MPDU retry, A-MPDU BlockAck

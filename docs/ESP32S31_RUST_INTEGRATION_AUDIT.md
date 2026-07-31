@@ -18,7 +18,7 @@ must not be copied into the driver.
 ## Already promoted in this audit
 
 The complete ordinary RX ownership transaction now lives in
-`open-esp-radio-mac-esp32s31::rx_pool`:
+`open-esp-radio-esp32s31-wifi-mac::rx_pool`:
 
 1. consume one non-`Copy` `RxCompletedDescriptor`;
 2. copy its received length into a 32-by-1,700-byte kind-7 staging pool;
@@ -31,7 +31,7 @@ concrete static DMA array and restores that array's sentinels. The ordering is
 no longer duplicated there.
 
 The fixed FIFO of staged ownership tokens is also
-`open-esp-radio-mac-esp32s31::rx_pool::RxFrameQueue`; the application no longer
+`open-esp-radio-esp32s31-wifi-mac::rx_pool::RxFrameQueue`; the application no longer
 implements a second queue. Its bounded `IrqSink` publishes the RX Embassy
 signal before the TX signal from the same interrupt snapshot. `IrqState`
 remains available for a task-side dispatcher, but is intentionally not
@@ -134,7 +134,7 @@ already lived in `HeDcmRate` and `StaTxRatePolicy` before the run. Details are
 in `docs/hil/2026-07-31-he20-dcm-ldpc-connected.md`.
 
 The executor-neutral BlockAck decision is now also driver-owned as
-`open-esp-radio-mac-esp32s31::tx_runtime::AmpduRetryState`. Both the internal
+`open-esp-radio-esp32s31-wifi-mac::tx_runtime::AmpduRetryState`. Both the internal
 DMA A-MPDU path and the referenced `embassy-net` path use the same bounded
 owner for 12-bit sequence-number wrap, cumulative acknowledged/attempted MPDU
 accounting, partial-BlockAck retry masks, retained-sequence compaction, the
@@ -197,7 +197,7 @@ small: an Embassy microsecond timer, operation limits and optional diagnostic
 hooks.
 
 The first target-executor slice now lives in
-`open-esp-radio-phy-esp32s31::target_executor`: all ten shared PHY-I2C
+`open-esp-radio-esp32s31-phy::target_executor`: all ten shared PHY-I2C
 completion loops and the TX-calibration PBUS completion loop use the injected
 `PhyAsyncDelay` trait and one driver-owned 10,000-sample bound. The application
 implements only a zero-sized Embassy timer adapter for these operations. A
@@ -253,7 +253,7 @@ nameable compile-time RPITIT future size remains unavailable on stable Rust.
 
 The former 742-line `esp32s31_rust::open_radio_platform` implementation of the
 S31 power/clock, PHY-I2C, temperature, baseband and MAC cold-start traits now
-lives in the optional `open-esp-radio-esp-hal-esp32s31` crate. This keeps the
+lives in the optional `open-esp-radio-esp32s31-wifi-esp-hal` crate. This keeps the
 core HAL independent of one framework while avoiding a new copy in every
 Embassy application. Interrupt handler functions and logging remain
 application-owned. A post-transfer `psram-code-psram-data` run delivered
@@ -303,7 +303,7 @@ priority:
 - long A-MPDU preparation must yield after a finite MPDU unit when RX work is
   already pending.
 
-The fixed token queue already lives in `open-esp-radio-mac-esp32s31`.
+The fixed token queue already lives in `open-esp-radio-esp32s31-wifi-mac`.
 `EmbassyMacIrqRuntime` now joins the executor-neutral `IrqState` to two
 coalescing Embassy wakes, owns the RX/TX interrupt classification and counts
 RX publications. The application no longer implements `IrqSink` or maps raw

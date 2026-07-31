@@ -1,24 +1,24 @@
 [workspace]
 members = [
-    "crates/open-esp-radio",
-    "crates/open-esp-radio-embassy-net",
-    "crates/open-esp-radio-esp-hal-esp32s31",
-    "crates/open-esp-radio-hal-esp32s31",
-    "crates/open-esp-radio-ieee80211",
-    "crates/open-esp-radio-mac-esp32s31",
-    "crates/open-esp-radio-pac-esp32s31",
-    "crates/open-esp-radio-phy-esp32s31",
-    "crates/open-esp-radio-svd-esp32s31",
-    "crates/open-esp-radio-wpa2",
-    "tools/pac-gen",
+    "crates/radio",
+    "crates/wifi/embassy-net",
+    "crates/wifi/ieee80211",
+    "crates/wifi/wpa2",
+    "crates/esp32s31/hal",
+    "crates/esp32s31/wifi/mac",
+    "crates/esp32s31/pac",
+    "crates/esp32s31/phy",
+    "crates/esp32s31/svd",
+    "crates/esp32s31/wifi/esp-hal",
     "tools/hil-runner",
+    "tools/pac-gen",
 ]
 exclude = ["hil/esp32s31", "hil/vendor-oracle/esp32s31"]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ermacv/open-esp-radio-rs"
 

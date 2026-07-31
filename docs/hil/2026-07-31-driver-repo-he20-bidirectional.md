@@ -93,7 +93,7 @@ before the application HIL can become only a platform executor.
 The same image now calls the PHY crate's `run_phy_register` through the
 driver-owned `TargetPhyRegisterPort`. The complete nested RF/baseband/channel
 completion graph, finite polling bounds and MAC stop/retune/restart contract
-therefore have one owner in `open-esp-radio-phy-esp32s31`; the 1,206-line HIL
+therefore have one owner in `open-esp-radio-esp32s31-phy`; the 1,206-line HIL
 copy was deleted. Operation ordinals, ROM TX-gain comparison and raw MMIO
 snapshots are isolated behind `PhyTargetObserver` and cannot change a PHY
 completion. The HIL now supplies only a zero-sized Embassy delay adapter and a

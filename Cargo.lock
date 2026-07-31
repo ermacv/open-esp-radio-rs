@@ -1021,11 +1021,11 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-embassy-net",
- "open-esp-radio-hal-esp32s31",
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
- "open-esp-radio-mac-esp32s31",
- "open-esp-radio-pac-esp32s31",
- "open-esp-radio-phy-esp32s31",
  "open-esp-radio-wpa2",
 ]
 
@@ -1038,7 +1038,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp-hal-esp32s31"
+name = "open-esp-radio-esp32s31-hal"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-pac",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-svd",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-phy"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-svd"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-esp-hal"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
@@ -1046,10 +1075,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-hal-esp32s31"
+name = "open-esp-radio-esp32s31-wifi-mac"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-pac-esp32s31",
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-ieee80211",
 ]
 
 [[package]]
@@ -1067,42 +1097,12 @@ name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
 [[package]]
-name = "open-esp-radio-mac-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "open-esp-radio-pac-esp32s31",
-]
-
-[[package]]
-name = "open-esp-radio-pac-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-svd-esp32s31",
-]
-
-[[package]]
 name = "open-esp-radio-pac-gen"
 version = "0.1.0"
 dependencies = [
  "roxmltree",
  "svd-parser",
  "svd2rust",
-]
-
-[[package]]
-name = "open-esp-radio-phy-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-hal-esp32s31",
-]
-
-[[package]]
-name = "open-esp-radio-svd-esp32s31"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "vcell",
 ]
 
 [[package]]

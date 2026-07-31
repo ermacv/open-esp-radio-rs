@@ -109,9 +109,9 @@ llvm-objdump -dr --symbolize-operands phy_rfpll.o
 Host verification:
 
 ```console
-cargo test -p open-esp-radio-phy-esp32s31 \
-  -p open-esp-radio-hal-esp32s31 \
-  -p open-esp-radio-pac-esp32s31
+cargo test -p open-esp-radio-esp32s31-phy \
+  -p open-esp-radio-esp32s31-hal \
+  -p open-esp-radio-esp32s31-pac
 ```
 
 At this baseline the command passed 207 PHY, 18 HAL and 64 PAC unit tests.

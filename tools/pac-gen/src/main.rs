@@ -9,11 +9,11 @@ use std::{
 };
 
 use roxmltree::{Document, Node};
-use svd2rust::{
-    config::{Config, RustEdition},
-    Target,
-};
 use svd_parser::svd::{Access, MaybeArray, RegisterCluster, RegisterProperties};
+use svd2rust::{
+    Target,
+    config::{Config, RustEdition},
+};
 
 const USAGE: &str = "usage: cargo pac-gen [--check]";
 const ALLOWED_CONFIDENCE_VALUES: &[&str] = &[
@@ -75,7 +75,7 @@ fn repository_root() -> PathBuf {
 
 fn format_generated(source: &str) -> Result<String, Box<dyn Error>> {
     let mut child = Command::new("rustfmt")
-        .args(["--edition", "2021"])
+        .args(["--edition", "2024", "--style-edition", "2024"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -940,13 +940,13 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let root = repository_root();
     let svd_path = root.join("svd/esp32s31-radio.svd");
-    let output_path = root.join("crates/open-esp-radio-svd-esp32s31/src/lib.rs");
+    let output_path = root.join("crates/esp32s31/svd/src/lib.rs");
     let input = fs::read_to_string(&svd_path)?;
     let windows = validate_structure(&input)?;
     validate_mmio_windows(&input, &windows)?;
 
     let mut config = Config::default();
-    config.edition = RustEdition::E2021;
+    config.edition = RustEdition::E2024;
     config.target = Target::None;
     config.strict = true;
     let generated = format_generated(&svd2rust::generate(&input, &config)?.lib_rs)?;
@@ -986,10 +986,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicitly_alternate, mmio_window, parse_mmio_windows, validate_alias_group,
-        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
-        validate_provenance, validate_register_aliases, validate_register_layout, ExpandedRegister,
-        MmioWindow,
+        ExpandedRegister, MmioWindow, explicitly_alternate, mmio_window, parse_mmio_windows,
+        validate_alias_group, validate_confidence, validate_dimension_order,
+        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
+        validate_register_layout,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;

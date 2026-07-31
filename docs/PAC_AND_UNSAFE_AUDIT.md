@@ -6,13 +6,13 @@ Audit date: 2026-07-27.
 
 `svd/esp32s31-radio.svd` is the editable register source.
 `tools/pac-gen` pins the `svd2rust 0.37.1` Rust library and generates the
-`open-esp-radio-svd-esp32s31` crate with the architecture-neutral target.
+`open-esp-radio-esp32s31-svd` crate with the architecture-neutral target.
 Run it through the portable Cargo alias `cargo pac-gen`; `cargo pac-gen
 --check` verifies reproducibility. It does not execute a shell or require a
 separately installed `svd2rust` binary. The Rust runner pipes the generated
 source directly through the toolchain's `rustfmt` component so normal
 workspace formatting checks remain valid. The compatibility PAC re-exports
-this crate as `open_esp_radio_pac_esp32s31::svd`.
+this crate as `open_esp_radio_esp32s31_pac::svd`.
 
 Before invoking `svd2rust`, the Rust runner parses every peripheral, cluster
 and register span and requires it to fit wholly inside one evidenced
@@ -181,11 +181,12 @@ fence execute as one borrowed operation. Consequently the top-level MAC
 cold-init routine no longer imports `Mmio`, `Register32`, numeric aliases or
 field masks; it composes only safe semantic capabilities.
 
-The complete `open-esp-radio-phy-esp32s31` crate is now free of `unsafe`, raw
+The complete `open-esp-radio-esp32s31-phy` crate is now free of `unsafe`, raw
 volatile access and pointer casts. Its target bindings express sequencing
 through non-cloneable actions and require the unique `RadioRegisters` borrow;
 hardware sequencing alone is not treated as a Rust memory-safety invariant.
-The source-only audit rejects any return of `unsafe` to this upper PHY crate.
+The crate-level `#![forbid(unsafe_code)]` makes any return of `unsafe` a
+compiler error.
 
 The power, PHY-I²C and PBus vertical slices are complete. PHY-I²C completion
 observations now require `&mut RadioRegisters`; this exclusive borrow is
@@ -199,7 +200,8 @@ baseband leaf moved directly to that final form without extending the
 `Register32` compatibility facade. Its two legal field images and source
 provenance live in the SVD; the generated writer is reachable only through the
 unique `RadioRegisters` owner. The former derived raw address and upper-layer
-`unsafe fn` are gone, and the source-only audit rejects both regressions.
+`unsafe fn` are gone; the generated PAC owns the register identity and the PHY
+crate's compiler lint forbids unsafe wrappers.
 
 SVD v2.6 moves the complete ADC-rate suffix, all seventeen ordered
 front-end-initialization writes, and the three-write pinned front-end update
@@ -244,8 +246,8 @@ All three estimator configuration RMW operations, both enable phases,
 readiness/activity observations and signed accumulator reads execute on
 generated register objects. The PAC source preserves the two distinct ROM
 orders for RXIQ mismatch and signal-power sampling; HAL only constructs
-semantic result structures. The audit rejects compatibility register types in
-both estimator and cold-prelude modules.
+semantic result structures. Neither estimator nor cold-prelude module imports
+the compatibility register types.
 
 The shared PBUS/CFR/gain table-memory aperture is native generated PAC too.
 Its public HAL API is unchanged, but boundary packing, ten-bit PBUS command
@@ -264,8 +266,8 @@ The rest of `phy_baseband` is native generated PAC as well: fourteen TX-power
 tracking edges, TX-rate/gain compensation, watchdog, noise-floor, the complete
 six-edge PA-on leaf and all eighteen local `phy_bb_reg_init` edges. The latter
 remains split only around its existing NRX and official-platform calls. HAL is
-now a sequencing facade with no generic register, field or mask access, and
-the source audit enforces that boundary.
+now a sequencing facade with no generic register, field or mask imports; the
+PAC owns the only register capability used by these operations.
 
 AGC enable/disable, RX compensation, the DC-memory clear pulse and both
 caller-timed PBus work-mode pulse segments have begun the same migration.

@@ -153,8 +153,8 @@ ordering.
 `configure_phy_registers`, `PhyBbMmioBinding`, and
 `PhyRxGainInitMmioBinding` all pass their existing unique register borrow
 into these safe methods. Raw access to `0x705c`, `0x7068`, `0x7094`,
-`0x7128`, `0x713c`, and the parameter word `0x08bc` is now rejected by the
-source-only audit.
+`0x7128`, `0x713c`, and the parameter word `0x08bc` is absent from current
+upper-layer sources.
 
 The multifunction `0x702c` word is now fully behind that same PAC identity.
 Complete `phy_set_rx_comp_new` proves the low-byte replacement there and the
@@ -171,9 +171,9 @@ high-byte/set/clear sequence, and all three antenna writes. Delay ownership
 remains in the caller state machine. TX-DC, TX-DC/PWDET, PWDET, TX calibration
 environment, RXIQ initialization, RX-gain DC, TXIQ, and RX-saturation MMIO
 bindings now require the same unique `RadioRegisters` borrow. Their former
-raw wrappers and duplicate mask helpers are removed. The source-only audit
-now rejects raw `0x0884`, `0x088c`, `0x702c`, `0x7030`, `0x70a0`, `0x711c`,
-and `0x7120` in addition to the earlier AGC addresses.
+raw wrappers and duplicate mask helpers are removed. Current upper-layer
+sources contain none of raw `0x0884`, `0x088c`, `0x702c`, `0x7030`, `0x70a0`,
+`0x711c`, `0x7120` or the earlier AGC addresses.
 
 The channel cleanup tail is now fully capability-bound as well. Complete
 pinned `libphy.a[phy_reg.o]::phy_dc_mem_clr`, size `0x1c`, proves a
@@ -188,8 +188,8 @@ The `phy_agc` HAL and platform `PhyI2cMasterControl` methods preserve the two
 DC-memory reads and the single BBPLL RMW. Cold initialization, register
 initialization, and channel changes borrow the platform-owned official
 `I2C_ANA_MST` token for the latter operation. The raw C ABIs, address
-constants, and duplicate mask helpers are deleted; the source-only audit
-rejects raw `0x703c` and `0xf818`.
+constants, and duplicate mask helpers are deleted; raw `0x703c` and `0xf818`
+are absent from current upper-layer sources.
 
 ## Frequency and channel control
 
@@ -246,7 +246,7 @@ or compatibility-register access: cold init, baseband init and channel
 actions coordinate the platform capability with the same
 `&mut RadioRegisters`; the D-code MMIO
 binding is no longer `unsafe` and cannot manufacture a second peripheral
-owner. The source-only audit rejects all raw accesses to `0x001c..0x003c`,
+owner. The current upper-layer sources no longer contain all raw accesses to `0x001c..0x003c`,
 `0x0874`, `0x4400`, `0x7848`, `0x7ce0`, `0x7ce4`, `0x9c18`, and `0xfc04`,
 as well as the removed wrapper names.
 
@@ -466,8 +466,8 @@ because the bodies prove masks and order, not their electrical roles.
 Temperature sampling is now a semantic, address-free PHY action. Its
 non-cloneable binding requires `&mut RadioRegisters`, and the HAL extracts
 the PAC `CODE` field from exactly one read. The former raw addresses, mask,
-volatile wrappers, and duplicated power-field test are removed. The
-source-only audit rejects their return.
+volatile wrappers, and duplicated power-field test are removed from current
+sources.
 
 ## RX-DCO control PAC
 
@@ -498,8 +498,8 @@ initializer bindings now pass the caller's unique `&mut RadioRegisters`
 capability to that one HAL owner. Their repeated raw volatile helpers were
 deleted. The adjacent duplicated raw `phy_pbus_rd` address/shift table was
 also removed: all three live calibration consumers now use the existing safe
-PAC-backed PBus result reader. The source-only audit rejects the old helper
-names and any new raw `0x2010_0434` literal in the live PHY crate.
+PAC-backed PBus result reader. The old helper names and raw `0x2010_0434`
+literal are absent from the live PHY crate.
 
 ## Cold-PHY prelude and deadline PAC
 
@@ -541,9 +541,8 @@ The safe HAL performs only one finite edge per call. Delay order, reset
 retries, and the inclusive 9,999-cycle deadline remain explicit state-machine
 state. Reset sampling crosses the boundary as `busy: bool`; neither a physical
 address, a mask, nor a raw register word appears in the PHY action/completion
-protocol. The old raw wrappers and constants are deleted, and the source-only
-audit rejects their names plus raw `0x2010_d800`, `0x2010_f028`,
-`0x2010_f800`, and `0x2010_f804` literals in the live PHY crate. At this
+protocol. The old raw wrappers, constants and raw `0x2010_d800`, `0x2010_f028`,
+`0x2010_f800`, and `0x2010_f804` literals are absent from the live PHY crate. At this
 revision the shared `0x2010_0890` word still had separately evidenced RXIQ
 status consumers on the remaining raw frontier; SVD v1.4 below closes that
 frontier.
@@ -581,9 +580,8 @@ correction fields are represented as disjoint low/high single-bit fields.
 The complete ROM initialization leaf still writes each pair in one RMW,
 whereas the RXIQ parent deliberately uses separate RMW calls. All clock,
 root-status and correction target bindings now require the same unique
-`&mut RadioRegisters` capability. The raw wrappers are removed, and the
-source-only audit now rejects both their names and raw `0x2010_0890` from the
-live PHY crate.
+`&mut RadioRegisters` capability. The raw wrappers and raw `0x2010_0890`
+literal are absent from the live PHY crate.
 
 ## RX-gain DC calibration control
 
@@ -606,9 +604,8 @@ on the prefix path, matching ROM order.
 This leaf is consumed directly through the generated `svd2rust` register API;
 it is deliberately absent from the handwritten `Register32` compatibility
 facade. The PHY wrapper is now safe and requires `&mut RadioRegisters`. The
-former `PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4` expression is deleted, and the
-source-only audit rejects that derived address, the raw literal, and an unsafe
-version of the wrapper.
+former `PHY_TONE_SELECTOR_CONTROL_ADDRESS - 4` expression, raw literal and
+unsafe wrapper are deleted.
 
 ## ADC-rate and front-end register cluster
 
@@ -636,7 +633,7 @@ two separate sets at `0x2010_0c08`, then one combined set of bits 1:0 at
 `0x2010_0448`. It does not acquire the similarly named ROM function's extra
 DAC-scale tail. The generated PAC now owns unique words at `0x2010_0444`,
 `0x2010_0448`, `0x2010_086c`, `0x2010_0894`, `0x2010_0c08`, and
-`0x2010_0c20`; the source-only audit rejects those literals in the PHY crate.
+`0x2010_0c20`; those literals are absent from the PHY crate.
 Shared `0x2010_040c`, `0x2010_0438`, and `0x2010_0c0c` identities remain
 single generated register objects. Their later tone/IQ consumers are now
 also ownership-threaded through those same objects.
@@ -654,9 +651,9 @@ poll, two independent comparator reads, and the two cleanup RMW edges.
 Higher-level actions no longer expose a physical address, mask, expected
 register image, or raw comparator words: ready and comparator observations
 cross the ownership boundary as booleans. The ready binding now also borrows
-`&mut RadioRegisters`, removing the last unowned access to this word. The
-source-only audit rejects the raw address, former constants and unsafe wrapper
-signatures.
+`&mut RadioRegisters`, removing the last unowned access to this word. The raw
+address, former constants and unsafe wrapper signatures are absent from the
+PHY crate.
 
 ## IQ correction ownership
 
@@ -671,7 +668,7 @@ its single-bit set, and signed gain/phase values are truncated to the
 instruction-proven six- or seven-bit fields inside the PAC. TXIQ and RXIQ
 bindings now carry the unique `&mut RadioRegisters` borrow. The raw
 `0x2010_0438`/`0x2010_0c0c` constants and upper-layer coefficient transforms
-are deleted and rejected by the source-only audit.
+are deleted.
 
 The common register-initialization enable leaf and complete RXIQ root
 status/prefix/suffix sequence now use these same generated objects directly.
@@ -787,11 +784,11 @@ saved image is sampled and restored through the same unique
 the PAC with that invariant documented.
 
 All former address constants and raw volatile helpers are removed from
-`open-esp-radio-phy-esp32s31`. Tone actions now borrow
+`open-esp-radio-esp32s31-phy`. Tone actions now borrow
 `&mut RadioRegisters`, and the final removal of obsolete `unsafe` markings
-from every PHY target binding makes the entire upper PHY crate safe. The
-source-only audit rejects all seven physical tone literals, former wrapper
-signatures, and any future `unsafe` or raw volatile access in the PHY crate.
+from every PHY target binding makes the entire upper PHY crate safe. All seven
+physical tone literals and former wrapper signatures are absent; the crate's
+`#![forbid(unsafe_code)]` attribute prevents unsafe code from returning.
 
 ## Native power-detector PAC operations
 
@@ -807,8 +804,8 @@ writes, the clear/set SAR trigger edges, and all separately ordered field
 restores. Pure PAC tests retain the instruction-derived enable and TX-DC image
 checks that previously lived in a fake compatibility-register model.
 Platform-only LP-AON mode selection remains in the official PAC adapter and
-is sequenced by the thin HAL wrapper. The source audit rejects any return of
-`Register32`, `Field32` or compatibility read/write methods to this module.
+is sequenced by the thin HAL wrapper. This module no longer imports
+`Register32`, `Field32` or compatibility read/write methods.
 
 `PHY_RX_DCO_ORACLE.CONTROL` has independently moved to the same native API.
 The PAC samples the saved field, performs the complete source's second fresh

@@ -11,8 +11,8 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -512,7 +512,7 @@ impl SerialCapture {
             {
                 Ok(serial) => serial,
                 Err(error) => {
-                    return format!("serial capture failed for {}: {error}\n", port.display())
+                    return format!("serial capture failed for {}: {error}\n", port.display());
                 }
             };
             let mut buffer = [0_u8; 2_048];

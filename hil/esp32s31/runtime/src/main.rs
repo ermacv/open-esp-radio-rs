@@ -264,7 +264,7 @@ extern "C" fn runtime_main() -> ! {
         let trng_source = TrngSource::new(peripherals.RNG);
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
-        let radio = open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral::new(
+        let radio = open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
             peripherals.WIFI,
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
@@ -303,7 +303,7 @@ async fn boot_smoke() {
 #[cfg(feature = "open-radio-hil")]
 #[embassy_executor::task]
 async fn open_radio_hil_task(
-    radio: open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral,
+    radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
     _trng_source: esp_hal::rng::TrngSource<'static>,
 ) {

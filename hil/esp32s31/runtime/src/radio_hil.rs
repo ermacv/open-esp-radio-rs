@@ -21,21 +21,29 @@ use open_esp_radio::esp32s31::{
     pac::{MacHeTbTidLimit, MacHeTid, MacHeTriggerTxQueueSnapshot},
     phy::PhyTxTargetPowerProfile,
 };
-use open_esp_radio::ieee80211::wmm::WmmParameterSet;
+use open_esp_radio::wifi::ieee80211::wmm::WmmParameterSet;
 use open_esp_radio::{
-    embassy_net::{
-        PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
-        PinnedResources as OpenRadioNetworkResources, PinnedTxFrame as OpenRadioNetworkTxFrame,
-        PinnedTxPool as OpenRadioNetworkTxPool,
-    },
     esp32s31::{
-        cooperative_tx::CooperativeTxHardware,
-        embassy_irq::EmbassyMacIrqRuntime,
-        embassy_tx::{
+        hal::{ColdRadioRegisters, Radio, RadioRegisters},
+        pac::{
+            MacHeBeamformingDiagnostics, MacHeTxVectorSnapshot, MacInterruptRegisters,
+            MacInterruptSetup, MacPowerInterruptRegisters,
+            mac::{self as mac_pac, init as mac_registers},
+        },
+        phy::{
+            PhyRegisterRunError, PhyRegisterTransition, PhyRfBoundary, PhyTargetObserver,
+            TargetPhyRegisterPort,
+            phy_channel::{PhyWifiTxGainImage, PhyWifiTxGainRequest},
+            phy_cold::PhyColdState,
+            run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
+            target_executor::{PhyAsyncDelay, PhyTargetPortError},
+        },
+        wifi::cooperative_tx::CooperativeTxHardware,
+        wifi::embassy_irq::EmbassyMacIrqRuntime,
+        wifi::embassy_tx::{
             ReferencedAmpduIngressPolicy, ReferencedHtAmpduBatch, ReferencedHtAmpduError,
         },
-        hal::{ColdRadioRegisters, Radio, RadioRegisters},
-        mac::{
+        wifi::mac::{
             crypto::{
                 StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp,
                 install_sta_pairwise_ccmp,
@@ -82,29 +90,21 @@ use open_esp_radio::{
             },
             tx_ampdu::{
                 BlockAckAction, HtAmpduLengthAccumulator, HtAmpduTxCompletion, HtAmpduTxError,
-                HtAmpduTxStorage, StaTxBlockAckResponse, StaTxBlockAckSessions,
-                TxBlockAckResponse, parse_block_ack_action,
+                HtAmpduTxStorage, StaTxBlockAckResponse, StaTxBlockAckSessions, TxBlockAckResponse,
+                parse_block_ack_action,
             },
             tx_runtime::{
                 AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState,
                 StaTxRuntimePolicy, UnicastRetryDecision, UnicastRetryError, UnicastRetryState,
             },
         },
-        pac::{
-            MacHeBeamformingDiagnostics, MacHeTxVectorSnapshot, MacInterruptRegisters,
-            MacInterruptSetup, MacPowerInterruptRegisters,
-            mac::{self as mac_pac, init as mac_registers},
-        },
-        phy::{
-            PhyRegisterRunError, PhyRegisterTransition, PhyRfBoundary, PhyTargetObserver,
-            TargetPhyRegisterPort,
-            phy_channel::{PhyWifiTxGainImage, PhyWifiTxGainRequest},
-            phy_cold::PhyColdState,
-            run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
-            target_executor::{PhyAsyncDelay, PhyTargetPortError},
-        },
     },
-    ieee80211::{
+    wifi::embassy_net::{
+        PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
+        PinnedResources as OpenRadioNetworkResources, PinnedTxFrame as OpenRadioNetworkTxFrame,
+        PinnedTxPool as OpenRadioNetworkTxPool,
+    },
+    wifi::ieee80211::{
         data::{
             DataDecapError, DataHeControl, DataInterfaceRole, amsdu_subframes,
             decapsulate_amsdu_subframe, decapsulate_data,
@@ -117,13 +117,12 @@ use open_esp_radio::{
             AssociationRequest, AssociationRequestError, HeUlMuPowerCapability,
             HeUlMuPowerCapabilityError, OpenAuthenticationRequest,
             STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
-            STA_RESPONSE_TIMEOUT_MS, StaActionFrame, StaAssociationPhy,
-            StaAssociationEvent, StaAssociationFailure, StaAssociationPreference,
-            StaAssociationRuntime, StaAuthenticationEvent, StaAuthenticationFailure,
-            StaAuthenticationRuntime, StaDataFrame, StaPowerCapability, StaPowerCapabilityError,
-            StaProtectedAmsduFrame, StaProtectedDataFrame, StaRxDuplicateFilter,
-            StaSequenceCounter, StaTxSequenceCounters, StationFrameError,
-            select_sta_association, select_wpa2_psk_rsn,
+            STA_RESPONSE_TIMEOUT_MS, StaActionFrame, StaAssociationEvent, StaAssociationFailure,
+            StaAssociationPhy, StaAssociationPreference, StaAssociationRuntime,
+            StaAuthenticationEvent, StaAuthenticationFailure, StaAuthenticationRuntime,
+            StaDataFrame, StaPowerCapability, StaPowerCapabilityError, StaProtectedAmsduFrame,
+            StaProtectedDataFrame, StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters,
+            StationFrameError, select_sta_association, select_wpa2_psk_rsn,
             sta_protected_amsdu_frame_length,
         },
         trigger::{
@@ -131,18 +130,18 @@ use open_esp_radio::{
             parse_trigger_user_spatial_stream,
         },
     },
-    wpa2::{
+    wifi::wpa2::{
         EapolKeyFrame, EapolKeyMessage, OwnedEapolFrame, Pmk, Wpa2Interface,
         aes::Wpa2SoftwareAes,
         frames::Wpa2TxFrame,
         keys::Wpa2KeyKind,
         supplicant::{
-            Wpa2StaDeadlineEvent, Wpa2StaResponseDeadline, Wpa2StaResponseWait,
-            Wpa2StaSupplicant, Wpa2StaSupplicantAction,
+            Wpa2StaDeadlineEvent, Wpa2StaResponseDeadline, Wpa2StaResponseWait, Wpa2StaSupplicant,
+            Wpa2StaSupplicantAction,
         },
     },
 };
-use open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral;
+use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
 // ordinal is deterministic for a fixed PHY transition and can therefore be
@@ -376,7 +375,7 @@ const UNICAST_TX_ATTEMPT_LIMIT: u8 = 4;
 // still-unwired HT PLCP and A-MPDU paths.
 //
 // SOURCE: the hardware code is `WIFI_PHY_RATE_54M = 0x0c` in the sibling
-// esp-wifi-sys S31 oracle; open-esp-radio-mac-esp32s31::tx::LegacyRate records
+// esp-wifi-sys S31 oracle; open-esp-radio-esp32s31-wifi-mac::tx::LegacyRate records
 // the complete typed mapping and blob/ROM provenance.
 //
 // `OPEN_RADIO_LEGACY_RATE_MBIT` is deliberately limited to the non-HT OFDM
@@ -1287,12 +1286,7 @@ impl PhyTargetObserver for HilPhyObserver {
         log_open_txdc_entry_mmio();
     }
 
-    fn tx_dc_comparator(
-        &mut self,
-        gain_index: u8,
-        iteration: u8,
-        comparator_high: [bool; 2],
-    ) {
+    fn tx_dc_comparator(&mut self, gain_index: u8, iteration: u8, comparator_high: [bool; 2]) {
         if gain_index == 0 && iteration == 0 {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL probe=txdc-first-environment \
@@ -1562,7 +1556,6 @@ fn log_open_rf_boundary_mmio(source: &str) {
         read_diagnostic_mmio(0x2010_0c04),
     ));
 }
-
 
 fn observe_scan_descriptors<M: Mmio>(
     mmio: &mut M,
@@ -2769,7 +2762,7 @@ async fn transmit_he_dcm_smpdu_oracle<M: Mmio + TxHardware>(
     sequence_number: u16,
 ) -> Result<(TxCompletion, Option<MacHeTxVectorSnapshot>), ActiveScanTxError>
 where
-    M: open_esp_radio::esp32s31::mac::tx_ampdu::HtAmpduHardware,
+    M: open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduHardware,
 {
     const RAW_FRAME_LENGTH: usize = 24;
     let cookie = ampdu.as_mut().begin().map_err(ActiveScanTxError::Ampdu)?;
@@ -2886,7 +2879,7 @@ async fn transmit_protected_ethernet_ampdu<M: Mmio + TxHardware>(
     ampdu_limit: usize,
 ) -> Result<ProtectedEthernetAmpduReport, ActiveScanTxError>
 where
-    M: open_esp_radio::esp32s31::mac::tx_ampdu::HtAmpduHardware,
+    M: open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduHardware,
 {
     let transmission_started = Instant::now();
     if !(1..=TX_AMPDU_FRAME_COUNT).contains(&ampdu_limit) {
@@ -3557,7 +3550,7 @@ async fn transmit_referenced_protected_ethernet_ampdu<M: Mmio + TxHardware>(
     he_txop_limit: HeEdcaTxopLimit,
 ) -> Result<ProtectedEthernetAmpduReport, ActiveScanTxError>
 where
-    M: open_esp_radio::esp32s31::mac::tx_ampdu::HtAmpduHardware,
+    M: open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduHardware,
 {
     let transmission_started = Instant::now();
     if !(1..=TX_AMPDU_FRAME_COUNT).contains(&ampdu_limit) {
@@ -3598,7 +3591,7 @@ where
                 .push_ht_amsdu_pair(
                     first,
                     second,
-                    open_esp_radio::ieee80211::station::StaProtectedEthernetFrame {
+                    open_esp_radio::wifi::ieee80211::station::StaProtectedEthernetFrame {
                         bssid,
                         sequence_number: sequence.take(),
                         user_priority: 0,
@@ -3635,7 +3628,7 @@ where
                 spill = Some(frame);
                 break;
             }
-            let metadata = open_esp_radio::ieee80211::station::StaProtectedEthernetFrame {
+            let metadata = open_esp_radio::wifi::ieee80211::station::StaProtectedEthernetFrame {
                 bssid,
                 sequence_number: sequence.take(),
                 user_priority: 0,
@@ -3762,7 +3755,7 @@ where
                 .push_ht_amsdu_pair(
                     first,
                     second,
-                    open_esp_radio::ieee80211::station::StaProtectedEthernetFrame {
+                    open_esp_radio::wifi::ieee80211::station::StaProtectedEthernetFrame {
                         bssid,
                         sequence_number: sequence.take(),
                         user_priority: 0,
@@ -3818,7 +3811,7 @@ where
                 spill = Some(frame);
                 break;
             }
-            let metadata = open_esp_radio::ieee80211::station::StaProtectedEthernetFrame {
+            let metadata = open_esp_radio::wifi::ieee80211::station::StaProtectedEthernetFrame {
                 bssid,
                 sequence_number: sequence.take(),
                 user_priority: 0,
@@ -4126,7 +4119,7 @@ async fn transmit_connected_protected_ethernet_frame<M: Mmio + TxHardware>(
     ethernet: &[u8],
 ) -> Result<TxCompletion, ActiveScanTxError>
 where
-    M: open_esp_radio::esp32s31::mac::tx_ampdu::HtAmpduHardware,
+    M: open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduHardware,
 {
     // Internally generated control probes do not own a pinned embassy-net
     // lease. Keep them on the universally valid OFDM basic-rate descriptor
@@ -8095,8 +8088,7 @@ async fn authenticate_target(
         read_diagnostic_mmio(0x2010_40f4),
     ));
 
-    let mut authentication =
-        StaAuthenticationRuntime::new(station_address, access_point.bssid);
+    let mut authentication = StaAuthenticationRuntime::new(station_address, access_point.bssid);
     loop {
         let attempt = match authentication.begin_attempt(sequence) {
             Ok(attempt) => attempt,
@@ -8224,9 +8216,7 @@ async fn authenticate_target(
                     continue;
                 };
                 let management_subtype = frame[0] & 0xfc;
-                if management_subtype == 0xb0
-                    || authentication.active_received_frames() <= 3
-                {
+                if management_subtype == 0xb0 || authentication.active_received_frames() <= 3 {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL probe=sta-auth-rx attempt={} frame={} \
                          subtype={:#04x} length={} da={:02x?} sa={:02x?} \
@@ -8331,31 +8321,29 @@ async fn authenticate_target(
                 failure,
                 received_frames,
                 ..
-            } => {
-                match failure {
-                    StaAuthenticationFailure::Timeout => emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
+            } => match failure {
+                StaAuthenticationFailure::Timeout => emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
                          attempt={attempt} error=timeout timeout_ms={} \
                          frames={received_frames}",
-                        STA_RESPONSE_TIMEOUT_MS,
-                    )),
-                    StaAuthenticationFailure::PeerDisconnect(disconnect) => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
+                    STA_RESPONSE_TIMEOUT_MS,
+                )),
+                StaAuthenticationFailure::PeerDisconnect(disconnect) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=RETRY stage=sta-auth-response \
                              attempt={attempt} error=peer-disconnect kind={:?} reason={} \
                              frames={received_frames}",
-                            disconnect.kind, disconnect.reason_code,
-                        ));
-                    }
-                    StaAuthenticationFailure::Rejected { status_code } => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
-                             attempt={attempt} status={status_code}"
-                        ));
-                        return false;
-                    }
+                        disconnect.kind, disconnect.reason_code,
+                    ));
                 }
-            }
+                StaAuthenticationFailure::Rejected { status_code } => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-response \
+                             attempt={attempt} status={status_code}"
+                    ));
+                    return false;
+                }
+            },
             StaAuthenticationEvent::Failed {
                 attempts,
                 failure,
@@ -8386,8 +8374,7 @@ async fn authenticate_target(
                 }
                 return false;
             }
-            StaAuthenticationEvent::Irrelevant
-            | StaAuthenticationEvent::Authenticated { .. } => {
+            StaAuthenticationEvent::Irrelevant | StaAuthenticationEvent::Authenticated { .. } => {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-runtime error=invalid-terminal"
                 ));
@@ -8546,56 +8533,55 @@ async fn associate_target(
                     &frame[16..22],
                 ));
             }
-            let (response, received_frames) = match association
-                .observe_management_frame(&frame[..extracted.length])
-            {
-                Ok(StaAssociationEvent::Irrelevant) => continue,
-                Ok(StaAssociationEvent::Associated {
-                    response,
-                    total_received_frames,
-                }) => (response, total_received_frames),
-                Ok(StaAssociationEvent::Failed {
-                    failure,
-                    total_received_frames,
-                }) => {
-                    match failure {
-                        StaAssociationFailure::Timeout => emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
-                             error=timeout frames={total_received_frames} bssid={:02x?}",
-                            access_point.bssid,
-                        )),
-                        StaAssociationFailure::PeerDisconnect(disconnect) => {
-                            emergency_log(format_args!(
+            let (response, received_frames) =
+                match association.observe_management_frame(&frame[..extracted.length]) {
+                    Ok(StaAssociationEvent::Irrelevant) => continue,
+                    Ok(StaAssociationEvent::Associated {
+                        response,
+                        total_received_frames,
+                    }) => (response, total_received_frames),
+                    Ok(StaAssociationEvent::Failed {
+                        failure,
+                        total_received_frames,
+                    }) => {
+                        match failure {
+                            StaAssociationFailure::Timeout => emergency_log(format_args!(
                                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
+                             error=timeout frames={total_received_frames} bssid={:02x?}",
+                                access_point.bssid,
+                            )),
+                            StaAssociationFailure::PeerDisconnect(disconnect) => {
+                                emergency_log(format_args!(
+                                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
                                  error=peer-disconnect kind={:?} reason={} frames={} \
                                  bssid={:02x?}",
-                                disconnect.kind,
-                                disconnect.reason_code,
-                                total_received_frames,
-                                access_point.bssid,
-                            ));
-                        }
-                        StaAssociationFailure::Rejected { status_code } => {
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
+                                    disconnect.kind,
+                                    disconnect.reason_code,
+                                    total_received_frames,
+                                    access_point.bssid,
+                                ));
+                            }
+                            StaAssociationFailure::Rejected { status_code } => {
+                                emergency_log(format_args!(
+                                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
                                  status={status_code} frames={total_received_frames} \
                                  bssid={:02x?}",
-                                access_point.bssid,
-                            ));
+                                    access_point.bssid,
+                                ));
+                            }
                         }
+                        let _ = disable_receive(mmio);
+                        return (false, false, false);
                     }
-                    let _ = disable_receive(mmio);
-                    return (false, false, false);
-                }
-                Err(error) => {
-                    let _ = disable_receive(mmio);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                    Err(error) => {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
                          action=observe-management error={error:?}"
-                    ));
-                    return (false, false, false);
-                }
-            };
+                        ));
+                        return (false, false, false);
+                    }
+                };
             {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=PASS stage=sta-assoc-response \
@@ -8958,23 +8944,19 @@ async fn await_wpa2_message_1(
                      replay={} bssid={bssid:02x?}",
                     replay_counter,
                 ));
-                let message3_rx_ring = match start_live_rx_ring(
-                    mmio,
-                    rx_storage,
-                    descriptor_base,
-                    buffer_addresses,
-                )
-                .await
-                {
-                    Ok(ring) => ring,
-                    Err(error) => {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-rx-arm \
+                let message3_rx_ring =
+                    match start_live_rx_ring(mmio, rx_storage, descriptor_base, buffer_addresses)
+                        .await
+                    {
+                        Ok(ring) => ring,
+                        Err(error) => {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-2-rx-arm \
                              error={error:?}"
-                        ));
-                        return (true, false);
-                    }
-                };
+                            ));
+                            return (true, false);
+                        }
+                    };
                 let completion = match transmit_unprotected_eapol(
                     mmio,
                     tx_storage,
@@ -9251,317 +9233,308 @@ async fn await_wpa2_message_3(
                 *pairwise.peer(),
                 pairwise.key().as_bytes(),
             ) {
-                    Ok(slot) => slot,
-                    Err(error) => {
-                        let _ = handshake.complete_key_install::<512>(request, false);
-                        let _ = disable_receive(mmio);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-pairwise-key-install \
+                Ok(slot) => slot,
+                Err(error) => {
+                    let _ = handshake.complete_key_install::<512>(request, false);
+                    let _ = disable_receive(mmio);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-pairwise-key-install \
                                  error={error:?}"
-                        ));
-                        return false;
-                    }
-                };
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-pairwise-key-install \
+                    ));
+                    return false;
+                }
+            };
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-pairwise-key-install \
                      slot={} valid={} peer_control={:#010x} crypto_control={:#010x} \
                      crypto_policy={:#010x}",
-                    key_slot.hardware_index(),
-                    mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP)
-                        & (1 << key_slot.hardware_index())
-                        != 0,
-                    mmio.read32(
-                        mac_pac::crypto_key_entry_word(key_slot.hardware_index(), 1)
-                            .expect("fixed pairwise slot metadata word"),
-                    ),
-                    mmio.read32(mac_pac::CRYPTO_INTERFACE_CONTROL[0]),
-                    mmio.read32(mac_pac::CRYPTO_POLICY_CONTROL),
-                ));
-                let group_slot = match install_sta_group_ccmp(
-                    mmio,
-                    gtk_id,
-                    group.key().as_bytes(),
-                ) {
-                    Ok(slot) => slot,
-                    Err(error) => {
-                        let _ = disable_receive(mmio);
-                        key_slot.clear(mmio);
-                        let _ = handshake.complete_key_install::<512>(request, false);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-group-key-install \
+                key_slot.hardware_index(),
+                mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << key_slot.hardware_index())
+                    != 0,
+                mmio.read32(
+                    mac_pac::crypto_key_entry_word(key_slot.hardware_index(), 1)
+                        .expect("fixed pairwise slot metadata word"),
+                ),
+                mmio.read32(mac_pac::CRYPTO_INTERFACE_CONTROL[0]),
+                mmio.read32(mac_pac::CRYPTO_POLICY_CONTROL),
+            ));
+            let group_slot = match install_sta_group_ccmp(mmio, gtk_id, group.key().as_bytes()) {
+                Ok(slot) => slot,
+                Err(error) => {
+                    let _ = disable_receive(mmio);
+                    key_slot.clear(mmio);
+                    let _ = handshake.complete_key_install::<512>(request, false);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-group-key-install \
                              gtk_id={} error={error:?}",
-                            gtk_id,
-                        ));
-                        return false;
-                    }
-                };
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-group-key-install \
+                        gtk_id,
+                    ));
+                    return false;
+                }
+            };
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-group-key-install \
                      slot={} gtk_id={} valid={} control={:#010x}",
-                    group_slot.hardware_index(),
-                    group_slot.key_id(),
-                    mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP)
-                        & (1 << group_slot.hardware_index())
-                        != 0,
-                    mmio.read32(
-                        mac_pac::crypto_key_entry_word(group_slot.hardware_index(), 1)
+                group_slot.hardware_index(),
+                group_slot.key_id(),
+                mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << group_slot.hardware_index())
+                    != 0,
+                mmio.read32(
+                    mac_pac::crypto_key_entry_word(group_slot.hardware_index(), 1)
                         .expect("fixed group slot metadata word"),
-                    ),
-                ));
-                let message4 = match handshake.complete_key_install::<512>(request, true) {
-                    Ok(Wpa2StaSupplicantAction::Transmit(message4))
-                        if message4.key_frame().message()
-                            == EapolKeyMessage::PairwiseMessage4
-                            && message4.key_frame().replay_counter() == replay_counter =>
-                    {
-                        message4
-                    }
-                    Ok(_) | Err(_) => {
-                        let _ = disable_receive(mmio);
-                        key_slot.clear(mmio);
-                        group_slot.clear(mmio);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-key-install-state"
-                        ));
-                        return false;
-                    }
-                };
-                let message4_valid = message4.key_frame().protocol_version() == 1;
-                let _ = disable_receive(mmio);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-3 \
+                ),
+            ));
+            let message4 = match handshake.complete_key_install::<512>(request, true) {
+                Ok(Wpa2StaSupplicantAction::Transmit(message4))
+                    if message4.key_frame().message() == EapolKeyMessage::PairwiseMessage4
+                        && message4.key_frame().replay_counter() == replay_counter =>
+                {
+                    message4
+                }
+                Ok(_) | Err(_) => {
+                    let _ = disable_receive(mmio);
+                    key_slot.clear(mmio);
+                    group_slot.clear(mmio);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-key-install-state"
+                    ));
+                    return false;
+                }
+            };
+            let message4_valid = message4.key_frame().protocol_version() == 1;
+            let _ = disable_receive(mmio);
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-3 \
                      replay={} mic=true encrypted_key_data={} bssid={bssid:02x?}",
-                    replay_counter,
-                    encrypted_key_data,
-                ));
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result={} stage=wpa2-message-4-build \
+                replay_counter, encrypted_key_data,
+            ));
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result={} stage=wpa2-message-4-build \
                      protocol_version=1 replay={} bytes={}",
-                    if message4_valid { "PASS" } else { "FAIL" },
-                    replay_counter,
-                    message4.as_bytes().len(),
-                ));
-                let hardware_index = key_slot.hardware_index();
-                let message4_sent = if message4_valid {
-                    // One protocol MPDU is enough. The lower unicast path
-                    // performs bounded MAC retries with the same sequence
-                    // number (and, for protected M4, the same CCMP PN).
-                    let completion = if WPA2_MESSAGE_4_HARDWARE_PROTECTED {
-                        transmit_eapol_message_4(
-                            mmio,
-                            tx_storage,
-                            station_address,
-                            bssid,
-                            &message4,
-                            &mut key_slot,
-                            sequences
-                                .take_data(peer_qos.then_some(0))
-                                .expect("selected EAPOL sequence-number owner exists"),
-                            peer_qos,
-                        )
-                        .await
-                    } else {
-                        transmit_unprotected_eapol(
-                            mmio,
-                            tx_storage,
-                            station_address,
-                            bssid,
-                            message4.as_bytes(),
-                            sequences.take_non_qos(),
-                        )
-                        .await
-                    };
-                    match completion {
-                        Ok(completion) => {
-                            let passed = completion.status == 0;
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result={} stage=wpa2-message-4-tx \
+                if message4_valid { "PASS" } else { "FAIL" },
+                replay_counter,
+                message4.as_bytes().len(),
+            ));
+            let hardware_index = key_slot.hardware_index();
+            let message4_sent = if message4_valid {
+                // One protocol MPDU is enough. The lower unicast path
+                // performs bounded MAC retries with the same sequence
+                // number (and, for protected M4, the same CCMP PN).
+                let completion = if WPA2_MESSAGE_4_HARDWARE_PROTECTED {
+                    transmit_eapol_message_4(
+                        mmio,
+                        tx_storage,
+                        station_address,
+                        bssid,
+                        &message4,
+                        &mut key_slot,
+                        sequences
+                            .take_data(peer_qos.then_some(0))
+                            .expect("selected EAPOL sequence-number owner exists"),
+                        peer_qos,
+                    )
+                    .await
+                } else {
+                    transmit_unprotected_eapol(
+                        mmio,
+                        tx_storage,
+                        station_address,
+                        bssid,
+                        message4.as_bytes(),
+                        sequences.take_non_qos(),
+                    )
+                    .await
+                };
+                match completion {
+                    Ok(completion) => {
+                        let passed = completion.status == 0;
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result={} stage=wpa2-message-4-tx \
                                  protected={} replay={} status={} primary={:#010x}",
-                                if passed { "PASS" } else { "FAIL" },
-                                WPA2_MESSAGE_4_HARDWARE_PROTECTED,
-                                replay_counter,
+                            if passed { "PASS" } else { "FAIL" },
+                            WPA2_MESSAGE_4_HARDWARE_PROTECTED,
+                            replay_counter,
+                            completion.status,
+                            completion.primary_word,
+                        ));
+                        passed
+                    }
+                    Err(error) => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-4-tx \
+                                 replay={} error={error:?}",
+                            replay_counter,
+                        ));
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+            let protected_arp_pass = if message4_sent {
+                // M4 TX completion only proves that the AP acknowledged
+                // the EAPOL MPDU. The vendor STA path reports the connected
+                // event separately, after its EAPOL callback has completed,
+                // so do not queue ordinary protected traffic on the same
+                // scheduling edge.
+                //
+                // SOURCE: promoted migration STA connected/EAPOL callback
+                // split; 2026-07-29 open-TX/hostapd HIL, where hostapd
+                // completed the four-way handshake but four immediate ARP
+                // MAC retries all returned status 5.
+                Timer::after_millis(WPA2_CONTROLLED_PORT_SETTLE_MS).await;
+                network_runner.set_link_state(LinkState::Up);
+                let mut passed = false;
+                for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
+                    let protected_rx_ring = match start_live_rx_ring(
+                        mmio,
+                        rx_storage,
+                        descriptor_base,
+                        buffer_addresses,
+                    )
+                    .await
+                    {
+                        Ok(ring) => ring,
+                        Err(error) => {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL \
+                                     stage=wpa2-protected-rx-arm attempt={attempt} \
+                                     error={error:?}"
+                            ));
+                            break;
+                        }
+                    };
+                    let Some(queued_arp) =
+                        queue_arp_probe(network_device, network_runner, station_address)
+                    else {
+                        let _ = disable_receive(mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL \
+                                 stage=wpa2-protected-arp-tx attempt={attempt} \
+                                 error=network-tx-token"
+                        ));
+                        break;
+                    };
+                    match transmit_protected_ethernet_frame(
+                        mmio,
+                        tx_storage,
+                        bssid,
+                        &mut key_slot,
+                        sequences
+                            .take_data(peer_qos.then_some(0))
+                            .expect("selected data sequence-number owner exists"),
+                        peer_qos,
+                        selected_data_tx_rate(association_phy, peer_qos),
+                        queued_arp.as_slice(),
+                    )
+                    .await
+                    {
+                        Ok(completion) => {
+                            let transmitted = completion.status == 0;
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result={} \
+                                     stage=wpa2-protected-arp-tx attempt={attempt} \
+                                     status={} primary={:#010x} owned_tx=true",
+                                if transmitted { "PASS" } else { "FAIL" },
                                 completion.status,
                                 completion.primary_word,
                             ));
-                            passed
-                        }
-                        Err(error) => {
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-message-4-tx \
-                                 replay={} error={error:?}",
-                                replay_counter,
-                            ));
-                            false
-                        }
-                    }
-                } else {
-                    false
-                };
-                let protected_arp_pass = if message4_sent {
-                    // M4 TX completion only proves that the AP acknowledged
-                    // the EAPOL MPDU. The vendor STA path reports the connected
-                    // event separately, after its EAPOL callback has completed,
-                    // so do not queue ordinary protected traffic on the same
-                    // scheduling edge.
-                    //
-                    // SOURCE: promoted migration STA connected/EAPOL callback
-                    // split; 2026-07-29 open-TX/hostapd HIL, where hostapd
-                    // completed the four-way handshake but four immediate ARP
-                    // MAC retries all returned status 5.
-                    Timer::after_millis(WPA2_CONTROLLED_PORT_SETTLE_MS).await;
-                    network_runner.set_link_state(LinkState::Up);
-                    let mut passed = false;
-                    for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-                        let protected_rx_ring = match start_live_rx_ring(
-                            mmio,
-                            rx_storage,
-                            descriptor_base,
-                            buffer_addresses,
-                        )
-                        .await
-                        {
-                            Ok(ring) => ring,
-                            Err(error) => {
-                                emergency_log(format_args!(
-                                    "OPEN_RADIO_PHY_HIL result=FAIL \
-                                     stage=wpa2-protected-rx-arm attempt={attempt} \
-                                     error={error:?}"
-                                ));
+                            if transmitted
+                                && await_protected_arp_response(
+                                    mmio,
+                                    rx_storage,
+                                    frame,
+                                    ethernet,
+                                    network_device,
+                                    network_runner,
+                                    station_address,
+                                    bssid,
+                                    protected_rx_ring,
+                                )
+                                .await
+                            {
+                                passed = true;
                                 break;
                             }
-                        };
-                        let Some(queued_arp) =
-                            queue_arp_probe(network_device, network_runner, station_address)
-                        else {
+                            if !transmitted {
+                                let _ = disable_receive(mmio);
+                            }
+                        }
+                        Err(error) => {
                             let _ = disable_receive(mmio);
                             emergency_log(format_args!(
                                 "OPEN_RADIO_PHY_HIL result=FAIL \
-                                 stage=wpa2-protected-arp-tx attempt={attempt} \
-                                 error=network-tx-token"
-                            ));
-                            break;
-                        };
-                        match transmit_protected_ethernet_frame(
-                            mmio,
-                            tx_storage,
-                            bssid,
-                            &mut key_slot,
-                            sequences
-                                .take_data(peer_qos.then_some(0))
-                                .expect("selected data sequence-number owner exists"),
-                            peer_qos,
-                            selected_data_tx_rate(association_phy, peer_qos),
-                            queued_arp.as_slice(),
-                        )
-                        .await
-                        {
-                            Ok(completion) => {
-                                let transmitted = completion.status == 0;
-                                emergency_log(format_args!(
-                                    "OPEN_RADIO_PHY_HIL result={} \
-                                     stage=wpa2-protected-arp-tx attempt={attempt} \
-                                     status={} primary={:#010x} owned_tx=true",
-                                    if transmitted { "PASS" } else { "FAIL" },
-                                    completion.status,
-                                    completion.primary_word,
-                                ));
-                                if transmitted
-                                    && await_protected_arp_response(
-                                        mmio,
-                                        rx_storage,
-                                        frame,
-                                        ethernet,
-                                        network_device,
-                                        network_runner,
-                                        station_address,
-                                        bssid,
-                                        protected_rx_ring,
-                                    )
-                                    .await
-                                {
-                                    passed = true;
-                                    break;
-                                }
-                                if !transmitted {
-                                    let _ = disable_receive(mmio);
-                                }
-                            }
-                            Err(error) => {
-                                let _ = disable_receive(mmio);
-                                emergency_log(format_args!(
-                                    "OPEN_RADIO_PHY_HIL result=FAIL \
                                      stage=wpa2-protected-arp-tx attempt={attempt} \
                                      error={error:?}"
-                                ));
-                            }
-                        }
-                        if attempt < WPA2_PROTECTED_ARP_ATTEMPTS {
-                            // An ARP reply is ordinary data, not part of the
-                            // four-way handshake. Losing it must allocate a new
-                            // 802.11 sequence number and CCMP PN; it must not
-                            // roll the WPA state machine back to M2.
-                            //
-                            // SOURCE: IEEE 802.11 CCMP packet-number uniqueness;
-                            // 2026-07-29 HIL run 4, where hostapd remained
-                            // authorized after the first ARP response was lost.
-                            Timer::after_millis(WPA2_PROTECTED_ARP_RETRY_DELAY_MS).await;
+                            ));
                         }
                     }
-                    passed
-                } else {
-                    false
-                };
-                if message4_valid && message4_sent && protected_arp_pass {
-                    run_connected_network(
-                        platform,
-                        mmio,
-                        interrupt_setup,
-                        rx_storage,
-                        tx_storage,
-                        descriptor_base,
-                        buffer_addresses,
-                        frame,
-                        ethernet,
-                        network_device,
-                        network_runner,
-                        station_address,
-                        bssid,
-                        association_id,
-                        key_slot,
-                        group_slot,
-                        peer_qos,
-                        association_phy,
-                        peer_supports_one_ltf_800ns_gi,
-                        peer_supports_ldpc,
-                        peer_dcm_receive,
-                        best_effort_txop,
-                        rate_control,
-                        sequences,
-                    )
-                    .await;
+                    if attempt < WPA2_PROTECTED_ARP_ATTEMPTS {
+                        // An ARP reply is ordinary data, not part of the
+                        // four-way handshake. Losing it must allocate a new
+                        // 802.11 sequence number and CCMP PN; it must not
+                        // roll the WPA state machine back to M2.
+                        //
+                        // SOURCE: IEEE 802.11 CCMP packet-number uniqueness;
+                        // 2026-07-29 HIL run 4, where hostapd remained
+                        // authorized after the first ARP response was lost.
+                        Timer::after_millis(WPA2_PROTECTED_ARP_RETRY_DELAY_MS).await;
+                    }
                 }
-                let group_hardware_index = group_slot.hardware_index();
-                group_slot.clear(mmio);
-                let group_key_cleared = mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP)
-                    & (1 << group_hardware_index)
-                    == 0;
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result={} stage=wpa2-group-key-clear \
+                passed
+            } else {
+                false
+            };
+            if message4_valid && message4_sent && protected_arp_pass {
+                run_connected_network(
+                    platform,
+                    mmio,
+                    interrupt_setup,
+                    rx_storage,
+                    tx_storage,
+                    descriptor_base,
+                    buffer_addresses,
+                    frame,
+                    ethernet,
+                    network_device,
+                    network_runner,
+                    station_address,
+                    bssid,
+                    association_id,
+                    key_slot,
+                    group_slot,
+                    peer_qos,
+                    association_phy,
+                    peer_supports_one_ltf_800ns_gi,
+                    peer_supports_ldpc,
+                    peer_dcm_receive,
+                    best_effort_txop,
+                    rate_control,
+                    sequences,
+                )
+                .await;
+            }
+            let group_hardware_index = group_slot.hardware_index();
+            group_slot.clear(mmio);
+            let group_key_cleared =
+                mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << group_hardware_index) == 0;
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result={} stage=wpa2-group-key-clear \
                      slot={group_hardware_index}",
-                    if group_key_cleared { "PASS" } else { "FAIL" },
-                ));
-                key_slot.clear(mmio);
-                let key_cleared =
-                    mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << hardware_index) == 0;
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result={} stage=wpa2-pairwise-key-clear slot={hardware_index}",
-                    if key_cleared { "PASS" } else { "FAIL" },
-                ));
-                return message4_valid
-                    && message4_sent
-                    && protected_arp_pass
-                    && group_key_cleared
-                    && key_cleared;
+                if group_key_cleared { "PASS" } else { "FAIL" },
+            ));
+            key_slot.clear(mmio);
+            let key_cleared =
+                mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << hardware_index) == 0;
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result={} stage=wpa2-pairwise-key-clear slot={hardware_index}",
+                if key_cleared { "PASS" } else { "FAIL" },
+            ));
+            return message4_valid
+                && message4_sent
+                && protected_arp_pass
+                && group_key_cleared
+                && key_cleared;
         }
         if let Err(error) = rx_ring.recycle_completed_half(mmio, |index| {
             // SAFETY: RxRingLive invokes this only for a fully completed,

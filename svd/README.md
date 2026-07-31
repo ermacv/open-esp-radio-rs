@@ -8,9 +8,9 @@ cargo pac-gen
 ```
 
 The generated crate source is
-`crates/open-esp-radio-svd-esp32s31/src/lib.rs`. The source-only audit runs the
+`crates/esp32s31/svd/src/lib.rs`. The source-only audit runs the
 Rust generator with `--check`, so a direct edit of that generated file fails
-CI. `open-esp-radio-pac-esp32s31/src/power.rs` is the shrinking compatibility
+CI. `crates/esp32s31/pac/src/power.rs` is the shrinking compatibility
 facade for code not yet moved to the generated API; it must not acquire
 official system peripherals already delegated to `esp-hal`.
 

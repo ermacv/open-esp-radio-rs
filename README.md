@@ -1,92 +1,54 @@
 # open-esp-radio-rs
 
-Source-only Rust radio stack for Espressif chips, initially targeting
-ESP32-S31.
+Source-only, `no_std` Wi-Fi radio stack for Espressif chips, currently focused
+on ESP32-S31. The normal workspace and HIL do not link `esp-wifi-sys`, vendor
+Wi-Fi archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace
+is the only opt-in exception.
 
-The public crates are designed to be consumed directly by `no_std` Rust
-applications. They and the default HIL do not link `esp-wifi-sys`, a vendor
-Wi-Fi archive, or a Wi-Fi/radio ROM ABI. The separately excluded vendor-oracle
-workspace is the only opt-in exception. The silicon boot ROM is outside this
-definition; the strict boundary concerns radio ownership and runtime calls.
+## Repository layout
 
-Current workspace layers:
+| Path | Purpose |
+| --- | --- |
+| `crates/radio` | Application-facing `open-esp-radio` facade |
+| `crates/wifi/` | Chip-independent Wi-Fi protocols and network adapters |
+| `crates/esp32s31/svd` | Generated register-access crate |
+| `crates/esp32s31/pac` | Radio register ownership and transactions |
+| `crates/esp32s31/hal` | Finite hardware operations and async boundaries |
+| `crates/esp32s31/phy` | PHY initialization and calibration state machines |
+| `crates/esp32s31/wifi/mac` | ESP32-S31 Wi-Fi MAC, RX/TX and rate control |
+| `crates/esp32s31/wifi/esp-hal` | Optional `esp-hal` Wi-Fi singleton adapter |
+| `hil/esp32s31` | Board, bootstrap and end-to-end hardware tests |
+| `tools` | PAC generator, HIL runner and source-only artifact audit |
+| `svd` | Editable ESP32-S31 radio register description |
 
-- `open-esp-radio-ieee80211`: chip-independent, allocation-free 802.11
-  management framing and scan observations;
-- `open-esp-radio-pac-esp32s31`: register access and peripheral ownership;
-- `open-esp-radio-hal-esp32s31`: finite radio transactions and async boundary
-  traits;
-- `open-esp-radio-esp-hal-esp32s31`: optional singleton-token adapter for the
-  `esp32s31-async-platform` branch of the `esp-hal` fork;
-- `open-esp-radio-mac-esp32s31`: allocation-free descriptor, RX/TX ownership,
-  interrupt primitives, with a compatibility re-export of the generic scan
-  API;
-- `open-esp-radio-phy-esp32s31`: Rust-owned cold PHY/calibration state
-  machines;
-- `open-esp-radio`: application-facing facade.
+Chip-wide packages follow `open-esp-radio-esp32s31-<layer>`. Protocol-specific
+hardware adds the protocol before its layer, for example
+`open-esp-radio-esp32s31-wifi-mac`. Directory names stay short because their
+hierarchy already supplies the project, chip and protocol context.
 
-The PHY port is still experimental. Its state machines and source-only link
-gate are usable, while the temporary register leaf module is progressively
-being moved down into HAL/PAC.
-The maintained vendor function inventory and behaviour comparison are in
-[`docs/phy/README.md`](docs/phy/README.md).
+See [the architecture guide](docs/ARCHITECTURE.md) for dependency direction
+and ownership boundaries, and [the documentation index](docs/README.md) for
+current status, reference material and archived migration reports.
 
-Cold source-only PHY initialization, open promiscuous RX, active/passive scan,
-open authentication, WPA2 association, the four-way handshake, protected
-pairwise/group traffic, DHCP, HT40 and HE20 A-MPDU/BlockAck have passed on
-ESP32-S31 without vendor radio initialization. The current open HE SU TX path
-has exercised MCS0 through MCS9 with the datasheet's 0.8-, 1.6- and 3.2-us
-guard intervals. [`ESP32S31_WIFI_FEATURE_STATUS.md`](docs/ESP32S31_WIFI_FEATURE_STATUS.md)
-tracks these results and the remaining datasheet capabilities without
-equating discovered oracle symbols with implemented features.
+## Verification
 
-The ESP32-S31 HAL binds the integration layer's singleton peripheral token to
-`Radio<P, Owned>`. Its finite `power_up` transition reproduces the
-source-owned modem reset, PMU publication, clock-source, PHY frontend and
-PHY-I²C prerequisites and verifies nine readable checkpoints. The eleven
-register identities used by this transition are typed PAC values; the HAL
-contains no raw addresses or volatile pointer access for this path. Only the
-resulting `Radio<P, Powered>` exposes the register capability used by finite
-PHY target bindings. Wi-Fi MAC clocks remain outside this transition and
-belong to the later MAC start state.
+```console
+cargo fmt --all -- --check
+cargo test --workspace
+cargo pac-gen --check
+tools/audit-source-only.sh
+```
 
-The live MAC path also consumes typed PAC registers. Its initialization,
-interrupt, RX, and TX transactions require a mutable borrow of the register
-capability; only the PAC performs peripheral volatile access. The application
-therefore hands the same `RadioRegisters` owner from completed PHY
-initialization into MAC/RX, instead of constructing an independent raw-MMIO
-adapter. DMA descriptors retain their own volatile cells because they are
-owned memory shared with hardware rather than peripheral registers.
+All workspaces and generated PAC code use Rust edition 2024 and its formatting
+style.
+The last command additionally needs the stable embedded target and `llvm-nm`.
+It validates generated PAC reproducibility, the compiled PHY artifact's
+external symbols and its dependency tree. It deliberately does not inspect
+Rust source text for required or forbidden function names.
 
-The low-level PAC is generated from `svd/esp32s31-radio.svd` by a portable
-Rust `xtask` using pinned `svd2rust 0.37.1`; run `cargo pac-gen` to regenerate
-it or `cargo pac-gen --check` to verify it. Python and shell code generation
-are not used. The existing `Register32`/`Field32` surface is a temporary
-compatibility facade while HAL and MAC move to the native generated register
-API. The current unsafe/MMIO inventory and non-radio clock/power dependencies
-are recorded in [`PAC_AND_UNSAFE_AUDIT.md`](docs/PAC_AND_UNSAFE_AUDIT.md).
-The blob/ROM debug-symbol audit and its MMIO-versus-descriptor classification
-are recorded in
-[`esp32s31-debug-oracles.md`](docs/esp32s31-debug-oracles.md).
-
-The former upper MAC/STA/AP/security migration archive has been retired.
-Source-owned primitives live in the buildable IEEE 802.11, MAC, WPA2, PAC and
-integration crates above; vendor ABI glue and superseded duplicates were
-deleted. The end-to-end HIL application still contains reusable runtime
-orchestration that is being extracted into these crates.
-[`MIGRATION_COMPLETION.md`](docs/MIGRATION_COMPLETION.md) records the original
-archive decision, and
-[`ESP32S31_RUST_INTEGRATION_AUDIT.md`](docs/ESP32S31_RUST_INTEGRATION_AUDIT.md)
-tracks the remaining application-to-driver transfer. Git history preserves the
-exact pre-cleanup archive.
-
-Board policy, task spawning, linker placement and flashing live in the
-repository-local [`hil/esp32s31`](hil/esp32s31) workspace. Reusable ESP-HAL
-singleton/trait wiring lives in the optional adapter crate above. The closed
-PHY comparison image lives in the separate, opt-in
-[`hil/vendor-oracle/esp32s31`](hil/vendor-oracle/esp32s31) workspace; neither
-the root workspace nor the source-only HIL resolves `esp-phy`, `esp-rtos` or
-`esp-wifi-sys`.
+Hardware workflows are documented in [the ESP32-S31 HIL README](hil/esp32s31/README.md).
+Current qualified capabilities and their evidence are tracked in
+[the feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md).
 
 No vendor ELF, static library, disassembly dump, generated proprietary header,
-or extracted binary table belongs in this repository.
+or extracted binary table belongs in the tracked repository.

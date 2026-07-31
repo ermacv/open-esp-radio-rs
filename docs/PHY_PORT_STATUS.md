@@ -13,6 +13,12 @@ parity findings live in [`phy/README.md`](phy/README.md). In particular,
 it does not mean that every child and lifecycle mode of the vendor PHY is
 ported.
 
+The crate stays at chip scope rather than under `wifi/`: its RFPLL, TXDC,
+PWDET, I/Q and gain-calibration machinery includes shared operations and
+distinct Wi-Fi/BT banks. Only the Wi-Fi path is currently integrated and HIL
+qualified. Protocol-neutral extraction should follow evidence from a second
+consumer instead of assuming that every calibration sequence is universal.
+
 Current layers:
 
 - Rust-owned cold-PHY and baseband state machines;
@@ -76,7 +82,7 @@ TX do not depend on it.
 
 The allocation-free scanner that previously existed only in
 `migration/esp32s31-hybrid-runtime` is now part of the live
-`open-esp-radio-mac-esp32s31` crate. It owns a bounded 32-record BSS table,
+`open-esp-radio-esp32s31-wifi-mac` crate. It owns a bounded 32-record BSS table,
 parses beacon and probe-response information elements, de-duplicates by BSSID,
 and retains the strongest complete observation. Channel timing and RX-ring
 ownership remain with the caller.
@@ -107,7 +113,7 @@ it. New scan work must use the live MAC module.
 
 Planned split:
 
-- `open-esp-radio-pac-esp32s31`: typed register descriptions;
-- `open-esp-radio-hal-esp32s31`: ownership and finite register transactions;
-- `open-esp-radio-phy-esp32s31`: cold calibration and channel state machines;
+- `open-esp-radio-esp32s31-pac`: typed register descriptions;
+- `open-esp-radio-esp32s31-hal`: ownership and finite register transactions;
+- `open-esp-radio-esp32s31-phy`: cold calibration and channel state machines;
 - higher MAC/802.11/WPA crates with no inward dependency on timers or crypto.

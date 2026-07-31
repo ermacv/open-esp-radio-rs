@@ -1,0 +1,18 @@
+[package]
+name = "open-esp-radio-esp32s31-wifi-esp-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP-HAL Wi-Fi singleton and platform adapter for the open ESP32-S31 radio"
+
+[features]
+default = []
+esp32s31 = ["dep:esp-hal", "dep:open-esp-radio"]
+
+[dependencies]
+esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+open-esp-radio = { path = "../../../radio", default-features = false, features = ["esp32s31-wifi"], optional = true }
+
+[lints]
+workspace = true

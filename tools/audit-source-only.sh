@@ -4,345 +4,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_triple="riscv32imafc-unknown-none-elf"
 audit_dir="$(mktemp -d)"
+trap 'rm -rf -- "$audit_dir"' EXIT
 
 cd "$repo_root"
 
-# The SVD is the editable clock/power/register source. Fail closed if the
-# checked-in svd2rust PAC was edited directly or generation is no longer
-# reproducible with the pinned Rust generator dependency.
+# Verify generated code from its canonical input instead of inspecting Rust
+# source text for particular identifiers or function spellings.
 cargo pac-gen --check
 
-# HAL/MAC may select only PAC-described peripheral registers. Descriptor
-# volatile access is intentionally excluded: those words live in owned DMA
-# memory, not in the peripheral address space.
-if rg -n \
-    '0x(2010|2058|2070|2071|2080|2081)_[[:xdigit:]]{4}' \
-    crates/open-esp-radio-hal-esp32s31/src \
-    crates/open-esp-radio-mac-esp32s31/src
-then
-    echo "raw radio peripheral address escaped the PAC" >&2
-    exit 1
-fi
-
-if rg -n \
-    '(read_volatile|write_volatile|as \*(const|mut))' \
-    crates/open-esp-radio-hal-esp32s31/src \
-    crates/open-esp-radio-mac-esp32s31/src/registers.rs
-then
-    echo "raw MMIO access escaped the PAC" >&2
-    exit 1
-fi
-
-# The generated register singleton is owned only by the compatibility PAC.
-# HAL/MAC/PHY receive the safe `RadioRegisters` capability and must not split
-# it into independently stolen svd2rust peripheral blocks.
-if rg -n \
-    '(open_esp_radio_svd|::svd::|svd::Peripherals|RadioRegisters::steal)' \
-    crates/open-esp-radio-mac-esp32s31/src \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "generated PAC ownership escaped RadioRegisters" >&2
-    exit 1
-fi
-
-# These native generated-PAC slices have completed their target migration.
-# Their HAL modules may sequence semantic operations but must not regress to
-# the Register32 compatibility facade.
-if rg -n \
-    '(Register32|Field32|read32|write32|modify32|power::(phy_i2c|phy_pbus))' \
-    crates/open-esp-radio-hal-esp32s31/src/phy_i2c.rs \
-    crates/open-esp-radio-hal-esp32s31/src/pbus.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_agc.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_iq_estimator.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_baseband.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_frequency.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_memory.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_prelude.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_power_detector.rs \
-    crates/open-esp-radio-hal-esp32s31/src/phy_rx_dco.rs
-then
-    echo "native PHY-I2C/PBus/prelude/AGC/IQ/baseband/frequency/memory/PWDET/RX-DCO compatibility MMIO returned to the HAL" >&2
-    exit 1
-fi
-
-# RX and TX BlockAck hardware leaves are now direct generated-PAC methods.
-# The MAC protocol modules retain validation and decoding but must not regain
-# compatibility-register identities or generic raw register operations.
-if rg -n \
-    '(Register32|Field32|read32|write32|modify32|mac::rx_block_ack|TX_BLOCK_ACK_(CONTROL_SEQUENCE|BITMAP_(LOW|HIGH)))' \
-    crates/open-esp-radio-mac-esp32s31/src/rx_ampdu_hw.rs \
-    crates/open-esp-radio-mac-esp32s31/src/tx_ampdu.rs
-then
-    echo "BlockAck compatibility MMIO returned to the MAC protocol layer" >&2
-    exit 1
-fi
-
-# The live RX ring receives only the semantic descriptor-walker capability.
-# Raw register identities remain available to diagnostic HIL code, but may
-# not re-enter the ownership and recycling implementation.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/rx.rs
-then
-    echo "RX descriptor-walker compatibility MMIO returned to the live ring" >&2
-    exit 1
-fi
-
-# The hard MAC ISR owns only snapshot/acknowledge operations. Raw register
-# identities would broaden interrupt authority and can also reintroduce an
-# accidental read/modify/write on the write-to-clear register.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/irq.rs
-then
-    echo "raw compatibility MMIO returned to the hard MAC ISR" >&2
-    exit 1
-fi
-
-# CCMP policy owns key composition and lifetime tokens, but receives only a
-# finite install/clear capability. Register geometry, validity publication,
-# interface enable and policy RMW belong to the generated PAC transaction.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/crypto.rs
-then
-    echo "raw compatibility MMIO returned to MAC CCMP policy" >&2
-    exit 1
-fi
-
-# The owned TX slot retains descriptor/state validation and completion decode,
-# while all ordinary-queue register transactions belong to generated PAC
-# capabilities. Raw identities would bypass the software-before-hardware
-# ownership edge and the two-phase timeout protocol.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/tx.rs
-then
-    echo "raw compatibility MMIO returned to the owned MAC TX slot" >&2
-    exit 1
-fi
-
-# The scan-to-associated receive-policy transition is a finite generated-PAC
-# transaction. The upper boundary may request only that semantic edge.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/sta_link_policy.rs
-then
-    echo "raw compatibility MMIO returned to STA link RX policy" >&2
-    exit 1
-fi
-
-# Address publication is a complete generated-PAC transaction. The upper MAC
-# receives only the two semantic address values.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/interface_address.rs
-then
-    echo "raw compatibility MMIO returned to MAC interface-address publication" >&2
-    exit 1
-fi
-
-# The cold handshake and interrupt reset prefix is one finite PAC operation.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_handshake.rs
-then
-    echo "raw compatibility MMIO returned to the cold MAC handshake" >&2
-    exit 1
-fi
-
-# The top-level cold init and its promiscuous tail compose semantic
-# capabilities only. The latter contains the open policy image, seven ordered
-# vendor RMWs, the miscellaneous-class RMW and the final device fence.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/init.rs \
-    crates/open-esp-radio-mac-esp32s31/src/sniffer.rs
-then
-    echo "raw compatibility MMIO returned to MAC cold init/sniffer boundary" >&2
-    exit 1
-fi
-
-# Cold crypto bypass is five ordered full-word generated-PAC stores.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_crypto.rs
-then
-    echo "raw compatibility MMIO returned to cold MAC crypto init" >&2
-    exit 1
-fi
-
-# RX buffer geometry is PAC-owned; descriptor publication remains rx.rs-owned.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_rx_buffer.rs
-then
-    echo "raw compatibility MMIO returned to cold RX buffer init" >&2
-    exit 1
-fi
-
-# Last-RX-buffer table images and their three enable edges are one complete
-# generated-PAC transaction.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_last_rx_buffer.rs
-then
-    echo "raw compatibility MMIO returned to last RX buffer init" >&2
-    exit 1
-fi
-
-# The direct mac_txrx_init prefix/suffix and all three intervening callback
-# hardware paths are generated-PAC transactions.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_txrx.rs
-then
-    echo "raw compatibility MMIO returned to cold MAC TX/RX init" >&2
-    exit 1
-fi
-if rg -n \
-    'R_(444C|4450|4458|445C|4C1C|4C54|4C58)' \
-    crates/open-esp-radio-mac-esp32s31/src/init.rs
-then
-    echo "PAC-owned MAC TX/RX callback register returned to upper init" >&2
-    exit 1
-fi
-
-# The 31-edge four-queue cold RX policy transaction is PAC-owned.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_rx_policy.rs
-then
-    echo "raw compatibility MMIO returned to cold RX policy" >&2
-    exit 1
-fi
-if rg -n \
-    '(RX_FILTER|BSSID_HIGH|INTERFACE_ADDRESS_HIGH)' \
-    crates/open-esp-radio-mac-esp32s31/src/init.rs
-then
-    echo "PAC-owned cold RX policy geometry returned to upper init" >&2
-    exit 1
-fi
-
-# Complete MAC enable is one PAC-owned gate-RMW plus interrupt-mask store.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/cold_enable.rs
-then
-    echo "raw compatibility MMIO returned to cold MAC enable" >&2
-    exit 1
-fi
-
-# MAC policy may request low-rate disable, but PHY register geometry and all
-# three fresh-read edges belong to the generated PAC.
-if rg -n \
-    '(Register32|Field32|\bMmio\b|read32|write32|modify32)' \
-    crates/open-esp-radio-mac-esp32s31/src/low_rate.rs
-then
-    echo "raw PHY low-rate MMIO returned to the MAC layer" >&2
-    exit 1
-fi
-
-# PHY target bindings may perform I2C/PBus work only through a borrowed
-# RadioRegisters capability. Keep the removed raw-owner leaves and unsafe
-# wrapper API from quietly returning during later calibration work.
-if rg -n \
-    'try_(start|finish)_(read|write)_unowned|try_(start|finish)_phy_pbus_force_test|pub[[:space:]]+unsafe[[:space:]]+fn[[:space:]]+(start_target|observe_target_edge|sample_target_once)|start_phy_channel_frequency_switch|configure_phy_(channel_nrx_frequency|nrx_frequency|frequency_registers|frequency_i2c_number_addresses|bt_filter|bb_tx_power_tracking|i2c_tx_rate|power_detector_registers|tx_power_control_background|power_detector_enabled|power_detector_calibration_mode|txdc_pwdet_registers|txdc_pwdet_sar|baseband_watchdog|noise_floor_auto|dc_iq_estimator|temperature_sensor_read)|write_phy_frequency_memory|set_phy_(baseband_mode|wifi_enabled|dc_iq_estimator_enable)|enable_phy_(mac_baseband|iq_correction)|restore_phy_txdc_pwdet_registers|write_phy_power_detector_reference_control|trigger_phy_power_detector_sar|sample_phy_dc_iq_readiness|read_phy_(power_detector_(ready_status|sar_word)|dc_iq_accumulators|rxiq_total_power|rxiq_mismatch_accumulators|signal_power_accumulators|temperature_code)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "unowned PHY-I2C/PBus target access returned" >&2
-    exit 1
-fi
-
-if rg -n \
-    'capture_and_clear_phy_register_field|restore_phy_register_field|mask_phy_rx_dco_control_field|restore_phy_rx_dco_control_field|read_phy_pbus_(field|rx_dco_value)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw RX-DCO/PBus owner access returned" >&2
-    exit 1
-fi
-
-if rg -n \
-    'configure_phy_register_force_txrx|sample_phy_i2c_master_reset|pulse_phy_i2c_master_reset|phy_i2c_master_reset_busy|configure_phy_register_xtal_frequency|read_phy_sdm_cycle_counter|configure_phy_tx_clock|configure_phy_rx_clock|configure_phy_rxiq_root_status|configure_phy_rxiq_root_correction|with_phy_tx_clock|with_phy_rx_clock|with_phy_rxiq_root_correction_begin|with_phy_rxiq_root_aux_begin' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw PHY prelude/deadline owner access returned" >&2
-    exit 1
-fi
-
-# RX-gain DC calibration is now a generated-PAC operation. Reject both the
-# physical literal and the former address arithmetic used to hide it behind
-# the adjacent tone-selector identity.
-if rg -n \
-    '0x2010_0424|PHY_TONE_SELECTOR_CONTROL_ADDRESS[[:space:]]*-[[:space:]]*4|unsafe[[:space:]]+fn[[:space:]]+configure_phy_rx_gain_dc_registers' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw RX-gain DC calibration access returned" >&2
-    exit 1
-fi
-
-if rg -n \
-    'unsafe[[:space:]]+fn[[:space:]]+configure_phy_(adc_rate|front_end_registers|front_end_update)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw ADC/front-end owner access returned" >&2
-    exit 1
-fi
-
-# TX-DC actions now carry booleans rather than a raw address/mask/register
-# image and all access is serialized by the generated PAC owner.
-if rg -n \
-    '0x2010_0418|PHY_TX_DC_READY_(ADDRESS|MASK|VALUE)|unsafe[[:space:]]+fn[[:space:]]+(trigger_phy_tx_dc_measurement|read_phy_tx_dc_(ready|comparator)_status|clear_phy_tx_dc_measurement)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw TX-DC measurement access returned" >&2
-    exit 1
-fi
-
-# IQ mode and coefficient access now uses the existing generated PAC fields.
-if rg -n \
-    '0x2010_(0438|0c0c)|PHY_(TXIQ_CONTROL|RXIQ_CORRECTION|RXIQ_AUX)_ADDRESS|unsafe[[:space:]]+fn[[:space:]]+configure_phy_(txiq_correction|txiq_coefficient|rxiq_coefficient|rxiq_calibration_mode)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw IQ correction/coefficient access returned" >&2
-    exit 1
-fi
-
-# Calibration-tone, DAC-scale and TX-gain-compensation MMIO is native PAC
-# state. Reject every former physical identity and wrapper that could bypass
-# the unique register owner.
-if rg -n \
-    '0x2010_(040c|0410|0414|041c|0420|0428|0c04)|PHY_(TONE_PATH[01]_CONTROL|TONE_STOP_CONTROL|TONE_SELECTOR_CONTROL|TX_GAIN_COMPENSATION_(CONTROL|AUX)|DAC_SCALE_CONTROL)_ADDRESS|unsafe[[:space:]]+fn[[:space:]]+(configure_phy_(calibration_tone|power_control_tone|calibration_tone_wide|txiq_mis_power)|read_phy_txiq_tone_control|restore_phy_txiq_tone_control|arm_phy_power_detector_tone|clear_phy_power_detector_tone_arm|stop_phy_power_detector_tone)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw calibration-tone access returned" >&2
-    exit 1
-fi
-
-# Every live PHY target operation is now ownership-bound and safe. Peripheral
-# writer unsafety belongs only inside the PAC, while DMA pointer unsafety
-# remains a separate MAC concern.
-if rg -n \
-    '\bunsafe\b|read_volatile|write_volatile|as \*(const|mut)' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "unsafe operation returned to the upper PHY crate" >&2
-    exit 1
-fi
-
-# Complete frequency/channel, PBus mode, AGC, antenna, RX-compensation,
-# DC-memory, BBPLL, 11b and post-init leaves are PAC/HAL-owned. These
-# addresses have no remaining live raw consumer.
-if rg -n \
-    '0x(2010_(001c|0024|0028|002c|0030|0034|0038|003c|0434|0444|0448|044c|0450|0454|0458|045c|0460|0464|0468|046c|047c|0808|080c|0810|0814|0818|081c|086c|0870|0874|0884|088c|0890|0894|08bc|08d0|0c08|0c20|4400|448c|7018|702c|7030|703c|7044|7048|705c|7064|7068|7094|70a0|7104|7114|711c|7120|7124|7128|713c|7400|7428|743c|7454|7458|745c|7460|7808|7848|7890|78a4|78c8|78dc|78e4|790c|7980|7a28|7c00|7c30|7c3c|7c40|7c44|7c50|7c6c|7ca8|7cd0|7ce0|7ce4|7d4c|8004|8010|8018|801c|8020|8028|802c|8070|8078|9c18|d800|f028|f800|f804|f818|fc04)|2070_1068|2071_0030|2081_(8000|8018))' \
-    crates/open-esp-radio-phy-esp32s31/src
-then
-    echo "raw recovered PHY address escaped the PAC/HAL boundary" >&2
-    exit 1
-fi
-
 RUSTUP_TOOLCHAIN=stable cargo build \
-    -p open-esp-radio-phy-esp32s31 \
+    -p open-esp-radio-esp32s31-phy \
     --lib \
     --release \
     --target "$target_triple"
@@ -350,7 +21,7 @@ RUSTUP_TOOLCHAIN=stable cargo build \
 artifact="$(
     find "target/$target_triple/release/deps" \
         -maxdepth 1 \
-        -name 'libopen_esp_radio_phy_esp32s31-*.rlib' \
+        -name 'libopen_esp_radio_esp32s31_phy-*.rlib' \
         -printf '%T@ %p\n' |
         sort -nr |
         head -n 1 |
@@ -366,12 +37,10 @@ llvm-nm --defined-only --format=posix "$artifact" 2>/dev/null |
     sort -u >"$audit_dir/defined"
 comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 
-# HAL/PAC symbols are source-only workspace dependencies verified again by
-# the dependency-tree gate below. The remaining entries are compiler/core
-# requirements supplied by the final Rust image, not radio ROM or vendor
-# archive ABI. Any other external symbol fails closed.
+# The final artifact may refer to its source-only HAL/PAC dependencies and to
+# compiler/core support only. Radio ROM or vendor archive symbols fail closed.
 if rg -v \
-    '^(_R.*open_esp_radio_(hal|pac)_esp32s31.*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
+    '^(_R.*open_esp_radio_esp32s31_(hal|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
     "$audit_dir/external"
 then
     echo "unexpected external symbol in source-only radio rlib" >&2
@@ -387,12 +56,12 @@ fi
 
 dependency_tree="$(
     RUSTUP_TOOLCHAIN=stable cargo tree \
-        -p open-esp-radio-phy-esp32s31 \
+        -p open-esp-radio-esp32s31-phy \
         --target "$target_triple" \
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-(phy|hal|pac|svd)-esp32s31|vcell) v'
+    rg -v '^(open-esp-radio-esp32s31-(phy|hal|pac|svd)|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1

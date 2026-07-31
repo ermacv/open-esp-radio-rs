@@ -1241,11 +1241,11 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-embassy-net",
- "open-esp-radio-hal-esp32s31",
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
  "open-esp-radio-ieee80211",
- "open-esp-radio-mac-esp32s31",
- "open-esp-radio-pac-esp32s31",
- "open-esp-radio-phy-esp32s31",
  "open-esp-radio-wpa2",
 ]
 
@@ -1258,7 +1258,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp-hal-esp32s31"
+name = "open-esp-radio-esp32s31-wifi-esp-hal"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
@@ -1266,44 +1266,44 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-hal-esp32s31"
+name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-pac-esp32s31",
+ "open-esp-radio-esp32s31-pac",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-mac"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-ieee80211",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-svd",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-phy"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-svd"
+version = "0.1.0"
+dependencies = [
+ "vcell",
 ]
 
 [[package]]
 name = "open-esp-radio-ieee80211"
 version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-mac-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "open-esp-radio-pac-esp32s31",
-]
-
-[[package]]
-name = "open-esp-radio-pac-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-svd-esp32s31",
-]
-
-[[package]]
-name = "open-esp-radio-phy-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-hal-esp32s31",
-]
-
-[[package]]
-name = "open-esp-radio-svd-esp32s31"
-version = "0.1.0"
-dependencies = [
- "vcell",
-]
 
 [[package]]
 name = "open-esp-radio-vendor-oracle-hil-esp32s31"
@@ -1316,7 +1316,7 @@ dependencies = [
  "esp-phy",
  "esp-rtos",
  "open-esp-radio",
- "open-esp-radio-esp-hal-esp32s31",
+ "open-esp-radio-esp32s31-wifi-esp-hal",
  "static_cell",
 ]
 
@@ -1987,3 +1987,17 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]

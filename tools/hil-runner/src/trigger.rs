@@ -8,11 +8,11 @@ use std::{
 };
 
 use open_esp_radio_ieee80211::trigger::{
-    BasicTriggerFrameEncoding, TriggerBasicDependentInfo, TriggerCommonEncoding, TriggerGiLtf,
-    TriggerScheduledUserEncoding, TRIGGER_BASIC_FRAME_LEN,
+    BasicTriggerFrameEncoding, TRIGGER_BASIC_FRAME_LEN, TriggerBasicDependentInfo,
+    TriggerCommonEncoding, TriggerGiLtf, TriggerScheduledUserEncoding,
 };
 
-use crate::{bidirectional::SerialCapture, Result};
+use crate::{Result, bidirectional::SerialCapture};
 
 const RADIOTAP_HEADER: [u8; 8] = [0, 0, 8, 0, 0, 0, 0, 0];
 const ARPHRD_IEEE80211_RADIOTAP: u16 = 803;
@@ -712,8 +712,8 @@ fn hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use open_esp_radio_ieee80211::trigger::{
-        parse_trigger_basic_dependent, parse_trigger_frame, parse_trigger_user_spatial_stream,
-        TriggerType,
+        TriggerType, parse_trigger_basic_dependent, parse_trigger_frame,
+        parse_trigger_user_spatial_stream,
     };
 
     #[test]
@@ -756,28 +756,32 @@ mod tests {
     #[test]
     fn parser_rejects_missing_identity_and_unbounded_values() {
         assert!(parse_options(&["mon0".into()], false).is_err());
-        assert!(parse_options(
-            &[
-                "mon0".into(),
-                "--transmitter".into(),
-                "70:15:fb:a8:48:f0".into(),
-                "--aid".into(),
-                "4096".into(),
-            ],
-            false
-        )
-        .is_err());
-        assert!(parse_options(
-            &[
-                "../wlan0".into(),
-                "--transmitter".into(),
-                "70:15:fb:a8:48:f0".into(),
-                "--aid".into(),
-                "1".into(),
-            ],
-            false
-        )
-        .is_err());
+        assert!(
+            parse_options(
+                &[
+                    "mon0".into(),
+                    "--transmitter".into(),
+                    "70:15:fb:a8:48:f0".into(),
+                    "--aid".into(),
+                    "4096".into(),
+                ],
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            parse_options(
+                &[
+                    "../wlan0".into(),
+                    "--transmitter".into(),
+                    "70:15:fb:a8:48:f0".into(),
+                    "--aid".into(),
+                    "1".into(),
+                ],
+                false
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -798,19 +802,21 @@ mod tests {
         assert_eq!(options.count, 10_000);
         assert_eq!(options.interval, Duration::from_millis(1));
         assert_eq!(options.serial, "/dev/ttyACM1");
-        assert!(parse_options(
-            &[
-                "mon0".into(),
-                "--transmitter".into(),
-                "70:15:fb:a8:48:f0".into(),
-                "--aid".into(),
-                "1".into(),
-                "--serial".into(),
-                "/dev/ttyACM0".into(),
-            ],
-            false
-        )
-        .is_err());
+        assert!(
+            parse_options(
+                &[
+                    "mon0".into(),
+                    "--transmitter".into(),
+                    "70:15:fb:a8:48:f0".into(),
+                    "--aid".into(),
+                    "1".into(),
+                    "--serial".into(),
+                    "/dev/ttyACM0".into(),
+                ],
+                false
+            )
+            .is_err()
+        );
     }
 
     #[test]

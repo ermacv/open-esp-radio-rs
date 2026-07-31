@@ -58,10 +58,10 @@ use open_esp_radio::esp32s31::{
         },
     },
 };
-use open_esp_radio::ieee80211::station::{
+use open_esp_radio::wifi::ieee80211::station::{
     OpenAuthenticationRequest, parse_open_authentication_response,
 };
-use open_esp_radio_esp_hal_esp32s31::EspHalRadioPeripheral;
+use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 
 unsafe extern "C" {
@@ -997,7 +997,7 @@ async fn run_open_mac_rx(
     // SIGNAL owns MPDU+FCS (30+4 = 0x22). The 0x00b6 value visible in vendor
     // submissions belongs to vendor-private metadata and cannot be replayed
     // as the raw PLCP length: the direct-q0 HIL then never completed.
-    // SOURCE: `open-esp-radio-mac-esp32s31/src/tx.rs`
+    // SOURCE: `crates/esp32s31/wifi/mac/src/tx.rs`
     // `management_1m_from_mpdu_length` and live `hybrid-power5.log`.
     let mut config = LegacyTxConfig::management_1m_from_mpdu_length(frame_length as u16).unwrap();
     config.data_power = 5;

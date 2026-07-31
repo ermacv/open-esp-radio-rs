@@ -82,7 +82,7 @@ format-five branch at `0x4b4..0x586` decodes HE MU SIG-A1 from prefix bytes
 three-bit bandwidth, compressed-SIG-B count, GI/LTF, Doppler, STBC and
 padding. The format-seven branch at `0x412..0x4b2` independently decodes the
 HE trigger-based common SIG-A view. These exact packet-metadata layouts now
-live in `open-esp-radio-mac-esp32s31::rx::{HeSuSignal,HeMuSignal,
+live in `open-esp-radio-esp32s31-wifi-mac::rx::{HeSuSignal,HeMuSignal,
 HeTriggerBasedSignal}`. This restores passive downlink/TB vector observation;
 it does not by itself qualify payload reception, OFDMA scheduling or MU-MIMO.
 

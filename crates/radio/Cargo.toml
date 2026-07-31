@@ -1,0 +1,37 @@
+[package]
+name = "open-esp-radio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Application facade for the source-only Rust ESP radio stack"
+
+[features]
+default = ["esp32s31-wifi"]
+wifi = [
+    "dep:open-esp-radio-embassy-net",
+    "dep:open-esp-radio-ieee80211",
+    "dep:open-esp-radio-wpa2",
+]
+esp32s31 = [
+    "dep:open-esp-radio-esp32s31-hal",
+    "dep:open-esp-radio-esp32s31-pac",
+    "dep:open-esp-radio-esp32s31-phy",
+]
+esp32s31-wifi = [
+    "esp32s31",
+    "wifi",
+    "dep:open-esp-radio-esp32s31-wifi-mac",
+]
+
+[dependencies]
+open-esp-radio-embassy-net = { path = "../wifi/embassy-net", optional = true }
+open-esp-radio-esp32s31-hal = { path = "../esp32s31/hal", optional = true }
+open-esp-radio-esp32s31-wifi-mac = { path = "../esp32s31/wifi/mac", optional = true }
+open-esp-radio-esp32s31-pac = { path = "../esp32s31/pac", optional = true }
+open-esp-radio-esp32s31-phy = { path = "../esp32s31/phy", optional = true }
+open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
+open-esp-radio-wpa2 = { path = "../wifi/wpa2", optional = true }
+
+[lints]
+workspace = true

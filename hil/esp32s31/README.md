@@ -24,7 +24,7 @@ Common commands from the repository root:
 
 ```text
 cargo hil doctor
-cargo hil build bidirectional
+cargo hil build radio
 cargo hil flash bidirectional --port /dev/ttyACM0
 cargo hil traffic bidirectional <device-ip> --phy he20
 cargo hil oracle verify

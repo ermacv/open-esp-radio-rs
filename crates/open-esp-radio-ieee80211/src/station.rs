@@ -946,6 +946,177 @@ impl StaAssociationRetrySchedule {
     }
 }
 
+/// One uniquely numbered Association transmission inside a state epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAssociationAttempt {
+    pub ordinal: u16,
+    pub sequence_number: u16,
+    pub elapsed_ms: u32,
+}
+
+/// Protocol-level reason why an Association epoch ended unsuccessfully.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationFailure {
+    Timeout,
+    PeerDisconnect(StaDisconnect),
+    Rejected { status_code: u16 },
+}
+
+/// Result of observing a management frame or completing one millisecond tick.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationEvent {
+    Irrelevant,
+    Associated {
+        response: AssociationResponse,
+        total_received_frames: u32,
+    },
+    Failed {
+        failure: StaAssociationFailure,
+        total_received_frames: u32,
+    },
+}
+
+/// Invalid executor interaction with [`StaAssociationRuntime`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationRuntimeError {
+    TickAlreadyActive,
+    NoActiveTick,
+    Terminal,
+}
+
+/// Allocation-free owner of one ordinary STA Association epoch.
+///
+/// A target executor begins one tick, optionally transmits the returned
+/// attempt, reports every completed RX descriptor, supplies extracted
+/// management frames, then finishes the tick. This type owns the one-second
+/// deadline, retransmission cadence, management sequence consumption and
+/// terminal response policy; it does not own timers, DMA or MAC registers.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_sta.o]::
+/// ieee80211_sta_new_state` Association branch arms the 1,000-ms state timer.
+/// The 160-ms retransmission cadence is the hardware-qualified open STA policy
+/// previously owned by the ESP32-S31 HIL and remains isolated in
+/// [`StaAssociationRetrySchedule`] pending recovery of the vendor timer body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAssociationRuntime {
+    local: [u8; 6],
+    bssid: [u8; 6],
+    elapsed_ms: u32,
+    tick_active: bool,
+    terminal: bool,
+    received_frames: u32,
+}
+
+impl StaAssociationRuntime {
+    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+        Self {
+            local,
+            bssid,
+            elapsed_ms: 0,
+            tick_active: false,
+            terminal: false,
+            received_frames: 0,
+        }
+    }
+
+    /// Begin the current millisecond tick and consume a management sequence
+    /// number exactly when the retry schedule calls for a new MPDU.
+    pub fn begin_tick(
+        &mut self,
+        sequence: &mut StaSequenceCounter,
+    ) -> Result<Option<StaAssociationAttempt>, StaAssociationRuntimeError> {
+        if self.terminal || self.elapsed_ms >= STA_RESPONSE_TIMEOUT_MS {
+            return Err(StaAssociationRuntimeError::Terminal);
+        }
+        if self.tick_active {
+            return Err(StaAssociationRuntimeError::TickAlreadyActive);
+        }
+        self.tick_active = true;
+        Ok(
+            StaAssociationRetrySchedule::attempt_at(self.elapsed_ms).map(|ordinal| {
+                StaAssociationAttempt {
+                    ordinal,
+                    sequence_number: sequence.take(),
+                    elapsed_ms: self.elapsed_ms,
+                }
+            }),
+        )
+    }
+
+    /// Account for one completed RX descriptor, including a frame which is
+    /// not a valid management input.
+    pub fn observe_received_frame(&mut self) -> Result<(), StaAssociationRuntimeError> {
+        self.require_active_tick()?;
+        self.received_frames = self.received_frames.saturating_add(1);
+        Ok(())
+    }
+
+    /// Classify one extracted management frame for the selected peer.
+    pub fn observe_management_frame(
+        &mut self,
+        frame: &[u8],
+    ) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
+        self.require_active_tick()?;
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
+            return Ok(self.fail(StaAssociationFailure::PeerDisconnect(disconnect)));
+        }
+        let Some(response) = parse_association_response(frame, self.local, self.bssid) else {
+            return Ok(StaAssociationEvent::Irrelevant);
+        };
+        if response.status_code != 0 {
+            return Ok(self.fail(StaAssociationFailure::Rejected {
+                status_code: response.status_code,
+            }));
+        }
+        self.tick_active = false;
+        self.terminal = true;
+        Ok(StaAssociationEvent::Associated {
+            response,
+            total_received_frames: self.received_frames,
+        })
+    }
+
+    /// Complete the current millisecond tick and expire the complete vendor
+    /// state deadline after exactly 1,000 ticks.
+    pub fn finish_tick(&mut self) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
+        self.require_active_tick()?;
+        self.tick_active = false;
+        self.elapsed_ms = self.elapsed_ms.saturating_add(1);
+        if self.elapsed_ms >= STA_RESPONSE_TIMEOUT_MS {
+            Ok(self.fail(StaAssociationFailure::Timeout))
+        } else {
+            Ok(StaAssociationEvent::Irrelevant)
+        }
+    }
+
+    pub const fn elapsed_ms(&self) -> u32 {
+        self.elapsed_ms
+    }
+
+    pub const fn total_received_frames(&self) -> u32 {
+        self.received_frames
+    }
+
+    fn require_active_tick(&self) -> Result<(), StaAssociationRuntimeError> {
+        if self.terminal {
+            Err(StaAssociationRuntimeError::Terminal)
+        } else if !self.tick_active {
+            Err(StaAssociationRuntimeError::NoActiveTick)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn fail(&mut self, failure: StaAssociationFailure) -> StaAssociationEvent {
+        self.tick_active = false;
+        self.terminal = true;
+        StaAssociationEvent::Failed {
+            failure,
+            total_received_frames: self.received_frames,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssociationRequest<'a> {
     pub source: [u8; 6],
@@ -2063,6 +2234,18 @@ mod tests {
         frame
     }
 
+    fn association_response(status_code: u16) -> [u8; 30] {
+        let mut frame = [0_u8; 30];
+        frame[0..2].copy_from_slice(&ASSOCIATION_RESPONSE_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&0x0431_u16.to_le_bytes());
+        frame[26..28].copy_from_slice(&status_code.to_le_bytes());
+        frame[28..30].copy_from_slice(&0xc02a_u16.to_le_bytes());
+        frame
+    }
+
     fn deauthentication(reason_code: u16) -> [u8; MANAGEMENT_HEADER_LEN + 2] {
         let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
         frame[0..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
@@ -2456,6 +2639,123 @@ mod tests {
         assert_eq!(StaAssociationRetrySchedule::attempt_at(159), None);
         assert_eq!(StaAssociationRetrySchedule::attempt_at(1_000), None);
         assert_eq!(STA_AUTHENTICATION_ATTEMPT_LIMIT, 3);
+    }
+
+    #[test]
+    fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut sequence = StaSequenceCounter::new(0x0ffc);
+        let mut attempts = [StaAssociationAttempt {
+            ordinal: 0,
+            sequence_number: 0,
+            elapsed_ms: 0,
+        }; 7];
+        let mut attempt_count = 0;
+
+        loop {
+            if let Some(attempt) = runtime.begin_tick(&mut sequence).unwrap() {
+                attempts[attempt_count] = attempt;
+                attempt_count += 1;
+            }
+            runtime.observe_received_frame().unwrap();
+            match runtime.finish_tick().unwrap() {
+                StaAssociationEvent::Irrelevant => {}
+                StaAssociationEvent::Failed {
+                    failure,
+                    total_received_frames,
+                } => {
+                    assert_eq!(failure, StaAssociationFailure::Timeout);
+                    assert_eq!(total_received_frames, STA_RESPONSE_TIMEOUT_MS);
+                    break;
+                }
+                event => panic!("unexpected association event: {event:?}"),
+            }
+        }
+
+        assert_eq!(attempt_count, attempts.len());
+        for (index, attempt) in attempts.into_iter().enumerate() {
+            assert_eq!(attempt.ordinal, index as u16 + 1);
+            assert_eq!(attempt.elapsed_ms, index as u32 * 160);
+            assert_eq!(attempt.sequence_number, (0x0ffc + index as u16) & 0x0fff);
+        }
+        assert_eq!(runtime.elapsed_ms(), STA_RESPONSE_TIMEOUT_MS);
+        assert_eq!(runtime.total_received_frames(), STA_RESPONSE_TIMEOUT_MS);
+        assert_eq!(
+            runtime.begin_tick(&mut sequence),
+            Err(StaAssociationRuntimeError::Terminal)
+        );
+    }
+
+    #[test]
+    fn association_runtime_accepts_only_selected_peer_response() {
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut sequence = StaSequenceCounter::new(7);
+        assert_eq!(
+            runtime.begin_tick(&mut sequence).unwrap().unwrap().ordinal,
+            1
+        );
+        assert_eq!(
+            runtime.begin_tick(&mut sequence),
+            Err(StaAssociationRuntimeError::TickAlreadyActive)
+        );
+        runtime.observe_received_frame().unwrap();
+
+        let mut other_peer = association_response(0);
+        other_peer[10] ^= 1;
+        assert_eq!(
+            runtime.observe_management_frame(&other_peer),
+            Ok(StaAssociationEvent::Irrelevant)
+        );
+
+        let response = AssociationResponse {
+            capability_info: 0x0431,
+            status_code: 0,
+            association_id: 42,
+            ht_capability: false,
+            he_capability: false,
+            he_operation: false,
+            wmm: false,
+            wmm_parameters: None,
+        };
+        assert_eq!(
+            runtime.observe_management_frame(&association_response(0)),
+            Ok(StaAssociationEvent::Associated {
+                response,
+                total_received_frames: 1,
+            })
+        );
+        assert_eq!(
+            runtime.finish_tick(),
+            Err(StaAssociationRuntimeError::Terminal)
+        );
+    }
+
+    #[test]
+    fn association_runtime_reports_peer_disconnect_and_rejection() {
+        let mut sequence = StaSequenceCounter::new(0);
+        let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID);
+        disconnected.begin_tick(&mut sequence).unwrap();
+        disconnected.observe_received_frame().unwrap();
+        assert_eq!(
+            disconnected.observe_management_frame(&deauthentication(7)),
+            Ok(StaAssociationEvent::Failed {
+                failure: StaAssociationFailure::PeerDisconnect(StaDisconnect {
+                    kind: StaDisconnectKind::Deauthentication,
+                    reason_code: 7,
+                }),
+                total_received_frames: 1,
+            })
+        );
+
+        let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID);
+        rejected.begin_tick(&mut sequence).unwrap();
+        assert_eq!(
+            rejected.observe_management_frame(&association_response(17)),
+            Ok(StaAssociationEvent::Failed {
+                failure: StaAssociationFailure::Rejected { status_code: 17 },
+                total_received_frames: 0,
+            })
+        );
     }
 
     #[test]

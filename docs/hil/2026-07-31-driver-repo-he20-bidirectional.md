@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.005 Mbit/s.
-- Concurrent open-radio TX floor: 66.460 Mbit/s.
-- Conservative sum: 76.465 Mbit/s.
+- Device direct-RX median: 10.015 Mbit/s.
+- Concurrent open-radio TX floor: 65.100 Mbit/s.
+- Conservative sum: 75.115 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,13 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `b8a525c5858416e44f0f1b2989f870aa9ea61ff568f055d2ec9d14676d877597`.
+  `0b273a3270e66b011561f6665725887a6d7ef1d323084e6f2426a0f134d2d5bc`.
 - ESP application image SHA-256:
-  `7d032bdb98d21cf038e60f9323b880b4e3e27d52cc8a66ebdf3dabcd53901b9d`.
+  `627467018660c0f82fed775b902f96f338935b1f52246c681d28eac36065ecff`.
 - Packed stage-two runtime SHA-256:
-  `76bfe3ffd079d62333091e94013ad224834b2c2c30eea22f9a8777c625633467`.
+  `15f25e21b81ab1e06309d3304fbc3ae9034e2b52b9c2f04b8914dbffedd793cf`.
+- Qualification report SHA-256:
+  `0d6a346e6baafe12d254fe07a32a1b59470a454df80a64d58921741b56ea727a`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -63,7 +65,7 @@ The bulky UART log and binaries remain generated artifacts under
 Reusable rate, aggregate, retry, pinned-frame and Embassy network ownership is
 already in the driver crates named in the feature ledger. The final run also
 used the driver-owned `select_sta_association` channel/CBW decision and
-`StaAssociationRetrySchedule`. It now also uses `StaPeerScanPolicy` and
+`StaAssociationRuntime`. It now also uses `StaPeerScanPolicy` and
 `StaPeerAssociationPlan` as the sole post-response join for HT A-MPDU, WMM,
 HE BSS color/capabilities, peer QoS, link metric and rate-control state; the
 former HIL copies were deleted before this qualification. `StaTxRuntimePolicy`
@@ -72,8 +74,8 @@ now owns that negotiated TX state and all four EDCA contention windows, while
 selection and success/failure CW transitions. The HIL retains only platform
 entropy, DMA/IRQ waiting, PHY power application and Retry-bit publication.
 Board/bootstrap setup, credentials, synthetic traffic generation and evidence
-reporting also remain HIL concerns. The authentication/WPA2 executor
-orchestration is tracked separately and must be extracted before the old
+reporting also remain HIL concerns. The WPA2 executor orchestration is tracked
+separately and must be extracted before the old
 application HIL can be deleted.
 
 The same image now calls the PHY crate's `run_phy_register` through the
@@ -96,6 +98,18 @@ diagnostic reporting. Three host tests cover timeout exhaustion, sequence
 wrap, peer success, deauthentication retry and status rejection. The strict
 connected run above proves the resulting Authentication, Association, WPA2 and
 traffic path on hardware.
+
+`StaAssociationRuntime` now owns the complete ordinary Association epoch too:
+the 1,000-ms vendor state deadline, finite 160-ms transmission schedule, one
+non-QoS sequence number per newly encoded request, complete RX descriptor
+count and selected-peer Association/Deauthentication classification. The HIL
+only opens and closes millisecond ticks, submits a scheduled MPDU, extracts
+management frames and executes the returned terminal result. Three host tests
+cover the exact seven-attempt schedule and twelve-bit sequence wrap, the
+1,000-tick timeout, selected-peer success, peer filtering, rejection and
+disconnect. A cold boot of this exact image received the successful
+Association response on attempt one, completed WPA2 and obtained
+`192.168.178.141/24` by DHCP before the strict run above passed.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

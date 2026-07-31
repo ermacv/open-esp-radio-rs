@@ -121,11 +121,12 @@ use open_esp_radio::{
             HeUlMuPowerCapabilityError, OpenAuthenticationRequest,
             STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
             STA_RESPONSE_TIMEOUT_MS, StaActionFrame, StaAssociationPhy,
-            StaAssociationPreference, StaAssociationRetrySchedule, StaAuthenticationEvent,
-            StaAuthenticationFailure, StaAuthenticationRuntime, StaDataFrame, StaPowerCapability,
-            StaPowerCapabilityError, StaProtectedAmsduFrame, StaProtectedDataFrame,
-            StaRxDuplicateFilter, StaSequenceCounter, StaTxSequenceCounters, StationFrameError,
-            parse_association_response, select_sta_association, select_wpa2_psk_rsn,
+            StaAssociationEvent, StaAssociationFailure, StaAssociationPreference,
+            StaAssociationRuntime, StaAuthenticationEvent, StaAuthenticationFailure,
+            StaAuthenticationRuntime, StaDataFrame, StaPowerCapability, StaPowerCapabilityError,
+            StaProtectedAmsduFrame, StaProtectedDataFrame, StaRxDuplicateFilter,
+            StaSequenceCounter, StaTxSequenceCounters, StationFrameError,
+            select_sta_association, select_wpa2_psk_rsn,
             sta_protected_amsdu_frame_length,
         },
         trigger::{
@@ -8652,15 +8653,26 @@ async fn associate_target(
             }
         };
 
-    let mut received_frames = 0_u32;
-    for tick in 0..STA_RESPONSE_TIMEOUT_MS {
-        if let Some(attempt) = StaAssociationRetrySchedule::attempt_at(tick) {
+    let mut association = StaAssociationRuntime::new(station_address, access_point.bssid);
+    loop {
+        let attempt = match association.begin_tick(sequences.non_qos_mut()) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                let _ = disable_receive(mmio);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                     action=begin-tick error={error:?}"
+                ));
+                return (false, false, false);
+            }
+        };
+        if let Some(attempt) = attempt {
             let completion = match transmit_association_request(
                 mmio,
                 tx_storage,
                 station_address,
                 &access_point,
-                sequences.take_non_qos(),
+                attempt.sequence_number,
             )
             .await
             {
@@ -8669,14 +8681,16 @@ async fn associate_target(
                     let _ = disable_receive(mmio);
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-retry-tx \
-                         attempt={attempt} error={error:?}"
+                         attempt={} error={error:?}",
+                        attempt.ordinal,
                     ));
                     return (false, false, false);
                 }
             };
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL stage=sta-assoc-tx attempt={attempt} \
+                "OPEN_RADIO_PHY_HIL stage=sta-assoc-tx attempt={} \
                  channel={} bssid={:02x?} status={} primary={:#010x}",
+                attempt.ordinal,
                 access_point.channel,
                 access_point.bssid,
                 completion.status,
@@ -8687,7 +8701,15 @@ async fn associate_target(
             let Some(completed) = rx_ring.take_completed(index) else {
                 continue;
             };
-            received_frames = received_frames.saturating_add(1);
+            if let Err(error) = association.observe_received_frame() {
+                let _ = disable_receive(mmio);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                     action=observe-rx error={error:?}"
+                ));
+                return (false, false, false);
+            }
+            let received_frames = association.total_received_frames();
             let segment = RxSegment {
                 descriptor_address: completed.descriptor_address(),
                 descriptor_word0: completed.word0(),
@@ -8722,20 +8744,61 @@ async fn associate_target(
                     &frame[16..22],
                 ));
             }
-            if let Some(response) = parse_association_response(
-                &frame[..extracted.length],
-                station_address,
-                access_point.bssid,
-            ) {
+            let (response, received_frames) = match association
+                .observe_management_frame(&frame[..extracted.length])
+            {
+                Ok(StaAssociationEvent::Irrelevant) => continue,
+                Ok(StaAssociationEvent::Associated {
+                    response,
+                    total_received_frames,
+                }) => (response, total_received_frames),
+                Ok(StaAssociationEvent::Failed {
+                    failure,
+                    total_received_frames,
+                }) => {
+                    match failure {
+                        StaAssociationFailure::Timeout => emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
+                             error=timeout frames={total_received_frames} bssid={:02x?}",
+                            access_point.bssid,
+                        )),
+                        StaAssociationFailure::PeerDisconnect(disconnect) => {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
+                                 error=peer-disconnect kind={:?} reason={} frames={} \
+                                 bssid={:02x?}",
+                                disconnect.kind,
+                                disconnect.reason_code,
+                                total_received_frames,
+                                access_point.bssid,
+                            ));
+                        }
+                        StaAssociationFailure::Rejected { status_code } => {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response \
+                                 status={status_code} frames={total_received_frames} \
+                                 bssid={:02x?}",
+                                access_point.bssid,
+                            ));
+                        }
+                    }
+                    let _ = disable_receive(mmio);
+                    return (false, false, false);
+                }
+                Err(error) => {
+                    let _ = disable_receive(mmio);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                         action=observe-management error={error:?}"
+                    ));
+                    return (false, false, false);
+                }
+            };
+            {
                 emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result={} stage=sta-assoc-response \
+                    "OPEN_RADIO_PHY_HIL result=PASS stage=sta-assoc-response \
                      status={} aid={} ht={} he_cap={} he_op={} wmm={} \
                      frames={received_frames} bssid={:02x?}",
-                    if response.status_code == 0 {
-                        "PASS"
-                    } else {
-                        "FAIL"
-                    },
                     response.status_code,
                     response.association_id,
                     response.ht_capability,
@@ -8744,10 +8807,6 @@ async fn associate_target(
                     response.wmm,
                     access_point.bssid,
                 ));
-                if response.status_code != 0 {
-                    let _ = disable_receive(mmio);
-                    return (false, false, false);
-                }
                 let selected_rsn = match select_wpa2_psk_rsn(&access_point) {
                     Ok(rsn) => rsn,
                     Err(error) => {
@@ -8932,16 +8991,39 @@ async fn associate_target(
             ));
             return (false, false, false);
         }
+        match association.finish_tick() {
+            Ok(StaAssociationEvent::Irrelevant) => {}
+            Ok(StaAssociationEvent::Failed {
+                failure: StaAssociationFailure::Timeout,
+                total_received_frames,
+            }) => {
+                let _ = disable_receive(mmio);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response error=timeout \
+                     frames={total_received_frames} bssid={:02x?}",
+                    access_point.bssid,
+                ));
+                return (false, false, false);
+            }
+            Ok(event) => {
+                let _ = disable_receive(mmio);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                     action=finish-tick event={event:?}"
+                ));
+                return (false, false, false);
+            }
+            Err(error) => {
+                let _ = disable_receive(mmio);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-runtime \
+                     action=finish-tick error={error:?}"
+                ));
+                return (false, false, false);
+            }
+        }
         Timer::after_millis(1).await;
     }
-
-    let _ = disable_receive(mmio);
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-response error=timeout \
-         frames={received_frames} bssid={:02x?}",
-        access_point.bssid,
-    ));
-    (false, false, false)
 }
 
 async fn await_wpa2_message_1(

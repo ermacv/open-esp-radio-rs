@@ -334,12 +334,18 @@ The first scan-to-association slice is now driver-owned. The IEEE 802.11 crate
 selects Automatic/HE20-preferred/forced-HT20 mode, validates the peer's HE20
 MCS9 or HT40 geometry, produces the exact primary/center-channel plus rev0 CBW
 tuple, and owns the one-second vendor response deadline and finite 160-ms
-Association compatibility schedule. `associate_target` now has one scheduled
-TX branch instead of separate initial/retry copies, and its local PHY/channel
-selectors were deleted. A post-transfer remote-only
-`psram-code-psram-data` HE20 run delivered 10.011-Mbit/s RX plus 68.788-Mbit/s
-concurrent TX with zero `BUFFER_FULL` and `FIFO_OVERFLOW`. Frame/RX ownership,
-WPA2 action dispatch and the final connected dispatcher remain to move.
+Association compatibility schedule. `StaAssociationRuntime` now owns the
+complete 1,000-tick epoch, exact seven-attempt schedule, non-QoS sequence
+consumption, selected-peer response/disconnect classification, RX count and
+terminal timeout/rejection identity. `associate_target` is only its timer,
+frame extraction and DMA executor; its local tick loop, retry calculation,
+sequence consumption and response parser were deleted. Three host tests cover
+the deadline/schedule and sequence wrap, selected-peer success and filtering,
+disconnect and rejection. A cold boot received the successful response on
+attempt one, completed WPA2/DHCP, and the strict `psram-code-psram-data` HE20
+run then delivered 10.015-Mbit/s RX plus a 65.100-Mbit/s concurrent TX floor
+with zero strict DMA-starvation failure. WPA2 action dispatch and the final
+connected dispatcher remain to move.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per
@@ -351,8 +357,8 @@ frames and advances the Embassy timer. Three host tests cover timeout
 exhaustion and sequence wrap, selected-peer success, disconnect retry and
 status rejection. The reset-separated PSRAM/PSRAM HE20 regression then passed
 at 10.005-Mbit/s RX plus a 66.460-Mbit/s concurrent TX floor with zero DMA
-starvation. Association RX ownership, WPA2 action dispatch and the final
-connected dispatcher remain to move.
+starvation. Association ownership subsequently moved into the runtime above;
+WPA2 action dispatch and the final connected dispatcher remain to move.
 
 The post-response peer join is now driver-owned too.
 `StaPeerScanPolicy` retains the scan-derived association PHY, typed HT A-MPDU

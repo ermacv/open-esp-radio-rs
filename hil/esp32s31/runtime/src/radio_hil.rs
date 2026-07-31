@@ -34,12 +34,7 @@ use open_esp_radio::{
         embassy_tx::{
             ReferencedAmpduIngressPolicy, ReferencedHtAmpduBatch, ReferencedHtAmpduError,
         },
-        hal::{
-            ColdRadioRegisters, Radio, RadioRegisters, phy_i2c::PhyI2cMasterControl,
-            phy_temperature::PhyTemperatureSystemControl,
-            power_detector_platform::PhyPowerDetectorPlatformControl, state::Powered,
-            wifi_bb::PhyWifiBbControl,
-        },
+        hal::{ColdRadioRegisters, Radio, RadioRegisters},
         mac::{
             crypto::{
                 StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp,
@@ -104,83 +99,12 @@ use open_esp_radio::{
             mac::{self as mac_pac, init as mac_registers},
         },
         phy::{
-            PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterPort,
-            PhyRegisterRunError, PhyRegisterTransition,
-            phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
-            phy_channel::{
-                PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
-                PhyChipChannelRequest, PhyChipChannelTransition, PhyWifiTxGainImage,
-                PhyWifiTxGainRequest,
-            },
-            phy_cold::{
-                PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-                PhyColdPbusError, PhyColdPbusObservation, PhyColdState,
-            },
-            phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
-            phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
-            phy_i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
-            phy_pbus::PhyPbusHardwareObservation,
-            phy_pwdet::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
-            phy_rfpll::{
-                RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
-            },
-            phy_rx_dco::{
-                PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
-                PhyRxDcoExternalBinding,
-            },
-            phy_rx_gain::{
-                PhyRxGainInitCompletion, PhyRxGainInitExternalBinding, PhyRxGainPublishCompletion,
-                PhyRxGainPublishExternalBinding,
-            },
-            phy_rx_gain_cal::{
-                PhyRxDcCalibrationCompletion, PhyRxDcCalibrationExternalBinding,
-                PhyRxGainDcCompletion, PhyRxGainDcExternalBinding,
-            },
-            phy_rx_saturation::{PhyRxSaturationCompletion, PhyRxSaturationExternalBinding},
-            phy_rxiq::{
-                PhyRxIqCoverCompletion, PhyRxIqCoverExternalBinding, PhyRxIqDataCompletion,
-                PhyRxIqDataExternalBinding, PhyRxIqEstimatorCompletion,
-                PhyRxIqEstimatorExternalBinding, PhyRxIqGainCompletion, PhyRxIqGainExternalBinding,
-                PhyRxIqInitCompletion, PhyRxIqInitExternalBinding, PhyRxIqRfCalibrationCompletion,
-                PhyRxIqRfCalibrationExternalBinding,
-            },
-            phy_temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
-            phy_tx_cal::{
-                PhyPowerAttenuationCompletion, PhyPowerAttenuationExternalBinding,
-                PhyToneSarCompletion, PhyToneSarExternalBinding,
-                PhyTxCalibrationEnvironmentCompletion, PhyTxCalibrationEnvironmentExternalBinding,
-                PhyTxCapCompletion, PhyTxCapExternalBinding, PhyTxCapSearchCompletion,
-                PhyTxCapSearchExternalBinding,
-            },
-            phy_tx_power::{
-                PhyPowerControlPointCompletion, PhyPowerControlPointExternalBinding,
-                PhyTxPowerCompletion, PhyTxPowerExternalBinding,
-            },
-            phy_txdc::{PhyTxDcAction, PhyTxDcCompletion, PhyTxDcExternalBinding},
-            phy_txdc_pwdet::{
-                PhyTxDcPwdetCompletion, PhyTxDcPwdetExternalBinding, PhyTxDcPwdetSearchCompletion,
-                PhyTxDcPwdetSearchExternalBinding,
-            },
-            phy_txiq::{
-                PhyTxIqCalibrationCompletion, PhyTxIqCalibrationExternalBinding,
-                PhyTxIqCoverCompletion, PhyTxIqCoverExternalBinding, PhyTxIqInitCompletion,
-                PhyTxIqInitExternalBinding, PhyTxIqLinearPowerCompletion,
-                PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
-                PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion,
-                PhyTxIqMisPowerExternalBinding,
-            },
-            run_phy_register,
-            target_executor::{
-                HARDWARE_EDGE_LIMIT, PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c,
-                complete_dcode_i2c, complete_final_i2c, complete_masked_i2c, complete_rfpll_i2c,
-                complete_rx_dc_calibration_pbus, complete_rx_dco_pbus, complete_rx_gain_dc_pbus,
-                complete_rx_gain_publish_pbus, complete_rx_saturation_pbus,
-                complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c, complete_rxiq_gain_pbus,
-                complete_rxiq_init_i2c, complete_rxiq_init_pbus, complete_temperature_i2c,
-                complete_tx_calibration_environment_pbus, complete_tx_dc_pwdet_pbus,
-                complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c, complete_txiq_init_i2c,
-                complete_txiq_pbus,
-            },
+            PhyRegisterRunError, PhyRegisterTransition, PhyRfBoundary, PhyTargetObserver,
+            TargetPhyRegisterPort,
+            phy_channel::{PhyWifiTxGainImage, PhyWifiTxGainRequest},
+            phy_cold::PhyColdState,
+            run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
+            target_executor::{PhyAsyncDelay, PhyTargetPortError},
         },
     },
     ieee80211::{
@@ -250,11 +174,7 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 }
 use static_cell::StaticCell;
 
-const CHANNEL_READY_SAMPLE_LIMIT: u32 = 10_000;
-const RF_OPERATION_LIMIT: u32 = 100_000;
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
-const MAC_CHANNEL_SETTLE_US: u64 = 20;
-const MAC_CHANNEL_IDLE_SETTLE_US: u64 = 5;
 // HIL 2026-07-30: increasing this ring to the vendor throughput profile's 48
 // buffers did not improve simultaneous RX/TX throughput or eliminate the
 // hardware BUFFER_FULL count. Keep the smaller ring until that counter's
@@ -1296,8 +1216,6 @@ fn read_diagnostic_mmio(address: usize) -> u32 {
     unsafe { (address as *const u32).read_volatile() }
 }
 
-type PreludePortError = PhyTargetPortError;
-
 struct EmbassyPhyDelay;
 
 impl PhyAsyncDelay for EmbassyPhyDelay {
@@ -1306,598 +1224,177 @@ impl PhyAsyncDelay for EmbassyPhyDelay {
     }
 }
 
-struct PreludePort<'a, P> {
-    radio: &'a mut Radio<P, Powered>,
-    mmio: u16,
-    delays: u16,
-    reset_samples: u16,
-    rf_operations: u32,
-    baseband_operations: u32,
-}
+struct HilPhyObserver;
 
-impl<'a, P> PreludePort<'a, P> {
-    fn new(radio: &'a mut Radio<P, Powered>) -> Self {
-        Self {
-            radio,
-            mmio: 0,
-            delays: 0,
-            reset_samples: 0,
-            rf_operations: 0,
-            baseband_operations: 0,
+impl PhyTargetObserver for HilPhyObserver {
+    fn operation_started(&mut self) {
+        DIAGNOSTIC_ACTION_ORDINAL.fetch_add(1, Ordering::AcqRel);
+        set_diagnostic_stage(110);
+        set_diagnostic_stage(120);
+    }
+
+    fn operation_completed(&mut self) {
+        set_diagnostic_stage(130);
+    }
+
+    fn channel_frequency_ready_timed_out(&mut self, samples: u32) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL channel=frequency-ready-timeout samples={samples}"
+        ));
+    }
+
+    fn channel_tx_gain(&mut self, request: PhyWifiTxGainRequest, image: PhyWifiTxGainImage) {
+        if request.channel == LISTEN_CHANNEL
+            && TX_GAIN_ORACLE_CAPTURED
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            compare_tx_gain_with_rom(request, image);
         }
+    }
+
+    fn channel_completed(
+        &mut self,
+        outcome: open_esp_radio::esp32s31::phy::phy_channel::PhyChipChannelOutcome,
+        operations: u32,
+    ) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL stage=post-init-channel channel={} \
+             frequency={} operations={operations}",
+            outcome.channel, outcome.frequency_mhz,
+        ));
+    }
+
+    fn channel_failed(
+        &mut self,
+        failure: open_esp_radio::esp32s31::phy::phy_channel::PhyChipChannelFailure,
+        operations: u32,
+    ) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel \
+             failure={failure:?} operations={operations}"
+        ));
+    }
+
+    fn mac_channel_restarted(&mut self, channel_or_frequency: u16, cbw: u8, link: u8) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL stage=mac-channel-restart \
+             channel_or_frequency={channel_or_frequency} cbw={cbw} \
+             control={:#010x} regdma_link={link}",
+            read_diagnostic_mmio(0x2010_4cac),
+        ));
+    }
+
+    fn tx_dc_entry(&mut self) {
+        log_open_txdc_entry_mmio();
+    }
+
+    fn tx_dc_comparator(
+        &mut self,
+        gain_index: u8,
+        iteration: u8,
+        comparator_high: [bool; 2],
+    ) {
+        if gain_index == 0 && iteration == 0 {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL probe=txdc-first-environment \
+                 bb_init={:#010x} pbus={:#010x}/{:#010x}/{:#010x} \
+                 tone={:#010x}/{:#010x}/{:#010x}/{:#010x} control={:#010x}",
+                read_diagnostic_mmio(0x2010_0800),
+                read_diagnostic_mmio(0x2010_0884),
+                read_diagnostic_mmio(0x2010_088c),
+                read_diagnostic_mmio(0x2010_0890),
+                read_diagnostic_mmio(0x2010_040c),
+                read_diagnostic_mmio(0x2010_041c),
+                read_diagnostic_mmio(0x2010_0420),
+                read_diagnostic_mmio(0x2010_0428),
+                read_diagnostic_mmio(0x2010_0418),
+            ));
+        }
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL probe=txdc-comparator gain={} iteration={} \
+             comparator={:?} control={:#010x}",
+            gain_index,
+            iteration,
+            comparator_high,
+            read_diagnostic_mmio(0x2010_0418),
+        ));
+    }
+
+    fn power_detector_sample(
+        &mut self,
+        measurement_index: u8,
+        sample_index: u8,
+        register_value: u32,
+    ) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL probe=pwdet-sample measurement={} sample={} \
+             raw={:#010x} value={} tone={:#010x}/{:#010x}/{:#010x} \
+             sar={:#010x}/{:#010x} reference={:#010x}",
+            measurement_index,
+            sample_index,
+            register_value,
+            open_esp_radio::esp32s31::phy::phy_pwdet::sar_sample_from_register(register_value),
+            read_diagnostic_mmio(0x2010_040c),
+            read_diagnostic_mmio(0x2010_041c),
+            read_diagnostic_mmio(0x2010_0420),
+            read_diagnostic_mmio(0x2010_0808),
+            read_diagnostic_mmio(0x2010_080c),
+            read_diagnostic_mmio(0x2010_0818),
+        ));
+    }
+
+    fn rf_boundary(&mut self, boundary: PhyRfBoundary) {
+        let source = match boundary {
+            PhyRfBoundary::BeforeRfInit => "open-before-rf-init",
+            PhyRfBoundary::AfterPbusClear => "open-after-pbus-clear",
+            PhyRfBoundary::BeforeI2cMasterRegisterInit => "open-before-i2cmst-reg-init",
+            PhyRfBoundary::BeforePowerDetectorRegisterInit => "open-before-pwdet-reg-init",
+            PhyRfBoundary::BeforeFrontEndRegisterInit => "open-before-fe-reg-init",
+            PhyRfBoundary::BeforeTemperatureSensorReadInit => "open-before-tsens-read-init",
+            PhyRfBoundary::BeforeTxPowerControlBackgroundInit => "open-before-tx-pwctrl-bg-init",
+            PhyRfBoundary::BeforeChannelFrequencyInit => "open-before-chan-freq-init",
+        };
+        log_open_rf_boundary_mmio(source);
     }
 }
 
-async fn complete_rfpll<P: PhyI2cMasterControl>(
-    binding: RfpllFrequencyExternalBinding,
-    platform: &mut P,
+async fn select_channel(
+    state: &mut PhyColdState,
+    channel_or_frequency: u16,
+    cbw: u8,
+    platform: &mut EspHalRadioPeripheral,
     registers: &mut RadioRegisters,
-) -> Result<RfpllFrequencyCompletion, PreludePortError> {
-    match binding {
-        RfpllFrequencyExternalBinding::Mmio(binding) => match binding.action() {
-            RfpllFrequencyAction::ReadChannelReady { samples }
-                if samples >= CHANNEL_READY_SAMPLE_LIMIT =>
-            {
-                Ok(RfpllFrequencyCompletion::ChannelReadyTimedOut)
-            }
-            _ => Ok(binding.execute_target(registers)),
-        },
-        RfpllFrequencyExternalBinding::I2c(binding) => {
-            complete_rfpll_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        RfpllFrequencyExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
+) -> Result<(), PhyTargetPortError> {
+    let mut observer = HilPhyObserver;
+    select_phy_channel::<EmbassyPhyDelay, _, _>(
+        state,
+        channel_or_frequency,
+        cbw,
+        platform,
+        registers,
+        &mut observer,
+    )
+    .await
 }
 
-async fn complete_tx_calibration_environment<P: PhyPowerDetectorPlatformControl>(
-    binding: PhyTxCalibrationEnvironmentExternalBinding,
-    platform: &mut P,
+async fn switch_channel_with_mac_restart(
+    state: &mut PhyColdState,
+    channel_or_frequency: u16,
+    cbw: u8,
+    platform: &mut EspHalRadioPeripheral,
     registers: &mut RadioRegisters,
-) -> Result<PhyTxCalibrationEnvironmentCompletion, PreludePortError> {
-    match binding {
-        PhyTxCalibrationEnvironmentExternalBinding::Mmio(binding) => {
-            Ok(binding.execute_target(platform, registers))
-        }
-        PhyTxCalibrationEnvironmentExternalBinding::Pbus(binding) => {
-            complete_tx_calibration_environment_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyTxCalibrationEnvironmentExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_tone_sar(
-    binding: PhyToneSarExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyToneSarCompletion, PreludePortError> {
-    match binding {
-        PhyToneSarExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyToneSarExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_temperature<P: PhyTemperatureSystemControl + PhyI2cMasterControl>(
-    binding: PhyTemperatureExternalBinding,
-    platform: &mut P,
-) -> Result<PhyTemperatureCompletion, PreludePortError> {
-    match binding {
-        PhyTemperatureExternalBinding::I2c(binding) => {
-            complete_temperature_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyTemperatureExternalBinding::Sample(binding) => Ok(binding.execute_target(platform)),
-    }
-}
-
-async fn complete_power_control_point(
-    binding: PhyPowerControlPointExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyPowerControlPointCompletion, PreludePortError> {
-    match binding {
-        PhyPowerControlPointExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyPowerControlPointExternalBinding::ToneSar(binding) => {
-            let completion = complete_tone_sar(binding, registers).await?;
-            Ok(PhyPowerControlPointCompletion::ToneSar(completion))
-        }
-    }
-}
-
-async fn complete_tx_power<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
-    binding: PhyTxPowerExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxPowerCompletion, PreludePortError> {
-    match binding {
-        PhyTxPowerExternalBinding::Environment(binding) => Ok(PhyTxPowerCompletion::Environment(
-            complete_tx_calibration_environment(binding, platform, registers).await?,
-        )),
-        PhyTxPowerExternalBinding::Rfpll(binding) => Ok(PhyTxPowerCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyTxPowerExternalBinding::I2c(binding) => {
-            complete_tx_power_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyTxPowerExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyTxPowerExternalBinding::ToneSar(binding) => {
-            let completion = complete_tone_sar(binding, registers).await?;
-            Ok(PhyTxPowerCompletion::ToneSar(completion))
-        }
-        PhyTxPowerExternalBinding::Point(binding) => Ok(PhyTxPowerCompletion::Point(
-            complete_power_control_point(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_power_attenuation(
-    binding: PhyPowerAttenuationExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyPowerAttenuationCompletion, PreludePortError> {
-    match binding {
-        PhyPowerAttenuationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyPowerAttenuationExternalBinding::ToneSar(binding) => {
-            let completion = complete_tone_sar(binding, registers).await?;
-            Ok(PhyPowerAttenuationCompletion::ToneSar(completion))
-        }
-    }
-}
-
-async fn complete_tx_cap_search<P: PhyI2cMasterControl>(
-    binding: PhyTxCapSearchExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxCapSearchCompletion, PreludePortError> {
-    match binding {
-        PhyTxCapSearchExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyTxCapSearchExternalBinding::I2c(binding) => Ok(PhyTxCapSearchCompletion::I2c(
-            complete_masked_i2c::<EmbassyPhyDelay>(binding, platform).await?,
-        )),
-        PhyTxCapSearchExternalBinding::ToneSar(binding) => {
-            let completion = complete_tone_sar(binding, registers).await?;
-            Ok(PhyTxCapSearchCompletion::ToneSar(completion))
-        }
-    }
-}
-
-async fn complete_tx_cap<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
-    binding: PhyTxCapExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxCapCompletion, PreludePortError> {
-    match binding {
-        PhyTxCapExternalBinding::Environment(binding) => Ok(PhyTxCapCompletion::Environment(
-            complete_tx_calibration_environment(binding, platform, registers).await?,
-        )),
-        PhyTxCapExternalBinding::Rfpll(binding) => Ok(PhyTxCapCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyTxCapExternalBinding::I2c(binding) => Ok(PhyTxCapCompletion::I2c(
-            complete_masked_i2c::<EmbassyPhyDelay>(binding, platform).await?,
-        )),
-        PhyTxCapExternalBinding::Attenuation(binding) => Ok(PhyTxCapCompletion::Attenuation(
-            complete_power_attenuation(binding, registers).await?,
-        )),
-        PhyTxCapExternalBinding::Search(binding) => Ok(PhyTxCapCompletion::Search(
-            complete_tx_cap_search(binding, platform, registers).await?,
-        )),
-    }
-}
-
-async fn complete_tx_dc_pwdet_search(
-    binding: PhyTxDcPwdetSearchExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxDcPwdetSearchCompletion, PreludePortError> {
-    match binding {
-        PhyTxDcPwdetSearchExternalBinding::Pbus(binding) => {
-            complete_tx_dc_pwdet_search_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyTxDcPwdetSearchExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyTxDcPwdetSearchExternalBinding::ToneSar(binding) => Ok(
-            PhyTxDcPwdetSearchCompletion::ToneSar(complete_tone_sar(binding, registers).await?),
-        ),
-    }
-}
-
-async fn complete_tx_dc_pwdet<P: PhyPowerDetectorPlatformControl>(
-    binding: PhyTxDcPwdetExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxDcPwdetCompletion, PreludePortError> {
-    match binding {
-        PhyTxDcPwdetExternalBinding::Mmio(binding) => {
-            Ok(binding.execute_target(platform, registers))
-        }
-        PhyTxDcPwdetExternalBinding::Pbus(binding) => {
-            complete_tx_dc_pwdet_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyTxDcPwdetExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyTxDcPwdetExternalBinding::Search(binding) => Ok(PhyTxDcPwdetCompletion::Search(
-            complete_tx_dc_pwdet_search(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_dcode<P: PhyI2cMasterControl>(
-    binding: PhyDcodeExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyDcodeCompletion, PreludePortError> {
-    match binding {
-        PhyDcodeExternalBinding::Rfpll(binding) => Ok(PhyDcodeCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyDcodeExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyDcodeExternalBinding::I2c(binding) => {
-            complete_dcode_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-    }
-}
-
-async fn complete_txiq_linear_power(
-    binding: PhyTxIqLinearPowerExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqLinearPowerCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqLinearPowerExternalBinding::ToneSar(binding) => Ok(
-            PhyTxIqLinearPowerCompletion::ToneSar(complete_tone_sar(binding, registers).await?),
-        ),
-    }
-}
-
-async fn complete_txiq_mis_power(
-    binding: PhyTxIqMisPowerExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqMisPowerCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqMisPowerExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyTxIqMisPowerExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyTxIqMisPowerExternalBinding::LinearPower(binding) => {
-            Ok(PhyTxIqMisPowerCompletion::LinearPower(
-                complete_txiq_linear_power(binding, registers).await?,
-            ))
-        }
-    }
-}
-
-async fn complete_txiq_cover(
-    binding: PhyTxIqCoverExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqCoverCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqCoverExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyTxIqCoverExternalBinding::MisPower(binding) => Ok(PhyTxIqCoverCompletion::MisPower(
-            complete_txiq_mis_power(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_txiq_loopback<P: PhyI2cMasterControl>(
-    binding: PhyTxIqLoopbackExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqLoopbackCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqLoopbackExternalBinding::I2c(binding) => Ok(PhyTxIqLoopbackCompletion::I2c(
-            complete_masked_i2c::<EmbassyPhyDelay>(binding, platform).await?,
-        )),
-        PhyTxIqLoopbackExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-    }
-}
-
-async fn complete_txiq_calibration<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
-    binding: PhyTxIqCalibrationExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqCalibrationCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqCalibrationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyTxIqCalibrationExternalBinding::Loopback(binding) => {
-            Ok(PhyTxIqCalibrationCompletion::Loopback(
-                complete_txiq_loopback(binding, platform, registers).await?,
-            ))
-        }
-        PhyTxIqCalibrationExternalBinding::Pbus(binding) => {
-            complete_txiq_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyTxIqCalibrationExternalBinding::Environment(binding) => {
-            Ok(PhyTxIqCalibrationCompletion::Environment(
-                complete_tx_calibration_environment(binding, platform, registers).await?,
-            ))
-        }
-        PhyTxIqCalibrationExternalBinding::PowerAttenuation(binding) => {
-            Ok(PhyTxIqCalibrationCompletion::PowerAttenuation(
-                complete_power_attenuation(binding, registers).await?,
-            ))
-        }
-        PhyTxIqCalibrationExternalBinding::Cover(binding) => Ok(
-            PhyTxIqCalibrationCompletion::Cover(complete_txiq_cover(binding, registers).await?),
-        ),
-    }
-}
-
-async fn complete_txiq<
-    P: PhyPowerDetectorPlatformControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
->(
-    binding: PhyTxIqInitExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxIqInitCompletion, PreludePortError> {
-    match binding {
-        PhyTxIqInitExternalBinding::Rfpll(binding) => Ok(PhyTxIqInitCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyTxIqInitExternalBinding::I2c(binding) => {
-            complete_txiq_init_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyTxIqInitExternalBinding::Calibration(binding) => Ok(PhyTxIqInitCompletion::Calibration(
-            complete_txiq_calibration(binding, platform, registers).await?,
-        )),
-        PhyTxIqInitExternalBinding::Temperature(binding) => Ok(PhyTxIqInitCompletion::Temperature(
-            complete_temperature(binding, platform).await?,
-        )),
-    }
-}
-
-async fn complete_dc_iq(
-    binding: PhyDcIqExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyDcIqCompletion, PreludePortError> {
-    match binding {
-        PhyDcIqExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyDcIqExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_rx_dco(
-    binding: PhyRxDcoExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxDcoCompletion, PreludePortError> {
-    match binding {
-        PhyRxDcoExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxDcoExternalBinding::Pbus(binding) => {
-            complete_rx_dco_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxDcoExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyRxDcoExternalBinding::DcIq(binding) => Ok(PhyRxDcoCompletion::DcIq(
-            complete_dc_iq(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rxiq_estimator(
-    binding: PhyRxIqEstimatorExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqEstimatorCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqEstimatorExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxIqEstimatorExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_rxiq_cover(
-    binding: PhyRxIqCoverExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqCoverCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqCoverExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxIqCoverExternalBinding::Estimator(binding) => Ok(PhyRxIqCoverCompletion::Estimator(
-            complete_rxiq_estimator(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rxiq_rf_calibration(
-    binding: PhyRxIqRfCalibrationExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqRfCalibrationCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqRfCalibrationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxIqRfCalibrationExternalBinding::Cover(binding) => Ok(
-            PhyRxIqRfCalibrationCompletion::Cover(complete_rxiq_cover(binding, registers).await?),
-        ),
-    }
-}
-
-async fn complete_rxiq_data(
-    binding: PhyRxIqDataExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqDataCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqDataExternalBinding::Calibration(binding) => Ok(PhyRxIqDataCompletion::Calibration(
-            complete_rxiq_rf_calibration(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rxiq_gain<P: PhyI2cMasterControl>(
-    binding: PhyRxIqGainExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqGainCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqGainExternalBinding::Pbus(binding) => {
-            complete_rxiq_gain_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxIqGainExternalBinding::I2c(binding) => {
-            complete_rxiq_gain_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyRxIqGainExternalBinding::AdjustTx(binding) => Ok(PhyRxIqGainCompletion::AdjustTx(
-            complete_rxiq_adjusted_tx_i2c::<EmbassyPhyDelay>(binding, platform).await?,
-        )),
-        PhyRxIqGainExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxIqGainExternalBinding::Dco(binding) => Ok(PhyRxIqGainCompletion::Dco(
-            complete_rx_dco(binding, registers).await?,
-        )),
-        PhyRxIqGainExternalBinding::Estimator(binding) => Ok(PhyRxIqGainCompletion::Estimator(
-            complete_rxiq_estimator(binding, registers).await?,
-        )),
-        PhyRxIqGainExternalBinding::Data(binding) => Ok(PhyRxIqGainCompletion::Data(
-            complete_rxiq_data(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rxiq<P: PhyI2cMasterControl>(
-    binding: PhyRxIqInitExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxIqInitCompletion, PreludePortError> {
-    match binding {
-        PhyRxIqInitExternalBinding::Rfpll(binding) => Ok(PhyRxIqInitCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyRxIqInitExternalBinding::I2c(binding) => {
-            complete_rxiq_init_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyRxIqInitExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxIqInitExternalBinding::Pbus(binding) => {
-            complete_rxiq_init_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxIqInitExternalBinding::Loopback(binding) => Ok(PhyRxIqInitCompletion::Loopback(
-            complete_txiq_loopback(binding, platform, registers).await?,
-        )),
-        PhyRxIqInitExternalBinding::Gain(binding) => Ok(PhyRxIqInitCompletion::Gain(
-            complete_rxiq_gain(binding, platform, registers).await?,
-        )),
-        PhyRxIqInitExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_rx_saturation(
-    binding: PhyRxSaturationExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxSaturationCompletion, PreludePortError> {
-    match binding {
-        PhyRxSaturationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxSaturationExternalBinding::Pbus(binding) => {
-            complete_rx_saturation_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxSaturationExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyRxSaturationExternalBinding::Sample(binding) => Ok(binding.execute_target(registers)),
-    }
-}
-
-async fn complete_rx_dc_minimum(
-    binding: PhyRxDcMinimumExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxDcMinimumCompletion, PreludePortError> {
-    match binding {
-        PhyRxDcMinimumExternalBinding::DcIq(binding) => Ok(PhyRxDcMinimumCompletion::DcIq(
-            complete_dc_iq(binding, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rx_dc_calibration(
-    binding: PhyRxDcCalibrationExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxDcCalibrationCompletion, PreludePortError> {
-    match binding {
-        PhyRxDcCalibrationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxDcCalibrationExternalBinding::Pbus(binding) => {
-            complete_rx_dc_calibration_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxDcCalibrationExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyRxDcCalibrationExternalBinding::Minimum(binding) => {
-            Ok(PhyRxDcCalibrationCompletion::Minimum(
-                complete_rx_dc_minimum(binding, registers).await?,
-            ))
-        }
-    }
-}
-
-async fn complete_rx_gain_dc<P: PhyI2cMasterControl>(
-    binding: PhyRxGainDcExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxGainDcCompletion, PreludePortError> {
-    match binding {
-        PhyRxGainDcExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxGainDcExternalBinding::Rfpll(binding) => Ok(PhyRxGainDcCompletion::Rfpll(
-            complete_rfpll(binding, platform, registers).await?,
-        )),
-        PhyRxGainDcExternalBinding::Pbus(binding) => {
-            complete_rx_gain_dc_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxGainDcExternalBinding::I2c(binding) => Ok(PhyRxGainDcCompletion::I2c(
-            complete_masked_i2c::<EmbassyPhyDelay>(binding, platform).await?,
-        )),
-        PhyRxGainDcExternalBinding::Calibration(binding) => Ok(PhyRxGainDcCompletion::Calibration(
-            complete_rx_dc_calibration(binding, registers).await?,
-        )),
-        PhyRxGainDcExternalBinding::Minimum(binding) => Ok(PhyRxGainDcCompletion::Minimum(
-            complete_rx_dc_minimum(binding, registers).await?,
-        )),
-        PhyRxGainDcExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_rx_gain_publish(
-    binding: PhyRxGainPublishExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxGainPublishCompletion, PreludePortError> {
-    match binding {
-        PhyRxGainPublishExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxGainPublishExternalBinding::Pbus(binding) => {
-            complete_rx_gain_publish_pbus::<EmbassyPhyDelay>(binding, registers).await
-        }
-        PhyRxGainPublishExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-    }
-}
-
-async fn complete_rx_gain<P: PhyI2cMasterControl>(
-    binding: PhyRxGainInitExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyRxGainInitCompletion, PreludePortError> {
-    match binding {
-        PhyRxGainInitExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-        PhyRxGainInitExternalBinding::Dc(binding) => Ok(PhyRxGainInitCompletion::Dc(
-            complete_rx_gain_dc(binding, platform, registers).await?,
-        )),
-        PhyRxGainInitExternalBinding::Publish(binding) => Ok(PhyRxGainInitCompletion::Publish(
-            complete_rx_gain_publish(binding, registers).await?,
-        )),
-    }
+) -> Result<(), PhyTargetPortError> {
+    let mut observer = HilPhyObserver;
+    switch_phy_channel_with_mac_restart::<EmbassyPhyDelay, _, _>(
+        state,
+        channel_or_frequency,
+        cbw,
+        platform,
+        registers,
+        &mut observer,
+    )
+    .await
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1973,231 +1470,6 @@ fn compare_tx_gain_with_rom(request: PhyWifiTxGainRequest, rust: PhyWifiTxGainIm
          differences={} rust32={:08x?} rom32={:02x?}",
         request.channel, differences, rust.output_32, rom_32,
     ));
-}
-
-async fn complete_channel<
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
->(
-    binding: PhyChipChannelExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyChipChannelCompletion, PreludePortError> {
-    match binding {
-        PhyChipChannelExternalBinding::Mmio(binding) => match binding.action() {
-            PhyChipChannelAction::AwaitFrequencyReadyEdge { samples, .. }
-                if samples >= CHANNEL_READY_SAMPLE_LIMIT =>
-            {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL channel=frequency-ready-timeout samples={samples}"
-                ));
-                Ok(PhyChipChannelCompletion::FrequencyReadyTimedOut)
-            }
-            _ => Ok(binding.execute_target(platform, registers)),
-        },
-        PhyChipChannelExternalBinding::Temperature(binding) => Ok(
-            PhyChipChannelCompletion::Temperature(complete_temperature(binding, platform).await?),
-        ),
-        PhyChipChannelExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyChipChannelExternalBinding::I2c(binding) => {
-            complete_channel_i2c::<EmbassyPhyDelay>(binding, platform).await
-        }
-        PhyChipChannelExternalBinding::TxGain(binding) => {
-            let request = binding.request();
-            let completion = binding.execute();
-            if request.channel == LISTEN_CHANNEL
-                && TX_GAIN_ORACLE_CAPTURED
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok()
-                && let PhyChipChannelCompletion::TxGainCalculated { image, .. } = completion
-            {
-                compare_tx_gain_with_rom(request, image);
-            }
-            Ok(completion)
-        }
-    }
-}
-
-async fn select_channel<
-    P: open_esp_radio::esp32s31::hal::wifi_bb::PhyWifiBbControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
->(
-    state: &mut PhyColdState,
-    channel_or_frequency: u16,
-    cbw: u8,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<(), PreludePortError> {
-    let mut transition = PhyChipChannelTransition::new(PhyChipChannelRequest {
-        channel_or_frequency,
-        cbw,
-        parameters: state.channel_parameters(),
-    });
-
-    for operation in 0..RF_OPERATION_LIMIT {
-        match transition.action() {
-            PhyChipChannelAction::Complete(outcome) => {
-                state.apply_channel_outcome(outcome);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=post-init-channel channel={} \
-                     frequency={} operations={operation}",
-                    outcome.channel, outcome.frequency_mhz,
-                ));
-                return Ok(());
-            }
-            PhyChipChannelAction::Failed(failure) => {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel \
-                     failure={failure:?} operations={operation}"
-                ));
-                return Err(PreludePortError::UnexpectedBinding);
-            }
-            action => {
-                let binding = PhyChipChannelExternalBinding::lower(action)
-                    .map_err(|_| PreludePortError::UnexpectedBinding)?;
-                let completion = complete_channel(binding, platform, registers).await?;
-                transition
-                    .advance(completion)
-                    .map_err(|_| PreludePortError::UnexpectedBinding)?;
-            }
-        }
-    }
-
-    Err(PreludePortError::RfOperationLimit)
-}
-
-async fn switch_channel_with_mac_restart<
-    P: open_esp_radio::esp32s31::hal::wifi_bb::PhyWifiBbControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
->(
-    state: &mut PhyColdState,
-    channel_or_frequency: u16,
-    cbw: u8,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<(), PreludePortError> {
-    // SOURCE: `_oracles/libnet80211.a[wl_chm.o]` complete
-    // `chm_phy_change_channel.constprop.0` and `_oracles/libpp.a` complete
-    // `ic_mac_deinit/hal_mac_deinit`, preserved before migration cleanup in
-    // `migration/esp32s31-hybrid-runtime/src/channel_switch.rs`.
-    registers.request_mac_channel_stop_without_power_save();
-    Timer::after_micros(MAC_CHANNEL_SETTLE_US).await;
-
-    for _ in 0..MAC_HANDSHAKE_SAMPLE_LIMIT {
-        if registers.mac_channel_active_state() == 0 {
-            // The migration transcription deliberately placed this idle
-            // settle before PHY retuning. The old HIL accidentally delayed
-            // after restart instead, allowing an immediate tune while the
-            // stopped MAC had only just reported idle.
-            Timer::after_micros(MAC_CHANNEL_IDLE_SETTLE_US).await;
-            select_channel(state, channel_or_frequency, cbw, platform, registers).await?;
-            // SOURCE: `_oracles/libpp.a` complete
-            // `ic_mac_init -> hal_mac_init ->
-            // pwr_hal_select_wifimac_regdma_link(4)`.
-            //
-            // An exact pre-auth snapshot from the working vendor path has
-            // REGDMA_CONTROL.LINK=4 (`0x2010_d83c = 0x0808_01ff`), while the
-            // failing open path retained LINK=0 (`0x0800_01ff`). Select the
-            // vendor link here, after MAC init and channel retuning, rather
-            // than comparing unrelated post-connect steady-state snapshots.
-            registers.restart_mac_after_channel_switch_without_power_save();
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL stage=mac-channel-restart \
-                 channel_or_frequency={channel_or_frequency} cbw={cbw} \
-                 control={:#010x} regdma_link={}",
-                registers.read32(mac_registers::CONTROL),
-                registers.wifi_mac_regdma_link(),
-            ));
-            return Ok(());
-        }
-        Timer::after_micros(1).await;
-    }
-
-    Err(PreludePortError::HardwareEdgeTimedOut)
-}
-
-async fn complete_tx_dc(
-    binding: PhyTxDcExternalBinding,
-    registers: &mut RadioRegisters,
-) -> Result<PhyTxDcCompletion, PreludePortError> {
-    match binding {
-        PhyTxDcExternalBinding::Mmio(binding) => {
-            if binding.action() == PhyTxDcAction::ConfigurePbusDebugMode {
-                log_open_txdc_entry_mmio();
-            }
-            let completion = binding.execute_target(registers);
-            if let PhyTxDcCompletion::ComparatorsRead {
-                gain_index,
-                iteration,
-                comparator_high,
-            } = completion
-            {
-                if gain_index == 0 && iteration == 0 {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL probe=txdc-first-environment \
-                         bb_init={:#010x} pbus={:#010x}/{:#010x}/{:#010x} \
-                         tone={:#010x}/{:#010x}/{:#010x}/{:#010x} \
-                         control={:#010x}",
-                        read_diagnostic_mmio(0x2010_0800),
-                        read_diagnostic_mmio(0x2010_0884),
-                        read_diagnostic_mmio(0x2010_088c),
-                        read_diagnostic_mmio(0x2010_0890),
-                        read_diagnostic_mmio(0x2010_040c),
-                        read_diagnostic_mmio(0x2010_041c),
-                        read_diagnostic_mmio(0x2010_0420),
-                        read_diagnostic_mmio(0x2010_0428),
-                        read_diagnostic_mmio(0x2010_0418),
-                    ));
-                }
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=txdc-comparator gain={} iteration={} \
-                     comparator={:?} control={:#010x}",
-                    gain_index,
-                    iteration,
-                    comparator_high,
-                    read_diagnostic_mmio(0x2010_0418),
-                ));
-            }
-            Ok(completion)
-        }
-        PhyTxDcExternalBinding::Ready(binding) => Ok(binding.execute_target(registers)),
-        PhyTxDcExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyTxDcExternalBinding::Pbus(mut binding) => {
-            let mut started = false;
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                if binding.start_target(registers).is_ok() {
-                    started = true;
-                    break;
-                }
-                Timer::after_micros(1).await;
-            }
-            if !started {
-                return Err(PreludePortError::HardwareEdgeTimedOut);
-            }
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                Timer::after_micros(1).await;
-                match binding
-                    .observe_target_edge(registers)
-                    .map_err(|_| PreludePortError::UnexpectedBinding)?
-                {
-                    PhyPbusHardwareObservation::EdgeConsumed => {
-                        return binding
-                            .into_completion()
-                            .map_err(|_| PreludePortError::UnexpectedBinding);
-                    }
-                    PhyPbusHardwareObservation::StillPending => {}
-                }
-            }
-            Err(PreludePortError::HardwareEdgeTimedOut)
-        }
-    }
 }
 
 fn log_open_txdc_entry_mmio() {
@@ -2277,263 +1549,6 @@ fn log_open_txdc_entry_mmio() {
     }
 }
 
-async fn complete_pwdet<P: PhyPowerDetectorPlatformControl>(
-    binding: PhyPwdetExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyPwdetCompletion, PreludePortError> {
-    match binding {
-        PhyPwdetExternalBinding::Mmio(binding) => {
-            let completion = binding.execute_target(platform, registers);
-            if let PhyPwdetCompletion::SarSampled {
-                measurement_index,
-                sample_index,
-                register_value,
-                ..
-            } = completion
-            {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=pwdet-sample measurement={} sample={} \
-                     raw={:#010x} value={} tone={:#010x}/{:#010x}/{:#010x} \
-                     sar={:#010x}/{:#010x} reference={:#010x}",
-                    measurement_index,
-                    sample_index,
-                    register_value,
-                    open_esp_radio::esp32s31::phy::phy_pwdet::sar_sample_from_register(
-                        register_value
-                    ),
-                    read_diagnostic_mmio(0x2010_040c),
-                    read_diagnostic_mmio(0x2010_041c),
-                    read_diagnostic_mmio(0x2010_0420),
-                    read_diagnostic_mmio(0x2010_0808),
-                    read_diagnostic_mmio(0x2010_080c),
-                    read_diagnostic_mmio(0x2010_0818),
-                ));
-            }
-            Ok(completion)
-        }
-        PhyPwdetExternalBinding::Ready(binding) => Ok(binding.execute_target(registers)),
-        PhyPwdetExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            Ok(binding.into_completion())
-        }
-        PhyPwdetExternalBinding::Pbus(mut binding) => {
-            let mut started = false;
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                if binding.start_target(registers).is_ok() {
-                    started = true;
-                    break;
-                }
-                Timer::after_micros(1).await;
-            }
-            if !started {
-                return Err(PreludePortError::HardwareEdgeTimedOut);
-            }
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                Timer::after_micros(1).await;
-                match binding
-                    .sample_target_once(registers)
-                    .map_err(|_| PreludePortError::UnexpectedBinding)?
-                {
-                    PhyPwdetPbusObservation::Completed => {
-                        return binding
-                            .into_completion()
-                            .map_err(|_| PreludePortError::UnexpectedBinding);
-                    }
-                    PhyPwdetPbusObservation::StillPending => {}
-                }
-            }
-            Err(PreludePortError::HardwareEdgeTimedOut)
-        }
-    }
-}
-
-async fn complete_baseband<
-    P: PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
->(
-    binding: PhyBbExternalBinding,
-    platform: &mut P,
-    registers: &mut RadioRegisters,
-) -> Result<PhyBbInitCompletion, PreludePortError> {
-    match binding {
-        PhyBbExternalBinding::Mmio(binding) => Ok(PhyBbInitCompletion::Mmio(
-            binding.execute_target(platform, registers),
-        )),
-        PhyBbExternalBinding::TxDc(binding) => Ok(PhyBbInitCompletion::TxDc(
-            complete_tx_dc(binding, registers).await?,
-        )),
-        PhyBbExternalBinding::Pwdet(binding) => Ok(PhyBbInitCompletion::Pwdet(
-            complete_pwdet(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::TxCap(binding) => Ok(PhyBbInitCompletion::TxCap(
-            complete_tx_cap(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::Temperature(binding) => Ok(PhyBbInitCompletion::Temperature(
-            complete_temperature(binding, platform).await?,
-        )),
-        PhyBbExternalBinding::TxPower(binding) => Ok(PhyBbInitCompletion::TxPower(
-            complete_tx_power(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::TxDcPwdet(binding) => Ok(PhyBbInitCompletion::TxDcPwdet(
-            complete_tx_dc_pwdet(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::Dcode(binding) => Ok(PhyBbInitCompletion::Dcode(
-            complete_dcode(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::TxIq(binding) => Ok(PhyBbInitCompletion::TxIq(
-            complete_txiq(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::TxCfr(binding) => Ok(PhyBbInitCompletion::TxCfr(
-            binding.execute_target(registers),
-        )),
-        PhyBbExternalBinding::PbusMemory(binding) => Ok(PhyBbInitCompletion::PbusMemory(
-            binding
-                .execute_target(registers)
-                .map_err(|_| PreludePortError::UnexpectedBinding)?,
-        )),
-        PhyBbExternalBinding::RxIq(binding) => Ok(PhyBbInitCompletion::RxIq(
-            complete_rxiq(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::RxSaturation(binding) => Ok(PhyBbInitCompletion::RxSaturation(
-            complete_rx_saturation(binding, registers).await?,
-        )),
-        PhyBbExternalBinding::RxGain(binding) => Ok(PhyBbInitCompletion::RxGain(
-            complete_rx_gain(binding, platform, registers).await?,
-        )),
-        PhyBbExternalBinding::Channel(binding) => Ok(PhyBbInitCompletion::Channel(
-            complete_channel(binding, platform, registers).await?,
-        )),
-    }
-}
-
-async fn complete_rf<
-    P: open_esp_radio::esp32s31::hal::analog_i2c::PhyPmuControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
->(
-    binding: PhyColdExternalBinding,
-    radio: &mut Radio<P, Powered>,
-) -> Result<PhyRfInitPrefixCompletion, PreludePortError> {
-    match binding {
-        PhyColdExternalBinding::I2c(mut binding) => {
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                match binding.action() {
-                    PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                        match binding.start_target(radio.parts_mut().0) {
-                            Ok(()) => {}
-                            Err(PhyColdI2cError::BusyAtStart) => Timer::after_micros(1).await,
-                            Err(_) => return Err(PreludePortError::UnexpectedBinding),
-                        }
-                    }
-                    PhyColdI2cAction::AwaitReadCompletionEdge { .. }
-                    | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        Timer::after_micros(1).await;
-                        match binding
-                            .observe_target_edge(radio.parts_mut().0)
-                            .map_err(|_| PreludePortError::UnexpectedBinding)?
-                        {
-                            PhyColdI2cObservation::EdgeConsumed
-                            | PhyColdI2cObservation::StillPending => {}
-                        }
-                    }
-                    PhyColdI2cAction::Complete(_) => {
-                        return binding
-                            .into_completion()
-                            .map_err(|_| PreludePortError::UnexpectedBinding);
-                    }
-                }
-            }
-            Err(PreludePortError::HardwareEdgeTimedOut)
-        }
-        PhyColdExternalBinding::Mmio(binding) => {
-            match binding.outer_action() {
-                PhyRfInitPrefixAction::ConfigureFeBbClock => {
-                    log_open_rf_boundary_mmio("open-before-rf-init");
-                }
-                PhyRfInitPrefixAction::ConfigureI2cClockSelection { .. } => {
-                    log_open_rf_boundary_mmio("open-after-pbus-clear");
-                }
-                PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
-                    log_open_rf_boundary_mmio("open-before-i2cmst-reg-init");
-                }
-                PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                    log_open_rf_boundary_mmio("open-before-pwdet-reg-init");
-                }
-                PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
-                    log_open_rf_boundary_mmio("open-before-fe-reg-init");
-                }
-                PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                    log_open_rf_boundary_mmio("open-before-tsens-read-init");
-                }
-                PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                    log_open_rf_boundary_mmio("open-before-tx-pwctrl-bg-init");
-                }
-                PhyRfInitPrefixAction::ChannelFrequency(
-                    open_esp_radio::esp32s31::phy::phy_frequency::PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters {
-                        ..
-                    }
-                ) => {
-                    log_open_rf_boundary_mmio("open-before-chan-freq-init");
-                }
-                _ => {}
-            }
-            binding
-                .execute_target(radio)
-                .map_err(|_| PreludePortError::UnexpectedBinding)
-        }
-        PhyColdExternalBinding::Observation(binding) => {
-            if binding.outer_action() == PhyRfInitPrefixAction::CaptureChannelFrequencyControl {
-                log_open_rf_boundary_mmio("open-before-chan-freq-init");
-            }
-            binding
-                .execute_target(radio)
-                .map_err(|_| PreludePortError::UnexpectedBinding)
-        }
-        PhyColdExternalBinding::Pbus(mut binding) => {
-            let registers = radio.registers_mut();
-            let mut started = false;
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                match binding.start_target(registers) {
-                    Ok(()) => {
-                        started = true;
-                        break;
-                    }
-                    Err(PhyColdPbusError::BusyAtStart) => Timer::after_micros(1).await,
-                    Err(_) => return Err(PreludePortError::UnexpectedBinding),
-                }
-            }
-            if !started {
-                return Err(PreludePortError::HardwareEdgeTimedOut);
-            }
-            for _ in 0..HARDWARE_EDGE_LIMIT {
-                Timer::after_micros(1).await;
-                match binding
-                    .observe_target_edge(registers)
-                    .map_err(|_| PreludePortError::UnexpectedBinding)?
-                {
-                    PhyColdPbusObservation::EdgeConsumed => {
-                        return binding
-                            .into_completion()
-                            .map_err(|_| PreludePortError::UnexpectedBinding);
-                    }
-                    PhyColdPbusObservation::StillPending => {}
-                }
-            }
-            Err(PreludePortError::HardwareEdgeTimedOut)
-        }
-        PhyColdExternalBinding::Timer(binding) => {
-            Timer::after_micros(u64::from(binding.micros())).await;
-            binding
-                .into_elapsed_completion()
-                .map_err(|_| PreludePortError::UnexpectedBinding)
-        }
-    }
-}
-
 fn log_open_rf_boundary_mmio(source: &str) {
     emergency_log(format_args!(
         "OPEN_RADIO_RF_BOUNDARY source={source} \
@@ -2550,71 +1565,6 @@ fn log_open_rf_boundary_mmio(source: &str) {
     ));
 }
 
-impl<
-    P: open_esp_radio::esp32s31::hal::phy_prelude::PhyPreludePlatformControl
-        + open_esp_radio::esp32s31::hal::analog_i2c::PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
-> PhyRegisterPort for PreludePort<'_, P>
-{
-    type Error = PreludePortError;
-
-    async fn complete(
-        &mut self,
-        binding: PhyRegisterExternalBinding,
-    ) -> Result<PhyRegisterCompletion, Self::Error> {
-        DIAGNOSTIC_ACTION_ORDINAL.fetch_add(1, Ordering::AcqRel);
-        set_diagnostic_stage(110);
-        set_diagnostic_stage(120);
-        let result = match binding {
-            PhyRegisterExternalBinding::Mmio(binding) => {
-                self.mmio += 1;
-                Ok(PhyRegisterCompletion::Mmio(
-                    binding.execute_target(self.radio),
-                ))
-            }
-            PhyRegisterExternalBinding::Timer(binding) => {
-                Timer::after_micros(u64::from(binding.micros())).await;
-                self.delays += 1;
-                Ok(binding.into_completion())
-            }
-            PhyRegisterExternalBinding::ResetSample(binding) => {
-                self.reset_samples += 1;
-                Ok(binding.execute_target(self.radio))
-            }
-            PhyRegisterExternalBinding::Rf(binding) => {
-                if self.rf_operations >= RF_OPERATION_LIMIT {
-                    Err(PreludePortError::RfOperationLimit)
-                } else {
-                    let completion = complete_rf(binding, self.radio).await?;
-                    self.rf_operations += 1;
-                    Ok(PhyRegisterCompletion::Rf(completion))
-                }
-            }
-            PhyRegisterExternalBinding::Baseband(binding) => {
-                let (platform, registers) = self.radio.parts_mut();
-                let completion = complete_baseband(binding, platform, registers).await?;
-                self.baseband_operations += 1;
-                Ok(PhyRegisterCompletion::Baseband(completion))
-            }
-            PhyRegisterExternalBinding::Temperature(binding) => {
-                let platform = self.radio.parts_mut().0;
-                Ok(PhyRegisterCompletion::Temperature(
-                    complete_temperature(binding, platform).await?,
-                ))
-            }
-            PhyRegisterExternalBinding::FinalI2c(binding) => {
-                complete_final_i2c::<EmbassyPhyDelay>(binding, self.radio.parts_mut().0).await
-            }
-        };
-        if result.is_ok() {
-            set_diagnostic_stage(130);
-        }
-        result
-    }
-}
 
 fn observe_scan_descriptors<M: Mmio>(
     mmio: &mut M,
@@ -11517,7 +10467,8 @@ pub async fn run(platform: EspHalRadioPeripheral, trng: Trng) {
     // Selecting the requested listen channel is a separate post-init call,
     // matching the vendor call graph instead of folding it into cold init.
     let mut transition = PhyRegisterTransition::with_default_profile();
-    let mut port = PreludePort::new(&mut powered);
+    let mut port =
+        TargetPhyRegisterPort::<_, EmbassyPhyDelay, _>::new(&mut powered, HilPhyObserver);
     loop {
         set_diagnostic_stage(100);
         let outcome = match run_phy_register(&mut transition, &mut port).await {
@@ -11530,7 +10481,8 @@ pub async fn run(platform: EspHalRadioPeripheral, trng: Trng) {
                     PhyRegisterRunError::Port(error) => emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=port error={error:?} \
                          rf_operations={} baseband_operations={}",
-                        port.rf_operations, port.baseband_operations,
+                        port.counters().rf_operations,
+                        port.counters().baseband_operations,
                     )),
                     PhyRegisterRunError::Transition(error) => emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=transition error={error:?}"
@@ -11552,18 +10504,19 @@ pub async fn run(platform: EspHalRadioPeripheral, trng: Trng) {
                 break;
             }
         };
+        let counters = port.counters();
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} \
                      mmio={} delays={} reset_samples={} rf_operations={} \
                      baseband_operations={}",
             outcome.full_calibration_performed,
-            port.mmio,
-            port.delays,
-            port.reset_samples,
-            port.rf_operations,
-            port.baseband_operations,
+            counters.mmio,
+            counters.delays,
+            counters.reset_samples,
+            counters.rf_operations,
+            counters.baseband_operations,
         ));
-        // `PreludePort` borrowed the complete radio while the PHY
+        // `TargetPhyRegisterPort` borrowed the complete radio while the PHY
         // transition was active.  The transition is now finished, so
         // release that borrow before lending the owned register block
         // to the MAC/RX HIL.

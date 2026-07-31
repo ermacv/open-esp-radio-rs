@@ -225,18 +225,29 @@ is one injected Embassy-delay call. The following PSRAM/PSRAM HE20 run passed
 at 10.010-Mbit/s RX plus a 65.386-Mbit/s concurrent TX floor with zero DMA
 starvation.
 
+The guarded whole-port transfer is now complete. `TargetPhyRegisterPort` owns
+the nested RF/baseband/channel completion composition as one private async
+graph; only the complete registration port and channel lifecycle functions are
+public. `PhyTargetObserver` preserves HIL crash stages, ROM comparisons and raw
+MMIO evidence without letting diagnostics determine a transition result. The
+application-local `PreludePort` and 1,206 lines of completion logic were
+deleted. The target placement audit passed with a 998,912-byte encoded image,
+and a reset-separated PSRAM/PSRAM HE20 run passed at 10.008-Mbit/s RX plus a
+69.758-Mbit/s concurrent TX floor with zero DMA starvation.
+
 A 2026-07-30 experiment copying the nested RX/TX calibration composition into
 separate public cross-crate `async fn`s was rejected. In the identical
 `psram-code-psram-data` image it moved the runtime text end from
 `0x500c1faa` to `0x500c248e`; consecutive reset-separated HE20 runs reported
-40 and 12,097 RX `BUFFER_FULL` events. Restoring the current single application
-port restored the exact `0x500c1faa` frontier and passed at 10.047-Mbit/s RX
+40 and 12,097 RX `BUFFER_FULL` events. Restoring the then-current single
+application port restored the exact `0x500c1faa` frontier and passed at 10.047-Mbit/s RX
 plus 66.169-Mbit/s TX with zero DMA starvation. The correlation is proven by
 the HIL runs; the suspected cause is changed nested-future/state layout, not
-yet a proven stack-overflow diagnosis. The next transfer should therefore move
-one complete `TargetPhyRegisterPort` state machine and add a compile-time
-future-size/frontier assertion instead of exposing every nested completion as
-an independent async API.
+yet a proven stack-overflow diagnosis. The completed transfer followed the
+resulting constraint: it moved one private `TargetPhyRegisterPort` composition
+instead of exposing the nested completions. The placement audit and strict
+simultaneous RX/TX qualification are the enforced frontier guards; a directly
+nameable compile-time RPITIT future size remains unavailable on stable Rust.
 
 ### 2. ESP-HAL platform adapter
 

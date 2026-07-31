@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.010 Mbit/s.
-- Concurrent open-radio TX floor: 65.386 Mbit/s.
-- Conservative sum: 75.396 Mbit/s.
+- Device direct-RX median: 10.008 Mbit/s.
+- Concurrent open-radio TX floor: 69.758 Mbit/s.
+- Conservative sum: 79.766 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,11 +49,11 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `be0050b4d1372a58d1e0354e250ea8713dc808f8d5a3f95185fbf94f79296382`.
+  `42387b138464580c00af89ba5d63a5c3302dd6ecc288c82d2e710793d008cf33`.
 - ESP application image SHA-256:
-  `c64c52b129a709c634f25ba6fbfc44ef1e836df94b30b75c9b90e45c61175229`.
+  `e38c35a1d89a7d2d6a007699e7b42eac196d481404b9df8558fb2df369465d63`.
 - Packed stage-two runtime SHA-256:
-  `605aa8b29a2b0760f5e8feb504926cc9568ee406dbf0f157a708d4ed6e03d3a1`.
+  `0e8b3f16496debf5007c36afabcde63990b41548c9ac4099de6490b624cf8039`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -76,13 +76,16 @@ reporting also remain HIL concerns. The authentication/WPA2 executor
 orchestration is tracked separately and must be extracted before the old
 application HIL can be deleted.
 
-The same image now calls the PHY crate's `run_phy_register` instead of keeping
-a second copy of its lowering/advance loop in the HIL. Operation ordinals and
-crash-stage markers moved to `PreludePort::complete`, the actual hardware
-boundary. The encoded application shrank from 1,129,104 to 998,912 bytes while
-retaining the strict result above. Nested RF/baseband completion remains one
-application-local port until it can move as one complete type with a guarded
-future/layout frontier.
+The same image now calls the PHY crate's `run_phy_register` through the
+driver-owned `TargetPhyRegisterPort`. The complete nested RF/baseband/channel
+completion graph, finite polling bounds and MAC stop/retune/restart contract
+therefore have one owner in `open-esp-radio-phy-esp32s31`; the 1,206-line HIL
+copy was deleted. Operation ordinals, ROM TX-gain comparison and raw MMIO
+snapshots are isolated behind `PhyTargetObserver` and cannot change a PHY
+completion. The HIL now supplies only a zero-sized Embassy delay adapter and a
+diagnostic observer. The encoded application remains 998,912 bytes, the
+placement audit passed, and the reset-separated strict run produced the result
+above with zero `BUFFER_FULL` and zero `FIFO_OVERFLOW`.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

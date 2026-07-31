@@ -10,6 +10,8 @@ extern crate std;
 pub mod executor;
 #[cfg(target_arch = "riscv32")]
 pub mod target_executor;
+#[cfg(target_arch = "riscv32")]
+pub mod target_port;
 
 pub mod phy_bb;
 pub mod phy_channel;
@@ -48,3 +50,8 @@ pub use phy_register::{
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
 #[cfg(target_arch = "riscv32")]
 pub use target_executor::{PhyAsyncDelay, PhyTargetPortError, HARDWARE_EDGE_LIMIT};
+#[cfg(target_arch = "riscv32")]
+pub use target_port::{
+    select_phy_channel, switch_phy_channel_with_mac_restart, NoopPhyTargetObserver, PhyRfBoundary,
+    PhyTargetObserver, PhyTargetPortCounters, TargetPhyRegisterPort,
+};

@@ -35,9 +35,9 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Result
 
 - Host offer: 10.001 Mbit/s, 15,001,200 bytes / 12,501 datagrams.
-- Device direct-RX median: 10.011 Mbit/s.
-- Concurrent open-radio TX floor: 63.660 Mbit/s.
-- Conservative sum: 73.671 Mbit/s.
+- Device direct-RX median: 10.005 Mbit/s.
+- Concurrent open-radio TX floor: 61.065 Mbit/s.
+- Conservative sum: 71.070 Mbit/s.
 - RX baseband format remained HE (`format=4`).
 - TX vector remained HE20 MCS9 at 114.7 Mbit/s.
 - Both captured RX runtime intervals reported `buffer_full=0` and
@@ -49,13 +49,13 @@ cargo hil traffic bidirectional 192.168.178.141 \
 ## Artifact identity
 
 - UART qualification log SHA-256:
-  `32d55733bc6a467c22f94135d49884a5edd71a54cf5a6556c81ee7e884ee4831`.
+  `9daf5e6297d0a6eb86f19adb119b6e5d6510a81578044f3a248e0191577e9e8b`.
 - ESP application image SHA-256:
-  `0e894bf1030d399fd953ee7cb74ba6d65504c7515091e81b6ae8a22d63c49434`.
+  `bf254fc6015b61c5402cbcbd9014491a4e256c1a8680eab23bb8eafabc979865`.
 - Packed stage-two runtime SHA-256:
-  `db11b111f3ad99ffbc05080d06420436c4aa21d6b68aa703a9751721ce5900b1`.
+  `4475c930dccfd6b6995099709db54ace7b5cbc333bb65f59905c319af1d6185a`.
 - Qualification report SHA-256:
-  `01aba5c945150a7ef06d60cc1be9844d61eb826a5877f0b8eabdb146bdbc41a2`.
+  `0f9585709e4119dc98bd9f1cc712ec6111378e13a3cbf5ba6ef7b1c93de0421c`.
 
 The bulky UART log and binaries remain generated artifacts under
 `target/hil/esp32s31`; this record preserves their hashes and the exact cell.
@@ -84,9 +84,11 @@ response windows. The HIL's spontaneous second M2 was deleted: complete vendor
 M1 re-enters through `wpa_sm_rx_eapol` and the driver state emits the response.
 The connected path now also uses one `StaTxBlockAckSessions` owner for the
 vendor TID order 0/7/5, shared Dialog Token sequence, independent alarms and
-ADDBA/DELBA routing. RX agreement ownership and the remaining connected
-event/route dispatcher still need extraction before the application HIL can
-become only a platform executor.
+ADDBA/DELBA routing. `StaRxBlockAckSessions` now owns pending requests, the
+eight software reorder/hardware-bank identities and a private activation
+transaction that must be committed or cancelled after MMIO/TX completion.
+The remaining connected frame event/route dispatcher still needs extraction
+before the application HIL can become only a platform executor.
 
 The same image now calls the PHY crate's `run_phy_register` through the
 driver-owned `TargetPhyRegisterPort`. The complete nested RF/baseband/channel
@@ -153,8 +155,15 @@ The connected BlockAck transfer replaced three HIL-owned sessions, three
 alarm slots and manual response-token selection with one fixed driver owner.
 The reset-separated trace proved ADDBA requests with Dialog Tokens 1, 2 and 3
 for TIDs 0, 7 and 5, followed by three operational 32-entry agreements. DHCP,
-the external ARP probe and the strict 10.011-Mbit/s RX plus 63.660-Mbit/s
-concurrent-TX run then passed with no DMA-starvation failure.
+the external ARP probe and the strict TX/RX BlockAck run then passed with no
+DMA-starvation failure.
+
+The receive BlockAck transfer removed both HIL agreement arrays and moved the
+vendor split between a bounded negotiated/reorder window and the literal
+64-entry S31 hardware window into `StaRxBlockAckSessions`. The HIL now only
+executes the returned bank program/clear and response-frame TX transaction.
+The final UART log retained a live bank-0 snapshot with hardware window 64;
+the strict run delivered 10.005-Mbit/s RX plus 61.065-Mbit/s concurrent TX.
 
 The registration tail's read-only PHY-I2C loop is no longer part of that
 application port. `complete_final_i2c` owns its fixed 10,000-edge bound,

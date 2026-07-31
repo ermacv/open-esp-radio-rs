@@ -65,10 +65,8 @@ use open_esp_radio::{
                 extract_ccmp_data, extract_control, extract_data, extract_management,
                 first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
             },
-            rx_ampdu::{
-                RX_BLOCK_ACK_MAX_WINDOW, RxBlockAckReorder, write_successful_addba_response,
-            },
-            rx_ampdu_hw::{self, S31_RX_BLOCK_ACK_MAX_TID, S31RxBlockAckAgreement},
+            rx_ampdu::StaRxBlockAckSessions,
+            rx_ampdu_hw,
             rx_pool::{
                 NetworkRxFrame, RxFrameQueue, RxStagePool, RxStageTransactionError,
                 VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
@@ -4496,25 +4494,6 @@ async fn start_tx_block_ack_negotiation(
     }
 }
 
-#[derive(Clone, Copy)]
-struct PendingRxAddba {
-    dialog_token: u8,
-    tid: u8,
-    requested_window: u16,
-    starting_sequence: u16,
-}
-
-struct ActiveRxAddba {
-    hardware_index: u8,
-    tid: u8,
-    window: u16,
-    starting_sequence: u16,
-    // The software agreement must outlive the matching MMIO entry. Frame
-    // retention/release will be connected to this owner after the first
-    // aggregate HIL establishes the descriptor delivery contract.
-    _reorder: RxBlockAckReorder,
-}
-
 // Keep one ordinary-code symbol alive so the host HIL can prove the runtime
 // memory profile from periodic UART evidence. In the required
 // psram-code-psram-data image its address is in 0x5000_0000..0x5100_0000; a
@@ -4657,8 +4636,7 @@ async fn connected_radio_loop(
     // node offset `0x268 + tid * 4`; complete `_oracles/libpp.a[hal_ampdu.o]`
     // exposes eight ordinary receive-BA hardware banks. Keep both ownership
     // domains fixed-size and allocation-free.
-    let mut pending_rx_addba: [Option<PendingRxAddba>; 8] = [None; 8];
-    let mut active_rx_addba: [Option<ActiveRxAddba>; 8] = core::array::from_fn(|_| None);
+    let mut rx_block_ack = StaRxBlockAckSessions::new();
     let mut last_he_rx_trigger_count = 0_u16;
     let mut observed_trigger_frames = 0_u32;
     let mut observed_he_ndpa_frames = 0_u32;
@@ -5152,23 +5130,18 @@ async fn connected_radio_loop(
                              starting_sequence={starting_sequence}",
                             u8::from(immediate),
                         ));
-                        if immediate
-                            && window != 0
-                            && timeout_tu == 0
-                            // SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
-                            // ht_recv_action_ba_addba_request` rejects only
-                            // TIDs with bit three set. The earlier TID-0-only
-                            // restriction came from the migration HIL, not
-                            // from the vendor implementation.
-                            && tid <= S31_RX_BLOCK_ACK_MAX_TID
-                            && starting_sequence <= 0x0fff
-                        {
-                            pending_rx_addba[usize::from(tid)] = Some(PendingRxAddba {
-                                dialog_token,
-                                tid,
-                                requested_window: window,
-                                starting_sequence,
-                            });
+                        if let Err(error) = rx_block_ack.offer(
+                            dialog_token,
+                            tid,
+                            immediate,
+                            window,
+                            timeout_tu,
+                            starting_sequence,
+                        ) {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL stage=rx-addba-reject \
+                                 tid={tid} error={error:?}"
+                            ));
                         }
                     }
                     Some(BlockAckAction::AddbaResponse { .. }) => {
@@ -5220,15 +5193,8 @@ async fn connected_radio_loop(
                         if initiator {
                             // The peer is the BA originator, so this tears
                             // down our receive agreement for that TID.
-                            if let Some(hardware_index) =
-                                active_rx_addba.iter().position(|agreement| {
-                                    agreement
-                                        .as_ref()
-                                        .is_some_and(|agreement| agreement.tid == tid)
-                                })
-                            {
-                                let _ = rx_ampdu_hw::clear(mmio, hardware_index as u8);
-                                active_rx_addba[hardware_index] = None;
+                            if let Some(agreement) = rx_block_ack.stop(tid) {
+                                let _ = rx_ampdu_hw::clear(mmio, agreement.hardware_index);
                             }
                         } else {
                             // The peer is the BA recipient, so this tears down
@@ -5395,154 +5361,109 @@ async fn connected_radio_loop(
             ));
         }
 
-        if let Some((pending_index, request)) = pending_rx_addba
-            .iter()
-            .enumerate()
-            .find_map(|(index, request)| request.map(|request| (index, request)))
-        {
-            pending_rx_addba[pending_index] = None;
-            let hardware_index = active_rx_addba
-                .iter()
-                .position(|agreement| {
-                    agreement
-                        .as_ref()
-                        .is_some_and(|agreement| agreement.tid == request.tid)
-                })
-                .or_else(|| active_rx_addba.iter().position(Option::is_none));
-            let Some(hardware_index) = hardware_index else {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-hardware \
-                     tid={} error=no-free-agreement",
-                    request.tid,
-                ));
-                continue;
-            };
-            let hardware_index = hardware_index as u8;
-            if active_rx_addba[usize::from(hardware_index)].is_some() {
-                let _ = rx_ampdu_hw::clear(mmio, hardware_index);
-                active_rx_addba[usize::from(hardware_index)] = None;
-            }
-            let selected_window = request.requested_window.min(RX_BLOCK_ACK_MAX_WINDOW);
-            // SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
-            // ampdu_rx_start.constprop.0` selects the negotiated response/reorder
-            // window above, but its ordinary STA activation branch passes the
-            // literal 64 to `ic_add_rx_ba`. Keep that hardware receive window
-            // distinct from the protocol-owned window.
-            let hardware_window = RX_BLOCK_ACK_MAX_WINDOW;
-            let reorder = match RxBlockAckReorder::new(request.starting_sequence, selected_window) {
-                Ok(reorder) => reorder,
-                Err(error) => {
+        match rx_block_ack.begin_pending(bssid) {
+            Ok(Some(activation)) => {
+                let hardware = activation.hardware();
+                if let Some(replaced) = activation.replaced() {
+                    let _ = rx_ampdu_hw::clear(mmio, replaced.hardware_index);
+                }
+                if let Err(error) = rx_ampdu_hw::program(mmio, hardware) {
+                    let _ = rx_block_ack.cancel(activation);
                     emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-software \
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-hardware \
                          error={error:?}"
                     ));
                     continue;
                 }
-            };
-            let agreement = S31RxBlockAckAgreement {
-                hardware_index,
-                interface: 0,
-                peer: bssid,
-                tid: request.tid,
-                starting_sequence: request.starting_sequence,
-                window: hardware_window,
-            };
-            if let Err(error) = rx_ampdu_hw::program(mmio, agreement) {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-hardware \
-                     error={error:?}"
-                ));
-                continue;
-            }
 
-            let mut body = [0_u8; 9];
-            if let Err(error) = write_successful_addba_response(
-                &mut body,
-                request.dialog_token,
-                request.tid,
-                selected_window,
-            ) {
-                let _ = rx_ampdu_hw::clear(mmio, hardware_index);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-body error={error:?}"
-                ));
-                continue;
-            }
-            let frame_length = match (StaActionFrame {
-                source: station_address,
-                bssid,
-                sequence_number: sequences.take_non_qos(),
-                body: &body,
-            })
-            .encode(&mut tx_storage.dma_buffer_mut()[TX_METADATA_SIZE..])
-            {
-                Ok(length) => length,
-                Err(error) => {
-                    let _ = rx_ampdu_hw::clear(mmio, hardware_index);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-encode error={error:?}"
-                    ));
-                    continue;
-                }
-            };
-            let hardware_storage_length = frame_length + TX_METADATA_SIZE + TX_FCS_SIZE;
-            let descriptor_capacity = (hardware_storage_length + 3) & !3;
-            match transmit_encoded_unicast_with_retry(
-                mmio,
-                tx_storage,
-                LegacyTxQueue::Voice,
-                frame_length,
-                descriptor_capacity,
-                None,
-                0,
-                0,
-                TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                0,
-                0,
-            )
-            .await
-            {
-                Ok(completion) if completion.status == 0 => {
-                    active_rx_addba[usize::from(hardware_index)] = Some(ActiveRxAddba {
-                        hardware_index,
-                        tid: request.tid,
-                        window: selected_window,
-                        starting_sequence: request.starting_sequence,
-                        _reorder: reorder,
-                    });
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=PASS stage=rx-addba-active \
-                         hardware_index={} interface=0 tid={} window={} hardware_window={} \
-                         starting_sequence={}",
-                        hardware_index,
-                        request.tid,
-                        selected_window,
-                        hardware_window,
-                        request.starting_sequence,
-                    ));
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL stage=rx-addba-hardware-state \
-                         hardware_index={} value={:?}",
-                        hardware_index,
-                        mmio.rx_block_ack_entry_snapshot(hardware_index),
-                    ));
-                }
-                Ok(completion) => {
-                    let _ = rx_ampdu_hw::clear(mmio, hardware_index);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-response \
-                         status={}",
-                        completion.status,
-                    ));
-                }
-                Err(error) => {
-                    let _ = rx_ampdu_hw::clear(mmio, hardware_index);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-response \
-                         error={error:?}"
-                    ));
+                let frame_length = match (StaActionFrame {
+                    source: station_address,
+                    bssid,
+                    sequence_number: sequences.take_non_qos(),
+                    body: activation.response_body(),
+                })
+                .encode(&mut tx_storage.dma_buffer_mut()[TX_METADATA_SIZE..])
+                {
+                    Ok(length) => length,
+                    Err(error) => {
+                        let _ = rx_ampdu_hw::clear(mmio, hardware.hardware_index);
+                        let _ = rx_block_ack.cancel(activation);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-encode \
+                             error={error:?}"
+                        ));
+                        continue;
+                    }
+                };
+                let hardware_storage_length = frame_length + TX_METADATA_SIZE + TX_FCS_SIZE;
+                let descriptor_capacity = (hardware_storage_length + 3) & !3;
+                match transmit_encoded_unicast_with_retry(
+                    mmio,
+                    tx_storage,
+                    LegacyTxQueue::Voice,
+                    frame_length,
+                    descriptor_capacity,
+                    None,
+                    0,
+                    0,
+                    TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+                    0,
+                    0,
+                )
+                .await
+                {
+                    Ok(completion) if completion.status == 0 => {
+                        match rx_block_ack.commit(activation) {
+                            Ok(active) => {
+                                emergency_log(format_args!(
+                                    "OPEN_RADIO_PHY_HIL result=PASS stage=rx-addba-active \
+                                     hardware_index={} interface=0 tid={} window={} \
+                                     hardware_window={} starting_sequence={}",
+                                    active.hardware_index,
+                                    active.tid,
+                                    active.window,
+                                    hardware.window,
+                                    active.starting_sequence,
+                                ));
+                                emergency_log(format_args!(
+                                    "OPEN_RADIO_PHY_HIL stage=rx-addba-hardware-state \
+                                     hardware_index={} value={:?}",
+                                    active.hardware_index,
+                                    mmio.rx_block_ack_entry_snapshot(active.hardware_index),
+                                ));
+                            }
+                            Err(error) => {
+                                let _ = rx_ampdu_hw::clear(mmio, hardware.hardware_index);
+                                emergency_log(format_args!(
+                                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-commit \
+                                     error={error:?}"
+                                ));
+                            }
+                        }
+                    }
+                    Ok(completion) => {
+                        let _ = rx_ampdu_hw::clear(mmio, hardware.hardware_index);
+                        let _ = rx_block_ack.cancel(activation);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-response \
+                             status={}",
+                            completion.status,
+                        ));
+                    }
+                    Err(error) => {
+                        let _ = rx_ampdu_hw::clear(mmio, hardware.hardware_index);
+                        let _ = rx_block_ack.cancel(activation);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-response \
+                             error={error:?}"
+                        ));
+                    }
                 }
             }
+            Ok(None) => {}
+            Err(error) => emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-addba-begin error={error:?}"
+            )),
         }
 
         // Keep HIL state reporting out of the packet latency window. ROM
@@ -5560,17 +5481,16 @@ async fn connected_radio_loop(
                 .iter()
                 .filter(|descriptor| rx_done(descriptor.word0()))
                 .count();
-            let mut rx_ba_state = [None; 8];
-            for (index, agreement) in active_rx_addba.iter().enumerate() {
-                rx_ba_state[index] = agreement.as_ref().map(|agreement| {
+            let rx_ba_state = rx_block_ack.snapshots().map(|agreement| {
+                agreement.map(|agreement| {
                     (
                         agreement.hardware_index,
                         agreement.tid,
                         agreement.window,
                         agreement.starting_sequence,
                     )
-                });
-            }
+                })
+            });
             // Keep the rate-control state on its own bounded line. The full
             // RX/DMA diagnostic record can exceed the USB emergency logger's
             // fixed staging buffer before its trailing fields are emitted.
@@ -5845,7 +5765,7 @@ async fn connected_radio_loop(
                 rx.hang.rx_tx_hang,
                 rx.hang.rx_tx_panic,
             );
-            for agreement in active_rx_addba.iter().flatten() {
+            for agreement in rx_block_ack.snapshots().into_iter().flatten() {
                 log::info!(
                     "OPEN_RADIO_PHY_HIL stage=rx-addba-hardware-state \
                      hardware_index={} value={:?}",
@@ -6333,8 +6253,7 @@ async fn connected_radio_loop(
                                 bssid,
                                 association_id,
                                 association_phy,
-                                &mut pending_rx_addba,
-                                &mut active_rx_addba,
+                                &mut rx_block_ack,
                                 &mut tx_block_ack,
                                 &mut duplicate_filter,
                                 &mut direct_udp_benchmark,
@@ -6781,8 +6700,7 @@ async fn connected_radio_loop(
                                             bssid,
                                             association_id,
                                             association_phy,
-                                            &mut pending_rx_addba,
-                                            &mut active_rx_addba,
+                                            &mut rx_block_ack,
                                             &mut tx_block_ack,
                                             &mut duplicate_filter,
                                             &mut direct_udp_benchmark,
@@ -7127,8 +7045,7 @@ fn service_benchmark_rx_during_tx(
     bssid: [u8; 6],
     association_id: u16,
     association_phy: StaAssociationPhy,
-    pending_rx_addba: &mut [Option<PendingRxAddba>; 8],
-    active_rx_addba: &mut [Option<ActiveRxAddba>; 8],
+    rx_block_ack: &mut StaRxBlockAckSessions,
     tx_block_ack: &mut StaTxBlockAckSessions,
     duplicate_filter: &mut StaRxDuplicateFilter,
     benchmark: &mut DirectUdpRxBenchmark,
@@ -7262,18 +7179,18 @@ fn service_benchmark_rx_during_tx(
                          starting_sequence={starting_sequence}",
                         u8::from(immediate),
                     ));
-                    if immediate
-                        && window != 0
-                        && timeout_tu == 0
-                        && tid <= S31_RX_BLOCK_ACK_MAX_TID
-                        && starting_sequence <= 0x0fff
-                    {
-                        pending_rx_addba[usize::from(tid)] = Some(PendingRxAddba {
-                            dialog_token,
-                            tid,
-                            requested_window: window,
-                            starting_sequence,
-                        });
+                    if let Err(error) = rx_block_ack.offer(
+                        dialog_token,
+                        tid,
+                        immediate,
+                        window,
+                        timeout_tu,
+                        starting_sequence,
+                    ) {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL stage=rx-addba-reject \
+                             tid={tid} error={error:?}"
+                        ));
                     }
                 }
                 Some(BlockAckAction::AddbaResponse { .. }) => {
@@ -7319,13 +7236,8 @@ fn service_benchmark_rx_during_tx(
                     reason,
                 }) => {
                     if initiator {
-                        if let Some(hardware_index) = active_rx_addba.iter().position(|agreement| {
-                            agreement
-                                .as_ref()
-                                .is_some_and(|agreement| agreement.tid == tid)
-                        }) {
-                            let _ = rx_ampdu_hw::clear(mmio, hardware_index as u8);
-                            active_rx_addba[hardware_index] = None;
+                        if let Some(agreement) = rx_block_ack.stop(tid) {
+                            let _ = rx_ampdu_hw::clear(mmio, agreement.hardware_index);
                         }
                     } else {
                         tx_block_ack.stop(tid);

@@ -368,9 +368,13 @@ failure. The next connected slice moved the vendor-ordered TID 0/7/5 TX
 BlockAck sessions, shared Dialog Token sequence, independent alarms and
 ADDBA/DELBA response routing into `StaTxBlockAckSessions`. Its reset-separated
 qualification made all three 32-entry agreements operational and delivered
-10.011-Mbit/s RX plus a 63.660-Mbit/s concurrent TX floor. RX BlockAck
-agreement ownership and the remaining connected event/route dispatcher are
-still in the HIL executor.
+10.011-Mbit/s RX plus a 63.660-Mbit/s concurrent TX floor. The following slice
+moved pending RX requests, all eight software-reorder/hardware-bank identities
+and activation commit/cancel into `StaRxBlockAckSessions`. The HIL now only
+executes the returned MMIO and response-TX transaction. Its exact image kept a
+live bank-0/window-64 snapshot and delivered 10.005-Mbit/s RX plus a
+61.065-Mbit/s concurrent TX floor. Only the remaining connected frame
+event/route dispatcher is still in the HIL executor.
 
 Open Authentication protocol ownership has now moved too.
 `StaAuthenticationRuntime` consumes exactly one non-QoS sequence number per

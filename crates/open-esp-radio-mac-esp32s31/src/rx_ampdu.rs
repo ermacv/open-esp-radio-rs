@@ -5,6 +5,8 @@
 //! protocol ownership in a fixed array of slot indices. Raw packet pointers
 //! stay outside the state machine.
 
+use crate::rx_ampdu_hw::{S31RxBlockAckAgreement, S31_RX_BLOCK_ACK_MAX_TID};
+
 // SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
 // ampdu_rx_start.constprop.0`. The vendor agreement owner selects the smaller
 // of the peer request and `g_wifi_menuconfig+0x30`, whose normal configured
@@ -50,6 +52,276 @@ pub enum RxAddbaResponseError {
     InvalidBodyLength(usize),
     InvalidTid(u8),
     InvalidWindow(u16),
+}
+
+pub const STA_RX_BLOCK_ACK_BANK_COUNT: usize = 8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaRxBlockAckSessionsError {
+    DelayedPolicyUnsupported,
+    InvalidTid(u8),
+    InvalidWindow(u16),
+    NonzeroTimeout(u16),
+    InvalidStartingSequence(u16),
+    ActivationBusy,
+    StaleActivation,
+    NoFreeHardwareBank,
+    Reorder(RxAmpduError),
+    Response(RxAddbaResponseError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingStaRxBlockAck {
+    dialog_token: u8,
+    tid: u8,
+    requested_window: u16,
+    starting_sequence: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaRxBlockAckSnapshot {
+    pub hardware_index: u8,
+    pub tid: u8,
+    pub window: u16,
+    pub starting_sequence: u16,
+}
+
+struct ActiveStaRxBlockAck {
+    snapshot: StaRxBlockAckSnapshot,
+    // The agreement owns this software reorder state for exactly as long as
+    // the corresponding hardware bank remains published.
+    _reorder: RxBlockAckReorder,
+}
+
+/// One private activation transaction spanning software and hardware state.
+///
+/// A caller cannot construct or clone this value. It must either return it to
+/// [`StaRxBlockAckSessions::commit`] after programming the hardware and
+/// transmitting the response, or to [`StaRxBlockAckSessions::cancel`] after
+/// undoing any hardware publication.
+pub struct StaRxBlockAckActivation {
+    generation: u32,
+    hardware: S31RxBlockAckAgreement,
+    response_body: [u8; 9],
+    negotiated: StaRxBlockAckSnapshot,
+    replaced: Option<StaRxBlockAckSnapshot>,
+    reorder: RxBlockAckReorder,
+}
+
+impl StaRxBlockAckActivation {
+    pub const fn hardware(&self) -> S31RxBlockAckAgreement {
+        self.hardware
+    }
+
+    pub const fn response_body(&self) -> &[u8; 9] {
+        &self.response_body
+    }
+
+    pub const fn negotiated(&self) -> StaRxBlockAckSnapshot {
+        self.negotiated
+    }
+
+    pub const fn replaced(&self) -> Option<StaRxBlockAckSnapshot> {
+        self.replaced
+    }
+}
+
+/// Fixed owner of the eight ordinary S31 receive BlockAck banks.
+///
+/// SOURCE: complete `_oracles/libnet80211.a[ieee80211_ht.o]::
+/// ampdu_rx_start.constprop.0` stores one independent agreement per TID and
+/// bounds the negotiated software window by the configured maximum. Complete
+/// `_oracles/libpp.a[hal_ampdu.o]::hal_agreement_add_rx_ba` owns eight
+/// hardware banks and receives the literal hardware window 64 on the ordinary
+/// STA path. The protocol window and hardware window therefore remain
+/// deliberately distinct here.
+pub struct StaRxBlockAckSessions {
+    pending: [Option<PendingStaRxBlockAck>; STA_RX_BLOCK_ACK_BANK_COUNT],
+    active: [Option<ActiveStaRxBlockAck>; STA_RX_BLOCK_ACK_BANK_COUNT],
+    generation: u32,
+    in_flight: Option<u32>,
+}
+
+impl StaRxBlockAckSessions {
+    pub fn new() -> Self {
+        Self {
+            pending: [None; STA_RX_BLOCK_ACK_BANK_COUNT],
+            active: core::array::from_fn(|_| None),
+            generation: 0,
+            in_flight: None,
+        }
+    }
+
+    /// Admit one parsed immediate ADDBA request into its per-TID pending slot.
+    /// A newer request for the same TID replaces the older unexecuted request,
+    /// matching the former dispatcher behavior without exposing its arrays.
+    pub fn offer(
+        &mut self,
+        dialog_token: u8,
+        tid: u8,
+        immediate: bool,
+        requested_window: u16,
+        timeout_tu: u16,
+        starting_sequence: u16,
+    ) -> Result<(), StaRxBlockAckSessionsError> {
+        if !immediate {
+            return Err(StaRxBlockAckSessionsError::DelayedPolicyUnsupported);
+        }
+        if tid > S31_RX_BLOCK_ACK_MAX_TID {
+            return Err(StaRxBlockAckSessionsError::InvalidTid(tid));
+        }
+        if requested_window == 0 || requested_window > 0x03ff {
+            return Err(StaRxBlockAckSessionsError::InvalidWindow(requested_window));
+        }
+        if timeout_tu != 0 {
+            return Err(StaRxBlockAckSessionsError::NonzeroTimeout(timeout_tu));
+        }
+        if starting_sequence > 0x0fff {
+            return Err(StaRxBlockAckSessionsError::InvalidStartingSequence(
+                starting_sequence,
+            ));
+        }
+        self.pending[usize::from(tid)] = Some(PendingStaRxBlockAck {
+            dialog_token,
+            tid,
+            requested_window,
+            starting_sequence,
+        });
+        Ok(())
+    }
+
+    /// Begin the oldest pending TID by numeric index and reserve its hardware
+    /// bank until the caller commits or cancels the returned transaction.
+    pub fn begin_pending(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<Option<StaRxBlockAckActivation>, StaRxBlockAckSessionsError> {
+        if self.in_flight.is_some() {
+            return Err(StaRxBlockAckSessionsError::ActivationBusy);
+        }
+        let Some((pending_index, request)) = self
+            .pending
+            .iter()
+            .enumerate()
+            .find_map(|(index, request)| request.map(|request| (index, request)))
+        else {
+            return Ok(None);
+        };
+        self.pending[pending_index] = None;
+
+        let hardware_index = self
+            .active
+            .iter()
+            .position(|agreement| {
+                agreement
+                    .as_ref()
+                    .is_some_and(|agreement| agreement.snapshot.tid == request.tid)
+            })
+            .or_else(|| self.active.iter().position(Option::is_none))
+            .ok_or(StaRxBlockAckSessionsError::NoFreeHardwareBank)?;
+        let replaced = self.active[hardware_index]
+            .take()
+            .map(|agreement| agreement.snapshot);
+        let window = request.requested_window.min(RX_BLOCK_ACK_MAX_WINDOW);
+        let reorder = RxBlockAckReorder::new(request.starting_sequence, window)
+            .map_err(StaRxBlockAckSessionsError::Reorder)?;
+        let mut response_body = [0_u8; 9];
+        write_successful_addba_response(
+            &mut response_body,
+            request.dialog_token,
+            request.tid,
+            window,
+        )
+        .map_err(StaRxBlockAckSessionsError::Response)?;
+
+        self.generation = next_sta_rx_block_ack_generation(self.generation);
+        self.in_flight = Some(self.generation);
+        let negotiated = StaRxBlockAckSnapshot {
+            hardware_index: hardware_index as u8,
+            tid: request.tid,
+            window,
+            starting_sequence: request.starting_sequence,
+        };
+        Ok(Some(StaRxBlockAckActivation {
+            generation: self.generation,
+            hardware: S31RxBlockAckAgreement {
+                hardware_index: hardware_index as u8,
+                interface: 0,
+                peer,
+                tid: request.tid,
+                starting_sequence: request.starting_sequence,
+                // The vendor ordinary STA hardware leaf receives 64 even
+                // when the negotiated/reorder window is smaller.
+                window: RX_BLOCK_ACK_MAX_WINDOW,
+            },
+            response_body,
+            negotiated,
+            replaced,
+            reorder,
+        }))
+    }
+
+    pub fn commit(
+        &mut self,
+        activation: StaRxBlockAckActivation,
+    ) -> Result<StaRxBlockAckSnapshot, StaRxBlockAckSessionsError> {
+        if self.in_flight != Some(activation.generation) {
+            return Err(StaRxBlockAckSessionsError::StaleActivation);
+        }
+        self.in_flight = None;
+        let snapshot = activation.negotiated;
+        self.active[usize::from(snapshot.hardware_index)] = Some(ActiveStaRxBlockAck {
+            snapshot,
+            _reorder: activation.reorder,
+        });
+        Ok(snapshot)
+    }
+
+    pub fn cancel(
+        &mut self,
+        activation: StaRxBlockAckActivation,
+    ) -> Result<(), StaRxBlockAckSessionsError> {
+        if self.in_flight != Some(activation.generation) {
+            return Err(StaRxBlockAckSessionsError::StaleActivation);
+        }
+        self.in_flight = None;
+        Ok(())
+    }
+
+    /// Remove the software owner before the caller clears the returned bank.
+    pub fn stop(&mut self, tid: u8) -> Option<StaRxBlockAckSnapshot> {
+        let index = self.active.iter().position(|agreement| {
+            agreement
+                .as_ref()
+                .is_some_and(|agreement| agreement.snapshot.tid == tid)
+        })?;
+        self.active[index]
+            .take()
+            .map(|agreement| agreement.snapshot)
+    }
+
+    pub fn snapshots(&self) -> [Option<StaRxBlockAckSnapshot>; STA_RX_BLOCK_ACK_BANK_COUNT] {
+        core::array::from_fn(|index| {
+            self.active[index]
+                .as_ref()
+                .map(|agreement| agreement.snapshot)
+        })
+    }
+}
+
+impl Default for StaRxBlockAckSessions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+const fn next_sta_rx_block_ack_generation(current: u32) -> u32 {
+    let next = current.wrapping_add(1);
+    if next == 0 {
+        1
+    } else {
+        next
+    }
 }
 
 /// Write one successful immediate BlockAck response into an owned action body.
@@ -424,6 +696,95 @@ mod tests {
                 window: 16,
                 timeout_tu: 0,
             })
+        );
+    }
+
+    #[test]
+    fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
+        let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
+        let mut sessions = StaRxBlockAckSessions::new();
+        sessions.offer(17, 7, true, 1023, 0, 0x0abc).unwrap();
+        let activation = sessions.begin_pending(peer).unwrap().unwrap();
+        assert_eq!(
+            activation.negotiated(),
+            StaRxBlockAckSnapshot {
+                hardware_index: 0,
+                tid: 7,
+                window: RX_BLOCK_ACK_MAX_WINDOW,
+                starting_sequence: 0x0abc,
+            }
+        );
+        assert_eq!(
+            activation.hardware(),
+            S31RxBlockAckAgreement {
+                hardware_index: 0,
+                interface: 0,
+                peer,
+                tid: 7,
+                starting_sequence: 0x0abc,
+                window: RX_BLOCK_ACK_MAX_WINDOW,
+            }
+        );
+        assert_eq!(
+            crate::tx_ampdu::parse_block_ack_action(activation.response_body()),
+            Some(crate::tx_ampdu::BlockAckAction::AddbaResponse {
+                dialog_token: 17,
+                status: 0,
+                tid: 7,
+                immediate: true,
+                amsdu: false,
+                window: RX_BLOCK_ACK_MAX_WINDOW,
+                timeout_tu: 0,
+            })
+        );
+        assert!(matches!(
+            sessions.begin_pending(peer),
+            Err(StaRxBlockAckSessionsError::ActivationBusy)
+        ));
+        let snapshot = sessions.commit(activation).unwrap();
+        assert_eq!(sessions.snapshots()[0], Some(snapshot));
+        assert_eq!(sessions.stop(7), Some(snapshot));
+        assert_eq!(sessions.snapshots(), [None; STA_RX_BLOCK_ACK_BANK_COUNT]);
+    }
+
+    #[test]
+    fn replacement_and_cancel_remove_the_previous_hardware_owner() {
+        let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
+        let mut sessions = StaRxBlockAckSessions::new();
+        sessions.offer(1, 0, true, 32, 0, 10).unwrap();
+        let first = sessions.begin_pending(peer).unwrap().unwrap();
+        let first_snapshot = sessions.commit(first).unwrap();
+
+        sessions.offer(2, 0, true, 16, 0, 20).unwrap();
+        let replacement = sessions.begin_pending(peer).unwrap().unwrap();
+        assert_eq!(replacement.replaced(), Some(first_snapshot));
+        assert_eq!(replacement.hardware().hardware_index, 0);
+        sessions.cancel(replacement).unwrap();
+        assert_eq!(sessions.snapshots(), [None; STA_RX_BLOCK_ACK_BANK_COUNT]);
+    }
+
+    #[test]
+    fn station_rx_sessions_reject_every_unsupported_request_class() {
+        let mut sessions = StaRxBlockAckSessions::new();
+        assert_eq!(
+            sessions.offer(1, 0, false, 32, 0, 0),
+            Err(StaRxBlockAckSessionsError::DelayedPolicyUnsupported)
+        );
+        assert_eq!(
+            sessions.offer(1, 8, true, 32, 0, 0),
+            Err(StaRxBlockAckSessionsError::InvalidTid(8))
+        );
+        assert_eq!(
+            sessions.offer(1, 0, true, 0, 0, 0),
+            Err(StaRxBlockAckSessionsError::InvalidWindow(0))
+        );
+        assert_eq!(
+            sessions.offer(1, 0, true, 32, 1, 0),
+            Err(StaRxBlockAckSessionsError::NonzeroTimeout(1))
+        );
+        assert_eq!(
+            sessions.offer(1, 0, true, 32, 0, 0x1000),
+            Err(StaRxBlockAckSessionsError::InvalidStartingSequence(0x1000))
         );
     }
 }

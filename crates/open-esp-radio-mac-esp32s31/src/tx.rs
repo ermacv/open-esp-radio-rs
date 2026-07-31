@@ -284,9 +284,64 @@ pub struct TxCompletion {
 }
 
 impl TxCompletion {
+    /// Hardware completion status used by the vendor ACK-timeout path.
+    ///
+    /// SOURCE: the six-entry jump table in complete
+    /// `_oracles/libpp.a[lmac.o]::lmacProcessTxComplete` maps status five to
+    /// `lmacProcessAckTimeout` (status zero maps to ordinary TX success).
+    pub const ACK_TIMEOUT_STATUS: u8 = 5;
+
     /// Return whether this completion belongs to a Trigger-based transmit flow.
     pub const fn is_trigger_based(&self) -> bool {
         self.trigger_flow
+    }
+
+    /// Count the ordinary Trigger-based packets reported by hardware.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[lmac.o]::lmacProcessTxComplete`
+    /// stores completion extension word zero bits 19:13 at per-queue state
+    /// byte `+0x30`. Complete `lmacProcess{Short,Long}RetryFail` consumes that
+    /// byte before deciding whether to enter `lmacProcessTBSuccess`.
+    pub const fn trigger_based_packet_count(&self) -> u8 {
+        ((self.auxiliary_b_word >> 13) & 0x7f) as u8
+    }
+
+    /// Return whether the completion selects the additional TB packet count.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[lmac.o]::lmacProcessTxComplete`
+    /// copies completion extension word zero bit 20 to per-queue state byte
+    /// `+0x2e`. The retry leaves add byte `+0x2f` only when this flag is set.
+    pub const fn last_tx_was_trigger_based(&self) -> bool {
+        self.auxiliary_b_word & (1 << 20) != 0
+    }
+
+    /// Decode the conditional secondary TB packet count.
+    ///
+    /// Complete `hal_mac_get_txq_complete` reconstructs extension word one as
+    /// `(A[21:20]) | (C[13:7] << 2)`. `lmacProcessTxComplete` shifts that word
+    /// right by two before storing byte `+0x2f`, so the consumed seven-bit
+    /// count is exactly raw completion word C bits 13:7.
+    pub const fn secondary_trigger_based_packet_count(&self) -> u8 {
+        ((self.auxiliary_c_word >> 7) & 0x7f) as u8
+    }
+
+    /// Reproduce the vendor's narrow ACK-timeout-to-TB-success predicate.
+    ///
+    /// This does not reinterpret an arbitrary failure as an ACK. Status five
+    /// dispatches through `lmacProcessAckTimeout`, which invokes the retry
+    /// leaves with their collision/error selector clear. Complete
+    /// `lmacProcess{Short,Long}RetryFail` then calls `lmacProcessTBSuccess`
+    /// only when the queue is in Trigger flow and the sum of its applicable
+    /// hardware packet counts is zero.
+    pub const fn completes_vendor_trigger_flow(&self) -> bool {
+        if self.status != Self::ACK_TIMEOUT_STATUS || !self.trigger_flow {
+            return false;
+        }
+        let mut packets = self.trigger_based_packet_count() as u16;
+        if self.last_tx_was_trigger_based() {
+            packets += self.secondary_trigger_based_packet_count() as u16;
+        }
+        packets == 0
     }
 
     /// Decode the signed ACK-SNR sample consumed by vendor rate control.

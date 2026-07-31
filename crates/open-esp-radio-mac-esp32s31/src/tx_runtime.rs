@@ -41,12 +41,18 @@ pub enum AmpduRetryDecision {
     RetainAggregate { retry_mask: u32 },
     /// End aggregate ownership; selected MPDUs require individual retry.
     Finish { retry_mask: u32 },
+    /// End ownership through the vendor Trigger-based completion path.
+    ///
+    /// No ordinary BlockAck was received, so this must remain distinct from
+    /// `Finish { retry_mask: 0 }` for statistics and rate-control purposes.
+    FinishTriggerFlow,
 }
 
 impl AmpduRetryDecision {
     pub const fn retry_mask(self) -> u32 {
         match self {
             Self::RetainAggregate { retry_mask } | Self::Finish { retry_mask } => retry_mask,
+            Self::FinishTriggerFlow => 0,
         }
     }
 
@@ -66,6 +72,7 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
     aggregate_attempts: u8,
     acknowledged: u8,
     block_ack_mpdu_attempts: u16,
+    trigger_flow_completions: u8,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
@@ -104,6 +111,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             aggregate_attempts: 1,
             acknowledged: 0,
             block_ack_mpdu_attempts: 0,
+            trigger_flow_completions: 0,
         })
     }
 
@@ -124,6 +132,18 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
                 expected: self.current_subframes,
                 observed: observed_subframes,
             });
+        }
+
+        // Complete `_oracles/libpp.a[lmac.o]::lmacProcessTxComplete` maps
+        // status five to `lmacProcessAckTimeout`. Both its short- and
+        // long-frame leaves call `lmacProcessTBSuccess(queue, 0x7f)` instead
+        // of retrying when the queue is in Trigger flow and its applicable
+        // packet counts are zero. Keep this before BlockAck accounting: the
+        // vendor path terminates the frame-exchange sequence without an
+        // ordinary BlockAck or an ordinary MPDU attempt count.
+        if completion.tx.completes_vendor_trigger_flow() {
+            self.trigger_flow_completions = self.trigger_flow_completions.saturating_add(1);
+            return Ok(AmpduRetryDecision::FinishTriggerFlow);
         }
         self.block_ack_mpdu_attempts = self
             .block_ack_mpdu_attempts
@@ -175,6 +195,12 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     pub const fn block_ack_mpdu_attempts(&self) -> u16 {
         self.block_ack_mpdu_attempts
     }
+
+    /// Number of terminal completions handled through `lmacProcessTBSuccess`
+    /// semantics rather than an ordinary BlockAck.
+    pub const fn trigger_flow_completions(&self) -> u8 {
+        self.trigger_flow_completions
+    }
 }
 
 #[cfg(test)]
@@ -185,9 +211,23 @@ mod tests {
         tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
     };
 
-    fn completion(status: u8, starting_sequence: u16, bitmap: u64) -> HtAmpduTxCompletion {
+    fn completion_with_tx(
+        tx: TxCompletion,
+        starting_sequence: u16,
+        bitmap: u64,
+    ) -> HtAmpduTxCompletion {
         HtAmpduTxCompletion {
-            tx: TxCompletion {
+            tx,
+            block_ack: HtBlockAckRegisters {
+                control: 0,
+                block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
+            },
+        }
+    }
+
+    fn completion(status: u8, starting_sequence: u16, bitmap: u64) -> HtAmpduTxCompletion {
+        completion_with_tx(
+            TxCompletion {
                 cookie: TxCookie(1),
                 status,
                 trigger_flow: false,
@@ -198,11 +238,9 @@ mod tests {
                 primary_word: 0,
                 alternate_word: 0,
             },
-            block_ack: HtBlockAckRegisters {
-                control: 0,
-                block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
-            },
-        }
+            starting_sequence,
+            bitmap,
+        )
     }
 
     const HT_POLICY: AmpduRetryPolicy = AmpduRetryPolicy {
@@ -306,5 +344,92 @@ mod tests {
                 observed: 1
             })
         );
+    }
+
+    #[test]
+    fn vendor_trigger_timeout_finishes_without_fabricating_block_ack() {
+        let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
+        let trigger_timeout = completion_with_tx(
+            TxCompletion {
+                cookie: TxCookie(1),
+                status: TxCompletion::ACK_TIMEOUT_STATUS,
+                trigger_flow: true,
+                used_alternate: false,
+                auxiliary_a_word: 0,
+                auxiliary_b_word: 0,
+                auxiliary_c_word: 0,
+                primary_word: 0,
+                alternate_word: 0,
+            },
+            20,
+            u64::MAX,
+        );
+
+        assert_eq!(
+            state.observe(trigger_timeout, 2),
+            Ok(AmpduRetryDecision::FinishTriggerFlow)
+        );
+        assert_eq!(state.trigger_flow_completions(), 1);
+        assert_eq!(state.acknowledged(), 0);
+        assert_eq!(state.block_ack_mpdu_attempts(), 0);
+        assert_eq!(state.aggregate_attempts(), 1);
+    }
+
+    #[test]
+    fn trigger_timeout_with_reported_packets_stays_on_retry_path() {
+        for (auxiliary_b_word, auxiliary_c_word) in [
+            (1 << 13, 0),
+            ((1 << 20), 1 << 7),
+            ((1 << 20) | (1 << 13), 0),
+        ] {
+            let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
+            let completion = completion_with_tx(
+                TxCompletion {
+                    cookie: TxCookie(1),
+                    status: TxCompletion::ACK_TIMEOUT_STATUS,
+                    trigger_flow: true,
+                    used_alternate: false,
+                    auxiliary_a_word: 0,
+                    auxiliary_b_word,
+                    auxiliary_c_word,
+                    primary_word: 0,
+                    alternate_word: 0,
+                },
+                20,
+                u64::MAX,
+            );
+            assert_eq!(
+                state.observe(completion, 2),
+                Ok(AmpduRetryDecision::RetainAggregate { retry_mask: 0b11 })
+            );
+            assert_eq!(state.trigger_flow_completions(), 0);
+            assert_eq!(state.block_ack_mpdu_attempts(), 2);
+        }
+    }
+
+    #[test]
+    fn trigger_success_predicate_rejects_wrong_status_or_queue_state() {
+        for (status, trigger_flow) in [(0, true), (4, true), (5, false)] {
+            let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
+            let completion = completion_with_tx(
+                TxCompletion {
+                    cookie: TxCookie(1),
+                    status,
+                    trigger_flow,
+                    used_alternate: false,
+                    auxiliary_a_word: 0,
+                    auxiliary_b_word: 0,
+                    auxiliary_c_word: 0,
+                    primary_word: 0,
+                    alternate_word: 0,
+                },
+                20,
+                0,
+            );
+            assert_ne!(
+                state.observe(completion, 2),
+                Ok(AmpduRetryDecision::FinishTriggerFlow)
+            );
+        }
     }
 }

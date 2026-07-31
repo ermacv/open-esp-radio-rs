@@ -141,9 +141,21 @@ The application still performs the deliberately separate operations: queue
 detach, DMA compaction, EDCA backoff selection, interrupt waiting and
 individual-MPDU transmission.
 
-Five host tests cover sequence wrap, stale BlockAck bits on a nonzero TX
+Eight host tests cover sequence wrap, stale BlockAck bits on a nonzero TX
 status, HT/HE single-MPDU divergence, the terminal attempt limit and
-DMA/state frame-count disagreement. A following current-tree
+DMA/state frame-count disagreement. They also cover the complete vendor
+Trigger-flow terminal predicate. The status jump table in
+`_oracles/libpp.a[lmac.o]::lmacProcessTxComplete` maps status five to
+`lmacProcessAckTimeout`; both retry leaves call `lmacProcessTBSuccess` only
+when the queue Trigger-flow bit is set and the applicable primary/secondary
+packet-count sum is zero. `TxCompletion` now decodes those raw fields and
+`AmpduRetryState` returns the distinct `FinishTriggerFlow` decision before
+BlockAck accounting. It therefore releases aggregate ownership without
+fabricating an ACK or adding an ordinary MPDU attempt. This behavior is
+source-implemented and host-tested; it is not HIL-qualified until an external
+AP sends a valid Trigger to the open STA.
+
+A following current-tree
 `psram-code-psram-data` DCM HIL run completed forty full three-profile rounds,
 64 real A-MPDUs per profile. Profiles that encountered partial BlockAck
 reported 65 or 66 aggregate attempts for 64 submissions, proving the new

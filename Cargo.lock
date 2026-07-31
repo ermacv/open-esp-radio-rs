@@ -1056,6 +1056,8 @@ dependencies = [
 name = "open-esp-radio-hil-runner"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "open-esp-radio-ieee80211",
  "serialport",
  "sha2",
 ]

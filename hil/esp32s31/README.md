@@ -27,7 +27,18 @@ cargo hil doctor
 cargo hil build radio
 cargo hil flash bidirectional --port /dev/ttyACM0
 cargo hil traffic bidirectional <device-ip> --phy he20
+cargo hil traffic trigger <monitor-interface> --transmitter <bssid> --aid <aid>
+cargo hil traffic trigger-hil <monitor-interface> --transmitter <bssid> --aid <aid>
 cargo hil oracle verify
 cargo hil oracle build
 cargo hil oracle flash --port /dev/ttyACM0
+```
+
+The root-owned AP/monitor helper and its narrow sudo policy live in
+`tools/open-radio-net`. Reinstall it from this repository after changing the
+helper or moving the checkout:
+
+```text
+cargo build -p open-esp-radio-hil-runner
+sudo tools/open-radio-net/install.sh
 ```

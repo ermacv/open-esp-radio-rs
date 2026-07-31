@@ -8,6 +8,8 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+libc = "0.2"
+open-esp-radio-ieee80211 = { path = "../../crates/open-esp-radio-ieee80211" }
 serialport = { version = "4.8.1", default-features = false }
 sha2 = "0.10.9"
 

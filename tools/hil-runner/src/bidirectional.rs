@@ -494,13 +494,13 @@ fn write_report(
     Ok(())
 }
 
-struct SerialCapture {
+pub(crate) struct SerialCapture {
     stop: Arc<AtomicBool>,
     worker: thread::JoinHandle<String>,
 }
 
 impl SerialCapture {
-    fn start(port: &Path) -> Self {
+    pub(crate) fn start(port: &Path) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let port = port.to_owned();
@@ -533,7 +533,7 @@ impl SerialCapture {
         Self { stop, worker }
     }
 
-    fn finish(self) -> String {
+    pub(crate) fn finish(self) -> String {
         self.stop.store(true, Ordering::Release);
         self.worker
             .join()

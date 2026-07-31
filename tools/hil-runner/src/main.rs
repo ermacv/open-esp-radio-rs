@@ -11,6 +11,7 @@ use std::{
 };
 
 mod bidirectional;
+mod trigger;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -76,7 +77,9 @@ fn run() -> Result<()> {
         }
         Some("traffic") => match arguments.next().as_deref() {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
-            _ => Err("usage: cargo hil traffic bidirectional <ipv4> [options]".into()),
+            Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
+            Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
+            _ => Err("usage: cargo hil traffic <bidirectional|trigger|trigger-hil> ...".into()),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
@@ -125,6 +128,8 @@ fn print_help() {
          cargo hil build [boot-smoke|radio]\n\n\
          cargo hil flash [boot-smoke|radio|bidirectional] [--port /dev/ttyACM0]\n\
          cargo hil traffic bidirectional <ipv4> [options]\n\
+         cargo hil traffic trigger <monitor-interface> [options]\n\
+         cargo hil traffic trigger-hil <monitor-interface> [options]\n\
          cargo hil oracle verify\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\

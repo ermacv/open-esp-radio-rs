@@ -201,10 +201,11 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
         &[(rom, &rom_symbols), (archive, &archive_symbols)],
     )?;
     println!(
-        "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
+        "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
         total.vendor_functions,
         total.matched,
         total.symbolic_matches,
+        total.effect_contract_matches,
         total.scenario_matches,
         total.state_matches,
         total.composition_matches,
@@ -261,7 +262,9 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
                     manifest
                         .entries()
                         .filter(|entry| {
-                            entry.disposition.is_implemented() && entry.semantic_contract.is_none()
+                            entry.disposition.is_implemented()
+                                && entry.semantic_contract.is_none()
+                                && entry.effect_contract.is_none()
                         })
                         .collect::<Vec<_>>()
                 })

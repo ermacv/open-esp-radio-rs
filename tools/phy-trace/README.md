@@ -654,7 +654,8 @@ orphan while the other source is being processed.
 
 The disposition manifest classifies every exact implemented replacement and
 uses fail-closed defaults for the rest. A `semantic-contract` names executable
-validator logic; a Rust component without one remains
+validator logic; an `effect-contract` names the canonical effect comparator.
+A Rust component without either remains
 `IMPLEMENTED-UNQUALIFIED` and does not count as evidence. Executable root
 contracts are reported separately as `composition-match`: they compare their
 declared action/state projection but do not imply an independent proof for
@@ -664,6 +665,33 @@ missing blocker target and prints the source-qualified blockers in the report,
 so an architectural root cannot hide an unported child behind prose. Protocol
 classification is independent, so shared PHY/RF, Wi-Fi, Bluetooth, BLE, Coex
 and 802.15.4 scope are not inferred from completion status.
+
+Effect Contract v1 is the common boundary between a vendor implementation and
+a Rust implementation. Its closed effect vocabulary is MMIO read/write,
+projected state read/write, delay, await-ready and typed platform call. Each
+vendor effect must resolve to one exact manifest rule with one of these closed
+dispositions: `required`, `replaced-by-async`, `platform-owned`, `forbidden`,
+or `allowed-omission` with one of `debug-diagnostic`,
+`nvs-calibration-cache`, `rtos-scheduling-adapter`, and
+`unused-instrumentation`. Unknown effect kinds, platform operations, omission
+reasons, unclassified vendor effects and extra Rust effects are errors.
+
+The first vertical slice is intentionally small and exact:
+
+```text
+function rom phy_disable_agc
+disposition direct
+rust-component open_esp_radio_esp32s31_hal::phy_agc::set_enabled
+effect-contract exact-effects-v1
+effect mmio-read 32 0x20107030 required
+effect mmio-write 32 0x20107030 required
+```
+
+The verifier derives those two effects independently from the pinned ROM ELF
+and compiled Rust probe. The effect evidence digest covers both the canonical
+policy and comparator source, so weakening either requires a reviewed baseline
+change. The blocking-to-async pilot will use the same schema with an explicit
+`AwaitReady` replacement rather than erasing a polling/delay edge.
 
 The two verification gates answer different questions:
 
@@ -700,10 +728,12 @@ are:
 - `INCOMPLETE`: a present pair cannot yet be proved;
 - `UNCOVERED`: no Rust comparison probe exists.
 
-Each `MATCH` row reports `evidence=symbolic`, `evidence=scenario`,
-`evidence=state`, or `evidence=composition-state-scenario`. Symbolic equality proves the
-normalized straight-line trace. Scenario equality proves only the explicitly
-declared inputs plus complete branch-outcome coverage. State evidence
+Each `MATCH` row reports `evidence=symbolic`, `evidence=effect-contract`,
+`evidence=scenario`, `evidence=state`, or
+`evidence=composition-state-scenario`. Symbolic equality proves the normalized
+straight-line trace. Effect-contract equality additionally proves that every
+effect has an explicit closed policy. Scenario equality proves only the
+explicitly declared inputs plus complete branch-outcome coverage. State evidence
 additionally compares the declared canonical pre/post projection without
 depending on Rust object layout. Composition-state-scenario evidence compares
 normalized root actions and final state for a declared transition matrix

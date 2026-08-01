@@ -27,6 +27,17 @@ protocol-prefix archive coex_ coex
 protocol-prefix rom phy_154_ ieee802154
 protocol-prefix archive phy_154_ ieee802154
 
+# Effect Contract v1 pilot: exact finite MMIO leaf. The contract classifies
+# every vendor effect; a new read, write, call, delay, or state edge fails
+# closed instead of being ignored by a normalizer.
+function rom phy_disable_agc
+disposition direct
+protocol shared
+rust-component open_esp_radio_esp32s31_hal::phy_agc::set_enabled
+effect-contract exact-effects-v1
+effect mmio-read 32 0x20107030 required
+effect mmio-write 32 0x20107030 required
+
 # The complete cold-registration graph already has a single Rust owner and
 # successful hardware evidence. These entries describe implementation only:
 # until a semantic transition contract is executable, they remain

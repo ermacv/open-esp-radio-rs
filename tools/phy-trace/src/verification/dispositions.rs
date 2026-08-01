@@ -8,6 +8,10 @@ use std::{
 
 use crate::{ArtifactSymbolIdentity, Result};
 
+use super::effect_contract::{
+    EffectComparison, EffectDisposition, EffectPolicy, EffectSelector, parse_effect_rule,
+};
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Protocol {
     Shared,
@@ -111,7 +115,10 @@ impl Disposition {
     }
 
     pub const fn is_implemented(self) -> bool {
-        matches!(self, Self::StateTransition | Self::ReplacedByComposition)
+        matches!(
+            self,
+            Self::Direct | Self::StateTransition | Self::ReplacedByComposition
+        )
     }
 }
 
@@ -131,6 +138,7 @@ pub struct Entry {
     pub rust_component: Option<String>,
     pub hil_evidence: Option<String>,
     pub semantic_contract: Option<SemanticContract>,
+    pub effect_contract: Option<EffectPolicy>,
     pub qualification_blockers: Vec<(String, String)>,
 }
 
@@ -143,6 +151,8 @@ struct EntryBuilder {
     rust_component: Option<String>,
     hil_evidence: Option<String>,
     semantic_contract: Option<SemanticContract>,
+    effect_comparison: Option<EffectComparison>,
+    effect_rules: Vec<(EffectSelector, EffectDisposition)>,
     qualification_blockers: Vec<(String, String)>,
     line: usize,
 }
@@ -169,6 +179,27 @@ impl EntryBuilder {
             )
             .into());
         }
+        if self.effect_comparison.is_some() && !disposition.is_implemented() {
+            return Err(format!(
+                "unimplemented function {} {} cannot have an effect-contract",
+                self.source, self.symbol
+            )
+            .into());
+        }
+        if self.semantic_contract.is_some() && self.effect_comparison.is_some() {
+            return Err(format!(
+                "function {} {} cannot combine semantic-contract and effect-contract",
+                self.source, self.symbol
+            )
+            .into());
+        }
+        if self.effect_comparison.is_none() && !self.effect_rules.is_empty() {
+            return Err(format!(
+                "function {} {} has effect rules but no effect-contract",
+                self.source, self.symbol
+            )
+            .into());
+        }
         if !self.qualification_blockers.is_empty() && !disposition.is_implemented() {
             return Err(format!(
                 "unimplemented function {} {} cannot have qualification blockers",
@@ -176,13 +207,19 @@ impl EntryBuilder {
             )
             .into());
         }
-        if !self.qualification_blockers.is_empty() && self.semantic_contract.is_some() {
+        if !self.qualification_blockers.is_empty()
+            && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
+        {
             return Err(format!(
                 "qualified function {} {} cannot have qualification blockers",
                 self.source, self.symbol
             )
             .into());
         }
+        let effect_contract = self
+            .effect_comparison
+            .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
+            .transpose()?;
         Ok(Entry {
             source: self.source,
             symbol: self.symbol,
@@ -191,6 +228,7 @@ impl EntryBuilder {
             rust_component: self.rust_component,
             hil_evidence: self.hil_evidence,
             semantic_contract: self.semantic_contract,
+            effect_contract,
             qualification_blockers: self.qualification_blockers,
         })
     }
@@ -272,6 +310,8 @@ impl Manifest {
                     rust_component: None,
                     hil_evidence: None,
                     semantic_contract: None,
+                    effect_comparison: None,
+                    effect_rules: Vec::new(),
                     qualification_blockers: Vec::new(),
                     line: line_number,
                 });
@@ -332,7 +372,7 @@ impl Manifest {
                     });
                 }
                 "disposition" | "protocol" | "rust-component" | "hil-evidence"
-                | "semantic-contract" | "blocked-by" => {
+                | "semantic-contract" | "effect-contract" | "effect" | "blocked-by" => {
                     let builder = current.as_mut().ok_or_else(|| {
                         format!("{directive} outside function at line {line_number}")
                     })?;
@@ -386,6 +426,23 @@ impl Manifest {
                                 )
                                 .into());
                             }
+                        }
+                        "effect-contract" => {
+                            if builder
+                                .effect_comparison
+                                .replace(EffectComparison::parse(value, line_number)?)
+                                .is_some()
+                            {
+                                return Err(format!(
+                                    "duplicate effect-contract at line {line_number}"
+                                )
+                                .into());
+                            }
+                        }
+                        "effect" => {
+                            builder
+                                .effect_rules
+                                .push(parse_effect_rule(value, line_number)?);
                         }
                         "blocked-by" => {
                             let mut words = value.split_whitespace();

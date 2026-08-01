@@ -83,6 +83,35 @@ fn semantic_evidence_is_bound_to_validator_sources() {
 }
 
 #[test]
+fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
+    let exact = effect_contract::EffectPolicy::new(
+        effect_contract::EffectComparison::ExactEffectsV1,
+        [(
+            effect_contract::EffectSelector::MmioRead {
+                width: 32,
+                address: 0x2010_7030,
+            },
+            effect_contract::EffectDisposition::Required,
+        )],
+    )
+    .unwrap();
+    let forbidden = effect_contract::EffectPolicy::new(
+        effect_contract::EffectComparison::ExactEffectsV1,
+        [(
+            effect_contract::EffectSelector::MmioRead {
+                width: 32,
+                address: 0x2010_7030,
+            },
+            effect_contract::EffectDisposition::Forbidden,
+        )],
+    )
+    .unwrap();
+    let evidence = effect_contract_evidence(&exact);
+    assert!(evidence.starts_with("effect-contract/exact-effects-v1/sha256:"));
+    assert_ne!(evidence, effect_contract_evidence(&forbidden));
+}
+
+#[test]
 fn verification_json_report_contains_reproducible_inputs() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let path = env::temp_dir().join(format!(

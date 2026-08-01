@@ -63,6 +63,19 @@ pub(crate) fn record_evidence(
     Ok(())
 }
 
+pub(crate) fn effect_contract_evidence(policy: &super::effect_contract::EffectPolicy) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"open-esp-radio-effect-contract-v1\0");
+    digest.update(policy.canonical().as_bytes());
+    digest.update(b"\0comparator\0");
+    digest.update(include_str!("effect_contract.rs").as_bytes());
+    format!(
+        "effect-contract/{}/sha256:{:x}",
+        policy.comparison.label(),
+        digest.finalize()
+    )
+}
+
 pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
     let text = fs::read_to_string(path)?;
     let mut evidence = EvidenceSet::new();
@@ -181,6 +194,11 @@ pub(crate) fn write_verification_json_report(
         ("vendor_functions", summary.vendor_functions, true),
         ("matched", summary.matched, true),
         ("symbolic_matches", summary.symbolic_matches, true),
+        (
+            "effect_contract_matches",
+            summary.effect_contract_matches,
+            true,
+        ),
         ("scenario_matches", summary.scenario_matches, true),
         ("state_matches", summary.state_matches, true),
         ("composition_matches", summary.composition_matches, true),

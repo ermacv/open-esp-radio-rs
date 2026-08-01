@@ -25,6 +25,7 @@ pub(crate) struct VerifySummary {
     pub(crate) vendor_functions: usize,
     pub(crate) matched: usize,
     pub(crate) symbolic_matches: usize,
+    pub(crate) effect_contract_matches: usize,
     pub(crate) scenario_matches: usize,
     pub(crate) state_matches: usize,
     pub(crate) composition_matches: usize,
@@ -84,6 +85,7 @@ impl VerifySummary {
         self.vendor_functions += other.vendor_functions;
         self.matched += other.matched;
         self.symbolic_matches += other.symbolic_matches;
+        self.effect_contract_matches += other.effect_contract_matches;
         self.scenario_matches += other.scenario_matches;
         self.state_matches += other.state_matches;
         self.composition_matches += other.composition_matches;
@@ -454,6 +456,9 @@ pub(crate) fn verify_source(
             },
             svd,
         )?;
+        let effect_policy = disposition_manifest
+            .and_then(|manifest| manifest.resolve(source.name, &vendor.name).entry)
+            .and_then(|entry| entry.effect_contract.as_ref());
         if let Some(profile) = execution_profiles
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
@@ -529,6 +534,52 @@ pub(crate) fn verify_source(
                 "FUNCTION\t{}\t{}\tINCOMPLETE\trust={}\tuncovered={uncovered}",
                 source.name, vendor.name, rust.name
             );
+        } else if let Some(policy) = effect_policy {
+            let vendor_effects = effect_contract::effects_from_observable(&vendor_trace.events)?;
+            let rust_effects = effect_contract::effects_from_observable(&rust_trace.events)?;
+            match effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)? {
+                effect_contract::EffectComparisonVerdict::Match
+                    if !*compare_return || returns_equal(&vendor_trace, &rust_trace) =>
+                {
+                    summary.matched += 1;
+                    summary.effect_contract_matches += 1;
+                    record_evidence(
+                        evidence,
+                        source.name,
+                        &vendor.name,
+                        effect_contract_evidence(policy),
+                    )?;
+                    println!(
+                        "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\teffects={}\treturn={}",
+                        source.name,
+                        vendor.name,
+                        rust.name,
+                        policy.comparison.label(),
+                        vendor_effects.len(),
+                        if *compare_return { "checked" } else { "void" },
+                    );
+                }
+                effect_contract::EffectComparisonVerdict::Match => {
+                    summary.mismatched += 1;
+                    println!(
+                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=return",
+                        source.name,
+                        vendor.name,
+                        rust.name,
+                        policy.comparison.label(),
+                    );
+                }
+                effect_contract::EffectComparisonVerdict::Mismatch(reason) => {
+                    summary.mismatched += 1;
+                    println!(
+                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason={reason}",
+                        source.name,
+                        vendor.name,
+                        rust.name,
+                        policy.comparison.label(),
+                    );
+                }
+            }
         } else if traces_equal(&vendor_trace, &rust_trace)
             && (!*compare_return || returns_equal(&vendor_trace, &rust_trace))
         {
@@ -556,11 +607,12 @@ pub(crate) fn verify_source(
         }
     }
     println!(
-        "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
+        "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
         source.name,
         summary.vendor_functions,
         summary.matched,
         summary.symbolic_matches,
+        summary.effect_contract_matches,
         summary.scenario_matches,
         summary.state_matches,
         summary.composition_matches,

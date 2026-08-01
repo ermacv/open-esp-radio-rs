@@ -1,6 +1,7 @@
 //! Verification manifests and concrete equivalence profiles.
 
 pub(crate) mod dispositions;
+pub(crate) mod effect_contract;
 mod evidence;
 mod execution;
 pub(crate) mod profiles;

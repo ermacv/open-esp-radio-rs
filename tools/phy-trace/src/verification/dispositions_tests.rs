@@ -4,7 +4,13 @@ use super::*;
 fn checked_in_manifest_is_strict_and_resolves_defaults() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("dispositions/esp32s31.disposition");
     let manifest = Manifest::load(&path).unwrap();
-    assert_eq!(manifest.entries().count(), 7);
+    assert_eq!(manifest.entries().count(), 8);
+
+    let disable_agc = manifest.resolve("rom", "phy_disable_agc");
+    assert_eq!(disable_agc.disposition, Disposition::Direct);
+    let effect_contract = disable_agc.entry.unwrap().effect_contract.as_ref().unwrap();
+    assert_eq!(effect_contract.comparison, EffectComparison::ExactEffectsV1);
+    assert_eq!(effect_contract.rules().count(), 2);
 
     let root = manifest.resolve("archive", "register_chipv7_phy");
     assert_eq!(root.disposition, Disposition::ReplacedByComposition);

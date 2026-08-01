@@ -101,10 +101,11 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
     )?;
     let orphan_probes = orphan_probe_count(&rust_artifact, &rust_prefix, &[(source, &symbols)])?;
     println!(
-        "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
+        "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
         summary.vendor_functions,
         summary.matched,
         summary.symbolic_matches,
+        summary.effect_contract_matches,
         summary.scenario_matches,
         summary.state_matches,
         summary.composition_matches,

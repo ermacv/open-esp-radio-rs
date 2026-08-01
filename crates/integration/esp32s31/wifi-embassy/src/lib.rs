@@ -11,4 +11,5 @@ extern crate std;
 
 pub mod cooperative_tx;
 pub mod embassy_irq;
+pub mod embassy_rx;
 pub mod embassy_tx;

@@ -854,6 +854,12 @@ together with `HIL_OPEN_RX_LIVE_APPEND_2026_07_27`, remain the primary
 evidence already attached to the SVD registers. The upper ring sees only a
 semantic `RxDma` capability; raw identities are no longer part of its API.
 Host tests retain the exact read/write/fence trace through a semantic model.
+The reload self-clear is exposed as one `poll_pending_reload` observation,
+never as an internal CPU spin. `RxStageReloadPending` retains the copied frame
+in Radio ownership until the doorbell settles and any terminal-frontier BASE
+repair completes. The Embassy HIL inserts a one-microsecond timer edge between
+pending samples and preserves the recovered `0x186a1` attempt limit; timeout
+drops the private staged copy and reports `RxRingError::Busy`.
 
 The hard MAC interrupt transaction is now a separate generated
 `WIFI_MAC_INTERRUPT` peripheral at `0x2010_4c40`. Complete

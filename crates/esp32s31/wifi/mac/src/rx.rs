@@ -167,7 +167,12 @@ const SUBTYPE_ASSOC_RESPONSE: u8 = 0x10;
 const SUBTYPE_REASSOC_RESPONSE: u8 = 0x30;
 const SUBTYPE_AUTH: u8 = 0xb0;
 const RX_DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
-const RX_DESCRIPTOR_RELOAD_POLL_LIMIT: usize = 0x0001_86a1;
+/// Exact maximum number of `APPEND_DESCRIPTOR_RELOAD` observations recovered
+/// from `wDev_AppendRxBlocks`.
+///
+/// The source-owned driver exposes each observation separately so an Embassy
+/// integration can yield between them instead of reproducing the ROM spin.
+pub const RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT: u32 = 0x0001_86a1;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RxSegment<'a> {
@@ -877,6 +882,13 @@ pub struct RxLiveAppend {
     pub descriptor_count: usize,
 }
 
+/// Result of one finite observation of the live RX append doorbell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxReloadObservation {
+    Pending,
+    Settled,
+}
+
 /// Prepared zero-terminated RX ring while the hardware walker is stopped.
 ///
 /// This type owns the right to start the descriptor walker. Consuming
@@ -1057,9 +1069,9 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
     /// peer's next A-MPDU consumes every remaining descriptor. `BATCH` must
     /// divide the ring so `recycle_start` visits each slot exactly once.
     ///
-    /// The caller must still invoke [`Self::finish_pending_reload`] after each
+    /// The caller must still drive [`Self::poll_pending_reload`] after each
     /// successful append. This deliberately preserves the ROM doorbell/base
-    /// repair ordering instead of hiding a potentially unbounded wait here.
+    /// repair ordering without hiding a wait in this finite operation.
     #[inline(never)]
     #[cfg_attr(
         target_arch = "riscv32",
@@ -1234,7 +1246,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         self.pending_tail.is_some()
     }
 
-    /// Complete one live-append doorbell before returning to frame processing.
+    /// Observe one live-append doorbell edge without waiting.
     ///
     /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
     /// `0x2f83_8a7e` spins on `RX_CONTROL.APPEND_DESCRIPTOR_RELOAD` with the
@@ -1244,17 +1256,18 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
     /// processing pass is observably unsafe: the appended half can itself
     /// reach the terminal descriptor first, making `RX_LAST_DESCRIPTOR`
     /// indistinguishable from the no-repair case.
-    pub fn finish_pending_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
+    pub fn poll_pending_reload<M: RxDma>(
+        &mut self,
+        mmio: &mut M,
+    ) -> Result<RxReloadObservation, RxRingError> {
         if self.pending_tail.is_none() {
-            return Ok(());
+            return Ok(RxReloadObservation::Settled);
         }
-        for _ in 0..RX_DESCRIPTOR_RELOAD_POLL_LIMIT {
-            if !mmio.reload_pending() {
-                return self.settle_reload(mmio);
-            }
-            core::hint::spin_loop();
+        if mmio.reload_pending() {
+            return Ok(RxReloadObservation::Pending);
         }
-        Err(RxRingError::Busy)
+        self.settle_reload(mmio)?;
+        Ok(RxReloadObservation::Settled)
     }
 
     fn settle_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {

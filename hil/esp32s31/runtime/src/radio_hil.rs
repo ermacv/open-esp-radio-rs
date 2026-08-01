@@ -96,6 +96,7 @@ use open_esp_radio::{
     integration::{
         esp32s31::wifi_embassy::{
             cooperative_tx::CooperativeTxHardware, embassy_irq::EmbassyMacIrqRuntime,
+            embassy_rx::{RxReloadDelay, await_staged_rx_reload},
             embassy_tx::{
                 ReferencedAmpduIngressPolicy, ReferencedHtAmpduBatch, ReferencedHtAmpduError,
             },
@@ -4419,7 +4420,15 @@ type ConnectedNetworkRxFrame =
 type ConnectedRxStagingQueue =
     RxFrameQueue<'static, VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>;
 
-fn stage_connected_rx_from_storage(
+struct OpenRadioRxReloadDelay;
+
+impl RxReloadDelay for OpenRadioRxReloadDelay {
+    fn after_micros(&mut self, micros: u32) -> impl core::future::Future<Output = ()> + '_ {
+        Timer::after_micros(u64::from(micros))
+    }
+}
+
+async fn stage_connected_rx_from_storage(
     mmio: &mut RadioRegisters,
     rx_storage: &RxStorage,
     rx_ring: &mut RxRingLive<'_, RX_DESCRIPTOR_COUNT>,
@@ -4430,17 +4439,13 @@ fn stage_connected_rx_from_storage(
     // dispatcher. The driver transaction copies it before invoking the rearm
     // closure, so no slice survives renewed hardware ownership.
     let dma_buffer = unsafe { rx_storage.buffers[completed_index].as_slice() };
-    OPEN_RADIO_RX_STAGE_POOL.stage_recycle_and_publish(
-        completed,
-        dma_buffer,
-        mmio,
-        rx_ring,
-        |index| {
+    let pending =
+        OPEN_RADIO_RX_STAGE_POOL.stage_recycle(completed, dma_buffer, mmio, rx_ring, |index| {
             // SAFETY: the driver invokes this closure only for the completed
             // prefix it owns and before publishing that descriptor again.
             unsafe { rx_storage.buffers[index].prepare_for_recycle() }
-        },
-    )
+        })?;
+    await_staged_rx_reload(pending, mmio, rx_ring, &mut OpenRadioRxReloadDelay).await
 }
 
 async fn connected_radio_loop(
@@ -4892,7 +4897,9 @@ async fn connected_radio_loop(
                     rx_storage,
                     &mut rx_ring,
                     completed,
-                ) {
+                )
+                .await
+                {
                     Ok(staged) => staged,
                     Err(error) => {
                         emergency_log(format_args!(
@@ -6189,7 +6196,9 @@ async fn connected_radio_loop(
                                 &mut last_he_ndpa_dialog_token,
                                 &mut last_he_ndpa_hardware,
                                 &mut last_network_activity,
-                            ) {
+                            )
+                            .await
+                            {
                                 rx_service_failed = true;
                                 emergency_log(format_args!(
                                     "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -6636,7 +6645,9 @@ async fn connected_radio_loop(
                                             &mut last_he_ndpa_dialog_token,
                                             &mut last_he_ndpa_hardware,
                                             &mut last_network_activity,
-                                        ) {
+                                        )
+                                        .await
+                                        {
                                             rx_service_failed = true;
                                             emergency_log(format_args!(
                                                 "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -6946,7 +6957,7 @@ fn account_connected_rx_route(
 /// ordinary HE20 image delivered 1,000/1,000 ICMP replies: RX starvation is a
 /// saturated bidirectional scheduling defect, not an idle PHY loss.
 #[allow(clippy::too_many_arguments)]
-fn service_benchmark_rx_during_tx(
+async fn service_benchmark_rx_during_tx(
     mmio: &mut RadioRegisters,
     rx_storage: &RxStorage,
     rx_ring: &mut RxRingLive<'_, RX_DESCRIPTOR_COUNT>,
@@ -6988,7 +6999,8 @@ fn service_benchmark_rx_during_tx(
             let Some(completed) = rx_ring.take_completed(index) else {
                 break;
             };
-            let staged = stage_connected_rx_from_storage(mmio, rx_storage, rx_ring, completed)?;
+            let staged =
+                stage_connected_rx_from_storage(mmio, rx_storage, rx_ring, completed).await?;
             if rx_staging_queue.try_push(staged).is_err() {
                 return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
             }

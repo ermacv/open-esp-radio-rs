@@ -99,6 +99,12 @@ for package in "${production_packages[@]}"; do
     fi
 done
 
+if rg -n 'core::hint::spin_loop|spin_loop\(' crates --glob '*.rs'
+then
+    echo "production source contains a CPU spin loop" >&2
+    exit 1
+fi
+
 # Build the exact final image from the locked dependencies. A sibling esp-hal
 # checkout is a useful HIL development override, but using it here would both
 # mutate the embedded lockfile and make this policy gate machine-dependent.

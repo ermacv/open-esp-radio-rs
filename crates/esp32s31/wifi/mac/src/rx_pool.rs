@@ -21,7 +21,10 @@ use core::{
 
 use crate::{
     descriptor::length as descriptor_length,
-    rx::{RxCompletedDescriptor, RxDma, RxRingError, RxRingLive, RxSegment},
+    rx::{
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxDma, RxReloadObservation,
+        RxRingError, RxRingLive, RxSegment,
+    },
 };
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
@@ -84,7 +87,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
     }
 
-    pub fn try_stage<'pool>(
+    fn try_stage<'pool>(
         &'pool self,
         completed: RxCompletedDescriptor,
         source: &[u8],
@@ -123,15 +126,17 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         })
     }
 
-    /// Copy one completed DMA frame, return its descriptor to hardware, and
-    /// only then publish an independent upper-layer owner.
+    /// Copy one completed DMA frame and begin returning its descriptor to
+    /// hardware.
     ///
     /// This is the complete ownership order in
     /// `_oracles/libpp.a[wdev.o]::wDev_IndicateFrame`: allocate/copy,
     /// `wDev_DiscardFrame`/`wDev_AppendRxBlocks`, then `lmacRxDone`. Neither
     /// protocol parsing nor the network queue is allowed to retain the DMA
     /// descriptor. The caller supplies only the storage-specific rearm
-    /// operation; this method owns the ordering and the reload completion.
+    /// operation. The returned [`RxStageReloadPending`] owns the copied frame
+    /// until the caller observes reload completion with an async scheduling
+    /// edge between pending samples.
     ///
     /// SOURCE\[HIL_OPEN_HE20_RX_OWNERSHIP_2026_07_30]: in the
     /// `psram-code-psram-data` profile, two reset-separated bidirectional
@@ -144,14 +149,14 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
     )]
-    pub fn stage_recycle_and_publish<'pool, const COUNT: usize, M, F>(
+    pub fn stage_recycle<'pool, const COUNT: usize, M, F>(
         &'pool self,
         completed: RxCompletedDescriptor,
         source: &[u8],
         mmio: &mut M,
         ring: &mut RxRingLive<'_, COUNT>,
         prepare_buffer: F,
-    ) -> Result<NetworkRxFrame<'pool, SLOTS, CAPACITY>, RxStageTransactionError>
+    ) -> Result<RxStageReloadPending<'pool, SLOTS, CAPACITY>, RxStageTransactionError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -166,11 +171,10 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         if append.descriptor_count != 1 {
             return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
         }
-        ring.finish_pending_reload(mmio)
-            .map_err(RxStageTransactionError::Ring)?;
-        radio_frame
-            .publish()
-            .map_err(|_radio_frame| RxStageTransactionError::Ownership)
+        Ok(RxStageReloadPending {
+            frame: Some(radio_frame),
+            reload_samples: 0,
+        })
     }
 
     pub fn claimed_slots(&self) -> u32 {
@@ -224,6 +228,68 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     }
 }
 
+/// Unique staged-frame owner while the RX append doorbell is pending.
+///
+/// Dropping this value discards only the independent staged copy. The DMA
+/// descriptor has already been rearmed and remains owned by the ring's
+/// pending-tail transaction.
+#[must_use = "the staged frame must be polled to reload completion or explicitly dropped"]
+pub struct RxStageReloadPending<'pool, const SLOTS: usize, const CAPACITY: usize> {
+    frame: Option<RadioRxFrame<'pool, SLOTS, CAPACITY>>,
+    reload_samples: u32,
+}
+
+impl<'pool, const SLOTS: usize, const CAPACITY: usize>
+    RxStageReloadPending<'pool, SLOTS, CAPACITY>
+{
+    /// Perform one hardware observation.
+    ///
+    /// `Ok(None)` is an explicit scheduling boundary: an async integration
+    /// must yield or await a timer before calling this method again. The exact
+    /// recovered ROM attempt bound is retained without spinning inside the
+    /// source-owned MAC crate.
+    pub fn poll_reload<const COUNT: usize, M: RxDma>(
+        &mut self,
+        mmio: &mut M,
+        ring: &mut RxRingLive<'_, COUNT>,
+    ) -> Result<Option<NetworkRxFrame<'pool, SLOTS, CAPACITY>>, RxStageTransactionError> {
+        if self.frame.is_none() {
+            return Err(RxStageTransactionError::Ownership);
+        }
+        match ring
+            .poll_pending_reload(mmio)
+            .map_err(RxStageTransactionError::Ring)?
+        {
+            RxReloadObservation::Pending => {
+                self.reload_samples = self.reload_samples.saturating_add(1);
+                if self.reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
+                    self.frame.take();
+                    Err(RxStageTransactionError::Ring(RxRingError::Busy))
+                } else {
+                    Ok(None)
+                }
+            }
+            RxReloadObservation::Settled => {
+                let frame = self
+                    .frame
+                    .take()
+                    .ok_or(RxStageTransactionError::Ownership)?;
+                match frame.publish() {
+                    Ok(frame) => Ok(Some(frame)),
+                    Err(frame) => {
+                        self.frame = Some(frame);
+                        Err(RxStageTransactionError::Ownership)
+                    }
+                }
+            }
+        }
+    }
+
+    pub const fn reload_samples(&self) -> u32 {
+        self.reload_samples
+    }
+}
+
 impl<const SLOTS: usize, const CAPACITY: usize> Default for RxStagePool<SLOTS, CAPACITY> {
     fn default() -> Self {
         Self::new()
@@ -231,7 +297,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> Default for RxStagePool<SLOTS, C
 }
 
 /// Unique frame owner between the DMA copy and queue publication.
-pub struct RadioRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
+struct RadioRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
     pool: &'pool RxStagePool<SLOTS, CAPACITY>,
     slot: usize,
     metadata: StagedMetadata,
@@ -240,7 +306,7 @@ pub struct RadioRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
 
 impl<'pool, const SLOTS: usize, const CAPACITY: usize> RadioRxFrame<'pool, SLOTS, CAPACITY> {
     /// Transfer the staged frame to the upper receive queue.
-    pub fn publish(
+    fn publish(
         mut self,
     ) -> Result<NetworkRxFrame<'pool, SLOTS, CAPACITY>, RadioRxFrame<'pool, SLOTS, CAPACITY>> {
         if !self.pool.try_publish_network(self.slot) {

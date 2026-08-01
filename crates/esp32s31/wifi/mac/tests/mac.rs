@@ -37,12 +37,14 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
         HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
-        RxBasebandFormat, RxDma, RxError, RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo,
-        RxRingError, RxRingStopped, RxSegment, build_cold_ring, decode_rx_he_mu_sig_b,
-        decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data, extract_control,
-        extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
-        publish_cold_ring, rearm_descriptor,
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxError,
+        RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError,
+        RxRingStopped, RxSegment, build_cold_ring, decode_rx_he_mu_sig_b, decode_rx_phy_info,
+        disable_receive, enable_receive, extract_ccmp_data, extract_control, extract_data,
+        extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
+        rearm_descriptor,
     },
+    rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs,
         HeMcs, HeRate, HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate,
@@ -1393,7 +1395,10 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     mmio.set(RX_CONTROL, RX_ENABLE);
     mmio.set(RX_NEXT_DESCRIPTOR, 0);
     mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
-    live.finish_pending_reload(&mut mmio).unwrap();
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
     assert_eq!(live.accepted_tail(), 3);
     assert!(!live.reload_pending());
     recycled.clear();
@@ -1447,7 +1452,10 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
     // pointer. No BASE repair is required for this ordinary append.
     mmio.set(RX_CONTROL, RX_ENABLE);
     mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
-    live.finish_pending_reload(&mut mmio).unwrap();
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
     assert_eq!(live.accepted_tail(), 0);
 
     descriptors[1].write_word0(completed);
@@ -1501,7 +1509,10 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
 
     mmio.set(RX_CONTROL, RX_ENABLE);
     mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
-    live.finish_pending_reload(&mut mmio).unwrap();
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
 
     descriptors[2].write_word0(completed);
     assert!(live.take_completed(2).is_some());
@@ -1517,6 +1528,79 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
         live.recycle_completed_prefix::<0, _, _>(&mut mmio, |_| Ok(())),
         Err(RxRingError::Count)
     );
+}
+
+#[test]
+fn staged_rx_frame_remains_private_until_reload_settles() {
+    const COUNT: usize = 2;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200];
+    let mut mmio = MockMmio::default();
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    let completed = live.take_completed(0).unwrap();
+    let pool = RxStagePool::<1, 16>::new();
+    let mut pending = pool
+        .stage_recycle(completed, &[1, 2, 3, 4], &mut mmio, &mut live, |_| Ok(()))
+        .unwrap();
+
+    assert_eq!(pool.claimed_slots(), 1);
+    assert_eq!(pool.network_slots(), 0);
+    assert_eq!(live.accepted_tail(), 1);
+    assert!(pending.poll_reload(&mut mmio, &mut live).unwrap().is_none());
+    assert_eq!(pending.reload_samples(), 1);
+    assert_eq!(pool.network_slots(), 0);
+
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    let network = pending.poll_reload(&mut mmio, &mut live).unwrap().unwrap();
+    assert_eq!(network.segment().buffer, &[1, 2, 3, 4]);
+    assert_eq!(pool.network_slots(), 1);
+    assert_eq!(live.accepted_tail(), 0);
+    drop(network);
+    assert_eq!(pool.claimed_slots(), 0);
+}
+
+#[test]
+fn staged_rx_reload_timeout_is_exact_and_releases_the_private_copy() {
+    const COUNT: usize = 2;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200];
+    let mut mmio = MockMmio::default();
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    let completed = live.take_completed(0).unwrap();
+    let pool = RxStagePool::<1, 16>::new();
+    let mut pending = pool
+        .stage_recycle(completed, &[1, 2, 3, 4], &mut mmio, &mut live, |_| Ok(()))
+        .unwrap();
+
+    for expected in 1..RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
+        assert!(pending.poll_reload(&mut mmio, &mut live).unwrap().is_none());
+        assert_eq!(pending.reload_samples(), expected);
+    }
+    assert!(matches!(
+        pending.poll_reload(&mut mmio, &mut live),
+        Err(RxStageTransactionError::Ring(RxRingError::Busy))
+    ));
+    assert_eq!(pending.reload_samples(), RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT);
+    assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(pool.network_slots(), 0);
+    assert!(live.reload_pending());
 }
 
 #[test]

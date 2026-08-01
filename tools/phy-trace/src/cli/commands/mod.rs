@@ -1,6 +1,7 @@
 //! Per-command parsing and execution.
 
 mod analyze;
+mod audit_direct_targets;
 mod compare;
 mod execute;
 mod execute_compare;
@@ -17,6 +18,7 @@ use super::{Command, MmioRegisterMap, Result};
 
 pub(super) fn run(command: Command, arguments: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> {
     match command {
+        Command::AuditDirectTargets => audit_direct_targets::run(arguments),
         Command::QualifyEsp32s31Channel => qualify_channel::run(arguments, svd),
         Command::QualifyEsp32s31RfInit => qualify_rf_init::run(arguments, svd),
         Command::Execute => execute::run(arguments, svd),

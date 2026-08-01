@@ -6,6 +6,7 @@ use crate::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
+    AuditDirectTargets,
     QualifyEsp32s31Channel,
     QualifyEsp32s31RfInit,
     Execute,
@@ -23,6 +24,7 @@ pub(crate) enum Command {
 impl Command {
     fn parse(value: &str) -> Result<Self> {
         Ok(match value {
+            "audit-direct-targets" => Self::AuditDirectTargets,
             "qualify-esp32s31-channel" => Self::QualifyEsp32s31Channel,
             "qualify-esp32s31-rf-init" => Self::QualifyEsp32s31RfInit,
             "execute" => Self::Execute,
@@ -65,7 +67,7 @@ impl Invocation {
                 index += 1;
             }
         }
-        if svd_paths.is_empty() {
+        if svd_paths.is_empty() && command != Command::AuditDirectTargets {
             return Err("missing --svd".into());
         }
         Ok(Self {
@@ -105,5 +107,17 @@ mod tests {
         let error = Invocation::parse(["guess".to_owned(), "--svd".to_owned(), "x".to_owned()])
             .unwrap_err();
         assert!(error.to_string().contains("unknown command"));
+    }
+
+    #[test]
+    fn direct_target_audit_does_not_require_an_unrelated_svd() {
+        let invocation = Invocation::parse([
+            "audit-direct-targets".to_owned(),
+            "--artifact".to_owned(),
+            "runtime.elf".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::AuditDirectTargets);
+        assert!(invocation.svd_paths.is_empty());
     }
 }

@@ -67,4 +67,22 @@ then
     exit 1
 fi
 
-echo "source-only radio audit passed: $artifact"
+# Build the exact final image from the locked dependencies. A sibling esp-hal
+# checkout is a useful HIL development override, but using it here would both
+# mutate the embedded lockfile and make this policy gate machine-dependent.
+ESP_HAL_ROOT="$audit_dir/no-local-esp-hal" cargo hil build radio
+
+runtime_elf="target/hil/esp32s31/psram-code-psram-data-open-radio-hil/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
+test -f "$runtime_elf"
+
+# The linker script exposes absolute ESP32-S31 ECO0 ROM symbols even when no
+# call references them, so symbol-table matching is insufficient. Decode all
+# executable sections and reject statically resolved jumps/calls into the
+# pinned radio API table or the contiguous radio implementation body. System
+# ROM outside these ranges (for example ets_printf) remains permitted.
+cargo phy-trace audit-direct-targets \
+    --artifact "$runtime_elf" \
+    --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \
+    --forbid 'esp32s31-eco0-radio-body=0x2f823c12..0x2f83e6d0'
+
+echo "source-only radio audit passed: rlib=$artifact runtime=$runtime_elf"

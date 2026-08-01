@@ -33,7 +33,6 @@ use open_esp_radio::{
         phy::{
             PhyRegisterRunError, PhyRegisterTransition, PhyRfBoundary, PhyTargetObserver,
             TargetPhyRegisterPort,
-            phy_channel::{PhyWifiTxGainImage, PhyWifiTxGainRequest},
             phy_cold::PhyColdState,
             run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
             target_executor::{PhyAsyncDelay, PhyTargetPortError},
@@ -158,7 +157,6 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static DIAGNOSTIC_ACTION_ORDINAL: AtomicU32 = AtomicU32::new(0);
 static AUTH_REGISTER_SNAPSHOT_CAPTURED: AtomicBool = AtomicBool::new(false);
-static TX_GAIN_ORACLE_CAPTURED: AtomicBool = AtomicBool::new(false);
 
 fn set_diagnostic_stage(stage: u32) {
     DIAGNOSTIC_STAGE.store(stage, Ordering::Release);
@@ -1248,16 +1246,6 @@ impl PhyTargetObserver for HilPhyObserver {
         ));
     }
 
-    fn channel_tx_gain(&mut self, request: PhyWifiTxGainRequest, image: PhyWifiTxGainImage) {
-        if request.channel == LISTEN_CHANNEL
-            && TX_GAIN_ORACLE_CAPTURED
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-        {
-            compare_tx_gain_with_rom(request, image);
-        }
-    }
-
     fn channel_completed(
         &mut self,
         outcome: open_esp_radio::esp32s31::phy::phy_channel::PhyChipChannelOutcome,
@@ -1394,81 +1382,6 @@ async fn switch_channel_with_mac_restart(
         &mut observer,
     )
     .await
-}
-
-#[cfg(target_arch = "riscv32")]
-fn compare_tx_gain_with_rom(request: PhyWifiTxGainRequest, rust: PhyWifiTxGainImage) {
-    // Diagnostic oracle only: complete rev0 ROM `phy_wifi_get_tx_gain` at
-    // 0x2f82_6ff8. Its calling convention and the three tables are recovered
-    // from `_oracles/esp32s31_rev0_rom.elf` and
-    // `_oracles/libphy.a[phy_tx_gain.o]::phy_wifi_get_tx_tab_new`.
-    // The open driver never calls this helper; the HIL removes it after the
-    // live Rust/ROM equivalence check.
-    const TABLE_LOW: [u16; 18] = [
-        0x003f, 0x0037, 0x002f, 0x0027, 0x0027, 0x001f, 0x0017, 0x000f, 0x000f, 0x000d, 0x000c,
-        0x0007, 0x0006, 0x0005, 0x0004, 0x0003, 0x0002, 0x0001,
-    ];
-    const TABLE_MID: [u16; 18] = [
-        0x0100, 0x0100, 0x0100, 0x0100, 0x8000, 0x8000, 0x8000, 0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0,
-    ];
-    const TABLE_HIGH: [u16; 18] = [
-        0x001b, 0x0018, 0x0014, 0x000e, 0x0006, 0x0000, 0xfff6, 0xffe9, 0xffe1, 0xffd7, 0xffd0,
-        0xffc9, 0xffc4, 0xffbe, 0xffb8, 0xffb0, 0xffa5, 0xff97,
-    ];
-    type RomPhyWifiGetTxGain = unsafe extern "C" fn(
-        u32,
-        *const u8,
-        i32,
-        i32,
-        *const u16,
-        *const u16,
-        *const u16,
-        *mut u8,
-        *mut u16,
-        *mut u16,
-        u32,
-    );
-
-    let mut rom_32 = [0_u8; 32];
-    let mut rom_64 = [0_u16; 32];
-    let mut rom_72 = [0_u16; 32];
-    // SAFETY: this is a diagnostic call to the immutable, chip-revision-pinned
-    // ROM oracle. All eleven arguments match the complete caller above and
-    // point to fixed-size, aligned Rust storage valid for the duration.
-    let oracle: RomPhyWifiGetTxGain = unsafe { core::mem::transmute(0x2f82_6ff8_usize) };
-    unsafe {
-        oracle(
-            u32::from(request.channel),
-            request.calibration_curve.as_ptr(),
-            i32::from(request.correction),
-            i32::from(request.base_and_delta),
-            TABLE_LOW.as_ptr(),
-            TABLE_MID.as_ptr(),
-            TABLE_HIGH.as_ptr(),
-            rom_32.as_mut_ptr(),
-            rom_64.as_mut_ptr(),
-            rom_72.as_mut_ptr(),
-            0,
-        );
-    }
-
-    let mut differences = 0_u32;
-    for index in 0..32 {
-        let shift = (index & 3) * 8;
-        let rust_32 = ((rust.output_32[index >> 2] >> shift) & 0xff) as u8;
-        let shift = (index & 1) * 16;
-        let rust_64 = ((rust.output_64[index >> 1] >> shift) & 0xffff) as u16;
-        let rust_72 = ((rust.output_72[index >> 1] >> shift) & 0xffff) as u16;
-        differences += u32::from(rust_32 != rom_32[index]);
-        differences += u32::from(rust_64 != rom_64[index]);
-        differences += u32::from(rust_72 != rom_72[index]);
-    }
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL probe=tx-gain-rom-equivalence channel={} \
-         differences={} rust32={:08x?} rom32={:02x?}",
-        request.channel, differences, rust.output_32, rom_32,
-    ));
 }
 
 fn log_open_txdc_entry_mmio() {

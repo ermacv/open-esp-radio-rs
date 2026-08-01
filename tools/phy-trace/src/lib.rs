@@ -10,6 +10,7 @@ mod analysis;
 mod artifact;
 mod cli;
 mod codegen;
+mod direct_target_audit;
 mod entry_contract;
 mod execution;
 mod external_abi;

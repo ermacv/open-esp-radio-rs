@@ -12,6 +12,23 @@ The authoritative ESP32-S31 run passes both `svd/esp32s31-radio.svd` and
 PAC registers reached by the trace and is never used to generate a runtime
 peripheral owner.
 
+The tool also provides an SVD-independent final-image policy check:
+
+```console
+cargo phy-trace audit-direct-targets \
+  --artifact target/path/to/runtime-elf \
+  --forbid 'radio-api=0x2f800bf0..0x2f8016bc' \
+  --forbid 'radio-body=0x2f823c12..0x2f83e6d0'
+```
+
+It scans every executable section rather than named functions, resolves
+constant `JAL`/`JALR` targets formed by ordinary RV32 immediate sequences and
+fails when a target is inside a forbidden half-open range. Absolute linker
+symbols do not fail by mere presence. Calls through runtime-loaded function
+pointers are intentionally outside this binary check and must be governed by
+the platform/effect contract. `tools/audit-source-only.sh` applies the pinned
+ESP32-S31 ECO0 radio ranges to the final normal HIL ELF.
+
 ## Internal architecture
 
 The binary entry point only translates the library result into an exit code.
@@ -23,6 +40,7 @@ The implementation is split by responsibility:
 - `ir` owns symbolic values, observable traces, indexed-MMIO proofs and the
   resolved reference-program types;
 - `analysis` contains the structural tracer and artifact-level call resolver;
+- `direct_target_audit` enforces final-ELF direct-call policy without symbols;
 - `execution` contains scenarios, persistent memory ownership, coverage and
   the RV32 machine;
 - `codegen` renders only a `ResolvedReferenceProgram`;

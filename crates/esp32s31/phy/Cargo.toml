@@ -7,10 +7,6 @@ license.workspace = true
 repository.workspace = true
 description = "Allocation-free Rust ESP32-S31 PHY state machines"
 
-[features]
-default = []
-strict-no-wait = []
-
 [dependencies]
 open-esp-radio-esp32s31-hal = { path = "../hal" }
 

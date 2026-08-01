@@ -67,6 +67,38 @@ then
     exit 1
 fi
 
+# Generated references and qualification harnesses are development oracles,
+# never dependencies of a production crate. Audit each public production root
+# separately so a future optional feature cannot smuggle a tool/HIL crate into
+# the ordinary workspace graph while the PHY-only allowlist above still passes.
+production_packages=(
+    open-esp-radio
+    open-esp-radio-embassy-net
+    open-esp-radio-esp32s31-hal
+    open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-phy
+    open-esp-radio-esp32s31-svd
+    open-esp-radio-esp32s31-wifi-embassy
+    open-esp-radio-esp32s31-wifi-esp-hal
+    open-esp-radio-esp32s31-wifi-mac
+    open-esp-radio-ieee80211
+    open-esp-radio-wpa2
+)
+for package in "${production_packages[@]}"; do
+    cargo tree \
+        --package "$package" \
+        --target "$target_triple" \
+        --edges normal,build \
+        --prefix none >"$audit_dir/dependencies-$package"
+    if rg \
+        '^open-esp-radio-(phy-trace|pac-gen|hil-runner|.*trace-probes|.*vendor-oracle)' \
+        "$audit_dir/dependencies-$package"
+    then
+        echo "qualification dependency survived in production package $package" >&2
+        exit 1
+    fi
+done
+
 # Build the exact final image from the locked dependencies. A sibling esp-hal
 # checkout is a useful HIL development override, but using it here would both
 # mutate the embedded lockfile and make this policy gate machine-dependent.

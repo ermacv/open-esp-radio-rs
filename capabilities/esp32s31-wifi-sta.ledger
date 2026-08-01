@@ -1,0 +1,205 @@
+# Machine-checked progress roots for the supported ESP32-S31 station path.
+# A terminal capability needs complete production ownership, host coverage,
+# executable vendor proof (or an explicit not-applicable classification), HIL
+# qualification and bounded/non-applicable scheduling.
+ledger-version 1
+target esp32s31-wifi-sta
+disposition-manifest tools/phy-trace/dispositions/esp32s31.disposition
+require-capability cold-registration
+require-capability rf-bb-initialization
+require-capability channel-selection-switch
+require-capability rx-tx-dma
+require-capability interrupt-recovery
+require-capability authentication-association
+require-capability wpa2
+require-capability async-deadlines
+require-capability power-management
+require-capability timeout-error-recovery
+
+capability cold-registration
+title Cold PHY registration
+scope One cold register_chipv7_phy composition through the typed target port
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/phy/src/phy_register.rs PhyRegisterTransition
+owner crates/esp32s31/phy/src/executor.rs run_phy_register
+test crates/esp32s31/phy/src/phy_register.rs stuck_i2c_reset_fails_only_after_bounded_async_samples_and_cleans_up
+vendor-root archive register_chipv7_phy
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on rf-bb-initialization
+gap vendor registration-root-contract-blocked-by-bb-init
+gap hil cold-registration-needs-post-refactor-requalification
+
+capability rf-bb-initialization
+title RF and baseband initialization
+scope Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registration
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/phy/src/phy_cold.rs PhyRfColdInit
+owner crates/esp32s31/phy/src/phy_bb.rs PhyBbInitTransition
+test crates/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound
+test crates/esp32s31/phy/src/phy_bb.rs complete_parent_failure_always_restores_idle_mode_and_agc
+vendor-root archive phy_rf_init
+vendor-root archive phy_bb_init
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+gap vendor bb-init-contract-and-blocker-chain-incomplete
+gap hil rf-bb-needs-post-refactor-requalification
+
+capability channel-selection-switch
+title Channel selection and live switch
+scope Typed 2.4-GHz PHY selection plus MAC stop restart around a live switch
+implementation complete
+host-proof covered
+vendor-proof qualified
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/phy/src/phy_channel.rs PhyChipChannelTransition
+owner crates/esp32s31/phy/src/target_port.rs switch_phy_channel_with_mac_restart
+test crates/esp32s31/phy/src/phy_channel.rs frequency_timeout_runs_full_radio_cleanup
+vendor-root archive phy_chip_set_chan
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on rf-bb-initialization
+gap hil channel-switch-needs-post-refactor-requalification
+
+capability rx-tx-dma
+title RX and TX DMA ownership
+scope Descriptor lifetime staging publication and finite TX completion for the connected STA path
+implementation partial
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/wifi/mac/src/rx_pool.rs RxStageReloadPending
+owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
+owner crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs await_staged_rx_reload
+test crates/esp32s31/wifi/mac/tests/mac.rs staged_rx_frame_remains_private_until_reload_settles
+test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
+vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
+vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on interrupt-recovery
+gap implementation connected-tx-executor-remains-in-hil
+gap vendor dma-root-contracts-not-executable
+gap hil rx-reload-async-boundary-needs-requalification
+
+capability interrupt-recovery
+title Interrupt acknowledgement and recovery ordering
+scope Hard MAC snapshot acknowledgement priority dispatch and Embassy wake coalescing
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/wifi/mac/src/irq.rs IrqState
+owner crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs EmbassyMacIrqRuntime
+test crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes
+vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_interrupt_get_event
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+gap vendor libpp-interrupt-contract-not-executable
+gap hil connected-irq-order-needs-post-rx-requalification
+
+capability authentication-association
+title Open authentication and STA association
+scope Finite selected-peer Open Authentication and Association epochs through accepted response
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/wifi/ieee80211/src/station.rs StaAuthenticationRuntime
+owner crates/wifi/ieee80211/src/station.rs StaAssociationRuntime
+owner crates/wifi/ieee80211/src/station.rs select_sta_association
+test crates/wifi/ieee80211/src/station.rs authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit
+test crates/wifi/ieee80211/src/station.rs association_runtime_owns_epoch_schedule_sequence_and_timeout
+vendor-anchor crates/wifi/ieee80211/src/station.rs ieee80211_sta_new_state
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on channel-selection-switch
+depends-on rx-tx-dma
+gap vendor net80211-auth-association-contract-not-executable
+gap hil connected-auth-needs-post-rx-requalification
+
+capability wpa2
+title WPA2 Personal station handshake
+scope Four-way handshake replay protection key installation response deadline and protected traffic
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/wifi/wpa2/src/supplicant.rs Wpa2StaSupplicant
+owner crates/wifi/wpa2/src/state.rs Wpa2StaState
+owner crates/wifi/wpa2/src/supplicant.rs Wpa2StaResponseDeadline
+test crates/wifi/wpa2/src/supplicant.rs resolves_m1_through_typed_install_and_authenticated_m4
+test crates/wifi/wpa2/src/supplicant.rs response_deadlines_preserve_total_wait_without_spontaneous_m2_retry
+vendor-anchor crates/wifi/wpa2/src/supplicant.rs wpa_supplicant_process_1_of_4
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on authentication-association
+gap vendor supplicant-contract-not-executable
+gap hil connected-wpa2-needs-post-rx-requalification
+
+capability async-deadlines
+title Bounded asynchronous hardware deadlines
+scope Production PHY I2C PBus IQ-estimator RX reload and protocol waits contain no CPU spin
+implementation complete
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/phy/src/target_executor.rs complete_final_i2c
+owner crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs await_staged_rx_reload
+owner crates/wifi/wpa2/src/retry.rs Wpa2Retry
+test crates/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound
+test crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs awaits_once_for_every_pending_reload_observation
+test crates/wifi/wpa2/src/retry.rs each_alarm_edge_emits_at_most_one_bounded_retransmission
+vendor-root rom phy_iq_est_enable
+vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+gap vendor remaining-wait-contracts-not-bound
+gap hil rx-async-deadline-needs-requalification
+
+capability power-management
+title Radio power lifecycle
+scope Clock reset power-up sleep wake and controlled shutdown of the unique radio owner
+implementation partial
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof not-applicable
+owner crates/esp32s31/hal/src/lib.rs PowerUpFailure
+owner crates/esp32s31/hal/src/lib.rs power_up
+test crates/esp32s31/hal/src/power.rs exact_semantic_sequence_is_finite_and_ordered
+test crates/esp32s31/hal/src/lib.rs failed_power_transition_returns_the_unique_owned_radio
+vendor-anchor docs/esp32s31-radio-register-provenance.md pwr_hal_set_mac_modem_state_wakeup_protect_enable
+vendor-anchor crates/esp32s31/hal/src/lib.rs phy_wakeup_init
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+gap implementation sleep-wake-shutdown-owner-missing
+gap vendor full-power-lifecycle-contract-missing
+gap hil sleep-wake-cycle-not-qualified
+
+capability timeout-error-recovery
+title Recovery after timeout or hardware error
+scope Typed cleanup ownership restoration and connected-radio restart after finite failures
+implementation partial
+host-proof covered
+vendor-proof mapped
+hil-proof partial
+async-proof bounded
+owner crates/esp32s31/phy/src/phy_channel.rs PhyChipChannelTransition
+owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
+owner crates/esp32s31/hal/src/lib.rs PowerUpFailure
+test crates/esp32s31/phy/src/phy_channel.rs frequency_timeout_runs_full_radio_cleanup
+test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
+test crates/esp32s31/hal/src/lib.rs failed_power_transition_returns_the_unique_owned_radio
+vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
+hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+depends-on rx-tx-dma
+depends-on power-management
+gap implementation connected-radio-restart-owner-missing
+gap vendor failure-cleanup-contracts-incomplete
+gap hil injected-fault-matrix-missing

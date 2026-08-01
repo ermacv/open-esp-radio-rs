@@ -15,8 +15,11 @@ provenance, not instructions.
 
 ## Current status and backlog
 
+- [Capability progress ledger](../capabilities/README.md) — machine-checked
+  production ownership, host/vendor/HIL proof and async readiness for the ten
+  supported STA capability roots.
 - [ESP32-S31 Wi-Fi feature status](ESP32S31_WIFI_FEATURE_STATUS.md) — canonical
-  implemented/HIL-qualified capability ledger.
+  detailed PHY/MAC feature and hardware-cell matrix.
 - [Integration backlog](INTEGRATION_BACKLOG.md) — reusable runtime logic that
   still resides in the ESP32-S31 HIL application.
 - [PHY binary parity](phy/README.md) — entry point to the compiled verifier and

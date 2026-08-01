@@ -1,4 +1,5 @@
 [alias]
 pac-gen = "run --quiet -p open-esp-radio-pac-gen --"
 hil = "run --quiet -p open-esp-radio-hil-runner --"
+capability-ledger = "run --quiet -p open-esp-radio-capability-ledger --"
 phy-trace = "run --quiet -p open-esp-radio-phy-trace --"

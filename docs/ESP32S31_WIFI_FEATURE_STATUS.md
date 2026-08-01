@@ -5,6 +5,12 @@ against the chip capability contract. A feature appearing in the datasheet is
 not considered implemented merely because a register, enum, or vendor symbol
 for it has been identified.
 
+Cross-layer readiness and qualification freshness for the current tree are
+defined by the [machine-checked capability ledger](../capabilities/README.md).
+The dated HIL labels below preserve completed hardware cells; after an owner
+or named integration boundary changes, they remain historical evidence until
+the ledger's requalification gap is closed.
+
 Primary capability source: Espressif, *ESP32-S31 Series Datasheet*, preliminary
 v0.5, section 4.3.2.1 “Wi-Fi Radio and Baseband”:
 <https://documentation.espressif.com/esp32-s31_datasheet_en.html>.

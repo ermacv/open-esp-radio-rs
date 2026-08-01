@@ -12,6 +12,7 @@ members = [
     "crates/esp32s31/phy",
     "crates/esp32s31/svd",
     "tools/hil-runner",
+    "tools/capability-ledger",
     "tools/pac-gen",
     "tools/phy-trace",
 ]

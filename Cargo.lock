@@ -1040,6 +1040,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-capability-ledger"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [

@@ -1,5 +1,7 @@
 # Driver-repository HE20 bidirectional HIL
 
+Qualification ID: `HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31`.
+
 This cell proves that the ESP32-S31 HIL system no longer needs the neighboring
 `esp32s31_rust` application to build, flash or qualify the normal open-radio
 data path. Both firmware stages and the Rust host runner came from

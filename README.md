@@ -1,9 +1,11 @@
 # open-esp-radio-rs
 
 Source-only, `no_std` radio research and driver workspace for Espressif chips.
-The currently qualified vertical slice is ESP32-S31 Wi-Fi; future chips and
-Bluetooth/BLE, IEEE 802.15.4 and coexistence work are part of the intended
-scope. The normal workspace and HIL do not link `esp-wifi-sys`, vendor Wi-Fi
+The current implementation target is the ESP32-S31 Wi-Fi station path; the
+capability ledger distinguishes historical hardware results from qualification
+of the current tree. Future chips and Bluetooth/BLE, IEEE 802.15.4 and
+coexistence work are part of the intended scope. The normal workspace and HIL
+do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
 
@@ -22,7 +24,7 @@ only opt-in exception.
 | `crates/esp32s31/phy` | PHY initialization and calibration state machines |
 | `crates/esp32s31/wifi/mac` | ESP32-S31 Wi-Fi MAC, RX/TX and rate control |
 | `hil/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
-| `tools` | PAC generator, HIL runner and source-only artifact audit |
+| `tools` | Capability/PHY validators, PAC generator, HIL runner and source-only artifact audit |
 | `svd` | Editable ESP32-S31 radio register description |
 
 Chip-wide packages follow `open-esp-radio-esp32s31-<layer>`. Protocol-specific
@@ -46,6 +48,7 @@ current status, reference material and archived migration reports.
 ```console
 cargo fmt --all -- --check
 cargo test --workspace
+cargo capability-ledger check --manifest capabilities/esp32s31-wifi-sta.ledger
 cargo pac-gen --check
 tools/audit-source-only.sh
 ```
@@ -60,8 +63,9 @@ external symbols and its dependency tree. It deliberately does not inspect
 Rust source text for required or forbidden function names.
 
 Hardware workflows are documented in [the ESP32-S31 HIL README](hil/esp32s31/README.md).
-Current qualified capabilities and their evidence are tracked in
-[the feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md).
+Current cross-layer readiness and stale-HIL gaps are tracked by the
+[machine-checked capability ledger](capabilities/README.md); the detailed PHY
+and MAC matrix remains in [the feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md).
 
 No vendor ELF, static library, disassembly dump, generated proprietary header,
 or extracted binary table belongs in the tracked repository.

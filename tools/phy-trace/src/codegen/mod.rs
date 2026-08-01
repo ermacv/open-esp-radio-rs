@@ -4,426 +4,26 @@
 //! driver. It deliberately exposes ordered MMIO through a trait and reports an
 //! unresolved return value as `None` instead of inventing a C prototype.
 
+mod value;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
 };
 
 use crate::{
-    Access, BitSource, BranchCondition, BranchOperation, Event, ReferenceEvent, ReferenceFlow,
-    ReferenceTerminator, Trace, Value,
+    BranchCondition, BranchOperation, MemoryAccess, ObservableEvent, ResolvedReferenceBody,
+    ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
+    ResolvedReferenceTerminator, SymbolicValue,
 };
+#[cfg(test)]
+use value::render_value;
+use value::{MmioReadAddress, render_value_scoped};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GeneratedReference {
     pub(crate) source: String,
     pub(crate) exit_a0_modeled: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum SourceWord {
-    Argument(u8),
-    Read(u32),
-    MemoryRead(u32),
-    CallResult(u32),
-    ExternalResult(u32),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum MmioReadAddress {
-    Static(u32),
-    Indexed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct BitGroup {
-    source: SourceWord,
-    inverted: bool,
-    shift: i8,
-}
-
-fn source_word(group: BitGroup, arguments: &[String; 8]) -> String {
-    let source = match group.source {
-        SourceWord::Argument(index) => arguments[usize::from(index)].clone(),
-        SourceWord::Read(token) => format!("read{token}"),
-        SourceWord::MemoryRead(token) => format!("memory_read{token}"),
-        SourceWord::CallResult(token) => format!("call_result{token}"),
-        SourceWord::ExternalResult(token) => format!("external_result{token}"),
-    };
-    if group.inverted {
-        format!("!{source}")
-    } else {
-        source
-    }
-}
-
-fn grouped_expression(group: BitGroup, mask: u32, arguments: &[String; 8]) -> String {
-    let source = source_word(group, arguments);
-    let shifted = match group.shift.cmp(&0) {
-        std::cmp::Ordering::Less => format!("({source} >> {})", -group.shift),
-        std::cmp::Ordering::Equal => source,
-        std::cmp::Ordering::Greater => format!("({source} << {})", group.shift),
-    };
-    format!("{shifted} & {mask:#010x}_u32")
-}
-
-fn validate_read(
-    reads: &[MmioReadAddress],
-    read_token: u32,
-    expected_address: u32,
-) -> Result<(), String> {
-    let actual_address = reads
-        .get(read_token as usize)
-        .ok_or_else(|| format!("symbolic value refers to missing MMIO read token {read_token}"))?;
-    if *actual_address != MmioReadAddress::Static(expected_address) {
-        return Err(format!(
-            "MMIO read token {read_token} does not refer to static address {expected_address:#010x}"
-        ));
-    }
-    Ok(())
-}
-
-fn validate_indexed_read(reads: &[MmioReadAddress], read_token: u32) -> Result<(), String> {
-    if usize::try_from(read_token)
-        .ok()
-        .and_then(|token| reads.get(token))
-        == Some(&MmioReadAddress::Indexed)
-    {
-        Ok(())
-    } else {
-        Err(format!(
-            "symbolic value refers to missing indexed MMIO read token {read_token}"
-        ))
-    }
-}
-
-fn render_value_scoped(
-    value: &Value,
-    reads: &[MmioReadAddress],
-    memory_read_count: usize,
-    call_results: &[bool],
-    external_results: usize,
-    arguments: &[String; 8],
-) -> Result<String, String> {
-    match value {
-        Value::Unknown => Err("symbolic value is unresolved".to_owned()),
-        Value::Constant(value) => Ok(format!("{value:#010x}_u32")),
-        Value::InputConstant { index, .. } => render_value_scoped(
-            &Value::input(*index),
-            reads,
-            memory_read_count,
-            call_results,
-            external_results,
-            arguments,
-        ),
-        Value::StackAddress(offset) => Err(format!(
-            "private stack address {offset:+#x} escaped into generated behavior"
-        )),
-        Value::SymbolAddress {
-            member,
-            symbol,
-            hi_addend,
-            lo_addend,
-            post_offset,
-        } => {
-            let Some(lo_addend) = lo_addend else {
-                return Err(format!(
-                    "incomplete HI20 relocation for {member:?}::{symbol} escaped into generated behavior"
-                ));
-            };
-            let member = member
-                .as_ref()
-                .map_or_else(|| "None".to_owned(), |member| format!("Some({member:?})"));
-            let base = format!(
-                "riscv_hi20_lo12_address(memory.symbol_address({member}, {symbol:?}), {:#010x}_u32, {:#010x}_u32)",
-                *hi_addend as u32, *lo_addend as u32
-            );
-            Ok(if *post_offset == 0 {
-                base
-            } else {
-                format!("({base}).wrapping_add({:#010x}_u32)", *post_offset as u32)
-            })
-        }
-        Value::CallResult(token) => {
-            if usize::try_from(*token)
-                .ok()
-                .and_then(|token| call_results.get(token))
-                .copied()
-                == Some(true)
-            {
-                Ok(format!("call_result{token}"))
-            } else {
-                Err(format!(
-                    "unmodeled call result {token} escaped into generated behavior"
-                ))
-            }
-        }
-        Value::ExternalTable(table) => Err(format!(
-            "external ABI table {} escaped into generated behavior",
-            crate::external_abi::table_spec(*table).id
-        )),
-        Value::ExternalFunction { table, function } => Err(format!(
-            "external ABI function {}::{function:?} escaped into generated behavior",
-            crate::external_abi::table_spec(*table).id
-        )),
-        Value::ExternalResult(token) => {
-            if usize::try_from(*token).is_ok_and(|token| token < external_results) {
-                Ok(format!("external_result{token}"))
-            } else {
-                Err(format!(
-                    "symbolic value refers to missing external-call token {token}"
-                ))
-            }
-        }
-        Value::Expression {
-            operation,
-            left,
-            right,
-        } => {
-            let left = render_value_scoped(
-                left,
-                reads,
-                memory_read_count,
-                call_results,
-                external_results,
-                arguments,
-            )?;
-            let right = render_value_scoped(
-                right,
-                reads,
-                memory_read_count,
-                call_results,
-                external_results,
-                arguments,
-            )?;
-            Ok(match operation {
-                crate::ExpressionOperation::Add => {
-                    format!("({left}).wrapping_add({right})")
-                }
-                crate::ExpressionOperation::Subtract => {
-                    format!("({left}).wrapping_sub({right})")
-                }
-                crate::ExpressionOperation::Multiply => {
-                    format!("({left}).wrapping_mul({right})")
-                }
-                crate::ExpressionOperation::DivideSigned => {
-                    format!("riscv_div({left}, {right})")
-                }
-                crate::ExpressionOperation::DivideUnsigned => {
-                    format!("riscv_divu({left}, {right})")
-                }
-                crate::ExpressionOperation::RemainderSigned => {
-                    format!("riscv_rem({left}, {right})")
-                }
-                crate::ExpressionOperation::RemainderUnsigned => {
-                    format!("riscv_remu({left}, {right})")
-                }
-                crate::ExpressionOperation::BitAnd => format!("({left}) & ({right})"),
-                crate::ExpressionOperation::BitOr => format!("({left}) | ({right})"),
-                crate::ExpressionOperation::BitXor => format!("({left}) ^ ({right})"),
-                crate::ExpressionOperation::ShiftLeft => {
-                    format!("({left}).wrapping_shl(({right}) & 31)")
-                }
-                crate::ExpressionOperation::ShiftRight => {
-                    format!("({left}).wrapping_shr(({right}) & 31)")
-                }
-                crate::ExpressionOperation::ShiftRightArithmetic => {
-                    format!("(({left}) as i32).wrapping_shr(({right}) & 31) as u32")
-                }
-                crate::ExpressionOperation::Equal => {
-                    format!("u32::from(({left}) == ({right}))")
-                }
-            })
-        }
-        Value::RegisterImage {
-            read_token,
-            address,
-            and_mask,
-            or_mask,
-        } => {
-            validate_read(reads, *read_token, *address)?;
-            Ok(format!(
-                "(read{read_token} & {and_mask:#010x}_u32) | {or_mask:#010x}_u32"
-            ))
-        }
-        Value::IndexedRegisterImage {
-            read_token,
-            and_mask,
-            or_mask,
-        } => {
-            validate_indexed_read(reads, *read_token)?;
-            Ok(format!(
-                "(read{read_token} & {and_mask:#010x}_u32) | {or_mask:#010x}_u32"
-            ))
-        }
-        Value::MemoryImage {
-            read_token,
-            and_mask,
-            or_mask,
-        } => {
-            if !usize::try_from(*read_token).is_ok_and(|token| token < memory_read_count) {
-                return Err(format!(
-                    "symbolic value refers to missing memory read token {read_token}"
-                ));
-            }
-            Ok(format!(
-                "(memory_read{read_token} & {and_mask:#010x}_u32) | {or_mask:#010x}_u32"
-            ))
-        }
-        Value::Bits(bits) => {
-            let mut constant = 0_u32;
-            let mut groups = BTreeMap::<BitGroup, u32>::new();
-            for (destination, source) in bits.iter().copied().enumerate() {
-                match source {
-                    BitSource::Unknown => {
-                        return Err(format!("symbolic bit {destination} is unresolved"));
-                    }
-                    BitSource::Constant(false) => {}
-                    BitSource::Constant(true) => constant |= 1 << destination,
-                    BitSource::Input {
-                        index,
-                        bit,
-                        inverted,
-                    } => {
-                        if index >= 8 {
-                            return Err(format!("argument index {index} is outside the RV32 ABI"));
-                        }
-                        let group = BitGroup {
-                            source: SourceWord::Argument(index),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                    BitSource::Register {
-                        read_token,
-                        address,
-                        bit,
-                        inverted,
-                    } => {
-                        validate_read(reads, read_token, address)?;
-                        let group = BitGroup {
-                            source: SourceWord::Read(read_token),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                    BitSource::IndexedRegister {
-                        read_token,
-                        bit,
-                        inverted,
-                    } => {
-                        validate_indexed_read(reads, read_token)?;
-                        let group = BitGroup {
-                            source: SourceWord::Read(read_token),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                    BitSource::Memory {
-                        read_token,
-                        bit,
-                        inverted,
-                    } => {
-                        if !usize::try_from(read_token).is_ok_and(|token| token < memory_read_count)
-                        {
-                            return Err(format!(
-                                "symbolic value refers to missing memory read token {read_token}"
-                            ));
-                        }
-                        let group = BitGroup {
-                            source: SourceWord::MemoryRead(read_token),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                    BitSource::CallResult {
-                        call_token,
-                        bit,
-                        inverted,
-                    } => {
-                        if usize::try_from(call_token)
-                            .ok()
-                            .and_then(|token| call_results.get(token))
-                            .copied()
-                            != Some(true)
-                        {
-                            return Err(format!(
-                                "symbolic bit refers to unmodeled call result {call_token}"
-                            ));
-                        }
-                        let group = BitGroup {
-                            source: SourceWord::CallResult(call_token),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                    BitSource::ExternalResult {
-                        call_token,
-                        bit,
-                        inverted,
-                    } => {
-                        if usize::try_from(call_token)
-                            .ok()
-                            .is_none_or(|token| token >= external_results)
-                        {
-                            return Err(format!(
-                                "symbolic bit refers to missing external-call token {call_token}"
-                            ));
-                        }
-                        let group = BitGroup {
-                            source: SourceWord::ExternalResult(call_token),
-                            inverted,
-                            shift: destination as i8 - bit as i8,
-                        };
-                        *groups.entry(group).or_default() |= 1 << destination;
-                    }
-                }
-            }
-
-            let mut terms = Vec::new();
-            if constant != 0 {
-                terms.push(format!("{constant:#010x}_u32"));
-            }
-            terms.extend(
-                groups
-                    .into_iter()
-                    .map(|(group, mask)| grouped_expression(group, mask, arguments)),
-            );
-            Ok(if terms.is_empty() {
-                "0x00000000_u32".to_owned()
-            } else {
-                terms.join(" | ")
-            })
-        }
-    }
-}
-
-#[cfg(test)]
-fn render_value(
-    value: &Value,
-    reads: &[u32],
-    memory_reads: &[u32],
-    external_results: usize,
-) -> Result<String, String> {
-    let arguments = core::array::from_fn(|index| format!("args[{index}]"));
-    let reads = reads
-        .iter()
-        .copied()
-        .map(MmioReadAddress::Static)
-        .collect::<Vec<_>>();
-    render_value_scoped(
-        value,
-        &reads,
-        memory_reads.len(),
-        &[],
-        external_results,
-        &arguments,
-    )
 }
 
 fn sanitize_identifier(symbol: &str) -> String {
@@ -469,7 +69,7 @@ impl Default for RenderState {
     }
 }
 
-fn render_state_value(value: &Value, state: &RenderState) -> Result<String, String> {
+fn render_state_value(value: &SymbolicValue, state: &RenderState) -> Result<String, String> {
     render_value_scoped(
         value,
         &state.reads,
@@ -497,14 +97,14 @@ fn render_condition(condition: &BranchCondition, state: &RenderState) -> Result<
 
 fn render_events(
     output: &mut String,
-    events: &[ReferenceEvent],
+    events: &[ResolvedReferenceEvent],
     state: &mut RenderState,
     indent: &str,
 ) -> Result<(), String> {
     for event in events {
         match event {
-            ReferenceEvent::Observable(Event::Memory {
-                access: Access::Read,
+            ResolvedReferenceEvent::Observable(ObservableEvent::Memory {
+                access: MemoryAccess::Read,
                 width,
                 address,
                 register,
@@ -520,8 +120,8 @@ fn render_events(
                 writeln!(output, "{indent}let _ = read{token};").unwrap();
                 state.reads.push(MmioReadAddress::Static(*address));
             }
-            ReferenceEvent::Observable(Event::Memory {
-                access: Access::Write,
+            ResolvedReferenceEvent::Observable(ObservableEvent::Memory {
+                access: MemoryAccess::Write,
                 width,
                 address,
                 register,
@@ -535,17 +135,17 @@ fn render_events(
                 )
                 .unwrap();
             }
-            ReferenceEvent::Observable(Event::Memory {
-                access: Access::Read,
+            ResolvedReferenceEvent::Observable(ObservableEvent::Memory {
+                access: MemoryAccess::Read,
                 value: Some(_),
                 ..
             }) => return Err("internal IR error: MMIO read carries a write value".to_owned()),
-            ReferenceEvent::Observable(Event::Memory {
-                access: Access::Write,
+            ResolvedReferenceEvent::Observable(ObservableEvent::Memory {
+                access: MemoryAccess::Write,
                 value: None,
                 ..
             }) => return Err("internal IR error: MMIO write has no symbolic value".to_owned()),
-            ReferenceEvent::IndexedMmio {
+            ResolvedReferenceEvent::IndexedMmio {
                 access,
                 width,
                 address,
@@ -600,7 +200,7 @@ fn render_events(
                 )
                 .unwrap();
                 match (access, value) {
-                    (Access::Read, None) => {
+                    (MemoryAccess::Read, None) => {
                         let token = state.reads.len();
                         writeln!(
                             output,
@@ -610,7 +210,7 @@ fn render_events(
                         writeln!(output, "{indent}let _ = read{token};").unwrap();
                         state.reads.push(MmioReadAddress::Indexed);
                     }
-                    (Access::Write, Some(value)) => {
+                    (MemoryAccess::Write, Some(value)) => {
                         let value = render_state_value(value, state)?;
                         writeln!(
                             output,
@@ -618,12 +218,12 @@ fn render_events(
                         )
                         .unwrap();
                     }
-                    (Access::Read, Some(_)) => {
+                    (MemoryAccess::Read, Some(_)) => {
                         return Err(
                             "internal IR error: indexed MMIO read carries a write value".to_owned()
                         );
                     }
-                    (Access::Write, None) => {
+                    (MemoryAccess::Write, None) => {
                         return Err(
                             "internal IR error: indexed MMIO write has no symbolic value"
                                 .to_owned(),
@@ -631,7 +231,7 @@ fn render_events(
                     }
                 }
             }
-            ReferenceEvent::Observable(Event::Fence {
+            ResolvedReferenceEvent::Observable(ObservableEvent::Fence {
                 fm,
                 predecessor,
                 successor,
@@ -642,12 +242,12 @@ fn render_events(
                 )
                 .unwrap();
             }
-            ReferenceEvent::DelayMicros { micros } => {
+            ResolvedReferenceEvent::DelayMicros { micros } => {
                 let micros = render_state_value(micros, state)?;
                 writeln!(output, "{indent}io.delay_micros({micros});").unwrap();
             }
-            ReferenceEvent::Memory {
-                access: Access::Read,
+            ResolvedReferenceEvent::Memory {
+                access: MemoryAccess::Read,
                 width,
                 address,
                 region,
@@ -676,8 +276,8 @@ fn render_events(
                 writeln!(output, "{indent}let _ = memory_read{token};").unwrap();
                 state.memory_read_count += 1;
             }
-            ReferenceEvent::Memory {
-                access: Access::Write,
+            ResolvedReferenceEvent::Memory {
+                access: MemoryAccess::Write,
                 width,
                 address,
                 region,
@@ -705,17 +305,17 @@ fn render_events(
                 )
                 .unwrap();
             }
-            ReferenceEvent::Memory {
-                access: Access::Read,
+            ResolvedReferenceEvent::Memory {
+                access: MemoryAccess::Read,
                 value: Some(_),
                 ..
             } => return Err("internal IR error: memory read carries a write value".to_owned()),
-            ReferenceEvent::Memory {
-                access: Access::Write,
+            ResolvedReferenceEvent::Memory {
+                access: MemoryAccess::Write,
                 value: None,
                 ..
             } => return Err("internal IR error: memory write has no symbolic value".to_owned()),
-            ReferenceEvent::ExternalCall {
+            ResolvedReferenceEvent::ExternalCall {
                 token,
                 table,
                 function,
@@ -794,7 +394,7 @@ fn render_events(
                 writeln!(output, "{indent}let _ = external_result{token};").unwrap();
                 state.external_results.push(*function);
             }
-            ReferenceEvent::DiagnosticCall {
+            ResolvedReferenceEvent::DiagnosticCall {
                 function,
                 argument_count,
                 arguments,
@@ -817,7 +417,7 @@ fn render_events(
                 )
                 .unwrap();
             }
-            ReferenceEvent::ComposedCall {
+            ResolvedReferenceEvent::ComposedCall {
                 token,
                 symbol,
                 arguments,
@@ -830,7 +430,7 @@ fn render_events(
                     ));
                 }
                 let mut child_state = RenderState::default();
-                for index in crate::reference_flow_input_indices(flow) {
+                for index in crate::resolved_reference_flow_input_indices(flow) {
                     let argument = render_state_value(&arguments[usize::from(index)], state)?;
                     let name = format!("call{token}_arg{index}");
                     writeln!(output, "{indent}let {name} = {argument};").unwrap();
@@ -866,27 +466,6 @@ fn render_events(
                 }
                 state.call_results.push(*result_modeled);
             }
-            ReferenceEvent::TailCall { site, target, .. } => {
-                return Err(format!(
-                    "internal IR error: unresolved tail call at {site:#010x} to {target:#010x}"
-                ));
-            }
-            ReferenceEvent::Call {
-                token,
-                site,
-                target,
-                ..
-            } => {
-                return Err(format!(
-                    "internal IR error: unresolved call {token} at {site:#010x} to {target:#010x}"
-                ));
-            }
-            ReferenceEvent::BranchDecision { condition, .. } => {
-                return Err(format!(
-                    "internal IR error: branch decision at {:#010x} escaped structured flow",
-                    condition.site
-                ));
-            }
         }
     }
     Ok(())
@@ -894,7 +473,7 @@ fn render_events(
 
 fn render_outcome(
     output: &mut String,
-    value: &Value,
+    value: &SymbolicValue,
     state: &RenderState,
     indent: &str,
 ) -> Result<(), String> {
@@ -924,14 +503,14 @@ enum FlowReturn {
 
 fn render_flow(
     output: &mut String,
-    flow: &ReferenceFlow,
+    flow: &ResolvedReferenceFlow,
     mut state: RenderState,
     indent: &str,
     return_kind: FlowReturn,
 ) -> Result<(), String> {
     render_events(output, &flow.events, &mut state, indent)?;
     match &flow.terminator {
-        ReferenceTerminator::Return(value) => match return_kind {
+        ResolvedReferenceTerminator::Return(value) => match return_kind {
             FlowReturn::Outcome => render_outcome(output, value, &state, indent),
             FlowReturn::Scalar => {
                 if !value.is_resolved() {
@@ -945,7 +524,7 @@ fn render_flow(
                 Ok(())
             }
         },
-        ReferenceTerminator::Branch {
+        ResolvedReferenceTerminator::Branch {
             condition,
             taken,
             not_taken,
@@ -969,19 +548,21 @@ fn render_flow(
 }
 
 fn collect_external_tables(
-    flow: &ReferenceFlow,
+    flow: &ResolvedReferenceFlow,
     output: &mut BTreeSet<crate::external_abi::Table>,
 ) {
     for event in &flow.events {
         match event {
-            ReferenceEvent::ExternalCall { table, .. } => {
+            ResolvedReferenceEvent::ExternalCall { table, .. } => {
                 output.insert(*table);
             }
-            ReferenceEvent::ComposedCall { flow, .. } => collect_external_tables(flow, output),
+            ResolvedReferenceEvent::ComposedCall { flow, .. } => {
+                collect_external_tables(flow, output)
+            }
             _ => {}
         }
     }
-    if let ReferenceTerminator::Branch {
+    if let ResolvedReferenceTerminator::Branch {
         taken, not_taken, ..
     } = &flow.terminator
     {
@@ -991,31 +572,14 @@ fn collect_external_tables(
 }
 
 pub(crate) fn generate(
-    trace: &Trace,
+    trace: &ResolvedReferenceProgram,
     artifact: &str,
     artifact_sha256: &str,
     member: Option<&str>,
     companions: &[(String, String)],
 ) -> Result<GeneratedReference, String> {
-    if !trace.is_reference_eligible() {
-        let mut reasons = trace.blockers.clone();
-        reasons.extend(trace.reference_blockers.iter().cloned());
-        reasons.extend(
-            trace
-                .events
-                .iter()
-                .filter_map(Event::unmapped_address)
-                .map(|address| format!("unmapped-register {address:#010x}")),
-        );
-        return Err(format!(
-            "{} is not eligible for reference generation: {}",
-            trace.symbol,
-            reasons.join("; ")
-        ));
-    }
-
     let function_name = sanitize_identifier(&trace.symbol);
-    let exit_a0_modeled = trace.reference_exit_a0_modeled();
+    let exit_a0_modeled = trace.exit_a0_modeled;
     let mut output = String::new();
     writeln!(
         output,
@@ -1038,7 +602,7 @@ pub(crate) fn generate(
         writeln!(output, "// Companion SHA-256: {sha256}").unwrap();
     }
     writeln!(output, "// Source symbol: {}", comment_text(&trace.symbol)).unwrap();
-    for dependency in &trace.reference_dependencies {
+    for dependency in &trace.dependencies {
         writeln!(
             output,
             "// Composed direct-call dependency: {}",
@@ -1047,19 +611,23 @@ pub(crate) fn generate(
         .unwrap();
     }
     let mut external_tables = BTreeSet::new();
-    for event in &trace.reference_events {
-        match event {
-            ReferenceEvent::ExternalCall { table, .. } => {
-                external_tables.insert(*table);
+    match &trace.body {
+        ResolvedReferenceBody::Linear { events, .. } => {
+            for event in events {
+                match event {
+                    ResolvedReferenceEvent::ExternalCall { table, .. } => {
+                        external_tables.insert(*table);
+                    }
+                    ResolvedReferenceEvent::ComposedCall { flow, .. } => {
+                        collect_external_tables(flow, &mut external_tables);
+                    }
+                    _ => {}
+                }
             }
-            ReferenceEvent::ComposedCall { flow, .. } => {
-                collect_external_tables(flow, &mut external_tables);
-            }
-            _ => {}
         }
-    }
-    if let Some(flow) = &trace.reference_flow {
-        collect_external_tables(flow, &mut external_tables);
+        ResolvedReferenceBody::Flow(flow) => {
+            collect_external_tables(flow, &mut external_tables);
+        }
     }
     for table in external_tables {
         let spec = crate::external_abi::table_spec(table);
@@ -1254,7 +822,7 @@ pub(crate) fn generate(
     writeln!(output, "pub struct ReferenceOutcome {{").unwrap();
     writeln!(
         output,
-        "    /// Value of the ABI `a0` register at exit; this does not infer a C prototype."
+        "    /// SymbolicValue of the ABI `a0` register at exit; this does not infer a C prototype."
     )
     .unwrap();
     writeln!(output, "    pub exit_a0: Option<u32>,").unwrap();
@@ -1273,11 +841,17 @@ pub(crate) fn generate(
     writeln!(output, "    let _ = &args;").unwrap();
 
     let mut state = RenderState::default();
-    if let Some(flow) = &trace.reference_flow {
-        render_flow(&mut output, flow, state, "    ", FlowReturn::Outcome)?;
-    } else {
-        render_events(&mut output, &trace.reference_events, &mut state, "    ")?;
-        render_outcome(&mut output, &trace.return_value, &state, "    ")?;
+    match &trace.body {
+        ResolvedReferenceBody::Flow(flow) => {
+            render_flow(&mut output, flow, state, "    ", FlowReturn::Outcome)?;
+        }
+        ResolvedReferenceBody::Linear {
+            events,
+            return_value,
+        } => {
+            render_events(&mut output, events, &mut state, "    ")?;
+            render_outcome(&mut output, return_value, &state, "    ")?;
+        }
     }
     writeln!(output, "}}").unwrap();
 
@@ -1288,288 +862,4 @@ pub(crate) fn generate(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn groups_shifted_argument_bits_into_a_readable_expression() {
-        let value = Value::input(0).and(1).shift_left(5);
-        assert_eq!(
-            render_value(&value, &[], &[], 0).unwrap(),
-            "(args[0] << 5) & 0x00000020_u32"
-        );
-    }
-
-    #[test]
-    fn validates_the_address_behind_a_read_token() {
-        let value = Value::RegisterImage {
-            read_token: 0,
-            address: 0x2010_7030,
-            and_mask: u32::MAX,
-            or_mask: 0,
-        };
-        assert!(render_value(&value, &[0x2010_7030], &[], 0).is_ok());
-        assert!(render_value(&value, &[0x2010_7034], &[], 0).is_err());
-    }
-
-    #[test]
-    fn distinguishes_static_and_indexed_read_tokens() {
-        let value = Value::IndexedRegisterImage {
-            read_token: 0,
-            and_mask: u32::MAX,
-            or_mask: 0,
-        };
-        let arguments = core::array::from_fn(|index| format!("args[{index}]"));
-
-        assert!(
-            render_value_scoped(&value, &[MmioReadAddress::Indexed], 0, &[], 0, &arguments,)
-                .is_ok()
-        );
-        assert!(
-            render_value_scoped(
-                &value,
-                &[MmioReadAddress::Static(0x2010_7030)],
-                0,
-                &[],
-                0,
-                &arguments,
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn renders_external_results_through_exact_riscv_arithmetic() {
-        let value = Value::expression(
-            crate::ExpressionOperation::RemainderUnsigned,
-            Value::ExternalResult(0),
-            Value::Constant(11),
-        )
-        .add_constant(0xfa)
-        .shift_left(21);
-
-        let rendered = render_value(&value, &[], &[], 1).unwrap();
-        assert!(rendered.contains("riscv_remu(external_result0, 0x0000000b_u32)"));
-        assert!(rendered.contains("wrapping_add(0x000000fa_u32)"));
-        assert!(rendered.contains("wrapping_shl"));
-        assert!(render_value(&value, &[], &[], 0).is_err());
-    }
-
-    #[test]
-    fn renders_dynamic_arithmetic_shift_with_rv32_masking() {
-        let value = Value::expression(
-            crate::ExpressionOperation::ShiftRightArithmetic,
-            Value::Constant((-0x81_i32) as u32),
-            Value::input(0),
-        );
-
-        assert_eq!(
-            render_value(&value, &[], &[], 0).unwrap(),
-            "((0xffffff7f_u32) as i32).wrapping_shr((args[0] & 0xffffffff_u32) & 31) as u32"
-        );
-    }
-
-    #[test]
-    fn signed_branch_casts_the_complete_rendered_expression() {
-        let condition = BranchCondition {
-            site: 0,
-            operation: BranchOperation::LessSigned,
-            left: Value::input(1),
-            right: Value::Constant(0),
-        };
-
-        assert_eq!(
-            render_condition(&condition, &RenderState::default()).unwrap(),
-            "((args[1] & 0xffffffff_u32) as i32) < ((0x00000000_u32) as i32)"
-        );
-    }
-
-    #[test]
-    fn generates_a_self_contained_ordered_reference() {
-        let trace = Trace {
-            symbol: "phy-example".to_owned(),
-            events: vec![
-                Event::Memory {
-                    access: Access::Read,
-                    width: 32,
-                    address: 0x2010_7030,
-                    register: "AGC.CONTROL".to_owned(),
-                    value: None,
-                },
-                Event::Memory {
-                    access: Access::Write,
-                    width: 32,
-                    address: 0x2010_7030,
-                    register: "AGC.CONTROL".to_owned(),
-                    value: Some(Value::RegisterImage {
-                        read_token: 0,
-                        address: 0x2010_7030,
-                        and_mask: 0xffff_fffe,
-                        or_mask: 1,
-                    }),
-                },
-            ],
-            reference_events: vec![
-                ReferenceEvent::Observable(Event::Memory {
-                    access: Access::Read,
-                    width: 32,
-                    address: 0x2010_7030,
-                    register: "AGC.CONTROL".to_owned(),
-                    value: None,
-                }),
-                ReferenceEvent::Observable(Event::Memory {
-                    access: Access::Write,
-                    width: 32,
-                    address: 0x2010_7030,
-                    register: "AGC.CONTROL".to_owned(),
-                    value: Some(Value::RegisterImage {
-                        read_token: 0,
-                        address: 0x2010_7030,
-                        and_mask: 0xffff_fffe,
-                        or_mask: 1,
-                    }),
-                }),
-                ReferenceEvent::DelayMicros {
-                    micros: Value::Constant(7),
-                },
-            ],
-            reference_dependencies: vec!["child_leaf".to_owned()],
-            blockers: Vec::new(),
-            reference_blockers: Vec::new(),
-            return_value: Value::input(0),
-            reference_flow: None,
-            unresolved_branch: None,
-        };
-        let generated = generate(
-            &trace,
-            "oracle.elf",
-            "abc123",
-            None,
-            &[("rom.elf".to_owned(), "def456".to_owned())],
-        )
-        .unwrap();
-
-        assert!(generated.exit_a0_modeled);
-        assert!(generated.source.contains("pub trait ReferenceIo"));
-        assert!(generated.source.contains("// Companion artifact: rom.elf"));
-        assert!(generated.source.contains("// Companion SHA-256: def456"));
-        assert!(
-            generated
-                .source
-                .contains("// Composed direct-call dependency: child_leaf")
-        );
-        assert!(
-            generated
-                .source
-                .contains("pub fn open_phy_reference_phy_example(")
-        );
-        assert!(
-            generated
-                .source
-                .contains("let read0 = io.read(32, 0x20107030_u32);")
-        );
-        assert!(
-            generated.source.contains(
-                "io.write(32, 0x20107030_u32, (read0 & 0xfffffffe_u32) | 0x00000001_u32);"
-            )
-        );
-        assert!(
-            generated
-                .source
-                .contains("io.delay_micros(0x00000007_u32);")
-        );
-        assert!(
-            generated
-                .source
-                .contains("ReferenceOutcome { exit_a0: Some(args[0] & 0xffffffff_u32) }")
-        );
-    }
-
-    #[test]
-    fn rejects_incomplete_control_flow_instead_of_emitting_a_partial_function() {
-        let trace = Trace {
-            symbol: "branchy".to_owned(),
-            events: Vec::new(),
-            reference_events: Vec::new(),
-            reference_dependencies: Vec::new(),
-            blockers: vec!["control-flow instruction at 0x10".to_owned()],
-            reference_blockers: Vec::new(),
-            return_value: Value::Unknown,
-            reference_flow: None,
-            unresolved_branch: None,
-        };
-        let error = generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap_err();
-        assert!(error.contains("not eligible"));
-        assert!(error.contains("control-flow"));
-    }
-
-    #[test]
-    fn preserves_ordered_elf_ram_reads_and_writes() {
-        let address = 0x3fcd_0010;
-        let trace = Trace {
-            symbol: "state_leaf".to_owned(),
-            events: Vec::new(),
-            reference_events: vec![
-                ReferenceEvent::Memory {
-                    access: Access::Read,
-                    width: 32,
-                    address: Value::Constant(address),
-                    region: ".data".to_owned(),
-                    value: None,
-                },
-                ReferenceEvent::Memory {
-                    access: Access::Write,
-                    width: 32,
-                    address: Value::Constant(address),
-                    region: ".data".to_owned(),
-                    value: Some(Value::MemoryImage {
-                        read_token: 0,
-                        and_mask: 0xffff_ff00,
-                        or_mask: 0x55,
-                    }),
-                },
-            ],
-            reference_dependencies: Vec::new(),
-            blockers: Vec::new(),
-            reference_blockers: Vec::new(),
-            return_value: Value::MemoryImage {
-                read_token: 0,
-                and_mask: u32::MAX,
-                or_mask: 0,
-            },
-            reference_flow: None,
-            unresolved_branch: None,
-        };
-        let generated = generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-
-        let read = generated
-            .source
-            .find("let memory_read0 = memory.read(32, memory_address0);")
-            .unwrap();
-        let write = generated
-            .source
-            .find("memory.write(32, memory_address1, memory_value1);")
-            .unwrap();
-        assert!(
-            generated
-                .source
-                .contains("let memory_address0 = 0x3fcd0010_u32;")
-        );
-        assert!(
-            generated
-                .source
-                .contains("let memory_address1 = 0x3fcd0010_u32;")
-        );
-        assert!(read < write);
-        assert!(
-            generated
-                .source
-                .contains("(memory_read0 & 0xffffff00_u32) | 0x00000055_u32")
-        );
-        assert!(
-            generated
-                .source
-                .contains("ReferenceOutcome { exit_a0: Some((memory_read0")
-        );
-    }
-}
+mod tests;

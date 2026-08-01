@@ -12,6 +12,36 @@ The authoritative ESP32-S31 run passes both `svd/esp32s31-radio.svd` and
 PAC registers reached by the trace and is never used to generate a runtime
 peripheral owner.
 
+## Internal architecture
+
+The binary entry point only translates the library result into an exit code.
+The implementation is split by responsibility:
+
+- `artifact` reads relocatable ELF objects and archives; `execution::image`
+  separately loads linked executable images;
+- `mmio` builds the register index from one or more SVD files;
+- `ir` owns symbolic values, observable traces, indexed-MMIO proofs and the
+  resolved reference-program types;
+- `analysis` contains the structural tracer and artifact-level call resolver;
+- `execution` contains scenarios, persistent memory ownership, coverage and
+  the RV32 machine;
+- `codegen` renders only a `ResolvedReferenceProgram`;
+- `verification` owns profiles, dispositions, evidence and comparisons;
+- `qualification` owns ESP32-S31-specific state/action normalization;
+- `cli` parses a typed top-level command and dispatches it to those services.
+
+Reference generation has an explicit fail-closed phase boundary:
+
+```text
+FunctionAnalysis -> resolution/composition -> ResolvedReferenceProgram -> Rust codegen
+```
+
+The resolved program type has no variants for unresolved direct/tail calls or
+temporary branch decisions and carries no blockers. Consequently incomplete
+analysis cannot reach code generation by accident. Composition evidence hashes
+the concrete qualification, comparison and execution source modules involved
+in each contract, not only their facade modules.
+
 Build the Rust comparison probes first:
 
 ```console

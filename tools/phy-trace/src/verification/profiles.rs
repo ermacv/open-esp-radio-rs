@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use crate::{
-    MemoryObservation, NamedScenario, Result, emulator, observe_memory, parse_assignment,
+    MemoryObservation, NamedScenario, Result, execution, observe_memory, parse_assignment,
     parse_symbol_observation, parse_symbol_word, parse_u32, seed_ram_word,
 };
 
@@ -69,7 +69,7 @@ impl ProfileBuilder {
         })
     }
 
-    fn scenario(&mut self, line: usize) -> Result<&mut emulator::Scenario> {
+    fn scenario(&mut self, line: usize) -> Result<&mut execution::Scenario> {
         self.current_scenario
             .as_mut()
             .map(|scenario| &mut scenario.scenario)
@@ -238,30 +238,5 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn checked_in_profile_parses() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("profiles/esp32s31.profile");
-        let profiles = load(&path).unwrap();
-        assert_eq!(profiles.len(), 41);
-        assert!(profiles.iter().all(|profile| !profile.scenarios.is_empty()));
-        assert_eq!(
-            profiles
-                .iter()
-                .filter(|profile| profile.contract == ProfileContract::State)
-                .count(),
-            7
-        );
-        assert_eq!(
-            profiles
-                .iter()
-                .find(|profile| profile.name == "rom-nrx-frequency")
-                .unwrap()
-                .scenarios
-                .len(),
-            4
-        );
-    }
-}
+#[path = "profiles_tests.rs"]
+mod tests;

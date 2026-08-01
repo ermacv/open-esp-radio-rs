@@ -107,6 +107,7 @@ pub enum PhyRxIqEstimatorAction {
     AwaitReadinessEdge {
         request: PhyRxIqEstimatorRequest,
         readiness_activity_edges: u16,
+        readiness_samples: u16,
     },
     ReadTotalPower(PhyRxIqEstimatorRequest),
     ReadMismatch(PhyRxIqEstimatorRequest),
@@ -212,6 +213,7 @@ pub struct PhyRxIqEstimatorTransition {
     request: PhyRxIqEstimatorRequest,
     step: EstimatorStep,
     readiness_activity_edges: u16,
+    readiness_samples: u16,
 }
 
 impl PhyRxIqEstimatorTransition {
@@ -220,6 +222,7 @@ impl PhyRxIqEstimatorTransition {
             request,
             step: EstimatorStep::Configure,
             readiness_activity_edges: 0,
+            readiness_samples: 0,
         }
     }
 
@@ -244,6 +247,7 @@ impl PhyRxIqEstimatorTransition {
             EstimatorStep::AwaitReadiness => PhyRxIqEstimatorAction::AwaitReadinessEdge {
                 request: self.request,
                 readiness_activity_edges: self.readiness_activity_edges,
+                readiness_samples: self.readiness_samples,
             },
             EstimatorStep::Read => match self.request.kind {
                 PhyRxIqEstimatorKind::TotalPower => {
@@ -322,7 +326,10 @@ impl PhyRxIqEstimatorTransition {
                     request,
                     snapshot: PhyDcIqReadinessSnapshot { ready: true, .. },
                 },
-            ) if request == self.request => EstimatorStep::Read,
+            ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
+                EstimatorStep::Read
+            }
             (
                 EstimatorStep::AwaitReadiness,
                 PhyRxIqEstimatorCompletion::ReadinessObserved {
@@ -334,6 +341,7 @@ impl PhyRxIqEstimatorTransition {
                         },
                 },
             ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
                 if activity {
                     self.readiness_activity_edges = self.readiness_activity_edges.wrapping_add(1);
                 }
@@ -2147,7 +2155,6 @@ impl PhyRxIqEstimatorMmioBinding {
         match action {
             PhyRxIqEstimatorAction::Configure(_)
             | PhyRxIqEstimatorAction::SetEnable { .. }
-            | PhyRxIqEstimatorAction::AwaitReadinessEdge { .. }
             | PhyRxIqEstimatorAction::ReadTotalPower(_)
             | PhyRxIqEstimatorAction::ReadMismatch(_) => Ok(Self { action }),
             _ => Err(PhyRxIqEstimatorBindingError::NotDirectMmio),
@@ -2180,12 +2187,6 @@ impl PhyRxIqEstimatorMmioBinding {
                     enabled,
                 }
             }
-            PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } => {
-                PhyRxIqEstimatorCompletion::ReadinessObserved {
-                    request,
-                    snapshot: crate::phy_dc_iq::sample_readiness_target(registers),
-                }
-            }
             PhyRxIqEstimatorAction::ReadTotalPower(request) => {
                 PhyRxIqEstimatorCompletion::TotalPowerRead {
                     request,
@@ -2210,16 +2211,50 @@ impl PhyRxIqEstimatorMmioBinding {
             _ => unreachable!(),
         }
     }
+}
 
-    pub fn into_timeout_completion(
-        self,
-    ) -> Result<PhyRxIqEstimatorCompletion, PhyRxIqEstimatorBindingError> {
-        match self.action {
-            PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } => {
-                Ok(PhyRxIqEstimatorCompletion::ReadinessTimedOut(request))
-            }
+/// Non-cloneable async boundary for one scheduled RXIQ readiness observation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyRxIqEstimatorReadinessBinding {
+    action: PhyRxIqEstimatorAction,
+}
+
+impl PhyRxIqEstimatorReadinessBinding {
+    pub fn new(action: PhyRxIqEstimatorAction) -> Result<Self, PhyRxIqEstimatorBindingError> {
+        match action {
+            PhyRxIqEstimatorAction::AwaitReadinessEdge { .. } => Ok(Self { action }),
             _ => Err(PhyRxIqEstimatorBindingError::NotDirectMmio),
         }
+    }
+
+    pub const fn samples(&self) -> u16 {
+        match self.action {
+            PhyRxIqEstimatorAction::AwaitReadinessEdge {
+                readiness_samples, ..
+            } => readiness_samples,
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> PhyRxIqEstimatorCompletion {
+        let PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        PhyRxIqEstimatorCompletion::ReadinessObserved {
+            request,
+            snapshot: crate::phy_dc_iq::sample_readiness_target(registers),
+        }
+    }
+
+    pub fn into_timeout_completion(self) -> PhyRxIqEstimatorCompletion {
+        let PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        PhyRxIqEstimatorCompletion::ReadinessTimedOut(request)
     }
 }
 
@@ -2263,10 +2298,14 @@ impl PhyRxIqEstimatorTimerBinding {
 pub enum PhyRxIqEstimatorExternalBinding {
     Mmio(PhyRxIqEstimatorMmioBinding),
     Timer(PhyRxIqEstimatorTimerBinding),
+    Readiness(PhyRxIqEstimatorReadinessBinding),
 }
 
 impl PhyRxIqEstimatorExternalBinding {
     pub fn lower(action: PhyRxIqEstimatorAction) -> Result<Self, PhyRxIqEstimatorBindingError> {
+        if let Ok(binding) = PhyRxIqEstimatorReadinessBinding::new(action) {
+            return Ok(Self::Readiness(binding));
+        }
         if let Ok(binding) = PhyRxIqEstimatorMmioBinding::new(action) {
             return Ok(Self::Mmio(binding));
         }
@@ -3607,6 +3646,16 @@ mod tests {
                 micros: 1,
             }),
             Ok(PhyRxIqEstimatorExternalBinding::Timer(_))
+        ));
+        assert!(matches!(
+            PhyRxIqEstimatorExternalBinding::lower(
+                PhyRxIqEstimatorAction::AwaitReadinessEdge {
+                    request: POWER_REQUEST,
+                    readiness_activity_edges: 0,
+                    readiness_samples: 11,
+                }
+            ),
+            Ok(PhyRxIqEstimatorExternalBinding::Readiness(binding)) if binding.samples() == 11
         ));
         assert!(matches!(
             PhyRxIqCoverExternalBinding::lower(PhyRxIqCoverAction::ConfigureCoefficient {

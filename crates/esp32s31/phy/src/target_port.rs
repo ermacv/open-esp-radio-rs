@@ -23,7 +23,7 @@ use crate::{
     },
     phy_cold::{
         PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-        PhyColdPbusObservation, PhyColdState,
+        PhyColdObservationRequest, PhyColdPbusObservation, PhyColdState,
     },
     phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
@@ -512,6 +512,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 D::after_micros(u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
+            PhyDcIqExternalBinding::Readiness(binding) => {
+                if binding.samples() >= HARDWARE_EDGE_LIMIT {
+                    Ok(binding.into_timeout_completion())
+                } else {
+                    D::after_micros(1).await;
+                    Ok(binding.execute_target(registers))
+                }
+            }
         }
     }
 
@@ -543,6 +551,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             PhyRxIqEstimatorExternalBinding::Timer(binding) => {
                 D::after_micros(u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
+            }
+            PhyRxIqEstimatorExternalBinding::Readiness(binding) => {
+                if binding.samples() >= HARDWARE_EDGE_LIMIT {
+                    Ok(binding.into_timeout_completion())
+                } else {
+                    D::after_micros(1).await;
+                    Ok(binding.execute_target(registers))
+                }
             }
         }
     }
@@ -1150,9 +1166,27 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 if binding.outer_action() == PhyRfInitPrefixAction::CaptureChannelFrequencyControl {
                     observer.rf_boundary(PhyRfBoundary::BeforeChannelFrequencyInit);
                 }
-                binding
-                    .execute_target(radio)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+                match binding.request() {
+                    PhyColdObservationRequest::ObserveDcIqReadiness {
+                        readiness_samples, ..
+                    }
+                    | PhyColdObservationRequest::ObserveSignalPowerReadiness {
+                        readiness_samples,
+                        ..
+                    } if readiness_samples >= HARDWARE_EDGE_LIMIT => binding
+                        .into_timeout_completion()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding),
+                    PhyColdObservationRequest::ObserveDcIqReadiness { .. }
+                    | PhyColdObservationRequest::ObserveSignalPowerReadiness { .. } => {
+                        D::after_micros(1).await;
+                        binding
+                            .execute_target(radio)
+                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+                    }
+                    _ => binding
+                        .execute_target(radio)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding),
+                }
             }
             PhyColdExternalBinding::Pbus(mut binding) => {
                 let registers = radio.registers_mut();

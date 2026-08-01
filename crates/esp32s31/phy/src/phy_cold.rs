@@ -2882,11 +2882,13 @@ pub enum PhyColdObservationRequest {
     ObserveDcIqReadiness {
         request: PhyDcIqEstimateRequest,
         readiness_activity_edges: u16,
+        readiness_samples: u16,
     },
     ReadDcIqAccumulators(PhyDcIqEstimateRequest),
     ObserveSignalPowerReadiness {
         request: PhySignalPowerRequest,
         readiness_activity_edges: u16,
+        readiness_samples: u16,
     },
     ReadSignalPowerAccumulators(PhySignalPowerRequest),
 }
@@ -2977,11 +2979,13 @@ impl PhyColdObservationBinding {
                     PhyDcIqAction::AwaitReadinessEdge {
                         request,
                         readiness_activity_edges,
+                        readiness_samples,
                     },
                 ))),
             )) => PhyColdObservationRequest::ObserveDcIqReadiness {
                 request,
                 readiness_activity_edges,
+                readiness_samples,
             },
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(PhyRxDcoAction::DcIq(
@@ -2993,11 +2997,13 @@ impl PhyColdObservationBinding {
                     PhySignalPowerAction::AwaitReadinessEdge {
                         request,
                         readiness_activity_edges,
+                        readiness_samples,
                     },
                 )),
             )) => PhyColdObservationRequest::ObserveSignalPowerReadiness {
                 request,
                 readiness_activity_edges,
+                readiness_samples,
             },
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Search(XtalDutySearchAction::SignalPower(
@@ -4717,6 +4723,7 @@ mod tests {
                 PhyDcIqAction::AwaitReadinessEdge {
                     request: dc_iq_request,
                     readiness_activity_edges: 3,
+                    readiness_samples: 5,
                 },
             ))),
         ));

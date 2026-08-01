@@ -148,6 +148,7 @@ pub enum PhyDcIqAction {
     AwaitReadinessEdge {
         request: PhyDcIqEstimateRequest,
         readiness_activity_edges: u16,
+        readiness_samples: u16,
     },
     ReadAccumulators(PhyDcIqEstimateRequest),
     Complete(PhyDcIqEstimateOutcome),
@@ -264,6 +265,7 @@ pub fn calculate_dc_iq_estimate(
 pub struct PhyDcIqEstimateTransition {
     request: PhyDcIqEstimateRequest,
     readiness_activity_edges: u16,
+    readiness_samples: u16,
     step: PhyDcIqStep,
 }
 
@@ -272,6 +274,7 @@ impl PhyDcIqEstimateTransition {
         Self {
             request,
             readiness_activity_edges: 0,
+            readiness_samples: 0,
             step: PhyDcIqStep::Configure,
         }
     }
@@ -297,6 +300,7 @@ impl PhyDcIqEstimateTransition {
             PhyDcIqStep::AwaitReadiness => PhyDcIqAction::AwaitReadinessEdge {
                 request: self.request,
                 readiness_activity_edges: self.readiness_activity_edges,
+                readiness_samples: self.readiness_samples,
             },
             PhyDcIqStep::ReadAccumulators => PhyDcIqAction::ReadAccumulators(self.request),
             PhyDcIqStep::DisableMeasurement(_) => PhyDcIqAction::SetEnable {
@@ -356,7 +360,10 @@ impl PhyDcIqEstimateTransition {
                     request,
                     snapshot: PhyDcIqReadinessSnapshot { ready: true, .. },
                 },
-            ) if request == self.request => PhyDcIqStep::ReadAccumulators,
+            ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
+                PhyDcIqStep::ReadAccumulators
+            }
             (
                 PhyDcIqStep::AwaitReadiness,
                 PhyDcIqCompletion::ReadinessObserved {
@@ -368,6 +375,7 @@ impl PhyDcIqEstimateTransition {
                         },
                 },
             ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
                 if activity {
                     self.readiness_activity_edges = self.readiness_activity_edges.wrapping_add(1);
                 }
@@ -444,7 +452,6 @@ impl PhyDcIqMmioBinding {
         match action {
             PhyDcIqAction::Configure(_)
             | PhyDcIqAction::SetEnable { .. }
-            | PhyDcIqAction::AwaitReadinessEdge { .. }
             | PhyDcIqAction::ReadAccumulators(_) => Ok(Self { action }),
             _ => Err(PhyDcIqBindingError::UnsupportedAction),
         }
@@ -452,15 +459,6 @@ impl PhyDcIqMmioBinding {
 
     pub const fn action(&self) -> PhyDcIqAction {
         self.action
-    }
-
-    pub fn into_timeout_completion(self) -> Result<PhyDcIqCompletion, PhyDcIqBindingError> {
-        match self.action {
-            PhyDcIqAction::AwaitReadinessEdge { request, .. } => {
-                Ok(PhyDcIqCompletion::ReadinessTimedOut(request))
-            }
-            _ => Err(PhyDcIqBindingError::UnsupportedAction),
-        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -485,18 +483,57 @@ impl PhyDcIqMmioBinding {
                     enabled,
                 }
             }
-            PhyDcIqAction::AwaitReadinessEdge { request, .. } => {
-                PhyDcIqCompletion::ReadinessObserved {
-                    request,
-                    snapshot: sample_readiness_target(registers),
-                }
-            }
             PhyDcIqAction::ReadAccumulators(request) => PhyDcIqCompletion::AccumulatorsRead {
                 request,
                 snapshot: read_accumulators_target(registers),
             },
             _ => unreachable!(),
         }
+    }
+}
+
+/// Non-cloneable async boundary for one scheduled readiness observation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyDcIqReadinessBinding {
+    action: PhyDcIqAction,
+}
+
+impl PhyDcIqReadinessBinding {
+    pub fn new(action: PhyDcIqAction) -> Result<Self, PhyDcIqBindingError> {
+        match action {
+            PhyDcIqAction::AwaitReadinessEdge { .. } => Ok(Self { action }),
+            _ => Err(PhyDcIqBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn samples(&self) -> u16 {
+        match self.action {
+            PhyDcIqAction::AwaitReadinessEdge {
+                readiness_samples, ..
+            } => readiness_samples,
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> PhyDcIqCompletion {
+        let PhyDcIqAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        PhyDcIqCompletion::ReadinessObserved {
+            request,
+            snapshot: sample_readiness_target(registers),
+        }
+    }
+
+    pub fn into_timeout_completion(self) -> PhyDcIqCompletion {
+        let PhyDcIqAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        PhyDcIqCompletion::ReadinessTimedOut(request)
     }
 }
 
@@ -540,10 +577,14 @@ impl PhyDcIqTimerBinding {
 pub enum PhyDcIqExternalBinding {
     Mmio(PhyDcIqMmioBinding),
     Timer(PhyDcIqTimerBinding),
+    Readiness(PhyDcIqReadinessBinding),
 }
 
 impl PhyDcIqExternalBinding {
     pub fn lower(action: PhyDcIqAction) -> Result<Self, PhyDcIqBindingError> {
+        if let Ok(binding) = PhyDcIqReadinessBinding::new(action) {
+            return Ok(Self::Readiness(binding));
+        }
         if let Ok(binding) = PhyDcIqMmioBinding::new(action) {
             return Ok(Self::Mmio(binding));
         }
@@ -664,6 +705,7 @@ mod tests {
             PhyDcIqAction::AwaitReadinessEdge {
                 request: REQUEST,
                 readiness_activity_edges: 2,
+                readiness_samples: 3,
             }
         );
         transition
@@ -726,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn external_lowering_covers_mmio_timer_and_rejects_terminal() {
+    fn external_lowering_separates_mmio_timer_readiness_and_terminal() {
         assert!(matches!(
             PhyDcIqExternalBinding::lower(PhyDcIqAction::Configure(REQUEST)),
             Ok(PhyDcIqExternalBinding::Mmio(_))
@@ -738,6 +780,14 @@ mod tests {
                 micros: 1,
             }),
             Ok(PhyDcIqExternalBinding::Timer(_))
+        ));
+        assert!(matches!(
+            PhyDcIqExternalBinding::lower(PhyDcIqAction::AwaitReadinessEdge {
+                request: REQUEST,
+                readiness_activity_edges: 0,
+                readiness_samples: 7,
+            }),
+            Ok(PhyDcIqExternalBinding::Readiness(binding)) if binding.samples() == 7
         ));
         assert!(matches!(
             PhyDcIqExternalBinding::lower(PhyDcIqAction::Failed(

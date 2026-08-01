@@ -80,6 +80,7 @@ pub enum PhySignalPowerAction {
     AwaitReadinessEdge {
         request: PhySignalPowerRequest,
         readiness_activity_edges: u16,
+        readiness_samples: u16,
     },
     ReadAccumulators(PhySignalPowerRequest),
     Complete(PhySignalPowerOutcome),
@@ -176,6 +177,7 @@ pub fn calculate_signal_power(
 pub struct PhySignalPowerTransition {
     request: PhySignalPowerRequest,
     readiness_activity_edges: u16,
+    readiness_samples: u16,
     step: PhySignalPowerStep,
 }
 
@@ -184,6 +186,7 @@ impl PhySignalPowerTransition {
         Self {
             request,
             readiness_activity_edges: 0,
+            readiness_samples: 0,
             step: PhySignalPowerStep::EnableTxClock,
         }
     }
@@ -245,6 +248,7 @@ impl PhySignalPowerTransition {
             PhySignalPowerStep::AwaitReadiness => PhySignalPowerAction::AwaitReadinessEdge {
                 request: self.request,
                 readiness_activity_edges: self.readiness_activity_edges,
+                readiness_samples: self.readiness_samples,
             },
             PhySignalPowerStep::ReadAccumulators => {
                 PhySignalPowerAction::ReadAccumulators(self.request)
@@ -337,7 +341,10 @@ impl PhySignalPowerTransition {
                     request,
                     snapshot: PhyDcIqReadinessSnapshot { ready: true, .. },
                 },
-            ) if request == self.request => PhySignalPowerStep::ReadAccumulators,
+            ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
+                PhySignalPowerStep::ReadAccumulators
+            }
             (
                 PhySignalPowerStep::AwaitReadiness,
                 PhySignalPowerCompletion::ReadinessObserved {
@@ -349,6 +356,7 @@ impl PhySignalPowerTransition {
                         },
                 },
             ) if request == self.request => {
+                self.readiness_samples = self.readiness_samples.saturating_add(1);
                 if activity {
                     self.readiness_activity_edges = self.readiness_activity_edges.wrapping_add(1);
                 }
@@ -515,6 +523,31 @@ mod tests {
             transition.action(),
             PhySignalPowerAction::Complete(PhySignalPowerOutcome { value: 0, .. })
         ));
+    }
+
+    #[test]
+    fn readiness_counts_all_samples_separately_from_activity() {
+        let mut transition = PhySignalPowerTransition::new(REQUEST);
+        reach_readiness(&mut transition);
+        for activity in [false, true, false] {
+            transition
+                .advance(PhySignalPowerCompletion::ReadinessObserved {
+                    request: REQUEST,
+                    snapshot: PhyDcIqReadinessSnapshot {
+                        ready: false,
+                        activity,
+                    },
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            transition.action(),
+            PhySignalPowerAction::AwaitReadinessEdge {
+                request: REQUEST,
+                readiness_activity_edges: 1,
+                readiness_samples: 3,
+            }
+        );
     }
 
     #[test]

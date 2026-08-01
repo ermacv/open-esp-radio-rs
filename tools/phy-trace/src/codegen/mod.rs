@@ -28,7 +28,7 @@ pub(crate) struct GeneratedReference {
     pub(crate) exit_a0_modeled: bool,
 }
 
-fn sanitize_identifier(symbol: &str) -> String {
+pub(crate) fn reference_function_name(symbol: &str) -> String {
     let mut output = String::from("open_phy_reference_");
     for character in symbol.chars() {
         if character.is_ascii_alphanumeric() || character == '_' {
@@ -1035,7 +1035,7 @@ pub(crate) fn generate(
     member: Option<&str>,
     companions: &[(String, String)],
 ) -> Result<GeneratedReference, String> {
-    let function_name = sanitize_identifier(&trace.symbol);
+    let function_name = reference_function_name(&trace.symbol);
     let exit_a0_modeled = trace.exit_a0_modeled;
     let mut output = String::new();
     writeln!(
@@ -1421,6 +1421,7 @@ pub(crate) fn generate(
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
     writeln!(output, "#[allow(dead_code, non_snake_case)]").unwrap();
+    writeln!(output, "#[inline(always)]").unwrap();
     writeln!(output, "pub fn {function_name}(").unwrap();
     writeln!(output, "    io: &mut impl ReferenceIo,").unwrap();
     writeln!(output, "    memory: &mut impl ReferenceMemory,").unwrap();

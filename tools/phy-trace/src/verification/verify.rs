@@ -470,16 +470,14 @@ pub(crate) fn verify_source(
             }
             continue;
         };
-        let vendor_trace = extract(
-            &ArtifactSymbolSelector {
-                artifact: source.artifact.to_path_buf(),
-                member: source
-                    .inventory
-                    .map_or_else(|| vendor.member.clone(), |_| None),
-                symbol: vendor.name.clone(),
-            },
-            svd,
-        )?;
+        let vendor_input = ArtifactSymbolSelector {
+            artifact: source.artifact.to_path_buf(),
+            member: source
+                .inventory
+                .map_or_else(|| vendor.member.clone(), |_| None),
+            symbol: vendor.name.clone(),
+        };
+        let vendor_trace = extract(&vendor_input, svd)?;
         let rust_trace = extract(
             &ArtifactSymbolSelector {
                 artifact: rust_artifact.to_path_buf(),
@@ -565,12 +563,38 @@ pub(crate) fn verify_source(
                 source.name, vendor.name, rust.name
             );
         } else if let Some(policy) = effect_policy {
+            let generated_companions = source
+                .companion
+                .into_iter()
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>();
+            let generated_proof =
+                crate::generated_reference::generate_compile_and_prove_exact_mmio_leaf(
+                    svd,
+                    &vendor_input,
+                    &generated_companions,
+                    &vendor_trace,
+                )?;
             let vendor_effects = effect_contract::effects_from_observable(&vendor_trace.events)?;
+            let generated_effects =
+                effect_contract::effects_from_observable(&generated_proof.trace.events)?;
             let rust_effects = effect_contract::effects_from_observable(&rust_trace.events)?;
-            match effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)? {
-                effect_contract::EffectComparisonVerdict::Match
-                    if !*compare_return || returns_equal(&vendor_trace, &rust_trace) =>
-                {
+            let vendor_to_rust =
+                effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)?;
+            let generated_to_rust =
+                effect_contract::compare_effects(&generated_effects, &rust_effects, policy)?;
+            println!(
+                "GENERATED-REFERENCE\t{}\t{}\tMATCH\tharness=exact-mmio-leaf-v1\tvendor-effects={}\tgenerated-effects={}",
+                source.name,
+                vendor.name,
+                vendor_effects.len(),
+                generated_effects.len(),
+            );
+            match (vendor_to_rust, generated_to_rust) {
+                (
+                    effect_contract::EffectComparisonVerdict::Match,
+                    effect_contract::EffectComparisonVerdict::Match,
+                ) if !*compare_return || returns_equal(&vendor_trace, &rust_trace) => {
                     summary.matched += 1;
                     summary.effect_contract_matches += 1;
                     record_evidence(
@@ -582,6 +606,7 @@ pub(crate) fn verify_source(
                             manifest_entry
                                 .and_then(|entry| entry.binding.as_ref())
                                 .expect("effect contract requires an executable binding"),
+                            &generated_proof.canonical(),
                         ),
                     )?;
                     println!(
@@ -594,7 +619,10 @@ pub(crate) fn verify_source(
                         if *compare_return { "checked" } else { "void" },
                     );
                 }
-                effect_contract::EffectComparisonVerdict::Match => {
+                (
+                    effect_contract::EffectComparisonVerdict::Match,
+                    effect_contract::EffectComparisonVerdict::Match,
+                ) => {
                     summary.mismatched += 1;
                     println!(
                         "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=return",
@@ -604,10 +632,20 @@ pub(crate) fn verify_source(
                         policy.comparison.label(),
                     );
                 }
-                effect_contract::EffectComparisonVerdict::Mismatch(reason) => {
+                (effect_contract::EffectComparisonVerdict::Mismatch(reason), _) => {
                     summary.mismatched += 1;
                     println!(
                         "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason={reason}",
+                        source.name,
+                        vendor.name,
+                        rust.name,
+                        policy.comparison.label(),
+                    );
+                }
+                (_, effect_contract::EffectComparisonVerdict::Mismatch(reason)) => {
+                    summary.mismatched += 1;
+                    println!(
+                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=generated-reference: {reason}",
                         source.name,
                         vendor.name,
                         rust.name,

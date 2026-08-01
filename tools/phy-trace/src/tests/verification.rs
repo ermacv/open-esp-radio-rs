@@ -116,9 +116,16 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
         )],
     )
     .unwrap();
-    let evidence = effect_contract_evidence(&exact, &binding);
+    let evidence = effect_contract_evidence(&exact, &binding, "generated-proof-v1");
     assert!(evidence.starts_with("effect-contract/exact-effects-v1/sha256:"));
-    assert_ne!(evidence, effect_contract_evidence(&forbidden, &binding));
+    assert_ne!(
+        evidence,
+        effect_contract_evidence(&forbidden, &binding, "generated-proof-v1")
+    );
+    assert_ne!(
+        evidence,
+        effect_contract_evidence(&exact, &binding, "changed-generated-proof")
+    );
 }
 
 #[test]

@@ -14,6 +14,7 @@ mod direct_target_audit;
 mod entry_contract;
 mod execution;
 mod external_abi;
+mod generated_reference;
 mod ir;
 mod mmio;
 mod parse;

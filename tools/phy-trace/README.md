@@ -563,9 +563,15 @@ cargo phy-trace generate-reference \
   --output /tmp/hal_random_reference.rs
 ```
 
-A generated reference should be compiled as a probe and fed back through
-`execute-compare`; successful generation by itself is not qualification
-evidence and does not make the file production driver code.
+A generated reference must be compiled as a probe and fed back through the
+validator; successful generation by itself is not qualification evidence and
+does not make the file production driver code. Binding v1 automates this loop
+for exact MMIO-only leaves: the verifier generates a concrete no-std harness,
+compiles it for `riscv32imafc-unknown-none-elf`, extracts the resulting machine
+code and first proves `generated reference == vendor ELF`. Only then does it
+compare both traces with the bound production Rust probe. RAM, delays, polling
+and platform callbacks are deliberately rejected by this first harness rather
+than receiving placeholder implementations.
 
 Generate every currently eligible reference in one pass and retain the blocked
 inventory as a machine-readable work queue:
@@ -691,15 +697,19 @@ effect mmio-read 32 0x20107030 required
 effect mmio-write 32 0x20107030 required
 ```
 
-The verifier derives those two effects independently from the pinned ROM ELF
-and compiled Rust probe. Binding v1 verifies that the vendor symbol belongs to
+The verifier derives those two effects independently from the pinned ROM ELF,
+the recompiled generated reference and the compiled production Rust probe.
+Binding v1 verifies that the vendor symbol belongs to
 the declared closed chip revision, the complete vendor artifact (and, for a
 linked archive oracle, its raw inventory) matches one declared SHA-256, and the
 exact `rust-probe` symbol exists in the supplied Rust ELF. The verifier selects
 that probe from the binding instead of falling back to the naming convention.
-The effect evidence digest covers the canonical binding, policy, comparator
-source and binding validator source, so weakening any of them requires a
-reviewed baseline change. The blocking-to-async pilot will use the same schema
+The effect evidence digest covers the canonical binding, policy, comparator,
+binding validator, generator, generated harness, normalized generated source,
+re-extracted effects and exact Rust compiler identity, so weakening or changing
+any part of the proof requires a reviewed baseline change. Local artifact path
+spellings are excluded from the source identity, while their pinned SHA-256
+values remain included. The blocking-to-async pilot will use the same schema
 with an explicit `AwaitReady` replacement rather than erasing a polling/delay
 edge.
 

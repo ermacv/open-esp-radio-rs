@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openEspRadioPeripheralFragment id="WDEV_PWR">
+    <peripheral>
+      <name>PHY_COLD_DEADLINE_ORACLE</name>
+      <description>
+        SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE];
+        CONFIDENCE[instruction-exact-semantics-unknown].
+        Free-running word sampled by the complete rev0 ROM SDM-stability
+        deadline. The instruction body proves its address and unsigned
+        wraparound consumer, but not its hardware clock source.
+      </description>
+      <baseAddress>0x2010d800</baseAddress>
+      <registers>
+        <register>
+          <name>DEADLINE_COUNTER_UNKNOWN</name>
+          <description>SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>SOURCE[ROM_REV0_PHY_WAIT_I2C_SDM_STABLE]; CONFIDENCE[instruction-exact]. Full-width wrapping deadline value.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_REGDMA_CONTROL</name>
+      <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Wi-Fi MAC REGDMA link selection updated by the complete ic_mac_init tail after every vendor channel change. Exact pre-auth vendor state and connected open HIL require link four.</description>
+      <baseAddress>0x2010d83c</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field>
+            <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TSF_STATUS</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Station TSF activity status recovered from the complete no-call hal_is_sta_tsf_active leaf. The instruction body proves the address and bit geometry but not the hardware transition rules.</description>
+      <baseAddress>0x2010d80c</baseAddress>
+      <registers>
+        <register>
+          <name>STATUS</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_is_sta_tsf_active returns bit zero.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>STATION_ACTIVE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_STA_TBTT_TARGET</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Station TBTT target word recovered from complete hal_set_sta_tbtt. The low 26-bit packing from the supplied 64-bit TSF value is exact; the hardware counter unit remains unnamed.</description>
+      <baseAddress>0x2010d82c</baseAddress>
+      <registers>
+        <register>
+          <name>TARGET</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_set_sta_tbtt replaces bits 25:0 with bits 35:10 of the supplied station TSF value and preserves the high six bits.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>TSF_BITS_35_10</name><bitOffset>0</bitOffset><bitWidth>26</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_STA_TSF_LOAD</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW.</description>
+      <baseAddress>0x2010d814</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOAD_STATION_TSF</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>VALUE_LOW</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Low 32 bits written first by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>VALUE_HIGH</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. High 32 bits written second by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_RTC_TIMER_UPDATE</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-partial]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value.</description>
+      <baseAddress>0x2010d830</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL,BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x2010d858.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+
+            <field><name>STA_TSF_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE.</description><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+
+            <field><name>RTC_UPDATE_ENABLE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Set when the leaf's enable argument is nonzero.</description><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+
+          </fields>
+        </register>
+        <register>
+          <name>SOC_WAKEUP_CLEAR</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>CLEAR_REQUEST</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>STA_LIGHT_SLEEP_WAKE_AHEAD</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>TIME</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RX_BEACON_TIME_LOW</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>STA_TSF_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF,BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.</description>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+
+            <field><name>STA_TSF_MODE</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them.</description><bitOffset>19</bitOffset><bitWidth>4</bitWidth></field>
+
+            <field><name>MODEM_STATE_WAKEUP_PROTECT_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it.</description><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+
+            <field><name>STA_TSF_ENABLE_LOW</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it.</description><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+
+            <field><name>STA_TSF_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE.</description><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+
+            <field><name>STA_TSF_ENABLE_HIGH</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>STA_TBTT_INTERVAL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument.</description>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>INTERVAL_BITS_31_10</name><bitOffset>0</bitOffset><bitWidth>22</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SLOW_CLOCK_CALIBRATION</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.</description>
+          <addressOffset>0x48</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>VALUE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Low eighteen bits of the OS-adapter calibration value.</description><bitOffset>0</bitOffset><bitWidth>18</bitWidth></field>
+
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_AUX_TSF_CONTROL</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. SoftAP, NAN and broadcast-TWT TSF control words. Complete public leaves prove their addresses and exact enable/mode masks; unrelated bits and hardware transition rules remain unnamed.</description>
+      <baseAddress>0x2010d860</baseAddress>
+      <registers>
+        <register>
+          <name>SOFTAP_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TSF_ENABLE</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>NAN_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TSF_MODE</name><bitOffset>19</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TSF_ENABLE_LOW</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TSF_ENABLE_HIGH</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>BTWT_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>TSF_MODE</name><bitOffset>19</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TSF_ENABLE_LOW</name><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TSF_ENABLE_HIGH</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TSF_TIMER</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. Four-entry TSF timer bank recovered from all complete target, wakeup and enable/disable leaves. Each entry consists of one control word followed by its 32-bit target. The public index is guarded to zero through three by the target and timer-enable leaves; the dedicated wakeup leaves do not contain their own range check.</description>
+      <baseAddress>0x2010d87c</baseAddress>
+      <registers>
+        <register><dim>4</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-3</dimIndex>
+          <name>CONTROL%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact-semantics-unknown]. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>LOW_CONTROL_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer.</description><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TIMER_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register><dim>4</dim><dimIncrement>0x08</dimIncrement><dimIndex>0-3</dimIndex>
+          <name>TARGET%s</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_COEX_RUNTIME</name>
+      <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Runtime receive-beacon and individual-TWT COEX/PTI words recovered from five complete hal_coex.o leaves. Register addresses, masks and RMW order are exact; fields whose electrical meaning is not established retain UNKNOWN names.</description>
+      <baseAddress>0x2010d89c</baseAddress>
+      <registers>
+        <register>
+          <name>CLEAR_REQUEST</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_clear_rx_beacon_pti sets bit zero through a fresh-read RMW. Complete hal_clr_itwt_pti sets the input-selected bit through the same word; the accepted index domain and remaining bit identities are not inferred.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>REQUESTS_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RX_BEACON_TIME_HIGH</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_rx_beacon_time replaces the low byte from bits 15:8 of its second argument after updating WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>ITWT_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_set_itwt_pti clears the low byte and then writes seqz(argument zero) into bit zero. The remaining low-byte semantics are unknown.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SHARED_RX_PTI</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>PTI</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>RX_BEACON_PTI</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_rx_beacon_pti replaces bits 15:12 from the low nibble of its first argument.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>PTI</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_POWER_INTERRUPT</name>
+      <description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT,BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction. Complete TSF timer enable/disable leaves update the timer interrupt masks in ENABLE and clear stale events through CLEAR.</description>
+      <baseAddress>0x2010d8b4</baseAddress>
+      <registers>
+        <register><name>ENABLE</name><description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><fields><field><name>EVENT_MASK</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>RAW</name><description>WDEVPWR_RAW diagnostic snapshot.</description><addressOffset>0x04</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>STATUS</name><description>SOURCE[BLOB_LIBPP_ISR_REGISTER_DUMP,BLOB_LIBPP_HAL_PWR_INTERRUPT]; CONFIDENCE[instruction-exact]. Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.</description><addressOffset>0x08</addressOffset><size>32</size><access>read-only</access><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><name>CLEAR</name><description>SOURCE[BLOB_LIBPP_HAL_PWR_INTERRUPT,BLOB_LIBPP_HAL_TSF_TIMER]; CONFIDENCE[instruction-exact]. Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer.</description><addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access><modifiedWriteValues>oneToClear</modifiedWriteValues><fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+      </registers>
+    </peripheral>
+</openEspRadioPeripheralFragment>

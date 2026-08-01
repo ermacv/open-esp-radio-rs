@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openEspRadioPeripheralFragment id="WIFI_BB_BRX">
+    <peripheral>
+      <name>PHY_BRX_RECOVERED_GAPS</name>
+      <description>SOURCE[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK]; CONFIDENCE[block-exact-register-semantics-opaque]. Sparse BRX words absent from the public platform PAC.</description>
+      <baseAddress>0x20108000</baseAddress>
+      <registers>
+        <register><name>FREQUENCY_CORRECTION_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description><addressOffset>0x50</addressOffset><size>32</size><access>read-write</access></register>
+      </registers>
+    </peripheral>
+</openEspRadioPeripheralFragment>

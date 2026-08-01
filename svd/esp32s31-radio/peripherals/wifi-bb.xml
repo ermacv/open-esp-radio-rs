@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openEspRadioPeripheralFragment id="WIFI_BB">
+    <peripheral>
+      <name>PHY_AGC_RECOVERED_GAPS</name>
+      <description>SOURCE[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK]; CONFIDENCE[block-exact-register-semantics-opaque]. Sparse AGC words absent from the public platform PAC.</description>
+      <baseAddress>0x20107000</baseAddress>
+      <registers>
+        <register><name>RX_SENSE_WORD_0_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description><addressOffset>0x10</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>RX_SENSE_WORD_1_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description><addressOffset>0x14</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>CCA_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.</description><addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>NOISE_FLOOR_STATUS_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.</description><addressOffset>0x50</addressOffset><size>32</size></register>
+        <register><name>RSSI_STATUS_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.</description><addressOffset>0x6c</addressOffset><size>32</size></register>
+        <register><name>CHANNEL_FILTER_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description><addressOffset>0x74</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>BACKUP_WORD_CC_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description><addressOffset>0xcc</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>RIFS_MODE_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.</description><addressOffset>0xf4</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>RX_SENSE_BACKUP_WORD_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.</description><addressOffset>0x108</addressOffset><size>32</size><access>read-write</access></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PHY_NRX_RECOVERED_GAPS</name>
+      <description>SOURCE[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK]; CONFIDENCE[block-exact-register-semantics-opaque]. Sparse NRX words absent from the public platform PAC.</description>
+      <baseAddress>0x20107800</baseAddress>
+      <registers>
+        <register><name>FFT_SCALE_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>BACKUP_WORD_0C_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description><addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>FREQUENCY_CORRECTION_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description><addressOffset>0x98</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>CHANNEL_FILTER_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description><addressOffset>0x104</addressOffset><size>32</size><access>read-write</access></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PHY_BB_RECOVERED_GAPS</name>
+      <description>SOURCE[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK]; CONFIDENCE[block-exact-register-semantics-opaque]. Sparse BB words absent from the public platform PAC.</description>
+      <baseAddress>0x20107c00</baseAddress>
+      <registers>
+        <register><name>CCA_COUNTER_CONTROL_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.</description><addressOffset>0x58</addressOffset><size>32</size><access>read-write</access></register>
+        <register><name>CCA_COUNTER_STATUS_0_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description><addressOffset>0x5c</addressOffset><size>32</size></register>
+        <register><name>CCA_COUNTER_STATUS_1_OPAQUE</name><description>SOURCE[ROM_REV0_PHY_VALIDATOR_GAPS]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description><addressOffset>0x60</addressOffset><size>32</size></register>
+      </registers>
+    </peripheral>
+</openEspRadioPeripheralFragment>

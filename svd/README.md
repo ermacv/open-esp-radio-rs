@@ -1,16 +1,33 @@
 # ESP32-S31 radio register source
 
-`esp32s31-radio.svd` is the editable machine-readable source for the recovered
-radio clock, reset, power, PHY-PBus, PHY-I2C and AGC PAC. Run:
+The editable radio-register source is split by physical ESP32-S31 modem block
+under `esp32s31-radio/peripherals/`. `esp32s31-radio/manifest.xml` pins each
+fragment to the corresponding half-open address window, while
+`esp32s31-radio/device.svd.in` retains device metadata, provenance and the
+stable peripheral order. The current partition is:
+
+| Fragment | Physical window | Source of the boundary |
+|---|---:|---|
+| `fe.xml` | `0x2010_0000..0x2010_4000` | ESP-IDF `DR_REG_FE_BASE` to `DR_REG_WIFI_MAC_BASE` |
+| `wifi-mac.xml` | `0x2010_4000..0x2010_7000` | ESP-IDF Wi-Fi MAC window |
+| `wifi-bb.xml` | `0x2010_7000..0x2010_8000` | ESP-IDF Wi-Fi baseband window |
+| `wifi-bb-brx.xml` | `0x2010_8000..0x2010_8400` | ESP-IDF BRX window |
+| `wdev-pwr.xml` | `0x2010_d800..0x2010_d900` | instruction-evidenced WDEVPWR aperture inside `MODEM_PWR_BASE` |
+| `i2c-ana-mst-mem.xml` | `0x2010_fc00..0x2011_0000` | ESP-IDF `DR_REG_I2C_ANA_MST_MEM_BASE` |
+
+`esp32s31-radio.svd` is a generated compatibility aggregate for svd2rust and
+tools that accept one SVD file. Do not edit it directly. Run:
 
 ```console
 cargo pac-gen
 ```
 
-The generated crate source is
-`crates/esp32s31/svd/src/lib.rs`. The source-only audit runs the
-Rust generator with `--check`, so a direct edit of that generated file fails
-CI. `crates/esp32s31/pac/src/power.rs` is the shrinking compatibility
+This deterministically assembles the aggregate and generates
+`crates/esp32s31/svd/src/lib.rs`. `cargo pac-gen --check` verifies both files,
+checks that every template reference has exactly one fragment definition, and
+rejects a peripheral whose base address is outside its declared physical
+window. A direct edit of either generated file therefore fails CI.
+`crates/esp32s31/pac/src/power.rs` is the shrinking compatibility
 facade for code not yet moved to the generated API; it must not acquire
 official system peripherals already delegated to `esp-hal`.
 
@@ -19,20 +36,27 @@ official-PAC registers reached from the vendor radio call graph. The trace
 tool loads it together with `esp32s31-radio.svd`; it is not an input to
 `cargo pac-gen`, generates no runtime crate, and creates no second peripheral
 owner. Its definitions are pinned to the same `esp-pacs` revision as the
-workspace lockfile.
+workspace lockfile. In particular, it now mirrors all 23 contiguous
+`MODEM_LPCON` registers at `0x2010_f000..0x2010_f05c` from that PAC, so vendor
+clock, reset, retention-memory and wakeup accesses receive stable register
+identities instead of merely falling inside a broad MMIO window.
 
 ## Evidence policy
 
-Descriptions use `SOURCE[...]` and `CONFIDENCE[...]` tags. Confidence has the
-following meaning:
+Descriptions use `SOURCE[...]` and `CONFIDENCE[...]` tags. The generator
+accepts only the following confidence vocabulary:
 
-- `exact-s31-layout`: field name, offset and width come from an ESP32-S31
-  register structure or SVD;
+- `block-exact-register-semantics-opaque`: the containing S31 block and word
+  address are exact, while the word's hardware semantics remain unnamed;
+- `instruction-exact`: the complete instruction body proves the described
+  operation and value transformation;
+- `instruction-exact-partial`: the instruction evidence is complete for the
+  described subset, but the register has additional unmodeled behavior;
 - `instruction-exact-semantics-unknown`: the complete ROM/blob instruction
   body proves the address, mask and operation, but not the hardware meaning;
-- `register-exact-fields-unknown`: the S31 structure names the register while
-  its internal bit layout is still unknown;
-- `mixed-per-field`: individual fields in the register have different evidence.
+- `hil-observed`: the statement is an observed hardware result;
+- `instruction-exact-hil-qualified`: complete instruction evidence is also
+  qualified by a matching hardware observation.
 
 Unknown and reserved fields are omitted. An `OPAQUE` or `UNKNOWN` name is
 intentional: it records usable instruction-level evidence without converting a

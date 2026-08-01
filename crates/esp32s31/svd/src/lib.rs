@@ -28214,6 +28214,1188 @@ pub mod wifi_mac_rx_dma {
         }
     }
 }
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FECOEX words absent from the public platform PAC."]
+pub type PhyFecoexRecovered = crate::Periph<phy_fecoex_recovered::RegisterBlock, 0x2010_0000>;
+impl core::fmt::Debug for PhyFecoexRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyFecoexRecovered").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FECOEX words absent from the public platform PAC."]
+pub mod phy_fecoex_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x20],
+        rf_frequency_control_opaque: RfFrequencyControlOpaque,
+        _reserved1: [u8; 0x1c],
+        rf_frequency_result_opaque: RfFrequencyResultOpaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x20 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."]
+        #[inline(always)]
+        pub const fn rf_frequency_control_opaque(&self) -> &RfFrequencyControlOpaque {
+            &self.rf_frequency_control_opaque
+        }
+        #[doc = "0x40 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown."]
+        #[inline(always)]
+        pub const fn rf_frequency_result_opaque(&self) -> &RfFrequencyResultOpaque {
+            &self.rf_frequency_result_opaque
+        }
+    }
+    #[doc = "RF_FREQUENCY_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_frequency_control_opaque`] module"]
+    #[doc(alias = "RF_FREQUENCY_CONTROL_OPAQUE")]
+    pub type RfFrequencyControlOpaque =
+        crate::Reg<rf_frequency_control_opaque::RfFrequencyControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."]
+    pub mod rf_frequency_control_opaque {
+        #[doc = "Register `RF_FREQUENCY_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<RfFrequencyControlOpaqueSpec>;
+        #[doc = "Register `RF_FREQUENCY_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<RfFrequencyControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RfFrequencyControlOpaqueSpec;
+        impl crate::RegisterSpec for RfFrequencyControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rf_frequency_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for RfFrequencyControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rf_frequency_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for RfFrequencyControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RF_FREQUENCY_RESULT_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_result_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_result_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_frequency_result_opaque`] module"]
+    #[doc(alias = "RF_FREQUENCY_RESULT_OPAQUE")]
+    pub type RfFrequencyResultOpaque =
+        crate::Reg<rf_frequency_result_opaque::RfFrequencyResultOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown."]
+    pub mod rf_frequency_result_opaque {
+        #[doc = "Register `RF_FREQUENCY_RESULT_OPAQUE` reader"]
+        pub type R = crate::R<RfFrequencyResultOpaqueSpec>;
+        #[doc = "Register `RF_FREQUENCY_RESULT_OPAQUE` writer"]
+        pub type W = crate::W<RfFrequencyResultOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_result_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_result_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RfFrequencyResultOpaqueSpec;
+        impl crate::RegisterSpec for RfFrequencyResultOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rf_frequency_result_opaque::R`](R) reader structure"]
+        impl crate::Readable for RfFrequencyResultOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rf_frequency_result_opaque::W`](W) writer structure"]
+        impl crate::Writable for RfFrequencyResultOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FEDATA words absent from the public platform PAC."]
+pub type PhyFedataRecovered = crate::Periph<phy_fedata_recovered::RegisterBlock, 0x2010_0400>;
+impl core::fmt::Debug for PhyFedataRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyFedataRecovered").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FEDATA words absent from the public platform PAC."]
+pub mod phy_fedata_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x30],
+        rx_filter_mode_opaque: RxFilterModeOpaque,
+        _reserved1: [u8; 0x0c],
+        tx_rx_reset_opaque: TxRxResetOpaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x30 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn rx_filter_mode_opaque(&self) -> &RxFilterModeOpaque {
+            &self.rx_filter_mode_opaque
+        }
+        #[doc = "0x40 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn tx_rx_reset_opaque(&self) -> &TxRxResetOpaque {
+            &self.tx_rx_reset_opaque
+        }
+    }
+    #[doc = "RX_FILTER_MODE_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_filter_mode_opaque`] module"]
+    #[doc(alias = "RX_FILTER_MODE_OPAQUE")]
+    pub type RxFilterModeOpaque = crate::Reg<rx_filter_mode_opaque::RxFilterModeOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+    pub mod rx_filter_mode_opaque {
+        #[doc = "Register `RX_FILTER_MODE_OPAQUE` reader"]
+        pub type R = crate::R<RxFilterModeOpaqueSpec>;
+        #[doc = "Register `RX_FILTER_MODE_OPAQUE` writer"]
+        pub type W = crate::W<RxFilterModeOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxFilterModeOpaqueSpec;
+        impl crate::RegisterSpec for RxFilterModeOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_filter_mode_opaque::R`](R) reader structure"]
+        impl crate::Readable for RxFilterModeOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_filter_mode_opaque::W`](W) writer structure"]
+        impl crate::Writable for RxFilterModeOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TX_RX_RESET_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_rx_reset_opaque`] module"]
+    #[doc(alias = "TX_RX_RESET_OPAQUE")]
+    pub type TxRxResetOpaque = crate::Reg<tx_rx_reset_opaque::TxRxResetOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
+    pub mod tx_rx_reset_opaque {
+        #[doc = "Register `TX_RX_RESET_OPAQUE` reader"]
+        pub type R = crate::R<TxRxResetOpaqueSpec>;
+        #[doc = "Register `TX_RX_RESET_OPAQUE` writer"]
+        pub type W = crate::W<TxRxResetOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxRxResetOpaqueSpec;
+        impl crate::RegisterSpec for TxRxResetOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_rx_reset_opaque::R`](R) reader structure"]
+        impl crate::Readable for TxRxResetOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tx_rx_reset_opaque::W`](W) writer structure"]
+        impl crate::Writable for TxRxResetOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FECTRL antenna words absent from the public platform PAC."]
+pub type PhyFectrlRecovered = crate::Periph<phy_fectrl_recovered::RegisterBlock, 0x2010_0800>;
+impl core::fmt::Debug for PhyFectrlRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyFectrlRecovered").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FECTRL antenna words absent from the public platform PAC."]
+pub mod phy_fectrl_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x34],
+        antenna_config_word_0_opaque: AntennaConfigWord0Opaque,
+        antenna_config_word_1_opaque: AntennaConfigWord1Opaque,
+        antenna_config_word_2_opaque: AntennaConfigWord2Opaque,
+        antenna_config_word_3_opaque: AntennaConfigWord3Opaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x34 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn antenna_config_word_0_opaque(&self) -> &AntennaConfigWord0Opaque {
+            &self.antenna_config_word_0_opaque
+        }
+        #[doc = "0x38 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn antenna_config_word_1_opaque(&self) -> &AntennaConfigWord1Opaque {
+            &self.antenna_config_word_1_opaque
+        }
+        #[doc = "0x3c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn antenna_config_word_2_opaque(&self) -> &AntennaConfigWord2Opaque {
+            &self.antenna_config_word_2_opaque
+        }
+        #[doc = "0x40 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn antenna_config_word_3_opaque(&self) -> &AntennaConfigWord3Opaque {
+            &self.antenna_config_word_3_opaque
+        }
+    }
+    #[doc = "ANTENNA_CONFIG_WORD_0_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_0_opaque`] module"]
+    #[doc(alias = "ANTENNA_CONFIG_WORD_0_OPAQUE")]
+    pub type AntennaConfigWord0Opaque =
+        crate::Reg<antenna_config_word_0_opaque::AntennaConfigWord0OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    pub mod antenna_config_word_0_opaque {
+        #[doc = "Register `ANTENNA_CONFIG_WORD_0_OPAQUE` reader"]
+        pub type R = crate::R<AntennaConfigWord0OpaqueSpec>;
+        #[doc = "Register `ANTENNA_CONFIG_WORD_0_OPAQUE` writer"]
+        pub type W = crate::W<AntennaConfigWord0OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AntennaConfigWord0OpaqueSpec;
+        impl crate::RegisterSpec for AntennaConfigWord0OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`antenna_config_word_0_opaque::R`](R) reader structure"]
+        impl crate::Readable for AntennaConfigWord0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`antenna_config_word_0_opaque::W`](W) writer structure"]
+        impl crate::Writable for AntennaConfigWord0OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ANTENNA_CONFIG_WORD_1_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_1_opaque`] module"]
+    #[doc(alias = "ANTENNA_CONFIG_WORD_1_OPAQUE")]
+    pub type AntennaConfigWord1Opaque =
+        crate::Reg<antenna_config_word_1_opaque::AntennaConfigWord1OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    pub mod antenna_config_word_1_opaque {
+        #[doc = "Register `ANTENNA_CONFIG_WORD_1_OPAQUE` reader"]
+        pub type R = crate::R<AntennaConfigWord1OpaqueSpec>;
+        #[doc = "Register `ANTENNA_CONFIG_WORD_1_OPAQUE` writer"]
+        pub type W = crate::W<AntennaConfigWord1OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AntennaConfigWord1OpaqueSpec;
+        impl crate::RegisterSpec for AntennaConfigWord1OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`antenna_config_word_1_opaque::R`](R) reader structure"]
+        impl crate::Readable for AntennaConfigWord1OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`antenna_config_word_1_opaque::W`](W) writer structure"]
+        impl crate::Writable for AntennaConfigWord1OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ANTENNA_CONFIG_WORD_2_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_2_opaque`] module"]
+    #[doc(alias = "ANTENNA_CONFIG_WORD_2_OPAQUE")]
+    pub type AntennaConfigWord2Opaque =
+        crate::Reg<antenna_config_word_2_opaque::AntennaConfigWord2OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    pub mod antenna_config_word_2_opaque {
+        #[doc = "Register `ANTENNA_CONFIG_WORD_2_OPAQUE` reader"]
+        pub type R = crate::R<AntennaConfigWord2OpaqueSpec>;
+        #[doc = "Register `ANTENNA_CONFIG_WORD_2_OPAQUE` writer"]
+        pub type W = crate::W<AntennaConfigWord2OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AntennaConfigWord2OpaqueSpec;
+        impl crate::RegisterSpec for AntennaConfigWord2OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`antenna_config_word_2_opaque::R`](R) reader structure"]
+        impl crate::Readable for AntennaConfigWord2OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`antenna_config_word_2_opaque::W`](W) writer structure"]
+        impl crate::Writable for AntennaConfigWord2OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ANTENNA_CONFIG_WORD_3_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_3_opaque`] module"]
+    #[doc(alias = "ANTENNA_CONFIG_WORD_3_OPAQUE")]
+    pub type AntennaConfigWord3Opaque =
+        crate::Reg<antenna_config_word_3_opaque::AntennaConfigWord3OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    pub mod antenna_config_word_3_opaque {
+        #[doc = "Register `ANTENNA_CONFIG_WORD_3_OPAQUE` reader"]
+        pub type R = crate::R<AntennaConfigWord3OpaqueSpec>;
+        #[doc = "Register `ANTENNA_CONFIG_WORD_3_OPAQUE` writer"]
+        pub type W = crate::W<AntennaConfigWord3OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AntennaConfigWord3OpaqueSpec;
+        impl crate::RegisterSpec for AntennaConfigWord3OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`antenna_config_word_3_opaque::R`](R) reader structure"]
+        impl crate::Readable for AntennaConfigWord3OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`antenna_config_word_3_opaque::W`](W) writer structure"]
+        impl crate::Writable for AntennaConfigWord3OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FEDATA_WIFI words absent from the public platform PAC."]
+pub type PhyFedataWifiRecovered =
+    crate::Periph<phy_fedata_wifi_recovered::RegisterBlock, 0x2010_0c00>;
+impl core::fmt::Debug for PhyFedataWifiRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyFedataWifiRecovered").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse FEDATA_WIFI words absent from the public platform PAC."]
+pub mod phy_fedata_wifi_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x18],
+        frequency_correction_word_0_opaque: FrequencyCorrectionWord0Opaque,
+        frequency_correction_word_1_opaque: FrequencyCorrectionWord1Opaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x18 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn frequency_correction_word_0_opaque(&self) -> &FrequencyCorrectionWord0Opaque {
+            &self.frequency_correction_word_0_opaque
+        }
+        #[doc = "0x1c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn frequency_correction_word_1_opaque(&self) -> &FrequencyCorrectionWord1Opaque {
+            &self.frequency_correction_word_1_opaque
+        }
+    }
+    #[doc = "FREQUENCY_CORRECTION_WORD_0_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_0_opaque`] module"]
+    #[doc(alias = "FREQUENCY_CORRECTION_WORD_0_OPAQUE")]
+    pub type FrequencyCorrectionWord0Opaque =
+        crate::Reg<frequency_correction_word_0_opaque::FrequencyCorrectionWord0OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    pub mod frequency_correction_word_0_opaque {
+        #[doc = "Register `FREQUENCY_CORRECTION_WORD_0_OPAQUE` reader"]
+        pub type R = crate::R<FrequencyCorrectionWord0OpaqueSpec>;
+        #[doc = "Register `FREQUENCY_CORRECTION_WORD_0_OPAQUE` writer"]
+        pub type W = crate::W<FrequencyCorrectionWord0OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyCorrectionWord0OpaqueSpec;
+        impl crate::RegisterSpec for FrequencyCorrectionWord0OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_correction_word_0_opaque::R`](R) reader structure"]
+        impl crate::Readable for FrequencyCorrectionWord0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`frequency_correction_word_0_opaque::W`](W) writer structure"]
+        impl crate::Writable for FrequencyCorrectionWord0OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FREQUENCY_CORRECTION_WORD_1_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_1_opaque`] module"]
+    #[doc(alias = "FREQUENCY_CORRECTION_WORD_1_OPAQUE")]
+    pub type FrequencyCorrectionWord1Opaque =
+        crate::Reg<frequency_correction_word_1_opaque::FrequencyCorrectionWord1OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    pub mod frequency_correction_word_1_opaque {
+        #[doc = "Register `FREQUENCY_CORRECTION_WORD_1_OPAQUE` reader"]
+        pub type R = crate::R<FrequencyCorrectionWord1OpaqueSpec>;
+        #[doc = "Register `FREQUENCY_CORRECTION_WORD_1_OPAQUE` writer"]
+        pub type W = crate::W<FrequencyCorrectionWord1OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyCorrectionWord1OpaqueSpec;
+        impl crate::RegisterSpec for FrequencyCorrectionWord1OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_correction_word_1_opaque::R`](R) reader structure"]
+        impl crate::Readable for FrequencyCorrectionWord1OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`frequency_correction_word_1_opaque::W`](W) writer structure"]
+        impl crate::Writable for FrequencyCorrectionWord1OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BTAGC words absent from the public platform PAC."]
+pub type PhyBtagcRecovered = crate::Periph<phy_btagc_recovered::RegisterBlock, 0x2010_2800>;
+impl core::fmt::Debug for PhyBtagcRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyBtagcRecovered").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BTAGC words absent from the public platform PAC."]
+pub mod phy_btagc_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x40],
+        rx_gain_force_opaque: RxGainForceOpaque,
+        _reserved1: [u8; 0x04],
+        gain_offset_word_0_opaque: GainOffsetWord0Opaque,
+        _reserved2: [u8; 0x1c],
+        gain_offset_word_1_opaque: GainOffsetWord1Opaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x40 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_gain_force read-modify-writes this word on its Bluetooth branch."]
+        #[inline(always)]
+        pub const fn rx_gain_force_opaque(&self) -> &RxGainForceOpaque {
+            &self.rx_gain_force_opaque
+        }
+        #[doc = "0x48 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn gain_offset_word_0_opaque(&self) -> &GainOffsetWord0Opaque {
+            &self.gain_offset_word_0_opaque
+        }
+        #[doc = "0x68 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn gain_offset_word_1_opaque(&self) -> &GainOffsetWord1Opaque {
+            &self.gain_offset_word_1_opaque
+        }
+    }
+    #[doc = "RX_GAIN_FORCE_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_gain_force read-modify-writes this word on its Bluetooth branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_force_opaque`] module"]
+    #[doc(alias = "RX_GAIN_FORCE_OPAQUE")]
+    pub type RxGainForceOpaque = crate::Reg<rx_gain_force_opaque::RxGainForceOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_gain_force read-modify-writes this word on its Bluetooth branch."]
+    pub mod rx_gain_force_opaque {
+        #[doc = "Register `RX_GAIN_FORCE_OPAQUE` reader"]
+        pub type R = crate::R<RxGainForceOpaqueSpec>;
+        #[doc = "Register `RX_GAIN_FORCE_OPAQUE` writer"]
+        pub type W = crate::W<RxGainForceOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_rx_gain_force read-modify-writes this word on its Bluetooth branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxGainForceOpaqueSpec;
+        impl crate::RegisterSpec for RxGainForceOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_gain_force_opaque::R`](R) reader structure"]
+        impl crate::Readable for RxGainForceOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_gain_force_opaque::W`](W) writer structure"]
+        impl crate::Writable for RxGainForceOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "GAIN_OFFSET_WORD_0_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_0_opaque`] module"]
+    #[doc(alias = "GAIN_OFFSET_WORD_0_OPAQUE")]
+    pub type GainOffsetWord0Opaque =
+        crate::Reg<gain_offset_word_0_opaque::GainOffsetWord0OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."]
+    pub mod gain_offset_word_0_opaque {
+        #[doc = "Register `GAIN_OFFSET_WORD_0_OPAQUE` reader"]
+        pub type R = crate::R<GainOffsetWord0OpaqueSpec>;
+        #[doc = "Register `GAIN_OFFSET_WORD_0_OPAQUE` writer"]
+        pub type W = crate::W<GainOffsetWord0OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GainOffsetWord0OpaqueSpec;
+        impl crate::RegisterSpec for GainOffsetWord0OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`gain_offset_word_0_opaque::R`](R) reader structure"]
+        impl crate::Readable for GainOffsetWord0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`gain_offset_word_0_opaque::W`](W) writer structure"]
+        impl crate::Writable for GainOffsetWord0OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "GAIN_OFFSET_WORD_1_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_1_opaque`] module"]
+    #[doc(alias = "GAIN_OFFSET_WORD_1_OPAQUE")]
+    pub type GainOffsetWord1Opaque =
+        crate::Reg<gain_offset_word_1_opaque::GainOffsetWord1OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."]
+    pub mod gain_offset_word_1_opaque {
+        #[doc = "Register `GAIN_OFFSET_WORD_1_OPAQUE` reader"]
+        pub type R = crate::R<GainOffsetWord1OpaqueSpec>;
+        #[doc = "Register `GAIN_OFFSET_WORD_1_OPAQUE` writer"]
+        pub type W = crate::W<GainOffsetWord1OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GainOffsetWord1OpaqueSpec;
+        impl crate::RegisterSpec for GainOffsetWord1OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`gain_offset_word_1_opaque::R`](R) reader structure"]
+        impl crate::Readable for GainOffsetWord1OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`gain_offset_word_1_opaque::W`](W) writer structure"]
+        impl crate::Writable for GainOffsetWord1OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse AGC words absent from the public platform PAC."]
+pub type PhyAgcRecoveredGaps = crate::Periph<phy_agc_recovered_gaps::RegisterBlock, 0x2010_7000>;
+impl core::fmt::Debug for PhyAgcRecoveredGaps {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyAgcRecoveredGaps").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse AGC words absent from the public platform PAC."]
+pub mod phy_agc_recovered_gaps {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x10],
+        rx_sense_word_0_opaque: RxSenseWord0Opaque,
+        rx_sense_word_1_opaque: RxSenseWord1Opaque,
+        _reserved2: [u8; 0x04],
+        cca_control_opaque: CcaControlOpaque,
+        _reserved3: [u8; 0x30],
+        noise_floor_status_opaque: NoiseFloorStatusOpaque,
+        _reserved4: [u8; 0x18],
+        rssi_status_opaque: RssiStatusOpaque,
+        _reserved5: [u8; 0x04],
+        channel_filter_control_opaque: ChannelFilterControlOpaque,
+        _reserved6: [u8; 0x54],
+        backup_word_cc_opaque: BackupWordCcOpaque,
+        _reserved7: [u8; 0x24],
+        rifs_mode_control_opaque: RifsModeControlOpaque,
+        _reserved8: [u8; 0x10],
+        rx_sense_backup_word_opaque: RxSenseBackupWordOpaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x10 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn rx_sense_word_0_opaque(&self) -> &RxSenseWord0Opaque {
+            &self.rx_sense_word_0_opaque
+        }
+        #[doc = "0x14 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+        #[inline(always)]
+        pub const fn rx_sense_word_1_opaque(&self) -> &RxSenseWord1Opaque {
+            &self.rx_sense_word_1_opaque
+        }
+        #[doc = "0x1c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
+        #[inline(always)]
+        pub const fn cca_control_opaque(&self) -> &CcaControlOpaque {
+            &self.cca_control_opaque
+        }
+        #[doc = "0x50 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
+        #[inline(always)]
+        pub const fn noise_floor_status_opaque(&self) -> &NoiseFloorStatusOpaque {
+            &self.noise_floor_status_opaque
+        }
+        #[doc = "0x6c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
+        #[inline(always)]
+        pub const fn rssi_status_opaque(&self) -> &RssiStatusOpaque {
+            &self.rssi_status_opaque
+        }
+        #[doc = "0x74 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+        #[inline(always)]
+        pub const fn channel_filter_control_opaque(&self) -> &ChannelFilterControlOpaque {
+            &self.channel_filter_control_opaque
+        }
+        #[doc = "0xcc - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+        #[inline(always)]
+        pub const fn backup_word_cc_opaque(&self) -> &BackupWordCcOpaque {
+            &self.backup_word_cc_opaque
+        }
+        #[doc = "0xf4 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
+        #[inline(always)]
+        pub const fn rifs_mode_control_opaque(&self) -> &RifsModeControlOpaque {
+            &self.rifs_mode_control_opaque
+        }
+        #[doc = "0x108 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
+        #[inline(always)]
+        pub const fn rx_sense_backup_word_opaque(&self) -> &RxSenseBackupWordOpaque {
+            &self.rx_sense_backup_word_opaque
+        }
+    }
+    #[doc = "RX_SENSE_WORD_0_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_0_opaque`] module"]
+    #[doc(alias = "RX_SENSE_WORD_0_OPAQUE")]
+    pub type RxSenseWord0Opaque = crate::Reg<rx_sense_word_0_opaque::RxSenseWord0OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+    pub mod rx_sense_word_0_opaque {
+        #[doc = "Register `RX_SENSE_WORD_0_OPAQUE` reader"]
+        pub type R = crate::R<RxSenseWord0OpaqueSpec>;
+        #[doc = "Register `RX_SENSE_WORD_0_OPAQUE` writer"]
+        pub type W = crate::W<RxSenseWord0OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxSenseWord0OpaqueSpec;
+        impl crate::RegisterSpec for RxSenseWord0OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_sense_word_0_opaque::R`](R) reader structure"]
+        impl crate::Readable for RxSenseWord0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_sense_word_0_opaque::W`](W) writer structure"]
+        impl crate::Writable for RxSenseWord0OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_SENSE_WORD_1_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_1_opaque`] module"]
+    #[doc(alias = "RX_SENSE_WORD_1_OPAQUE")]
+    pub type RxSenseWord1Opaque = crate::Reg<rx_sense_word_1_opaque::RxSenseWord1OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+    pub mod rx_sense_word_1_opaque {
+        #[doc = "Register `RX_SENSE_WORD_1_OPAQUE` reader"]
+        pub type R = crate::R<RxSenseWord1OpaqueSpec>;
+        #[doc = "Register `RX_SENSE_WORD_1_OPAQUE` writer"]
+        pub type W = crate::W<RxSenseWord1OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxSenseWord1OpaqueSpec;
+        impl crate::RegisterSpec for RxSenseWord1OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_sense_word_1_opaque::R`](R) reader structure"]
+        impl crate::Readable for RxSenseWord1OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_sense_word_1_opaque::W`](W) writer structure"]
+        impl crate::Writable for RxSenseWord1OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CCA_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control_opaque`] module"]
+    #[doc(alias = "CCA_CONTROL_OPAQUE")]
+    pub type CcaControlOpaque = crate::Reg<cca_control_opaque::CcaControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
+    pub mod cca_control_opaque {
+        #[doc = "Register `CCA_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<CcaControlOpaqueSpec>;
+        #[doc = "Register `CCA_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<CcaControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaControlOpaqueSpec;
+        impl crate::RegisterSpec for CcaControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for CcaControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for CcaControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "NOISE_FLOOR_STATUS_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_status_opaque`] module"]
+    #[doc(alias = "NOISE_FLOOR_STATUS_OPAQUE")]
+    pub type NoiseFloorStatusOpaque =
+        crate::Reg<noise_floor_status_opaque::NoiseFloorStatusOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
+    pub mod noise_floor_status_opaque {
+        #[doc = "Register `NOISE_FLOOR_STATUS_OPAQUE` reader"]
+        pub type R = crate::R<NoiseFloorStatusOpaqueSpec>;
+        #[doc = "Register `NOISE_FLOOR_STATUS_OPAQUE` writer"]
+        pub type W = crate::W<NoiseFloorStatusOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NoiseFloorStatusOpaqueSpec;
+        impl crate::RegisterSpec for NoiseFloorStatusOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`noise_floor_status_opaque::R`](R) reader structure"]
+        impl crate::Readable for NoiseFloorStatusOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`noise_floor_status_opaque::W`](W) writer structure"]
+        impl crate::Writable for NoiseFloorStatusOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RSSI_STATUS_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rssi_status_opaque`] module"]
+    #[doc(alias = "RSSI_STATUS_OPAQUE")]
+    pub type RssiStatusOpaque = crate::Reg<rssi_status_opaque::RssiStatusOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
+    pub mod rssi_status_opaque {
+        #[doc = "Register `RSSI_STATUS_OPAQUE` reader"]
+        pub type R = crate::R<RssiStatusOpaqueSpec>;
+        #[doc = "Register `RSSI_STATUS_OPAQUE` writer"]
+        pub type W = crate::W<RssiStatusOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RssiStatusOpaqueSpec;
+        impl crate::RegisterSpec for RssiStatusOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rssi_status_opaque::R`](R) reader structure"]
+        impl crate::Readable for RssiStatusOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rssi_status_opaque::W`](W) writer structure"]
+        impl crate::Writable for RssiStatusOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
+    #[doc(alias = "CHANNEL_FILTER_CONTROL_OPAQUE")]
+    pub type ChannelFilterControlOpaque =
+        crate::Reg<channel_filter_control_opaque::ChannelFilterControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+    pub mod channel_filter_control_opaque {
+        #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<ChannelFilterControlOpaqueSpec>;
+        #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<ChannelFilterControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelFilterControlOpaqueSpec;
+        impl crate::RegisterSpec for ChannelFilterControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_filter_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for ChannelFilterControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_filter_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for ChannelFilterControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BACKUP_WORD_CC_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_cc_opaque`] module"]
+    #[doc(alias = "BACKUP_WORD_CC_OPAQUE")]
+    pub type BackupWordCcOpaque = crate::Reg<backup_word_cc_opaque::BackupWordCcOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+    pub mod backup_word_cc_opaque {
+        #[doc = "Register `BACKUP_WORD_CC_OPAQUE` reader"]
+        pub type R = crate::R<BackupWordCcOpaqueSpec>;
+        #[doc = "Register `BACKUP_WORD_CC_OPAQUE` writer"]
+        pub type W = crate::W<BackupWordCcOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BackupWordCcOpaqueSpec;
+        impl crate::RegisterSpec for BackupWordCcOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`backup_word_cc_opaque::R`](R) reader structure"]
+        impl crate::Readable for BackupWordCcOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`backup_word_cc_opaque::W`](W) writer structure"]
+        impl crate::Writable for BackupWordCcOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RIFS_MODE_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rifs_mode_control_opaque`] module"]
+    #[doc(alias = "RIFS_MODE_CONTROL_OPAQUE")]
+    pub type RifsModeControlOpaque =
+        crate::Reg<rifs_mode_control_opaque::RifsModeControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
+    pub mod rifs_mode_control_opaque {
+        #[doc = "Register `RIFS_MODE_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<RifsModeControlOpaqueSpec>;
+        #[doc = "Register `RIFS_MODE_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<RifsModeControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RifsModeControlOpaqueSpec;
+        impl crate::RegisterSpec for RifsModeControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rifs_mode_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for RifsModeControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rifs_mode_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for RifsModeControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_SENSE_BACKUP_WORD_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_backup_word_opaque`] module"]
+    #[doc(alias = "RX_SENSE_BACKUP_WORD_OPAQUE")]
+    pub type RxSenseBackupWordOpaque =
+        crate::Reg<rx_sense_backup_word_opaque::RxSenseBackupWordOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
+    pub mod rx_sense_backup_word_opaque {
+        #[doc = "Register `RX_SENSE_BACKUP_WORD_OPAQUE` reader"]
+        pub type R = crate::R<RxSenseBackupWordOpaqueSpec>;
+        #[doc = "Register `RX_SENSE_BACKUP_WORD_OPAQUE` writer"]
+        pub type W = crate::W<RxSenseBackupWordOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxSenseBackupWordOpaqueSpec;
+        impl crate::RegisterSpec for RxSenseBackupWordOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_sense_backup_word_opaque::R`](R) reader structure"]
+        impl crate::Readable for RxSenseBackupWordOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_sense_backup_word_opaque::W`](W) writer structure"]
+        impl crate::Writable for RxSenseBackupWordOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse NRX words absent from the public platform PAC."]
+pub type PhyNrxRecoveredGaps = crate::Periph<phy_nrx_recovered_gaps::RegisterBlock, 0x2010_7800>;
+impl core::fmt::Debug for PhyNrxRecoveredGaps {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyNrxRecoveredGaps").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse NRX words absent from the public platform PAC."]
+pub mod phy_nrx_recovered_gaps {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        fft_scale_control_opaque: FftScaleControlOpaque,
+        _reserved1: [u8; 0x08],
+        backup_word_0c_opaque: BackupWord0cOpaque,
+        _reserved2: [u8; 0x88],
+        frequency_correction_control_opaque: FrequencyCorrectionControlOpaque,
+        _reserved3: [u8; 0x68],
+        channel_filter_control_opaque: ChannelFilterControlOpaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn fft_scale_control_opaque(&self) -> &FftScaleControlOpaque {
+            &self.fft_scale_control_opaque
+        }
+        #[doc = "0x0c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+        #[inline(always)]
+        pub const fn backup_word_0c_opaque(&self) -> &BackupWord0cOpaque {
+            &self.backup_word_0c_opaque
+        }
+        #[doc = "0x98 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn frequency_correction_control_opaque(
+            &self,
+        ) -> &FrequencyCorrectionControlOpaque {
+            &self.frequency_correction_control_opaque
+        }
+        #[doc = "0x104 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+        #[inline(always)]
+        pub const fn channel_filter_control_opaque(&self) -> &ChannelFilterControlOpaque {
+            &self.channel_filter_control_opaque
+        }
+    }
+    #[doc = "FFT_SCALE_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fft_scale_control_opaque`] module"]
+    #[doc(alias = "FFT_SCALE_CONTROL_OPAQUE")]
+    pub type FftScaleControlOpaque =
+        crate::Reg<fft_scale_control_opaque::FftScaleControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
+    pub mod fft_scale_control_opaque {
+        #[doc = "Register `FFT_SCALE_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<FftScaleControlOpaqueSpec>;
+        #[doc = "Register `FFT_SCALE_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<FftScaleControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FftScaleControlOpaqueSpec;
+        impl crate::RegisterSpec for FftScaleControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`fft_scale_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for FftScaleControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`fft_scale_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for FftScaleControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BACKUP_WORD_0C_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_0c_opaque`] module"]
+    #[doc(alias = "BACKUP_WORD_0C_OPAQUE")]
+    pub type BackupWord0cOpaque = crate::Reg<backup_word_0c_opaque::BackupWord0cOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+    pub mod backup_word_0c_opaque {
+        #[doc = "Register `BACKUP_WORD_0C_OPAQUE` reader"]
+        pub type R = crate::R<BackupWord0cOpaqueSpec>;
+        #[doc = "Register `BACKUP_WORD_0C_OPAQUE` writer"]
+        pub type W = crate::W<BackupWord0cOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BackupWord0cOpaqueSpec;
+        impl crate::RegisterSpec for BackupWord0cOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`backup_word_0c_opaque::R`](R) reader structure"]
+        impl crate::Readable for BackupWord0cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`backup_word_0c_opaque::W`](W) writer structure"]
+        impl crate::Writable for BackupWord0cOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
+    #[doc(alias = "FREQUENCY_CORRECTION_CONTROL_OPAQUE")]
+    pub type FrequencyCorrectionControlOpaque =
+        crate::Reg<frequency_correction_control_opaque::FrequencyCorrectionControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    pub mod frequency_correction_control_opaque {
+        #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<FrequencyCorrectionControlOpaqueSpec>;
+        #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<FrequencyCorrectionControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyCorrectionControlOpaqueSpec;
+        impl crate::RegisterSpec for FrequencyCorrectionControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_correction_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for FrequencyCorrectionControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`frequency_correction_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for FrequencyCorrectionControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
+    #[doc(alias = "CHANNEL_FILTER_CONTROL_OPAQUE")]
+    pub type ChannelFilterControlOpaque =
+        crate::Reg<channel_filter_control_opaque::ChannelFilterControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+    pub mod channel_filter_control_opaque {
+        #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<ChannelFilterControlOpaqueSpec>;
+        #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<ChannelFilterControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelFilterControlOpaqueSpec;
+        impl crate::RegisterSpec for ChannelFilterControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_filter_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for ChannelFilterControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_filter_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for ChannelFilterControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BB words absent from the public platform PAC."]
+pub type PhyBbRecoveredGaps = crate::Periph<phy_bb_recovered_gaps::RegisterBlock, 0x2010_7c00>;
+impl core::fmt::Debug for PhyBbRecoveredGaps {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyBbRecoveredGaps").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BB words absent from the public platform PAC."]
+pub mod phy_bb_recovered_gaps {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x58],
+        cca_counter_control_opaque: CcaCounterControlOpaque,
+        cca_counter_status_0_opaque: CcaCounterStatus0Opaque,
+        cca_counter_status_1_opaque: CcaCounterStatus1Opaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x58 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn cca_counter_control_opaque(&self) -> &CcaCounterControlOpaque {
+            &self.cca_counter_control_opaque
+        }
+        #[doc = "0x5c - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+        #[inline(always)]
+        pub const fn cca_counter_status_0_opaque(&self) -> &CcaCounterStatus0Opaque {
+            &self.cca_counter_status_0_opaque
+        }
+        #[doc = "0x60 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+        #[inline(always)]
+        pub const fn cca_counter_status_1_opaque(&self) -> &CcaCounterStatus1Opaque {
+            &self.cca_counter_status_1_opaque
+        }
+    }
+    #[doc = "CCA_COUNTER_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_control_opaque`] module"]
+    #[doc(alias = "CCA_COUNTER_CONTROL_OPAQUE")]
+    pub type CcaCounterControlOpaque =
+        crate::Reg<cca_counter_control_opaque::CcaCounterControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
+    pub mod cca_counter_control_opaque {
+        #[doc = "Register `CCA_COUNTER_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<CcaCounterControlOpaqueSpec>;
+        #[doc = "Register `CCA_COUNTER_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<CcaCounterControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaCounterControlOpaqueSpec;
+        impl crate::RegisterSpec for CcaCounterControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_counter_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for CcaCounterControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_counter_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for CcaCounterControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CCA_COUNTER_STATUS_0_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_0_opaque`] module"]
+    #[doc(alias = "CCA_COUNTER_STATUS_0_OPAQUE")]
+    pub type CcaCounterStatus0Opaque =
+        crate::Reg<cca_counter_status_0_opaque::CcaCounterStatus0OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+    pub mod cca_counter_status_0_opaque {
+        #[doc = "Register `CCA_COUNTER_STATUS_0_OPAQUE` reader"]
+        pub type R = crate::R<CcaCounterStatus0OpaqueSpec>;
+        #[doc = "Register `CCA_COUNTER_STATUS_0_OPAQUE` writer"]
+        pub type W = crate::W<CcaCounterStatus0OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaCounterStatus0OpaqueSpec;
+        impl crate::RegisterSpec for CcaCounterStatus0OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_counter_status_0_opaque::R`](R) reader structure"]
+        impl crate::Readable for CcaCounterStatus0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_counter_status_0_opaque::W`](W) writer structure"]
+        impl crate::Writable for CcaCounterStatus0OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CCA_COUNTER_STATUS_1_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_1_opaque`] module"]
+    #[doc(alias = "CCA_COUNTER_STATUS_1_OPAQUE")]
+    pub type CcaCounterStatus1Opaque =
+        crate::Reg<cca_counter_status_1_opaque::CcaCounterStatus1OpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+    pub mod cca_counter_status_1_opaque {
+        #[doc = "Register `CCA_COUNTER_STATUS_1_OPAQUE` reader"]
+        pub type R = crate::R<CcaCounterStatus1OpaqueSpec>;
+        #[doc = "Register `CCA_COUNTER_STATUS_1_OPAQUE` writer"]
+        pub type W = crate::W<CcaCounterStatus1OpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaCounterStatus1OpaqueSpec;
+        impl crate::RegisterSpec for CcaCounterStatus1OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_counter_status_1_opaque::R`](R) reader structure"]
+        impl crate::Readable for CcaCounterStatus1OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_counter_status_1_opaque::W`](W) writer structure"]
+        impl crate::Writable for CcaCounterStatus1OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BRX words absent from the public platform PAC."]
+pub type PhyBrxRecoveredGaps = crate::Periph<phy_brx_recovered_gaps::RegisterBlock, 0x2010_8000>;
+impl core::fmt::Debug for PhyBrxRecoveredGaps {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyBrxRecoveredGaps").finish()
+    }
+}
+#[doc = "SOURCE\\[ESP_IDF_25FE69F_S31_PHY_RETENTION,BLOB_LIBPHY_PHY_DEBUG_REG_CHECK\\]; CONFIDENCE\\[block-exact-register-semantics-opaque\\]. Sparse BRX words absent from the public platform PAC."]
+pub mod phy_brx_recovered_gaps {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x50],
+        frequency_correction_control_opaque: FrequencyCorrectionControlOpaque,
+    }
+    impl RegisterBlock {
+        #[doc = "0x50 - SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[inline(always)]
+        pub const fn frequency_correction_control_opaque(
+            &self,
+        ) -> &FrequencyCorrectionControlOpaque {
+            &self.frequency_correction_control_opaque
+        }
+    }
+    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
+    #[doc(alias = "FREQUENCY_CORRECTION_CONTROL_OPAQUE")]
+    pub type FrequencyCorrectionControlOpaque =
+        crate::Reg<frequency_correction_control_opaque::FrequencyCorrectionControlOpaqueSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    pub mod frequency_correction_control_opaque {
+        #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` reader"]
+        pub type R = crate::R<FrequencyCorrectionControlOpaqueSpec>;
+        #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` writer"]
+        pub type W = crate::W<FrequencyCorrectionControlOpaqueSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        impl W {}
+        #[doc = "SOURCE\\[ROM_REV0_PHY_VALIDATOR_GAPS\\]. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyCorrectionControlOpaqueSpec;
+        impl crate::RegisterSpec for FrequencyCorrectionControlOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_correction_control_opaque::R`](R) reader structure"]
+        impl crate::Readable for FrequencyCorrectionControlOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`frequency_correction_control_opaque::W`](W) writer structure"]
+        impl crate::Writable for FrequencyCorrectionControlOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -28347,6 +29529,24 @@ pub struct Peripherals {
     pub wifi_mac_cold_handshake: WifiMacColdHandshake,
     #[doc = "WIFI_MAC_RX_DMA"]
     pub wifi_mac_rx_dma: WifiMacRxDma,
+    #[doc = "PHY_FECOEX_RECOVERED"]
+    pub phy_fecoex_recovered: PhyFecoexRecovered,
+    #[doc = "PHY_FEDATA_RECOVERED"]
+    pub phy_fedata_recovered: PhyFedataRecovered,
+    #[doc = "PHY_FECTRL_RECOVERED"]
+    pub phy_fectrl_recovered: PhyFectrlRecovered,
+    #[doc = "PHY_FEDATA_WIFI_RECOVERED"]
+    pub phy_fedata_wifi_recovered: PhyFedataWifiRecovered,
+    #[doc = "PHY_BTAGC_RECOVERED"]
+    pub phy_btagc_recovered: PhyBtagcRecovered,
+    #[doc = "PHY_AGC_RECOVERED_GAPS"]
+    pub phy_agc_recovered_gaps: PhyAgcRecoveredGaps,
+    #[doc = "PHY_NRX_RECOVERED_GAPS"]
+    pub phy_nrx_recovered_gaps: PhyNrxRecoveredGaps,
+    #[doc = "PHY_BB_RECOVERED_GAPS"]
+    pub phy_bb_recovered_gaps: PhyBbRecoveredGaps,
+    #[doc = "PHY_BRX_RECOVERED_GAPS"]
+    pub phy_brx_recovered_gaps: PhyBrxRecoveredGaps,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -28433,6 +29633,15 @@ impl Peripherals {
             wifi_mac_power_interrupt: unsafe { WifiMacPowerInterrupt::steal() },
             wifi_mac_cold_handshake: unsafe { WifiMacColdHandshake::steal() },
             wifi_mac_rx_dma: unsafe { WifiMacRxDma::steal() },
+            phy_fecoex_recovered: unsafe { PhyFecoexRecovered::steal() },
+            phy_fedata_recovered: unsafe { PhyFedataRecovered::steal() },
+            phy_fectrl_recovered: unsafe { PhyFectrlRecovered::steal() },
+            phy_fedata_wifi_recovered: unsafe { PhyFedataWifiRecovered::steal() },
+            phy_btagc_recovered: unsafe { PhyBtagcRecovered::steal() },
+            phy_agc_recovered_gaps: unsafe { PhyAgcRecoveredGaps::steal() },
+            phy_nrx_recovered_gaps: unsafe { PhyNrxRecoveredGaps::steal() },
+            phy_bb_recovered_gaps: unsafe { PhyBbRecoveredGaps::steal() },
+            phy_brx_recovered_gaps: unsafe { PhyBrxRecoveredGaps::steal() },
         }
     }
 }

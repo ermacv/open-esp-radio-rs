@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Physical ESP32-S31 modem/radio windows used to partition the recovered SVD.
+  The first four and I2C_ANA_MST_MEM boundaries come from the pinned ESP-IDF
+  esp32s31/modem/reg_base.h. WDEV_PWR is the smaller instruction-evidenced
+  WDEVPWR aperture inside MODEM_PWR_BASE; it is deliberately not promoted to
+  an official platform-peripheral name.
+-->
+<openEspRadioSvdManifest>
+  <fragment id="FE" path="peripherals/fe.xml" start="0x20100000" endExclusive="0x20104000"/>
+  <fragment id="WIFI_MAC" path="peripherals/wifi-mac.xml" start="0x20104000" endExclusive="0x20107000"/>
+  <fragment id="WIFI_BB" path="peripherals/wifi-bb.xml" start="0x20107000" endExclusive="0x20108000"/>
+  <fragment id="WIFI_BB_BRX" path="peripherals/wifi-bb-brx.xml" start="0x20108000" endExclusive="0x20108400"/>
+  <fragment id="WDEV_PWR" path="peripherals/wdev-pwr.xml" start="0x2010d800" endExclusive="0x2010d900"/>
+  <fragment id="I2C_ANA_MST_MEM" path="peripherals/i2c-ana-mst-mem.xml" start="0x2010fc00" endExclusive="0x20110000"/>
+</openEspRadioSvdManifest>

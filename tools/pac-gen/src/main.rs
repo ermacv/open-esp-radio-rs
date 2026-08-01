@@ -15,8 +15,11 @@ use svd2rust::{
     config::{Config, RustEdition},
 };
 
+mod radio_svd;
+
 const USAGE: &str = "usage: cargo pac-gen [--check]";
 const ALLOWED_CONFIDENCE_VALUES: &[&str] = &[
+    "block-exact-register-semantics-opaque",
     "hil-observed",
     "instruction-exact",
     "instruction-exact-hil-qualified",
@@ -940,11 +943,21 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
 
     let root = repository_root();
-    let svd_path = root.join("svd/esp32s31-radio.svd");
     let output_path = root.join("crates/esp32s31/svd/src/lib.rs");
-    let input = fs::read_to_string(&svd_path)?;
+    let assembled = radio_svd::assemble(&root)?;
+    radio_svd::synchronize_aggregate(&assembled, check)?;
+    let svd_path = assembled.aggregate_path;
+    let input = assembled.contents;
     let windows = validate_structure(&input)?;
     validate_mmio_windows(&input, &windows)?;
+    let platform_svd_path = root.join("svd/esp32s31-platform-radio-deps.svd");
+    let platform_input = fs::read_to_string(&platform_svd_path)?;
+    svd_parser::parse(&platform_input).map_err(|error| {
+        format!(
+            "validator-only platform SVD {} is invalid: {error}",
+            platform_svd_path.display()
+        )
+    })?;
 
     let mut config = Config::default();
     config.edition = RustEdition::E2024;

@@ -14,7 +14,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    PhyRegisterPort,
+    HARDWARE_EDGE_LIMIT, PhyRegisterPort,
     phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
     phy_channel::{
         PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
@@ -75,8 +75,8 @@ use crate::{
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
     },
     target_executor::{
-        HARDWARE_EDGE_LIMIT, PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c,
-        complete_dcode_i2c, complete_final_i2c, complete_masked_i2c, complete_rfpll_i2c,
+        PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c, complete_dcode_i2c,
+        complete_final_i2c, complete_masked_i2c, complete_rfpll_i2c,
         complete_rx_dc_calibration_pbus, complete_rx_dco_pbus, complete_rx_gain_dc_pbus,
         complete_rx_gain_publish_pbus, complete_rx_saturation_pbus, complete_rxiq_adjusted_tx_i2c,
         complete_rxiq_gain_i2c, complete_rxiq_gain_pbus, complete_rxiq_init_i2c,

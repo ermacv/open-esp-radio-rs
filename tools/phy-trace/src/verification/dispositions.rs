@@ -8,7 +8,7 @@ use std::{
 
 use crate::{ArtifactSymbolIdentity, Result};
 
-use super::bindings::{Binding, BindingVersion, VendorRevision, parse_sha256};
+use super::bindings::{Binding, BindingVersion, DriverAdapter, VendorRevision, parse_sha256};
 use super::effect_contract::{
     EffectComparison, EffectDisposition, EffectPolicy, EffectSelector, parse_effect_rule,
 };
@@ -160,6 +160,7 @@ struct EntryBuilder {
     vendor_artifact_digests: BTreeSet<String>,
     vendor_inventory_digests: BTreeSet<String>,
     rust_probe: Option<String>,
+    driver_adapter: Option<DriverAdapter>,
     qualification_blockers: Vec<(String, String)>,
     line: usize,
 }
@@ -230,7 +231,8 @@ impl EntryBuilder {
         let has_binding_fields = self.vendor_revision.is_some()
             || !self.vendor_artifact_digests.is_empty()
             || !self.vendor_inventory_digests.is_empty()
-            || self.rust_probe.is_some();
+            || self.rust_probe.is_some()
+            || self.driver_adapter.is_some();
         let binding = match self.binding_version {
             Some(version) => Some(Binding::new(
                 version,
@@ -245,6 +247,7 @@ impl EntryBuilder {
                 self.rust_probe.ok_or_else(|| {
                     format!("binding {} {} has no rust-probe", self.source, self.symbol)
                 })?,
+                self.driver_adapter,
             )?),
             None if has_binding_fields => {
                 return Err(format!(
@@ -265,6 +268,17 @@ impl EntryBuilder {
         if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
             return Err(format!(
                 "binding {} {} has no registered effect or semantic contract",
+                self.source, self.symbol
+            )
+            .into());
+        }
+        if binding
+            .as_ref()
+            .is_some_and(|binding| binding.driver_adapter.is_some())
+            && effect_contract.is_none()
+        {
+            return Err(format!(
+                "driver adapter {} {} requires an effect-contract",
                 self.source, self.symbol
             )
             .into());
@@ -379,6 +393,7 @@ impl Manifest {
                     vendor_artifact_digests: BTreeSet::new(),
                     vendor_inventory_digests: BTreeSet::new(),
                     rust_probe: None,
+                    driver_adapter: None,
                     qualification_blockers: Vec::new(),
                     line: line_number,
                 });
@@ -450,6 +465,7 @@ impl Manifest {
                 | "vendor-artifact-sha256"
                 | "vendor-inventory-sha256"
                 | "rust-probe"
+                | "driver-adapter"
                 | "blocked-by" => {
                     let builder = current.as_mut().ok_or_else(|| {
                         format!("{directive} outside function at line {line_number}")
@@ -570,6 +586,18 @@ impl Manifest {
                                 return Err(
                                     format!("duplicate rust-probe at line {line_number}").into()
                                 );
+                            }
+                        }
+                        "driver-adapter" => {
+                            if builder
+                                .driver_adapter
+                                .replace(DriverAdapter::parse(value, line_number)?)
+                                .is_some()
+                            {
+                                return Err(format!(
+                                    "duplicate driver-adapter at line {line_number}"
+                                )
+                                .into());
                             }
                         }
                         "blocked-by" => {

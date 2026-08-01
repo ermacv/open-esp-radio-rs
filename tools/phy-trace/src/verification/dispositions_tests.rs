@@ -4,7 +4,7 @@ use super::*;
 fn checked_in_manifest_is_strict_and_resolves_defaults() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("dispositions/esp32s31.disposition");
     let manifest = Manifest::load(&path).unwrap();
-    assert_eq!(manifest.entries().count(), 8);
+    assert_eq!(manifest.entries().count(), 9);
 
     let disable_agc = manifest.resolve("rom", "phy_disable_agc");
     assert_eq!(disable_agc.disposition, Disposition::Direct);
@@ -15,6 +15,19 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
     assert_eq!(binding.version, BindingVersion::V1);
     assert_eq!(binding.revision, VendorRevision::Esp32s31Eco0Rom);
     assert_eq!(binding.rust_probe, "open_phy_trace_disable_agc");
+    assert_eq!(binding.driver_adapter, None);
+
+    let iq_enable = manifest.resolve("rom", "phy_iq_est_enable");
+    assert_eq!(iq_enable.disposition, Disposition::StateTransition);
+    let iq_enable = iq_enable.entry.unwrap();
+    assert_eq!(
+        iq_enable.binding.as_ref().unwrap().driver_adapter,
+        Some(DriverAdapter::Esp32s31IqEstEnableV1)
+    );
+    assert_eq!(
+        iq_enable.effect_contract.as_ref().unwrap().rules().count(),
+        9
+    );
 
     let root = manifest.resolve("archive", "register_chipv7_phy");
     assert_eq!(root.disposition, Disposition::ReplacedByComposition);

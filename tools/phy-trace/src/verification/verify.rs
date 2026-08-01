@@ -7,7 +7,8 @@ use std::{
 
 use crate::qualification::{
     qualify_esp32s31_bluetooth_tx_power, qualify_esp32s31_bluetooth_txdc,
-    qualify_esp32s31_bluetooth_txdc_pwdet, qualify_esp32s31_channel, qualify_esp32s31_rf_init,
+    qualify_esp32s31_bluetooth_txdc_pwdet, qualify_esp32s31_channel,
+    qualify_esp32s31_iq_est_enable, qualify_esp32s31_rf_init,
 };
 use crate::*;
 
@@ -258,6 +259,70 @@ pub(crate) fn verify_source(
         let source_qualified_suffix = format!("{}_{suffix}", source.name);
         let manifest_entry = disposition_manifest
             .and_then(|manifest| manifest.resolve(source.name, &vendor.name).entry);
+        if let Some((entry, binding, adapter)) = manifest_entry.and_then(|entry| {
+            entry.binding.as_ref().and_then(|binding| {
+                binding
+                    .driver_adapter
+                    .map(|adapter| (entry, binding, adapter))
+            })
+        }) {
+            let policy = entry
+                .effect_contract
+                .as_ref()
+                .expect("driver adapter requires an effect contract");
+            let proof = match adapter {
+                bindings::DriverAdapter::Esp32s31IqEstEnableV1 => {
+                    if source.name != "rom" || vendor.name != "phy_iq_est_enable" {
+                        return Err(format!(
+                            "driver adapter {} cannot qualify {} {}",
+                            adapter.label(),
+                            source.name,
+                            vendor.name,
+                        )
+                        .into());
+                    }
+                    qualify_esp32s31_iq_est_enable(
+                        svd,
+                        source.artifact,
+                        source.companion,
+                        rust_artifact,
+                        rust_companion,
+                        &binding.rust_probe,
+                        policy,
+                        false,
+                    )?
+                }
+            };
+            if proof.matched {
+                summary.matched += 1;
+                summary.effect_contract_matches += 1;
+                record_evidence(
+                    evidence,
+                    source.name,
+                    &vendor.name,
+                    driver_adapter_effect_evidence(policy, binding, &proof.canonical),
+                )?;
+                println!(
+                    "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\tdriver-adapter={}",
+                    source.name,
+                    vendor.name,
+                    binding.rust_probe,
+                    policy.comparison.label(),
+                    adapter.label(),
+                );
+            } else {
+                summary.mismatched += 1;
+                println!(
+                    "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\tdriver-adapter={}",
+                    source.name,
+                    vendor.name,
+                    binding.rust_probe,
+                    policy.comparison.label(),
+                    adapter.label(),
+                );
+            }
+            continue;
+        }
         let selected_rust =
             if let Some(binding) = manifest_entry.and_then(|entry| entry.binding.as_ref()) {
                 rust_by_suffix

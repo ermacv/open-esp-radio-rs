@@ -41,6 +41,15 @@ pub struct CanonicalTemperatureTrackingState {
     pub second: u8,
 }
 
+/// Harness projection of the Rust-owned replacement for
+/// `phy_param_rom + 0x1ac` plus the independent async safety counter.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CanonicalIqEstimatorState {
+    pub readiness_activity_edges: u16,
+    pub readiness_samples: u16,
+}
+
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     loop {
@@ -71,6 +80,42 @@ pub extern "C" fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 {
 #[inline(never)]
 pub extern "C" fn open_phy_trace_disable_agc(registers: &mut RadioRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, false);
+}
+
+/// Compiled driver adapter for the `phy_iq_est_enable` semantic boundary.
+///
+/// This is deliberately test-only. It executes the production HAL leaves and
+/// exposes the async scheduling edge as an intercepted delay marker. The host
+/// validator independently drives the production typed transition; requiring
+/// both views avoids depending on optimized Rust enum stack padding here.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_iq_est_enable(
+    control: u32,
+    state: &mut CanonicalIqEstimatorState,
+    registers: &mut RadioRegisters,
+) {
+    state.readiness_activity_edges = 0;
+    state.readiness_samples = 0;
+
+    open_esp_radio_esp32s31_hal::phy_iq_estimator::configure(registers, control as u16);
+    open_esp_radio_esp32s31_hal::phy_iq_estimator::set_start_enabled(registers, true);
+    ets_delay_us(1);
+    open_esp_radio_esp32s31_hal::phy_iq_estimator::set_measurement_enabled(registers, true);
+
+    while state.readiness_samples < open_esp_radio_esp32s31_phy::HARDWARE_EDGE_LIMIT {
+        // Harness marker for the Embassy timer/yield owned by the production
+        // target completer before every live sample.
+        ets_delay_us(1);
+        let snapshot = open_esp_radio_esp32s31_hal::phy_iq_estimator::sample_readiness(registers);
+        state.readiness_samples = state.readiness_samples.saturating_add(1);
+        if snapshot.ready {
+            return;
+        }
+        if snapshot.activity {
+            state.readiness_activity_edges = state.readiness_activity_edges.wrapping_add(1);
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -765,6 +810,7 @@ pub extern "C" fn open_phy_trace_freq_i2c_mem_write(
 #[inline(never)]
 pub fn retain_all_probes() {
     core::hint::black_box(open_phy_trace_disable_agc as *const ());
+    core::hint::black_box(open_phy_trace_iq_est_enable as *const ());
     core::hint::black_box(open_phy_trace_enable_agc as *const ());
     core::hint::black_box(open_phy_trace_vht_support as *const ());
     core::hint::black_box(open_phy_trace_csidump_force_lltf_cfg as *const ());

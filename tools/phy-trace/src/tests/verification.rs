@@ -28,7 +28,7 @@ fn regression_and_completion_gates_are_independent() {
 fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("baselines/esp32s31.evidence");
     let expected = load_evidence_baseline(&path).unwrap();
-    assert_eq!(expected.len(), 103);
+    assert_eq!(expected.len(), 104);
     assert!(check_evidence_baseline(&expected, &expected));
 
     let mut downgraded = expected.clone();
@@ -92,6 +92,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
         ]),
         BTreeSet::new(),
         "open_phy_trace_leaf".to_owned(),
+        None,
     )
     .unwrap();
     let exact = effect_contract::EffectPolicy::new(

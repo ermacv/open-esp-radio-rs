@@ -9,6 +9,7 @@ mod bluetooth_tx_power;
 mod bluetooth_txdc;
 mod bluetooth_txdc_pwdet;
 mod channel;
+mod iq_estimator;
 mod rf_init;
 mod runner;
 mod state;
@@ -17,6 +18,7 @@ pub use bluetooth_tx_power::*;
 pub use bluetooth_txdc::*;
 pub use bluetooth_txdc_pwdet::*;
 pub use channel::*;
+pub(crate) use iq_estimator::*;
 pub use rf_init::*;
 #[cfg(test)]
 use rf_init::{rf_phase, vendor_rf_init_phase};

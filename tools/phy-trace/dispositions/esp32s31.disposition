@@ -43,6 +43,31 @@ effect-contract exact-effects-v1
 effect mmio-read 32 0x20107030 required
 effect mmio-write 32 0x20107030 required
 
+# Blocking-to-async vertical slice. The closed driver adapter executes three
+# ROM branch scenarios, the compiled release HAL probe and the typed Rust
+# transition. The ROM activity halfword is projected onto owned Rust state;
+# the polling read and fixed delay require named, bounded async replacements.
+function rom phy_iq_est_enable
+disposition state-transition
+protocol shared
+rust-component open_esp_radio_esp32s31_phy::phy_dc_iq::PhyDcIqEstimateTransition
+binding v1
+vendor-revision esp32s31-eco0-rom
+vendor-artifact-sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87
+vendor-artifact-sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542
+rust-probe open_phy_trace_iq_est_enable
+driver-adapter esp32s31-iq-est-enable-v1
+effect-contract exact-effects-v1
+effect state-read 16 phy_dc_iq.readiness_activity_edges required
+effect state-write 16 phy_dc_iq.readiness_activity_edges required
+effect mmio-read 32 0x2010044c required
+effect mmio-write 32 0x2010044c required
+effect mmio-read 32 0x20100450 required
+effect mmio-write 32 0x20100450 required
+effect delay replaced-by-async timer-1us deadline-us=1
+effect mmio-read 32 0x2010047c replaced-by-async iq-estimator-ready attempts=10000
+effect mmio-read 32 0x201008d0 required
+
 # The complete cold-registration graph already has a single Rust owner and
 # successful hardware evidence. These entries describe implementation only:
 # until a semantic transition contract is executable, they remain

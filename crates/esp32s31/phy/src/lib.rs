@@ -50,8 +50,11 @@ pub use phy_register::{
     default_phy_register_init_profile,
 };
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
+/// Shared one-microsecond sampling bound used by every target executor and by
+/// host-side qualification of the same typed timeout contract.
+pub const HARDWARE_EDGE_LIMIT: u16 = 10_000;
 #[cfg(target_arch = "riscv32")]
-pub use target_executor::{HARDWARE_EDGE_LIMIT, PhyAsyncDelay, PhyTargetPortError};
+pub use target_executor::{PhyAsyncDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters,

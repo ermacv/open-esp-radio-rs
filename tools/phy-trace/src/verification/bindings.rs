@@ -9,6 +9,28 @@ pub(crate) enum BindingVersion {
     V1,
 }
 
+/// Closed executable bridge between a compiled probe and a Rust architectural
+/// replacement whose control flow cannot be compared as one direct leaf.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DriverAdapter {
+    Esp32s31IqEstEnableV1,
+}
+
+impl DriverAdapter {
+    pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
+        match value {
+            "esp32s31-iq-est-enable-v1" => Ok(Self::Esp32s31IqEstEnableV1),
+            _ => Err(format!("unknown driver adapter {value:?} at line {line}").into()),
+        }
+    }
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Esp32s31IqEstEnableV1 => "esp32s31-iq-est-enable-v1",
+        }
+    }
+}
+
 impl BindingVersion {
     pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
         match value {
@@ -74,6 +96,7 @@ pub(crate) struct Binding {
     artifact_digests: BTreeSet<String>,
     inventory_digests: BTreeSet<String>,
     pub(crate) rust_probe: String,
+    pub(crate) driver_adapter: Option<DriverAdapter>,
 }
 
 impl Binding {
@@ -83,6 +106,7 @@ impl Binding {
         artifact_digests: BTreeSet<String>,
         inventory_digests: BTreeSet<String>,
         rust_probe: String,
+        driver_adapter: Option<DriverAdapter>,
     ) -> Result<Self> {
         if artifact_digests.is_empty() {
             return Err("binding has no vendor-artifact-sha256".into());
@@ -102,6 +126,7 @@ impl Binding {
             artifact_digests,
             inventory_digests,
             rust_probe,
+            driver_adapter,
         })
     }
 
@@ -185,6 +210,11 @@ impl Binding {
         output.push_str("rust-probe ");
         output.push_str(&self.rust_probe);
         output.push('\n');
+        if let Some(adapter) = self.driver_adapter {
+            output.push_str("driver-adapter ");
+            output.push_str(adapter.label());
+            output.push('\n');
+        }
         output
     }
 }
@@ -202,6 +232,7 @@ mod tests {
             BTreeSet::from([DIGEST.to_owned()]),
             BTreeSet::new(),
             "open_phy_trace_leaf".to_owned(),
+            None,
         )
         .unwrap()
     }

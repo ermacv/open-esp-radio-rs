@@ -63,7 +63,7 @@ jobs:
             --rust-artifact hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-hil-esp32s31-trace-probes-elf \
             --profiles tools/phy-trace/profiles/esp32s31.profile \
             --dispositions tools/phy-trace/dispositions/esp32s31.disposition \
-            --gate regression --match-floor 103 \
+            --gate regression --match-floor 104 \
             --evidence-baseline tools/phy-trace/baselines/esp32s31.evidence \
             --json-report oracle-regression.json \
             | tee oracle-regression.log

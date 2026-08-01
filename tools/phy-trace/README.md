@@ -645,7 +645,7 @@ open-esp-radio-vendor-oracle-esp32s31-trace-elf \
 open-esp-radio-hil-esp32s31-trace-probes-elf \
   --profiles tools/phy-trace/profiles/esp32s31.profile \
   --dispositions tools/phy-trace/dispositions/esp32s31.disposition \
-  --gate regression --match-floor 103 \
+  --gate regression --match-floor 104 \
   --evidence-baseline tools/phy-trace/baselines/esp32s31.evidence \
   --json-report oracle-regression.json
 ```
@@ -680,9 +680,12 @@ dispositions: `required`, `replaced-by-async`, `platform-owned`, `forbidden`,
 or `allowed-omission` with one of `debug-diagnostic`,
 `nvs-calibration-cache`, `rtos-scheduling-adapter`, and
 `unused-instrumentation`. Unknown effect kinds, platform operations, omission
-reasons, unclassified vendor effects and extra Rust effects are errors.
+reasons, unclassified vendor effects and extra Rust effects are errors. An
+async replacement also fixes one named condition and one non-zero
+`attempts=COUNT` or `deadline-us=COUNT`; an arbitrary await or a changed
+deadline cannot satisfy the rule.
 
-The first vertical slice is intentionally small and exact:
+The first direct vertical slice is intentionally small and exact:
 
 ```text
 function rom phy_disable_agc
@@ -709,9 +712,21 @@ binding validator, generator, generated harness, normalized generated source,
 re-extracted effects and exact Rust compiler identity, so weakening or changing
 any part of the proof requires a reviewed baseline change. Local artifact path
 spellings are excluded from the source identity, while their pinned SHA-256
-values remain included. The blocking-to-async pilot will use the same schema
-with an explicit `AwaitReady` replacement rather than erasing a polling/delay
-edge.
+values remain included.
+
+The blocking-to-async slice is now executable for ROM
+`phy_iq_est_enable`. Its closed `esp32s31-iq-est-enable-v1` driver adapter
+compares three things independently: concrete ROM execution, the release/LTO
+probe compiled from the production HAL/PAC leaves, and the public actions of
+`PhyDcIqEstimateTransition`. Three scenarios cover immediate ready, inactive
+then ready, and active/inactive/ready; together they cover all four ROM branch
+outcomes. The vendor `phy_param+0x1ac` halfword is projected onto the typed
+`readiness_activity_edges` state field. The one-microsecond delay must become
+`timer-1us deadline-us=1`, each live ready sample must become
+`iq-estimator-ready attempts=10000`, and the typed timeout must traverse the
+complete disable tail. The evidence also binds the generated reference source,
+the exact release probe ELF, scenario inputs, adapter, transition, target-port,
+execution engine and comparator sources.
 
 `PROTOCOL-INVENTORY` reports `executable-bindings` separately from exact
 disposition entries. This keeps migration honest: legacy semantic contracts
@@ -723,9 +738,9 @@ async replacement, platform boundary, or closed omission.
 
 The two verification gates answer different questions:
 
-- `--gate regression --match-floor 103 --evidence-baseline PATH` passes when
+- `--gate regression --match-floor 104 --evidence-baseline PATH` passes when
   there are no mismatches, incomplete comparisons, or orphan probes, at least
-  103 functions retain evidence, and every source-qualified baseline function
+  104 functions retain evidence, and every source-qualified baseline function
   retains the same evidence kind. A lost state proof cannot be hidden by a new
   scenario match elsewhere. New evidence is reported as `EVIDENCE-ADDITION`
   and does not require weakening the existing baseline. Profile evidence also
@@ -739,9 +754,9 @@ The two verification gates answer different questions:
 
 The explicit floor is mandatory for the regression gate so the total amount
 of established evidence cannot silently decrease. The current ESP32-S31
-inventory has 466 source-qualified functions; 103 have evidence. Of the
-remaining 363, two are implemented architectural roots that still need
-semantic contracts and 361 are classified `not-yet-ported`.
+inventory has 466 source-qualified functions; 104 have evidence. Of the
+remaining 362, two are implemented architectural roots that still need
+semantic contracts and 360 are classified `not-yet-ported`.
 
 For ROM, `verify` and `verify-all` map `phy_NAME` to
 `open_phy_trace_NAME`. Archive symbols use their full name, so archive

@@ -91,6 +91,43 @@ pub(crate) fn effect_contract_evidence(
     )
 }
 
+pub(crate) fn driver_adapter_effect_evidence(
+    policy: &super::effect_contract::EffectPolicy,
+    binding: &super::bindings::Binding,
+    adapter_proof: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"open-esp-radio-driver-adapter-effect-contract-v1\0");
+    digest.update(policy.canonical().as_bytes());
+    digest.update(b"\0binding\0");
+    digest.update(binding.canonical().as_bytes());
+    digest.update(b"\0adapter-proof\0");
+    digest.update(adapter_proof.as_bytes());
+    digest.update(b"\0effect-comparator\0");
+    digest.update(include_str!("effect_contract.rs").as_bytes());
+    digest.update(b"\0binding-validator\0");
+    digest.update(include_str!("bindings.rs").as_bytes());
+    digest.update(b"\0iq-driver-adapter\0");
+    digest.update(include_str!("../qualification/iq_estimator.rs").as_bytes());
+    digest.update(include_str!("../qualification/mod.rs").as_bytes());
+    digest.update(b"\0execution-engine\0");
+    digest.update(include_str!("../execution/machine.rs").as_bytes());
+    digest.update(include_str!("../execution/model.rs").as_bytes());
+    digest.update(b"\0reference-generator\0");
+    digest.update(include_str!("../analysis/reference/summaries.rs").as_bytes());
+    digest.update(include_str!("../codegen/mod.rs").as_bytes());
+    digest.update(include_str!("../codegen/value.rs").as_bytes());
+    digest.update(b"\0production-transition-and-target-port\0");
+    digest.update(include_str!("../../../../crates/esp32s31/phy/src/phy_dc_iq.rs").as_bytes());
+    digest.update(include_str!("../../../../crates/esp32s31/phy/src/target_port.rs").as_bytes());
+    digest.update(include_str!("../../../../hil/esp32s31/trace-probes/src/lib.rs").as_bytes());
+    format!(
+        "effect-contract/{}/sha256:{:x}",
+        policy.comparison.label(),
+        digest.finalize()
+    )
+}
+
 pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
     let text = fs::read_to_string(path)?;
     let mut evidence = EvidenceSet::new();

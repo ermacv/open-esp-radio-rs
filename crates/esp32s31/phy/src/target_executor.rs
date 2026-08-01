@@ -10,6 +10,7 @@ use core::future::Future;
 use open_esp_radio_esp32s31_hal::{RadioRegisters, phy_i2c::PhyI2cMasterControl};
 
 use crate::{
+    HARDWARE_EDGE_LIMIT,
     phy_channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
     phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
@@ -41,13 +42,6 @@ use crate::{
         PhyTxIqPbusBinding,
     },
 };
-
-/// Maximum number of one-microsecond samples used for a finite hardware edge.
-///
-/// This is the exact bound used by the first hardware-tested open PHY port in
-/// `esp32s31_rust`.  Keeping it in the driver makes timeout behavior identical
-/// across applications instead of silently changing with board integration.
-pub const HARDWARE_EDGE_LIMIT: u16 = 10_000;
 
 /// Executor-independent asynchronous delay used by target PHY operations.
 ///

@@ -91,7 +91,7 @@ pub(crate) enum ReadyCondition {
 }
 
 impl ReadyCondition {
-    fn id(&self) -> String {
+    pub(crate) fn id(&self) -> String {
         match self {
             Self::Named(name) => name.clone(),
             Self::Mmio {
@@ -106,7 +106,7 @@ impl ReadyCondition {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[allow(
     dead_code,
     reason = "attempt and deadline timeouts are both part of the v1 async contract"
@@ -114,6 +114,33 @@ impl ReadyCondition {
 pub(crate) enum Timeout {
     Attempts(u32),
     DeadlineMicros(u32),
+}
+
+impl Timeout {
+    fn parse(value: &str, line: usize) -> Result<Self> {
+        let (kind, count) = value.split_once('=').ok_or_else(|| {
+            format!("async replacement timeout must be KIND=COUNT at line {line}")
+        })?;
+        let count = parse_u32(count)
+            .ok_or_else(|| format!("invalid async replacement timeout {value:?} at line {line}"))?;
+        if count == 0 {
+            return Err(
+                format!("async replacement timeout must be non-zero at line {line}").into(),
+            );
+        }
+        match kind {
+            "attempts" => Ok(Self::Attempts(count)),
+            "deadline-us" => Ok(Self::DeadlineMicros(count)),
+            _ => Err(format!("unknown async replacement timeout {kind:?} at line {line}").into()),
+        }
+    }
+
+    fn canonical(self) -> String {
+        match self {
+            Self::Attempts(count) => format!("attempts={count}"),
+            Self::DeadlineMicros(micros) => format!("deadline-us={micros}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -312,20 +339,22 @@ impl OmissionReason {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum EffectDisposition {
     Required,
-    ReplacedByAsync,
+    ReplacedByAsync { condition: String, timeout: Timeout },
     AllowedOmission(OmissionReason),
     PlatformOwned,
     Forbidden,
 }
 
 impl EffectDisposition {
-    pub(crate) fn canonical(self) -> String {
+    pub(crate) fn canonical(&self) -> String {
         match self {
             Self::Required => "required".to_owned(),
-            Self::ReplacedByAsync => "replaced-by-async".to_owned(),
+            Self::ReplacedByAsync { condition, timeout } => {
+                format!("replaced-by-async {condition} {}", timeout.canonical())
+            }
             Self::AllowedOmission(reason) => {
                 format!("allowed-omission {}", reason.label())
             }
@@ -428,7 +457,19 @@ pub(crate) fn parse_effect_rule(
         .ok_or_else(|| format!("effect has no disposition at line {line}"))?;
     let disposition = match disposition_name {
         "required" => EffectDisposition::Required,
-        "replaced-by-async" => EffectDisposition::ReplacedByAsync,
+        "replaced-by-async" => EffectDisposition::ReplacedByAsync {
+            condition: words
+                .next()
+                .filter(|condition| !condition.is_empty())
+                .ok_or_else(|| format!("replaced-by-async has no condition at line {line}"))?
+                .to_owned(),
+            timeout: Timeout::parse(
+                words
+                    .next()
+                    .ok_or_else(|| format!("replaced-by-async has no timeout at line {line}"))?,
+                line,
+            )?,
+        },
         "platform-owned" => EffectDisposition::PlatformOwned,
         "forbidden" => EffectDisposition::Forbidden,
         "allowed-omission" => EffectDisposition::AllowedOmission(OmissionReason::parse(
@@ -446,13 +487,13 @@ pub(crate) fn parse_effect_rule(
     if words.next().is_some() {
         return Err(format!("effect has extra fields at line {line}").into());
     }
-    match (&selector, disposition) {
+    match (&selector, &disposition) {
         (EffectSelector::PlatformCall { .. }, EffectDisposition::AllowedOmission(_))
         | (EffectSelector::PlatformCall { .. }, EffectDisposition::PlatformOwned)
         | (_, EffectDisposition::Required | EffectDisposition::Forbidden)
         | (
             EffectSelector::Delay | EffectSelector::MmioRead { .. },
-            EffectDisposition::ReplacedByAsync,
+            EffectDisposition::ReplacedByAsync { .. },
         ) => {}
         (_, EffectDisposition::AllowedOmission(_)) => {
             return Err(format!(
@@ -466,7 +507,7 @@ pub(crate) fn parse_effect_rule(
             )
             .into());
         }
-        (_, EffectDisposition::ReplacedByAsync) => {
+        (_, EffectDisposition::ReplacedByAsync { .. }) => {
             return Err(format!(
                 "replaced-by-async applies only to delay or MMIO-read effects at line {line}"
             )
@@ -601,7 +642,7 @@ pub(crate) fn compare_effects(
     let mut used_rules = BTreeSet::new();
     for (vendor_index, vendor_effect) in vendor.iter().enumerate() {
         let selector = vendor_effect.selector();
-        let disposition = policy.rules.get(&selector).copied().ok_or_else(|| {
+        let disposition = policy.rules.get(&selector).ok_or_else(|| {
             format!(
                 "unclassified vendor effect at index {vendor_index}: {}",
                 selector.canonical()
@@ -625,13 +666,26 @@ pub(crate) fn compare_effects(
                 }
                 rust_index += 1;
             }
-            EffectDisposition::ReplacedByAsync => {
-                let Some(ContractEffect::AwaitReady { .. }) = rust.get(rust_index) else {
+            EffectDisposition::ReplacedByAsync { condition, timeout } => {
+                let Some(ContractEffect::AwaitReady {
+                    condition: rust_condition,
+                    timeout: rust_timeout,
+                }) = rust.get(rust_index)
+                else {
                     return Ok(EffectComparisonVerdict::Mismatch(format!(
                         "{} requires one Rust await-ready replacement",
                         selector.canonical()
                     )));
                 };
+                if rust_condition.id() != *condition || rust_timeout != timeout {
+                    return Ok(EffectComparisonVerdict::Mismatch(format!(
+                        "{} requires await-ready {condition} {}, received await-ready {} {}",
+                        selector.canonical(),
+                        timeout.canonical(),
+                        rust_condition.id(),
+                        rust_timeout.canonical(),
+                    )));
+                }
                 rust_index += 1;
             }
             EffectDisposition::AllowedOmission(_) => {
@@ -659,7 +713,7 @@ pub(crate) fn compare_effects(
         .into());
     }
     for (selector, disposition) in &policy.rules {
-        if *disposition != EffectDisposition::Forbidden && !used_rules.contains(selector) {
+        if disposition != &EffectDisposition::Forbidden && !used_rules.contains(selector) {
             return Err(format!(
                 "declared effect rule was not exercised: {}",
                 selector.canonical()
@@ -716,7 +770,13 @@ mod tests {
     fn blocking_effect_requires_an_explicit_await_ready_replacement() {
         let policy = EffectPolicy::new(
             EffectComparison::ExactEffectsV1,
-            [(EffectSelector::Delay, EffectDisposition::ReplacedByAsync)],
+            [(
+                EffectSelector::Delay,
+                EffectDisposition::ReplacedByAsync {
+                    condition: "iq-estimator-ready".to_owned(),
+                    timeout: Timeout::Attempts(100),
+                },
+            )],
         )
         .unwrap();
         let vendor = [ContractEffect::Delay {

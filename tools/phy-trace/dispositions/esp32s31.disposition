@@ -34,6 +34,11 @@ function rom phy_disable_agc
 disposition direct
 protocol shared
 rust-component open_esp_radio_esp32s31_hal::phy_agc::set_enabled
+binding v1
+vendor-revision esp32s31-eco0-rom
+vendor-artifact-sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87
+vendor-artifact-sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542
+rust-probe open_phy_trace_disable_agc
 effect-contract exact-effects-v1
 effect mmio-read 32 0x20107030 required
 effect mmio-write 32 0x20107030 required

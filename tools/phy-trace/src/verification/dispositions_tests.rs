@@ -11,6 +11,10 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
     let effect_contract = disable_agc.entry.unwrap().effect_contract.as_ref().unwrap();
     assert_eq!(effect_contract.comparison, EffectComparison::ExactEffectsV1);
     assert_eq!(effect_contract.rules().count(), 2);
+    let binding = disable_agc.entry.unwrap().binding.as_ref().unwrap();
+    assert_eq!(binding.version, BindingVersion::V1);
+    assert_eq!(binding.revision, VendorRevision::Esp32s31Eco0Rom);
+    assert_eq!(binding.rust_probe, "open_phy_trace_disable_agc");
 
     let root = manifest.resolve("archive", "register_chipv7_phy");
     assert_eq!(root.disposition, Disposition::ReplacedByComposition);

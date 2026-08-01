@@ -84,6 +84,16 @@ fn semantic_evidence_is_bound_to_validator_sources() {
 
 #[test]
 fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
+    let binding = bindings::Binding::new(
+        bindings::BindingVersion::V1,
+        bindings::VendorRevision::Esp32s31Eco0Rom,
+        BTreeSet::from([
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+        ]),
+        BTreeSet::new(),
+        "open_phy_trace_leaf".to_owned(),
+    )
+    .unwrap();
     let exact = effect_contract::EffectPolicy::new(
         effect_contract::EffectComparison::ExactEffectsV1,
         [(
@@ -106,9 +116,9 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
         )],
     )
     .unwrap();
-    let evidence = effect_contract_evidence(&exact);
+    let evidence = effect_contract_evidence(&exact, &binding);
     assert!(evidence.starts_with("effect-contract/exact-effects-v1/sha256:"));
-    assert_ne!(evidence, effect_contract_evidence(&forbidden));
+    assert_ne!(evidence, effect_contract_evidence(&forbidden, &binding));
 }
 
 #[test]

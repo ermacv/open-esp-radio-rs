@@ -682,16 +682,34 @@ The first vertical slice is intentionally small and exact:
 function rom phy_disable_agc
 disposition direct
 rust-component open_esp_radio_esp32s31_hal::phy_agc::set_enabled
+binding v1
+vendor-revision esp32s31-eco0-rom
+vendor-artifact-sha256 <reviewed-complete-ELF-sha256>
+rust-probe open_phy_trace_disable_agc
 effect-contract exact-effects-v1
 effect mmio-read 32 0x20107030 required
 effect mmio-write 32 0x20107030 required
 ```
 
 The verifier derives those two effects independently from the pinned ROM ELF
-and compiled Rust probe. The effect evidence digest covers both the canonical
-policy and comparator source, so weakening either requires a reviewed baseline
-change. The blocking-to-async pilot will use the same schema with an explicit
-`AwaitReady` replacement rather than erasing a polling/delay edge.
+and compiled Rust probe. Binding v1 verifies that the vendor symbol belongs to
+the declared closed chip revision, the complete vendor artifact (and, for a
+linked archive oracle, its raw inventory) matches one declared SHA-256, and the
+exact `rust-probe` symbol exists in the supplied Rust ELF. The verifier selects
+that probe from the binding instead of falling back to the naming convention.
+The effect evidence digest covers the canonical binding, policy, comparator
+source and binding validator source, so weakening any of them requires a
+reviewed baseline change. The blocking-to-async pilot will use the same schema
+with an explicit `AwaitReady` replacement rather than erasing a polling/delay
+edge.
+
+`PROTOCOL-INVENTORY` reports `executable-bindings` separately from exact
+disposition entries. This keeps migration honest: legacy semantic contracts
+remain visible but are not presented as artifact/probe-bound until they adopt
+Binding v1. A Binding v1 function containing an unresolved call cannot reach
+effect comparison; the ordinary extractor marks the trace incomplete. Typed
+call dispositions are added only when a pilot needs a deliberate composition,
+async replacement, platform boundary, or closed omission.
 
 The two verification gates answer different questions:
 

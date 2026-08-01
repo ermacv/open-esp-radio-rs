@@ -63,12 +63,19 @@ pub(crate) fn record_evidence(
     Ok(())
 }
 
-pub(crate) fn effect_contract_evidence(policy: &super::effect_contract::EffectPolicy) -> String {
+pub(crate) fn effect_contract_evidence(
+    policy: &super::effect_contract::EffectPolicy,
+    binding: &super::bindings::Binding,
+) -> String {
     let mut digest = Sha256::new();
     digest.update(b"open-esp-radio-effect-contract-v1\0");
     digest.update(policy.canonical().as_bytes());
+    digest.update(b"\0binding\0");
+    digest.update(binding.canonical().as_bytes());
     digest.update(b"\0comparator\0");
     digest.update(include_str!("effect_contract.rs").as_bytes());
+    digest.update(b"\0binding-validator\0");
+    digest.update(include_str!("bindings.rs").as_bytes());
     format!(
         "effect-contract/{}/sha256:{:x}",
         policy.comparison.label(),

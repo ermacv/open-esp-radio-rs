@@ -8,6 +8,7 @@ use std::{
 
 use crate::{ArtifactSymbolIdentity, Result};
 
+use super::bindings::{Binding, BindingVersion, VendorRevision, parse_sha256};
 use super::effect_contract::{
     EffectComparison, EffectDisposition, EffectPolicy, EffectSelector, parse_effect_rule,
 };
@@ -139,6 +140,7 @@ pub struct Entry {
     pub hil_evidence: Option<String>,
     pub semantic_contract: Option<SemanticContract>,
     pub effect_contract: Option<EffectPolicy>,
+    pub binding: Option<Binding>,
     pub qualification_blockers: Vec<(String, String)>,
 }
 
@@ -153,6 +155,11 @@ struct EntryBuilder {
     semantic_contract: Option<SemanticContract>,
     effect_comparison: Option<EffectComparison>,
     effect_rules: Vec<(EffectSelector, EffectDisposition)>,
+    binding_version: Option<BindingVersion>,
+    vendor_revision: Option<VendorRevision>,
+    vendor_artifact_digests: BTreeSet<String>,
+    vendor_inventory_digests: BTreeSet<String>,
+    rust_probe: Option<String>,
     qualification_blockers: Vec<(String, String)>,
     line: usize,
 }
@@ -220,6 +227,60 @@ impl EntryBuilder {
             .effect_comparison
             .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
             .transpose()?;
+        let has_binding_fields = self.vendor_revision.is_some()
+            || !self.vendor_artifact_digests.is_empty()
+            || !self.vendor_inventory_digests.is_empty()
+            || self.rust_probe.is_some();
+        let binding = match self.binding_version {
+            Some(version) => Some(Binding::new(
+                version,
+                self.vendor_revision.ok_or_else(|| {
+                    format!(
+                        "binding {} {} has no vendor-revision",
+                        self.source, self.symbol
+                    )
+                })?,
+                self.vendor_artifact_digests,
+                self.vendor_inventory_digests,
+                self.rust_probe.ok_or_else(|| {
+                    format!("binding {} {} has no rust-probe", self.source, self.symbol)
+                })?,
+            )?),
+            None if has_binding_fields => {
+                return Err(format!(
+                    "function {} {} has binding fields but no binding version",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            None => None,
+        };
+        if effect_contract.is_some() && binding.is_none() {
+            return Err(format!(
+                "effect contract {} {} has no executable binding",
+                self.source, self.symbol
+            )
+            .into());
+        }
+        if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
+            return Err(format!(
+                "binding {} {} has no registered effect or semantic contract",
+                self.source, self.symbol
+            )
+            .into());
+        }
+        if let Some(binding) = &binding
+            && binding.revision.source() != self.source
+        {
+            return Err(format!(
+                "binding {} {} uses revision {} for source {}",
+                self.source,
+                self.symbol,
+                binding.revision.label(),
+                binding.revision.source()
+            )
+            .into());
+        }
         Ok(Entry {
             source: self.source,
             symbol: self.symbol,
@@ -229,6 +290,7 @@ impl EntryBuilder {
             hil_evidence: self.hil_evidence,
             semantic_contract: self.semantic_contract,
             effect_contract,
+            binding,
             qualification_blockers: self.qualification_blockers,
         })
     }
@@ -312,6 +374,11 @@ impl Manifest {
                     semantic_contract: None,
                     effect_comparison: None,
                     effect_rules: Vec::new(),
+                    binding_version: None,
+                    vendor_revision: None,
+                    vendor_artifact_digests: BTreeSet::new(),
+                    vendor_inventory_digests: BTreeSet::new(),
+                    rust_probe: None,
                     qualification_blockers: Vec::new(),
                     line: line_number,
                 });
@@ -371,8 +438,19 @@ impl Manifest {
                         protocol: Protocol::parse(protocol, line_number)?,
                     });
                 }
-                "disposition" | "protocol" | "rust-component" | "hil-evidence"
-                | "semantic-contract" | "effect-contract" | "effect" | "blocked-by" => {
+                "disposition"
+                | "protocol"
+                | "rust-component"
+                | "hil-evidence"
+                | "semantic-contract"
+                | "effect-contract"
+                | "effect"
+                | "binding"
+                | "vendor-revision"
+                | "vendor-artifact-sha256"
+                | "vendor-inventory-sha256"
+                | "rust-probe"
+                | "blocked-by" => {
                     let builder = current.as_mut().ok_or_else(|| {
                         format!("{directive} outside function at line {line_number}")
                     })?;
@@ -443,6 +521,56 @@ impl Manifest {
                             builder
                                 .effect_rules
                                 .push(parse_effect_rule(value, line_number)?);
+                        }
+                        "binding" => {
+                            if builder
+                                .binding_version
+                                .replace(BindingVersion::parse(value, line_number)?)
+                                .is_some()
+                            {
+                                return Err(
+                                    format!("duplicate binding at line {line_number}").into()
+                                );
+                            }
+                        }
+                        "vendor-revision" => {
+                            if builder
+                                .vendor_revision
+                                .replace(VendorRevision::parse(value, line_number)?)
+                                .is_some()
+                            {
+                                return Err(format!(
+                                    "duplicate vendor-revision at line {line_number}"
+                                )
+                                .into());
+                            }
+                        }
+                        "vendor-artifact-sha256" => {
+                            let digest =
+                                parse_sha256(value, "vendor-artifact-sha256", line_number)?;
+                            if !builder.vendor_artifact_digests.insert(digest) {
+                                return Err(format!(
+                                    "duplicate vendor-artifact-sha256 at line {line_number}"
+                                )
+                                .into());
+                            }
+                        }
+                        "vendor-inventory-sha256" => {
+                            let digest =
+                                parse_sha256(value, "vendor-inventory-sha256", line_number)?;
+                            if !builder.vendor_inventory_digests.insert(digest) {
+                                return Err(format!(
+                                    "duplicate vendor-inventory-sha256 at line {line_number}"
+                                )
+                                .into());
+                            }
+                        }
+                        "rust-probe" => {
+                            if builder.rust_probe.replace(value.to_owned()).is_some() {
+                                return Err(
+                                    format!("duplicate rust-probe at line {line_number}").into()
+                                );
+                            }
                         }
                         "blocked-by" => {
                             let mut words = value.split_whitespace();

@@ -73,7 +73,7 @@ evidence rom phy_chan_dump_cfg symbolic
 evidence rom phy_csidump_force_lltf_cfg symbolic
 evidence rom phy_dac_rate_set symbolic
 evidence rom phy_dis_hw_set_freq scenario/profile:rom-disable-hardware-frequency/sha256:fc67f3d43faf96342ab1497f0f933d05b6c695440d31f58bcf0e7055b59486c1
-evidence rom phy_disable_agc effect-contract/exact-effects-v1/sha256:deec80910e0b2b3a9a6e532c854a80e2a6a2a2f4d54755d5927a77d5dd5a4b7b
+evidence rom phy_disable_agc effect-contract/exact-effects-v1/sha256:9ec51c5ce0e359e8b10d60aeab7fb56fe0e182672f0585c6d139914100ad2aae
 evidence rom phy_disable_cca symbolic
 evidence rom phy_disable_low_rate symbolic
 evidence rom phy_en_hw_set_freq symbolic

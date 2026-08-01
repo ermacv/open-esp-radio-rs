@@ -126,8 +126,12 @@ pub(crate) fn print_protocol_inventory(
         }
     }
     println!(
-        "PROTOCOL-INVENTORY\tshared={shared}\twifi={wifi}\tbluetooth={bluetooth}\tble={ble}\tcoex={coex}\tieee802154={ieee802154}\tunknown={unknown}\texact-dispositions={}",
-        manifest.entries().count()
+        "PROTOCOL-INVENTORY\tshared={shared}\twifi={wifi}\tbluetooth={bluetooth}\tble={ble}\tcoex={coex}\tieee802154={ieee802154}\tunknown={unknown}\texact-dispositions={}\texecutable-bindings={}",
+        manifest.entries().count(),
+        manifest
+            .entries()
+            .filter(|entry| entry.binding.is_some())
+            .count(),
     );
 }
 
@@ -151,14 +155,18 @@ pub(crate) fn verify_source(
         source.name,
         source.artifact.display()
     );
-    if let Some(inventory) = source.inventory.filter(|path| *path != source.artifact) {
-        let inventory_digest = pinned_vendor_digest(inventory)?;
-        println!(
-            "ORACLE\t{}-inventory\t{}\tsha256={inventory_digest}",
-            source.name,
-            inventory.display()
-        );
-    }
+    let inventory_digest =
+        if let Some(inventory) = source.inventory.filter(|path| *path != source.artifact) {
+            let inventory_digest = pinned_vendor_digest(inventory)?;
+            println!(
+                "ORACLE\t{}-inventory\t{}\tsha256={inventory_digest}",
+                source.name,
+                inventory.display()
+            );
+            Some(inventory_digest)
+        } else {
+            None
+        };
     if let Some(companion) = source.companion {
         let companion_digest = pinned_vendor_digest(companion)?;
         println!(
@@ -169,6 +177,21 @@ pub(crate) fn verify_source(
     }
     let vendor_symbols = vendor_symbols(source)?;
     let rust_symbols = list_code_symbols(rust_artifact, rust_prefix)?;
+    if let Some(manifest) = disposition_manifest {
+        for entry in manifest
+            .entries()
+            .filter(|entry| entry.source == source.name)
+        {
+            if let Some(binding) = &entry.binding {
+                binding.validate(
+                    source.name,
+                    &vendor_digest,
+                    inventory_digest.as_deref(),
+                    &rust_symbols,
+                )?;
+            }
+        }
+    }
     let mut profiled_vendor_symbols = BTreeSet::new();
     for profile in execution_profiles {
         if profile.vendor_source != source.name && source.name != "vendor" {
@@ -233,10 +256,19 @@ pub(crate) fn verify_source(
             .strip_prefix(source.prefix)
             .expect("symbol was filtered by vendor prefix");
         let source_qualified_suffix = format!("{}_{suffix}", source.name);
-        let Some((rust, compare_return)) = rust_by_suffix
-            .get(source_qualified_suffix.as_str())
-            .or_else(|| rust_by_suffix.get(suffix))
-        else {
+        let manifest_entry = disposition_manifest
+            .and_then(|manifest| manifest.resolve(source.name, &vendor.name).entry);
+        let selected_rust =
+            if let Some(binding) = manifest_entry.and_then(|entry| entry.binding.as_ref()) {
+                rust_by_suffix
+                    .values()
+                    .find(|(symbol, _)| symbol.name == binding.rust_probe)
+            } else {
+                rust_by_suffix
+                    .get(source_qualified_suffix.as_str())
+                    .or_else(|| rust_by_suffix.get(suffix))
+            };
+        let Some((rust, compare_return)) = selected_rust else {
             if let Some(manifest) = disposition_manifest {
                 let resolved = manifest.resolve(source.name, &vendor.name);
                 if resolved.disposition.is_implemented() {
@@ -456,9 +488,7 @@ pub(crate) fn verify_source(
             },
             svd,
         )?;
-        let effect_policy = disposition_manifest
-            .and_then(|manifest| manifest.resolve(source.name, &vendor.name).entry)
-            .and_then(|entry| entry.effect_contract.as_ref());
+        let effect_policy = manifest_entry.and_then(|entry| entry.effect_contract.as_ref());
         if let Some(profile) = execution_profiles
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
@@ -547,7 +577,12 @@ pub(crate) fn verify_source(
                         evidence,
                         source.name,
                         &vendor.name,
-                        effect_contract_evidence(policy),
+                        effect_contract_evidence(
+                            policy,
+                            manifest_entry
+                                .and_then(|entry| entry.binding.as_ref())
+                                .expect("effect contract requires an executable binding"),
+                        ),
                     )?;
                     println!(
                         "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\teffects={}\treturn={}",

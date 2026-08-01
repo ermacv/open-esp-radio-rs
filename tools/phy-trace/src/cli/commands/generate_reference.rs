@@ -8,6 +8,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
     let mut member = None;
     let mut symbol = None;
     let mut output = None;
+    let mut entry_contract = entry_contract::EntryContract::None;
     let mut arguments = filtered.into_iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -26,6 +27,12 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
             "--output" => {
                 output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
             }
+            "--entry-contract" => {
+                entry_contract = entry_contract::EntryContract::parse(&take_value(
+                    &mut arguments,
+                    "--entry-contract",
+                )?)?;
+            }
             _ => {
                 return Err(format!("unknown generate-reference option: {argument}").into());
             }
@@ -38,7 +45,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
         member: member.clone(),
         symbol,
     };
-    let trace = extract_reference(&input, &companions, svd)?;
+    let trace = extract_reference(&input, &companions, entry_contract, svd)?;
     let resolved =
         ResolvedReferenceProgram::try_from(&trace).map_err(|error| -> Error { error.into() })?;
     let digest = artifact_sha256(&artifact)?;

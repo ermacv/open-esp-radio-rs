@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{ReferenceResolver, trace_binary_symbol};
+use super::{ReferenceResolver, StructuralPointerContext, trace_binary_symbol};
 use crate::{
     ArtifactSymbolIdentity, FunctionAnalysis, MmioRegisterMap, ObservableEvent, Result, artifact,
 };
@@ -103,15 +103,22 @@ pub(crate) fn extract(
                 input.symbol, input.member
             )
         })?;
-    trace_binary_symbol(symbol, svd, &BTreeMap::new(), &BTreeMap::new(), None)
+    trace_binary_symbol(
+        symbol,
+        svd,
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
 }
 
 pub(crate) fn extract_reference(
     input: &ArtifactSymbolSelector,
     companions: &[PathBuf],
+    entry_contract: crate::entry_contract::EntryContract,
     svd: &MmioRegisterMap,
 ) -> Result<FunctionAnalysis> {
-    ReferenceResolver::load(&input.artifact, companions)?.trace(
+    ReferenceResolver::load_with_entry_contract(&input.artifact, companions, entry_contract)?.trace(
         input.member.as_deref(),
         &input.symbol,
         svd,

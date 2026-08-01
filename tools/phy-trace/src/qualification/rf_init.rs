@@ -90,12 +90,13 @@ pub fn vendor_rf_init_scenario(phy_param: u32, phy_functions_pointer: u32) -> ex
         ROM_PHY_FUNCTION_TABLE,
     );
     seed_ram_word(&mut scenario, ROM_PHY_PARAM_POINTER, phy_param);
-    for (index, value) in ROM_PHY_FUNCTIONS.into_iter().enumerate() {
-        seed_ram_word(
-            &mut scenario,
-            ROM_PHY_FUNCTION_TABLE + index as u32 * 4,
-            value,
-        );
+    for (offset, target) in
+        entry_contract::function_targets(entry_contract::FunctionTable::Esp32s31PhyCold)
+    {
+        let entry_contract::FunctionTarget::Address(value) = target else {
+            unreachable!("the cold ROM PHY table contains only absolute ROM targets")
+        };
+        seed_ram_word(&mut scenario, ROM_PHY_FUNCTION_TABLE + offset, value);
     }
     declare_state_ownership(&mut scenario, phy_param, RF_INIT_STATE_FOOTPRINT);
 

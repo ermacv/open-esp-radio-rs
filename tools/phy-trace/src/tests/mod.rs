@@ -154,6 +154,41 @@ fn assert_generated_reference_compiles(name: &str, source: &str) {
     );
 }
 
+fn assert_generated_reference_tests_run(name: &str, source: &str, tests: &str) {
+    let stem = format!("open-esp-radio-{name}-tests-{}", std::process::id());
+    let source_path = env::temp_dir().join(format!("{stem}.rs"));
+    let output_path = env::temp_dir().join(&stem);
+    fs::write(&source_path, format!("{source}\n{tests}")).unwrap();
+    let compile = std::process::Command::new("rustc")
+        .arg("--edition=2024")
+        .arg("--test")
+        .arg("-Dwarnings")
+        .arg("-o")
+        .arg(&output_path)
+        .arg(&source_path)
+        .output()
+        .unwrap();
+    if !compile.status.success() {
+        let _ = fs::remove_file(&source_path);
+        if output_path.exists() {
+            let _ = fs::remove_file(&output_path);
+        }
+        panic!(
+            "generated reference tests did not compile:\n{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+    }
+    let run = std::process::Command::new(&output_path).output().unwrap();
+    fs::remove_file(source_path).unwrap();
+    fs::remove_file(output_path).unwrap();
+    assert!(
+        run.status.success(),
+        "generated reference tests failed:\n{}\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
 fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition {
     let slot_load = ((slot_offset & 0x0fff) << 20) | (15 << 15) | (2 << 12) | (15 << 7) | 0x03;
     let mut bytes = vec![

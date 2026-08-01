@@ -7,11 +7,20 @@ pub(crate) struct ReferenceResolver {
     pub(crate) symbols_by_address: BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
     pub(crate) symbol_ids: BTreeMap<(Option<String>, String), u32>,
     pub(crate) relocated_calls: StructuralRelocatedCalls,
-    pub(crate) external_pointer_cells: BTreeMap<u32, external_abi::Table>,
+    pub(crate) pointer_context: StructuralPointerContext,
 }
 
 impl ReferenceResolver {
+    #[cfg(test)]
     pub(crate) fn load(artifact: &Path, companions: &[PathBuf]) -> Result<Self> {
+        Self::load_with_entry_contract(artifact, companions, entry_contract::EntryContract::None)
+    }
+
+    pub(crate) fn load_with_entry_contract(
+        artifact: &Path,
+        companions: &[PathBuf],
+        entry_contract: entry_contract::EntryContract,
+    ) -> Result<Self> {
         let symbols = artifact::load_symbols(artifact, "")?;
         let mut symbols_by_address = symbols
             .iter()
@@ -68,16 +77,101 @@ impl ReferenceResolver {
                     .map(|symbol| (symbol.address as u32, symbol)),
             );
         }
-        let external_pointer_cells = image.as_ref().map_or_else(BTreeMap::new, |image| {
-            external_abi::all_tables()
-                .into_iter()
-                .filter_map(|table| {
-                    image
-                        .symbol_address(external_abi::table_spec(table).pointer_symbol)
-                        .map(|address| (address, table))
-                })
-                .collect()
-        });
+        let mut pointer_context = StructuralPointerContext::default();
+        for table in external_abi::all_tables() {
+            let spec = external_abi::table_spec(table);
+            pointer_context.relocated_pointer_symbols.insert(
+                spec.pointer_symbol.to_owned(),
+                SymbolicValue::ExternalTable(table),
+            );
+            if let Some(address) = image
+                .as_ref()
+                .and_then(|image| image.symbol_address(spec.pointer_symbol))
+            {
+                pointer_context
+                    .external_pointer_cells
+                    .insert(address, table);
+            }
+        }
+        if let Some(table) = entry_contract.function_table() {
+            let image = image.as_ref().ok_or_else(|| {
+                format!(
+                    "entry contract {} requires a linked ELF artifact",
+                    entry_contract.id()
+                )
+            })?;
+            let mut pointer_symbols = vec![entry_contract::ROM_PHY_FUNCTION_TABLE_POINTER_SYMBOL];
+            if entry_contract == entry_contract::EntryContract::Esp32s31PhyRegistered {
+                pointer_symbols.push(entry_contract::LINKED_PHY_FUNCTION_TABLE_POINTER_SYMBOL);
+            }
+            for pointer_symbol in pointer_symbols {
+                let address = image.symbol_address(pointer_symbol).ok_or_else(|| {
+                    format!(
+                        "entry contract {} requires pointer symbol {pointer_symbol}",
+                        entry_contract.id()
+                    )
+                })?;
+                pointer_context
+                    .function_pointer_cells
+                    .insert(address, table);
+                pointer_context.relocated_pointer_symbols.insert(
+                    pointer_symbol.to_owned(),
+                    SymbolicValue::FunctionTable(table),
+                );
+            }
+            for (offset, target) in entry_contract::function_targets(table) {
+                let target = match target {
+                    entry_contract::FunctionTarget::Address(address) => address,
+                    entry_contract::FunctionTarget::Symbol(symbol) => {
+                        image.symbol_address(symbol).ok_or_else(|| {
+                            format!(
+                                "entry contract {} requires function symbol {symbol}",
+                                entry_contract.id()
+                            )
+                        })?
+                    }
+                };
+                if !symbols_by_address.contains_key(&target) {
+                    return Err(format!(
+                        "entry contract {} target {target:#010x} has no code symbol",
+                        entry_contract.id()
+                    )
+                    .into());
+                }
+                pointer_context
+                    .function_table_slots
+                    .insert((table, offset), target);
+            }
+            if entry_contract == entry_contract::EntryContract::Esp32s31PhyRegistered {
+                let pointer_symbol = entry_contract::ROM_PHY_PARAM_POINTER_SYMBOL;
+                let pointer_address = image.symbol_address(pointer_symbol).ok_or_else(|| {
+                    format!(
+                        "entry contract {} requires pointer symbol {pointer_symbol}",
+                        entry_contract.id()
+                    )
+                })?;
+                let target_symbol = entry_contract::LINKED_PHY_PARAM_SYMBOL;
+                image.symbol_address(target_symbol).ok_or_else(|| {
+                    format!(
+                        "entry contract {} requires data symbol {target_symbol}",
+                        entry_contract.id()
+                    )
+                })?;
+                let value = SymbolicValue::SymbolAddress {
+                    member: None,
+                    symbol: target_symbol.to_owned(),
+                    hi_addend: 0,
+                    lo_addend: Some(0),
+                    post_offset: 0,
+                };
+                pointer_context
+                    .data_pointer_cells
+                    .insert(pointer_address, value.clone());
+                pointer_context
+                    .relocated_pointer_symbols
+                    .insert(pointer_symbol.to_owned(), value);
+            }
+        }
         let mut relocated_calls = StructuralRelocatedCalls::new();
         if let Some(image) = image.as_ref() {
             for (address, call) in image.relocated_calls() {
@@ -141,7 +235,7 @@ impl ReferenceResolver {
             symbols_by_address,
             symbol_ids,
             relocated_calls,
-            external_pointer_cells,
+            pointer_context,
         })
     }
 
@@ -169,7 +263,7 @@ impl ReferenceResolver {
             symbol,
             &self.symbols_by_address,
             &self.relocated_calls,
-            &self.external_pointer_cells,
+            &self.pointer_context,
             None,
             svd,
             &mut visiting,

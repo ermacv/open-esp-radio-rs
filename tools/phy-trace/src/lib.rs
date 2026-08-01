@@ -10,6 +10,7 @@ mod analysis;
 mod artifact;
 mod cli;
 mod codegen;
+mod entry_contract;
 mod execution;
 mod external_abi;
 mod ir;

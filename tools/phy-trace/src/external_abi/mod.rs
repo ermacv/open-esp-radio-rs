@@ -127,10 +127,6 @@ pub(crate) fn table_spec(table: Table) -> &'static TableSpec {
     }
 }
 
-pub(crate) fn table_for_pointer_symbol(symbol: &str) -> Option<Table> {
-    (symbol == ESP32S31_WIFI_OSI_V9.pointer_symbol).then_some(Table::Esp32s31WifiOsiV9)
-}
-
 pub(crate) fn slot(table: Table, offset: u32) -> Option<&'static SlotSpec> {
     ESP32S31_WIFI_OSI_V9_SLOTS
         .iter()

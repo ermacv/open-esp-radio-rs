@@ -12,13 +12,15 @@ use std::{
 };
 
 use crate::{
-    BranchCondition, BranchOperation, MemoryAccess, ObservableEvent, ResolvedReferenceBody,
-    ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
-    ResolvedReferenceTerminator, SymbolicValue,
+    BranchCondition, BranchOperation, IndexedMmioGuard, IndexedMmioRegister, MemoryAccess,
+    ObservableEvent, RV32_MODELED_ARGUMENT_COUNT, RV32_REGISTER_ARGUMENT_COUNT,
+    RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody, ResolvedReferenceEvent,
+    ResolvedReferenceFlow, ResolvedReferenceProgram, ResolvedReferenceTerminator,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
 };
 #[cfg(test)]
 use value::render_value;
-use value::{MmioReadAddress, render_value_scoped};
+use value::{CallResultAvailability, MmioReadAddress, render_value_scoped};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GeneratedReference {
@@ -48,10 +50,11 @@ struct RenderState {
     mmio_access_count: usize,
     memory_read_count: usize,
     memory_access_count: usize,
-    call_results: Vec<bool>,
+    bounded_poll_count: usize,
+    call_results: Vec<CallResultAvailability>,
     external_results: Vec<crate::external_abi::Function>,
     validated_external_tables: BTreeSet<crate::external_abi::Table>,
-    arguments: [String; 8],
+    arguments: [String; RV32_MODELED_ARGUMENT_COUNT],
 }
 
 impl Default for RenderState {
@@ -61,6 +64,7 @@ impl Default for RenderState {
             mmio_access_count: 0,
             memory_read_count: 0,
             memory_access_count: 0,
+            bounded_poll_count: 0,
             call_results: Vec::new(),
             external_results: Vec::new(),
             validated_external_tables: BTreeSet::new(),
@@ -93,6 +97,63 @@ fn render_condition(condition: &BranchCondition, state: &RenderState) -> Result<
         BranchOperation::LessUnsigned => format!("({left}) < ({right})"),
         BranchOperation::GreaterEqualUnsigned => format!("({left}) >= ({right})"),
     })
+}
+
+fn render_indexed_mmio_address(
+    output: &mut String,
+    state: &mut RenderState,
+    indent: &str,
+    address: &SymbolicValue,
+    registers: &[IndexedMmioRegister],
+    guard: Option<&IndexedMmioGuard>,
+) -> Result<usize, String> {
+    let access_token = state.mmio_access_count;
+    state.mmio_access_count += 1;
+    if registers.is_empty() {
+        return Err("indexed MMIO event has no SVD register domain".to_owned());
+    }
+    if let Some(guard) = guard {
+        let selector = render_state_value(&guard.selector, state)?;
+        writeln!(
+            output,
+            "{indent}let mmio_selector{access_token} = {selector};"
+        )
+        .unwrap();
+        writeln!(
+            output,
+            "{indent}assert!(mmio_selector{access_token} <= {:#010x}_u32, \"indexed MMIO selector is outside the recovered SVD register bank\");",
+            guard.maximum
+        )
+        .unwrap();
+    }
+    let address = render_state_value(address, state)?;
+    let domain = registers
+        .iter()
+        .map(|register| format!("{:#010x}_u32", register.address))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let names = registers
+        .iter()
+        .map(|register| register.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(
+        output,
+        "{indent}// Indexed MMIO SVD bank: {}.",
+        comment_text(&names)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "{indent}let mmio_address{access_token} = {address};"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "{indent}assert!(matches!(mmio_address{access_token}, {domain}), \"indexed MMIO address is outside the recovered SVD register bank\");"
+    )
+    .unwrap();
+    Ok(access_token)
 }
 
 fn render_events(
@@ -153,52 +214,14 @@ fn render_events(
                 guard,
                 value,
             } => {
-                let access_token = state.mmio_access_count;
-                state.mmio_access_count += 1;
-                if registers.is_empty() {
-                    return Err("indexed MMIO event has no SVD register domain".to_owned());
-                }
-                if let Some(guard) = guard {
-                    let selector = render_state_value(&guard.selector, state)?;
-                    writeln!(
-                        output,
-                        "{indent}let mmio_selector{access_token} = {selector};"
-                    )
-                    .unwrap();
-                    writeln!(
-                        output,
-                        "{indent}assert!(mmio_selector{access_token} <= {:#010x}_u32, \"indexed MMIO selector is outside the recovered SVD register bank\");",
-                        guard.maximum
-                    )
-                    .unwrap();
-                }
-                let address = render_state_value(address, state)?;
-                let domain = registers
-                    .iter()
-                    .map(|register| format!("{:#010x}_u32", register.address))
-                    .collect::<Vec<_>>()
-                    .join(" | ");
-                let names = registers
-                    .iter()
-                    .map(|register| register.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                writeln!(
+                let access_token = render_indexed_mmio_address(
                     output,
-                    "{indent}// Indexed MMIO SVD bank: {}.",
-                    comment_text(&names)
-                )
-                .unwrap();
-                writeln!(
-                    output,
-                    "{indent}let mmio_address{access_token} = {address};"
-                )
-                .unwrap();
-                writeln!(
-                    output,
-                    "{indent}assert!(matches!(mmio_address{access_token}, {domain}), \"indexed MMIO address is outside the recovered SVD register bank\");"
-                )
-                .unwrap();
+                    state,
+                    indent,
+                    address,
+                    registers,
+                    guard.as_ref(),
+                )?;
                 match (access, value) {
                     (MemoryAccess::Read, None) => {
                         let token = state.reads.len();
@@ -230,6 +253,285 @@ fn render_events(
                         );
                     }
                 }
+            }
+            ResolvedReferenceEvent::PollMmio {
+                width,
+                address,
+                registers,
+                guard,
+                mask,
+                expected,
+            } => {
+                let access_token = render_indexed_mmio_address(
+                    output,
+                    state,
+                    indent,
+                    address,
+                    registers,
+                    guard.as_ref(),
+                )?;
+                writeln!(
+                    output,
+                    "{indent}// Poll until (value & {mask:#010x}) == {expected:#010x}."
+                )
+                .unwrap();
+                writeln!(output, "{indent}loop {{").unwrap();
+                writeln!(
+                    output,
+                    "{indent}    let value = io.read({width}, mmio_address{access_token});"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}    if value & {mask:#010x}_u32 == {expected:#010x}_u32 {{ break; }}"
+                )
+                .unwrap();
+                writeln!(output, "{indent}}}").unwrap();
+            }
+            ResolvedReferenceEvent::BoundedPoll {
+                maximum_attempts,
+                body,
+                repeat_while_mask,
+                repeat_while_expected,
+                on_exhausted,
+            } => {
+                let token = state.bounded_poll_count;
+                state.bounded_poll_count += 1;
+                writeln!(
+                    output,
+                    "{indent}// Reviewed bounded poll: at most {maximum_attempts} attempts."
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}for bounded_poll_attempt{token} in 0..{maximum_attempts}_u16 {{"
+                )
+                .unwrap();
+                writeln!(output, "{indent}    let bounded_poll_value{token} = {{").unwrap();
+                let body_state = RenderState {
+                    arguments: state.arguments.clone(),
+                    ..RenderState::default()
+                };
+                let body_indent = format!("{indent}        ");
+                render_flow(output, body, body_state, &body_indent, FlowReturn::Scalar)?;
+                writeln!(output, "{indent}    }};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}    if bounded_poll_value{token} & {repeat_while_mask:#010x}_u32 != {repeat_while_expected:#010x}_u32 {{ break; }}"
+                )
+                .unwrap();
+                if let Some(on_exhausted) = on_exhausted {
+                    writeln!(
+                        output,
+                        "{indent}    if bounded_poll_attempt{token} + 1 == {maximum_attempts}_u16 {{"
+                    )
+                    .unwrap();
+                    let mut exhausted_state = state.clone();
+                    let exhausted_indent = format!("{indent}        ");
+                    render_events(
+                        output,
+                        std::slice::from_ref(on_exhausted.as_ref()),
+                        &mut exhausted_state,
+                        &exhausted_indent,
+                    )?;
+                    writeln!(output, "{indent}    }}").unwrap();
+                }
+                writeln!(output, "{indent}}}").unwrap();
+            }
+            ResolvedReferenceEvent::PollFlow {
+                body,
+                exit_when_mask,
+                exit_when_expected,
+            } => {
+                let token = state.bounded_poll_count;
+                state.bounded_poll_count += 1;
+                writeln!(
+                    output,
+                    "{indent}// Poll a complete composed flow until its exit predicate matches."
+                )
+                .unwrap();
+                writeln!(output, "{indent}loop {{").unwrap();
+                writeln!(output, "{indent}    let poll_flow_value{token} = {{").unwrap();
+                let body_state = RenderState {
+                    arguments: state.arguments.clone(),
+                    ..RenderState::default()
+                };
+                let body_indent = format!("{indent}        ");
+                render_flow(output, body, body_state, &body_indent, FlowReturn::Scalar)?;
+                writeln!(output, "{indent}    }};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}    if poll_flow_value{token} & {exit_when_mask:#010x}_u32 == {exit_when_expected:#010x}_u32 {{ break; }}"
+                )
+                .unwrap();
+                writeln!(output, "{indent}}}").unwrap();
+            }
+            ResolvedReferenceEvent::SymmetricCalibrationSearch {
+                token,
+                attempts_per_direction,
+                settle_micros,
+                sample_shift,
+                sample_mask,
+                accepted_sample,
+                initial_read,
+                setup,
+                write_candidate,
+                sample,
+            } => {
+                if usize::try_from(*token).ok() != Some(state.call_results.len()) {
+                    return Err(format!(
+                        "calibration token {token} is not ordered in generated behavior"
+                    ));
+                }
+                writeln!(
+                    output,
+                    "{indent}// Reviewed symmetric calibration search: two directions, at most {attempts_per_direction} attempts each."
+                )
+                .unwrap();
+                writeln!(output, "{indent}let calibration_initial_word{token} = {{").unwrap();
+                let child_indent = format!("{indent}    ");
+                render_flow(
+                    output,
+                    initial_read,
+                    RenderState::default(),
+                    &child_indent,
+                    FlowReturn::Scalar,
+                )?;
+                writeln!(output, "{indent}}};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}let calibration_initial{token} = (calibration_initial_word{token} & 0x0000ffff_u32) as u16;"
+                )
+                .unwrap();
+                writeln!(output, "{indent}{{").unwrap();
+                render_flow(
+                    output,
+                    setup,
+                    RenderState::default(),
+                    &child_indent,
+                    FlowReturn::Unit,
+                )?;
+                writeln!(output, "{indent}}};").unwrap();
+                writeln!(output, "{indent}let mut calibration_sum{token} = 0_u16;").unwrap();
+                writeln!(output, "{indent}let mut calibration_count{token} = 0_u8;").unwrap();
+                writeln!(
+                    output,
+                    "{indent}for calibration_direction{token} in 0..2_u8 {{"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}    for calibration_step{token} in 0..{attempts_per_direction}_u16 {{"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        let calibration_candidate{token} = if calibration_direction{token} == 0 {{ calibration_initial{token}.wrapping_sub(calibration_step{token}) }} else {{ calibration_initial{token}.wrapping_add(1).wrapping_add(calibration_step{token}) }};"
+                )
+                .unwrap();
+                writeln!(output, "{indent}        {{").unwrap();
+                let writer_state = RenderState {
+                    arguments: core::array::from_fn(|index| {
+                        if index == 0 {
+                            format!("(i32::from(calibration_candidate{token} as i16)) as u32")
+                        } else {
+                            format!("args[{index}]")
+                        }
+                    }),
+                    ..RenderState::default()
+                };
+                let loop_child_indent = format!("{indent}            ");
+                render_flow(
+                    output,
+                    write_candidate,
+                    writer_state,
+                    &loop_child_indent,
+                    FlowReturn::Unit,
+                )?;
+                writeln!(output, "{indent}        }};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}        io.delay_micros({settle_micros:#010x}_u32);"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        let calibration_sample_word{token} = {{"
+                )
+                .unwrap();
+                render_flow(
+                    output,
+                    sample,
+                    RenderState::default(),
+                    &loop_child_indent,
+                    FlowReturn::Scalar,
+                )?;
+                writeln!(output, "{indent}        }};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}        let calibration_sample{token} = (calibration_sample_word{token} >> {sample_shift}) & {sample_mask:#010x}_u32;"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        if calibration_sample{token} == {accepted_sample:#010x}_u32 {{"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}            calibration_sum{token} = calibration_sum{token}.wrapping_add(calibration_candidate{token});"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}            calibration_count{token} = calibration_count{token}.wrapping_add(1);"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        }} else if calibration_count{token} != 0 {{"
+                )
+                .unwrap();
+                writeln!(output, "{indent}            break;").unwrap();
+                writeln!(output, "{indent}        }}").unwrap();
+                writeln!(output, "{indent}    }}").unwrap();
+                writeln!(output, "{indent}}}").unwrap();
+                writeln!(
+                    output,
+                    "{indent}let calibration_selected{token} = if calibration_count{token} == 0 {{ calibration_initial{token} }} else {{ riscv_div(u32::from(calibration_sum{token}), u32::from(calibration_count{token})) as u16 }};"
+                )
+                .unwrap();
+                writeln!(output, "{indent}{{").unwrap();
+                let final_writer_state = RenderState {
+                    arguments: core::array::from_fn(|index| {
+                        if index == 0 {
+                            format!("(i32::from(calibration_selected{token} as i16)) as u32")
+                        } else {
+                            format!("args[{index}]")
+                        }
+                    }),
+                    ..RenderState::default()
+                };
+                render_flow(
+                    output,
+                    write_candidate,
+                    final_writer_state,
+                    &child_indent,
+                    FlowReturn::Unit,
+                )?;
+                writeln!(output, "{indent}}};").unwrap();
+                writeln!(
+                    output,
+                    "{indent}io.delay_micros({settle_micros:#010x}_u32);"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let call_result{token} = (u32::from(calibration_initial{token}) << 16) | u32::from(calibration_selected{token});"
+                )
+                .unwrap();
+                writeln!(output, "{indent}let _ = call_result{token};").unwrap();
+                state.call_results.push(CallResultAvailability::Primary);
             }
             ResolvedReferenceEvent::Observable(ObservableEvent::Fence {
                 fm,
@@ -399,23 +701,35 @@ fn render_events(
                 argument_count,
                 arguments,
             } => {
-                if function != "wifi_log" || *argument_count != 6 {
-                    return Err(format!(
-                        "unsupported diagnostic call shape: {function} with {argument_count} arguments"
-                    ));
-                }
                 let arguments = arguments
                     .iter()
                     .take(usize::from(*argument_count))
                     .map(|value| render_state_value(value, state))
                     .collect::<Result<Vec<_>, _>>()?;
-                writeln!(output, "{indent}// Named diagnostic call: wifi_log.").unwrap();
-                writeln!(
-                    output,
-                    "{indent}platform.wifi_log([{}]);",
-                    arguments.join(", ")
-                )
-                .unwrap();
+                match (function.as_str(), *argument_count) {
+                    ("wifi_log", 6) => {
+                        writeln!(output, "{indent}// Named diagnostic call: wifi_log.").unwrap();
+                        writeln!(
+                            output,
+                            "{indent}platform.wifi_log([{}]);",
+                            arguments.join(", ")
+                        )
+                        .unwrap();
+                    }
+                    ("ets_printf", 1) => {
+                        writeln!(
+                            output,
+                            "{indent}// Reviewed ROM diagnostic call: ets_printf."
+                        )
+                        .unwrap();
+                        writeln!(output, "{indent}platform.ets_printf({});", arguments[0]).unwrap();
+                    }
+                    _ => {
+                        return Err(format!(
+                            "unsupported diagnostic call shape: {function} with {argument_count} arguments"
+                        ));
+                    }
+                }
             }
             ResolvedReferenceEvent::ComposedCall {
                 token,
@@ -434,6 +748,10 @@ fn render_events(
                     let argument = render_state_value(&arguments[usize::from(index)], state)?;
                     let name = format!("call{token}_arg{index}");
                     writeln!(output, "{indent}let {name} = {argument};").unwrap();
+                    // Specialization can turn the last use of a callee input
+                    // into a constant while the conservative input inventory
+                    // still retains the binding.
+                    writeln!(output, "{indent}let _ = &{name};").unwrap();
                     child_state.arguments[usize::from(index)] = name;
                 }
                 writeln!(
@@ -464,7 +782,120 @@ fn render_events(
                 if *result_modeled {
                     writeln!(output, "{indent}let _ = call_result{token};").unwrap();
                 }
-                state.call_results.push(*result_modeled);
+                state.call_results.push(if *result_modeled {
+                    CallResultAvailability::Primary
+                } else {
+                    CallResultAvailability::Unmodeled
+                });
+            }
+            ResolvedReferenceEvent::ComposedCallWithScratch {
+                token,
+                symbol,
+                arguments,
+                flow,
+                result_modeled,
+                scratch_argument,
+                scratch_size,
+            } => {
+                if usize::try_from(*token).ok() != Some(state.call_results.len()) {
+                    return Err(format!(
+                        "scratch call token {token} is not ordered in generated behavior"
+                    ));
+                }
+                let scratch_index = usize::from(*scratch_argument);
+                let scratch_base = 0xfffe_0000_u32.wrapping_add(token.wrapping_mul(0x100));
+                let mut child_state = RenderState::default();
+                for index in crate::resolved_reference_flow_input_indices(flow) {
+                    let name = format!("call{token}_arg{index}");
+                    if usize::from(index) == scratch_index {
+                        child_state.arguments[usize::from(index)] = name;
+                        continue;
+                    }
+                    let argument = render_state_value(&arguments[usize::from(index)], state)?;
+                    writeln!(output, "{indent}let {name} = {argument};").unwrap();
+                    writeln!(output, "{indent}let _ = &{name};").unwrap();
+                    child_state.arguments[usize::from(index)] = name;
+                }
+                writeln!(
+                    output,
+                    "{indent}// Composed direct call with {scratch_size}-byte initialized-on-write scratch: {}.",
+                    comment_text(symbol)
+                )
+                .unwrap();
+                let assignment = if *result_modeled {
+                    format!("let call_result{token} = ")
+                } else {
+                    String::new()
+                };
+                writeln!(output, "{indent}{assignment}{{").unwrap();
+                let child_indent = format!("{indent}    ");
+                writeln!(
+                    output,
+                    "{child_indent}let call{token}_arg{scratch_argument} = {scratch_base:#010x}_u32;"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{child_indent}let mut scratch_memory{token} = ReferenceScratchMemory::new(memory, call{token}_arg{scratch_argument}, {scratch_size});"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{child_indent}let memory = &mut scratch_memory{token};"
+                )
+                .unwrap();
+                render_flow(
+                    output,
+                    flow,
+                    child_state,
+                    &child_indent,
+                    if *result_modeled {
+                        FlowReturn::Scalar
+                    } else {
+                        FlowReturn::Unit
+                    },
+                )?;
+                writeln!(output, "{indent}}};").unwrap();
+                if *result_modeled {
+                    writeln!(output, "{indent}let _ = call_result{token};").unwrap();
+                }
+                state.call_results.push(if *result_modeled {
+                    CallResultAvailability::Primary
+                } else {
+                    CallResultAvailability::Unmodeled
+                });
+            }
+            ResolvedReferenceEvent::WideSignedDivide {
+                token,
+                dividend_low,
+                dividend_high,
+                divisor_low,
+                divisor_high,
+            } => {
+                if usize::try_from(*token).ok() != Some(state.call_results.len()) {
+                    return Err(format!(
+                        "wide-divide token {token} is not ordered in generated behavior"
+                    ));
+                }
+                let dividend_low = render_state_value(dividend_low, state)?;
+                let dividend_high = render_state_value(dividend_high, state)?;
+                let divisor_low = render_state_value(divisor_low, state)?;
+                let divisor_high = render_state_value(divisor_high, state)?;
+                writeln!(
+                    output,
+                    "{indent}// Reviewed ROM __divdi3: signed a1:a0 / a3:a2."
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let (call_result{token}, call_result{token}_high) = riscv_div_i64_words({dividend_low}, {dividend_high}, {divisor_low}, {divisor_high});"
+                )
+                .unwrap();
+                writeln!(output, "{indent}let _ = call_result{token};").unwrap();
+                writeln!(output, "{indent}let _ = call_result{token}_high;").unwrap();
+                state
+                    .call_results
+                    .push(CallResultAvailability::PrimaryAndSecondary);
             }
         }
     }
@@ -482,7 +913,14 @@ fn render_outcome(
         .iter()
         .copied()
         .enumerate()
-        .map(|(token, modeled)| (token as u32, modeled))
+        .flat_map(|(token, availability)| {
+            let token = token as u32;
+            let primary = !matches!(availability, CallResultAvailability::Unmodeled);
+            let secondary = matches!(availability, CallResultAvailability::PrimaryAndSecondary);
+            [(token, primary)]
+                .into_iter()
+                .chain(secondary.then_some((token | SECONDARY_CALL_RESULT_TOKEN_FLAG, true)))
+        })
         .collect::<BTreeMap<_, _>>();
     let exit_a0 =
         if value.is_resolved() && crate::value_call_results_available(value, &available_calls) {
@@ -558,6 +996,25 @@ fn collect_external_tables(
             }
             ResolvedReferenceEvent::ComposedCall { flow, .. } => {
                 collect_external_tables(flow, output)
+            }
+            ResolvedReferenceEvent::ComposedCallWithScratch { flow, .. } => {
+                collect_external_tables(flow, output)
+            }
+            ResolvedReferenceEvent::BoundedPoll { body, .. } => {
+                collect_external_tables(body, output)
+            }
+            ResolvedReferenceEvent::PollFlow { body, .. } => collect_external_tables(body, output),
+            ResolvedReferenceEvent::SymmetricCalibrationSearch {
+                initial_read,
+                setup,
+                write_candidate,
+                sample,
+                ..
+            } => {
+                collect_external_tables(initial_read, output);
+                collect_external_tables(setup, output);
+                collect_external_tables(write_candidate, output);
+                collect_external_tables(sample, output);
             }
             _ => {}
         }
@@ -752,6 +1209,88 @@ pub(crate) fn generate(
     .unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
+    writeln!(output, "#[allow(dead_code)]").unwrap();
+    writeln!(
+        output,
+        "struct ReferenceScratchMemory<'a, M: ReferenceMemory> {{"
+    )
+    .unwrap();
+    writeln!(output, "    inner: &'a mut M,").unwrap();
+    writeln!(output, "    base: u32,").unwrap();
+    writeln!(output, "    len: usize,").unwrap();
+    writeln!(output, "    bytes: [u8; 256],").unwrap();
+    writeln!(output, "    initialized: [bool; 256],").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output, "#[allow(dead_code)]").unwrap();
+    writeln!(
+        output,
+        "impl<'a, M: ReferenceMemory> ReferenceScratchMemory<'a, M> {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    fn new(inner: &'a mut M, base: u32, len: u16) -> Self {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        assert!(len != 0 && len <= 256, \"reference scratch size is outside 1..=256\");"
+    )
+    .unwrap();
+    writeln!(output, "        Self {{ inner, base, len: usize::from(len), bytes: [0; 256], initialized: [false; 256] }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    fn local_range(&self, width: u8, address: u32) -> Option<core::ops::Range<usize>> {{"
+    )
+    .unwrap();
+    writeln!(output, "        let byte_count = match width {{ 8 => 1_u32, 16 => 2, 32 => 4, _ => panic!(\"unsupported reference scratch width {{width}}\") }};").unwrap();
+    writeln!(output, "        let end = address.checked_add(byte_count).expect(\"reference scratch address overflow\");").unwrap();
+    writeln!(output, "        let limit = self.base.checked_add(self.len as u32).expect(\"reference scratch limit overflow\");").unwrap();
+    writeln!(
+        output,
+        "        let inside = address >= self.base && end <= limit;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        let disjoint = end <= self.base || address >= limit;"
+    )
+    .unwrap();
+    writeln!(output, "        assert!(inside || disjoint, \"reference memory access partially overlaps private scratch\");").unwrap();
+    writeln!(
+        output,
+        "        inside.then(|| (address - self.base) as usize..(end - self.base) as usize)"
+    )
+    .unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output, "#[allow(dead_code)]").unwrap();
+    writeln!(
+        output,
+        "impl<M: ReferenceMemory> ReferenceMemory for ReferenceScratchMemory<'_, M> {{"
+    )
+    .unwrap();
+    writeln!(output, "    fn symbol_address(&mut self, member: Option<&str>, symbol: &str) -> u32 {{ self.inner.symbol_address(member, symbol) }}").unwrap();
+    writeln!(
+        output,
+        "    fn read(&mut self, width: u8, address: u32) -> u32 {{"
+    )
+    .unwrap();
+    writeln!(output, "        let Some(range) = self.local_range(width, address) else {{ return self.inner.read(width, address); }};").unwrap();
+    writeln!(output, "        assert!(range.clone().all(|index| self.initialized[index]), \"read from uninitialized reference scratch\");").unwrap();
+    writeln!(output, "        range.enumerate().fold(0_u32, |value, (shift, index)| value | (u32::from(self.bytes[index]) << (shift * 8)))").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    fn write(&mut self, width: u8, address: u32, value: u32) {{"
+    )
+    .unwrap();
+    writeln!(output, "        let Some(range) = self.local_range(width, address) else {{ self.inner.write(width, address, value); return; }};").unwrap();
+    writeln!(output, "        for (shift, index) in range.enumerate() {{ self.bytes[index] = (value >> (shift * 8)) as u8; self.initialized[index] = true; }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
     writeln!(
         output,
         "/// Platform callbacks reached through the pinned ESP32-S31 Wi-Fi OSI ABI."
@@ -777,6 +1316,7 @@ pub(crate) fn generate(
     )
     .unwrap();
     writeln!(output, "    fn wifi_log(&mut self, arguments: [u32; 6]);").unwrap();
+    writeln!(output, "    fn ets_printf(&mut self, format_address: u32);").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
     writeln!(output, "#[allow(dead_code)]").unwrap();
@@ -806,6 +1346,34 @@ pub(crate) fn generate(
     writeln!(output, "    left.checked_div(right).unwrap_or(u32::MAX)").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output, "#[allow(dead_code)]").unwrap();
+    writeln!(
+        output,
+        "fn riscv_div_i64_words(dividend_low: u32, dividend_high: u32, divisor_low: u32, divisor_high: u32) -> (u32, u32) {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    let dividend = (((dividend_high as u64) << 32) | dividend_low as u64) as i64;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    let divisor = (((divisor_high as u64) << 32) | divisor_low as u64) as i64;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    assert!(divisor != 0, \"modeled __divdi3 precondition violated: divisor is zero\");"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    let quotient = dividend.wrapping_div(divisor) as u64;"
+    )
+    .unwrap();
+    writeln!(output, "    (quotient as u32, (quotient >> 32) as u32)").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output, "#[allow(dead_code)]").unwrap();
     writeln!(output, "fn riscv_rem(left: u32, right: u32) -> u32 {{").unwrap();
     writeln!(output, "    if right == 0 {{ left }} else if left == i32::MIN as u32 && right == u32::MAX {{ 0 }} else {{ ((left as i32) % (right as i32)) as u32 }}").unwrap();
     writeln!(output, "}}").unwrap();
@@ -828,12 +1396,36 @@ pub(crate) fn generate(
     writeln!(output, "    pub exit_a0: Option<u32>,").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
-    writeln!(output, "#[allow(dead_code)]").unwrap();
+    writeln!(output, "#[derive(Clone, Copy, Debug, Eq, PartialEq)]").unwrap();
+    writeln!(output, "pub struct Rv32ReferenceArguments {{").unwrap();
+    writeln!(
+        output,
+        "    pub registers: [u32; {RV32_REGISTER_ARGUMENT_COUNT}],"
+    )
+    .unwrap();
+    writeln!(output, "    pub stack: [u32; {RV32_STACK_ARGUMENT_COUNT}],").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(
+        output,
+        "impl core::ops::Index<usize> for Rv32ReferenceArguments {{"
+    )
+    .unwrap();
+    writeln!(output, "    type Output = u32;").unwrap();
+    writeln!(
+        output,
+        "    fn index(&self, index: usize) -> &Self::Output {{"
+    )
+    .unwrap();
+    writeln!(output, "        if index < {RV32_REGISTER_ARGUMENT_COUNT} {{ &self.registers[index] }} else {{ &self.stack[index - {RV32_REGISTER_ARGUMENT_COUNT}] }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "#[allow(dead_code, non_snake_case)]").unwrap();
     writeln!(output, "pub fn {function_name}(").unwrap();
     writeln!(output, "    io: &mut impl ReferenceIo,").unwrap();
     writeln!(output, "    memory: &mut impl ReferenceMemory,").unwrap();
     writeln!(output, "    platform: &mut impl ReferencePlatform,").unwrap();
-    writeln!(output, "    args: [u32; 8],").unwrap();
+    writeln!(output, "    args: Rv32ReferenceArguments,").unwrap();
     writeln!(output, ") -> ReferenceOutcome {{").unwrap();
     writeln!(output, "    let _ = &mut *io;").unwrap();
     writeln!(output, "    let _ = &mut *memory;").unwrap();

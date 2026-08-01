@@ -61,26 +61,11 @@ use open_esp_radio_esp32s31_phy::{
     },
 };
 
-use crate::{Result, execution, seed_ram_word};
+use crate::{Result, entry_contract, execution, seed_ram_word};
 
-const ROM_PHY_FUNCTION_TABLE: u32 = 0x2f07_f944;
+const ROM_PHY_FUNCTION_TABLE: u32 = entry_contract::ROM_PHY_FUNCTION_TABLE;
 const ROM_PHY_FUNCTION_TABLE_POINTER: u32 = 0x2f07_fc3c;
 const ROM_PHY_PARAM_POINTER: u32 = 0x2f07_fc40;
-const ROM_PHY_FUNCTIONS: [u32; 13] = [
-    0x2f82_9f18,
-    0x2f82_9f1a,
-    0x2f82_9f84,
-    0x2f82_9fc0,
-    0x2f82_44fe,
-    0x2f82_78b0,
-    0x2f82_5dc8,
-    0x2f82_5ecc,
-    0x2f82_5f7c,
-    0x2f82_711c,
-    0x2f82_7392,
-    0x2f82_66da,
-    0x2f82_88de,
-];
 
 const TEMPERATURE_DAC: u8 = 5;
 const TEMPERATURE_CODE: u8 = 0;

@@ -5,11 +5,12 @@ mod reference;
 mod trace;
 mod value;
 
-#[cfg(test)]
-pub(crate) use indexed_mmio::evaluate_for_input;
 pub(crate) use indexed_mmio::{
-    IndexedMmioDomain, IndexedMmioGuard, IndexedMmioRegister, indexed_mmio_domain,
+    IndexedMmioDomain, IndexedMmioGuard, IndexedMmioRegister, collect_evaluable_input_bits,
+    evaluate_for_input, indexed_mmio_domain,
 };
 pub(crate) use reference::*;
 pub(crate) use trace::*;
-pub(crate) use value::{BitSource, ExpressionOperation, SymbolicValue};
+pub(crate) use value::{
+    BitSource, ExpressionOperation, PRIVATE_STACK_READ_TOKEN_FLAG, SymbolicValue,
+};

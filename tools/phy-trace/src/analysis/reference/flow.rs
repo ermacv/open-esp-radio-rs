@@ -2,31 +2,10 @@
 
 use super::*;
 
-fn reference_intrinsic_trace(
-    symbol: &artifact::ArtifactSymbolDefinition,
-) -> Option<FunctionAnalysis> {
-    match symbol.name.as_str() {
-        "ets_delay_us" => Some(FunctionAnalysis {
-            symbol: symbol.name.clone(),
-            events: Vec::new(),
-            reference_events: vec![DraftReferenceEvent::DelayMicros {
-                micros: SymbolicValue::input(0),
-            }],
-            reference_dependencies: Vec::new(),
-            blockers: Vec::new(),
-            reference_blockers: Vec::new(),
-            return_value: SymbolicValue::Unknown,
-            reference_flow: None,
-            unresolved_branch: None,
-        }),
-        _ => None,
-    }
-}
-
 pub(super) struct ReferenceCalleeContext<'a> {
     pub(super) symbols_by_address: &'a BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
     pub(super) relocated_calls: &'a StructuralRelocatedCalls,
-    pub(super) external_pointer_cells: &'a BTreeMap<u32, external_abi::Table>,
+    pub(super) pointer_context: &'a StructuralPointerContext,
     pub(super) svd: &'a MmioRegisterMap,
 }
 
@@ -112,8 +91,8 @@ pub(super) fn explore_reference_flow(
     symbol: &artifact::ArtifactSymbolDefinition,
     svd: &MmioRegisterMap,
     relocated_calls: &StructuralRelocatedCalls,
-    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
-    specialized_arguments: Option<&[SymbolicValue; 8]>,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
 ) -> std::result::Result<DraftReferenceFlow, String> {
     const MAX_COMPLETE_PATHS: usize = 64;
     const MAX_EXPLORED_STATES: usize = MAX_COMPLETE_PATHS * 2 - 1;
@@ -135,7 +114,7 @@ pub(super) fn explore_reference_flow(
             symbol,
             svd,
             relocated_calls,
-            external_pointer_cells,
+            pointer_context,
             specialized_arguments,
             &forced_branches,
         )
@@ -158,6 +137,11 @@ pub(super) fn explore_reference_flow(
             .iter()
             .filter(|blocker| blocker.starts_with("call/jump instruction"))
             .count();
+        let reference_only_blockers = trace
+            .blockers
+            .iter()
+            .filter(|blocker| is_reference_only_blocker(blocker))
+            .count();
 
         if let Some(branch) = trace.unresolved_branch {
             let branch_blockers = trace
@@ -167,7 +151,7 @@ pub(super) fn explore_reference_flow(
                 .count();
             if !trace.reference_blockers.is_empty()
                 || branch_blockers != 1
-                || trace.blockers.len() != call_blockers + branch_blockers
+                || trace.blockers.len() != call_blockers + branch_blockers + reference_only_blockers
                 || typed_calls != call_blockers
             {
                 return Err(format!(
@@ -203,7 +187,7 @@ pub(super) fn explore_reference_flow(
         }
 
         if !trace.reference_blockers.is_empty()
-            || trace.blockers.len() != call_blockers
+            || trace.blockers.len() != call_blockers + reference_only_blockers
             || typed_calls != call_blockers
         {
             return Err(format!(
@@ -234,7 +218,7 @@ pub(super) fn explore_reference_flow(
 pub(super) fn resolve_reference_callee(
     target: u32,
     site: u32,
-    arguments: &[SymbolicValue; 8],
+    arguments: &Rv32CallArguments,
     context: &ReferenceCalleeContext<'_>,
     visiting: &mut BTreeSet<u32>,
 ) -> std::result::Result<(String, FunctionAnalysis), String> {
@@ -242,8 +226,8 @@ pub(super) fn resolve_reference_callee(
         .symbols_by_address
         .get(&target)
         .ok_or_else(|| format!("unresolved-call at {site:#010x} to {target:#010x}"))?;
-    if let Some(trace) = reference_intrinsic_trace(callee) {
-        return Ok((callee.name.clone(), trace));
+    if let Some(trace) = standard_memory_intrinsic_trace(callee, arguments) {
+        return trace.map(|trace| (callee.name.clone(), trace));
     }
     if !visiting.insert(target) {
         return Err(format!("recursive-call at {site:#010x} to {}", callee.name));
@@ -252,7 +236,7 @@ pub(super) fn resolve_reference_callee(
         callee,
         context.symbols_by_address,
         context.relocated_calls,
-        context.external_pointer_cells,
+        context.pointer_context,
         Some(arguments),
         context.svd,
         visiting,
@@ -261,9 +245,10 @@ pub(super) fn resolve_reference_callee(
     visiting.remove(&target);
     let trace = result?;
     if !trace.is_reference_eligible() {
+        let causes = trace.reference_failure_reasons().join(" | ");
         return Err(format!(
-            "callee-ineligible at {site:#010x}: {}",
-            callee.name
+            "callee-ineligible at {site:#010x}: {} [causes: {causes}]",
+            callee.name,
         ));
     }
     Ok((callee.name.clone(), trace))
@@ -284,6 +269,117 @@ pub(super) fn compose_calls_in_reference_flow(
 ) -> std::result::Result<DraftReferenceFlow, String> {
     let mut events = Vec::with_capacity(flow.events.len());
     for event in flow.events {
+        let event = match event {
+            DraftReferenceEvent::BoundedPoll {
+                maximum_attempts,
+                body,
+                repeat_while_mask,
+                repeat_while_expected,
+                on_exhausted,
+            } => {
+                events.push(DraftReferenceEvent::BoundedPoll {
+                    maximum_attempts,
+                    body: Box::new(compose_calls_in_reference_flow(
+                        *body,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                    repeat_while_mask,
+                    repeat_while_expected,
+                    on_exhausted,
+                });
+                continue;
+            }
+            DraftReferenceEvent::PollFlow {
+                body,
+                exit_when_mask,
+                exit_when_expected,
+            } => {
+                events.push(DraftReferenceEvent::PollFlow {
+                    body: Box::new(compose_calls_in_reference_flow(
+                        *body,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                    exit_when_mask,
+                    exit_when_expected,
+                });
+                continue;
+            }
+            DraftReferenceEvent::SymmetricCalibrationSearch {
+                token,
+                attempts_per_direction,
+                settle_micros,
+                sample_shift,
+                sample_mask,
+                accepted_sample,
+                initial_read,
+                setup,
+                write_candidate,
+                sample,
+            } => {
+                events.push(DraftReferenceEvent::SymmetricCalibrationSearch {
+                    token,
+                    attempts_per_direction,
+                    settle_micros,
+                    sample_shift,
+                    sample_mask,
+                    accepted_sample,
+                    initial_read: Box::new(compose_calls_in_reference_flow(
+                        *initial_read,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                    setup: Box::new(compose_calls_in_reference_flow(
+                        *setup,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                    write_candidate: Box::new(compose_calls_in_reference_flow(
+                        *write_candidate,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                    sample: Box::new(compose_calls_in_reference_flow(
+                        *sample,
+                        context,
+                        visiting,
+                        dependencies,
+                    )?),
+                });
+                continue;
+            }
+            DraftReferenceEvent::ScratchCall {
+                token,
+                site,
+                target,
+                arguments,
+                scratch_argument,
+                scratch_size,
+            } => {
+                let (callee_name, callee_trace) =
+                    resolve_reference_callee(target, site, &arguments, context, visiting)?;
+                let result_modeled = callee_trace.reference_exit_a0_modeled();
+                dependencies.push(callee_name.clone());
+                dependencies.extend(callee_trace.reference_dependencies.iter().cloned());
+                events.push(DraftReferenceEvent::ComposedCallWithScratch {
+                    token,
+                    symbol: callee_name,
+                    arguments,
+                    flow: Box::new(trace_into_reference_flow(callee_trace)),
+                    result_modeled,
+                    scratch_argument,
+                    scratch_size,
+                });
+                continue;
+            }
+            other => other,
+        };
         let (token, site, target, arguments) = match event {
             DraftReferenceEvent::Call {
                 token,
@@ -309,8 +405,30 @@ pub(super) fn compose_calls_in_reference_flow(
             }
         };
 
-        let (callee_name, callee_trace) =
-            resolve_reference_callee(target, site, &arguments, context, visiting)?;
+        if let Some(callee) = context.symbols_by_address.get(&target)
+            && wide_signed_divide_intrinsic(callee, &arguments).is_some()
+        {
+            dependencies.push(callee.name.clone());
+            events.push(DraftReferenceEvent::WideSignedDivide {
+                token,
+                dividend_low: arguments[0].clone(),
+                dividend_high: arguments[1].clone(),
+                divisor_low: arguments[2].clone(),
+                divisor_high: arguments[3].clone(),
+            });
+            continue;
+        }
+
+        let (callee_name, callee_trace) = if arguments
+            .iter()
+            .any(|argument| argument.private_stack_offset().is_some())
+        {
+            return Err(format!(
+                "call at {site:#010x} passes caller private stack through symbolic control flow; branch-aware memory composition is required"
+            ));
+        } else {
+            resolve_reference_callee(target, site, &arguments, context, visiting)?
+        };
         let result_modeled = callee_trace.reference_exit_a0_modeled();
         dependencies.push(callee_name.clone());
         dependencies.extend(callee_trace.reference_dependencies.iter().cloned());

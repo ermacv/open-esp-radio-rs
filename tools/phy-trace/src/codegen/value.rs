@@ -2,7 +2,46 @@
 
 use std::collections::BTreeMap;
 
-use crate::{BitSource, SymbolicValue};
+use crate::{
+    BitSource, RV32_MODELED_ARGUMENT_COUNT, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CallResultAvailability {
+    Unmodeled,
+    Primary,
+    PrimaryAndSecondary,
+}
+
+fn call_result_parts(token: u32) -> (u32, bool) {
+    (
+        token & !SECONDARY_CALL_RESULT_TOKEN_FLAG,
+        token & SECONDARY_CALL_RESULT_TOKEN_FLAG != 0,
+    )
+}
+
+fn call_result_available(token: u32, results: &[CallResultAvailability]) -> bool {
+    let (token, secondary) = call_result_parts(token);
+    usize::try_from(token)
+        .ok()
+        .and_then(|token| results.get(token))
+        .is_some_and(|availability| match (availability, secondary) {
+            (CallResultAvailability::Primary, false)
+            | (CallResultAvailability::PrimaryAndSecondary, _) => true,
+            (CallResultAvailability::Unmodeled, _) | (CallResultAvailability::Primary, true) => {
+                false
+            }
+        })
+}
+
+fn call_result_name(token: u32) -> String {
+    let (token, secondary) = call_result_parts(token);
+    if secondary {
+        format!("call_result{token}_high")
+    } else {
+        format!("call_result{token}")
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum SourceWord {
@@ -26,12 +65,12 @@ struct BitGroup {
     shift: i8,
 }
 
-fn source_word(group: BitGroup, arguments: &[String; 8]) -> String {
+fn source_word(group: BitGroup, arguments: &[String; RV32_MODELED_ARGUMENT_COUNT]) -> String {
     let source = match group.source {
         SourceWord::Argument(index) => arguments[usize::from(index)].clone(),
         SourceWord::Read(token) => format!("read{token}"),
         SourceWord::MemoryRead(token) => format!("memory_read{token}"),
-        SourceWord::CallResult(token) => format!("call_result{token}"),
+        SourceWord::CallResult(token) => call_result_name(token),
         SourceWord::ExternalResult(token) => format!("external_result{token}"),
     };
     if group.inverted {
@@ -41,7 +80,11 @@ fn source_word(group: BitGroup, arguments: &[String; 8]) -> String {
     }
 }
 
-fn grouped_expression(group: BitGroup, mask: u32, arguments: &[String; 8]) -> String {
+fn grouped_expression(
+    group: BitGroup,
+    mask: u32,
+    arguments: &[String; RV32_MODELED_ARGUMENT_COUNT],
+) -> String {
     let source = source_word(group, arguments);
     let shifted = match group.shift.cmp(&0) {
         std::cmp::Ordering::Less => format!("({source} >> {})", -group.shift),
@@ -85,9 +128,9 @@ pub(super) fn render_value_scoped(
     value: &SymbolicValue,
     reads: &[MmioReadAddress],
     memory_read_count: usize,
-    call_results: &[bool],
+    call_results: &[CallResultAvailability],
     external_results: usize,
-    arguments: &[String; 8],
+    arguments: &[String; RV32_MODELED_ARGUMENT_COUNT],
 ) -> Result<String, String> {
     match value {
         SymbolicValue::Unknown => Err("symbolic value is unresolved".to_owned()),
@@ -129,13 +172,8 @@ pub(super) fn render_value_scoped(
             })
         }
         SymbolicValue::CallResult(token) => {
-            if usize::try_from(*token)
-                .ok()
-                .and_then(|token| call_results.get(token))
-                .copied()
-                == Some(true)
-            {
-                Ok(format!("call_result{token}"))
+            if call_result_available(*token, call_results) {
+                Ok(call_result_name(*token))
             } else {
                 Err(format!(
                     "unmodeled call result {token} escaped into generated behavior"
@@ -149,6 +187,14 @@ pub(super) fn render_value_scoped(
         SymbolicValue::ExternalFunction { table, function } => Err(format!(
             "external ABI function {}::{function:?} escaped into generated behavior",
             crate::external_abi::table_spec(*table).id
+        )),
+        SymbolicValue::FunctionTable(table) => Err(format!(
+            "function table {} escaped into generated behavior",
+            table.id()
+        )),
+        SymbolicValue::FunctionPointer { table, target } => Err(format!(
+            "function pointer {}::{target:#010x} escaped into generated behavior",
+            table.id()
         )),
         SymbolicValue::ExternalResult(token) => {
             if usize::try_from(*token).is_ok_and(|token| token < external_results) {
@@ -217,7 +263,57 @@ pub(super) fn render_value_scoped(
                 crate::ExpressionOperation::Equal => {
                     format!("u32::from(({left}) == ({right}))")
                 }
+                crate::ExpressionOperation::LessThanSigned => {
+                    format!("u32::from((({left}) as i32) < (({right}) as i32))")
+                }
+                crate::ExpressionOperation::LessThanUnsigned => {
+                    format!("u32::from(({left}) < ({right}))")
+                }
             })
+        }
+        SymbolicValue::WideSignedDivide {
+            dividend_low,
+            dividend_high,
+            divisor_low,
+            divisor_high,
+            high_word,
+        } => {
+            let dividend_low = render_value_scoped(
+                dividend_low,
+                reads,
+                memory_read_count,
+                call_results,
+                external_results,
+                arguments,
+            )?;
+            let dividend_high = render_value_scoped(
+                dividend_high,
+                reads,
+                memory_read_count,
+                call_results,
+                external_results,
+                arguments,
+            )?;
+            let divisor_low = render_value_scoped(
+                divisor_low,
+                reads,
+                memory_read_count,
+                call_results,
+                external_results,
+                arguments,
+            )?;
+            let divisor_high = render_value_scoped(
+                divisor_high,
+                reads,
+                memory_read_count,
+                call_results,
+                external_results,
+                arguments,
+            )?;
+            Ok(format!(
+                "riscv_div_i64_words({dividend_low}, {dividend_high}, {divisor_low}, {divisor_high}).{}",
+                usize::from(*high_word)
+            ))
         }
         SymbolicValue::RegisterImage {
             read_token,
@@ -269,8 +365,10 @@ pub(super) fn render_value_scoped(
                         bit,
                         inverted,
                     } => {
-                        if index >= 8 {
-                            return Err(format!("argument index {index} is outside the RV32 ABI"));
+                        if usize::from(index) >= RV32_MODELED_ARGUMENT_COUNT {
+                            return Err(format!(
+                                "argument index {index} is outside the modeled RV32 ABI"
+                            ));
                         }
                         let group = BitGroup {
                             source: SourceWord::Argument(index),
@@ -324,17 +422,17 @@ pub(super) fn render_value_scoped(
                         };
                         *groups.entry(group).or_default() |= 1 << destination;
                     }
+                    BitSource::PrivateStack { read_token, .. } => {
+                        return Err(format!(
+                            "private-stack read token {read_token} escaped reference composition"
+                        ));
+                    }
                     BitSource::CallResult {
                         call_token,
                         bit,
                         inverted,
                     } => {
-                        if usize::try_from(call_token)
-                            .ok()
-                            .and_then(|token| call_results.get(token))
-                            .copied()
-                            != Some(true)
-                        {
+                        if !call_result_available(call_token, call_results) {
                             return Err(format!(
                                 "symbolic bit refers to unmodeled call result {call_token}"
                             ));

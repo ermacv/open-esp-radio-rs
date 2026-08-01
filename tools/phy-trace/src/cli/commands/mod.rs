@@ -6,6 +6,7 @@ mod execute;
 mod execute_compare;
 mod extract;
 mod generate_reference;
+mod generate_reference_batch;
 mod qualify_channel;
 mod qualify_rf_init;
 mod verify;
@@ -22,6 +23,7 @@ pub(super) fn run(command: Command, arguments: Vec<String>, svd: &MmioRegisterMa
         Command::ExecuteCompare => execute_compare::run(arguments, svd),
         Command::VerifyProfiles => verify_profiles::run(arguments, svd),
         Command::GenerateReference => generate_reference::run(arguments, svd),
+        Command::GenerateReferenceBatch => generate_reference_batch::run(arguments, svd),
         Command::Analyze => analyze::run(arguments, svd),
         Command::VerifyAll => verify_all::run(arguments, svd),
         Command::Verify => verify::run(arguments, svd),

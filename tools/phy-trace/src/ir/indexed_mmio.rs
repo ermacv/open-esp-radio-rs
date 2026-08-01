@@ -112,8 +112,25 @@ fn affine_input(value: &SymbolicValue) -> Option<AffineInput> {
     }
 }
 
-fn collect_evaluable_input_bits(
+pub(crate) fn collect_evaluable_input_bits(
     value: &SymbolicValue,
+    index: &mut Option<u8>,
+    bits: &mut BTreeSet<u8>,
+) -> bool {
+    collect_evaluable_input_bits_masked(value, u32::MAX, index, bits)
+}
+
+fn lower_dependency_mask(output_mask: u32) -> u32 {
+    if output_mask == 0 {
+        0
+    } else {
+        u32::MAX >> output_mask.leading_zeros()
+    }
+}
+
+fn collect_evaluable_input_bits_masked(
+    value: &SymbolicValue,
+    output_mask: u32,
     index: &mut Option<u8>,
     bits: &mut BTreeSet<u8>,
 ) -> bool {
@@ -127,28 +144,76 @@ fn collect_evaluable_input_bits(
                 return false;
             }
             *index = Some(*source_index);
-            bits.extend(0..32);
+            bits.extend((0..32).filter(|bit| output_mask & (1 << bit) != 0));
             true
         }
-        SymbolicValue::Expression { left, right, .. } => {
-            collect_evaluable_input_bits(left, index, bits)
-                && collect_evaluable_input_bits(right, index, bits)
-        }
-        SymbolicValue::Bits(sources) => sources.iter().all(|source| match source {
-            BitSource::Constant(_) => true,
-            BitSource::Input {
-                index: source_index,
-                bit,
-                ..
-            } => {
-                if index.is_some_and(|index| index != *source_index) {
-                    return false;
+        SymbolicValue::Expression {
+            operation,
+            left,
+            right,
+        } => {
+            let (left_mask, right_mask) = match operation {
+                ExpressionOperation::BitAnd => match (left.as_constant(), right.as_constant()) {
+                    (_, Some(mask)) => (output_mask & mask, 0),
+                    (Some(mask), _) => (0, output_mask & mask),
+                    _ => (output_mask, output_mask),
+                },
+                ExpressionOperation::BitOr => match (left.as_constant(), right.as_constant()) {
+                    (_, Some(mask)) => (output_mask & !mask, 0),
+                    (Some(mask), _) => (0, output_mask & !mask),
+                    _ => (output_mask, output_mask),
+                },
+                ExpressionOperation::BitXor => (output_mask, output_mask),
+                ExpressionOperation::Add
+                | ExpressionOperation::Subtract
+                | ExpressionOperation::Multiply => {
+                    let mask = lower_dependency_mask(output_mask);
+                    (mask, mask)
                 }
-                *index = Some(*source_index);
-                bits.insert(*bit);
-                true
+                ExpressionOperation::ShiftLeft => {
+                    let Some(shift) = right.as_constant() else {
+                        return false;
+                    };
+                    (output_mask.wrapping_shr(shift & 31), 0)
+                }
+                ExpressionOperation::ShiftRight => {
+                    let Some(shift) = right.as_constant() else {
+                        return false;
+                    };
+                    (output_mask.wrapping_shl(shift & 31), 0)
+                }
+                ExpressionOperation::ShiftRightArithmetic
+                | ExpressionOperation::DivideSigned
+                | ExpressionOperation::DivideUnsigned
+                | ExpressionOperation::RemainderSigned
+                | ExpressionOperation::RemainderUnsigned
+                | ExpressionOperation::Equal
+                | ExpressionOperation::LessThanSigned
+                | ExpressionOperation::LessThanUnsigned => (u32::MAX, u32::MAX),
+            };
+            collect_evaluable_input_bits_masked(left, left_mask, index, bits)
+                && collect_evaluable_input_bits_masked(right, right_mask, index, bits)
+        }
+        SymbolicValue::Bits(sources) => sources.iter().enumerate().all(|(destination, source)| {
+            if output_mask & (1 << destination) == 0 {
+                return true;
             }
-            _ => false,
+            match source {
+                BitSource::Constant(_) => true,
+                BitSource::Input {
+                    index: source_index,
+                    bit,
+                    ..
+                } => {
+                    if index.is_some_and(|index| index != *source_index) {
+                        return false;
+                    }
+                    *index = Some(*source_index);
+                    bits.insert(*bit);
+                    true
+                }
+                _ => false,
+            }
         }),
         _ => false,
     }
@@ -204,6 +269,8 @@ pub(crate) fn evaluate_for_input(
                     (left as i32).wrapping_shr(right & 31) as u32
                 }
                 ExpressionOperation::Equal => u32::from(left == right),
+                ExpressionOperation::LessThanSigned => u32::from((left as i32) < (right as i32)),
+                ExpressionOperation::LessThanUnsigned => u32::from(left < right),
             })
         }
         SymbolicValue::Bits(sources) => {

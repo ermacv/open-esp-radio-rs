@@ -1,5 +1,5 @@
 use super::*;
-use crate::{DraftReferenceEvent, FunctionAnalysis};
+use crate::{DraftReferenceEvent, DraftReferenceFlow, DraftReferenceTerminator, FunctionAnalysis};
 
 fn generate_from_trace(
     trace: &FunctionAnalysis,
@@ -290,5 +290,111 @@ fn preserves_ordered_elf_ram_reads_and_writes() {
         generated
             .source
             .contains("ReferenceOutcome { exit_a0: Some((memory_read0")
+    );
+}
+
+#[test]
+fn renders_both_words_of_one_ordered_wide_division() {
+    let trace = FunctionAnalysis {
+        symbol: "wide_divide".to_owned(),
+        events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::WideSignedDivide {
+            token: 0,
+            dividend_low: SymbolicValue::input(0),
+            dividend_high: SymbolicValue::input(1),
+            divisor_low: SymbolicValue::input(2),
+            divisor_high: SymbolicValue::input(3),
+        }],
+        reference_dependencies: vec!["__divdi3".to_owned()],
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::CallResult(0)
+            .bitxor(SymbolicValue::CallResult(SECONDARY_CALL_RESULT_TOKEN_FLAG)),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+    let generated = generate_from_trace(&trace, "rom.elf", "digest", None, &[]).unwrap();
+
+    assert!(
+        generated
+            .source
+            .contains("let (call_result0, call_result0_high) = riscv_div_i64_words(")
+    );
+    assert!(
+        generated
+            .source
+            .contains("ReferenceOutcome { exit_a0: Some((call_result0) ^ (call_result0_high)) }")
+    );
+    assert!(generated.source.contains(
+        "assert!(divisor != 0, \"modeled __divdi3 precondition violated: divisor is zero\")"
+    ));
+}
+
+#[test]
+fn renders_a_compact_bounded_poll_with_an_exhaustion_diagnostic() {
+    let mut call_arguments = core::array::from_fn(|_| SymbolicValue::Unknown);
+    call_arguments[0] = SymbolicValue::input(0);
+    let mut diagnostic_arguments = core::array::from_fn(|_| SymbolicValue::Unknown);
+    diagnostic_arguments[0] = SymbolicValue::Constant(0x2f84_d9cc);
+    let trace = FunctionAnalysis {
+        symbol: "bounded_poll".to_owned(),
+        events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: vec!["poll_read".to_owned(), "ets_printf".to_owned()],
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Unknown,
+        reference_flow: Some(DraftReferenceFlow {
+            events: vec![DraftReferenceEvent::BoundedPoll {
+                maximum_attempts: 100,
+                body: Box::new(DraftReferenceFlow {
+                    events: vec![
+                        DraftReferenceEvent::DelayMicros {
+                            micros: SymbolicValue::Constant(20),
+                        },
+                        DraftReferenceEvent::ComposedCall {
+                            token: 0,
+                            symbol: "poll_read".to_owned(),
+                            arguments: Box::new(call_arguments),
+                            flow: Box::new(DraftReferenceFlow {
+                                events: Vec::new(),
+                                terminator: DraftReferenceTerminator::Return(SymbolicValue::input(
+                                    0,
+                                )),
+                            }),
+                            result_modeled: true,
+                        },
+                    ],
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::CallResult(0)),
+                }),
+                repeat_while_mask: u32::MAX,
+                repeat_while_expected: 0,
+                on_exhausted: Some(Box::new(DraftReferenceEvent::DiagnosticCall {
+                    function: "ets_printf".to_owned(),
+                    argument_count: 1,
+                    arguments: Box::new(diagnostic_arguments),
+                })),
+            }],
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::Unknown),
+        }),
+        unresolved_branch: None,
+    };
+
+    let generated = generate_from_trace(&trace, "rom.elf", "digest", None, &[]).unwrap();
+    assert!(
+        generated
+            .source
+            .contains("for bounded_poll_attempt0 in 0..100_u16")
+    );
+    assert!(generated.source.contains("io.delay_micros(0x00000014_u32)"));
+    assert!(
+        generated
+            .source
+            .contains("if bounded_poll_value0 & 0xffffffff_u32 != 0x00000000_u32 { break; }")
+    );
+    assert!(
+        generated
+            .source
+            .contains("platform.ets_printf(0x2f84d9cc_u32)")
     );
 }

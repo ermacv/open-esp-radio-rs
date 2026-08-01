@@ -5,16 +5,30 @@ use std::collections::{BTreeMap, BTreeSet};
 use rv_asm::{Inst, Reg};
 
 use crate::{
-    BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, ExpressionOperation,
-    FunctionAnalysis, IndexedMmioDomain, MemoryAccess, MmioRegisterMap, ObservableEvent, Result,
-    SymbolicValue, artifact, encode_fence_set, external_abi, indexed_mmio_domain,
+    BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
+    DraftReferenceEvent, ExpressionOperation, FunctionAnalysis, IndexedMmioDomain,
+    IndexedMmioRegister, MemoryAccess, MmioRegisterMap, ObservableEvent,
+    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
+    encode_fence_set, entry_contract, evaluate_for_input, external_abi, indexed_mmio_domain,
 };
+
+const REFERENCE_ONLY_POLL_BLOCKER: &str = "reference-modeled MMIO polling loop";
+const REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER: &str = "reference-modeled standard memory intrinsic";
+const MAX_INLINE_MEMORY_INTRINSIC_BYTES: u32 = 256;
+const MAX_STRUCTURAL_INSTRUCTION_VISITS: u16 = 256;
+
+pub(crate) fn is_reference_only_blocker(blocker: &str) -> bool {
+    blocker.starts_with(REFERENCE_ONLY_POLL_BLOCKER)
+        || blocker.starts_with(REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum StructuralAddress {
     Absolute(u32),
     PrivateStack(i32),
     ExternalTableSlot(external_abi::Table, i32),
+    FunctionTableSlot(entry_contract::FunctionTable, i32),
     CallerMemory(SymbolicValue),
     SymbolMemory(SymbolicValue),
 }
@@ -38,6 +52,34 @@ impl StructuralCallSite {
 
 pub(crate) type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;
 
+#[derive(Clone, Debug)]
+pub(crate) struct StructuralPointerContext {
+    pub(crate) external_pointer_cells: BTreeMap<u32, external_abi::Table>,
+    pub(crate) function_pointer_cells: BTreeMap<u32, entry_contract::FunctionTable>,
+    pub(crate) data_pointer_cells: BTreeMap<u32, SymbolicValue>,
+    pub(crate) relocated_pointer_symbols: BTreeMap<String, SymbolicValue>,
+    pub(crate) function_table_slots: BTreeMap<(entry_contract::FunctionTable, u32), u32>,
+}
+
+impl Default for StructuralPointerContext {
+    fn default() -> Self {
+        let mut relocated_pointer_symbols = BTreeMap::new();
+        for table in external_abi::all_tables() {
+            relocated_pointer_symbols.insert(
+                external_abi::table_spec(table).pointer_symbol.to_owned(),
+                SymbolicValue::ExternalTable(table),
+            );
+        }
+        Self {
+            external_pointer_cells: BTreeMap::new(),
+            function_pointer_cells: BTreeMap::new(),
+            data_pointer_cells: BTreeMap::new(),
+            relocated_pointer_symbols,
+            function_table_slots: BTreeMap::new(),
+        }
+    }
+}
+
 fn structural_effective_address(
     values: &[SymbolicValue; 32],
     base: Reg,
@@ -54,6 +96,9 @@ fn structural_effective_address(
         SymbolicValue::ExternalTable(table) => {
             Some(StructuralAddress::ExternalTableSlot(*table, offset))
         }
+        SymbolicValue::FunctionTable(table) => {
+            Some(StructuralAddress::FunctionTableSlot(*table, offset))
+        }
         SymbolicValue::SymbolAddress {
             lo_addend: Some(_), ..
         } => Some(StructuralAddress::SymbolMemory(
@@ -64,6 +109,218 @@ fn structural_effective_address(
         )),
         _ => None,
     }
+}
+
+fn structural_value_address(value: &SymbolicValue) -> Option<StructuralAddress> {
+    match value {
+        SymbolicValue::Constant(address) => Some(StructuralAddress::Absolute(*address)),
+        SymbolicValue::StackAddress(offset) => Some(StructuralAddress::PrivateStack(*offset)),
+        SymbolicValue::ExternalTable(table) => {
+            Some(StructuralAddress::ExternalTableSlot(*table, 0))
+        }
+        SymbolicValue::FunctionTable(table) => {
+            Some(StructuralAddress::FunctionTableSlot(*table, 0))
+        }
+        SymbolicValue::SymbolAddress {
+            lo_addend: Some(_), ..
+        } => Some(StructuralAddress::SymbolMemory(value.clone())),
+        _ if value.caller_memory_address() => Some(StructuralAddress::CallerMemory(value.clone())),
+        _ => None,
+    }
+}
+
+fn memory_intrinsic_load_byte(
+    address: SymbolicValue,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    stack: &SymbolicStack,
+    reference_events: &mut Vec<DraftReferenceEvent>,
+    next_memory_read_token: &mut u32,
+) -> std::result::Result<SymbolicValue, String> {
+    match structural_value_address(&address) {
+        Some(StructuralAddress::PrivateStack(offset)) => stack
+            .load(offset, 8, false)
+            .ok_or_else(|| format!("uninitialized private-stack byte at {offset:+#x}")),
+        Some(StructuralAddress::CallerMemory(address)) => {
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                address,
+                region: "caller-owned ABI argument RAM".to_owned(),
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(StructuralAddress::SymbolMemory(address)) => {
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                region: address.canonical(),
+                address,
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(StructuralAddress::Absolute(address)) => {
+            let region = symbol
+                .memory_region(address, 8)
+                .ok_or_else(|| format!("source byte {address:#010x} is not mapped ELF RAM"))?;
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                address: SymbolicValue::Constant(address),
+                region: region.name.clone(),
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(
+            StructuralAddress::ExternalTableSlot(..) | StructuralAddress::FunctionTableSlot(..),
+        )
+        | None => Err(format!(
+            "source address {} has no byte-addressable memory provenance",
+            address.canonical()
+        )),
+    }
+}
+
+fn memory_intrinsic_store_byte(
+    address: SymbolicValue,
+    value: SymbolicValue,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    stack: &mut SymbolicStack,
+    reference_events: &mut Vec<DraftReferenceEvent>,
+) -> std::result::Result<(), String> {
+    if !value.is_resolved() {
+        return Err(format!(
+            "destination byte at {} has an unresolved value",
+            address.canonical()
+        ));
+    }
+    match structural_value_address(&address) {
+        Some(StructuralAddress::PrivateStack(offset)) => {
+            stack.store(offset, 8, &value);
+            reference_events.push(DraftReferenceEvent::PrivateStackStore {
+                offset,
+                width: 8,
+                value,
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::CallerMemory(address)) => {
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address,
+                region: "caller-owned ABI argument RAM".to_owned(),
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::SymbolMemory(address)) => {
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                region: address.canonical(),
+                address,
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::Absolute(address)) => {
+            let region = symbol
+                .memory_region(address, 8)
+                .ok_or_else(|| format!("destination byte {address:#010x} is not mapped ELF RAM"))?;
+            if !region.writable {
+                return Err(format!(
+                    "destination byte {address:#010x} is in read-only region {}",
+                    region.name
+                ));
+            }
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address: SymbolicValue::Constant(address),
+                region: region.name.clone(),
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(
+            StructuralAddress::ExternalTableSlot(..) | StructuralAddress::FunctionTableSlot(..),
+        )
+        | None => Err(format!(
+            "destination address {} has no writable byte-memory provenance",
+            address.canonical()
+        )),
+    }
+}
+
+fn inline_standard_memory_intrinsic(
+    name: &str,
+    arguments: &Rv32CallArguments,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    stack: &mut SymbolicStack,
+    reference_events: &mut Vec<DraftReferenceEvent>,
+    next_memory_read_token: &mut u32,
+) -> Option<std::result::Result<SymbolicValue, String>> {
+    if !matches!(name, "memcpy" | "memset") {
+        return None;
+    }
+    let result = (|| {
+        let length = arguments[2]
+            .as_constant()
+            .ok_or_else(|| format!("{name} length is not constant"))?;
+        if length > MAX_INLINE_MEMORY_INTRINSIC_BYTES {
+            return Err(format!(
+                "{name} length {length} exceeds the reviewed inline limit of {MAX_INLINE_MEMORY_INTRINSIC_BYTES} bytes"
+            ));
+        }
+        let destination = arguments[0].clone();
+        match name {
+            "memcpy" => {
+                let mut bytes = Vec::with_capacity(length as usize);
+                for offset in 0..length {
+                    bytes.push(memory_intrinsic_load_byte(
+                        arguments[1].clone().add_constant(offset),
+                        symbol,
+                        stack,
+                        reference_events,
+                        next_memory_read_token,
+                    )?);
+                }
+                for (offset, value) in bytes.into_iter().enumerate() {
+                    memory_intrinsic_store_byte(
+                        destination.clone().add_constant(offset as u32),
+                        value,
+                        symbol,
+                        stack,
+                        reference_events,
+                    )?;
+                }
+            }
+            "memset" => {
+                let byte = arguments[1].clone().and(0xff);
+                for offset in 0..length {
+                    memory_intrinsic_store_byte(
+                        destination.clone().add_constant(offset),
+                        byte.clone(),
+                        symbol,
+                        stack,
+                        reference_events,
+                    )?;
+                }
+            }
+            _ => unreachable!(),
+        }
+        Ok(destination)
+    })();
+    Some(result)
 }
 
 fn structural_indexed_mmio_address(
@@ -77,6 +334,101 @@ fn structural_indexed_mmio_address(
         .add_constant(offset as u32);
     let domain = indexed_mmio_domain(&address, svd)?;
     Some((address, domain))
+}
+
+fn evaluate_branch_for_input(
+    condition: &BranchCondition,
+    input_index: u8,
+    input: u32,
+) -> Option<bool> {
+    let left = evaluate_for_input(&condition.left, input_index, input)?;
+    let right = evaluate_for_input(&condition.right, input_index, input)?;
+    Some(match condition.operation {
+        BranchOperation::Equal => left == right,
+        BranchOperation::NotEqual => left != right,
+        BranchOperation::LessSigned => (left as i32) < (right as i32),
+        BranchOperation::GreaterEqualSigned => (left as i32) >= (right as i32),
+        BranchOperation::LessUnsigned => left < right,
+        BranchOperation::GreaterEqualUnsigned => left >= right,
+    })
+}
+
+fn structural_indexed_read_only_memory_address(
+    values: &[SymbolicValue; 32],
+    base: Reg,
+    offset: i32,
+    width: u8,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    reference_events: &[DraftReferenceEvent],
+) -> Option<(SymbolicValue, String)> {
+    const MAX_EXHAUSTIVE_INPUT_BITS: usize = 8;
+
+    let address = values[usize::from(base.0)]
+        .clone()
+        .add_constant(offset as u32);
+    let mut input_index = None;
+    let mut input_bits = BTreeSet::new();
+    if !collect_evaluable_input_bits(&address, &mut input_index, &mut input_bits) {
+        return None;
+    }
+    let input_index = input_index?;
+
+    let mut relevant_decisions = Vec::new();
+    for event in reference_events {
+        let DraftReferenceEvent::BranchDecision { condition, taken } = event else {
+            continue;
+        };
+        let mut condition_index = None;
+        let mut condition_bits = BTreeSet::new();
+        if !collect_evaluable_input_bits(&condition.left, &mut condition_index, &mut condition_bits)
+            || !collect_evaluable_input_bits(
+                &condition.right,
+                &mut condition_index,
+                &mut condition_bits,
+            )
+        {
+            return None;
+        }
+        if condition_index == Some(input_index) {
+            input_bits.extend(condition_bits);
+            relevant_decisions.push((condition, *taken));
+        }
+    }
+    if input_bits.len() > MAX_EXHAUSTIVE_INPUT_BITS {
+        return None;
+    }
+
+    let input_bits = input_bits.into_iter().collect::<Vec<_>>();
+    let mut selected_region = None::<(u32, u32, String)>;
+    let mut feasible_inputs = 0usize;
+    for combination in 0..(1_u32 << input_bits.len()) {
+        let input = input_bits
+            .iter()
+            .enumerate()
+            .fold(0_u32, |value, (source, destination)| {
+                value | (((combination >> source) & 1) << destination)
+            });
+        if relevant_decisions.iter().any(|(condition, taken)| {
+            evaluate_branch_for_input(condition, input_index, input) != Some(*taken)
+        }) {
+            continue;
+        }
+        let candidate = evaluate_for_input(&address, input_index, input)?;
+        let region = symbol
+            .memory_region(candidate, width)
+            .filter(|region| !region.writable)?;
+        let identity = (region.start, region.length, region.name.clone());
+        if selected_region
+            .as_ref()
+            .is_some_and(|selected| selected != &identity)
+        {
+            return None;
+        }
+        selected_region = Some(identity);
+        feasible_inputs += 1;
+    }
+    let (_, _, region) = selected_region?;
+    (feasible_inputs != 0).then_some((address, format!("bounded read-only ELF {region}")))
 }
 
 fn relocation_symbol_address(
@@ -171,18 +523,302 @@ impl SymbolicStack {
     }
 }
 
+fn structural_call_arguments(
+    values: &[SymbolicValue; 32],
+    stack: &SymbolicStack,
+    private_stack_may_be_modified_by_call: bool,
+) -> Box<Rv32CallArguments> {
+    Box::new(core::array::from_fn(|index| {
+        if index < RV32_REGISTER_ARGUMENT_COUNT {
+            return values[10 + index].clone();
+        }
+        let stack_index = index - RV32_REGISTER_ARGUMENT_COUNT;
+        let Some(offset) = values[usize::from(Reg::SP.0)]
+            .private_stack_offset()
+            .map(|base| base.wrapping_add((stack_index * 4) as i32))
+        else {
+            return SymbolicValue::Unknown;
+        };
+        (!private_stack_may_be_modified_by_call)
+            .then(|| stack.load(offset, 32, false))
+            .flatten()
+            .unwrap_or(SymbolicValue::Unknown)
+    }))
+}
+
+#[derive(Clone, Debug)]
+struct StructuralCheckpoint {
+    events_len: usize,
+    reference_events_len: usize,
+    blockers_len: usize,
+    reference_blockers_len: usize,
+    next_mmio_read_token: u32,
+    next_memory_read_token: u32,
+    next_call_token: u32,
+    next_external_call_token: u32,
+    stack: SymbolicStack,
+}
+
+#[derive(Clone, Debug)]
+struct StructuralPollLoop {
+    event: DraftReferenceEvent,
+    checkpoint: StructuralCheckpoint,
+    read_token: u32,
+}
+
+fn symbolic_value_depends_on_mmio_read(value: &SymbolicValue, read_token: u32) -> bool {
+    match value {
+        SymbolicValue::RegisterImage {
+            read_token: token, ..
+        }
+        | SymbolicValue::IndexedRegisterImage {
+            read_token: token, ..
+        } => *token == read_token,
+        SymbolicValue::Expression { left, right, .. } => {
+            symbolic_value_depends_on_mmio_read(left, read_token)
+                || symbolic_value_depends_on_mmio_read(right, read_token)
+        }
+        SymbolicValue::Bits(bits) => bits.iter().any(|source| {
+            matches!(
+                source,
+                BitSource::Register {
+                    read_token: token,
+                    ..
+                } | BitSource::IndexedRegister {
+                    read_token: token,
+                    ..
+                } if *token == read_token
+            )
+        }),
+        _ => false,
+    }
+}
+
+fn equality_constraints_for_read(
+    value: &SymbolicValue,
+    target: u32,
+    read_token: u32,
+    read_address: u32,
+) -> Option<(u32, u32)> {
+    let mut mask = 0_u32;
+    let mut expected = 0_u32;
+    for (destination, source) in value.bits().into_iter().enumerate() {
+        let target_bit = target & (1 << destination) != 0;
+        match source {
+            BitSource::Constant(value) if value == target_bit => {}
+            BitSource::Constant(_) => return None,
+            BitSource::Register {
+                read_token: token,
+                address,
+                bit,
+                inverted,
+            } if token == read_token && address == read_address => {
+                let source_mask = 1_u32 << bit;
+                let source_expected = target_bit ^ inverted;
+                if mask & source_mask != 0 && (expected & source_mask != 0) != source_expected {
+                    return None;
+                }
+                mask |= source_mask;
+                if source_expected {
+                    expected |= source_mask;
+                }
+            }
+            _ => return None,
+        }
+    }
+    (mask != 0).then_some((mask, expected))
+}
+
+fn sign_constraint_for_read(
+    value: &SymbolicValue,
+    expected_sign: bool,
+    read_token: u32,
+    read_address: u32,
+) -> Option<(u32, u32)> {
+    let BitSource::Register {
+        read_token: token,
+        address,
+        bit,
+        inverted,
+    } = value.bits()[31]
+    else {
+        return None;
+    };
+    if token != read_token || address != read_address {
+        return None;
+    }
+    let mask = 1_u32 << bit;
+    let source_expected = expected_sign ^ inverted;
+    Some((mask, if source_expected { mask } else { 0 }))
+}
+
+fn poll_exit_predicate(
+    condition: &BranchCondition,
+    read_token: u32,
+    read_address: u32,
+) -> Option<(u32, u32)> {
+    match condition.operation {
+        BranchOperation::NotEqual | BranchOperation::Equal => {
+            let (value, target) = condition
+                .right
+                .as_constant()
+                .map(|target| (&condition.left, target))
+                .or_else(|| {
+                    condition
+                        .left
+                        .as_constant()
+                        .map(|target| (&condition.right, target))
+                })?;
+            let (mask, mut expected) =
+                equality_constraints_for_read(value, target, read_token, read_address)?;
+            if condition.operation == BranchOperation::Equal {
+                if mask.count_ones() != 1 {
+                    return None;
+                }
+                expected ^= mask;
+            }
+            Some((mask, expected))
+        }
+        BranchOperation::LessSigned if condition.right.as_constant() == Some(0) => {
+            sign_constraint_for_read(&condition.left, false, read_token, read_address)
+        }
+        BranchOperation::GreaterEqualSigned if condition.right.as_constant() == Some(0) => {
+            sign_constraint_for_read(&condition.left, true, read_token, read_address)
+        }
+        _ => None,
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "poll recognition validates one complete structural checkpoint"
+)]
+fn recognize_structural_poll_loop(
+    instructions: &[artifact::DecodedInstruction],
+    loop_start_index: usize,
+    branch_index: usize,
+    condition: &BranchCondition,
+    checkpoint: &StructuralCheckpoint,
+    events: &[ObservableEvent],
+    reference_events: &[DraftReferenceEvent],
+    blockers: &[String],
+    reference_blockers: &[String],
+    next_mmio_read_token: u32,
+    next_memory_read_token: u32,
+    next_call_token: u32,
+    next_external_call_token: u32,
+    stack: &SymbolicStack,
+    svd: &MmioRegisterMap,
+) -> Option<StructuralPollLoop> {
+    if blockers.len() != checkpoint.blockers_len
+        || reference_blockers.len() != checkpoint.reference_blockers_len
+        || next_mmio_read_token != checkpoint.next_mmio_read_token + 1
+        || next_memory_read_token != checkpoint.next_memory_read_token
+        || next_call_token != checkpoint.next_call_token
+        || next_external_call_token != checkpoint.next_external_call_token
+        || stack != &checkpoint.stack
+        || events.len() != checkpoint.events_len + 1
+        || reference_events.len() != checkpoint.reference_events_len + 1
+    {
+        return None;
+    }
+
+    let loop_instructions = &instructions[loop_start_index..=branch_index];
+    let load_count = loop_instructions
+        .iter()
+        .filter(|decoded| {
+            matches!(
+                decoded.instruction,
+                Inst::Lb { .. }
+                    | Inst::Lbu { .. }
+                    | Inst::Lh { .. }
+                    | Inst::Lhu { .. }
+                    | Inst::Lw { .. }
+            )
+        })
+        .count();
+    if load_count != 1
+        || loop_instructions[..loop_instructions.len() - 1]
+            .iter()
+            .any(|decoded| {
+                matches!(
+                    decoded.instruction,
+                    Inst::Sb { .. }
+                        | Inst::Sh { .. }
+                        | Inst::Sw { .. }
+                        | Inst::Beq { .. }
+                        | Inst::Bne { .. }
+                        | Inst::Blt { .. }
+                        | Inst::Bge { .. }
+                        | Inst::Bltu { .. }
+                        | Inst::Bgeu { .. }
+                        | Inst::Jal { .. }
+                        | Inst::Jalr { .. }
+                        | Inst::Fence { .. }
+                        | Inst::Ecall
+                        | Inst::Ebreak
+                        | Inst::LrW { .. }
+                        | Inst::ScW { .. }
+                        | Inst::AmoW { .. }
+                )
+            })
+    {
+        return None;
+    }
+
+    let DraftReferenceEvent::Observable(ObservableEvent::Memory {
+        access: MemoryAccess::Read,
+        width,
+        address,
+        ..
+    }) = &reference_events[checkpoint.reference_events_len]
+    else {
+        return None;
+    };
+    let register = svd.register(*address)?;
+    let read_token = checkpoint.next_mmio_read_token;
+    let (mask, expected) = poll_exit_predicate(condition, read_token, *address)?;
+    Some(StructuralPollLoop {
+        event: DraftReferenceEvent::PollMmio {
+            width: *width,
+            address: SymbolicValue::Constant(*address),
+            registers: vec![IndexedMmioRegister {
+                address: *address,
+                name: register.name.clone(),
+            }],
+            guard: None,
+            mask,
+            expected,
+        },
+        checkpoint: checkpoint.clone(),
+        read_token,
+    })
+}
+
 fn structural_set(values: &mut [SymbolicValue; 32], register: Reg, value: SymbolicValue) {
     if register != Reg::ZERO {
         values[usize::from(register.0)] = value;
     }
 }
 
-fn structural_finish_call(values: &mut [SymbolicValue; 32], return_address: u32, call_token: u32) {
+fn structural_finish_call(
+    values: &mut [SymbolicValue; 32],
+    return_address: u32,
+    call_token: u32,
+    target: u32,
+) {
     structural_finish_call_with_result(
         values,
         return_address,
         SymbolicValue::CallResult(call_token),
     );
+    if target == super::ESP32S31_ROM_DIVDI3_ADDRESS {
+        structural_set(
+            values,
+            Reg::A1,
+            SymbolicValue::CallResult(call_token | SECONDARY_CALL_RESULT_TOKEN_FLAG),
+        );
+    }
 }
 
 fn structural_finish_call_with_result(
@@ -218,14 +854,14 @@ pub(crate) fn trace_binary_symbol(
     symbol: &artifact::ArtifactSymbolDefinition,
     svd: &MmioRegisterMap,
     relocated_calls: &StructuralRelocatedCalls,
-    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
-    specialized_arguments: Option<&[SymbolicValue; 8]>,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
 ) -> Result<FunctionAnalysis> {
     trace_binary_symbol_with_branches(
         symbol,
         svd,
         relocated_calls,
-        external_pointer_cells,
+        pointer_context,
         specialized_arguments,
         &BTreeMap::new(),
     )
@@ -235,14 +871,14 @@ pub(crate) fn trace_binary_symbol_with_branches(
     symbol: &artifact::ArtifactSymbolDefinition,
     svd: &MmioRegisterMap,
     relocated_calls: &StructuralRelocatedCalls,
-    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
-    specialized_arguments: Option<&[SymbolicValue; 8]>,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
     forced_branches: &BTreeMap<u32, bool>,
 ) -> Result<FunctionAnalysis> {
     let mut values: [SymbolicValue; 32] = core::array::from_fn(|_| SymbolicValue::Unknown);
     values[0] = SymbolicValue::Constant(0);
     values[usize::from(Reg::SP.0)] = SymbolicValue::StackAddress(0);
-    for index in 0..8 {
+    for index in 0..RV32_REGISTER_ARGUMENT_COUNT {
         values[10 + index] = specialized_arguments
             .and_then(|arguments| arguments[index].as_constant())
             .map_or_else(
@@ -263,7 +899,19 @@ pub(crate) fn trace_binary_symbol_with_branches(
     let mut next_memory_read_token = 0_u32;
     let mut next_call_token = 0_u32;
     let mut next_external_call_token = 0_u32;
+    let mut next_private_stack_read_token = 0_u32;
     let mut stack = SymbolicStack::default();
+    for index in 0..RV32_STACK_ARGUMENT_COUNT {
+        let argument_index = RV32_REGISTER_ARGUMENT_COUNT + index;
+        let value = specialized_arguments
+            .and_then(|arguments| arguments[argument_index].as_constant())
+            .map_or_else(
+                || SymbolicValue::input(argument_index as u8),
+                SymbolicValue::Constant,
+            );
+        stack.store((index * 4) as i32, 32, &value);
+    }
+    let mut private_stack_may_be_modified_by_call = false;
 
     let instructions = artifact::decode_symbol(symbol)?;
     let instruction_indices = instructions
@@ -272,17 +920,34 @@ pub(crate) fn trace_binary_symbol_with_branches(
         .map(|(index, instruction)| (instruction.address as u32, index))
         .collect::<BTreeMap<_, _>>();
     let mut instruction_index = 0usize;
-    let mut visited_instructions = BTreeSet::new();
+    let mut instruction_visits = BTreeMap::<u32, u16>::new();
+    let mut checkpoints = BTreeMap::<u32, StructuralCheckpoint>::new();
     while let Some(decoded) = instructions.get(instruction_index).copied() {
         let pc = decoded.address;
         let width = decoded.width;
         let instruction = decoded.instruction;
-        if !visited_instructions.insert(pc as u32) {
+        let visits = instruction_visits.entry(pc as u32).or_default();
+        if *visits >= MAX_STRUCTURAL_INSTRUCTION_VISITS {
             blockers.push(format!(
-                "control-flow loop revisits instruction at {pc:#x}: {instruction}"
+                "control-flow loop bounded unrolling exceeds {MAX_STRUCTURAL_INSTRUCTION_VISITS} visits at {pc:#x}: {instruction}"
             ));
             break;
         }
+        *visits += 1;
+        checkpoints.insert(
+            pc as u32,
+            StructuralCheckpoint {
+                events_len: events.len(),
+                reference_events_len: reference_events.len(),
+                blockers_len: blockers.len(),
+                reference_blockers_len: reference_blockers.len(),
+                next_mmio_read_token,
+                next_memory_read_token,
+                next_call_token,
+                next_external_call_token,
+                stack: stack.clone(),
+            },
+        );
         if let Some((name, target)) =
             relocated_calls.get(&StructuralCallSite::new(symbol, pc as u32))
         {
@@ -307,6 +972,56 @@ pub(crate) fn trace_binary_symbol_with_branches(
                 ));
                 break;
             };
+            if target.is_none()
+                && let Some(result) = inline_standard_memory_intrinsic(
+                    name,
+                    &core::array::from_fn(|index| {
+                        if index < RV32_REGISTER_ARGUMENT_COUNT {
+                            values[10 + index].clone()
+                        } else {
+                            SymbolicValue::Unknown
+                        }
+                    }),
+                    symbol,
+                    &mut stack,
+                    &mut reference_events,
+                    &mut next_memory_read_token,
+                )
+            {
+                if !matches!(dest, Reg::ZERO | Reg::RA) {
+                    reference_blockers.push(format!(
+                        "unsupported-memory-intrinsic-link-register at {pc:#x}: {name} uses {dest}"
+                    ));
+                    break;
+                }
+                let result = match result {
+                    Ok(result) => result,
+                    Err(error) => {
+                        reference_blockers
+                            .push(format!("standard-memory-intrinsic at {pc:#x}: {error}"));
+                        break;
+                    }
+                };
+                let removed = blockers.pop();
+                debug_assert!(
+                    removed.is_some_and(|blocker| { blocker.starts_with("call/jump instruction") })
+                );
+                blockers.push(format!(
+                    "{REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER} at {pc:#x}: {name}"
+                ));
+                if dest == Reg::ZERO {
+                    return_value = result;
+                    break;
+                }
+                structural_finish_call_with_result(
+                    &mut values,
+                    (pc as u32).wrapping_add(8),
+                    result,
+                );
+                values[0] = SymbolicValue::Constant(0);
+                instruction_index += 2;
+                continue;
+            }
             if target.is_none()
                 && let Some(argument_count) = external_abi::diagnostic_argument_count(name)
             {
@@ -341,7 +1056,11 @@ pub(crate) fn trace_binary_symbol_with_branches(
                 reference_blockers.push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
                 break;
             };
-            let arguments = Box::new(core::array::from_fn(|index| values[10 + index].clone()));
+            let arguments =
+                structural_call_arguments(&values, &stack, private_stack_may_be_modified_by_call);
+            private_stack_may_be_modified_by_call |= arguments
+                .iter()
+                .any(|argument| argument.private_stack_offset().is_some());
             if dest == Reg::ZERO {
                 let call_token = next_call_token;
                 reference_events.push(DraftReferenceEvent::TailCall {
@@ -361,7 +1080,12 @@ pub(crate) fn trace_binary_symbol_with_branches(
                     target,
                     arguments,
                 });
-                structural_finish_call(&mut values, (pc as u32).wrapping_add(8), call_token);
+                structural_finish_call(
+                    &mut values,
+                    (pc as u32).wrapping_add(8),
+                    call_token,
+                    target,
+                );
             } else {
                 reference_blockers.push(format!(
                     "unsupported-call-link-register at {pc:#x}: {name} uses {dest}"
@@ -465,11 +1189,41 @@ pub(crate) fn trace_binary_symbol_with_branches(
                 let value = values[usize::from(src1.0)].clone().seqz();
                 structural_set(&mut values, dest, value);
             }
-            Inst::Slti { dest, .. }
-            | Inst::Sltiu { dest, .. }
-            | Inst::Slt { dest, .. }
-            | Inst::Sltu { dest, .. } => {
-                structural_set(&mut values, dest, SymbolicValue::Unknown);
+            Inst::Slti { imm, dest, src1 } | Inst::Sltiu { imm, dest, src1 } => {
+                let left = values[usize::from(src1.0)].clone();
+                let right = SymbolicValue::Constant(imm.as_u32());
+                let operation = if matches!(instruction, Inst::Slti { .. }) {
+                    ExpressionOperation::LessThanSigned
+                } else {
+                    ExpressionOperation::LessThanUnsigned
+                };
+                let value = match left.as_constant() {
+                    Some(left) if operation == ExpressionOperation::LessThanSigned => {
+                        SymbolicValue::Constant(u32::from((left as i32) < (imm.as_u32() as i32)))
+                    }
+                    Some(left) => SymbolicValue::Constant(u32::from(left < imm.as_u32())),
+                    None => SymbolicValue::expression(operation, left, right),
+                };
+                structural_set(&mut values, dest, value);
+            }
+            Inst::Slt { dest, src1, src2 } | Inst::Sltu { dest, src1, src2 } => {
+                let left = values[usize::from(src1.0)].clone();
+                let right = values[usize::from(src2.0)].clone();
+                let operation = if matches!(instruction, Inst::Slt { .. }) {
+                    ExpressionOperation::LessThanSigned
+                } else {
+                    ExpressionOperation::LessThanUnsigned
+                };
+                let value = match (left.as_constant(), right.as_constant()) {
+                    (Some(left), Some(right))
+                        if operation == ExpressionOperation::LessThanSigned =>
+                    {
+                        SymbolicValue::Constant(u32::from((left as i32) < (right as i32)))
+                    }
+                    (Some(left), Some(right)) => SymbolicValue::Constant(u32::from(left < right)),
+                    _ => SymbolicValue::expression(operation, left, right),
+                };
+                structural_set(&mut values, dest, value);
             }
             Inst::And { dest, src1, src2 } => {
                 let value = values[usize::from(src1.0)]
@@ -627,14 +1381,19 @@ pub(crate) fn trace_binary_symbol_with_branches(
                     _ => 32,
                 };
                 let signed = matches!(instruction, Inst::Lb { .. } | Inst::Lh { .. });
-                let relocated_external_table = symbol
+                let relocated_pointer = symbol
                     .relocation(pc as u32, artifact::RelocationKind::Lo12I)
                     .and_then(|relocation| {
                         (relocation.addend == 0 && offset.as_i32() == 0)
-                            .then(|| external_abi::table_for_pointer_symbol(&relocation.symbol))
+                            .then(|| {
+                                pointer_context
+                                    .relocated_pointer_symbols
+                                    .get(&relocation.symbol)
+                                    .cloned()
+                            })
                             .flatten()
                     });
-                let address = if relocated_external_table.is_some() {
+                let address = if relocated_pointer.is_some() {
                     None
                 } else {
                     match complete_low_relocation(
@@ -656,12 +1415,33 @@ pub(crate) fn trace_binary_symbol_with_branches(
                         }
                     }
                 };
-                let value = match (relocated_external_table, address) {
-                    (Some(table), _) if width == 32 => SymbolicValue::ExternalTable(table),
+                let value = match (relocated_pointer, address) {
+                    (Some(value), _) if width == 32 => value,
                     (_, Some(StructuralAddress::Absolute(address)))
-                        if width == 32 && external_pointer_cells.contains_key(&address) =>
+                        if width == 32
+                            && pointer_context
+                                .external_pointer_cells
+                                .contains_key(&address) =>
                     {
-                        SymbolicValue::ExternalTable(external_pointer_cells[&address])
+                        SymbolicValue::ExternalTable(
+                            pointer_context.external_pointer_cells[&address],
+                        )
+                    }
+                    (_, Some(StructuralAddress::Absolute(address)))
+                        if width == 32
+                            && pointer_context
+                                .function_pointer_cells
+                                .contains_key(&address) =>
+                    {
+                        SymbolicValue::FunctionTable(
+                            pointer_context.function_pointer_cells[&address],
+                        )
+                    }
+                    (_, Some(StructuralAddress::Absolute(address)))
+                        if width == 32
+                            && pointer_context.data_pointer_cells.contains_key(&address) =>
+                    {
+                        pointer_context.data_pointer_cells[&address].clone()
                     }
                     (_, Some(StructuralAddress::ExternalTableSlot(table, offset)))
                         if width == 32 =>
@@ -689,13 +1469,51 @@ pub(crate) fn trace_binary_symbol_with_branches(
                             }
                         }
                     }
-                    (_, Some(StructuralAddress::PrivateStack(offset))) => {
-                        stack.load(offset, width, signed).unwrap_or_else(|| {
+                    (_, Some(StructuralAddress::FunctionTableSlot(table, offset)))
+                        if width == 32 =>
+                    {
+                        let Ok(offset) = u32::try_from(offset) else {
                             reference_blockers.push(format!(
-                                "uninitialized-private-stack-load at {pc:#x}: {instruction}"
+                                "negative-function-table-slot at {pc:#x}: {instruction}"
                             ));
-                            SymbolicValue::Unknown
-                        })
+                            structural_set(&mut values, dest, SymbolicValue::Unknown);
+                            values[0] = SymbolicValue::Constant(0);
+                            instruction_index += 1;
+                            continue;
+                        };
+                        match pointer_context.function_table_slots.get(&(table, offset)) {
+                            Some(target) => SymbolicValue::FunctionPointer {
+                                table,
+                                target: *target,
+                            },
+                            None => {
+                                reference_blockers.push(format!(
+                                    "unregistered-function-table-slot at {pc:#x}: {}+{offset:#x}",
+                                    table.id()
+                                ));
+                                SymbolicValue::Unknown
+                            }
+                        }
+                    }
+                    (_, Some(StructuralAddress::PrivateStack(offset))) => {
+                        if private_stack_may_be_modified_by_call {
+                            let token = next_private_stack_read_token;
+                            next_private_stack_read_token += 1;
+                            reference_events.push(DraftReferenceEvent::PrivateStackLoad {
+                                token,
+                                offset,
+                                width,
+                                signed,
+                            });
+                            SymbolicValue::private_stack_read(token, width, signed)
+                        } else {
+                            stack.load(offset, width, signed).unwrap_or_else(|| {
+                                reference_blockers.push(format!(
+                                    "uninitialized-private-stack-load at {pc:#x}: {instruction}"
+                                ));
+                                SymbolicValue::Unknown
+                            })
+                        }
                     }
                     (_, Some(StructuralAddress::CallerMemory(address))) => {
                         let read_token = next_memory_read_token;
@@ -767,6 +1585,41 @@ pub(crate) fn trace_binary_symbol_with_branches(
                                 value: None,
                             });
                             SymbolicValue::indexed_register_read(read_token, width, signed)
+                        } else if let Some((address, region)) =
+                            structural_indexed_read_only_memory_address(
+                                &values,
+                                base,
+                                offset.as_i32(),
+                                width,
+                                symbol,
+                                &reference_events,
+                            )
+                        {
+                            let read_token = next_memory_read_token;
+                            next_memory_read_token += 1;
+                            reference_events.push(DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Read,
+                                width,
+                                address,
+                                region,
+                                value: None,
+                            });
+                            SymbolicValue::memory_read(read_token, width, signed)
+                        } else if values[usize::from(base.0)].is_resolved()
+                            && values[usize::from(base.0)].depends_on_private_stack_read()
+                        {
+                            let read_token = next_memory_read_token;
+                            next_memory_read_token += 1;
+                            reference_events.push(DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Read,
+                                width,
+                                address: values[usize::from(base.0)]
+                                    .clone()
+                                    .add_constant(offset.as_u32()),
+                                region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
+                                value: None,
+                            });
+                            SymbolicValue::memory_read(read_token, width, signed)
                         } else {
                             reference_blockers.push(format!(
                                 "unmodeled-memory-load at {pc:#x}: {instruction}{}; base {} = {}",
@@ -813,6 +1666,11 @@ pub(crate) fn trace_binary_symbol_with_branches(
                 match address {
                     Some(StructuralAddress::PrivateStack(offset)) => {
                         stack.store(offset, width, &value);
+                        reference_events.push(DraftReferenceEvent::PrivateStackStore {
+                            offset,
+                            width,
+                            value,
+                        });
                     }
                     Some(StructuralAddress::CallerMemory(address)) => {
                         if !value.is_resolved() {
@@ -895,6 +1753,18 @@ pub(crate) fn trace_binary_symbol_with_branches(
                                 guard: domain.guard,
                                 value: Some(value),
                             });
+                        } else if values[usize::from(base.0)].is_resolved()
+                            && values[usize::from(base.0)].depends_on_private_stack_read()
+                        {
+                            reference_events.push(DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Write,
+                                width,
+                                address: values[usize::from(base.0)]
+                                    .clone()
+                                    .add_constant(offset.as_u32()),
+                                region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
+                                value: Some(value),
+                            });
                         } else {
                             reference_blockers.push(format!(
                                 "unmodeled-memory-store at {pc:#x}: {instruction}{}; base {} = {}",
@@ -952,6 +1822,60 @@ pub(crate) fn trace_binary_symbol_with_branches(
                         ));
                         break;
                     }
+                    let branch_target = (pc as u32).wrapping_add(offset.as_u32());
+                    if branch_target < pc as u32
+                        && let Some(loop_start_index) =
+                            instruction_indices.get(&branch_target).copied()
+                        && let Some(checkpoint) = checkpoints.get(&branch_target)
+                        && let Some(poll) = recognize_structural_poll_loop(
+                            &instructions,
+                            loop_start_index,
+                            instruction_index,
+                            &condition,
+                            checkpoint,
+                            &events,
+                            &reference_events,
+                            &blockers,
+                            &reference_blockers,
+                            next_mmio_read_token,
+                            next_memory_read_token,
+                            next_call_token,
+                            next_external_call_token,
+                            &stack,
+                            svd,
+                        )
+                    {
+                        events.truncate(poll.checkpoint.events_len);
+                        reference_events.truncate(poll.checkpoint.reference_events_len);
+                        blockers.truncate(poll.checkpoint.blockers_len);
+                        reference_blockers.truncate(poll.checkpoint.reference_blockers_len);
+                        next_mmio_read_token = poll.checkpoint.next_mmio_read_token;
+                        next_memory_read_token = poll.checkpoint.next_memory_read_token;
+                        next_call_token = poll.checkpoint.next_call_token;
+                        next_external_call_token = poll.checkpoint.next_external_call_token;
+                        stack = poll.checkpoint.stack;
+                        for value in &mut values {
+                            if symbolic_value_depends_on_mmio_read(value, poll.read_token) {
+                                *value = SymbolicValue::Unknown;
+                            }
+                        }
+                        reference_events.push(poll.event);
+                        blockers.push(format!(
+                            "{REFERENCE_ONLY_POLL_BLOCKER} at {pc:#x}: {instruction}"
+                        ));
+                        let fallthrough = (pc as u32).wrapping_add(u32::from(width));
+                        let Some(fallthrough_index) =
+                            instruction_indices.get(&fallthrough).copied()
+                        else {
+                            reference_blockers.push(format!(
+                                "invalid polling-loop fallthrough at {pc:#x}: {instruction}"
+                            ));
+                            break;
+                        };
+                        instruction_index = fallthrough_index;
+                        values[0] = SymbolicValue::Constant(0);
+                        continue;
+                    }
                     let Some(taken) = forced_branches.get(&(pc as u32)).copied() else {
                         blockers.push(format!(
                             "input-dependent control-flow at {pc:#x}: {instruction}"
@@ -994,8 +1918,14 @@ pub(crate) fn trace_binary_symbol_with_branches(
                 }
                 blockers.push(format!("call/jump instruction at {pc:#x}: {instruction}"));
                 if target < symbol_start || target >= symbol_end {
-                    let arguments =
-                        Box::new(core::array::from_fn(|index| values[10 + index].clone()));
+                    let arguments = structural_call_arguments(
+                        &values,
+                        &stack,
+                        private_stack_may_be_modified_by_call,
+                    );
+                    private_stack_may_be_modified_by_call |= arguments
+                        .iter()
+                        .any(|argument| argument.private_stack_offset().is_some());
                     if dest == Reg::ZERO {
                         let call_token = next_call_token;
                         reference_events.push(DraftReferenceEvent::TailCall {
@@ -1019,9 +1949,62 @@ pub(crate) fn trace_binary_symbol_with_branches(
                             &mut values,
                             (pc as u32).wrapping_add(u32::from(width)),
                             call_token,
+                            target,
                         );
                     }
                 }
+            }
+            Inst::Jalr { offset, base, dest }
+                if matches!(
+                    &values[usize::from(base.0)],
+                    SymbolicValue::FunctionPointer { .. }
+                ) =>
+            {
+                let SymbolicValue::FunctionPointer { table, target } =
+                    values[usize::from(base.0)].clone()
+                else {
+                    unreachable!()
+                };
+                blockers.push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+                if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+                    reference_blockers.push(format!(
+                        "unsupported function-table call shape at {pc:#x}: {}::{target:#010x}",
+                        table.id()
+                    ));
+                    break;
+                }
+                let arguments = structural_call_arguments(
+                    &values,
+                    &stack,
+                    private_stack_may_be_modified_by_call,
+                );
+                private_stack_may_be_modified_by_call |= arguments
+                    .iter()
+                    .any(|argument| argument.private_stack_offset().is_some());
+                let call_token = next_call_token;
+                if dest == Reg::ZERO {
+                    reference_events.push(DraftReferenceEvent::TailCall {
+                        token: call_token,
+                        site: pc as u32,
+                        target,
+                        arguments,
+                    });
+                    return_value = SymbolicValue::CallResult(call_token);
+                    break;
+                }
+                next_call_token += 1;
+                reference_events.push(DraftReferenceEvent::Call {
+                    token: call_token,
+                    site: pc as u32,
+                    target,
+                    arguments,
+                });
+                structural_finish_call(
+                    &mut values,
+                    (pc as u32).wrapping_add(u32::from(width)),
+                    call_token,
+                    target,
+                );
             }
             Inst::Jalr { offset, base, dest }
                 if matches!(
@@ -1048,6 +2031,7 @@ pub(crate) fn trace_binary_symbol_with_branches(
                         SymbolicValue::Constant(0)
                     }
                 }));
+                let mut private_stack_output = None;
                 let result = match slot.return_model {
                     external_abi::ReturnModel::Constant(value) => SymbolicValue::Constant(value),
                     external_abi::ReturnModel::SymbolicU32 => {
@@ -1072,6 +2056,7 @@ pub(crate) fn trace_binary_symbol_with_branches(
                         let output =
                             SymbolicValue::ExternalResult(next_external_call_token).and(0xff);
                         stack.store(*offset, 8, &output);
+                        private_stack_output = Some((*offset, output));
                         // The validated private pointer has already been
                         // consumed by the internal stack effect. Do not let a
                         // callee-local address escape into call composition or
@@ -1089,6 +2074,13 @@ pub(crate) fn trace_binary_symbol_with_branches(
                     function,
                     arguments,
                 });
+                if let Some((offset, value)) = private_stack_output {
+                    reference_events.push(DraftReferenceEvent::PrivateStackStore {
+                        offset,
+                        width: 8,
+                        value,
+                    });
+                }
                 next_external_call_token += 1;
                 if dest == Reg::ZERO {
                     return_value = result;
@@ -1133,6 +2125,22 @@ pub(crate) fn trace_binary_symbol_with_branches(
         }
         values[0] = SymbolicValue::Constant(0);
         instruction_index += 1;
+    }
+
+    let private_stack_crosses_call_boundary = reference_events.iter().any(|event| match event {
+        DraftReferenceEvent::Call { arguments, .. }
+        | DraftReferenceEvent::TailCall { arguments, .. } => arguments
+            .iter()
+            .any(|argument| argument.private_stack_offset().is_some()),
+        _ => false,
+    });
+    if !private_stack_crosses_call_boundary
+        && !reference_events
+            .iter()
+            .any(|event| matches!(event, DraftReferenceEvent::PrivateStackLoad { .. }))
+    {
+        reference_events
+            .retain(|event| !matches!(event, DraftReferenceEvent::PrivateStackStore { .. }));
     }
 
     Ok(FunctionAnalysis {

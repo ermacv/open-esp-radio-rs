@@ -1,17 +1,21 @@
 //! SVD-aware extraction of direct MMIO traces from compiled RISC-V code.
 //!
 //! This is deliberately an instruction/ELF tool, not a source-text policy
-//! checker. It handles straight-line leaves exactly and fails closed when a
-//! symbol contains control flow, calls or unresolved MMIO addressing.
+//! checker. Direct trace comparison handles straight-line leaves exactly. The
+//! stricter reference resolver additionally composes supported calls and
+//! bounded acyclic symbolic branches while failing closed on unresolved MMIO
+//! addressing, loops and unsupported effects.
 
 mod binary;
 mod dispositions;
 mod emulator;
+mod external_abi;
 mod profiles;
+mod reference_codegen;
 mod semantic;
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     env,
     fmt::Write as _,
     fs,
@@ -28,6 +32,8 @@ type EvidenceSet = BTreeMap<(String, String), String>;
 
 const ESP32S31_LIBPHY_SHA256: &str =
     "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223";
+const ESP32S31_LIBPP_SHA256: &str =
+    "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e";
 const ESP32S31_REV0_ROM_LOCAL_SHA256: &str =
     "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542";
 const ESP32S31_REV0_ROM_CANONICAL_SHA256: &str =
@@ -39,15 +45,20 @@ fn is_pinned_vendor_digest(digest: &str) -> bool {
     matches!(
         digest,
         ESP32S31_LIBPHY_SHA256
+            | ESP32S31_LIBPP_SHA256
             | ESP32S31_REV0_ROM_LOCAL_SHA256
             | ESP32S31_REV0_ROM_CANONICAL_SHA256
             | ESP32S31_LINKED_LIBPHY_SHA256
     )
 }
 
-fn pinned_vendor_digest(path: &Path) -> Result<String> {
+fn artifact_sha256(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
-    let digest = format!("{:x}", Sha256::digest(&bytes));
+    Ok(format!("{:x}", Sha256::digest(&bytes)))
+}
+
+fn pinned_vendor_digest(path: &Path) -> Result<String> {
+    let digest = artifact_sha256(path)?;
     if !is_pinned_vendor_digest(&digest) {
         return Err(
             format!("vendor artifact is not a pinned ESP32-S31 oracle: sha256 {digest}").into(),
@@ -158,6 +169,13 @@ impl SvdMap {
         } else {
             names.join("|")
         }
+    }
+
+    fn register(&self, address: u32) -> Option<&Register> {
+        self.registers
+            .binary_search_by_key(&address, |register| register.address)
+            .ok()
+            .map(|index| &self.registers[index])
     }
 }
 
@@ -500,13 +518,65 @@ fn collect_registers(
 enum Value {
     Unknown,
     Constant(u32),
+    InputConstant {
+        index: u8,
+        value: u32,
+    },
+    StackAddress(i32),
+    SymbolAddress {
+        member: Option<String>,
+        symbol: String,
+        hi_addend: i64,
+        lo_addend: Option<i64>,
+        post_offset: i64,
+    },
+    CallResult(u32),
+    ExternalTable(external_abi::Table),
+    ExternalFunction {
+        table: external_abi::Table,
+        function: external_abi::Function,
+    },
+    ExternalResult(u32),
+    Expression {
+        operation: ExpressionOperation,
+        left: Box<Value>,
+        right: Box<Value>,
+    },
     RegisterImage {
         read_token: u32,
         address: u32,
         and_mask: u32,
         or_mask: u32,
     },
+    IndexedRegisterImage {
+        read_token: u32,
+        and_mask: u32,
+        or_mask: u32,
+    },
+    MemoryImage {
+        read_token: u32,
+        and_mask: u32,
+        or_mask: u32,
+    },
     Bits(Box<[BitSource; 32]>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpressionOperation {
+    Add,
+    Subtract,
+    Multiply,
+    DivideSigned,
+    DivideUnsigned,
+    RemainderSigned,
+    RemainderUnsigned,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
+    ShiftRightArithmetic,
+    Equal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -524,6 +594,91 @@ enum BitSource {
         bit: u8,
         inverted: bool,
     },
+    IndexedRegister {
+        read_token: u32,
+        bit: u8,
+        inverted: bool,
+    },
+    Memory {
+        read_token: u32,
+        bit: u8,
+        inverted: bool,
+    },
+    CallResult {
+        call_token: u32,
+        bit: u8,
+        inverted: bool,
+    },
+    ExternalResult {
+        call_token: u32,
+        bit: u8,
+        inverted: bool,
+    },
+}
+
+impl BitSource {
+    fn inverted(self) -> Self {
+        match self {
+            Self::Unknown => Self::Unknown,
+            Self::Constant(value) => Self::Constant(!value),
+            Self::Input {
+                index,
+                bit,
+                inverted,
+            } => Self::Input {
+                index,
+                bit,
+                inverted: !inverted,
+            },
+            Self::Register {
+                read_token,
+                address,
+                bit,
+                inverted,
+            } => Self::Register {
+                read_token,
+                address,
+                bit,
+                inverted: !inverted,
+            },
+            Self::IndexedRegister {
+                read_token,
+                bit,
+                inverted,
+            } => Self::IndexedRegister {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            Self::Memory {
+                read_token,
+                bit,
+                inverted,
+            } => Self::Memory {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            Self::CallResult {
+                call_token,
+                bit,
+                inverted,
+            } => Self::CallResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            Self::ExternalResult {
+                call_token,
+                bit,
+                inverted,
+            } => Self::ExternalResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+        }
+    }
 }
 
 impl Value {
@@ -540,6 +695,28 @@ impl Value {
             Self::Unknown => [BitSource::Unknown; 32],
             Self::Constant(value) => {
                 core::array::from_fn(|bit| BitSource::Constant(value & (1 << bit) != 0))
+            }
+            Self::InputConstant { index, .. } => core::array::from_fn(|bit| BitSource::Input {
+                index: *index,
+                bit: bit as u8,
+                inverted: false,
+            }),
+            Self::StackAddress(_)
+            | Self::SymbolAddress { .. }
+            | Self::ExternalTable(_)
+            | Self::ExternalFunction { .. }
+            | Self::Expression { .. } => [BitSource::Unknown; 32],
+            Self::CallResult(call_token) => core::array::from_fn(|bit| BitSource::CallResult {
+                call_token: *call_token,
+                bit: bit as u8,
+                inverted: false,
+            }),
+            Self::ExternalResult(call_token) => {
+                core::array::from_fn(|bit| BitSource::ExternalResult {
+                    call_token: *call_token,
+                    bit: bit as u8,
+                    inverted: false,
+                })
             }
             Self::RegisterImage {
                 read_token,
@@ -560,8 +737,368 @@ impl Value {
                     BitSource::Constant(false)
                 }
             }),
+            Self::IndexedRegisterImage {
+                read_token,
+                and_mask,
+                or_mask,
+            } => core::array::from_fn(|bit| {
+                if or_mask & (1 << bit) != 0 {
+                    BitSource::Constant(true)
+                } else if and_mask & (1 << bit) != 0 {
+                    BitSource::IndexedRegister {
+                        read_token: *read_token,
+                        bit: bit as u8,
+                        inverted: false,
+                    }
+                } else {
+                    BitSource::Constant(false)
+                }
+            }),
+            Self::MemoryImage {
+                read_token,
+                and_mask,
+                or_mask,
+            } => core::array::from_fn(|bit| {
+                if or_mask & (1 << bit) != 0 {
+                    BitSource::Constant(true)
+                } else if and_mask & (1 << bit) != 0 {
+                    BitSource::Memory {
+                        read_token: *read_token,
+                        bit: bit as u8,
+                        inverted: false,
+                    }
+                } else {
+                    BitSource::Constant(false)
+                }
+            }),
             Self::Bits(bits) => **bits,
         }
+    }
+
+    fn register_read(read_token: u32, address: u32, width: u8, signed: bool) -> Self {
+        if width == 32 {
+            return Self::RegisterImage {
+                read_token,
+                address,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            };
+        }
+        Self::from_bits(core::array::from_fn(|bit| {
+            if bit < usize::from(width) {
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit: bit as u8,
+                    inverted: false,
+                }
+            } else if signed {
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit: width - 1,
+                    inverted: false,
+                }
+            } else {
+                BitSource::Constant(false)
+            }
+        }))
+    }
+
+    fn indexed_register_read(read_token: u32, width: u8, signed: bool) -> Self {
+        if width == 32 {
+            return Self::IndexedRegisterImage {
+                read_token,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            };
+        }
+        Self::from_bits(core::array::from_fn(|bit| {
+            if bit < usize::from(width) {
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit: bit as u8,
+                    inverted: false,
+                }
+            } else if signed {
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit: width - 1,
+                    inverted: false,
+                }
+            } else {
+                BitSource::Constant(false)
+            }
+        }))
+    }
+
+    fn memory_read(read_token: u32, width: u8, signed: bool) -> Self {
+        if width == 32 {
+            return Self::MemoryImage {
+                read_token,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            };
+        }
+        Self::from_bits(core::array::from_fn(|bit| {
+            if bit < usize::from(width) {
+                BitSource::Memory {
+                    read_token,
+                    bit: bit as u8,
+                    inverted: false,
+                }
+            } else if signed {
+                BitSource::Memory {
+                    read_token,
+                    bit: width - 1,
+                    inverted: false,
+                }
+            } else {
+                BitSource::Constant(false)
+            }
+        }))
+    }
+
+    fn substitute(
+        &self,
+        arguments: &[Value; 8],
+        read_tokens: &[u32],
+        memory_read_tokens: &[u32],
+        external_tokens: &[u32],
+    ) -> std::result::Result<Self, String> {
+        if let Some(index) = self.direct_input_index() {
+            return arguments
+                .get(usize::from(index))
+                .cloned()
+                .ok_or_else(|| format!("call argument {index} is outside the RV32 ABI"));
+        }
+        if let Self::SymbolAddress { lo_addend, .. } = self {
+            return lo_addend
+                .is_some()
+                .then(|| self.clone())
+                .ok_or_else(|| "incomplete relocation escaped across a call boundary".to_owned());
+        }
+        if let Self::Expression {
+            operation,
+            left,
+            right,
+        } = self
+        {
+            return Ok(Self::Expression {
+                operation: *operation,
+                left: Box::new(left.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                right: Box::new(right.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+            });
+        }
+        if matches!(
+            self,
+            Self::StackAddress(_) | Self::ExternalTable(_) | Self::ExternalFunction { .. }
+        ) {
+            return Err("non-scalar value escaped across a call boundary".to_owned());
+        }
+        let bits = self.bits();
+        let mut substituted = [BitSource::Unknown; 32];
+        for (destination, source) in bits.into_iter().enumerate() {
+            substituted[destination] = match source {
+                BitSource::Unknown => BitSource::Unknown,
+                BitSource::Constant(value) => BitSource::Constant(value),
+                BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                } => {
+                    let argument = arguments
+                        .get(usize::from(index))
+                        .ok_or_else(|| format!("call argument {index} is outside the RV32 ABI"))?;
+                    let source = argument.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit,
+                    inverted,
+                } => BitSource::Register {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("callee MMIO read token {read_token} has no caller mapping")
+                    })?,
+                    address,
+                    bit,
+                    inverted,
+                },
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::IndexedRegister {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("callee MMIO read token {read_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::Memory {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::Memory {
+                    read_token: *memory_read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("callee memory read token {read_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                },
+                BitSource::ExternalResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResult {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("callee external-call token {call_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+            };
+        }
+        Ok(Self::from_bits(substituted))
+    }
+
+    fn rewrite_call_context(
+        &self,
+        read_tokens: &[u32],
+        memory_read_tokens: &[u32],
+        external_tokens: &[u32],
+        call_results: &BTreeMap<u32, Value>,
+    ) -> std::result::Result<Self, String> {
+        if let Self::SymbolAddress { lo_addend, .. } = self {
+            return lo_addend
+                .is_some()
+                .then(|| self.clone())
+                .ok_or_else(|| "incomplete relocation escaped across a call boundary".to_owned());
+        }
+        if let Self::Expression {
+            operation,
+            left,
+            right,
+        } = self
+        {
+            return Ok(Self::Expression {
+                operation: *operation,
+                left: Box::new(left.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                )?),
+                right: Box::new(right.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                )?),
+            });
+        }
+        if matches!(
+            self,
+            Self::StackAddress(_) | Self::ExternalTable(_) | Self::ExternalFunction { .. }
+        ) {
+            return Err("non-scalar value escaped across a call boundary".to_owned());
+        }
+        let bits = self.bits();
+        let mut rewritten = [BitSource::Unknown; 32];
+        for (destination, source) in bits.into_iter().enumerate() {
+            rewritten[destination] = match source {
+                BitSource::Unknown => BitSource::Unknown,
+                BitSource::Constant(value) => BitSource::Constant(value),
+                BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                } => BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                },
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit,
+                    inverted,
+                } => BitSource::Register {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller MMIO read token {read_token} has no flattened mapping")
+                    })?,
+                    address,
+                    bit,
+                    inverted,
+                },
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::IndexedRegister {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller MMIO read token {read_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::Memory {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::Memory {
+                    read_token: *memory_read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller memory read token {read_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => {
+                    let result = call_results
+                        .get(&call_token)
+                        .ok_or_else(|| format!("call result {call_token} is not available"))?;
+                    let source = result.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                BitSource::ExternalResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResult {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("caller external-call token {call_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+            };
+        }
+        Ok(Self::from_bits(rewritten))
     }
 
     fn from_bits(bits: [BitSource; 32]) -> Self {
@@ -617,10 +1154,75 @@ impl Value {
                 };
             }
         }
+
+        let indexed_register = bits.iter().find_map(|source| match source {
+            BitSource::IndexedRegister { read_token, .. } => Some(*read_token),
+            _ => None,
+        });
+        if let Some(read_token) = indexed_register {
+            let mut and_mask = 0_u32;
+            let mut or_mask = 0_u32;
+            let mut register_image = true;
+            for (bit, source) in bits.iter().enumerate() {
+                match source {
+                    BitSource::IndexedRegister {
+                        read_token: source_token,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == read_token && usize::from(*source_bit) == bit => {
+                        and_mask |= 1 << bit;
+                    }
+                    BitSource::Constant(true) => or_mask |= 1 << bit,
+                    BitSource::Constant(false) => {}
+                    _ => register_image = false,
+                }
+            }
+            if register_image {
+                return Self::IndexedRegisterImage {
+                    read_token,
+                    and_mask,
+                    or_mask,
+                };
+            }
+        }
+
+        let memory = bits.iter().find_map(|source| match source {
+            BitSource::Memory { read_token, .. } => Some(*read_token),
+            _ => None,
+        });
+        if let Some(read_token) = memory {
+            let mut and_mask = 0_u32;
+            let mut or_mask = 0_u32;
+            let mut memory_image = true;
+            for (bit, source) in bits.iter().enumerate() {
+                match source {
+                    BitSource::Memory {
+                        read_token: source_token,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == read_token && usize::from(*source_bit) == bit => {
+                        and_mask |= 1 << bit;
+                    }
+                    BitSource::Constant(true) => or_mask |= 1 << bit,
+                    BitSource::Constant(false) => {}
+                    _ => memory_image = false,
+                }
+            }
+            if memory_image {
+                return Self::MemoryImage {
+                    read_token,
+                    and_mask,
+                    or_mask,
+                };
+            }
+        }
         Self::Bits(Box::new(bits))
     }
 
     fn and(self, constant: u32) -> Self {
+        if matches!(&self, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::BitAnd, self, Self::Constant(constant));
+        }
         Self::from_bits(core::array::from_fn(|bit| {
             if constant & (1 << bit) == 0 {
                 BitSource::Constant(false)
@@ -631,6 +1233,9 @@ impl Value {
     }
 
     fn or(self, constant: u32) -> Self {
+        if matches!(&self, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::BitOr, self, Self::Constant(constant));
+        }
         Self::from_bits(core::array::from_fn(|bit| {
             if constant & (1 << bit) != 0 {
                 BitSource::Constant(true)
@@ -641,32 +1246,67 @@ impl Value {
     }
 
     fn bitand(self, other: Self) -> Self {
+        if let Some(constant) = self.as_constant() {
+            return other.and(constant);
+        }
+        if let Some(constant) = other.as_constant() {
+            return self.and(constant);
+        }
+        if matches!(&self, Self::Expression { .. }) || matches!(&other, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::BitAnd, self, other);
+        }
         let left = self.bits();
         let right = other.bits();
-        Self::from_bits(core::array::from_fn(|bit| match (left[bit], right[bit]) {
-            (BitSource::Constant(false), _) | (_, BitSource::Constant(false)) => {
-                BitSource::Constant(false)
-            }
-            (BitSource::Constant(true), source) | (source, BitSource::Constant(true)) => source,
-            (left, right) if left == right => left,
-            _ => BitSource::Unknown,
-        }))
+        let simplified =
+            Self::from_bits(core::array::from_fn(|bit| match (left[bit], right[bit]) {
+                (BitSource::Constant(false), _) | (_, BitSource::Constant(false)) => {
+                    BitSource::Constant(false)
+                }
+                (BitSource::Constant(true), source) | (source, BitSource::Constant(true)) => source,
+                (left, right) if left == right => left,
+                _ => BitSource::Unknown,
+            }));
+        if simplified.is_resolved() {
+            simplified
+        } else {
+            Self::expression(ExpressionOperation::BitAnd, self, other)
+        }
     }
 
     fn bitor(self, other: Self) -> Self {
+        if let Some(constant) = self.as_constant() {
+            return other.or(constant);
+        }
+        if let Some(constant) = other.as_constant() {
+            return self.or(constant);
+        }
+        if matches!(&self, Self::Expression { .. }) || matches!(&other, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::BitOr, self, other);
+        }
         let left = self.bits();
         let right = other.bits();
-        Self::from_bits(core::array::from_fn(|bit| match (left[bit], right[bit]) {
-            (BitSource::Constant(true), _) | (_, BitSource::Constant(true)) => {
-                BitSource::Constant(true)
-            }
-            (BitSource::Constant(false), source) | (source, BitSource::Constant(false)) => source,
-            (left, right) if left == right => left,
-            _ => BitSource::Unknown,
-        }))
+        let simplified =
+            Self::from_bits(core::array::from_fn(|bit| match (left[bit], right[bit]) {
+                (BitSource::Constant(true), _) | (_, BitSource::Constant(true)) => {
+                    BitSource::Constant(true)
+                }
+                (BitSource::Constant(false), source) | (source, BitSource::Constant(false)) => {
+                    source
+                }
+                (left, right) if left == right => left,
+                _ => BitSource::Unknown,
+            }));
+        if simplified.is_resolved() {
+            simplified
+        } else {
+            Self::expression(ExpressionOperation::BitOr, self, other)
+        }
     }
 
     fn shift_left(self, amount: u32) -> Self {
+        if matches!(&self, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::ShiftLeft, self, Self::Constant(amount));
+        }
         let source = self.bits();
         Self::from_bits(core::array::from_fn(|bit| {
             bit.checked_sub(amount as usize)
@@ -675,6 +1315,13 @@ impl Value {
     }
 
     fn shift_right(self, amount: u32) -> Self {
+        if matches!(&self, Self::Expression { .. }) {
+            return Self::expression(
+                ExpressionOperation::ShiftRight,
+                self,
+                Self::Constant(amount),
+            );
+        }
         let source = self.bits();
         Self::from_bits(core::array::from_fn(|bit| {
             source
@@ -685,31 +1332,83 @@ impl Value {
     }
 
     fn add_constant(self, constant: u32) -> Self {
-        let source = self.bits();
-        let mut result = [BitSource::Unknown; 32];
-        let mut carry = false;
-        let mut carry_unknown = false;
-        for bit in 0..32 {
-            if carry_unknown {
-                result[bit] = BitSource::Unknown;
-                continue;
+        if constant == 0 {
+            return self;
+        }
+        if let Self::Constant(value) = self {
+            return Self::Constant(value.wrapping_add(constant));
+        }
+        if let Self::StackAddress(offset) = self {
+            return Self::StackAddress(offset.wrapping_add(constant as i32));
+        }
+        if let Self::SymbolAddress {
+            member,
+            symbol,
+            hi_addend,
+            lo_addend,
+            post_offset,
+        } = self
+        {
+            return Self::SymbolAddress {
+                member,
+                symbol,
+                hi_addend,
+                lo_addend,
+                post_offset: post_offset.wrapping_add(i64::from(constant as i32)),
+            };
+        }
+        Self::expression(ExpressionOperation::Add, self, Self::Constant(constant))
+    }
+
+    fn direct_input_index(&self) -> Option<u8> {
+        if let Self::InputConstant { index, .. } = self {
+            return Some(*index);
+        }
+        let Self::Bits(bits) = self else {
+            return None;
+        };
+        let mut index = None;
+        for (destination, source) in bits.iter().enumerate() {
+            let BitSource::Input {
+                index: source_index,
+                bit,
+                inverted: false,
+            } = source
+            else {
+                return None;
+            };
+            if usize::from(*bit) != destination {
+                return None;
             }
-            let add = constant & (1 << bit) != 0;
-            match source[bit] {
-                BitSource::Constant(value) => {
-                    result[bit] = BitSource::Constant(value ^ add ^ carry);
-                    carry = (value && add) || (value && carry) || (add && carry);
-                }
-                symbolic if !add && !carry => {
-                    result[bit] = symbolic;
-                }
-                _ => {
-                    result[bit] = BitSource::Unknown;
-                    carry_unknown = true;
-                }
+            match index {
+                Some(index) if index != *source_index => return None,
+                Some(_) => {}
+                None => index = Some(*source_index),
             }
         }
-        Self::from_bits(result)
+        index
+    }
+
+    fn caller_memory_address(&self) -> bool {
+        if self.direct_input_index().is_some() {
+            return true;
+        }
+        match self {
+            Self::Expression {
+                operation: ExpressionOperation::Add,
+                left,
+                right,
+            } => {
+                (left.caller_memory_address() && matches!(right.as_ref(), Self::Constant(_)))
+                    || (right.caller_memory_address() && matches!(left.as_ref(), Self::Constant(_)))
+            }
+            Self::Expression {
+                operation: ExpressionOperation::Subtract,
+                left,
+                right,
+            } => left.caller_memory_address() && matches!(right.as_ref(), Self::Constant(_)),
+            _ => false,
+        }
     }
 
     #[cfg(test)]
@@ -736,11 +1435,50 @@ impl Value {
                 bit,
                 inverted: !inverted,
             },
+            BitSource::IndexedRegister {
+                read_token,
+                bit,
+                inverted,
+            } => BitSource::IndexedRegister {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            BitSource::Memory {
+                read_token,
+                bit,
+                inverted,
+            } => BitSource::Memory {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            BitSource::CallResult {
+                call_token,
+                bit,
+                inverted,
+            } => BitSource::CallResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            BitSource::ExternalResult {
+                call_token,
+                bit,
+                inverted,
+            } => BitSource::ExternalResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
             BitSource::Unknown => BitSource::Unknown,
         }))
     }
 
     fn xor(self, constant: u32) -> Self {
+        if matches!(&self, Self::Expression { .. }) {
+            return Self::expression(ExpressionOperation::BitXor, self, Self::Constant(constant));
+        }
         let bits = self.bits();
         Self::from_bits(core::array::from_fn(|bit| {
             if constant & (1 << bit) == 0 {
@@ -768,6 +1506,42 @@ impl Value {
                         bit,
                         inverted: !inverted,
                     },
+                    BitSource::IndexedRegister {
+                        read_token,
+                        bit,
+                        inverted,
+                    } => BitSource::IndexedRegister {
+                        read_token,
+                        bit,
+                        inverted: !inverted,
+                    },
+                    BitSource::Memory {
+                        read_token,
+                        bit,
+                        inverted,
+                    } => BitSource::Memory {
+                        read_token,
+                        bit,
+                        inverted: !inverted,
+                    },
+                    BitSource::CallResult {
+                        call_token,
+                        bit,
+                        inverted,
+                    } => BitSource::CallResult {
+                        call_token,
+                        bit,
+                        inverted: !inverted,
+                    },
+                    BitSource::ExternalResult {
+                        call_token,
+                        bit,
+                        inverted,
+                    } => BitSource::ExternalResult {
+                        call_token,
+                        bit,
+                        inverted: !inverted,
+                    },
                     BitSource::Unknown => BitSource::Unknown,
                 }
             }
@@ -775,17 +1549,32 @@ impl Value {
     }
 
     fn bitxor(self, other: Self) -> Self {
+        if self == other {
+            return Self::Constant(0);
+        }
         match (self, other) {
             (Self::Constant(constant), value) | (value, Self::Constant(constant)) => {
                 value.xor(constant)
             }
-            _ => Self::Unknown,
+            (left, right) => Self::expression(ExpressionOperation::BitXor, left, right),
+        }
+    }
+
+    fn expression(operation: ExpressionOperation, left: Self, right: Self) -> Self {
+        if !left.is_resolved() || !right.is_resolved() {
+            return Self::Unknown;
+        }
+        Self::Expression {
+            operation,
+            left: Box::new(left),
+            right: Box::new(right),
         }
     }
 
     fn as_constant(&self) -> Option<u32> {
         match self {
             Self::Constant(value) => Some(*value),
+            Self::InputConstant { value, .. } => Some(*value),
             _ => None,
         }
     }
@@ -800,13 +1589,7 @@ impl Value {
             .filter(|source| *source != BitSource::Constant(false));
         let source = nonzero.next();
         if nonzero.next().is_some() {
-            return Self::Bits(Box::new(core::array::from_fn(|bit| {
-                if bit == 0 {
-                    BitSource::Unknown
-                } else {
-                    BitSource::Constant(false)
-                }
-            })));
+            return Self::expression(ExpressionOperation::Equal, self, Self::Constant(0));
         }
         let inverse = match source {
             None => BitSource::Constant(true),
@@ -831,6 +1614,42 @@ impl Value {
                 bit,
                 inverted: !inverted,
             },
+            Some(BitSource::IndexedRegister {
+                read_token,
+                bit,
+                inverted,
+            }) => BitSource::IndexedRegister {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            Some(BitSource::Memory {
+                read_token,
+                bit,
+                inverted,
+            }) => BitSource::Memory {
+                read_token,
+                bit,
+                inverted: !inverted,
+            },
+            Some(BitSource::CallResult {
+                call_token,
+                bit,
+                inverted,
+            }) => BitSource::CallResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            Some(BitSource::ExternalResult {
+                call_token,
+                bit,
+                inverted,
+            }) => BitSource::ExternalResult {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
             Some(BitSource::Unknown) => BitSource::Unknown,
             Some(BitSource::Constant(false)) => unreachable!(),
         };
@@ -844,19 +1663,66 @@ impl Value {
     }
 
     fn is_resolved(&self) -> bool {
-        !matches!(self, Self::Unknown) && !self.bits().contains(&BitSource::Unknown)
+        match self {
+            Self::Expression { left, right, .. } => left.is_resolved() && right.is_resolved(),
+            Self::SymbolAddress { lo_addend, .. } => lo_addend.is_some(),
+            Self::ExternalResult(_) => true,
+            Self::ExternalTable(_) | Self::ExternalFunction { .. } | Self::StackAddress(_) => false,
+            _ => !matches!(self, Self::Unknown) && !self.bits().contains(&BitSource::Unknown),
+        }
     }
 
     fn canonical(&self) -> String {
         match self {
             Self::Unknown => "unknown".to_owned(),
             Self::Constant(value) => format!("const:{value:#010x}"),
+            Self::InputConstant { index, .. } => Self::input(*index).canonical(),
+            Self::StackAddress(offset) => format!("private-stack:{offset:+#x}"),
+            Self::SymbolAddress {
+                member,
+                symbol,
+                hi_addend,
+                lo_addend,
+                post_offset,
+            } => format!(
+                "symbol:{}::{symbol}:hi{hi_addend:+#x}:lo{}:post{post_offset:+#x}",
+                member.as_deref().unwrap_or("<linked>"),
+                lo_addend.map_or_else(|| "?".to_owned(), |addend| format!("{addend:+#x}"))
+            ),
+            Self::CallResult(call_token) => format!("call-result:{call_token}"),
+            Self::ExternalTable(table) => {
+                format!("external-table:{}", external_abi::table_spec(*table).id)
+            }
+            Self::ExternalFunction { table, function } => format!(
+                "external-function:{}::{function:?}",
+                external_abi::table_spec(*table).id
+            ),
+            Self::ExternalResult(call_token) => format!("external-result:{call_token}"),
+            Self::Expression {
+                operation,
+                left,
+                right,
+            } => format!(
+                "expr:{operation:?}({},{})",
+                left.canonical(),
+                right.canonical()
+            ),
             Self::RegisterImage {
                 read_token,
                 address,
                 and_mask,
                 or_mask,
             } => format!("rmw:read{read_token}[{address:#010x}]&{and_mask:#010x}|{or_mask:#010x}"),
+            Self::IndexedRegisterImage {
+                read_token,
+                and_mask,
+                or_mask,
+            } => format!("indexed-rmw:read{read_token}&{and_mask:#010x}|{or_mask:#010x}"),
+            Self::MemoryImage {
+                read_token,
+                and_mask,
+                or_mask,
+            } => format!("ram:read{read_token}&{and_mask:#010x}|{or_mask:#010x}"),
             Self::Bits(bits) => {
                 let terms = bits
                     .iter()
@@ -883,6 +1749,38 @@ impl Value {
                                 "{bit}={inverse}read{read_token}[{address:#010x}].{source}"
                             ))
                         }
+                        BitSource::IndexedRegister {
+                            read_token,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!("{bit}={inverse}indexed-read{read_token}.{source}"))
+                        }
+                        BitSource::Memory {
+                            read_token,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!("{bit}={inverse}ramread{read_token}.{source}"))
+                        }
+                        BitSource::CallResult {
+                            call_token,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!("{bit}={inverse}call{call_token}.a0.{source}"))
+                        }
+                        BitSource::ExternalResult {
+                            call_token,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!("{bit}={inverse}external{call_token}.{source}"))
+                        }
                         BitSource::Unknown => Some(format!("{bit}=?")),
                     })
                     .collect::<Vec<_>>()
@@ -891,6 +1789,346 @@ impl Value {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AffineInput {
+    index: Option<u8>,
+    scale: u32,
+    offset: u32,
+}
+
+fn merge_affine_input(left: Option<u8>, right: Option<u8>) -> Option<Option<u8>> {
+    match (left, right) {
+        (Some(left), Some(right)) if left != right => None,
+        (Some(index), _) | (_, Some(index)) => Some(Some(index)),
+        (None, None) => Some(None),
+    }
+}
+
+fn affine_input(value: &Value) -> Option<AffineInput> {
+    match value {
+        Value::Constant(value) => Some(AffineInput {
+            index: None,
+            scale: 0,
+            offset: *value,
+        }),
+        Value::InputConstant { index, .. } => Some(AffineInput {
+            index: Some(*index),
+            scale: 1,
+            offset: 0,
+        }),
+        Value::Bits(bits) => {
+            let first_input = bits.iter().find_map(|source| match source {
+                BitSource::Input { index, .. } => Some(*index),
+                _ => None,
+            })?;
+            for shift in 0..32_usize {
+                let matches = bits.iter().enumerate().all(|(destination, source)| {
+                    if destination < shift {
+                        *source == BitSource::Constant(false)
+                    } else {
+                        *source
+                            == BitSource::Input {
+                                index: first_input,
+                                bit: (destination - shift) as u8,
+                                inverted: false,
+                            }
+                    }
+                });
+                if matches {
+                    return Some(AffineInput {
+                        index: Some(first_input),
+                        scale: 1_u32 << shift,
+                        offset: 0,
+                    });
+                }
+            }
+            None
+        }
+        Value::Expression {
+            operation,
+            left,
+            right,
+        } => {
+            let left = affine_input(left)?;
+            let right = affine_input(right)?;
+            match operation {
+                ExpressionOperation::Add | ExpressionOperation::Subtract => {
+                    let index = merge_affine_input(left.index, right.index)?;
+                    let (scale, offset) = if *operation == ExpressionOperation::Add {
+                        (
+                            left.scale.wrapping_add(right.scale),
+                            left.offset.wrapping_add(right.offset),
+                        )
+                    } else {
+                        (
+                            left.scale.wrapping_sub(right.scale),
+                            left.offset.wrapping_sub(right.offset),
+                        )
+                    };
+                    Some(AffineInput {
+                        index,
+                        scale,
+                        offset,
+                    })
+                }
+                ExpressionOperation::Multiply if left.index.is_none() => Some(AffineInput {
+                    index: right.index,
+                    scale: right.scale.wrapping_mul(left.offset),
+                    offset: right.offset.wrapping_mul(left.offset),
+                }),
+                ExpressionOperation::Multiply if right.index.is_none() => Some(AffineInput {
+                    index: left.index,
+                    scale: left.scale.wrapping_mul(right.offset),
+                    offset: left.offset.wrapping_mul(right.offset),
+                }),
+                ExpressionOperation::ShiftLeft if right.index.is_none() => {
+                    let shift = right.offset & 31;
+                    Some(AffineInput {
+                        index: left.index,
+                        scale: left.scale.wrapping_shl(shift),
+                        offset: left.offset.wrapping_shl(shift),
+                    })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn collect_evaluable_input_bits(
+    value: &Value,
+    index: &mut Option<u8>,
+    bits: &mut BTreeSet<u8>,
+) -> bool {
+    match value {
+        Value::Constant(_) => true,
+        Value::InputConstant {
+            index: source_index,
+            ..
+        } => {
+            if index.is_some_and(|index| index != *source_index) {
+                return false;
+            }
+            *index = Some(*source_index);
+            bits.extend(0..32);
+            true
+        }
+        Value::Expression { left, right, .. } => {
+            collect_evaluable_input_bits(left, index, bits)
+                && collect_evaluable_input_bits(right, index, bits)
+        }
+        Value::Bits(sources) => sources.iter().all(|source| match source {
+            BitSource::Constant(_) => true,
+            BitSource::Input {
+                index: source_index,
+                bit,
+                ..
+            } => {
+                if index.is_some_and(|index| index != *source_index) {
+                    return false;
+                }
+                *index = Some(*source_index);
+                bits.insert(*bit);
+                true
+            }
+            _ => false,
+        }),
+        _ => false,
+    }
+}
+
+fn evaluate_for_input(value: &Value, input_index: u8, input: u32) -> Option<u32> {
+    match value {
+        Value::Constant(value) => Some(*value),
+        Value::InputConstant { index, .. } if *index == input_index => Some(input),
+        Value::Expression {
+            operation,
+            left,
+            right,
+        } => {
+            let left = evaluate_for_input(left, input_index, input)?;
+            let right = evaluate_for_input(right, input_index, input)?;
+            Some(match operation {
+                ExpressionOperation::Add => left.wrapping_add(right),
+                ExpressionOperation::Subtract => left.wrapping_sub(right),
+                ExpressionOperation::Multiply => left.wrapping_mul(right),
+                ExpressionOperation::DivideSigned => {
+                    let (left, right) = (left as i32, right as i32);
+                    if right == 0 {
+                        u32::MAX
+                    } else if left == i32::MIN && right == -1 {
+                        i32::MIN as u32
+                    } else {
+                        left.wrapping_div(right) as u32
+                    }
+                }
+                ExpressionOperation::DivideUnsigned => left.checked_div(right).unwrap_or(u32::MAX),
+                ExpressionOperation::RemainderSigned => {
+                    let (left, right) = (left as i32, right as i32);
+                    if right == 0 {
+                        left as u32
+                    } else if left == i32::MIN && right == -1 {
+                        0
+                    } else {
+                        left.wrapping_rem(right) as u32
+                    }
+                }
+                ExpressionOperation::RemainderUnsigned => left.checked_rem(right).unwrap_or(left),
+                ExpressionOperation::BitAnd => left & right,
+                ExpressionOperation::BitOr => left | right,
+                ExpressionOperation::BitXor => left ^ right,
+                ExpressionOperation::ShiftLeft => left.wrapping_shl(right & 31),
+                ExpressionOperation::ShiftRight => left.wrapping_shr(right & 31),
+                ExpressionOperation::ShiftRightArithmetic => {
+                    (left as i32).wrapping_shr(right & 31) as u32
+                }
+                ExpressionOperation::Equal => u32::from(left == right),
+            })
+        }
+        Value::Bits(sources) => {
+            let mut output = 0_u32;
+            for (destination, source) in sources.iter().enumerate() {
+                let bit = match source {
+                    BitSource::Constant(value) => *value,
+                    BitSource::Input {
+                        index,
+                        bit,
+                        inverted,
+                    } if *index == input_index => ((input >> bit) & 1 != 0) ^ *inverted,
+                    _ => return None,
+                };
+                output |= u32::from(bit) << destination;
+            }
+            Some(output)
+        }
+        _ => None,
+    }
+}
+
+fn register_family(name: &str) -> String {
+    let mut output = String::with_capacity(name.len());
+    let mut in_digits = false;
+    for character in name.chars() {
+        if character.is_ascii_digit() {
+            if !in_digits {
+                output.push('%');
+                in_digits = true;
+            }
+        } else {
+            in_digits = false;
+            output.push(character);
+        }
+    }
+    output
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IndexedMmioRegister {
+    address: u32,
+    name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IndexedMmioGuard {
+    selector: Value,
+    maximum: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IndexedMmioDomain {
+    registers: Vec<IndexedMmioRegister>,
+    guard: Option<IndexedMmioGuard>,
+}
+
+fn indexed_mmio_domain(address: &Value, svd: &SvdMap) -> Option<IndexedMmioDomain> {
+    const MAX_EXHAUSTIVE_INPUT_BITS: usize = 8;
+    const MAX_GUARDED_REGISTERS: u32 = 32;
+
+    let mut input_index = None;
+    let mut input_bits = BTreeSet::new();
+    if !collect_evaluable_input_bits(address, &mut input_index, &mut input_bits) {
+        return None;
+    }
+    let input_index = input_index?;
+
+    if input_bits.len() <= MAX_EXHAUSTIVE_INPUT_BITS {
+        let input_bits = input_bits.into_iter().collect::<Vec<_>>();
+        let mut registers = BTreeMap::<u32, String>::new();
+        let mut family = None;
+        for combination in 0..(1_u32 << input_bits.len()) {
+            let input =
+                input_bits
+                    .iter()
+                    .enumerate()
+                    .fold(0_u32, |value, (source, destination)| {
+                        value | (((combination >> source) & 1) << destination)
+                    });
+            let address = evaluate_for_input(address, input_index, input)?;
+            let register = svd.register(address)?;
+            let register_family = register_family(&register.name);
+            if family
+                .as_ref()
+                .is_some_and(|family| family != &register_family)
+            {
+                return None;
+            }
+            family = Some(register_family);
+            registers.insert(register.address, register.name.clone());
+        }
+        if registers.len() >= 2 {
+            return Some(IndexedMmioDomain {
+                registers: registers
+                    .into_iter()
+                    .map(|(address, name)| IndexedMmioRegister { address, name })
+                    .collect(),
+                guard: None,
+            });
+        }
+    }
+
+    let affine = affine_input(address)?;
+    if affine.index != Some(input_index) || affine.scale == 0 {
+        return None;
+    }
+    let mut registers = Vec::new();
+    let mut family = None;
+    for selector in 0..=MAX_GUARDED_REGISTERS {
+        let candidate_address = evaluate_for_input(address, input_index, selector)?;
+        let Some(register) = svd.register(candidate_address) else {
+            break;
+        };
+        let register_family = register_family(&register.name);
+        if family
+            .as_ref()
+            .is_some_and(|family| family != &register_family)
+        {
+            break;
+        }
+        family = Some(register_family);
+        if registers
+            .iter()
+            .any(|candidate: &IndexedMmioRegister| candidate.address == register.address)
+        {
+            return None;
+        }
+        registers.push(IndexedMmioRegister {
+            address: register.address,
+            name: register.name.clone(),
+        });
+    }
+    if !(2..=MAX_GUARDED_REGISTERS as usize).contains(&registers.len()) {
+        return None;
+    }
+    Some(IndexedMmioDomain {
+        guard: Some(IndexedMmioGuard {
+            selector: Value::input(input_index),
+            maximum: registers.len() as u32 - 1,
+        }),
+        registers,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -928,13 +2166,383 @@ enum Event {
         width: u8,
         address: u32,
         register: String,
-        value: String,
+        value: Option<Value>,
     },
     Fence {
         fm: u8,
         predecessor: u8,
         successor: u8,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReferenceEvent {
+    Observable(Event),
+    IndexedMmio {
+        access: Access,
+        width: u8,
+        address: Value,
+        registers: Vec<IndexedMmioRegister>,
+        guard: Option<IndexedMmioGuard>,
+        value: Option<Value>,
+    },
+    DelayMicros {
+        micros: Value,
+    },
+    Memory {
+        access: Access,
+        width: u8,
+        address: Value,
+        region: String,
+        value: Option<Value>,
+    },
+    ExternalCall {
+        token: u32,
+        table: external_abi::Table,
+        function: external_abi::Function,
+        arguments: Box<[Value; 8]>,
+    },
+    DiagnosticCall {
+        function: String,
+        argument_count: u8,
+        arguments: Box<[Value; 8]>,
+    },
+    TailCall {
+        token: u32,
+        site: u32,
+        target: u32,
+        arguments: Box<[Value; 8]>,
+    },
+    Call {
+        token: u32,
+        site: u32,
+        target: u32,
+        arguments: Box<[Value; 8]>,
+    },
+    ComposedCall {
+        token: u32,
+        symbol: String,
+        arguments: Box<[Value; 8]>,
+        flow: Box<ReferenceFlow>,
+        result_modeled: bool,
+    },
+    BranchDecision {
+        condition: BranchCondition,
+        taken: bool,
+    },
+}
+
+fn reference_event_is_mmio_read(event: &ReferenceEvent) -> bool {
+    matches!(
+        event,
+        ReferenceEvent::Observable(Event::Memory {
+            access: Access::Read,
+            ..
+        }) | ReferenceEvent::IndexedMmio {
+            access: Access::Read,
+            ..
+        }
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BranchOperation {
+    Equal,
+    NotEqual,
+    LessSigned,
+    GreaterEqualSigned,
+    LessUnsigned,
+    GreaterEqualUnsigned,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BranchCondition {
+    site: u32,
+    operation: BranchOperation,
+    left: Value,
+    right: Value,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReferenceTerminator {
+    Return(Value),
+    Branch {
+        condition: BranchCondition,
+        taken: Box<ReferenceFlow>,
+        not_taken: Box<ReferenceFlow>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReferenceFlow {
+    events: Vec<ReferenceEvent>,
+    terminator: ReferenceTerminator,
+}
+
+fn collect_value_inputs(value: &Value, output: &mut BTreeSet<u8>) {
+    match value {
+        Value::InputConstant { index, .. } => {
+            output.insert(*index);
+        }
+        Value::Expression { left, right, .. } => {
+            collect_value_inputs(left, output);
+            collect_value_inputs(right, output);
+        }
+        Value::Bits(bits) => {
+            output.extend(bits.iter().filter_map(|source| match source {
+                BitSource::Input { index, .. } => Some(*index),
+                _ => None,
+            }));
+        }
+        _ => {}
+    }
+}
+
+fn collect_reference_flow_inputs(flow: &ReferenceFlow, output: &mut BTreeSet<u8>) {
+    for event in &flow.events {
+        match event {
+            ReferenceEvent::Observable(Event::Memory {
+                value: Some(value), ..
+            }) => collect_value_inputs(value, output),
+            ReferenceEvent::IndexedMmio {
+                address,
+                guard,
+                value,
+                ..
+            } => {
+                collect_value_inputs(address, output);
+                if let Some(guard) = guard {
+                    collect_value_inputs(&guard.selector, output);
+                }
+                if let Some(value) = value {
+                    collect_value_inputs(value, output);
+                }
+            }
+            ReferenceEvent::Memory { address, value, .. } => {
+                collect_value_inputs(address, output);
+                if let Some(value) = value {
+                    collect_value_inputs(value, output);
+                }
+            }
+            ReferenceEvent::DelayMicros { micros } => collect_value_inputs(micros, output),
+            ReferenceEvent::ExternalCall {
+                table,
+                function,
+                arguments,
+                ..
+            } => {
+                let argument_count = external_abi::function(*table, *function).argument_count;
+                for value in arguments.iter().take(usize::from(argument_count)) {
+                    collect_value_inputs(value, output);
+                }
+            }
+            ReferenceEvent::DiagnosticCall {
+                argument_count,
+                arguments,
+                ..
+            } => {
+                for value in arguments.iter().take(usize::from(*argument_count)) {
+                    collect_value_inputs(value, output);
+                }
+            }
+            ReferenceEvent::ComposedCall {
+                arguments, flow, ..
+            } => {
+                for index in reference_flow_input_indices(flow) {
+                    collect_value_inputs(&arguments[usize::from(index)], output);
+                }
+            }
+            _ => {}
+        }
+    }
+    match &flow.terminator {
+        ReferenceTerminator::Return(value) => collect_value_inputs(value, output),
+        ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            collect_value_inputs(&condition.left, output);
+            collect_value_inputs(&condition.right, output);
+            collect_reference_flow_inputs(taken, output);
+            collect_reference_flow_inputs(not_taken, output);
+        }
+    }
+}
+
+fn reference_flow_input_indices(flow: &ReferenceFlow) -> BTreeSet<u8> {
+    let mut output = BTreeSet::new();
+    collect_reference_flow_inputs(flow, &mut output);
+    output
+}
+
+fn reference_flow_exit_modeled(flow: &ReferenceFlow) -> bool {
+    reference_flow_exit_modeled_with_calls(flow, BTreeMap::new())
+}
+
+fn reference_flow_exit_modeled_with_calls(
+    flow: &ReferenceFlow,
+    available: BTreeMap<u32, bool>,
+) -> bool {
+    let Some(available) = validate_reference_events(&flow.events, available) else {
+        return false;
+    };
+    match &flow.terminator {
+        ReferenceTerminator::Return(value) => {
+            value.is_resolved() && value_call_results_available(value, &available)
+        }
+        ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            value_call_results_available(&condition.left, &available)
+                && value_call_results_available(&condition.right, &available)
+                && reference_flow_exit_modeled_with_calls(taken, available.clone())
+                && reference_flow_exit_modeled_with_calls(not_taken, available)
+        }
+    }
+}
+
+fn value_call_results_available(value: &Value, available: &BTreeMap<u32, bool>) -> bool {
+    match value {
+        Value::CallResult(token) => available.get(token).copied() == Some(true),
+        Value::Expression { left, right, .. } => {
+            value_call_results_available(left, available)
+                && value_call_results_available(right, available)
+        }
+        Value::Bits(bits) => bits.iter().all(|source| match source {
+            BitSource::CallResult { call_token, .. } => {
+                available.get(call_token).copied() == Some(true)
+            }
+            _ => true,
+        }),
+        _ => true,
+    }
+}
+
+fn validate_reference_events(
+    events: &[ReferenceEvent],
+    mut available: BTreeMap<u32, bool>,
+) -> Option<BTreeMap<u32, bool>> {
+    for event in events {
+        let values_are_available = match event {
+            ReferenceEvent::Observable(Event::Memory {
+                value: Some(value), ..
+            }) => value_call_results_available(value, &available),
+            ReferenceEvent::IndexedMmio {
+                address,
+                guard,
+                value,
+                ..
+            } => {
+                value_call_results_available(address, &available)
+                    && guard.as_ref().is_none_or(|guard| {
+                        value_call_results_available(&guard.selector, &available)
+                    })
+                    && value
+                        .as_ref()
+                        .is_none_or(|value| value_call_results_available(value, &available))
+            }
+            ReferenceEvent::Memory { address, value, .. } => {
+                value_call_results_available(address, &available)
+                    && value
+                        .as_ref()
+                        .is_none_or(|value| value_call_results_available(value, &available))
+            }
+            ReferenceEvent::DelayMicros { micros } => {
+                value_call_results_available(micros, &available)
+            }
+            ReferenceEvent::ExternalCall {
+                table,
+                function,
+                arguments,
+                ..
+            } => arguments
+                .iter()
+                .take(usize::from(
+                    external_abi::function(*table, *function).argument_count,
+                ))
+                .all(|value| value_call_results_available(value, &available)),
+            ReferenceEvent::DiagnosticCall {
+                argument_count,
+                arguments,
+                ..
+            } => arguments
+                .iter()
+                .take(usize::from(*argument_count))
+                .all(|value| value_call_results_available(value, &available)),
+            ReferenceEvent::ComposedCall {
+                token,
+                arguments,
+                flow,
+                result_modeled,
+                ..
+            } => {
+                let used_inputs = reference_flow_input_indices(flow);
+                if *token != available.len() as u32
+                    || used_inputs.iter().any(|index| {
+                        !value_call_results_available(&arguments[usize::from(*index)], &available)
+                    })
+                    || !reference_flow_calls_are_valid(flow)
+                    || *result_modeled != reference_flow_exit_modeled(flow)
+                {
+                    return None;
+                }
+                available.insert(*token, *result_modeled);
+                true
+            }
+            ReferenceEvent::Call { .. }
+            | ReferenceEvent::TailCall { .. }
+            | ReferenceEvent::BranchDecision { .. } => return None,
+            _ => true,
+        };
+        if !values_are_available {
+            return None;
+        }
+    }
+    Some(available)
+}
+
+fn reference_flow_calls_are_valid(flow: &ReferenceFlow) -> bool {
+    let Some(available) = validate_reference_events(&flow.events, BTreeMap::new()) else {
+        return false;
+    };
+    match &flow.terminator {
+        ReferenceTerminator::Return(_) => true,
+        ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            value_call_results_available(&condition.left, &available)
+                && value_call_results_available(&condition.right, &available)
+                && validate_reference_flow_with_calls(taken, available.clone())
+                && validate_reference_flow_with_calls(not_taken, available)
+        }
+    }
+}
+
+fn validate_reference_flow_with_calls(
+    flow: &ReferenceFlow,
+    available: BTreeMap<u32, bool>,
+) -> bool {
+    let Some(available) = validate_reference_events(&flow.events, available) else {
+        return false;
+    };
+    match &flow.terminator {
+        ReferenceTerminator::Return(_) => true,
+        ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            value_call_results_available(&condition.left, &available)
+                && value_call_results_available(&condition.right, &available)
+                && validate_reference_flow_with_calls(taken, available.clone())
+                && validate_reference_flow_with_calls(not_taken, available)
+        }
+    }
 }
 
 impl Event {
@@ -951,6 +2559,9 @@ impl Event {
                     Access::Read => "R",
                     Access::Write => "W",
                 };
+                let value = value
+                    .as_ref()
+                    .map_or_else(|| "-".to_owned(), Value::canonical);
                 format!("{access}\t{width}\t{address:#010x}\t{register}\t{value}")
             }
             Self::Fence {
@@ -1014,9 +2625,9 @@ impl Event {
     }
 
     #[cfg(test)]
-    fn memory_value(&self) -> Option<&str> {
+    fn memory_value(&self) -> Option<String> {
         match self {
-            Self::Memory { value, .. } => Some(value),
+            Self::Memory { value, .. } => value.as_ref().map(Value::canonical),
             Self::Fence { .. } => None,
         }
     }
@@ -1026,8 +2637,13 @@ impl Event {
 struct Trace {
     symbol: String,
     events: Vec<Event>,
+    reference_events: Vec<ReferenceEvent>,
+    reference_dependencies: Vec<String>,
     blockers: Vec<String>,
+    reference_blockers: Vec<String>,
     return_value: Value,
+    reference_flow: Option<ReferenceFlow>,
+    unresolved_branch: Option<BranchCondition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1037,12 +2653,108 @@ struct ArtifactSymbol {
 }
 
 impl Trace {
+    fn reference_indexed_mmio_count(&self) -> usize {
+        fn flow_count(flow: &ReferenceFlow) -> usize {
+            let events = flow
+                .events
+                .iter()
+                .map(|event| match event {
+                    ReferenceEvent::IndexedMmio { .. } => 1,
+                    ReferenceEvent::ComposedCall { flow, .. } => flow_count(flow),
+                    _ => 0,
+                })
+                .sum::<usize>();
+            events
+                + match &flow.terminator {
+                    ReferenceTerminator::Return(_) => 0,
+                    ReferenceTerminator::Branch {
+                        taken, not_taken, ..
+                    } => flow_count(taken) + flow_count(not_taken),
+                }
+        }
+
+        self.reference_flow.as_ref().map_or_else(
+            || {
+                self.reference_events
+                    .iter()
+                    .map(|event| match event {
+                        ReferenceEvent::IndexedMmio { .. } => 1,
+                        ReferenceEvent::ComposedCall { flow, .. } => flow_count(flow),
+                        _ => 0,
+                    })
+                    .sum()
+            },
+            flow_count,
+        )
+    }
+
     fn is_exact(&self) -> bool {
-        self.blockers.is_empty()
+        self.reference_flow.is_none()
+            && self.blockers.is_empty()
             && self
                 .events
                 .iter()
                 .all(|event| event.unmapped_address().is_none())
+    }
+
+    fn is_reference_eligible(&self) -> bool {
+        self.blockers.is_empty()
+            && self.reference_blockers.is_empty()
+            && self.unresolved_branch.is_none()
+            && self.reference_observables_are_mapped()
+            && self.reference_calls_are_valid()
+    }
+
+    fn reference_observables_are_mapped(&self) -> bool {
+        fn flow_is_mapped(flow: &ReferenceFlow) -> bool {
+            flow.events.iter().all(|event| match event {
+                ReferenceEvent::Observable(event) => event.unmapped_address().is_none(),
+                ReferenceEvent::IndexedMmio { registers, .. } => !registers.is_empty(),
+                ReferenceEvent::ComposedCall { flow, .. } => flow_is_mapped(flow),
+                _ => true,
+            }) && match &flow.terminator {
+                ReferenceTerminator::Return(_) => true,
+                ReferenceTerminator::Branch {
+                    taken, not_taken, ..
+                } => flow_is_mapped(taken) && flow_is_mapped(not_taken),
+            }
+        }
+
+        fn reference_event_is_mapped(event: &ReferenceEvent) -> bool {
+            match event {
+                ReferenceEvent::Observable(event) => event.unmapped_address().is_none(),
+                ReferenceEvent::IndexedMmio { registers, .. } => !registers.is_empty(),
+                ReferenceEvent::ComposedCall { flow, .. } => flow_is_mapped(flow),
+                _ => true,
+            }
+        }
+
+        self.reference_flow.as_ref().map_or_else(
+            || self.reference_events.iter().all(reference_event_is_mapped),
+            flow_is_mapped,
+        )
+    }
+
+    fn reference_calls_are_valid(&self) -> bool {
+        if let Some(flow) = &self.reference_flow {
+            reference_flow_calls_are_valid(flow)
+        } else {
+            validate_reference_events(&self.reference_events, BTreeMap::new()).is_some()
+        }
+    }
+
+    fn reference_exit_a0_modeled(&self) -> bool {
+        self.reference_flow.as_ref().map_or_else(
+            || {
+                validate_reference_events(&self.reference_events, BTreeMap::new()).is_some_and(
+                    |available| {
+                        self.return_value.is_resolved()
+                            && value_call_results_available(&self.return_value, &available)
+                    },
+                )
+            },
+            reference_flow_exit_modeled,
+        )
     }
 }
 
@@ -1116,7 +2828,9 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
         values.insert(register.to_owned(), Value::input(index as u8));
     }
     let mut events = Vec::new();
+    let mut reference_events = Vec::new();
     let mut blockers = Vec::new();
+    let mut reference_blockers = Vec::new();
     let mut return_value = Value::Unknown;
     let mut next_mmio_read_token = 0_u32;
     let mut in_symbol = false;
@@ -1242,13 +2956,15 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
                     let width = width_for(mnemonic).unwrap();
                     let read_token = next_mmio_read_token;
                     next_mmio_read_token += 1;
-                    events.push(Event::Memory {
+                    let event = Event::Memory {
                         access: Access::Read,
                         width,
                         address,
                         register: svd.register_name(address),
-                        value: "-".to_owned(),
-                    });
+                        value: None,
+                    };
+                    events.push(event.clone());
+                    reference_events.push(ReferenceEvent::Observable(event));
                     values.insert(
                         operands[0].to_owned(),
                         if width == 32 {
@@ -1263,6 +2979,10 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
                         },
                     );
                 } else {
+                    reference_blockers.push(format!(
+                        "unmodeled-memory-load at 0x{}: {instruction}",
+                        pc_text.trim()
+                    ));
                     values.insert(operands[0].to_owned(), Value::Unknown);
                 }
             }
@@ -1277,13 +2997,20 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
                             pc_text.trim()
                         ));
                     }
-                    events.push(Event::Memory {
+                    let event = Event::Memory {
                         access: Access::Write,
                         width: width_for(mnemonic).unwrap(),
                         address,
                         register: svd.register_name(address),
-                        value: value.canonical(),
-                    });
+                        value: Some(value),
+                    };
+                    events.push(event.clone());
+                    reference_events.push(ReferenceEvent::Observable(event));
+                } else {
+                    reference_blockers.push(format!(
+                        "unmodeled-memory-store at 0x{}: {instruction}",
+                        pc_text.trim()
+                    ));
                 }
             }
             "ret" => {
@@ -1291,11 +3018,15 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
             }
             "fence" if operands.len() == 2 => {
                 match (parse_fence_set(operands[0]), parse_fence_set(operands[1])) {
-                    (Some(predecessor), Some(successor)) => events.push(Event::Fence {
-                        fm: 0,
-                        predecessor,
-                        successor,
-                    }),
+                    (Some(predecessor), Some(successor)) => {
+                        let event = Event::Fence {
+                            fm: 0,
+                            predecessor,
+                            successor,
+                        };
+                        events.push(event.clone());
+                        reference_events.push(ReferenceEvent::Observable(event));
+                    }
                     _ => blockers.push(format!(
                         "unsupported fence at 0x{}: {instruction}",
                         pc_text.trim()
@@ -1323,15 +3054,173 @@ fn trace_disassembly(symbol: &str, disassembly: &str, svd: &SvdMap) -> Trace {
     Trace {
         symbol: symbol.to_owned(),
         events,
+        reference_events,
+        reference_dependencies: Vec::new(),
         blockers,
+        reference_blockers,
         return_value,
+        reference_flow: None,
+        unresolved_branch: None,
     }
 }
 
-fn structural_effective_address(values: &[Value; 32], base: Reg, offset: i32) -> Option<u32> {
-    values[usize::from(base.0)]
-        .as_constant()
-        .map(|base| base.wrapping_add(offset as u32))
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum StructuralAddress {
+    Absolute(u32),
+    PrivateStack(i32),
+    ExternalTableSlot(external_abi::Table, i32),
+    CallerMemory(Value),
+    SymbolMemory(Value),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct StructuralCallSite {
+    member: Option<String>,
+    symbol: String,
+    address: u32,
+}
+
+impl StructuralCallSite {
+    fn new(owner: &binary::BinarySymbol, address: u32) -> Self {
+        Self {
+            member: owner.member.clone(),
+            symbol: owner.name.clone(),
+            address,
+        }
+    }
+}
+
+type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;
+
+fn structural_effective_address(
+    values: &[Value; 32],
+    base: Reg,
+    offset: i32,
+) -> Option<StructuralAddress> {
+    let base = &values[usize::from(base.0)];
+    match base {
+        Value::Constant(base) => Some(StructuralAddress::Absolute(
+            base.wrapping_add(offset as u32),
+        )),
+        Value::StackAddress(base) => {
+            Some(StructuralAddress::PrivateStack(base.wrapping_add(offset)))
+        }
+        Value::ExternalTable(table) => Some(StructuralAddress::ExternalTableSlot(*table, offset)),
+        Value::SymbolAddress {
+            lo_addend: Some(_), ..
+        } => Some(StructuralAddress::SymbolMemory(
+            base.clone().add_constant(offset as u32),
+        )),
+        _ if base.caller_memory_address() => Some(StructuralAddress::CallerMemory(
+            base.clone().add_constant(offset as u32),
+        )),
+        _ => None,
+    }
+}
+
+fn structural_indexed_mmio_address(
+    values: &[Value; 32],
+    base: Reg,
+    offset: i32,
+    svd: &SvdMap,
+) -> Option<(Value, IndexedMmioDomain)> {
+    let address = values[usize::from(base.0)]
+        .clone()
+        .add_constant(offset as u32);
+    let domain = indexed_mmio_domain(&address, svd)?;
+    Some((address, domain))
+}
+
+fn relocation_symbol_address(
+    owner: &binary::BinarySymbol,
+    relocation: &binary::SymbolRelocation,
+) -> Value {
+    Value::SymbolAddress {
+        member: owner.member.clone(),
+        symbol: relocation.symbol.clone(),
+        hi_addend: relocation.addend,
+        lo_addend: None,
+        post_offset: 0,
+    }
+}
+
+fn complete_low_relocation(
+    owner: &binary::BinarySymbol,
+    pc: u32,
+    kind: binary::RelocationKind,
+    base: &Value,
+    encoded_offset: i32,
+) -> std::result::Result<Option<Value>, String> {
+    if owner.addresses_resolved {
+        return Ok(None);
+    }
+    let Some(relocation) = owner.relocation(pc, kind) else {
+        return Ok(None);
+    };
+    let expected_offset = ((relocation.addend as u32) << 20) as i32 >> 20;
+    if encoded_offset != expected_offset {
+        return Err(format!(
+            "relocation {kind:?} at {pc:#x} encodes {encoded_offset:+#x}, expected low addend {expected_offset:+#x}"
+        ));
+    }
+    let Value::SymbolAddress {
+        member,
+        symbol,
+        hi_addend,
+        lo_addend: None,
+        post_offset: 0,
+    } = base
+    else {
+        return Err(format!(
+            "relocation {kind:?} at {pc:#x} has no matching incomplete HI20 base"
+        ));
+    };
+    if member != &owner.member || symbol != &relocation.symbol {
+        return Err(format!(
+            "relocation {kind:?} at {pc:#x} does not match its HI20 base: low={:?}::{}{:+#x}, high={member:?}::{symbol}{hi_addend:+#x}",
+            owner.member, relocation.symbol, relocation.addend
+        ));
+    }
+    Ok(Some(Value::SymbolAddress {
+        member: member.clone(),
+        symbol: symbol.clone(),
+        hi_addend: *hi_addend,
+        lo_addend: Some(relocation.addend),
+        post_offset: 0,
+    }))
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct SymbolicStack {
+    bytes: BTreeMap<i32, [BitSource; 8]>,
+}
+
+impl SymbolicStack {
+    fn store(&mut self, offset: i32, width: u8, value: &Value) {
+        let bits = value.bits();
+        for byte in 0..usize::from(width / 8) {
+            self.bytes.insert(
+                offset.wrapping_add(byte as i32),
+                core::array::from_fn(|bit| bits[byte * 8 + bit]),
+            );
+        }
+    }
+
+    fn load(&self, offset: i32, width: u8, signed: bool) -> Option<Value> {
+        let width = usize::from(width);
+        let mut bits = [BitSource::Constant(false); 32];
+        for destination in 0..width {
+            let byte = self
+                .bytes
+                .get(&offset.wrapping_add((destination / 8) as i32))?;
+            bits[destination] = byte[destination % 8];
+        }
+        if signed {
+            let sign = bits[width - 1];
+            bits[width..].fill(sign);
+        }
+        Some(Value::from_bits(bits))
+    }
 }
 
 fn structural_set(values: &mut [Value; 32], register: Reg, value: Value) {
@@ -1340,24 +3229,218 @@ fn structural_set(values: &mut [Value; 32], register: Reg, value: Value) {
     }
 }
 
-fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Trace> {
+fn structural_finish_call(values: &mut [Value; 32], return_address: u32, call_token: u32) {
+    structural_finish_call_with_result(values, return_address, Value::CallResult(call_token));
+}
+
+fn structural_finish_call_with_result(
+    values: &mut [Value; 32],
+    return_address: u32,
+    result: Value,
+) {
+    for register in [
+        Reg::RA,
+        Reg::T0,
+        Reg::T1,
+        Reg::T2,
+        Reg::A0,
+        Reg::A1,
+        Reg::A2,
+        Reg::A3,
+        Reg::A4,
+        Reg::A5,
+        Reg::A6,
+        Reg::A7,
+        Reg::T3,
+        Reg::T4,
+        Reg::T5,
+        Reg::T6,
+    ] {
+        structural_set(values, register, Value::Unknown);
+    }
+    structural_set(values, Reg::RA, Value::Constant(return_address));
+    structural_set(values, Reg::A0, result);
+}
+
+fn trace_binary_symbol(
+    symbol: &binary::BinarySymbol,
+    svd: &SvdMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
+    specialized_arguments: Option<&[Value; 8]>,
+) -> Result<Trace> {
+    trace_binary_symbol_with_branches(
+        symbol,
+        svd,
+        relocated_calls,
+        external_pointer_cells,
+        specialized_arguments,
+        &BTreeMap::new(),
+    )
+}
+
+fn trace_binary_symbol_with_branches(
+    symbol: &binary::BinarySymbol,
+    svd: &SvdMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
+    specialized_arguments: Option<&[Value; 8]>,
+    forced_branches: &BTreeMap<u32, bool>,
+) -> Result<Trace> {
     let mut values: [Value; 32] = core::array::from_fn(|_| Value::Unknown);
     values[0] = Value::Constant(0);
+    values[usize::from(Reg::SP.0)] = Value::StackAddress(0);
     for index in 0..8 {
-        values[10 + index] = Value::input(index as u8);
+        values[10 + index] = specialized_arguments
+            .and_then(|arguments| arguments[index].as_constant())
+            .map_or_else(
+                || Value::input(index as u8),
+                |value| Value::InputConstant {
+                    index: index as u8,
+                    value,
+                },
+            );
     }
     let mut events = Vec::new();
+    let mut reference_events = Vec::new();
     let mut blockers = Vec::new();
+    let mut reference_blockers = Vec::new();
     let mut return_value = Value::Unknown;
+    let mut unresolved_branch = None;
     let mut next_mmio_read_token = 0_u32;
+    let mut next_memory_read_token = 0_u32;
+    let mut next_call_token = 0_u32;
+    let mut next_external_call_token = 0_u32;
+    let mut stack = SymbolicStack::default();
 
-    for decoded in binary::decode_symbol(symbol)? {
+    let instructions = binary::decode_symbol(symbol)?;
+    let instruction_indices = instructions
+        .iter()
+        .enumerate()
+        .map(|(index, instruction)| (instruction.address as u32, index))
+        .collect::<BTreeMap<_, _>>();
+    let mut instruction_index = 0usize;
+    let mut visited_instructions = BTreeSet::new();
+    while let Some(decoded) = instructions.get(instruction_index).copied() {
         let pc = decoded.address;
         let width = decoded.width;
         let instruction = decoded.instruction;
+        if !visited_instructions.insert(pc as u32) {
+            blockers.push(format!(
+                "control-flow loop revisits instruction at {pc:#x}: {instruction}"
+            ));
+            break;
+        }
+        if let Some((name, target)) =
+            relocated_calls.get(&StructuralCallSite::new(symbol, pc as u32))
+        {
+            blockers.push(format!(
+                "call/jump instruction at {pc:#x}: relocated call to {name}"
+            ));
+            let Some(jalr) = instructions.get(instruction_index + 1).copied() else {
+                reference_blockers.push(format!(
+                    "malformed-call-relocation at {pc:#x}: {name} has no following JALR"
+                ));
+                break;
+            };
+            if jalr.address != pc.wrapping_add(4) {
+                reference_blockers.push(format!(
+                    "malformed-call-relocation at {pc:#x}: {name} is not a two-instruction call"
+                ));
+                break;
+            }
+            let Inst::Jalr { dest, .. } = jalr.instruction else {
+                reference_blockers.push(format!(
+                    "malformed-call-relocation at {pc:#x}: {name} is not followed by JALR"
+                ));
+                break;
+            };
+            if target.is_none()
+                && let Some(argument_count) = external_abi::diagnostic_argument_count(name)
+            {
+                if dest != Reg::RA {
+                    reference_blockers.push(format!(
+                        "unsupported-diagnostic-call-link-register at {pc:#x}: {name} uses {dest}"
+                    ));
+                    break;
+                }
+                let arguments = Box::new(core::array::from_fn(|index| {
+                    if index < usize::from(argument_count) {
+                        values[10 + index].clone()
+                    } else {
+                        Value::Constant(0)
+                    }
+                }));
+                reference_events.push(ReferenceEvent::DiagnosticCall {
+                    function: name.clone(),
+                    argument_count,
+                    arguments,
+                });
+                structural_finish_call_with_result(
+                    &mut values,
+                    (pc as u32).wrapping_add(8),
+                    Value::Unknown,
+                );
+                values[0] = Value::Constant(0);
+                instruction_index += 2;
+                continue;
+            }
+            let Some(target) = *target else {
+                reference_blockers.push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
+                break;
+            };
+            let arguments = Box::new(core::array::from_fn(|index| values[10 + index].clone()));
+            if dest == Reg::ZERO {
+                let call_token = next_call_token;
+                reference_events.push(ReferenceEvent::TailCall {
+                    token: call_token,
+                    site: pc as u32,
+                    target,
+                    arguments,
+                });
+                return_value = Value::CallResult(call_token);
+                break;
+            } else if dest == Reg::RA {
+                let call_token = next_call_token;
+                next_call_token += 1;
+                reference_events.push(ReferenceEvent::Call {
+                    token: call_token,
+                    site: pc as u32,
+                    target,
+                    arguments,
+                });
+                structural_finish_call(&mut values, (pc as u32).wrapping_add(8), call_token);
+            } else {
+                reference_blockers.push(format!(
+                    "unsupported-call-link-register at {pc:#x}: {name} uses {dest}"
+                ));
+            }
+            values[0] = Value::Constant(0);
+            instruction_index += 2;
+            continue;
+        }
         match instruction {
             Inst::Lui { uimm, dest } => {
-                structural_set(&mut values, dest, Value::Constant(uimm.as_u32()));
+                if !symbol.addresses_resolved
+                    && let Some(relocation) =
+                        symbol.relocation(pc as u32, binary::RelocationKind::Hi20)
+                {
+                    if uimm.as_u32() != 0 {
+                        reference_blockers.push(format!(
+                            "malformed-data-relocation at {pc:#x}: HI20 retains encoded immediate {:#x}",
+                            uimm.as_u32()
+                        ));
+                        structural_set(&mut values, dest, Value::Unknown);
+                    } else {
+                        structural_set(
+                            &mut values,
+                            dest,
+                            relocation_symbol_address(symbol, relocation),
+                        );
+                    }
+                } else {
+                    structural_set(&mut values, dest, Value::Constant(uimm.as_u32()));
+                }
             }
             Inst::Auipc { uimm, dest } => {
                 structural_set(
@@ -1367,9 +3450,23 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                 );
             }
             Inst::Addi { imm, dest, src1 } => {
-                let value = values[usize::from(src1.0)]
-                    .clone()
-                    .add_constant(imm.as_u32());
+                let value = match complete_low_relocation(
+                    symbol,
+                    pc as u32,
+                    binary::RelocationKind::Lo12I,
+                    &values[usize::from(src1.0)],
+                    imm.as_i32(),
+                ) {
+                    Ok(Some(address)) => address,
+                    Ok(None) => values[usize::from(src1.0)]
+                        .clone()
+                        .add_constant(imm.as_u32()),
+                    Err(error) => {
+                        reference_blockers
+                            .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        Value::Unknown
+                    }
+                };
                 structural_set(&mut values, dest, value);
             }
             Inst::Andi { imm, dest, src1 } => {
@@ -1397,10 +3494,17 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                 structural_set(&mut values, dest, value);
             }
             Inst::Srai { imm, dest, src1 } => {
-                let value = values[usize::from(src1.0)]
-                    .as_constant()
-                    .map(|value| Value::Constant(((value as i32) >> imm.as_u32()) as u32))
-                    .unwrap_or(Value::Unknown);
+                let source = values[usize::from(src1.0)].clone();
+                let value = source.as_constant().map_or_else(
+                    || {
+                        Value::expression(
+                            ExpressionOperation::ShiftRightArithmetic,
+                            source,
+                            Value::Constant(imm.as_u32()),
+                        )
+                    },
+                    |value| Value::Constant((value as i32).wrapping_shr(imm.as_u32()) as u32),
+                );
                 structural_set(&mut values, dest, value);
             }
             Inst::Sltiu { imm, dest, src1 } if imm.as_u32() == 1 => {
@@ -1438,17 +3542,16 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                     (Some(left), Some(right)) => Value::Constant(left.wrapping_add(right)),
                     (_, Some(right)) => left.add_constant(right),
                     (Some(left), _) => right.add_constant(left),
-                    _ => Value::Unknown,
+                    _ => Value::expression(ExpressionOperation::Add, left, right),
                 };
                 structural_set(&mut values, dest, value);
             }
             Inst::Sub { dest, src1, src2 } => {
-                let value = match (
-                    values[usize::from(src1.0)].as_constant(),
-                    values[usize::from(src2.0)].as_constant(),
-                ) {
+                let left_value = values[usize::from(src1.0)].clone();
+                let right_value = values[usize::from(src2.0)].clone();
+                let value = match (left_value.as_constant(), right_value.as_constant()) {
                     (Some(left), Some(right)) => Value::Constant(left.wrapping_sub(right)),
-                    _ => Value::Unknown,
+                    _ => Value::expression(ExpressionOperation::Subtract, left_value, right_value),
                 };
                 structural_set(&mut values, dest, value);
             }
@@ -1456,17 +3559,31 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
             | Inst::Srl { dest, src1, src2 }
             | Inst::Sra { dest, src1, src2 } => {
                 let source = values[usize::from(src1.0)].clone();
-                let amount = values[usize::from(src2.0)]
-                    .as_constant()
-                    .map(|value| value & 31);
-                let value = match (instruction, amount) {
+                let amount = values[usize::from(src2.0)].clone();
+                let constant_amount = amount.as_constant().map(|value| value & 31);
+                let value = match (instruction, constant_amount) {
                     (Inst::Sll { .. }, Some(amount)) => source.shift_left(amount),
                     (Inst::Srl { .. }, Some(amount)) => source.shift_right(amount),
-                    (Inst::Sra { .. }, Some(amount)) => source
-                        .as_constant()
-                        .map(|value| Value::Constant(((value as i32) >> amount) as u32))
-                        .unwrap_or(Value::Unknown),
-                    _ => Value::Unknown,
+                    (Inst::Sra { .. }, Some(amount)) => source.as_constant().map_or_else(
+                        || {
+                            Value::expression(
+                                ExpressionOperation::ShiftRightArithmetic,
+                                source,
+                                Value::Constant(amount),
+                            )
+                        },
+                        |value| Value::Constant((value as i32).wrapping_shr(amount) as u32),
+                    ),
+                    (Inst::Sll { .. }, None) => {
+                        Value::expression(ExpressionOperation::ShiftLeft, source, amount)
+                    }
+                    (Inst::Srl { .. }, None) => {
+                        Value::expression(ExpressionOperation::ShiftRight, source, amount)
+                    }
+                    (Inst::Sra { .. }, None) => {
+                        Value::expression(ExpressionOperation::ShiftRightArithmetic, source, amount)
+                    }
+                    _ => unreachable!(),
                 };
                 structural_set(&mut values, dest, value);
             }
@@ -1475,8 +3592,10 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
             | Inst::Divu { dest, src1, src2 }
             | Inst::Rem { dest, src1, src2 }
             | Inst::Remu { dest, src1, src2 } => {
-                let left = values[usize::from(src1.0)].as_constant();
-                let right = values[usize::from(src2.0)].as_constant();
+                let left_value = values[usize::from(src1.0)].clone();
+                let right_value = values[usize::from(src2.0)].clone();
+                let left = left_value.as_constant();
+                let right = right_value.as_constant();
                 let value = match (instruction, left, right) {
                     (Inst::Mul { .. }, Some(left), Some(right)) => {
                         Value::Constant(left.wrapping_mul(right))
@@ -1501,7 +3620,30 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                     (Inst::Remu { .. }, Some(left), Some(right)) => {
                         Value::Constant(if right == 0 { left } else { left % right })
                     }
-                    _ => Value::Unknown,
+                    (Inst::Mul { .. }, _, _) => {
+                        Value::expression(ExpressionOperation::Multiply, left_value, right_value)
+                    }
+                    (Inst::Div { .. }, _, _) => Value::expression(
+                        ExpressionOperation::DivideSigned,
+                        left_value,
+                        right_value,
+                    ),
+                    (Inst::Divu { .. }, _, _) => Value::expression(
+                        ExpressionOperation::DivideUnsigned,
+                        left_value,
+                        right_value,
+                    ),
+                    (Inst::Rem { .. }, _, _) => Value::expression(
+                        ExpressionOperation::RemainderSigned,
+                        left_value,
+                        right_value,
+                    ),
+                    (Inst::Remu { .. }, _, _) => Value::expression(
+                        ExpressionOperation::RemainderUnsigned,
+                        left_value,
+                        right_value,
+                    ),
+                    _ => unreachable!(),
                 };
                 structural_set(&mut values, dest, value);
             }
@@ -1518,31 +3660,162 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                     Inst::Lh { .. } | Inst::Lhu { .. } => 16,
                     _ => 32,
                 };
-                let address = structural_effective_address(&values, base, offset.as_i32());
-                let value =
-                    if let Some(address) = address.filter(|address| svd.contains_mmio(*address)) {
+                let signed = matches!(instruction, Inst::Lb { .. } | Inst::Lh { .. });
+                let relocated_external_table = symbol
+                    .relocation(pc as u32, binary::RelocationKind::Lo12I)
+                    .and_then(|relocation| {
+                        (relocation.addend == 0 && offset.as_i32() == 0)
+                            .then(|| external_abi::table_for_pointer_symbol(&relocation.symbol))
+                            .flatten()
+                    });
+                let address = if relocated_external_table.is_some() {
+                    None
+                } else {
+                    match complete_low_relocation(
+                        symbol,
+                        pc as u32,
+                        binary::RelocationKind::Lo12I,
+                        &values[usize::from(base.0)],
+                        offset.as_i32(),
+                    ) {
+                        Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
+                        Ok(None) => structural_effective_address(&values, base, offset.as_i32()),
+                        Err(error) => {
+                            reference_blockers
+                                .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                            structural_set(&mut values, dest, Value::Unknown);
+                            values[0] = Value::Constant(0);
+                            instruction_index += 1;
+                            continue;
+                        }
+                    }
+                };
+                let value = match (relocated_external_table, address) {
+                    (Some(table), _) if width == 32 => Value::ExternalTable(table),
+                    (_, Some(StructuralAddress::Absolute(address)))
+                        if width == 32 && external_pointer_cells.contains_key(&address) =>
+                    {
+                        Value::ExternalTable(external_pointer_cells[&address])
+                    }
+                    (_, Some(StructuralAddress::ExternalTableSlot(table, offset)))
+                        if width == 32 =>
+                    {
+                        let Ok(offset) = u32::try_from(offset) else {
+                            reference_blockers.push(format!(
+                                "negative-external-abi-slot at {pc:#x}: {instruction}"
+                            ));
+                            structural_set(&mut values, dest, Value::Unknown);
+                            values[0] = Value::Constant(0);
+                            instruction_index += 1;
+                            continue;
+                        };
+                        match external_abi::slot(table, offset) {
+                            Some(slot) => Value::ExternalFunction {
+                                table,
+                                function: slot.function,
+                            },
+                            None => {
+                                reference_blockers.push(format!(
+                                    "unregistered-external-abi-slot at {pc:#x}: {}+{offset:#x}",
+                                    external_abi::table_spec(table).id
+                                ));
+                                Value::Unknown
+                            }
+                        }
+                    }
+                    (_, Some(StructuralAddress::PrivateStack(offset))) => {
+                        stack.load(offset, width, signed).unwrap_or_else(|| {
+                            reference_blockers.push(format!(
+                                "uninitialized-private-stack-load at {pc:#x}: {instruction}"
+                            ));
+                            Value::Unknown
+                        })
+                    }
+                    (_, Some(StructuralAddress::CallerMemory(address))) => {
+                        let read_token = next_memory_read_token;
+                        next_memory_read_token += 1;
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Read,
+                            width,
+                            address,
+                            region: "caller-owned ABI argument RAM".to_owned(),
+                            value: None,
+                        });
+                        Value::memory_read(read_token, width, signed)
+                    }
+                    (_, Some(StructuralAddress::SymbolMemory(address))) => {
+                        let read_token = next_memory_read_token;
+                        next_memory_read_token += 1;
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Read,
+                            width,
+                            region: address.canonical(),
+                            address,
+                            value: None,
+                        });
+                        Value::memory_read(read_token, width, signed)
+                    }
+                    (_, Some(StructuralAddress::Absolute(address)))
+                        if svd.contains_mmio(address) =>
+                    {
                         let read_token = next_mmio_read_token;
                         next_mmio_read_token += 1;
-                        events.push(Event::Memory {
+                        let event = Event::Memory {
                             access: Access::Read,
                             width,
                             address,
                             register: svd.register_name(address),
-                            value: "-".to_owned(),
+                            value: None,
+                        };
+                        events.push(event.clone());
+                        reference_events.push(ReferenceEvent::Observable(event));
+                        Value::register_read(read_token, address, width, signed)
+                    }
+                    (_, Some(StructuralAddress::Absolute(address)))
+                        if symbol.memory_region(address, width).is_some() =>
+                    {
+                        let region = symbol.memory_region(address, width).unwrap();
+                        let read_token = next_memory_read_token;
+                        next_memory_read_token += 1;
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Read,
+                            width,
+                            address: Value::Constant(address),
+                            region: region.name.clone(),
+                            value: None,
                         });
-                        if width == 32 {
-                            Value::RegisterImage {
-                                read_token,
+                        Value::memory_read(read_token, width, signed)
+                    }
+                    _ => {
+                        if let Some((address, domain)) =
+                            structural_indexed_mmio_address(&values, base, offset.as_i32(), svd)
+                        {
+                            let read_token = next_mmio_read_token;
+                            next_mmio_read_token += 1;
+                            reference_events.push(ReferenceEvent::IndexedMmio {
+                                access: Access::Read,
+                                width,
                                 address,
-                                and_mask: u32::MAX,
-                                or_mask: 0,
-                            }
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: None,
+                            });
+                            Value::indexed_register_read(read_token, width, signed)
                         } else {
+                            reference_blockers.push(format!(
+                                "unmodeled-memory-load at {pc:#x}: {instruction}{}; base {} = {}",
+                                if symbol.addresses_resolved {
+                                    ""
+                                } else {
+                                    " (relocatable addresses)"
+                                },
+                                base,
+                                values[usize::from(base.0)].canonical(),
+                            ));
                             Value::Unknown
                         }
-                    } else {
-                        Value::Unknown
-                    };
+                    }
+                };
                 structural_set(&mut values, dest, value);
             }
             Inst::Sb { offset, src, base }
@@ -1553,50 +3826,328 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
                     Inst::Sh { .. } => 16,
                     _ => 32,
                 };
-                if let Some(address) = structural_effective_address(&values, base, offset.as_i32())
-                    .filter(|address| svd.contains_mmio(*address))
-                {
-                    let value = values[usize::from(src.0)].clone();
-                    if !value.is_resolved() {
-                        blockers.push(format!(
-                            "unresolved MMIO write value at {pc:#x}: {instruction}"
-                        ));
+                let value = values[usize::from(src.0)].clone();
+                let address = match complete_low_relocation(
+                    symbol,
+                    pc as u32,
+                    binary::RelocationKind::Lo12S,
+                    &values[usize::from(base.0)],
+                    offset.as_i32(),
+                ) {
+                    Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
+                    Ok(None) => structural_effective_address(&values, base, offset.as_i32()),
+                    Err(error) => {
+                        reference_blockers
+                            .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        values[0] = Value::Constant(0);
+                        instruction_index += 1;
+                        continue;
                     }
-                    events.push(Event::Memory {
-                        access: Access::Write,
-                        width,
-                        address,
-                        register: svd.register_name(address),
-                        value: value.canonical(),
-                    });
+                };
+                match address {
+                    Some(StructuralAddress::PrivateStack(offset)) => {
+                        stack.store(offset, width, &value);
+                    }
+                    Some(StructuralAddress::CallerMemory(address)) => {
+                        if !value.is_resolved() {
+                            reference_blockers
+                                .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                        }
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Write,
+                            width,
+                            address,
+                            region: "caller-owned ABI argument RAM".to_owned(),
+                            value: Some(value),
+                        });
+                    }
+                    Some(StructuralAddress::SymbolMemory(address)) => {
+                        if !value.is_resolved() {
+                            reference_blockers
+                                .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                        }
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Write,
+                            width,
+                            region: address.canonical(),
+                            address,
+                            value: Some(value),
+                        });
+                    }
+                    Some(StructuralAddress::Absolute(address)) if svd.contains_mmio(address) => {
+                        if !value.is_resolved() {
+                            blockers.push(format!(
+                                "unresolved MMIO write value at {pc:#x}: {instruction}"
+                            ));
+                        }
+                        let event = Event::Memory {
+                            access: Access::Write,
+                            width,
+                            address,
+                            register: svd.register_name(address),
+                            value: Some(value),
+                        };
+                        events.push(event.clone());
+                        reference_events.push(ReferenceEvent::Observable(event));
+                    }
+                    Some(StructuralAddress::Absolute(address))
+                        if symbol.memory_region(address, width).is_some() =>
+                    {
+                        let region = symbol.memory_region(address, width).unwrap();
+                        if !region.writable {
+                            reference_blockers.push(format!(
+                                "read-only-memory-store at {pc:#x}: {instruction} ({})",
+                                region.name
+                            ));
+                        }
+                        if !value.is_resolved() {
+                            reference_blockers
+                                .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                        }
+                        reference_events.push(ReferenceEvent::Memory {
+                            access: Access::Write,
+                            width,
+                            address: Value::Constant(address),
+                            region: region.name.clone(),
+                            value: Some(value),
+                        });
+                    }
+                    _ => {
+                        if let Some((address, domain)) =
+                            structural_indexed_mmio_address(&values, base, offset.as_i32(), svd)
+                        {
+                            if !value.is_resolved() {
+                                reference_blockers.push(format!(
+                                    "unresolved indexed MMIO write value at {pc:#x}: {instruction}"
+                                ));
+                            }
+                            reference_events.push(ReferenceEvent::IndexedMmio {
+                                access: Access::Write,
+                                width,
+                                address,
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: Some(value),
+                            });
+                        } else {
+                            reference_blockers.push(format!(
+                                "unmodeled-memory-store at {pc:#x}: {instruction}{}; base {} = {}",
+                                if symbol.addresses_resolved {
+                                    ""
+                                } else {
+                                    " (relocatable addresses)"
+                                },
+                                base,
+                                values[usize::from(base.0)].canonical(),
+                            ));
+                        }
+                    }
                 }
             }
-            Inst::Beq { .. }
-            | Inst::Bne { .. }
-            | Inst::Blt { .. }
-            | Inst::Bge { .. }
-            | Inst::Bltu { .. }
-            | Inst::Bgeu { .. } => {
-                blockers.push(format!(
-                    "control-flow instruction at {pc:#x}: {instruction}"
-                ));
+            Inst::Beq { offset, src1, src2 }
+            | Inst::Bne { offset, src1, src2 }
+            | Inst::Blt { offset, src1, src2 }
+            | Inst::Bge { offset, src1, src2 }
+            | Inst::Bltu { offset, src1, src2 }
+            | Inst::Bgeu { offset, src1, src2 } => {
+                let left_value = values[usize::from(src1.0)].clone();
+                let right_value = values[usize::from(src2.0)].clone();
+                let left = left_value.as_constant();
+                let right = right_value.as_constant();
+                let taken = if let Some((left, right)) = left.zip(right) {
+                    match instruction {
+                        Inst::Beq { .. } => left == right,
+                        Inst::Bne { .. } => left != right,
+                        Inst::Blt { .. } => (left as i32) < (right as i32),
+                        Inst::Bge { .. } => (left as i32) >= (right as i32),
+                        Inst::Bltu { .. } => left < right,
+                        Inst::Bgeu { .. } => left >= right,
+                        _ => unreachable!(),
+                    }
+                } else {
+                    let operation = match instruction {
+                        Inst::Beq { .. } => BranchOperation::Equal,
+                        Inst::Bne { .. } => BranchOperation::NotEqual,
+                        Inst::Blt { .. } => BranchOperation::LessSigned,
+                        Inst::Bge { .. } => BranchOperation::GreaterEqualSigned,
+                        Inst::Bltu { .. } => BranchOperation::LessUnsigned,
+                        Inst::Bgeu { .. } => BranchOperation::GreaterEqualUnsigned,
+                        _ => unreachable!(),
+                    };
+                    let condition = BranchCondition {
+                        site: pc as u32,
+                        operation,
+                        left: left_value,
+                        right: right_value,
+                    };
+                    if !condition.left.is_resolved() || !condition.right.is_resolved() {
+                        blockers.push(format!(
+                            "unresolved input-dependent control-flow at {pc:#x}: {instruction}"
+                        ));
+                        break;
+                    }
+                    let Some(taken) = forced_branches.get(&(pc as u32)).copied() else {
+                        blockers.push(format!(
+                            "input-dependent control-flow at {pc:#x}: {instruction}"
+                        ));
+                        unresolved_branch = Some(condition);
+                        break;
+                    };
+                    reference_events.push(ReferenceEvent::BranchDecision { condition, taken });
+                    taken
+                };
+                let target = if taken {
+                    (pc as u32).wrapping_add(offset.as_u32())
+                } else {
+                    (pc as u32).wrapping_add(u32::from(width))
+                };
+                let Some(target_index) = instruction_indices.get(&target).copied() else {
+                    blockers.push(format!(
+                        "invalid conditional target at {pc:#x}: {instruction}"
+                    ));
+                    break;
+                };
+                instruction_index = target_index;
+                values[0] = Value::Constant(0);
+                continue;
             }
-            Inst::Jal { .. } => {
+            Inst::Jal { offset, dest } => {
+                let target = (pc as u32).wrapping_add(offset.as_u32());
+                let symbol_start = symbol.address as u32;
+                let symbol_end = symbol_start.wrapping_add(symbol.bytes.len() as u32);
+                if dest == Reg::ZERO && target >= symbol_start && target < symbol_end {
+                    let Some(target_index) = instruction_indices.get(&target).copied() else {
+                        blockers.push(format!(
+                            "invalid local jump target at {pc:#x}: {instruction}"
+                        ));
+                        break;
+                    };
+                    instruction_index = target_index;
+                    values[0] = Value::Constant(0);
+                    continue;
+                }
                 blockers.push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+                if target < symbol_start || target >= symbol_end {
+                    let arguments =
+                        Box::new(core::array::from_fn(|index| values[10 + index].clone()));
+                    if dest == Reg::ZERO {
+                        let call_token = next_call_token;
+                        reference_events.push(ReferenceEvent::TailCall {
+                            token: call_token,
+                            site: pc as u32,
+                            target,
+                            arguments,
+                        });
+                        return_value = Value::CallResult(call_token);
+                        break;
+                    } else if dest == Reg::RA {
+                        let call_token = next_call_token;
+                        next_call_token += 1;
+                        reference_events.push(ReferenceEvent::Call {
+                            token: call_token,
+                            site: pc as u32,
+                            target,
+                            arguments,
+                        });
+                        structural_finish_call(
+                            &mut values,
+                            (pc as u32).wrapping_add(u32::from(width)),
+                            call_token,
+                        );
+                    }
+                }
+            }
+            Inst::Jalr { offset, base, dest }
+                if matches!(&values[usize::from(base.0)], Value::ExternalFunction { .. }) =>
+            {
+                let Value::ExternalFunction { table, function } =
+                    values[usize::from(base.0)].clone()
+                else {
+                    unreachable!()
+                };
+                let slot = external_abi::function(table, function);
+                if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+                    blockers.push(format!(
+                        "unsupported external ABI call shape at {pc:#x}: {instruction}"
+                    ));
+                    break;
+                }
+                let mut arguments = Box::new(core::array::from_fn(|index| {
+                    if index < usize::from(slot.argument_count) {
+                        values[10 + index].clone()
+                    } else {
+                        Value::Constant(0)
+                    }
+                }));
+                let result = match slot.return_model {
+                    external_abi::ReturnModel::Constant(value) => Value::Constant(value),
+                    external_abi::ReturnModel::SymbolicU32 => {
+                        Value::ExternalResult(next_external_call_token)
+                    }
+                    external_abi::ReturnModel::PrivateStackOutputU8 { pointer_argument } => {
+                        let Some(Value::StackAddress(offset)) =
+                            arguments.get(usize::from(pointer_argument))
+                        else {
+                            blockers.push(format!(
+                                "call/jump instruction at {pc:#x}: external ABI {}::{}",
+                                external_abi::table_spec(table).id,
+                                slot.c_name
+                            ));
+                            reference_blockers.push(format!(
+                                "unsupported-external-output-pointer at {pc:#x}: {}::{} argument a{pointer_argument} is not private stack",
+                                external_abi::table_spec(table).id,
+                                slot.c_name
+                            ));
+                            break;
+                        };
+                        let output = Value::ExternalResult(next_external_call_token).and(0xff);
+                        stack.store(*offset, 8, &output);
+                        // The validated private pointer has already been
+                        // consumed by the internal stack effect. Do not let a
+                        // callee-local address escape into call composition or
+                        // generated behavior.
+                        arguments[usize::from(pointer_argument)] = Value::Constant(0);
+                        // The C callback returns an int, but this model only
+                        // claims its output-byte effect. Any later use of a0
+                        // therefore remains fail-closed.
+                        Value::Unknown
+                    }
+                };
+                reference_events.push(ReferenceEvent::ExternalCall {
+                    token: next_external_call_token,
+                    table,
+                    function,
+                    arguments,
+                });
+                next_external_call_token += 1;
+                if dest == Reg::ZERO {
+                    return_value = result;
+                    break;
+                }
+                structural_finish_call_with_result(
+                    &mut values,
+                    (pc as u32).wrapping_add(u32::from(width)),
+                    result,
+                );
             }
             Inst::Jalr { offset, base, dest }
                 if dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0 =>
             {
                 return_value = values[usize::from(Reg::A0.0)].clone();
+                break;
             }
             Inst::Jalr { .. } => {
                 blockers.push(format!("call/jump instruction at {pc:#x}: {instruction}"));
             }
-            Inst::Fence { fence } => events.push(Event::Fence {
-                fm: fence.fm,
-                predecessor: encode_fence_set(fence.pred),
-                successor: encode_fence_set(fence.succ),
-            }),
+            Inst::Fence { fence } => {
+                let event = Event::Fence {
+                    fm: fence.fm,
+                    predecessor: encode_fence_set(fence.pred),
+                    successor: encode_fence_set(fence.succ),
+                };
+                events.push(event.clone());
+                reference_events.push(ReferenceEvent::Observable(event));
+            }
             Inst::Ecall
             | Inst::Ebreak
             | Inst::LrW { .. }
@@ -1611,13 +4162,19 @@ fn trace_binary_symbol(symbol: &binary::BinarySymbol, svd: &SvdMap) -> Result<Tr
             }
         }
         values[0] = Value::Constant(0);
+        instruction_index += 1;
     }
 
     Ok(Trace {
         symbol: symbol.name.clone(),
         events,
+        reference_events,
+        reference_dependencies: Vec::new(),
         blockers,
+        reference_blockers,
         return_value,
+        reference_flow: None,
+        unresolved_branch,
     })
 }
 
@@ -1742,7 +4299,1277 @@ fn extract(input: &Input, svd: &SvdMap) -> Result<Trace> {
                 input.symbol, input.member
             )
         })?;
-    trace_binary_symbol(symbol, svd)
+    trace_binary_symbol(symbol, svd, &BTreeMap::new(), &BTreeMap::new(), None)
+}
+
+fn inline_reference_summary(
+    prefix: &[ReferenceEvent],
+    callee: &Trace,
+    arguments: &[Value; 8],
+) -> std::result::Result<(Vec<ReferenceEvent>, Value), String> {
+    if callee.reference_flow.is_some() {
+        return Err(format!(
+            "callee {} contains symbolic control flow and must be represented as a scoped call before flattening",
+            callee.symbol
+        ));
+    }
+    let mut output = prefix.to_vec();
+    let mut next_read_token = prefix
+        .iter()
+        .filter(|event| reference_event_is_mmio_read(event))
+        .count() as u32;
+    let mut next_memory_read_token = prefix
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                ReferenceEvent::Memory {
+                    access: Access::Read,
+                    ..
+                }
+            )
+        })
+        .count() as u32;
+    let mut next_external_token = prefix
+        .iter()
+        .filter(|event| matches!(event, ReferenceEvent::ExternalCall { .. }))
+        .count() as u32;
+    let mut read_tokens = Vec::new();
+    let mut memory_read_tokens = Vec::new();
+    let mut external_tokens = Vec::new();
+
+    for event in &callee.reference_events {
+        let event = match event {
+            ReferenceEvent::Observable(Event::Memory {
+                access: Access::Read,
+                ..
+            }) => {
+                read_tokens.push(next_read_token);
+                next_read_token += 1;
+                event.clone()
+            }
+            ReferenceEvent::Observable(Event::Memory {
+                access: Access::Write,
+                width,
+                address,
+                register,
+                value: Some(value),
+            }) => {
+                let value = value.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                if !value.is_resolved() {
+                    return Err(format!(
+                        "callee {} has a write that is unresolved after argument substitution",
+                        callee.symbol
+                    ));
+                }
+                ReferenceEvent::Observable(Event::Memory {
+                    access: Access::Write,
+                    width: *width,
+                    address: *address,
+                    register: register.clone(),
+                    value: Some(value),
+                })
+            }
+            ReferenceEvent::IndexedMmio {
+                access,
+                width,
+                address,
+                registers,
+                guard,
+                value,
+            } => {
+                let address = address.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                let guard = guard
+                    .as_ref()
+                    .map(|guard| -> std::result::Result<IndexedMmioGuard, String> {
+                        Ok(IndexedMmioGuard {
+                            selector: guard.selector.substitute(
+                                arguments,
+                                &read_tokens,
+                                &memory_read_tokens,
+                                &external_tokens,
+                            )?,
+                            maximum: guard.maximum,
+                        })
+                    })
+                    .transpose()?;
+                let value = value
+                    .as_ref()
+                    .map(|value| {
+                        value.substitute(
+                            arguments,
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                        )
+                    })
+                    .transpose()?;
+                if *access == Access::Read {
+                    read_tokens.push(next_read_token);
+                    next_read_token += 1;
+                }
+                ReferenceEvent::IndexedMmio {
+                    access: *access,
+                    width: *width,
+                    address,
+                    registers: registers.clone(),
+                    guard,
+                    value,
+                }
+            }
+            ReferenceEvent::DelayMicros { micros } => {
+                let micros = micros.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                if !micros.is_resolved() {
+                    return Err(format!(
+                        "callee {} has an unresolved delay after argument substitution",
+                        callee.symbol
+                    ));
+                }
+                ReferenceEvent::DelayMicros { micros }
+            }
+            ReferenceEvent::Memory {
+                access: Access::Read,
+                width,
+                address,
+                region,
+                value: None,
+            } => {
+                let address = address.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                if !address.is_resolved() {
+                    return Err(format!(
+                        "callee {} has a memory-read address that is unresolved after argument substitution",
+                        callee.symbol
+                    ));
+                }
+                memory_read_tokens.push(next_memory_read_token);
+                next_memory_read_token += 1;
+                ReferenceEvent::Memory {
+                    access: Access::Read,
+                    width: *width,
+                    address,
+                    region: region.clone(),
+                    value: None,
+                }
+            }
+            ReferenceEvent::Memory {
+                access: Access::Write,
+                width,
+                address,
+                region,
+                value: Some(value),
+            } => {
+                let address = address.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                let value = value.substitute(
+                    arguments,
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                )?;
+                if !address.is_resolved() || !value.is_resolved() {
+                    return Err(format!(
+                        "callee {} has a memory write that is unresolved after argument substitution",
+                        callee.symbol
+                    ));
+                }
+                ReferenceEvent::Memory {
+                    access: Access::Write,
+                    width: *width,
+                    address,
+                    region: region.clone(),
+                    value: Some(value),
+                }
+            }
+            ReferenceEvent::ExternalCall {
+                table,
+                function,
+                arguments: external_arguments,
+                ..
+            } => {
+                let mapped_arguments = external_arguments
+                    .iter()
+                    .map(|value| {
+                        value.substitute(
+                            arguments,
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .try_into()
+                    .map_err(|_| "internal external argument count changed".to_owned())?;
+                let token = next_external_token;
+                next_external_token += 1;
+                external_tokens.push(token);
+                ReferenceEvent::ExternalCall {
+                    token,
+                    table: *table,
+                    function: *function,
+                    arguments: Box::new(mapped_arguments),
+                }
+            }
+            ReferenceEvent::DiagnosticCall {
+                function,
+                argument_count,
+                arguments: diagnostic_arguments,
+            } => {
+                let mapped_arguments = diagnostic_arguments
+                    .iter()
+                    .map(|value| {
+                        value.substitute(
+                            arguments,
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .try_into()
+                    .map_err(|_| "internal diagnostic argument count changed".to_owned())?;
+                ReferenceEvent::DiagnosticCall {
+                    function: function.clone(),
+                    argument_count: *argument_count,
+                    arguments: Box::new(mapped_arguments),
+                }
+            }
+            ReferenceEvent::TailCall { site, target, .. } => {
+                return Err(format!(
+                    "callee {} still contains an unresolved call at {site:#010x} to {target:#010x}",
+                    callee.symbol
+                ));
+            }
+            ReferenceEvent::Call {
+                token,
+                site,
+                target,
+                ..
+            } => {
+                return Err(format!(
+                    "callee {} still contains unresolved call {token} at {site:#010x} to {target:#010x}",
+                    callee.symbol
+                ));
+            }
+            _ => event.clone(),
+        };
+        output.push(event);
+    }
+    let return_value = callee.return_value.substitute(
+        arguments,
+        &read_tokens,
+        &memory_read_tokens,
+        &external_tokens,
+    )?;
+    Ok((output, return_value))
+}
+
+fn reference_intrinsic_trace(symbol: &binary::BinarySymbol) -> Option<Trace> {
+    match symbol.name.as_str() {
+        "ets_delay_us" => Some(Trace {
+            symbol: symbol.name.clone(),
+            events: Vec::new(),
+            reference_events: vec![ReferenceEvent::DelayMicros {
+                micros: Value::input(0),
+            }],
+            reference_dependencies: Vec::new(),
+            blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            return_value: Value::Unknown,
+            reference_flow: None,
+            unresolved_branch: None,
+        }),
+        _ => None,
+    }
+}
+
+struct ReferenceCalleeContext<'a> {
+    symbols_by_address: &'a BTreeMap<u32, binary::BinarySymbol>,
+    relocated_calls: &'a StructuralRelocatedCalls,
+    external_pointer_cells: &'a BTreeMap<u32, external_abi::Table>,
+    svd: &'a SvdMap,
+}
+
+#[derive(Clone, Debug)]
+struct ReferencePath {
+    events: VecDeque<ReferenceEvent>,
+    return_value: Value,
+}
+
+fn build_reference_flow(
+    mut paths: Vec<ReferencePath>,
+) -> std::result::Result<ReferenceFlow, String> {
+    if paths.is_empty() {
+        return Err("bounded branch exploration produced no complete paths".to_owned());
+    }
+
+    let mut events = Vec::new();
+    loop {
+        let Some(first) = paths[0].events.front().cloned() else {
+            if paths.iter().any(|path| !path.events.is_empty()) {
+                return Err("symbolic paths do not share a structured event boundary".to_owned());
+            }
+            let return_value = paths[0].return_value.clone();
+            if paths.iter().any(|path| path.return_value != return_value) {
+                return Err("symbolic paths merge with incompatible return states".to_owned());
+            }
+            return Ok(ReferenceFlow {
+                events,
+                terminator: ReferenceTerminator::Return(return_value),
+            });
+        };
+
+        if let ReferenceEvent::BranchDecision { condition, .. } = first {
+            let mut taken_paths = Vec::new();
+            let mut not_taken_paths = Vec::new();
+            for mut path in paths {
+                let Some(ReferenceEvent::BranchDecision {
+                    condition: path_condition,
+                    taken,
+                }) = path.events.pop_front()
+                else {
+                    return Err("symbolic paths diverge before a common branch boundary".to_owned());
+                };
+                if path_condition != condition {
+                    return Err(format!(
+                        "symbolic paths disagree about branch condition at {:#010x}",
+                        condition.site
+                    ));
+                }
+                if taken {
+                    taken_paths.push(path);
+                } else {
+                    not_taken_paths.push(path);
+                }
+            }
+            if taken_paths.is_empty() || not_taken_paths.is_empty() {
+                return Err(format!(
+                    "branch exploration did not cover both outcomes at {:#010x}",
+                    condition.site
+                ));
+            }
+            return Ok(ReferenceFlow {
+                events,
+                terminator: ReferenceTerminator::Branch {
+                    condition,
+                    taken: Box::new(build_reference_flow(taken_paths)?),
+                    not_taken: Box::new(build_reference_flow(not_taken_paths)?),
+                },
+            });
+        }
+
+        if paths.iter().any(|path| path.events.front() != Some(&first)) {
+            return Err("symbolic paths have incompatible observable event prefixes".to_owned());
+        }
+        for path in &mut paths {
+            path.events.pop_front();
+        }
+        events.push(first);
+    }
+}
+
+fn explore_reference_flow(
+    symbol: &binary::BinarySymbol,
+    svd: &SvdMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
+    specialized_arguments: Option<&[Value; 8]>,
+) -> std::result::Result<ReferenceFlow, String> {
+    const MAX_COMPLETE_PATHS: usize = 64;
+    const MAX_EXPLORED_STATES: usize = MAX_COMPLETE_PATHS * 2 - 1;
+    const MAX_BRANCH_DECISIONS: usize = 12;
+
+    let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
+    let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
+    let mut paths = Vec::new();
+    let mut explored_states = 0usize;
+
+    while let Some(forced_branches) = queue.pop_front() {
+        explored_states += 1;
+        if explored_states > MAX_EXPLORED_STATES {
+            return Err(format!(
+                "symbolic CFG exceeds the exploration limit of {MAX_COMPLETE_PATHS} complete paths"
+            ));
+        }
+        let trace = trace_binary_symbol_with_branches(
+            symbol,
+            svd,
+            relocated_calls,
+            external_pointer_cells,
+            specialized_arguments,
+            &forced_branches,
+        )
+        .map_err(|error| error.to_string())?;
+
+        let typed_calls = trace
+            .reference_events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    ReferenceEvent::Call { .. }
+                        | ReferenceEvent::TailCall { .. }
+                        | ReferenceEvent::DiagnosticCall { .. }
+                )
+            })
+            .count();
+        let call_blockers = trace
+            .blockers
+            .iter()
+            .filter(|blocker| blocker.starts_with("call/jump instruction"))
+            .count();
+
+        if let Some(branch) = trace.unresolved_branch {
+            let branch_blockers = trace
+                .blockers
+                .iter()
+                .filter(|blocker| blocker.starts_with("input-dependent control-flow"))
+                .count();
+            if !trace.reference_blockers.is_empty()
+                || branch_blockers != 1
+                || trace.blockers.len() != call_blockers + branch_blockers
+                || typed_calls != call_blockers
+            {
+                return Err(format!(
+                    "path to branch {:#010x} has unsupported effects: {}",
+                    branch.site,
+                    trace
+                        .blockers
+                        .iter()
+                        .chain(&trace.reference_blockers)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+            if forced_branches.len() >= MAX_BRANCH_DECISIONS {
+                return Err(format!(
+                    "symbolic CFG exceeds the limit of {MAX_BRANCH_DECISIONS} branch decisions per path"
+                ));
+            }
+            for taken in [false, true] {
+                let mut next = forced_branches.clone();
+                if next.insert(branch.site, taken).is_some() {
+                    return Err(format!(
+                        "symbolic CFG revisits branch {:#010x}; loops are not supported",
+                        branch.site
+                    ));
+                }
+                if queued.insert(next.clone()) {
+                    queue.push_back(next);
+                }
+            }
+            continue;
+        }
+
+        if !trace.reference_blockers.is_empty()
+            || trace.blockers.len() != call_blockers
+            || typed_calls != call_blockers
+        {
+            return Err(format!(
+                "symbolic path has unsupported effects: {}",
+                trace
+                    .blockers
+                    .iter()
+                    .chain(&trace.reference_blockers)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
+        }
+        paths.push(ReferencePath {
+            events: trace.reference_events.into(),
+            return_value: trace.return_value,
+        });
+        if paths.len() > MAX_COMPLETE_PATHS {
+            return Err(format!(
+                "symbolic CFG exceeds the exploration limit of {MAX_COMPLETE_PATHS} complete paths"
+            ));
+        }
+    }
+
+    build_reference_flow(paths)
+}
+
+fn resolve_reference_callee(
+    target: u32,
+    site: u32,
+    arguments: &[Value; 8],
+    context: &ReferenceCalleeContext<'_>,
+    visiting: &mut BTreeSet<u32>,
+) -> std::result::Result<(String, Trace), String> {
+    let callee = context
+        .symbols_by_address
+        .get(&target)
+        .ok_or_else(|| format!("unresolved-call at {site:#010x} to {target:#010x}"))?;
+    if let Some(trace) = reference_intrinsic_trace(callee) {
+        return Ok((callee.name.clone(), trace));
+    }
+    if !visiting.insert(target) {
+        return Err(format!("recursive-call at {site:#010x} to {}", callee.name));
+    }
+    let result = resolve_reference_trace(
+        callee,
+        context.symbols_by_address,
+        context.relocated_calls,
+        context.external_pointer_cells,
+        Some(arguments),
+        context.svd,
+        visiting,
+    )
+    .map_err(|error| format!("callee-decode at {site:#010x}: {}: {error}", callee.name));
+    visiting.remove(&target);
+    let trace = result?;
+    if !trace.is_reference_eligible() {
+        return Err(format!(
+            "callee-ineligible at {site:#010x}: {}",
+            callee.name
+        ));
+    }
+    Ok((callee.name.clone(), trace))
+}
+
+fn trace_into_reference_flow(mut trace: Trace) -> ReferenceFlow {
+    trace.reference_flow.take().unwrap_or(ReferenceFlow {
+        events: std::mem::take(&mut trace.reference_events),
+        terminator: ReferenceTerminator::Return(trace.return_value),
+    })
+}
+
+fn compose_calls_in_reference_flow(
+    mut flow: ReferenceFlow,
+    context: &ReferenceCalleeContext<'_>,
+    visiting: &mut BTreeSet<u32>,
+    dependencies: &mut Vec<String>,
+) -> std::result::Result<ReferenceFlow, String> {
+    let mut events = Vec::with_capacity(flow.events.len());
+    for event in flow.events {
+        let (token, site, target, arguments) = match event {
+            ReferenceEvent::Call {
+                token,
+                site,
+                target,
+                arguments,
+            }
+            | ReferenceEvent::TailCall {
+                token,
+                site,
+                target,
+                arguments,
+            } => (token, site, target, arguments),
+            ReferenceEvent::BranchDecision { condition, .. } => {
+                return Err(format!(
+                    "branch decision at {:#010x} escaped structured flow assembly",
+                    condition.site
+                ));
+            }
+            other => {
+                events.push(other);
+                continue;
+            }
+        };
+
+        let (callee_name, callee_trace) =
+            resolve_reference_callee(target, site, &arguments, context, visiting)?;
+        let result_modeled = callee_trace.reference_exit_a0_modeled();
+        dependencies.push(callee_name.clone());
+        dependencies.extend(callee_trace.reference_dependencies.iter().cloned());
+        events.push(ReferenceEvent::ComposedCall {
+            token,
+            symbol: callee_name,
+            arguments,
+            flow: Box::new(trace_into_reference_flow(callee_trace)),
+            result_modeled,
+        });
+    }
+    flow.events = events;
+    flow.terminator = match flow.terminator {
+        ReferenceTerminator::Return(value) => ReferenceTerminator::Return(value),
+        ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } => ReferenceTerminator::Branch {
+            condition,
+            taken: Box::new(compose_calls_in_reference_flow(
+                *taken,
+                context,
+                visiting,
+                dependencies,
+            )?),
+            not_taken: Box::new(compose_calls_in_reference_flow(
+                *not_taken,
+                context,
+                visiting,
+                dependencies,
+            )?),
+        },
+    };
+    Ok(flow)
+}
+
+fn resolve_reference_trace(
+    symbol: &binary::BinarySymbol,
+    symbols_by_address: &BTreeMap<u32, binary::BinarySymbol>,
+    relocated_calls: &StructuralRelocatedCalls,
+    external_pointer_cells: &BTreeMap<u32, external_abi::Table>,
+    specialized_arguments: Option<&[Value; 8]>,
+    svd: &SvdMap,
+    visiting: &mut BTreeSet<u32>,
+) -> Result<Trace> {
+    let mut trace = trace_binary_symbol(
+        symbol,
+        svd,
+        relocated_calls,
+        external_pointer_cells,
+        specialized_arguments,
+    )?;
+    let typed_calls = trace
+        .reference_events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                ReferenceEvent::TailCall { .. }
+                    | ReferenceEvent::Call { .. }
+                    | ReferenceEvent::DiagnosticCall { .. }
+            )
+        })
+        .count();
+    if trace.unresolved_branch.is_some() {
+        match explore_reference_flow(
+            symbol,
+            svd,
+            relocated_calls,
+            external_pointer_cells,
+            specialized_arguments,
+        )
+        .and_then(|flow| {
+            compose_calls_in_reference_flow(
+                flow,
+                &ReferenceCalleeContext {
+                    symbols_by_address,
+                    relocated_calls,
+                    external_pointer_cells,
+                    svd,
+                },
+                visiting,
+                &mut trace.reference_dependencies,
+            )
+        }) {
+            Ok(flow) if reference_flow_calls_are_valid(&flow) => {
+                trace.events.clear();
+                trace.reference_events.clear();
+                trace.blockers.clear();
+                trace.reference_flow = Some(flow);
+                trace.unresolved_branch = None;
+            }
+            Ok(_) => trace.reference_blockers.push(
+                "symbolic-cfg: composed call result is used without a modeled callee `a0`"
+                    .to_owned(),
+            ),
+            Err(error) => trace
+                .reference_blockers
+                .push(format!("symbolic-cfg: {error}")),
+        }
+        return Ok(trace);
+    }
+    if typed_calls == 0 {
+        return Ok(trace);
+    }
+
+    let call_blockers = trace
+        .blockers
+        .iter()
+        .filter(|blocker| blocker.starts_with("call/jump instruction"))
+        .count();
+    if typed_calls != call_blockers {
+        trace.reference_blockers.push(format!(
+            "unsupported-call-shape: typed-calls={typed_calls} call-blockers={call_blockers}"
+        ));
+        return Ok(trace);
+    }
+
+    let source_events = std::mem::take(&mut trace.reference_events);
+    let mut output = Vec::new();
+    let mut read_tokens = Vec::new();
+    let mut memory_read_tokens = Vec::new();
+    let mut external_tokens = Vec::new();
+    let mut call_results = BTreeMap::<u32, Value>::new();
+    let mut tail_return = None;
+    for (index, event) in source_events.iter().enumerate() {
+        let result = match event {
+            ReferenceEvent::Observable(Event::Memory {
+                access: Access::Read,
+                ..
+            }) => {
+                let token = output
+                    .iter()
+                    .filter(|event| reference_event_is_mmio_read(event))
+                    .count() as u32;
+                read_tokens.push(token);
+                output.push(event.clone());
+                Ok(())
+            }
+            ReferenceEvent::Observable(Event::Memory {
+                access: Access::Write,
+                width,
+                address,
+                register,
+                value: Some(value),
+            }) => value
+                .rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )
+                .and_then(|value| {
+                    value.is_resolved().then_some(value).ok_or_else(|| {
+                        format!("MMIO write after a call remains unresolved at {address:#010x}")
+                    })
+                })
+                .map(|value| {
+                    output.push(ReferenceEvent::Observable(Event::Memory {
+                        access: Access::Write,
+                        width: *width,
+                        address: *address,
+                        register: register.clone(),
+                        value: Some(value),
+                    }));
+                }),
+            ReferenceEvent::IndexedMmio {
+                access,
+                width,
+                address,
+                registers,
+                guard,
+                value,
+            } => (|| -> std::result::Result<(), String> {
+                let address = address.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )?;
+                let guard = guard
+                    .as_ref()
+                    .map(|guard| -> std::result::Result<IndexedMmioGuard, String> {
+                        Ok(IndexedMmioGuard {
+                            selector: guard.selector.rewrite_call_context(
+                                &read_tokens,
+                                &memory_read_tokens,
+                                &external_tokens,
+                                &call_results,
+                            )?,
+                            maximum: guard.maximum,
+                        })
+                    })
+                    .transpose()?;
+                let value = value
+                    .as_ref()
+                    .map(|value| {
+                        value.rewrite_call_context(
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                            &call_results,
+                        )
+                    })
+                    .transpose()?;
+                if *access == Access::Read {
+                    let token = output
+                        .iter()
+                        .filter(|event| reference_event_is_mmio_read(event))
+                        .count() as u32;
+                    read_tokens.push(token);
+                }
+                output.push(ReferenceEvent::IndexedMmio {
+                    access: *access,
+                    width: *width,
+                    address,
+                    registers: registers.clone(),
+                    guard,
+                    value,
+                });
+                Ok(())
+            })(),
+            ReferenceEvent::DelayMicros { micros } => micros
+                .rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )
+                .and_then(|micros| {
+                    micros
+                        .is_resolved()
+                        .then_some(micros)
+                        .ok_or_else(|| "delay after a call remains unresolved".to_owned())
+                })
+                .map(|micros| output.push(ReferenceEvent::DelayMicros { micros })),
+            ReferenceEvent::Memory {
+                access: Access::Read,
+                width,
+                address,
+                region,
+                value: None,
+            } => (|| -> std::result::Result<(), String> {
+                let address = address.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )?;
+                if !address.is_resolved() {
+                    return Err("memory-read address after a call remains unresolved".to_owned());
+                }
+                let token = output
+                    .iter()
+                    .filter(|event| {
+                        matches!(
+                            event,
+                            ReferenceEvent::Memory {
+                                access: Access::Read,
+                                ..
+                            }
+                        )
+                    })
+                    .count() as u32;
+                memory_read_tokens.push(token);
+                output.push(ReferenceEvent::Memory {
+                    access: Access::Read,
+                    width: *width,
+                    address,
+                    region: region.clone(),
+                    value: None,
+                });
+                Ok(())
+            })(),
+            ReferenceEvent::Memory {
+                access: Access::Write,
+                width,
+                address,
+                region,
+                value: Some(value),
+            } => (|| -> std::result::Result<(), String> {
+                let address = address.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )?;
+                let value = value.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                )?;
+                if !address.is_resolved() || !value.is_resolved() {
+                    return Err("memory write after a call remains unresolved".to_owned());
+                }
+                output.push(ReferenceEvent::Memory {
+                    access: Access::Write,
+                    width: *width,
+                    address,
+                    region: region.clone(),
+                    value: Some(value),
+                });
+                Ok(())
+            })(),
+            ReferenceEvent::Observable(Event::Fence { .. }) => {
+                output.push(event.clone());
+                Ok(())
+            }
+            ReferenceEvent::ExternalCall {
+                token,
+                table,
+                function,
+                arguments,
+            } => (|| -> std::result::Result<(), String> {
+                let arguments = arguments
+                    .iter()
+                    .map(|value| {
+                        value.rewrite_call_context(
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                            &call_results,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .try_into()
+                    .map_err(|_| "internal external argument count changed".to_owned())?;
+                let mapped_token = output
+                    .iter()
+                    .filter(|event| matches!(event, ReferenceEvent::ExternalCall { .. }))
+                    .count() as u32;
+                external_tokens.push(mapped_token);
+                output.push(ReferenceEvent::ExternalCall {
+                    token: mapped_token,
+                    table: *table,
+                    function: *function,
+                    arguments: Box::new(arguments),
+                });
+                if usize::try_from(*token).ok() != Some(external_tokens.len() - 1) {
+                    return Err(format!(
+                        "external call token {token} is not ordered in the source trace"
+                    ));
+                }
+                Ok(())
+            })(),
+            ReferenceEvent::DiagnosticCall {
+                function,
+                argument_count,
+                arguments,
+            } => (|| -> std::result::Result<(), String> {
+                let arguments = arguments
+                    .iter()
+                    .map(|value| {
+                        value.rewrite_call_context(
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                            &call_results,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .try_into()
+                    .map_err(|_| "internal diagnostic argument count changed".to_owned())?;
+                output.push(ReferenceEvent::DiagnosticCall {
+                    function: function.clone(),
+                    argument_count: *argument_count,
+                    arguments: Box::new(arguments),
+                });
+                Ok(())
+            })(),
+            ReferenceEvent::Call {
+                token: source_call_token,
+                site,
+                target,
+                arguments,
+            }
+            | ReferenceEvent::TailCall {
+                token: source_call_token,
+                site,
+                target,
+                arguments,
+            } => {
+                let is_tail = matches!(event, ReferenceEvent::TailCall { .. });
+                if is_tail && index + 1 != source_events.len() {
+                    Err(format!(
+                        "tail-call-not-terminal at {site:#010x} to {target:#010x}"
+                    ))
+                } else {
+                    (|| -> std::result::Result<(), String> {
+                        let arguments = arguments
+                            .iter()
+                            .map(|value| {
+                                value.rewrite_call_context(
+                                    &read_tokens,
+                                    &memory_read_tokens,
+                                    &external_tokens,
+                                    &call_results,
+                                )
+                            })
+                            .collect::<std::result::Result<Vec<_>, _>>()?
+                            .try_into()
+                            .map_err(|_| "internal call argument count changed".to_owned())?;
+                        let (callee_name, callee_trace) = resolve_reference_callee(
+                            *target,
+                            *site,
+                            &arguments,
+                            &ReferenceCalleeContext {
+                                symbols_by_address,
+                                relocated_calls,
+                                external_pointer_cells,
+                                svd,
+                            },
+                            visiting,
+                        )?;
+                        let requires_scoped_call = callee_trace.reference_flow.is_some()
+                            || callee_trace
+                                .reference_events
+                                .iter()
+                                .any(|event| matches!(event, ReferenceEvent::ComposedCall { .. }));
+                        let callee_dependencies = callee_trace.reference_dependencies.clone();
+                        trace.reference_dependencies.push(callee_name.clone());
+                        trace.reference_dependencies.extend(callee_dependencies);
+                        if requires_scoped_call {
+                            let result_modeled = callee_trace.reference_exit_a0_modeled();
+                            let mapped_token = output
+                                .iter()
+                                .filter(|event| {
+                                    matches!(event, ReferenceEvent::ComposedCall { .. })
+                                })
+                                .count() as u32;
+                            output.push(ReferenceEvent::ComposedCall {
+                                token: mapped_token,
+                                symbol: callee_name,
+                                arguments: Box::new(arguments),
+                                flow: Box::new(trace_into_reference_flow(callee_trace)),
+                                result_modeled,
+                            });
+                            let return_value = if result_modeled {
+                                Value::CallResult(mapped_token)
+                            } else {
+                                Value::Unknown
+                            };
+                            if is_tail {
+                                tail_return = Some(return_value);
+                            } else {
+                                call_results.insert(*source_call_token, return_value);
+                            }
+                        } else {
+                            let (events, return_value) =
+                                inline_reference_summary(&output, &callee_trace, &arguments)?;
+                            output = events;
+                            if is_tail {
+                                tail_return = Some(return_value);
+                            } else {
+                                call_results.insert(*source_call_token, return_value);
+                            }
+                        }
+                        Ok(())
+                    })()
+                }
+            }
+            _ => Err("internal reference event has an invalid value shape".to_owned()),
+        };
+        if let Err(error) = result {
+            trace.reference_events = source_events.clone();
+            trace
+                .reference_blockers
+                .push(format!("call-summary-flattening: {error}"));
+            return Ok(trace);
+        }
+    }
+
+    trace.return_value = if let Some(value) = tail_return {
+        value
+    } else {
+        match trace.return_value.rewrite_call_context(
+            &read_tokens,
+            &memory_read_tokens,
+            &external_tokens,
+            &call_results,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                trace.reference_events = source_events.clone();
+                trace
+                    .reference_blockers
+                    .push(format!("call-return-flattening: {error}"));
+                return Ok(trace);
+            }
+        }
+    };
+    trace.reference_events = output;
+    trace
+        .blockers
+        .retain(|blocker| !blocker.starts_with("call/jump instruction"));
+    Ok(trace)
+}
+
+struct ReferenceCatalog {
+    symbols: Vec<binary::BinarySymbol>,
+    symbols_by_address: BTreeMap<u32, binary::BinarySymbol>,
+    symbol_ids: BTreeMap<(Option<String>, String), u32>,
+    relocated_calls: StructuralRelocatedCalls,
+    external_pointer_cells: BTreeMap<u32, external_abi::Table>,
+}
+
+impl ReferenceCatalog {
+    fn load(artifact: &Path, companions: &[PathBuf]) -> Result<Self> {
+        let symbols = binary::load_symbols(artifact, "")?;
+        let mut symbols_by_address = symbols
+            .iter()
+            .filter(|symbol| symbol.addresses_resolved)
+            .map(|symbol| (symbol.address as u32, symbol.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut symbol_ids = symbols
+            .iter()
+            .filter(|symbol| symbol.addresses_resolved)
+            .map(|symbol| {
+                (
+                    (symbol.member.clone(), symbol.name.clone()),
+                    symbol.address as u32,
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut next_archive_symbol_id = 0x8000_0000_u32;
+        for symbol in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
+            while symbols_by_address.contains_key(&next_archive_symbol_id) {
+                next_archive_symbol_id = next_archive_symbol_id.wrapping_add(1);
+            }
+            let identity = (symbol.member.clone(), symbol.name.clone());
+            if symbol_ids
+                .insert(identity.clone(), next_archive_symbol_id)
+                .is_some()
+            {
+                return Err(format!(
+                    "duplicate archive symbol identity {:?}::{}",
+                    identity.0, identity.1
+                )
+                .into());
+            }
+            symbols_by_address.insert(next_archive_symbol_id, symbol.clone());
+            next_archive_symbol_id = next_archive_symbol_id.wrapping_add(1);
+        }
+        let mut image = if symbols.iter().any(|symbol| symbol.addresses_resolved) {
+            Some(emulator::ExecutableImage::load(artifact)?)
+        } else {
+            None
+        };
+        for companion in companions {
+            let Some(image) = image.as_mut() else {
+                return Err(format!(
+                    "reference companions require a linked ELF primary artifact: {}",
+                    artifact.display()
+                )
+                .into());
+            };
+            image.add_companion(companion)?;
+            symbols_by_address.extend(
+                binary::load_symbols(companion, "")?
+                    .into_iter()
+                    .filter(|symbol| symbol.addresses_resolved)
+                    .map(|symbol| (symbol.address as u32, symbol)),
+            );
+        }
+        let external_pointer_cells = image.as_ref().map_or_else(BTreeMap::new, |image| {
+            external_abi::all_tables()
+                .into_iter()
+                .filter_map(|table| {
+                    image
+                        .symbol_address(external_abi::table_spec(table).pointer_symbol)
+                        .map(|address| (address, table))
+                })
+                .collect()
+        });
+        let mut relocated_calls = StructuralRelocatedCalls::new();
+        if let Some(image) = image.as_ref() {
+            for (address, call) in image.relocated_calls() {
+                let Some(owner) = symbols_by_address.values().find(|symbol| {
+                    symbol.addresses_resolved
+                        && address >= symbol.address as u32
+                        && address < (symbol.address as u32).wrapping_add(symbol.bytes.len() as u32)
+                }) else {
+                    continue;
+                };
+                relocated_calls.insert(StructuralCallSite::new(owner, address), call);
+            }
+        }
+
+        let mut archive_definitions = BTreeMap::<String, Vec<(Option<String>, u32)>>::new();
+        for symbol in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
+            let identity = (symbol.member.clone(), symbol.name.clone());
+            archive_definitions
+                .entry(symbol.name.clone())
+                .or_default()
+                .push((
+                    symbol.member.clone(),
+                    *symbol_ids
+                        .get(&identity)
+                        .expect("every archive symbol received a synthetic identity"),
+                ));
+        }
+        for owner in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
+            for relocation in owner.relocations.iter().filter(|relocation| {
+                matches!(
+                    relocation.kind,
+                    binary::RelocationKind::Call | binary::RelocationKind::CallPlt
+                )
+            }) {
+                let candidates = archive_definitions
+                    .get(&relocation.symbol)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let same_member = candidates
+                    .iter()
+                    .filter(|(member, _)| member == &owner.member)
+                    .map(|(_, target)| *target)
+                    .collect::<Vec<_>>();
+                let target = if relocation.addend != 0 {
+                    None
+                } else if same_member.len() == 1 {
+                    Some(same_member[0])
+                } else if candidates.len() == 1 {
+                    Some(candidates[0].1)
+                } else {
+                    None
+                };
+                relocated_calls.insert(
+                    StructuralCallSite::new(owner, relocation.address),
+                    (relocation.symbol.clone(), target),
+                );
+            }
+        }
+        Ok(Self {
+            symbols,
+            symbols_by_address,
+            symbol_ids,
+            relocated_calls,
+            external_pointer_cells,
+        })
+    }
+
+    fn trace(&self, member: Option<&str>, name: &str, svd: &SvdMap) -> Result<Trace> {
+        let symbol = self
+            .symbols
+            .iter()
+            .find(|candidate| {
+                candidate.name == name
+                    && member.is_none_or(|member| candidate.member.as_deref() == Some(member))
+            })
+            .ok_or_else(|| format!("symbol {name} in member {member:?} was not found"))?;
+        let identity = (symbol.member.clone(), symbol.name.clone());
+        let symbol_id = *self
+            .symbol_ids
+            .get(&identity)
+            .expect("catalog lookup returned a symbol without an identity");
+        let mut visiting = BTreeSet::from([symbol.address as u32, symbol_id]);
+        resolve_reference_trace(
+            symbol,
+            &self.symbols_by_address,
+            &self.relocated_calls,
+            &self.external_pointer_cells,
+            None,
+            svd,
+            &mut visiting,
+        )
+    }
+}
+
+fn extract_reference(input: &Input, companions: &[PathBuf], svd: &SvdMap) -> Result<Trace> {
+    ReferenceCatalog::load(&input.artifact, companions)?.trace(
+        input.member.as_deref(),
+        &input.symbol,
+        svd,
+    )
 }
 
 fn print_trace(trace: &Trace) {
@@ -1788,7 +5615,7 @@ fn print_uncovered(symbol: &str, side: &str, trace: &Trace) -> usize {
 
 fn usage() {
     eprintln!(
-        "usage:\n  open-esp-radio-phy-trace execute --svd PATH [--svd PATH]... --artifact PATH [--companion PATH] --symbol NAME [--concrete-only] [--timeline] [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--observe ADDRESS=LENGTH] [--max-steps COUNT]\n  open-esp-radio-phy-trace execute-compare --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-companion PATH] --vendor-symbol NAME --rust-artifact PATH [--rust-companion PATH] --rust-symbol NAME [--compare-return] [--case NAME [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--vendor-ram-symbol ADDRESS=SYMBOL] [--rust-ram-symbol ADDRESS=SYMBOL] [--observe ADDRESS=LENGTH] [--max-steps COUNT]]...\n  open-esp-radio-phy-trace qualify-esp32s31-channel --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace qualify-esp32s31-rf-init --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace verify-profiles --svd PATH [--svd PATH]... --profiles PATH --vendor-artifact PATH [--vendor-companion PATH] --rust-artifact PATH [--rust-companion PATH]\n  open-esp-radio-phy-trace analyze --svd PATH [--svd PATH]... --artifact PATH [--symbol-prefix PREFIX]\n  open-esp-radio-phy-trace verify --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-inventory PATH] --rust-artifact PATH [--profiles PATH] [--vendor-companion PATH] [--rust-companion PATH] [--vendor-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH]\n  open-esp-radio-phy-trace verify-all --svd PATH [--svd PATH]... --rom-artifact PATH --archive-artifact PATH --archive-inventory PATH --rust-artifact PATH [--profiles PATH] [--dispositions PATH] [--rom-companion PATH] [--archive-companion PATH] [--rust-companion PATH] [--rom-prefix PREFIX] [--archive-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH] [--json-report PATH]\n  open-esp-radio-phy-trace extract --svd PATH [--svd PATH]... --artifact PATH [--member NAME] --symbol NAME\n  open-esp-radio-phy-trace compare --svd PATH [--svd PATH]... --left-artifact PATH [--left-member NAME] --left-symbol NAME --right-artifact PATH [--right-member NAME] --right-symbol NAME"
+        "usage:\n  open-esp-radio-phy-trace execute --svd PATH [--svd PATH]... --artifact PATH [--companion PATH] --symbol NAME [--concrete-only] [--timeline] [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--observe ADDRESS=LENGTH] [--max-steps COUNT]\n  open-esp-radio-phy-trace execute-compare --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-companion PATH] --vendor-symbol NAME --rust-artifact PATH [--rust-companion PATH] --rust-symbol NAME [--compare-return] [--case NAME [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--vendor-ram-symbol ADDRESS=SYMBOL] [--rust-ram-symbol ADDRESS=SYMBOL] [--observe ADDRESS=LENGTH] [--max-steps COUNT]]...\n  open-esp-radio-phy-trace qualify-esp32s31-channel --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace qualify-esp32s31-rf-init --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace verify-profiles --svd PATH [--svd PATH]... --profiles PATH --vendor-artifact PATH [--vendor-companion PATH] --rust-artifact PATH [--rust-companion PATH]\n  open-esp-radio-phy-trace analyze --svd PATH [--svd PATH]... --artifact PATH [--companion PATH]... [--symbol-prefix PREFIX]\n  open-esp-radio-phy-trace generate-reference --svd PATH [--svd PATH]... --artifact PATH [--companion PATH]... [--member NAME] --symbol NAME [--output PATH]\n  open-esp-radio-phy-trace verify --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-inventory PATH] --rust-artifact PATH [--profiles PATH] [--vendor-companion PATH] [--rust-companion PATH] [--vendor-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH]\n  open-esp-radio-phy-trace verify-all --svd PATH [--svd PATH]... --rom-artifact PATH --archive-artifact PATH --archive-inventory PATH --rust-artifact PATH [--profiles PATH] [--dispositions PATH] [--rom-companion PATH] [--archive-companion PATH] [--rust-companion PATH] [--rom-prefix PREFIX] [--archive-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH] [--json-report PATH]\n  open-esp-radio-phy-trace extract --svd PATH [--svd PATH]... --artifact PATH [--member NAME] --symbol NAME\n  open-esp-radio-phy-trace compare --svd PATH [--svd PATH]... --left-artifact PATH [--left-member NAME] --left-symbol NAME --right-artifact PATH [--right-member NAME] --right-symbol NAME"
     );
 }
 
@@ -4001,14 +7828,85 @@ fn run() -> Result<bool> {
             );
             Ok(matched == loaded_profiles.len())
         }
+        "generate-reference" => {
+            let mut artifact = None;
+            let mut companions = Vec::new();
+            let mut member = None;
+            let mut symbol = None;
+            let mut output = None;
+            let mut arguments = filtered.into_iter();
+            while let Some(argument) = arguments.next() {
+                match argument.as_str() {
+                    "--artifact" => {
+                        artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
+                    }
+                    "--companion" => {
+                        companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
+                    }
+                    "--member" => {
+                        member = Some(take_value(&mut arguments, "--member")?);
+                    }
+                    "--symbol" => {
+                        symbol = Some(take_value(&mut arguments, "--symbol")?);
+                    }
+                    "--output" => {
+                        output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
+                    }
+                    _ => {
+                        return Err(format!("unknown generate-reference option: {argument}").into());
+                    }
+                }
+            }
+            let artifact = artifact.ok_or("missing --artifact")?;
+            let symbol = symbol.ok_or("missing --symbol")?;
+            let input = Input {
+                artifact: artifact.clone(),
+                member: member.clone(),
+                symbol,
+            };
+            let trace = extract_reference(&input, &companions, &svd)?;
+            let digest = artifact_sha256(&artifact)?;
+            let companion_provenance = companions
+                .iter()
+                .map(|companion| Ok((companion.display().to_string(), artifact_sha256(companion)?)))
+                .collect::<Result<Vec<_>>>()?;
+            let generated = reference_codegen::generate(
+                &trace,
+                &artifact.display().to_string(),
+                &digest,
+                member.as_deref(),
+                &companion_provenance,
+            )
+            .map_err(|error| -> Error { error.into() })?;
+            if let Some(output) = output {
+                fs::write(&output, generated.source)?;
+                println!(
+                    "GENERATED\t{}\t{}\texit-a0={}",
+                    trace.symbol,
+                    output.display(),
+                    if generated.exit_a0_modeled {
+                        "modeled"
+                    } else {
+                        "unresolved"
+                    }
+                );
+            } else {
+                print!("{}", generated.source);
+            }
+            Ok(true)
+        }
         "analyze" => {
             let mut artifact = None;
+            let mut companions = Vec::new();
             let mut prefix = "phy_".to_owned();
             let mut arguments = filtered.into_iter();
             while let Some(argument) = arguments.next() {
                 match argument.as_str() {
                     "--artifact" => {
                         artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
+                    }
+                    "--companion" => {
+                        companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
                     }
                     "--symbol-prefix" => {
                         prefix = take_value(&mut arguments, "--symbol-prefix")?;
@@ -4021,10 +7919,13 @@ fn run() -> Result<bool> {
             if symbols.is_empty() {
                 return Err(format!("no external code symbols start with {prefix:?}").into());
             }
+            let reference_catalog = ReferenceCatalog::load(&artifact, &companions)?;
 
             let mut exact = 0usize;
             let mut incomplete = 0usize;
+            let mut reference_codegen_eligible = 0usize;
             let mut reasons = BTreeMap::<String, usize>::new();
+            let mut reference_reasons = BTreeMap::<String, usize>::new();
             for symbol in &symbols {
                 let input = Input {
                     artifact: artifact.clone(),
@@ -4032,18 +7933,28 @@ fn run() -> Result<bool> {
                     symbol: symbol.name.clone(),
                 };
                 let trace = extract(&input, &svd)?;
+                let reference_trace =
+                    reference_catalog.trace(symbol.member.as_deref(), &symbol.name, &svd)?;
                 let owner = symbol.member.as_deref().unwrap_or("-");
+                let reference_status = if reference_trace.is_reference_eligible() {
+                    reference_codegen_eligible += 1;
+                    "eligible"
+                } else {
+                    "blocked"
+                };
                 if trace.is_exact() {
                     exact += 1;
                     println!(
-                        "FUNCTION\t{}\t{owner}\tDIRECT-TRACE-EXACT\tevents={}",
+                        "FUNCTION\t{}\t{owner}\tDIRECT-TRACE-EXACT\tevents={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
                         symbol.name,
-                        trace.events.len()
+                        trace.events.len(),
+                        reference_trace.reference_dependencies.len(),
+                        reference_trace.reference_indexed_mmio_count(),
                     );
                 } else {
                     incomplete += 1;
                     println!(
-                        "FUNCTION\t{}\t{owner}\tINCOMPLETE\tevents={}\tuncovered={}",
+                        "FUNCTION\t{}\t{owner}\tINCOMPLETE\tevents={}\tuncovered={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
                         symbol.name,
                         trace.events.len(),
                         trace.blockers.len()
@@ -4051,7 +7962,9 @@ fn run() -> Result<bool> {
                                 .events
                                 .iter()
                                 .filter_map(Event::unmapped_address)
-                                .count()
+                                .count(),
+                        reference_trace.reference_dependencies.len(),
+                        reference_trace.reference_indexed_mmio_count(),
                     );
                     for blocker in &trace.blockers {
                         let kind = blocker
@@ -4068,13 +7981,23 @@ fn run() -> Result<bool> {
                         );
                     }
                 }
+                for blocker in &reference_trace.reference_blockers {
+                    let kind = blocker
+                        .split_once(' ')
+                        .map_or(blocker.as_str(), |pair| pair.0);
+                    *reference_reasons.entry(kind.to_owned()).or_default() += 1;
+                }
             }
             println!(
-                "SUMMARY\tfunctions={}\tdirect_trace_exact={exact}\tincomplete={incomplete}",
-                symbols.len()
+                "SUMMARY\tfunctions={}\tdirect_trace_exact={exact}\tincomplete={incomplete}\treference_codegen_eligible={reference_codegen_eligible}\treference_codegen_blocked={}",
+                symbols.len(),
+                symbols.len() - reference_codegen_eligible,
             );
             for (reason, count) in reasons {
                 println!("SUMMARY-UNCOVERED\t{reason}\t{count}");
+            }
+            for (reason, count) in reference_reasons {
+                println!("SUMMARY-REFERENCE-BLOCKED\t{reason}\t{count}");
             }
             Ok(incomplete == 0)
         }
@@ -4536,6 +8459,763 @@ mod tests {
         }
     }
 
+    fn indexed_map(base: u32, stride: u32, count: u32, family: &str) -> SvdMap {
+        SvdMap {
+            registers: (0..count)
+                .map(|index| Register {
+                    address: base.wrapping_add(index.wrapping_mul(stride)),
+                    name: format!("{family}{index}"),
+                })
+                .collect(),
+            windows: vec![Window {
+                start: base,
+                end: base.wrapping_add(count.wrapping_mul(stride)),
+            }],
+        }
+    }
+
+    #[test]
+    fn affine_indexed_mmio_requires_a_contiguous_svd_bank_and_emits_a_guard() {
+        let address = Value::expression(
+            ExpressionOperation::Add,
+            Value::input(0).shift_left(3),
+            Value::Constant(0x2010_4004),
+        );
+        let domain =
+            indexed_mmio_domain(&address, &indexed_map(0x2010_4004, 8, 4, "WIFI.BSSID_HIGH"))
+                .unwrap();
+
+        assert_eq!(domain.registers.len(), 4);
+        assert_eq!(domain.guard.unwrap().maximum, 3);
+
+        let missing_middle = SvdMap {
+            registers: vec![
+                Register {
+                    address: 0x2010_4004,
+                    name: "WIFI.BSSID_HIGH0".to_owned(),
+                },
+                Register {
+                    address: 0x2010_4014,
+                    name: "WIFI.BSSID_HIGH2".to_owned(),
+                },
+            ],
+            windows: vec![],
+        };
+        assert!(indexed_mmio_domain(&address, &missing_middle).is_none());
+    }
+
+    #[test]
+    fn masked_indexed_mmio_proves_its_entire_domain_without_an_argument_guard() {
+        let address = Value::input(1)
+            .and(3)
+            .shift_left(2)
+            .add_constant(0x2010_4dbc);
+        let domain = indexed_mmio_domain(
+            &address,
+            &indexed_map(0x2010_4dbc, 4, 4, "WIFI.MU_EDCA_TIMER"),
+        )
+        .unwrap();
+
+        assert_eq!(domain.registers.len(), 4);
+        assert!(domain.guard.is_none());
+    }
+
+    #[test]
+    fn mixed_resolved_bitwise_values_fall_back_to_exact_expressions() {
+        let register = Value::RegisterImage {
+            read_token: 0,
+            address: 0x2010_7030,
+            and_mask: u32::MAX,
+            or_mask: 0,
+        };
+        let argument = Value::input(0).and(7);
+
+        for value in [
+            register.clone().bitand(argument.clone()),
+            register.clone().bitor(argument.clone()),
+            register.clone().bitxor(argument.clone()),
+        ] {
+            assert!(matches!(value, Value::Expression { .. }));
+            assert!(value.is_resolved());
+        }
+        assert_eq!(argument.clone().bitxor(argument), Value::Constant(0));
+
+        let zero_test = Value::input(2).seqz();
+        assert!(matches!(zero_test, Value::Expression { .. }));
+        assert_eq!(evaluate_for_input(&zero_test, 2, 0), Some(1));
+        assert_eq!(evaluate_for_input(&zero_test, 2, 7), Some(0));
+    }
+
+    fn assert_generated_reference_compiles(name: &str, source: &str) {
+        let stem = format!("open-esp-radio-{name}-{}", std::process::id());
+        let source_path = env::temp_dir().join(format!("{stem}.rs"));
+        let output_path = env::temp_dir().join(format!("lib{stem}.rlib"));
+        fs::write(&source_path, source).unwrap();
+        let output = std::process::Command::new("rustc")
+            .arg("--edition=2024")
+            .arg("--crate-type=lib")
+            .arg("-Dwarnings")
+            .arg("-o")
+            .arg(&output_path)
+            .arg(&source_path)
+            .output()
+            .unwrap();
+        fs::remove_file(source_path).unwrap();
+        if output_path.exists() {
+            fs::remove_file(output_path).unwrap();
+        }
+        assert!(
+            output.status.success(),
+            "generated reference did not compile:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn wifi_osi_tail_symbol(slot_offset: u32) -> binary::BinarySymbol {
+        let slot_load = ((slot_offset & 0x0fff) << 20) | (15 << 15) | (2 << 12) | (15 << 7) | 0x03;
+        let mut bytes = vec![
+            0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_osi_funcs_p)
+            0x83, 0xa7, 0x07, 0x00, // lw a5, %lo(g_osi_funcs_p)(a5)
+        ];
+        bytes.extend_from_slice(&slot_load.to_le_bytes());
+        bytes.extend_from_slice(&[0x82, 0x87]); // jr a5
+        binary::BinarySymbol {
+            member: Some("synthetic.o".to_owned()),
+            name: "wifi_osi_tail".to_owned(),
+            address: 0x1000,
+            bytes,
+            addresses_resolved: false,
+            memory_regions: Vec::new(),
+            relocations: vec![binary::SymbolRelocation {
+                address: 0x1004,
+                kind: binary::RelocationKind::Lo12I,
+                symbol: "g_osi_funcs_p".to_owned(),
+                addend: 0,
+            }],
+        }
+    }
+
+    #[test]
+    fn wifi_osi_rand_tail_call_resolves_from_relocation() {
+        let symbol = wifi_osi_tail_symbol(0x0bc);
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.return_value, Value::ExternalResult(0));
+        assert!(matches!(
+            trace.reference_events.as_slice(),
+            [ReferenceEvent::ExternalCall {
+                token: 0,
+                table: external_abi::Table::Esp32s31WifiOsiV9,
+                function: external_abi::Function::Rand,
+                ..
+            }]
+        ));
+
+        let generated = reference_codegen::generate(
+            &trace,
+            "libpp.a",
+            ESP32S31_LIBPP_SHA256,
+            Some("hal_mac.o"),
+            &[],
+        )
+        .unwrap();
+        assert!(generated.source.contains("pub trait ReferencePlatform"));
+        assert!(
+            generated
+                .source
+                .contains("let external_result0 = platform.wifi_osi_rand();")
+        );
+        assert!(
+            generated
+                .source
+                .contains("assert_eq!(platform.wifi_osi_version(), 0x00000009_u32")
+        );
+        assert!(
+            generated
+                .source
+                .contains("assert_eq!(platform.wifi_osi_magic(), 0xdeadbeaf_u32")
+        );
+        assert!(
+            generated
+                .source
+                .contains("assert_eq!(platform.wifi_osi_table_size(), 0x00000200_u32")
+        );
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(external_result0) }")
+        );
+        assert!(generated.source.contains(
+            external_abi::table_spec(external_abi::Table::Esp32s31WifiOsiV9).source_sha256
+        ));
+    }
+
+    #[test]
+    fn unknown_wifi_osi_slot_fails_closed() {
+        let symbol = wifi_osi_tail_symbol(0x0c0);
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.reference_blockers.iter().any(|blocker| {
+            blocker.contains("unregistered-external-abi-slot") && blocker.contains("+0xc0")
+        }));
+    }
+
+    #[test]
+    fn wifi_osi_output_pointer_outside_private_stack_fails_closed() {
+        let symbol = wifi_osi_tail_symbol(0x1a8);
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.reference_blockers.iter().any(|blocker| {
+            blocker.contains("unsupported-external-output-pointer")
+                && blocker.contains("_coex_pti_get")
+                && blocker.contains("a1")
+        }));
+    }
+
+    #[test]
+    fn real_libpp_hal_random_resolves_through_wifi_osi_abi() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+
+        let trace = ReferenceCatalog::load(&artifact, &[])
+            .unwrap()
+            .trace(Some("hal_mac.o"), "hal_random", &map())
+            .unwrap();
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.return_value, Value::ExternalResult(0));
+    }
+
+    #[test]
+    fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let trace = ReferenceCatalog::load(&artifact, &[])
+            .unwrap()
+            .trace(Some("hal_coex.o"), "hal_set_ofdma_sequence_pti", &svd)
+            .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(
+            trace
+                .reference_events
+                .iter()
+                .filter(|event| matches!(event, ReferenceEvent::ExternalCall { .. }))
+                .count(),
+            12
+        );
+        assert_eq!(
+            trace.reference_dependencies,
+            [
+                "hal_set_tb_pti",
+                "hal_set_beamf_pti",
+                "hal_set_beamf_mt_pti"
+            ]
+        );
+        assert!(trace.reference_events.iter().any(|event| matches!(
+            event,
+            ReferenceEvent::DiagnosticCall { function, .. } if function == "wifi_log"
+        )));
+        let generated = reference_codegen::generate(
+            &trace,
+            "libpp.a",
+            ESP32S31_LIBPP_SHA256,
+            Some("hal_coex.o"),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            generated.source.matches("wifi_osi_coex_pti_get(").count(),
+            13
+        );
+        assert_generated_reference_compiles("hal_set_ofdma_sequence_pti", &generated.source);
+    }
+
+    #[test]
+    fn real_libpp_coex_runtime_leaves_generate_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for symbol in [
+            "hal_set_rx_beacon_time",
+            "hal_set_rx_beacon_pti",
+            "hal_clear_rx_beacon_pti",
+            "hal_set_itwt_pti",
+            "hal_clr_itwt_pti",
+        ] {
+            let trace = catalog.trace(Some("hal_coex.o"), symbol, &svd).unwrap();
+            assert!(trace.is_reference_eligible(), "{symbol}: {trace:#?}");
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some("hal_coex.o"),
+                &[],
+            )
+            .unwrap();
+            assert_generated_reference_compiles(symbol, &generated.source);
+        }
+    }
+
+    #[test]
+    fn real_libpp_tsf_runtime_leaves_generate_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for (member, symbol) in [
+            ("hal_tsf.o", "hal_enable_nan_tsf"),
+            ("hal_tsf.o", "hal_disable_nan_tsf"),
+            ("hal_tsf.o", "hal_disable_softap_tsf"),
+            ("hal_tsf.o", "hal_set_sta_tbtt"),
+            ("hal_tsf.o", "hal_set_sta_tbtt_interval"),
+            ("hal_tsf.o", "hal_set_sta_light_sleep_wake_ahead_time"),
+            ("hal_tsf.o", "hal_is_sta_tsf_active"),
+            ("hal_tsf.o", "hal_tsf_clear_soc_wakeup_request"),
+            ("hal_mac.o", "hal_enable_sta_btwt_tsf"),
+        ] {
+            let trace = catalog.trace(Some(member), symbol, &svd).unwrap();
+            assert!(
+                trace.is_reference_eligible(),
+                "{member}::{symbol}: {trace:#?}"
+            );
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some(member),
+                &[],
+            )
+            .unwrap();
+            assert_generated_reference_compiles(symbol, &generated.source);
+        }
+    }
+
+    #[test]
+    fn real_libpp_remaining_mmio_leaves_generate_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for (member, symbol) in [
+            ("hal_mac.o", "hal_beacon_ie_crc_get"),
+            ("hal_mac.o", "hal_enable_sta_beacon_filter"),
+            ("hal_mac.o", "hal_disable_sta_beacon_filter"),
+            ("hal_mac_ctl.o", "hal_he_set_hw_qos_null_ra_to_trans"),
+            ("hal_mac_ctl.o", "hal_mac_interrupt_clr_bsscolor"),
+            ("hal_mac_rx.o", "hal_mac_rx_get_end_state"),
+            ("hal_mac_rx.o", "hal_mac_rx_get_end_info"),
+            ("hal_sniffer.o", "hal_sniffer_rx_clr_statistics"),
+        ] {
+            let trace = catalog.trace(Some(member), symbol, &svd).unwrap();
+            assert!(
+                trace.is_reference_eligible(),
+                "{member}::{symbol}: {trace:#?}"
+            );
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some(member),
+                &[],
+            )
+            .unwrap();
+            assert_generated_reference_compiles(symbol, &generated.source);
+        }
+    }
+
+    #[test]
+    fn real_libpp_timer_update_generates_both_symbolic_cfg_paths() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+
+        let trace = ReferenceCatalog::load(&artifact, &[])
+            .unwrap()
+            .trace(Some("hal_tsf.o"), "hal_timer_update_by_rtc", &svd)
+            .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert!(!trace.is_exact());
+        assert!(trace.reference_flow.is_some());
+        let generated = reference_codegen::generate(
+            &trace,
+            "libpp.a",
+            ESP32S31_LIBPP_SHA256,
+            Some("hal_tsf.o"),
+            &[],
+        )
+        .unwrap();
+        assert!(generated.exit_a0_modeled);
+        assert!(generated.source.contains("if (args[0]"));
+        assert!(generated.source.contains("0x2010d830_u32"));
+        assert!(generated.source.contains("0x2010d878_u32"));
+        assert!(generated.source.contains("0x08000000_u32"));
+        assert!(generated.source.contains("0x0003ffff_u32"));
+    }
+
+    #[test]
+    fn real_libpp_indexed_mmio_generates_guarded_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for (member, symbol) in [
+            ("hal_mac.o", "hal_mac_is_txq_valid"),
+            ("hal_mac.o", "hal_mac_clr_bssid"),
+            ("hal_mac_ctl.o", "hal_he_set_ac_muedca_param"),
+        ] {
+            let trace = catalog.trace(Some(member), symbol, &svd).unwrap();
+            assert!(trace.is_reference_eligible(), "{symbol}: {trace:#?}");
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some(member),
+                &[],
+            )
+            .unwrap();
+            if member == "hal_mac.o" {
+                assert!(generated.source.contains("let mmio_selector0 = args[0]"));
+            }
+            assert!(generated.source.contains("assert!(matches!(mmio_address0"));
+            assert_generated_reference_compiles(symbol, &generated.source);
+        }
+
+        for symbol in [
+            "hal_disable_tsf_timer_wakeup",
+            "hal_enable_tsf_timer_wakeup",
+            "hal_tsf_timer_set_target",
+            "hal_tsf_timer_get_target",
+            "hal_disable_tsf_timer",
+            "hal_enable_tsf_timer",
+        ] {
+            let trace = catalog.trace(Some("hal_tsf.o"), symbol, &svd).unwrap();
+            assert!(trace.is_reference_eligible(), "{symbol}: {trace:#?}");
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some("hal_tsf.o"),
+                &[],
+            )
+            .unwrap();
+            assert!(generated.source.contains("assert!(matches!(mmio_address"));
+            assert_generated_reference_compiles(symbol, &generated.source);
+        }
+    }
+
+    #[test]
+    fn real_libpp_caller_memory_accessors_generate_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for (member, name) in [
+            ("hal_mac.o", "hal_mac_ftm_get_t3"),
+            ("hal_mac_ctl.o", "hal_mac_get_csi_filter"),
+        ] {
+            let trace = catalog.trace(Some(member), name, &svd).unwrap();
+            assert!(
+                trace.is_reference_eligible(),
+                "{member}::{name}: {trace:#?}"
+            );
+            assert!(trace.reference_events.iter().any(|event| matches!(
+                event,
+                ReferenceEvent::Memory { region, .. }
+                    if region == "caller-owned ABI argument RAM"
+            )));
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some(member),
+                &[],
+            )
+            .unwrap();
+            assert_generated_reference_compiles(name, &generated.source);
+        }
+    }
+
+    #[test]
+    fn real_libpp_relocated_state_accessors_generate_compilable_references() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+
+        for (member, name) in [
+            ("hal_mac.o", "hal_mac_set_csi"),
+            ("hal_tsf.o", "hal_tsf_get_tbttstart"),
+        ] {
+            let trace = catalog.trace(Some(member), name, &svd).unwrap();
+            assert!(
+                trace.is_reference_eligible(),
+                "{member}::{name}: {trace:#?}"
+            );
+            let generated = reference_codegen::generate(
+                &trace,
+                "libpp.a",
+                ESP32S31_LIBPP_SHA256,
+                Some(member),
+                &[],
+            )
+            .unwrap();
+            assert!(generated.source.contains("memory.symbol_address("));
+            assert_generated_reference_compiles(name, &generated.source);
+        }
+    }
+
+    #[test]
+    fn every_eligible_real_libpp_hal_trace_reaches_codegen() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+        let svd = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+        let symbols = catalog
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.name.starts_with("hal_"))
+            .map(|symbol| (symbol.member.clone(), symbol.name.clone()))
+            .collect::<Vec<_>>();
+        let mut eligible = 0usize;
+
+        for (member, name) in symbols {
+            let trace = catalog.trace(member.as_deref(), &name, &svd).unwrap();
+            if trace.is_reference_eligible() {
+                eligible += 1;
+                let generated = reference_codegen::generate(
+                    &trace,
+                    "libpp.a",
+                    ESP32S31_LIBPP_SHA256,
+                    member.as_deref(),
+                    &[],
+                )
+                .unwrap_or_else(|error| panic!("eligible {member:?}::{name} failed: {error}"));
+                if trace.reference_indexed_mmio_count() != 0 {
+                    assert_generated_reference_compiles(&name, &generated.source);
+                }
+            }
+        }
+        assert!(eligible > 0);
+    }
+
+    #[test]
+    fn real_libpp_mac_delay_names_both_wifi_osi_callbacks() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/libpp.a");
+        if !artifact.exists() {
+            eprintln!("private libpp fixture is not installed; integration test skipped");
+            return;
+        }
+
+        let trace = ReferenceCatalog::load(&artifact, &[])
+            .unwrap()
+            .trace(Some("hal_mac_ctl.o"), "hal_he_set_mac_delay", &map())
+            .unwrap();
+        let functions = trace
+            .reference_events
+            .iter()
+            .filter_map(|event| match event {
+                ReferenceEvent::ExternalCall { function, .. } => Some(*function),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(functions.starts_with(&[
+            external_abi::Function::EnvIsChip,
+            external_abi::Function::Random,
+        ]));
+        assert!(trace.reference_blockers.iter().all(|blocker| {
+            !blocker.contains("esp32s31-wifi-osi-v9+0x4")
+                && !blocker.contains("esp32s31-wifi-osi-v9+0x144")
+        }));
+    }
+
+    #[test]
+    fn linked_rom_catalog_discovers_wifi_osi_pointer_cell_by_symbol() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let artifact = root.join("_oracles/esp32s31_rev0_rom.elf");
+        if !artifact.exists() {
+            eprintln!("private ROM fixture is not installed; integration test skipped");
+            return;
+        }
+
+        let catalog = ReferenceCatalog::load(&artifact, &[]).unwrap();
+        assert_eq!(
+            catalog.external_pointer_cells.get(&0x2f07_ff44),
+            Some(&external_abi::Table::Esp32s31WifiOsiV9)
+        );
+    }
+
+    #[test]
+    fn wifi_osi_result_survives_direct_call_composition() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "rand_wrapper".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x13, 0x75, 0xf5, 0x0f, // andi a0, a0, 255
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let mut child = wifi_osi_tail_symbol(0x0bc);
+        child.address = 0x2000;
+        child.relocations[0].address = 0x2004;
+        let symbols = BTreeMap::from([(0x2000, child)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_dependencies, ["wifi_osi_tail"]);
+        assert_eq!(trace.return_value, Value::ExternalResult(0).and(0xff));
+        assert!(matches!(
+            trace.reference_events.as_slice(),
+            [ReferenceEvent::ExternalCall {
+                token: 0,
+                function: external_abi::Function::Rand,
+                ..
+            }]
+        ));
+    }
+
     #[test]
     fn composite_svd_catalog_resolves_platform_owned_radio_dependencies() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4629,7 +9309,7 @@ mod tests {
         assert!(trace.is_exact());
         assert_eq!(trace.events.len(), 2);
         assert_eq!(
-            trace.events[1].memory_value(),
+            trace.events[1].memory_value().as_deref(),
             Some("rmw:read0[0x20107030]&0xdfffffff|0x20000000")
         );
     }
@@ -4658,11 +9338,11 @@ mod tests {
         assert!(rust.is_exact());
         assert!(!traces_equal(&vendor, &rust));
         assert_eq!(
-            vendor.events[2].memory_value(),
+            vendor.events[2].memory_value().as_deref(),
             Some("rmw:read0[0x20107030]&0xffffffff|0x00000000")
         );
         assert_eq!(
-            rust.events[2].memory_value(),
+            rust.events[2].memory_value().as_deref(),
             Some("rmw:read1[0x20107030]&0xffffffff|0x00000000")
         );
     }
@@ -4677,6 +9357,1146 @@ mod tests {
         let trace = trace_disassembly("conditional", disassembly, &map());
         assert!(!trace.is_exact());
         assert_eq!(trace.blockers.len(), 1);
+    }
+
+    #[test]
+    fn unmodeled_ram_keeps_mmio_trace_exact_but_blocks_reference_generation() {
+        let disassembly = r#"
+20100000 <stateful>:
+20100000: lw a0, 0x0(a1)
+20100004: sw a0, 0x4(a1)
+20100008: ret
+"#;
+        let trace = trace_disassembly("stateful", disassembly, &map());
+
+        assert!(trace.is_exact());
+        assert!(!trace.is_reference_eligible());
+        assert_eq!(trace.reference_blockers.len(), 2);
+        assert!(trace.reference_blockers[0].contains("unmodeled-memory-load"));
+        assert!(trace.reference_blockers[1].contains("unmodeled-memory-store"));
+    }
+
+    #[test]
+    fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
+        let symbol = binary::BinarySymbol {
+            member: Some("caller_memory.o".to_owned()),
+            name: "caller_memory".to_owned(),
+            address: 0,
+            bytes: vec![
+                0x03, 0x26, 0x45, 0x00, // lw a2, 4(a0)
+                0x23, 0x24, 0xc5, 0x00, // sw a2, 8(a0)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: false,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_events.len(), 2);
+        let ReferenceEvent::Memory {
+            access: Access::Read,
+            address: read_address,
+            region,
+            ..
+        } = &trace.reference_events[0]
+        else {
+            panic!("expected caller-owned RAM read");
+        };
+        assert_eq!(region, "caller-owned ABI argument RAM");
+        assert!(read_address.canonical().contains("arg0"));
+        let ReferenceEvent::Memory {
+            access: Access::Write,
+            address: write_address,
+            value: Some(Value::MemoryImage { read_token: 0, .. }),
+            ..
+        } = &trace.reference_events[1]
+        else {
+            panic!("expected caller-owned RAM write of the first read");
+        };
+        assert!(write_address.canonical().contains("arg0"));
+
+        let generated = reference_codegen::generate(
+            &trace,
+            "caller-memory.a",
+            "synthetic",
+            symbol.member.as_deref(),
+            &[],
+        )
+        .unwrap();
+        assert!(generated.source.contains("memory.read(32,"));
+        assert!(generated.source.contains("memory.write(32,"));
+        assert!(generated.source.contains(".wrapping_add(0x00000004_u32)"));
+        assert!(generated.source.contains(".wrapping_add(0x00000008_u32)"));
+        assert_generated_reference_compiles("caller-memory", &generated.source);
+    }
+
+    #[test]
+    fn pointer_loaded_from_caller_ram_does_not_inherit_argument_provenance() {
+        let symbol = binary::BinarySymbol {
+            member: Some("indirect_pointer.o".to_owned()),
+            name: "indirect_pointer".to_owned(),
+            address: 0,
+            bytes: vec![
+                0x83, 0x25, 0x05, 0x00, // lw a1, 0(a0)
+                0x03, 0xa6, 0x05, 0x00, // lw a2, 0(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: false,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert_eq!(
+            trace
+                .reference_events
+                .iter()
+                .filter(|event| matches!(event, ReferenceEvent::Memory { .. }))
+                .count(),
+            1
+        );
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker.contains("unmodeled-memory-load"))
+        );
+    }
+
+    #[test]
+    fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
+        let symbol = binary::BinarySymbol {
+            member: Some("relocated_state.o".to_owned()),
+            name: "relocated_state".to_owned(),
+            address: 0,
+            bytes: vec![
+                0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(state)
+                0x03, 0xa5, 0x47, 0x00, // lw a0, %lo(state+4)(a5)
+                0x23, 0xa4, 0xa7, 0x00, // sw a0, %lo(state+8)(a5)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: false,
+            memory_regions: Vec::new(),
+            relocations: vec![
+                binary::SymbolRelocation {
+                    address: 0,
+                    kind: binary::RelocationKind::Hi20,
+                    symbol: "state".to_owned(),
+                    addend: 0,
+                },
+                binary::SymbolRelocation {
+                    address: 4,
+                    kind: binary::RelocationKind::Lo12I,
+                    symbol: "state".to_owned(),
+                    addend: 4,
+                },
+                binary::SymbolRelocation {
+                    address: 8,
+                    kind: binary::RelocationKind::Lo12S,
+                    symbol: "state".to_owned(),
+                    addend: 8,
+                },
+            ],
+        };
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_events.len(), 2);
+        let ReferenceEvent::Memory {
+            access: Access::Read,
+            address:
+                Value::SymbolAddress {
+                    hi_addend: 0,
+                    lo_addend: Some(4),
+                    ..
+                },
+            ..
+        } = &trace.reference_events[0]
+        else {
+            panic!("expected relocated symbolic read");
+        };
+        let ReferenceEvent::Memory {
+            access: Access::Write,
+            address:
+                Value::SymbolAddress {
+                    hi_addend: 0,
+                    lo_addend: Some(8),
+                    ..
+                },
+            value: Some(Value::MemoryImage { read_token: 0, .. }),
+            ..
+        } = &trace.reference_events[1]
+        else {
+            panic!("expected relocated symbolic write");
+        };
+
+        let generated = reference_codegen::generate(
+            &trace,
+            "relocated-state.a",
+            "synthetic",
+            symbol.member.as_deref(),
+            &[],
+        )
+        .unwrap();
+        assert!(
+            generated
+                .source
+                .contains("memory.symbol_address(Some(\"relocated_state.o\"), \"state\")")
+        );
+        assert!(generated.source.contains("riscv_hi20_lo12_address"));
+        assert_generated_reference_compiles("relocated-state", &generated.source);
+    }
+
+    #[test]
+    fn mismatched_hi20_lo12_symbols_fail_closed() {
+        let symbol = binary::BinarySymbol {
+            member: Some("mismatched_relocation.o".to_owned()),
+            name: "mismatched_relocation".to_owned(),
+            address: 0,
+            bytes: vec![
+                0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(first)
+                0x03, 0xa5, 0x07, 0x00, // lw a0, %lo(second)(a5)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: false,
+            memory_regions: Vec::new(),
+            relocations: vec![
+                binary::SymbolRelocation {
+                    address: 0,
+                    kind: binary::RelocationKind::Hi20,
+                    symbol: "first".to_owned(),
+                    addend: 0,
+                },
+                binary::SymbolRelocation {
+                    address: 4,
+                    kind: binary::RelocationKind::Lo12I,
+                    symbol: "second".to_owned(),
+                    addend: 0,
+                },
+            ],
+        };
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.reference_events.is_empty());
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker.contains("malformed-data-relocation"))
+        );
+    }
+
+    #[test]
+    fn call_summary_substitutes_arguments_and_remaps_read_tokens() {
+        let prefix = vec![ReferenceEvent::Observable(Event::Memory {
+            access: Access::Read,
+            width: 32,
+            address: 0x2010_7030,
+            register: "AGC.FIRST".to_owned(),
+            value: None,
+        })];
+        let callee = Trace {
+            symbol: "child".to_owned(),
+            events: Vec::new(),
+            reference_events: vec![
+                ReferenceEvent::Observable(Event::Memory {
+                    access: Access::Read,
+                    width: 32,
+                    address: 0x2010_7034,
+                    register: "AGC.SECOND".to_owned(),
+                    value: None,
+                }),
+                ReferenceEvent::Observable(Event::Memory {
+                    access: Access::Write,
+                    width: 32,
+                    address: 0x2010_7038,
+                    register: "AGC.THIRD".to_owned(),
+                    value: Some(Value::input(0)),
+                }),
+            ],
+            reference_dependencies: Vec::new(),
+            blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            return_value: Value::RegisterImage {
+                read_token: 0,
+                address: 0x2010_7034,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            },
+            reference_flow: None,
+            unresolved_branch: None,
+        };
+        let arguments: [Value; 8] = core::array::from_fn(|index| {
+            if index == 0 {
+                Value::input(1)
+            } else {
+                Value::Unknown
+            }
+        });
+
+        let (events, return_value) =
+            inline_reference_summary(&prefix, &callee, &arguments).unwrap();
+
+        assert_eq!(events.len(), 3);
+        let ReferenceEvent::Observable(Event::Memory {
+            value: Some(write_value),
+            ..
+        }) = &events[2]
+        else {
+            panic!("expected substituted write");
+        };
+        assert!(write_value.canonical().contains("arg1"));
+        assert_eq!(
+            return_value.canonical(),
+            "rmw:read1[0x20107034]&0xffffffff|0x00000000"
+        );
+    }
+
+    #[test]
+    fn call_summary_substitutes_indexed_mmio_and_preserves_read_identity() {
+        let prefix = vec![ReferenceEvent::Observable(Event::Memory {
+            access: Access::Read,
+            width: 32,
+            address: 0x2010_7030,
+            register: "AGC.FIRST".to_owned(),
+            value: None,
+        })];
+        let callee = Trace {
+            symbol: "indexed_child".to_owned(),
+            events: Vec::new(),
+            reference_events: vec![ReferenceEvent::IndexedMmio {
+                access: Access::Read,
+                width: 32,
+                address: Value::input(0).shift_left(2).add_constant(0x2010_4000),
+                registers: vec![
+                    IndexedMmioRegister {
+                        address: 0x2010_4000,
+                        name: "WIFI.QUEUE0".to_owned(),
+                    },
+                    IndexedMmioRegister {
+                        address: 0x2010_4004,
+                        name: "WIFI.QUEUE1".to_owned(),
+                    },
+                ],
+                guard: Some(IndexedMmioGuard {
+                    selector: Value::input(0),
+                    maximum: 1,
+                }),
+                value: None,
+            }],
+            reference_dependencies: Vec::new(),
+            blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            return_value: Value::IndexedRegisterImage {
+                read_token: 0,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            },
+            reference_flow: None,
+            unresolved_branch: None,
+        };
+        let arguments: [Value; 8] = core::array::from_fn(|index| {
+            if index == 0 {
+                Value::input(1)
+            } else {
+                Value::Unknown
+            }
+        });
+
+        let (events, return_value) =
+            inline_reference_summary(&prefix, &callee, &arguments).unwrap();
+        let ReferenceEvent::IndexedMmio {
+            address,
+            guard: Some(guard),
+            ..
+        } = &events[1]
+        else {
+            panic!("expected indexed MMIO read");
+        };
+        assert!(address.canonical().contains("arg1"));
+        assert!(guard.selector.canonical().contains("arg1"));
+        assert_eq!(
+            return_value.canonical(),
+            "indexed-rmw:read1&0xffffffff|0x00000000"
+        );
+    }
+
+    #[test]
+    fn call_summary_substitutes_caller_owned_memory_addresses() {
+        let callee = Trace {
+            symbol: "memory_child".to_owned(),
+            events: Vec::new(),
+            reference_events: vec![ReferenceEvent::Memory {
+                access: Access::Read,
+                width: 32,
+                address: Value::input(0).add_constant(4),
+                region: "caller-owned ABI argument RAM".to_owned(),
+                value: None,
+            }],
+            reference_dependencies: Vec::new(),
+            blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            return_value: Value::MemoryImage {
+                read_token: 0,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            },
+            reference_flow: None,
+            unresolved_branch: None,
+        };
+        let arguments: [Value; 8] = core::array::from_fn(|index| {
+            if index == 0 {
+                Value::input(2).add_constant(8)
+            } else {
+                Value::Unknown
+            }
+        });
+
+        let (events, return_value) = inline_reference_summary(&[], &callee, &arguments).unwrap();
+        let [
+            ReferenceEvent::Memory {
+                access: Access::Read,
+                address,
+                ..
+            },
+        ] = events.as_slice()
+        else {
+            panic!("expected one substituted caller-memory read");
+        };
+        assert!(address.canonical().contains("arg2"));
+        assert_eq!(
+            return_value,
+            Value::MemoryImage {
+                read_token: 0,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn private_stack_round_trips_symbolic_values_and_sign_extension() {
+        let mut stack = SymbolicStack::default();
+        stack.store(-8, 32, &Value::input(2));
+        assert_eq!(
+            stack.load(-8, 32, false).unwrap().canonical(),
+            Value::input(2).canonical()
+        );
+
+        stack.store(-1, 8, &Value::Constant(0x80));
+        assert_eq!(
+            stack.load(-1, 8, true).unwrap(),
+            Value::Constant(0xffff_ff80)
+        );
+        assert!(stack.load(-12, 32, false).is_none());
+    }
+
+    #[test]
+    fn call_results_are_substituted_into_parent_dataflow() {
+        let value = Value::CallResult(7).and(0xff).shift_left(8).or(3);
+        let call_results = BTreeMap::from([(7, Value::Constant(0x1234))]);
+
+        let rewritten = value
+            .rewrite_call_context(&[], &[], &[], &call_results)
+            .unwrap();
+
+        assert_eq!(rewritten, Value::Constant(0x3403));
+    }
+
+    #[test]
+    fn returning_direct_call_is_flattened_from_binary_symbols() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "parent".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x13, 0x75, 0xf5, 0x0f, // andi a0, a0, 255
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "child".to_owned(),
+            address: 0x2000,
+            bytes: vec![
+                0x13, 0x05, 0x05, 0x00, // mv a0, a0
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, child)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_dependencies, ["child"]);
+        assert_eq!(trace.return_value, Value::input(0).and(0xff));
+    }
+
+    #[test]
+    fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "branch_parent".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "branch_child".to_owned(),
+            address: 0x2000,
+            bytes: vec![
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x200c
+                0x13, 0x05, 0x10, 0x00, // li a0, 1
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x20, 0x00, // li a0, 2
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, child)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert!(matches!(
+            trace.reference_events.as_slice(),
+            [ReferenceEvent::ComposedCall {
+                token: 0,
+                symbol,
+                result_modeled: true,
+                ..
+            }] if symbol == "branch_child"
+        ));
+        let generated =
+            reference_codegen::generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+        assert!(generated.source.contains("let call_result0 = {"));
+        assert!(
+            generated
+                .source
+                .contains("// Composed direct call: branch_child.")
+        );
+        assert!(generated.source.contains("if (call0_arg0"));
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(call_result0 & 0xffffffff_u32) }")
+        );
+        assert_generated_reference_compiles("scoped-callee", &generated.source);
+    }
+
+    #[test]
+    fn nested_call_graph_keeps_each_composed_token_scope_local() {
+        let grandparent = binary::BinarySymbol {
+            member: None,
+            name: "grandparent".to_owned(),
+            address: 0x0800,
+            bytes: vec![
+                0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+                0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "branch_parent".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "branch_child".to_owned(),
+            address: 0x2000,
+            bytes: vec![
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x200c
+                0x13, 0x05, 0x10, 0x00, // li a0, 1
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x20, 0x00, // li a0, 2
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x1000, parent), (0x2000, child)]);
+        let relocations = BTreeMap::from([(
+            StructuralCallSite::new(&grandparent, 0x0800),
+            ("branch_parent".to_owned(), Some(0x1000)),
+        )]);
+        let mut visiting = BTreeSet::from([0x0800]);
+
+        let trace = resolve_reference_trace(
+            &grandparent,
+            &symbols,
+            &relocations,
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(
+            trace.reference_dependencies,
+            ["branch_parent", "branch_child"]
+        );
+        let generated =
+            reference_codegen::generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+        assert_eq!(generated.source.matches("let call_result0 = {").count(), 2);
+        assert_generated_reference_compiles("nested-call-scopes", &generated.source);
+    }
+
+    #[test]
+    fn caller_cfg_can_branch_on_a_composed_callee_result() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "branch_on_call_result".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x1010
+                0x13, 0x05, 0x30, 0x00, // li a0, 3
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x40, 0x00, // li a0, 4
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "branch_child".to_owned(),
+            address: 0x2000,
+            bytes: vec![
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x200c
+                0x13, 0x05, 0x10, 0x00, // li a0, 1
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x20, 0x00, // li a0, 2
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, child)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        let generated =
+            reference_codegen::generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+        assert!(generated.source.contains("let call_result0 = {"));
+        assert!(generated.source.contains("if (call0_arg0"));
+        assert!(generated.source.contains("if (call_result0"));
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(0x00000004_u32) }")
+        );
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(0x00000003_u32) }")
+        );
+        assert_generated_reference_compiles("branch-on-call-result", &generated.source);
+    }
+
+    #[test]
+    fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "branch_on_void_call".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x1010
+                0x13, 0x05, 0x30, 0x00, // li a0, 3
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x40, 0x00, // li a0, 4
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let delay = binary::BinarySymbol {
+            member: None,
+            name: "ets_delay_us".to_owned(),
+            address: 0x2000,
+            bytes: vec![0x73, 0x00, 0x10, 0x00],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, delay)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.reference_blockers.iter().any(|blocker| {
+            blocker.contains("composed call result is used without a modeled callee `a0`")
+        }));
+    }
+
+    #[test]
+    fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "branch_with_void_call".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x0a, 0x05, 0x00, // beq a0, zero, 0x1014
+                0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+                0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+                0x13, 0x05, 0x70, 0x00, // li a0, 7
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x80, 0x00, // li a0, 8
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let delay = binary::BinarySymbol {
+            member: None,
+            name: "ets_delay_us".to_owned(),
+            address: 0x2000,
+            bytes: vec![0x73, 0x00, 0x10, 0x00],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, delay)]);
+        let relocations = BTreeMap::from([(
+            StructuralCallSite::new(&parent, 0x1004),
+            ("ets_delay_us".to_owned(), Some(0x2000)),
+        )]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &relocations,
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        let generated =
+            reference_codegen::generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+        assert!(
+            generated
+                .source
+                .contains("// Composed direct call: ets_delay_us.")
+        );
+        assert!(generated.source.contains("let call0_arg0 ="));
+        assert!(generated.source.contains("io.delay_micros("));
+        assert!(!generated.source.contains("let call_result0 = {"));
+        assert_generated_reference_compiles("discarded-call-result", &generated.source);
+    }
+
+    #[test]
+    fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "relocated_parent".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+                0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+                0x13, 0x75, 0xf5, 0x0f, // andi a0, a0, 255
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "companion_child".to_owned(),
+            address: 0x2000,
+            bytes: vec![0x67, 0x80, 0x00, 0x00], // ret
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, child)]);
+        let relocations = BTreeMap::from([(
+            StructuralCallSite::new(&parent, 0x1000),
+            ("companion_child".to_owned(), Some(0x2000)),
+        )]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &relocations,
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_dependencies, ["companion_child"]);
+        assert_eq!(trace.return_value, Value::input(0).and(0xff));
+    }
+
+    #[test]
+    fn unresolved_call_relocation_fails_closed() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "unresolved_parent".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+                0x67, 0x00, 0x03, 0x00, // jalr zero, 0(t1)
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let relocations = BTreeMap::from([(
+            StructuralCallSite::new(&parent, 0x1000),
+            ("missing_child".to_owned(), None),
+        )]);
+
+        let trace =
+            trace_binary_symbol(&parent, &map(), &relocations, &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker.contains("unresolved-call-relocation"))
+        );
+    }
+
+    #[test]
+    fn forward_local_jump_skips_dead_instructions() {
+        let symbol = binary::BinarySymbol {
+            member: None,
+            name: "local_jump".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x6f, 0x00, 0x80, 0x00, // j 0x1008
+                0x73, 0x00, 0x10, 0x00, // ebreak (unreachable)
+                0x13, 0x05, 0x05, 0x00, // mv a0, a0
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.return_value, Value::input(0));
+    }
+
+    #[test]
+    fn local_jump_loop_fails_closed() {
+        let symbol = binary::BinarySymbol {
+            member: None,
+            name: "local_loop".to_owned(),
+            address: 0x1000,
+            bytes: vec![0x6f, 0x00, 0x00, 0x00], // j 0x1000
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.blockers[0].contains("control-flow loop"));
+    }
+
+    #[test]
+    fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "delay_wrapper".to_owned(),
+            address: 0x1000,
+            bytes: vec![0x6f, 0x10, 0x00, 0x00], // j 0x2000
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let delay = binary::BinarySymbol {
+            member: None,
+            name: "ets_delay_us".to_owned(),
+            address: 0x2000,
+            bytes: vec![0x73, 0x00, 0x10, 0x00], // body is deliberately unsupported
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x2000, delay)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_dependencies, ["ets_delay_us"]);
+        assert_eq!(
+            trace.reference_events,
+            [ReferenceEvent::DelayMicros {
+                micros: Value::input(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn constant_conditional_branch_follows_only_the_feasible_edge() {
+        let symbol = binary::BinarySymbol {
+            member: None,
+            name: "constant_branch".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x04, 0x00, 0x00, // beq zero, zero, 0x1008
+                0x73, 0x00, 0x10, 0x00, // ebreak (infeasible)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+    }
+
+    #[test]
+    fn symbolic_conditional_branch_fails_closed() {
+        let symbol = binary::BinarySymbol {
+            member: None,
+            name: "symbolic_branch".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x04, 0x05, 0x00, // beq a0, zero, 0x1008
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+
+        let trace =
+            trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &BTreeMap::new(), None).unwrap();
+
+        assert!(!trace.is_reference_eligible());
+        assert!(trace.blockers[0].contains("input-dependent control-flow"));
+    }
+
+    #[test]
+    fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
+        let symbol = binary::BinarySymbol {
+            member: None,
+            name: "symbolic_branch_reference".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x06, 0x05, 0x00, // beq a0, zero, 0x100c
+                0x13, 0x05, 0x10, 0x00, // li a0, 1
+                0x67, 0x80, 0x00, 0x00, // ret
+                0x13, 0x05, 0x20, 0x00, // li a0, 2
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &symbol,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert!(!trace.is_exact());
+        let ReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } = &trace.reference_flow.as_ref().unwrap().terminator
+        else {
+            panic!("expected a structured branch");
+        };
+        assert_eq!(condition.site, 0x1000);
+        assert!(matches!(
+            taken.terminator,
+            ReferenceTerminator::Return(Value::Constant(2))
+        ));
+        assert!(matches!(
+            not_taken.terminator,
+            ReferenceTerminator::Return(Value::Constant(1))
+        ));
+
+        let generated =
+            reference_codegen::generate(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+        assert!(generated.exit_a0_modeled);
+        assert!(
+            generated
+                .source
+                .contains("// Symbolic branch from 0x00001000.")
+        );
+        assert!(generated.source.contains("if (args[0]"));
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(0x00000002_u32) }")
+        );
+        assert!(
+            generated
+                .source
+                .contains("ReferenceOutcome { exit_a0: Some(0x00000001_u32) }")
+        );
+    }
+
+    #[test]
+    fn constant_call_argument_specializes_a_child_branch() {
+        let parent = binary::BinarySymbol {
+            member: None,
+            name: "constant_wrapper".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x13, 0x05, 0x00, 0x00, // li a0, 0
+                0x6f, 0x00, 0x40, 0x00, // j 0x1008
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let child = binary::BinarySymbol {
+            member: None,
+            name: "conditional_child".to_owned(),
+            address: 0x1008,
+            bytes: vec![
+                0x63, 0x04, 0x05, 0x00, // beq a0, zero, 0x1010
+                0x73, 0x00, 0x10, 0x00, // ebreak (infeasible for this call)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = BTreeMap::from([(0x1008, child)]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &parent,
+            &symbols,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+            &map(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        assert_eq!(trace.reference_dependencies, ["conditional_child"]);
+        assert_eq!(trace.return_value, Value::Constant(0));
     }
 
     #[test]

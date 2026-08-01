@@ -226,6 +226,181 @@ cargo phy-trace analyze --svd svd/esp32s31-radio.svd \
 
 cargo phy-trace analyze --svd svd/esp32s31-radio.svd \
   --artifact _oracles/libphy.a --symbol-prefix ''
+
+cargo phy-trace analyze --svd svd/esp32s31-radio.svd \
+  --svd svd/esp32s31-platform-radio-deps.svd \
+  --artifact \
+    hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
+open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+  --companion _oracles/esp32s31_rev0_rom.elf
+```
+
+Each row reports `reference-codegen=eligible|blocked`, the number of composed
+dependencies and `indexed-mmio=N`. The summary counts the stricter generation
+subset separately from `direct_trace_exact`. The two are intentionally
+different: a trace can be exact for MMIO comparison while an unmodeled RAM/ELF
+load or store still makes generation unsafe.
+
+Generate a safe, executable Rust reference for a supported symbol:
+
+```console
+cargo phy-trace generate-reference \
+  --svd svd/esp32s31-radio.svd \
+  --svd svd/esp32s31-platform-radio-deps.svd \
+  --artifact _oracles/esp32s31_rev0_rom.elf \
+  --symbol phy_disable_agc \
+  --output /tmp/phy_disable_agc_reference.rs
+
+rustc --edition 2024 --crate-type lib \
+  /tmp/phy_disable_agc_reference.rs
+```
+
+For an archive symbol, add `--member phy_init.o` when the symbol owner must be
+selected explicitly. Without `--output`, the generated source is written to
+stdout so it can be inspected or consumed by another tool.
+
+The generated function is an executable specification over `ReferenceIo`, a
+separate `ReferenceMemory` state port and a typed `ReferencePlatform` callback
+boundary, not a guessed PAC/HAL
+implementation. It retains ordered MMIO and classified ELF/RAM reads and
+writes, distinct read identities, delays, fences, exact wrapping bit
+expressions and source provenance. Mixed-source operations such as
+`MMIO_read | argument` remain explicit expression trees instead of degrading
+to unknown bits. Variable RV32 `sll`, `srl` and `sra` mask the shift count to
+five bits, and arithmetic right shift retains the signed RV32 result. The
+memory implementation must seed `.data`,
+`.bss` and read-only ELF bytes from the same pinned image, resolve archive-local
+and global symbol identities against that exact link, then retain the writes
+required by the validation scenario. `ReferenceOutcome::exit_a0` records the machine
+value in the ABI `a0` register without inferring whether the unavailable C
+prototype declared a return value. An unresolved `a0` is represented by
+`None`.
+
+Generation explores resolved input/MMIO/RAM/callback-dependent branches in a
+bounded acyclic CFG and emits structured Rust `if`/`else` expressions. Per
+resolved function, the limit is 64 complete paths and 12 symbolic branch
+decisions per path. Every
+path must terminate, preserve a renderable condition and contain only modeled
+effects; loops, path explosion, unsupported instructions, unresolved write
+values and unmapped MMIO registers remain fail-closed. A statically addressed
+MMIO access must name an exact SVD register; membership in a broad SVD address
+window alone is not enough. Input-indexed MMIO is generated in two bounded
+forms. If the address depends on at most eight input bits, the extractor
+enumerates every combination and requires all resulting addresses to belong to
+one exact SVD register family. Otherwise the expression must be affine in one
+ABI argument and indices starting at zero must form a contiguous SVD register
+bank; generation is capped at 32 registers and emits an explicit maximum-index
+assertion. Both forms also emit a runtime address allowlist assertion and keep
+indexed reads as distinct symbolic identities for later RMWs and return values.
+An arbitrary pointer, a gap in the bank, a second input, an unrelated register
+family or a merely window-mapped address remains fail-closed. These assertions
+are recovered reference preconditions, not proof that a production Rust API
+should accept an untyped `u32` index.
+
+A statically addressed RAM access is generated only when its complete width
+belongs to a real alloc section of a linked ELF. The extractor also preserves
+loads and stores whose address is an affine `argument + constant` expression as
+caller-owned ABI RAM.
+Those accesses retain the runtime address in the generated Rust instead of
+guessing the layout of `phy_param` or another C context. The `ReferenceMemory`
+implementation must bound them to explicitly declared CPU-owned ranges and
+reject MMIO or undeclared memory. A pointer loaded from RAM/MMIO, returned by an
+unmodeled call or produced by non-affine arithmetic does not inherit that
+provenance and remains fail-closed. Relocatable archives preserve matched
+`R_RISCV_HI20` plus `R_RISCV_LO12_I`/`R_RISCV_LO12_S` data addresses as
+`archive member + symbol + high/low addends`. Generated references ask
+`ReferenceMemory::symbol_address` for the address in the exact linked scenario
+and reproduce the RV32 HI20/LO12 rounding formula, including pairs whose high
+and low addends differ. The memory adapter must reject an absent/ambiguous
+symbol and a write to a read-only resolved section. A missing or mismatched
+pair, unexpected encoded low addend, and unsupported GOT/PC-relative/TLS
+relocation remain blockers. The symbolic extractor treats compiler-private stack
+slots as internal temporary storage, so register spills do not leak into the
+generated `ReferenceMemory` contract. An uninitialized stack read or a stack
+pointer that escapes into observable behavior still fails closed. Use the
+linked vendor-oracle ELF instead of `libphy.a` when generating state accessors.
+
+The reference resolver composes returning direct calls and terminal direct
+tail-calls when every target is a known eligible symbol in the primary or a
+companion linked image. Straight-line callees are flattened with argument,
+return-value and MMIO/RAM token remapping. A callee with symbolic control flow
+is instead emitted as a nested call-flow block with its own read/callback token
+scope. Only the ABI arguments actually consumed by that callee are captured
+before entering the block, and its modeled `a0` can feed later caller
+arithmetic, writes or branches. An unmodeled callee `a0` is allowed when it is
+discarded or only becomes the unresolved top-level exit value, but fails closed
+if caller-visible behavior depends on it. Every composed symbol is recorded in
+the generated provenance header. This turns small call graphs into one
+executable reference without reproducing the vendor C function boundaries.
+Repeated `--companion PATH` options resolve
+`R_RISCV_CALL`/`R_RISCV_CALL_PLT` targets by symbol name across ELF images;
+every companion path and SHA-256 is recorded in the output. The resolver also
+models `ets_delay_us` as an ordered `ReferenceIo::delay_micros` action and
+follows exact local unconditional jumps while rejecting loops. Constant
+conditions follow only their feasible edge; resolved symbolic conditions are
+explored on both edges and rebuilt as structured reference flow. Constant
+arguments from a particular call site specialize the child for that call
+without changing the generated ABI expressions. Direct and tail calls may
+appear before a branch, inside either arm, or in a branch condition through a
+modeled callee result. Recursion, unresolved targets, stack-pointer arguments
+and unbounded control flow remain fail-closed, except for calls proven to come
+from a registered external ABI table.
+
+Relocatable archives retain `R_RISCV_CALL` and `R_RISCV_CALL_PLT` with the
+owning member, function and instruction site. A target is composed only when
+its definition is unique (preferring an exact same-member definition); an
+absent, ambiguous or nonzero-addend target stays unresolved. Registered
+diagnostic `wifi_log` calls remain explicit `ReferencePlatform` events instead
+of being silently discarded.
+
+The first registered table is the ESP32-S31 Wi-Fi OS adapter v9. For both
+relocatable archives and linked ELFs, the resolver recognizes the exact chain
+`g_osi_funcs_p -> fixed slot load -> JALR`. The table description pins the
+target header commit and SHA-256, version `9`, magic `0xDEADBEAF`, 512-byte
+size and slot offsets. Generated references expose modeled callbacks through
+`ReferencePlatform`, assert the version/magic/size precondition, and retain
+nondeterministic callback results as symbolic values. `_env_is_chip`, `_rand`,
+`_random` and `_slowclk_cal_get` are modeled; `_coex_pti_get` is identified by
+name and modeled only for a one-byte output pointer into the current
+function's private stack. Generated references obtain that byte from
+`ReferencePlatform`; the callback's integer status remains unresolved, so any
+status-dependent behavior fails closed. A non-stack output pointer is also
+rejected. This represents the real callback contract without accepting the
+pinned no-COEX stub which returns without initializing its output byte.
+Unknown table pointers, offsets and callback effects are never guessed.
+
+For example, the vendor `hal_random` tail call is now a compilable reference
+over the `_rand` callback at offset `0xbc`:
+
+```console
+cargo phy-trace generate-reference \
+  --svd svd/esp32s31-radio.svd \
+  --svd svd/esp32s31-platform-radio-deps.svd \
+  --artifact _oracles/libpp.a \
+  --member hal_mac.o \
+  --symbol hal_random \
+  --output /tmp/hal_random_reference.rs
+```
+
+A generated reference should be compiled as a probe and fed back through
+`execute-compare`; successful generation by itself is not qualification
+evidence and does not make the file production driver code.
+
+For example, the complete two-path `hal_timer_update_by_rtc` reference is now
+generated directly from the archive. Its disabled arm clears the RTC update
+bit; its enabled arm sets that bit and publishes the low 18 calibration bits:
+
+```console
+cargo phy-trace generate-reference \
+  --svd svd/esp32s31-radio.svd \
+  --svd svd/esp32s31-platform-radio-deps.svd \
+  --artifact _oracles/libpp.a \
+  --member hal_tsf.o \
+  --symbol hal_timer_update_by_rtc \
+  --output /tmp/hal_timer_update_by_rtc_reference.rs
+
+rustc --edition 2024 --crate-type lib -D warnings \
+  /tmp/hal_timer_update_by_rtc_reference.rs
 ```
 
 Verify every ROM function against a conventionally named Rust probe and report

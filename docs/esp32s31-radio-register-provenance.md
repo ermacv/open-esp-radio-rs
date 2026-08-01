@@ -1216,6 +1216,32 @@ which copied only the clear bit still produced q0 status 5 on all three auth
 attempts; this bit is therefore documented hardware state, not a standalone
 TX repair.
 
+The same complete `hal_tsf.o` provides all six leaves for the independent
+four-entry TSF timer bank. Entry `i` uses control word
+`0x2010d87c + i*8` and target word `0x2010d880 + i*8` for `i = 0..3`.
+The target setter replaces control bits 2:0 and publishes the full target;
+the getter returns both values through caller-owned output pointers. Dedicated
+wakeup leaves set or clear control bit 30, and the timer enable/disable leaves
+set or clear control bit 31 while updating WDEVPWR interrupt bit `7-i` at
+`0x2010d8b4`. Enable also acknowledges that event through a fresh-read RMW at
+`0x2010d8c0`. SVD v3.46 records the exact register geometry and operations;
+the low three control bits remain explicitly semantics-unknown.
+
+The remaining complete TSF runtime leaves close the sparse words around that
+bank. `hal_is_sta_tsf_active` reads bit zero at `0x2010d80c`.
+`hal_set_sta_tbtt` publishes TSF bits 35:10 into the low 26 bits at
+`0x2010d82c`, the third argument's bits 31:10 into the low 22 bits at
+`0x2010d85c`, and its fifth argument into the high half at `0x2010d840`;
+the dedicated interval and light-sleep-wake-ahead setters independently prove
+the latter two fields. `hal_tsf_clear_soc_wakeup_request` sets bit 30 at
+`0x2010d834`. Complete SoftAP, NAN and broadcast-TWT leaves prove their
+distinct control words at `0x2010d860`, `0x2010d868` and `0x2010d870`.
+The NAN and broadcast-TWT transactions use the same exact bits 31, 27 and
+22:19 masks as station TSF; the SoftAP disable leaf clears bits 31:30, while
+the generic TSF-domain leaves independently identify bit 31 as its enable.
+SVD v3.48 records these addresses and masks without claiming unobserved
+counter units, bit-30 meaning or hardware transition behavior.
+
 The callback at `g_wifi_osi_funcs` offset `0x1a8` is `_coex_pti_get`. Complete
 `libcoexist.a::coex_core_pti_get` copies `coex_pti_tab[event]`; its complete
 48-byte cold table gives event 1 = 5, event 3 = 7, event 10 = 3 and event 15 =
@@ -1229,6 +1255,35 @@ values. SVD v3.17 records the intended table source and the complete setter
 geometry. The MAC queries an explicit `MacCoexPtiSource` in exact blob order;
 the current integration supplies the pinned cold-table values without linking
 the vendor coexistence runtime.
+
+The structural reference generator now models that callback contract without
+adopting the defective stub behavior. It accepts the output pointer only when
+it resolves to the current function's private stack, writes one symbolic byte,
+and deliberately leaves the callback's integer status unresolved. Thus all
+twelve outputs of complete `hal_set_ofdma_sequence_pti` reach the exact child
+setter graph, while a callback pointed at arbitrary RAM/MMIO or code which
+depends on its status still fails closed. Archive `R_RISCV_CALL` relocations
+resolve by unique member/symbol identity, and the final `wifi_log` remains an
+explicit diagnostic platform event.
+
+The same complete `hal_coex.o` identifies runtime receive-beacon and iTWT
+words at `0x2010d854` and `0x2010d89c..0x2010d8ac`. SVD v3.47 records their
+exact RMW masks and order. Only fields named directly by the complete leaves
+are promoted; the dynamic clear-request bitmap and low iTWT control byte keep
+semantics-unknown identities.
+
+A final bounded leaf audit closes the seven unique MMIO addresses which still
+blocked the `hal_*` reference inventory. Complete beacon-filter/CRC leaves
+prove low enable bits 2:0 at `0x201042b4` and the full result at
+`0x20104300`. The secondary BSS-color interrupt clear is bit 12 at
+`0x20104c38`. Complete `hal_he_set_hw_qos_null_ra_to_trans` toggles bit two in
+the three words `0x20104cc8`, `0x20104cd8` and `0x20104ce8`; their individual
+profile identities remain unknown. The bounded baseband-error loop samples
+bit 16 at `0x201040e8..0x201040f4`. Finally, the complete RX-end/statistics
+leaves prove the split state word at `0x201040a8`, the bit-31 clear pulse at
+`0x20104e28`, and the full result words at `0x20104e30/34`. SVD v3.49 records
+these exact operations and preserves semantics-unknown names where the leaf
+does not expose an individual hardware meaning.
 
 Complete `hal_he_init` has a natural platform boundary at its
 `hal_init_tx_pwr` child. SVD v3.18 records the complete prefix before that

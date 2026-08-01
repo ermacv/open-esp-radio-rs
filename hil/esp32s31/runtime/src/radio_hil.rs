@@ -1001,7 +1001,8 @@ impl TxStorage {
 
     fn next_edca_backoff(&mut self, queue: LegacyTxQueue) -> u16 {
         // SOURCE: complete `_oracles/libpp.a[hal_mac.o]::hal_random` jumps
-        // through `wifi_osi_funcs_t::_random` at offset 0xbc; the pinned
+        // through `wifi_osi_funcs_t::_rand` at offset 0xbc (distinct from
+        // `_random` at offset 0x144); the pinned
         // esp-radio implementation of that callback constructs
         // `esp_hal::rng::Rng` and returns its hardware RNG word. The live
         // `Trng` owner keeps the S31 entropy source enabled for this run.

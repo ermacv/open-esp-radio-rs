@@ -80,6 +80,10 @@ block/register/data layout.
 | `BLOB_LIBPP_HAL_ANTENNA_INIT` | Complete 0x5e-byte `libpp.a[hal_mac_tx.o]::hal_attenna_init` body; 34 ordered RMW edges across eight reverse-stride bank words and one common word |
 | `BLOB_LIBPP_HAL_INIT_TAIL` | Complete `hal_init` offsets 0xcc..0x12a plus the complete hardware-beacon reload and RTC timer-update leaves; OSI offsets cross-checked against pinned esp-wifi-sys and esp-hal |
 | `BLOB_LIBPP_HAL_INIT_COEX` | Complete `hal_init` COEX tail and all complete RX, default, TB and beamforming PTI setter leaves |
+| `BLOB_LIBPP_HAL_TSF_TIMER` | Complete `hal_tsf.o` target, wakeup and enable/disable leaves; proves the four-entry `0x2010d87c + index*8` control/target bank and its WDEVPWR interrupt-mask transactions |
+| `BLOB_LIBPP_HAL_TSF_RUNTIME` | Complete station-TBTT, activity, wakeup-clear, SoftAP/NAN and broadcast-TWT TSF leaves; proves the remaining runtime words at `0x2010d80c`, `0x2010d82c`, `0x2010d834`, `0x2010d840`, `0x2010d85c`, `0x2010d860`, `0x2010d868` and `0x2010d870` |
+| `BLOB_LIBPP_HAL_COEX_RUNTIME` | Complete receive-beacon and individual-TWT leaves in `hal_coex.o`; proves `0x2010d854` and the five-word `0x2010d89c..0x2010d8ac` runtime COEX/PTI bank |
+| `BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES` | Complete beacon-filter/CRC, secondary-interrupt clear, QoS-null translation, baseband-error, RX-end and statistics-clear leaves across `hal_mac*.o` and `hal_sniffer.o`; closes the remaining seven unique unmapped HAL MMIO addresses |
 | `BLOB_LIBCOEX_PTI_TABLE` | Complete `libcoexist.a` PTI getter plus its 48-byte cold-default table; provides the four event values queried by MAC init |
 | `BLOB_LIBPP_HAL_HE_INIT_PREFIX` | Complete `hal_he_init` prefix, beamforming init/report-rate children and trigger-based TX init through the TX-power boundary |
 | `BLOB_LIBPP_HAL_TX_POWER_INIT` | Complete 43-entry MAC power-table parent plus TB, immediate-response and TB-RU register leaves |

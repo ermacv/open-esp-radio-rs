@@ -237,6 +237,13 @@ impl ExecutableImage {
         self.relocated_calls_by_address.get(&address)
     }
 
+    pub(crate) fn relocated_calls(&self) -> BTreeMap<u32, (String, Option<u32>)> {
+        self.relocated_calls_by_address
+            .iter()
+            .map(|(address, call)| (*address, (call.name.clone(), call.target)))
+            .collect()
+    }
+
     fn relocated_call_link_register(&self, address: u32) -> Result<Reg> {
         match self.instruction(address.wrapping_add(4))?.0 {
             Inst::Jalr { dest, .. } => Ok(dest),

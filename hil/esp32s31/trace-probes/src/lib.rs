@@ -57,6 +57,18 @@ pub extern "C" fn ets_delay_us(micros: u32) {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
+pub extern "C" fn open_phy_trace_ret_bt_index_to_bb(index: u32) -> u32 {
+    open_esp_radio_esp32s31_phy::phy_bluetooth::bluetooth_gain_index_to_baseband(index)
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 {
+    open_esp_radio_esp32s31_phy::phy_bluetooth::bluetooth_baseband_to_gain_index(baseband)
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
 pub extern "C" fn open_phy_trace_disable_agc(registers: &mut RadioRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, false);
 }

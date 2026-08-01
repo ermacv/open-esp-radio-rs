@@ -15,11 +15,18 @@ const RETURN_SENTINEL: u32 = 0xffff_fffc;
 const STACK_POINTER: u32 = 0x3fff_f000;
 const STACK_SIZE: u32 = 0x1_0000;
 
+fn execution_stack_contains(address: u32) -> bool {
+    address
+        .checked_sub(STACK_POINTER.wrapping_sub(STACK_SIZE))
+        .is_some_and(|offset| offset < STACK_SIZE)
+}
+
 #[derive(Clone, Debug)]
 struct Segment {
     address: u32,
     bytes: Vec<u8>,
     memory_size: u32,
+    writable: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -33,6 +40,7 @@ pub struct ExecutableImage {
     segments: Vec<Segment>,
     symbols_by_name: HashMap<String, u32>,
     symbols_by_address: BTreeMap<u32, String>,
+    call_trampoline_addresses: BTreeSet<u32>,
     relocated_calls_by_address: BTreeMap<u32, RelocatedCall>,
     global_pointer: Option<u32>,
 }
@@ -68,12 +76,18 @@ impl ExecutableImage {
                 address,
                 bytes: data.to_vec(),
                 memory_size,
+                writable: matches!(
+                    segment.flags(),
+                    object::SegmentFlags::Elf { p_flags }
+                        if p_flags & object::elf::PF_W != 0
+                ),
             });
         }
         segments.sort_by_key(|segment| segment.address);
 
         let mut symbols_by_name = HashMap::new();
         let mut symbols_by_address = BTreeMap::new();
+        let mut call_trampoline_addresses = BTreeSet::new();
         let mut global_pointer = None;
         for symbol in file.symbols() {
             if !symbol.is_definition() || symbol.address() == 0 {
@@ -83,6 +97,9 @@ impl ExecutableImage {
                 continue;
             };
             let address = symbol.address() as u32;
+            if name.starts_with("__call_") {
+                call_trampoline_addresses.insert(address);
+            }
             let absolute_callable =
                 symbol.kind() == SymbolKind::Unknown && symbol.section() == SymbolSection::Absolute;
             if symbol.kind() == SymbolKind::Text
@@ -157,6 +174,7 @@ impl ExecutableImage {
             segments,
             symbols_by_name,
             symbols_by_address,
+            call_trampoline_addresses,
             relocated_calls_by_address,
             global_pointer,
         })
@@ -172,6 +190,8 @@ impl ExecutableImage {
         for (address, name) in companion.symbols_by_address {
             self.symbols_by_address.entry(address).or_insert(name);
         }
+        self.call_trampoline_addresses
+            .extend(companion.call_trampoline_addresses);
         for (address, call) in companion.relocated_calls_by_address {
             self.relocated_calls_by_address
                 .entry(address)
@@ -191,6 +211,22 @@ impl ExecutableImage {
 
     pub fn symbol_address(&self, name: &str) -> Option<u32> {
         self.symbols_by_name.get(name).copied()
+    }
+
+    /// Return the half-open text extent of one linked symbol.
+    ///
+    /// The validator uses this only to distinguish calls issued directly by
+    /// an architectural root from calls made by its children. Linked ELF
+    /// symbols are address ordered, so the next text symbol is the fail-closed
+    /// end boundary even when the input symbol table omits explicit sizes.
+    pub fn symbol_extent(&self, name: &str) -> Option<std::ops::Range<u32>> {
+        let start = self.symbol_address(name)?;
+        let end = self
+            .symbols_by_address
+            .range((std::ops::Bound::Excluded(start), std::ops::Bound::Unbounded))
+            .next()
+            .map(|(address, _)| *address)?;
+        Some(start..end)
     }
 
     fn symbol_at(&self, address: u32) -> Option<&str> {
@@ -586,11 +622,26 @@ impl ExecutableImage {
         })
     }
 
+    /// Returns one byte from the linked ELF load image, including the
+    /// zero-filled `p_memsz - p_filesz` tail used for BSS.
+    pub fn loaded_byte(&self, address: u32) -> Option<u8> {
+        self.byte(address)
+    }
+
     fn contains_memory(&self, address: u32) -> bool {
         self.segments.iter().any(|segment| {
             address
                 .checked_sub(segment.address)
                 .is_some_and(|offset| offset < segment.memory_size)
+        })
+    }
+
+    fn contains_writable_memory(&self, address: u32) -> bool {
+        self.segments.iter().any(|segment| {
+            segment.writable
+                && address
+                    .checked_sub(segment.address)
+                    .is_some_and(|offset| offset < segment.memory_size)
         })
     }
 
@@ -637,10 +688,75 @@ pub enum ExecutionEvent {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExecutionTimelineEvent {
+    Observable(ExecutionEvent),
+    Call(OrderedCall),
+    Branch { site: u32, taken: bool },
+    RamRead { width: u8, address: u32, value: u32 },
+    RamWrite { width: u8, address: u32, value: u32 },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoryRange {
     pub start: u32,
     pub length: u32,
+}
+
+/// Who is allowed to change a RAM range between two modeled CPU calls.
+///
+/// `Interrupt`, `Dma`, and `SharedUnknown` are invalidated at every session
+/// boundary and must be seeded again by the next scenario before they can be
+/// read. `MmioDerived` remains CPU-owned storage whose value was computed from
+/// an explicit peripheral response.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "the ownership schema includes interrupt/DMA domains before a contract needs them"
+)]
+pub enum MemoryOwner {
+    Cpu,
+    MmioDerived,
+    Interrupt,
+    Dma,
+    SharedUnknown,
+    Immutable,
+}
+
+impl MemoryOwner {
+    const fn may_change_outside_cpu(self) -> bool {
+        matches!(self, Self::Interrupt | Self::Dma | Self::SharedUnknown)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryOwnership {
+    pub range: MemoryRange,
+    pub owner: MemoryOwner,
+}
+
+impl MemoryOwnership {
+    fn overlaps(self, other: Self) -> bool {
+        let self_end = self.range.start.saturating_add(self.range.length);
+        let other_end = other.range.start.saturating_add(other.range.length);
+        self.range.start < other_end && other.range.start < self_end
+    }
+}
+
+/// Memory initialization policy at an [`ExecutionSession`] boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "reset modes are exercised by session clients and validator tests"
+)]
+pub enum ResetPolicy {
+    /// An ordinary function call: retain CPU-owned writable state.
+    #[default]
+    Continue,
+    /// Recreate `.data`/`.bss` from the immutable linked ELF image.
+    ColdBoot,
+    /// Recreate ELF-backed state but retain explicitly persistent/no-init RAM.
+    WarmReset,
 }
 
 impl MemoryRange {
@@ -686,6 +802,13 @@ pub struct IndirectCall {
     pub arguments: [u32; 8],
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrderedCall {
+    pub site: u32,
+    pub symbol: String,
+    pub arguments: [u32; 8],
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Scenario {
     pub arguments: Vec<u32>,
@@ -694,18 +817,119 @@ pub struct Scenario {
     pub memory_initial: BTreeMap<u32, u8>,
     pub observed_memory: Vec<MemoryRange>,
     pub memory_aliases: Vec<MemoryAlias>,
+    /// Non-ELF RAM that must survive between calls made through an
+    /// [`ExecutionSession`]. ELF-backed `.data`/`.bss` is retained
+    /// automatically; the private executor stack is fresh for every call.
+    pub persistent_memory: Vec<MemoryRange>,
+    /// Reviewed ownership of RAM that can outlive this call. Externally owned
+    /// ranges become poison at every call boundary unless explicitly seeded.
+    pub memory_ownership: Vec<MemoryOwnership>,
+    pub reset_policy: ResetPolicy,
     pub max_steps: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct ExecutionResult {
     pub events: Vec<ExecutionEvent>,
+    pub timeline: Vec<ExecutionTimelineEvent>,
     pub return_value: u32,
     pub steps: u64,
     pub branches: BTreeSet<(u32, bool)>,
+    pub ordered_branches: Vec<(u32, bool)>,
     pub calls: BTreeSet<String>,
+    pub ordered_calls: Vec<OrderedCall>,
     pub indirect_calls: BTreeSet<IndirectCall>,
     pub memory_changes: Vec<MemoryChange>,
+    /// Explicit RAM overlay at function entry. Semantic normalizers combine
+    /// this with ordered writes when they need a call-time value rather than
+    /// the immutable ELF baseline or the final persistent state.
+    pub initial_memory: BTreeMap<u32, u8>,
+    /// Final bytes eligible for reuse by [`ExecutionSession`]. This contains
+    /// ELF-backed writes and explicitly declared persistent RAM, never the
+    /// executor's private stack.
+    pub persistent_memory: BTreeMap<u32, u8>,
+}
+
+/// Persistent software memory across a sequence of vendor calls.
+///
+/// The linked ELF remains the immutable load baseline. Only writes to its
+/// load segments and ranges explicitly declared through
+/// [`Scenario::persistent_memory`] are carried into the next invocation.
+/// MMIO responses and the private call stack are deliberately per-scenario.
+#[derive(Clone, Debug, Default)]
+pub struct ExecutionSession {
+    memory: BTreeMap<u32, u8>,
+    persistent_ranges: Vec<MemoryRange>,
+    memory_ownership: Vec<MemoryOwnership>,
+}
+
+impl ExecutionSession {
+    pub fn execute(
+        &mut self,
+        image: &ExecutableImage,
+        svd: &SvdMap,
+        symbol: &str,
+        mut scenario: Scenario,
+    ) -> Result<ExecutionResult> {
+        for ownership in scenario.memory_ownership.drain(..) {
+            if let Some(previous) = self
+                .memory_ownership
+                .iter()
+                .find(|previous| previous.overlaps(ownership) && previous.owner != ownership.owner)
+            {
+                return Err(format!(
+                    "conflicting RAM ownership {:?} and {:?} for overlapping ranges at {:#010x}",
+                    previous.owner, ownership.owner, ownership.range.start
+                )
+                .into());
+            }
+            if !self.memory_ownership.contains(&ownership) {
+                self.memory_ownership.push(ownership);
+            }
+        }
+        for range in scenario.persistent_memory.drain(..) {
+            if !self.persistent_ranges.contains(&range) {
+                self.persistent_ranges.push(range);
+            }
+        }
+        match scenario.reset_policy {
+            ResetPolicy::Continue => {}
+            ResetPolicy::ColdBoot => self.memory.clear(),
+            ResetPolicy::WarmReset => self.memory.retain(|address, _| {
+                self.persistent_ranges
+                    .iter()
+                    .any(|range| range.contains(*address))
+            }),
+        }
+        for ownership in &self.memory_ownership {
+            if ownership.owner.may_change_outside_cpu() {
+                self.memory
+                    .retain(|address, _| !ownership.range.contains(*address));
+            }
+        }
+        scenario.persistent_memory = self.persistent_ranges.clone();
+        scenario.memory_ownership = self.memory_ownership.clone();
+
+        let explicit = std::mem::take(&mut scenario.memory_initial);
+        scenario.memory_initial = self.memory.clone();
+        scenario.memory_initial.extend(explicit);
+
+        let result = execute(image, svd, symbol, scenario)?;
+        self.memory.clone_from(&result.persistent_memory);
+        Ok(result)
+    }
+
+    pub fn byte(&self, image: &ExecutableImage, address: u32) -> Option<u8> {
+        if self.memory_ownership.iter().any(|ownership| {
+            ownership.range.contains(address) && ownership.owner.may_change_outside_cpu()
+        }) {
+            return None;
+        }
+        self.memory
+            .get(&address)
+            .copied()
+            .or_else(|| image.loaded_byte(address))
+    }
 }
 
 struct Machine<'a> {
@@ -717,14 +941,19 @@ struct Machine<'a> {
     initial_overlay: BTreeMap<u32, u8>,
     observed_memory: Vec<MemoryRange>,
     memory_aliases: Vec<MemoryAlias>,
+    persistent_memory: Vec<MemoryRange>,
+    memory_ownership: Vec<MemoryOwnership>,
     /// Explicit stable read values supplied by the scenario. Bus writes do
     /// not update this map: storage/W1C/FIFO semantics belong to an explicit
     /// peripheral model, not to the generic transaction recorder.
     mmio_read_seeds: BTreeMap<u32, u32>,
     mmio_reads: BTreeMap<u32, VecDeque<u32>>,
     events: Vec<ExecutionEvent>,
+    timeline: Vec<ExecutionTimelineEvent>,
     branches: BTreeSet<(u32, bool)>,
+    ordered_branches: Vec<(u32, bool)>,
     calls: BTreeSet<String>,
+    ordered_calls: Vec<OrderedCall>,
     indirect_calls: BTreeSet<IndirectCall>,
     steps: u64,
     max_steps: u64,
@@ -751,11 +980,16 @@ impl<'a> Machine<'a> {
             initial_overlay,
             observed_memory: scenario.observed_memory,
             memory_aliases: scenario.memory_aliases,
+            persistent_memory: scenario.persistent_memory,
+            memory_ownership: scenario.memory_ownership,
             mmio_read_seeds: scenario.mmio_initial,
             mmio_reads: scenario.mmio_reads,
             events: Vec::new(),
+            timeline: Vec::new(),
             branches: BTreeSet::new(),
+            ordered_branches: Vec::new(),
             calls: BTreeSet::new(),
+            ordered_calls: Vec::new(),
             indirect_calls: BTreeSet::new(),
             steps: 0,
             max_steps: if scenario.max_steps == 0 {
@@ -777,10 +1011,19 @@ impl<'a> Machine<'a> {
     }
 
     fn normal_byte(&self, address: u32) -> Result<u8> {
-        self.overlay
-            .get(&address)
-            .copied()
-            .or_else(|| self.image.byte(address))
+        if let Some(value) = self.overlay.get(&address).copied() {
+            return Ok(value);
+        }
+        if self.memory_ownership.iter().any(|ownership| {
+            ownership.range.contains(address) && ownership.owner.may_change_outside_cpu()
+        }) {
+            return Err(format!(
+                "read from externally mutable RAM at {address:#010x} without a call-entry seed"
+            )
+            .into());
+        }
+        self.image
+            .byte(address)
             .ok_or_else(|| format!("read from poison/unmapped memory at {address:#010x}").into())
     }
 
@@ -801,7 +1044,7 @@ impl<'a> Machine<'a> {
                         format!("MMIO read at {address:#010x} has no explicit seed or response")
                     })?,
             };
-            self.events.push(ExecutionEvent::Read {
+            self.record_event(ExecutionEvent::Read {
                 width,
                 address,
                 register: self.svd.register_name(address),
@@ -815,14 +1058,17 @@ impl<'a> Machine<'a> {
             value |=
                 u32::from(self.normal_byte(address.wrapping_add(offset as u32))?) << (offset * 8);
         }
+        self.timeline.push(ExecutionTimelineEvent::RamRead {
+            width,
+            address,
+            value,
+        });
         Ok(value)
     }
 
     fn normal_address_is_valid(&self, address: u32) -> bool {
         self.image.contains_memory(address)
-            || address
-                .checked_sub(STACK_POINTER.wrapping_sub(STACK_SIZE))
-                .is_some_and(|offset| offset < STACK_SIZE)
+            || execution_stack_contains(address)
             || self.initial_overlay.contains_key(&address)
             || self
                 .observed_memory
@@ -838,7 +1084,7 @@ impl<'a> Machine<'a> {
     fn write(&mut self, address: u32, width: u8, value: u32) -> Result<()> {
         let bytes = usize::from(width / 8);
         if self.svd.contains_mmio(address) {
-            self.events.push(ExecutionEvent::Write {
+            self.record_event(ExecutionEvent::Write {
                 width,
                 address,
                 register: self.svd.register_name(address),
@@ -848,22 +1094,66 @@ impl<'a> Machine<'a> {
         }
         for offset in 0..bytes {
             let byte_address = address.wrapping_add(offset as u32);
+            if self.memory_ownership.iter().any(|ownership| {
+                ownership.range.contains(byte_address) && ownership.owner == MemoryOwner::Immutable
+            }) {
+                return Err(format!(
+                    "write to ownership-declared immutable RAM at {byte_address:#010x}"
+                )
+                .into());
+            }
+            if self.image.contains_memory(byte_address)
+                && !self.image.contains_writable_memory(byte_address)
+            {
+                return Err(
+                    format!("write to read-only ELF memory at {byte_address:#010x}").into(),
+                );
+            }
             if !self.normal_address_is_valid(byte_address) {
                 return Err(format!("write to undeclared memory at {byte_address:#010x}").into());
             }
             self.overlay
                 .insert(byte_address, (value >> (offset * 8)) as u8);
         }
+        self.timeline.push(ExecutionTimelineEvent::RamWrite {
+            width,
+            address,
+            value: value & MmioValue::mask(width),
+        });
         Ok(())
     }
 
     fn branch(&mut self, taken: bool, offset: i32, width: u32) {
         self.branches.insert((self.pc, taken));
+        self.ordered_branches.push((self.pc, taken));
+        self.timeline.push(ExecutionTimelineEvent::Branch {
+            site: self.pc,
+            taken,
+        });
         self.pc = if taken {
             self.pc.wrapping_add(offset as u32)
         } else {
             self.pc.wrapping_add(width)
         };
+    }
+
+    fn record_call(&mut self, site: u32, symbol: String) {
+        let arguments =
+            core::array::from_fn(|index| self.registers[usize::from(Reg::A0.0) + index]);
+        self.calls.insert(symbol.clone());
+        let call = OrderedCall {
+            site,
+            symbol,
+            arguments,
+        };
+        self.ordered_calls.push(call.clone());
+        self.timeline.push(ExecutionTimelineEvent::Call(call));
+    }
+
+    fn record_event(&mut self, event: ExecutionEvent) {
+        self.events.push(event.clone());
+        self.timeline
+            .push(ExecutionTimelineEvent::Observable(event));
     }
 
     fn memory_changes(&self) -> Result<Vec<MemoryChange>> {
@@ -912,17 +1202,59 @@ impl<'a> Machine<'a> {
         Ok(changes)
     }
 
+    fn persistent_memory(&self) -> BTreeMap<u32, u8> {
+        self.overlay
+            .iter()
+            .filter_map(|(address, value)| {
+                let explicitly_persistent = self
+                    .persistent_memory
+                    .iter()
+                    .any(|range| range.contains(*address));
+                ((!execution_stack_contains(*address)
+                    && self.image.contains_writable_memory(*address))
+                    || explicitly_persistent)
+                    .then_some((*address, *value))
+            })
+            .collect()
+    }
+
     fn step(&mut self) -> Result<bool> {
         if self.steps == self.max_steps {
-            return Err(format!("execution exceeded {} steps", self.max_steps).into());
+            let context = self
+                .ordered_calls
+                .iter()
+                .rev()
+                .take(6)
+                .map(|call| {
+                    format!(
+                        "{}({:#x},{:#x},{:#x},{:#x})",
+                        call.symbol,
+                        call.arguments[0],
+                        call.arguments[1],
+                        call.arguments[2],
+                        call.arguments[3]
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" <- ");
+            return Err(format!(
+                "execution exceeded {} steps at pc={:#010x}; recent calls: {}",
+                self.max_steps,
+                self.pc,
+                if context.is_empty() {
+                    "<entry>"
+                } else {
+                    &context
+                }
+            )
+            .into());
         }
         self.steps += 1;
 
         if let Some(symbol) = self.image.symbol_at(self.pc)
             && symbol == "ets_delay_us"
         {
-            self.events
-                .push(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
+            self.record_event(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
             let return_address = self.register(Reg::RA);
             if return_address == RETURN_SENTINEL {
                 return Ok(false);
@@ -937,7 +1269,7 @@ impl<'a> Machine<'a> {
                 self.set_register(link, continuation);
             }
             if let Some(target) = call.target {
-                self.calls.insert(call.name);
+                self.record_call(self.pc, call.name);
                 self.pc = target;
             } else {
                 return Err(format!(
@@ -1176,8 +1508,10 @@ impl<'a> Machine<'a> {
             Inst::Jal { offset, dest } => {
                 let target = self.pc.wrapping_add(offset.as_u32());
                 self.set_register(dest, next);
-                if let Some(symbol) = self.image.symbol_at(target) {
-                    self.calls.insert(symbol.to_owned());
+                let leaves_call_trampoline =
+                    self.image.call_trampoline_addresses.contains(&self.pc);
+                if !leaves_call_trampoline && let Some(symbol) = self.image.symbol_at(target) {
+                    self.record_call(self.pc, symbol.to_owned());
                 }
                 self.pc = target;
                 return Ok(true);
@@ -1189,8 +1523,9 @@ impl<'a> Machine<'a> {
                     return Ok(false);
                 }
                 if let Some(symbol) = self.image.symbol_at(target) {
-                    self.calls.insert(symbol.to_owned());
-                    if !(dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0) {
+                    let is_return = dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0;
+                    if !is_return {
+                        self.record_call(self.pc, symbol.to_owned());
                         self.indirect_calls.insert(IndirectCall {
                             site: self.pc,
                             symbol: symbol.to_owned(),
@@ -1210,7 +1545,7 @@ impl<'a> Machine<'a> {
                         | u8::from(set.memory_read) << 1
                         | u8::from(set.memory_write)
                 };
-                self.events.push(ExecutionEvent::Fence {
+                self.record_event(ExecutionEvent::Fence {
                     fm: fence.fm,
                     predecessor: encode(fence.pred),
                     successor: encode(fence.succ),
@@ -1256,14 +1591,21 @@ pub fn execute(
     }
     let return_value = machine.register(Reg::A0);
     let memory_changes = machine.memory_changes()?;
+    let persistent_memory = machine.persistent_memory();
+    let initial_memory = machine.initial_overlay.clone();
     Ok(ExecutionResult {
         events: machine.events,
+        timeline: machine.timeline,
         return_value,
         steps: machine.steps,
         branches: machine.branches,
+        ordered_branches: machine.ordered_branches,
         calls: machine.calls,
+        ordered_calls: machine.ordered_calls,
         indirect_calls: machine.indirect_calls,
         memory_changes,
+        initial_memory,
+        persistent_memory,
     })
 }
 
@@ -1277,9 +1619,11 @@ mod tests {
                 address: 0x1000,
                 bytes,
                 memory_size,
+                writable: true,
             }],
             symbols_by_name: HashMap::from([("test".to_owned(), 0x1000)]),
             symbols_by_address: BTreeMap::from([(0x1000, "test".to_owned())]),
+            call_trampoline_addresses: BTreeSet::new(),
             relocated_calls_by_address: BTreeMap::new(),
             global_pointer: None,
         }
@@ -1303,6 +1647,7 @@ mod tests {
                 0x63, 0x00, 0x00, 0x00, // beq zero, zero, 0 (must be unreachable)
             ],
             memory_size: 12,
+            writable: true,
         }];
         if let Some(target) = target {
             symbols_by_name.insert("callee".to_owned(), target);
@@ -1311,12 +1656,14 @@ mod tests {
                 address: target,
                 bytes: vec![0x67, 0x80, 0x00, 0x00], // ret
                 memory_size: 4,
+                writable: true,
             });
         }
         ExecutableImage {
             segments,
             symbols_by_name,
             symbols_by_address,
+            call_trampoline_addresses: BTreeSet::new(),
             relocated_calls_by_address: BTreeMap::from([(
                 0x1000,
                 RelocatedCall {
@@ -1328,15 +1675,20 @@ mod tests {
         }
     }
 
-    fn oracle() -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+    fn oracle() -> Option<std::path::PathBuf> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
-            .join("_oracles/esp32s31_rev0_rom.elf")
+            .join("_oracles/esp32s31_rev0_rom.elf");
+        path.exists().then_some(path)
     }
 
     #[test]
     fn executes_frequency_band_tail_call_and_records_both_mmio_updates() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let Some(oracle) = oracle() else {
+            eprintln!("private ROM fixture is not installed; integration test skipped");
+            return;
+        };
+        let image = ExecutableImage::load(&oracle).unwrap();
         let svd = SvdMap::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
@@ -1374,7 +1726,11 @@ mod tests {
 
     #[test]
     fn top_level_tail_delay_finishes_at_the_return_sentinel() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let Some(oracle) = oracle() else {
+            eprintln!("private ROM fixture is not installed; integration test skipped");
+            return;
+        };
+        let image = ExecutableImage::load(&oracle).unwrap();
         let svd = SvdMap::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
@@ -1392,7 +1748,11 @@ mod tests {
 
     #[test]
     fn static_branch_inventory_includes_reachable_child_control_flow() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let Some(oracle) = oracle() else {
+            eprintln!("private ROM fixture is not installed; integration test skipped");
+            return;
+        };
+        let image = ExecutableImage::load(&oracle).unwrap();
         assert!(
             !image
                 .coverage_inventory("phy_bb_bss_cbw40")
@@ -1404,7 +1764,11 @@ mod tests {
 
     #[test]
     fn branch_inventory_removes_child_outcomes_infeasible_from_fixed_arguments() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let Some(oracle) = oracle() else {
+            eprintln!("private ROM fixture is not installed; integration test skipped");
+            return;
+        };
+        let image = ExecutableImage::load(&oracle).unwrap();
         let wrapper = image.coverage_inventory("phy_pbus_debugmode").unwrap();
         assert_eq!(wrapper.branch_outcomes.len(), 1);
         assert!(wrapper.branch_outcomes.iter().all(|(_, taken)| !taken));
@@ -1432,7 +1796,410 @@ mod tests {
         };
         let result = execute(&image, &svd, "wrapper", Scenario::default()).unwrap();
         assert!(result.calls.contains("callee"));
+        assert_eq!(result.ordered_calls.len(), 1);
+        assert_eq!(result.ordered_calls[0].symbol, "callee");
         assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
+        let image = ExecutableImage {
+            segments: vec![
+                Segment {
+                    address: 0x1000,
+                    bytes: vec![
+                        0x97, 0x02, 0x00, 0x00, // auipc t0, 0
+                        0x67, 0x80, 0x02, 0x00, // jalr zero, 0(t0)
+                    ],
+                    memory_size: 8,
+                    writable: true,
+                },
+                Segment {
+                    address: 0x2000,
+                    bytes: [0x6f, 0x00, 0x00, 0x01]
+                        .into_iter()
+                        .chain([0; 12])
+                        .chain([0x67, 0x80, 0x00, 0x00])
+                        .collect(),
+                    memory_size: 20,
+                    writable: true,
+                },
+            ],
+            symbols_by_name: HashMap::from([
+                ("wrapper".to_owned(), 0x1000),
+                ("__call_callee".to_owned(), 0x2000),
+                ("callee".to_owned(), 0x2010),
+            ]),
+            symbols_by_address: BTreeMap::from([
+                (0x1000, "wrapper".to_owned()),
+                (0x2000, "__call_callee".to_owned()),
+                (0x2010, "callee".to_owned()),
+            ]),
+            call_trampoline_addresses: BTreeSet::from([0x2000]),
+            relocated_calls_by_address: BTreeMap::from([(
+                0x1000,
+                RelocatedCall {
+                    name: "callee".to_owned(),
+                    target: Some(0x2000),
+                },
+            )]),
+            global_pointer: None,
+        };
+        let result = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap();
+        assert_eq!(result.ordered_calls.len(), 1);
+        assert_eq!(result.ordered_calls[0].symbol, "callee");
+    }
+
+    #[test]
+    fn ordered_control_flow_retains_call_multiplicity_and_loop_iterations() {
+        let calls = ExecutableImage {
+            segments: vec![Segment {
+                address: 0x1000,
+                bytes: vec![
+                    0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+                    0xef, 0x00, 0x00, 0x01, // jal ra, 16
+                    0xef, 0x00, 0xc0, 0x00, // jal ra, 12
+                    0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+                    0x67, 0x80, 0x00, 0x00, // ret
+                    0x67, 0x80, 0x00, 0x00, // callee: ret
+                ],
+                memory_size: 24,
+                writable: true,
+            }],
+            symbols_by_name: HashMap::from([
+                ("wrapper".to_owned(), 0x1000),
+                ("callee".to_owned(), 0x1014),
+            ]),
+            symbols_by_address: BTreeMap::from([
+                (0x1000, "wrapper".to_owned()),
+                (0x1014, "callee".to_owned()),
+            ]),
+            call_trampoline_addresses: BTreeSet::new(),
+            relocated_calls_by_address: BTreeMap::new(),
+            global_pointer: None,
+        };
+        let result = execute(&calls, &empty_svd(), "wrapper", Scenario::default()).unwrap();
+        assert_eq!(result.calls.len(), 1);
+        assert_eq!(result.ordered_calls.len(), 2);
+        assert!(
+            result
+                .ordered_calls
+                .iter()
+                .all(|call| call.symbol == "callee")
+        );
+
+        let loop_image = tiny_image(
+            vec![
+                0x13, 0x05, 0x30, 0x00, // addi a0, zero, 3
+                0x13, 0x05, 0xf5, 0xff, // addi a0, a0, -1
+                0xe3, 0x1e, 0x05, 0xfe, // bne a0, zero, -4
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            16,
+        );
+        let result = execute(&loop_image, &empty_svd(), "test", Scenario::default()).unwrap();
+        assert_eq!(result.branches.len(), 2);
+        assert_eq!(
+            result.ordered_branches,
+            vec![(0x1008, true), (0x1008, true), (0x1008, false)]
+        );
+    }
+
+    #[test]
+    fn ordered_timeline_retains_intermediate_ram_values() {
+        let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+        let address = 0x3fff_0000;
+        let mut scenario = Scenario::default();
+        scenario
+            .memory_initial
+            .extend((0..4).map(|offset| (address + offset, 0)));
+        let svd = empty_svd();
+        let mut machine = Machine::new(&image, &svd, 0x1000, scenario);
+
+        machine.write(address, 32, 0x1122_3344).unwrap();
+        assert_eq!(machine.read(address, 32).unwrap(), 0x1122_3344);
+        machine.write(address, 32, 0x5566_7788).unwrap();
+        assert_eq!(machine.read(address, 32).unwrap(), 0x5566_7788);
+
+        assert_eq!(
+            machine.timeline,
+            vec![
+                ExecutionTimelineEvent::RamWrite {
+                    width: 32,
+                    address,
+                    value: 0x1122_3344,
+                },
+                ExecutionTimelineEvent::RamRead {
+                    width: 32,
+                    address,
+                    value: 0x1122_3344,
+                },
+                ExecutionTimelineEvent::RamWrite {
+                    width: 32,
+                    address,
+                    value: 0x5566_7788,
+                },
+                ExecutionTimelineEvent::RamRead {
+                    width: 32,
+                    address,
+                    value: 0x5566_7788,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn execution_session_retains_elf_and_declared_ram_but_not_stack() {
+        let mut image = tiny_image(
+            vec![
+                0x03, 0xa5, 0x05, 0x00, // lw a0, 0(a1)
+                0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+                0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0, 0, 0, 0, // ELF-backed mutable word
+                0x13, 0x01, 0xc1, 0xff, // stack_writer: addi sp, sp, -4
+                0x23, 0x20, 0xa1, 0x00, // stack_writer: sw a0, 0(sp)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            32,
+        );
+        image
+            .symbols_by_name
+            .insert("stack_writer".to_owned(), 0x1014);
+        image
+            .symbols_by_address
+            .insert(0x1014, "stack_writer".to_owned());
+        let svd = empty_svd();
+        let mut session = ExecutionSession::default();
+
+        for expected in [1, 2] {
+            let scenario = Scenario {
+                arguments: vec![0, 0x1010],
+                ..Scenario::default()
+            };
+            let result = session.execute(&image, &svd, "test", scenario).unwrap();
+            assert_eq!(result.return_value, expected);
+        }
+        assert_eq!(session.byte(&image, 0x1010), Some(2));
+
+        let external = 0x2000;
+        let first = Scenario {
+            arguments: vec![0, external],
+            memory_initial: (0..4).map(|offset| (external + offset, 0)).collect(),
+            persistent_memory: vec![MemoryRange {
+                start: external,
+                length: 4,
+            }],
+            ..Scenario::default()
+        };
+        assert_eq!(
+            session
+                .execute(&image, &svd, "test", first)
+                .unwrap()
+                .return_value,
+            1
+        );
+        let second = Scenario {
+            arguments: vec![0, external],
+            ..Scenario::default()
+        };
+        assert_eq!(
+            session
+                .execute(&image, &svd, "test", second)
+                .unwrap()
+                .return_value,
+            2
+        );
+
+        let stack = session
+            .execute(
+                &image,
+                &svd,
+                "stack_writer",
+                Scenario {
+                    arguments: vec![0xdead_beef],
+                    ..Scenario::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            stack
+                .persistent_memory
+                .keys()
+                .all(|address| !execution_stack_contains(*address))
+        );
+    }
+
+    #[test]
+    fn execution_session_invalidates_externally_mutable_ram_between_calls() {
+        let image = tiny_image(
+            vec![
+                0x03, 0xa5, 0x05, 0x00, // lw a0, 0(a1)
+                0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+                0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0, 0, 0, 0,
+            ],
+            20,
+        );
+        let range = MemoryRange {
+            start: 0x1010,
+            length: 4,
+        };
+        let ownership = MemoryOwnership {
+            range,
+            owner: MemoryOwner::SharedUnknown,
+        };
+        let mut session = ExecutionSession::default();
+        let unseeded = Scenario {
+            arguments: vec![0, range.start],
+            memory_ownership: vec![ownership],
+            ..Scenario::default()
+        };
+        let error = session
+            .execute(&image, &empty_svd(), "test", unseeded)
+            .unwrap_err();
+        assert!(error.to_string().contains("externally mutable RAM"));
+
+        let seeded = Scenario {
+            arguments: vec![0, range.start],
+            memory_initial: (0..4)
+                .map(|offset| (range.start + offset, u8::from(offset == 0) * 9))
+                .collect(),
+            ..Scenario::default()
+        };
+        assert_eq!(
+            session
+                .execute(&image, &empty_svd(), "test", seeded)
+                .unwrap()
+                .return_value,
+            10
+        );
+        assert_eq!(session.byte(&image, range.start), None);
+    }
+
+    #[test]
+    fn execution_session_distinguishes_cold_and_warm_reset() {
+        let image = tiny_image(
+            vec![
+                0x03, 0xa5, 0x05, 0x00, // lw a0, 0(a1)
+                0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+                0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0, 0, 0, 0,
+            ],
+            20,
+        );
+        let mut session = ExecutionSession::default();
+        for (reset_policy, expected) in [
+            (ResetPolicy::Continue, 1),
+            (ResetPolicy::Continue, 2),
+            (ResetPolicy::ColdBoot, 1),
+        ] {
+            let result = session
+                .execute(
+                    &image,
+                    &empty_svd(),
+                    "test",
+                    Scenario {
+                        arguments: vec![0, 0x1010],
+                        reset_policy,
+                        ..Scenario::default()
+                    },
+                )
+                .unwrap();
+            assert_eq!(result.return_value, expected);
+        }
+
+        let external = 0x2000;
+        let first = Scenario {
+            arguments: vec![0, external],
+            memory_initial: (0..4).map(|offset| (external + offset, 0)).collect(),
+            persistent_memory: vec![MemoryRange {
+                start: external,
+                length: 4,
+            }],
+            ..Scenario::default()
+        };
+        assert_eq!(
+            session
+                .execute(&image, &empty_svd(), "test", first)
+                .unwrap()
+                .return_value,
+            1
+        );
+        let warm = Scenario {
+            arguments: vec![0, external],
+            reset_policy: ResetPolicy::WarmReset,
+            ..Scenario::default()
+        };
+        assert_eq!(
+            session
+                .execute(&image, &empty_svd(), "test", warm)
+                .unwrap()
+                .return_value,
+            2
+        );
+        assert_eq!(session.byte(&image, 0x1010), Some(0));
+    }
+
+    #[test]
+    fn ownership_conflicts_and_immutable_writes_fail_closed() {
+        let image = tiny_image(
+            vec![
+                0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0, 0, 0, 0,
+            ],
+            12,
+        );
+        let range = MemoryRange {
+            start: 0x1008,
+            length: 4,
+        };
+        let immutable = Scenario {
+            arguments: vec![1, range.start],
+            memory_ownership: vec![MemoryOwnership {
+                range,
+                owner: MemoryOwner::Immutable,
+            }],
+            ..Scenario::default()
+        };
+        let error = execute(&image, &empty_svd(), "test", immutable).unwrap_err();
+        assert!(error.to_string().contains("immutable RAM"));
+
+        let mut session = ExecutionSession::default();
+        session
+            .execute(
+                &image,
+                &empty_svd(),
+                "test",
+                Scenario {
+                    arguments: vec![1, range.start],
+                    memory_ownership: vec![MemoryOwnership {
+                        range,
+                        owner: MemoryOwner::Cpu,
+                    }],
+                    ..Scenario::default()
+                },
+            )
+            .unwrap();
+        let conflict = session
+            .execute(
+                &image,
+                &empty_svd(),
+                "test",
+                Scenario {
+                    arguments: vec![1, range.start],
+                    memory_ownership: vec![MemoryOwnership {
+                        range,
+                        owner: MemoryOwner::Dma,
+                    }],
+                    ..Scenario::default()
+                },
+            )
+            .unwrap_err();
+        assert!(conflict.to_string().contains("conflicting RAM ownership"));
     }
 
     #[test]
@@ -1515,6 +2282,18 @@ mod tests {
     }
 
     #[test]
+    fn writes_to_read_only_elf_memory_fail_closed() {
+        let mut image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 8);
+        image.segments[0].writable = false;
+        let svd = empty_svd();
+        let mut machine = Machine::new(&image, &svd, 0x1000, Scenario::default());
+
+        let error = machine.write(0x1004, 8, 0x5a).unwrap_err();
+        assert!(error.to_string().contains("read-only ELF memory"));
+        assert!(machine.persistent_memory().is_empty());
+    }
+
+    #[test]
     fn execution_rejects_extra_arguments_and_unconsumed_mmio_reads() {
         let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
         let too_many = Scenario {
@@ -1564,7 +2343,7 @@ mod tests {
 
     #[test]
     fn reports_only_observed_memory_mutations() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
         let svd = SvdMap::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
@@ -1594,7 +2373,7 @@ mod tests {
 
     #[test]
     fn observed_memory_alias_reports_normalized_addresses() {
-        let image = ExecutableImage::load(&oracle()).unwrap();
+        let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
         let svd = SvdMap::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")

@@ -8,20 +8,23 @@ mod binary;
 mod dispositions;
 mod emulator;
 mod profiles;
+mod semantic;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use object::{Object, ObjectSection};
 use rv_asm::{Inst, Reg};
 use sha2::{Digest, Sha256};
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
+type EvidenceSet = BTreeMap<(String, String), String>;
 
 const ESP32S31_LIBPHY_SHA256: &str =
     "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223";
@@ -29,30 +32,23 @@ const ESP32S31_REV0_ROM_LOCAL_SHA256: &str =
     "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542";
 const ESP32S31_REV0_ROM_CANONICAL_SHA256: &str =
     "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87";
-const ESP32S31_LINKED_LIBPHY_PROVENANCE: &[u8] =
-    b"libphy.a sha256=51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223";
+const ESP32S31_LINKED_LIBPHY_SHA256: &str =
+    "a38df8f225107786bbb77c03cdc2ec62d8aa68178d8412279745073c4a991524";
+
+fn is_pinned_vendor_digest(digest: &str) -> bool {
+    matches!(
+        digest,
+        ESP32S31_LIBPHY_SHA256
+            | ESP32S31_REV0_ROM_LOCAL_SHA256
+            | ESP32S31_REV0_ROM_CANONICAL_SHA256
+            | ESP32S31_LINKED_LIBPHY_SHA256
+    )
+}
 
 fn pinned_vendor_digest(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
     let digest = format!("{:x}", Sha256::digest(&bytes));
-    if !matches!(
-        digest.as_str(),
-        ESP32S31_LIBPHY_SHA256
-            | ESP32S31_REV0_ROM_LOCAL_SHA256
-            | ESP32S31_REV0_ROM_CANONICAL_SHA256
-    ) {
-        let linked_from_pinned_libphy = if let Ok(file) = object::File::parse(bytes.as_slice()) {
-            file.section_by_name(".note.open_esp_radio.oracle")
-                .and_then(|section| section.data().ok())
-                == Some(ESP32S31_LINKED_LIBPHY_PROVENANCE)
-        } else {
-            false
-        };
-        if linked_from_pinned_libphy {
-            return Ok(format!(
-                "{digest};source-libphy-sha256={ESP32S31_LIBPHY_SHA256}"
-            ));
-        }
+    if !is_pinned_vendor_digest(&digest) {
         return Err(
             format!("vendor artifact is not a pinned ESP32-S31 oracle: sha256 {digest}").into(),
         );
@@ -122,6 +118,28 @@ impl SvdMap {
         Ok(Self { registers, windows })
     }
 
+    fn load_all(paths: &[PathBuf]) -> Result<Self> {
+        let mut combined = Self {
+            registers: Vec::new(),
+            windows: Vec::new(),
+        };
+        for path in paths {
+            let map = Self::load(path)?;
+            combined.registers.extend(map.registers);
+            combined.windows.extend(map.windows);
+        }
+        combined
+            .registers
+            .sort_by_key(|register| (register.address, register.name.clone()));
+        combined.registers.dedup();
+        reject_register_collisions(&combined.registers)?;
+        combined
+            .windows
+            .sort_by_key(|window| (window.start, window.end));
+        combined.windows.dedup();
+        Ok(combined)
+    }
+
     fn contains_mmio(&self, address: u32) -> bool {
         self.windows
             .iter()
@@ -141,6 +159,292 @@ impl SvdMap {
             names.join("|")
         }
     }
+}
+
+fn reject_register_collisions(registers: &[Register]) -> Result<()> {
+    for registers in registers.chunk_by(|left, right| left.address == right.address) {
+        if registers.len() > 1 {
+            let names = registers
+                .iter()
+                .map(|register| register.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "conflicting SVD register definitions at {:#010x}: {names}",
+                registers[0].address
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+fn record_evidence(
+    evidence: &mut EvidenceSet,
+    source: &str,
+    symbol: &str,
+    kind: impl Into<String>,
+) -> Result<()> {
+    let key = (source.to_owned(), symbol.to_owned());
+    let kind = kind.into();
+    if let Some(previous) = evidence.insert(key, kind.clone())
+        && previous != kind
+    {
+        return Err(
+            format!("conflicting evidence for {source} {symbol}: {previous} and {kind}").into(),
+        );
+    }
+    Ok(())
+}
+
+fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
+    let text = fs::read_to_string(path)?;
+    let mut evidence = EvidenceSet::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line_number = index + 1;
+        let line = raw.split_once('#').map_or(raw, |(before, _)| before).trim();
+        if line.is_empty() {
+            continue;
+        }
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let ["evidence", source, symbol, kind] = fields.as_slice() else {
+            return Err(format!(
+                "invalid evidence baseline line {line_number}; expected: evidence SOURCE SYMBOL KIND"
+            )
+            .into());
+        };
+        record_evidence(&mut evidence, source, symbol, *kind)?;
+    }
+    if evidence.is_empty() {
+        return Err(format!("evidence baseline {} is empty", path.display()).into());
+    }
+    Ok(evidence)
+}
+
+fn check_evidence_baseline(expected: &EvidenceSet, actual: &EvidenceSet) -> bool {
+    let mut passed = true;
+    for ((source, symbol), expected_kind) in expected {
+        match actual.get(&(source.clone(), symbol.clone())) {
+            Some(actual_kind) if actual_kind == expected_kind => {}
+            Some(actual_kind) => {
+                passed = false;
+                println!(
+                    "EVIDENCE-REGRESSION\t{source}\t{symbol}\texpected={expected_kind}\tactual={actual_kind}"
+                );
+            }
+            None => {
+                passed = false;
+                println!(
+                    "EVIDENCE-REGRESSION\t{source}\t{symbol}\texpected={expected_kind}\tactual=missing"
+                );
+            }
+        }
+    }
+    for ((source, symbol), kind) in actual {
+        if !expected.contains_key(&(source.clone(), symbol.clone())) {
+            println!("EVIDENCE-ADDITION\t{source}\t{symbol}\t{kind}");
+        }
+    }
+    println!(
+        "EVIDENCE-BASELINE\t{}\texpected={}\tactual={}",
+        if passed { "PASS" } else { "FAIL" },
+        expected.len(),
+        actual.len()
+    );
+    passed
+}
+
+fn print_evidence(evidence: &EvidenceSet) {
+    for ((source, symbol), kind) in evidence {
+        println!("EVIDENCE\t{source}\t{symbol}\t{kind}");
+    }
+}
+
+fn write_json_string(output: &mut String, value: &str) {
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character.is_control() => {
+                write!(output, "\\u{:04x}", character as u32)
+                    .expect("writing to String cannot fail");
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('"');
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the report boundary deliberately receives a complete immutable proof record"
+)]
+fn write_verification_json_report(
+    path: &Path,
+    gate: VerificationGate,
+    summary: VerifySummary,
+    orphan_probes: usize,
+    evidence_baseline_passed: bool,
+    passed: bool,
+    evidence: &EvidenceSet,
+    artifacts: &[(&str, &Path)],
+    qualification_gaps: &[&dispositions::Entry],
+) -> Result<()> {
+    let mut output = String::new();
+    output.push_str("{\n  \"schema_version\": 1,\n  \"command\": \"verify-all\",\n");
+    output.push_str("  \"gate\": ");
+    write_json_string(
+        &mut output,
+        match gate {
+            VerificationGate::Completion => "completion",
+            VerificationGate::Regression { .. } => "regression",
+        },
+    );
+    writeln!(output, ",\n  \"passed\": {passed},").expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "  \"evidence_baseline_passed\": {evidence_baseline_passed},"
+    )
+    .expect("writing to String cannot fail");
+    output.push_str("  \"summary\": {\n");
+    for (name, value, trailing) in [
+        ("vendor_functions", summary.vendor_functions, true),
+        ("matched", summary.matched, true),
+        ("symbolic_matches", summary.symbolic_matches, true),
+        ("scenario_matches", summary.scenario_matches, true),
+        ("state_matches", summary.state_matches, true),
+        ("composition_matches", summary.composition_matches, true),
+        ("mismatched", summary.mismatched, true),
+        ("incomplete", summary.incomplete, true),
+        ("missing", summary.missing, true),
+        (
+            "implemented_unqualified",
+            summary.implemented_unqualified,
+            true,
+        ),
+        ("not_yet_ported", summary.not_yet_ported, true),
+        ("orphan_rust_probes", orphan_probes, false),
+    ] {
+        writeln!(
+            output,
+            "    \"{name}\": {value}{}",
+            if trailing { "," } else { "" }
+        )
+        .expect("writing to String cannot fail");
+    }
+    output.push_str("  },\n  \"qualification_gaps\": [\n");
+    for (index, gap) in qualification_gaps.iter().enumerate() {
+        output.push_str("    {\"source\": ");
+        write_json_string(&mut output, &gap.source);
+        output.push_str(", \"symbol\": ");
+        write_json_string(&mut output, &gap.symbol);
+        output.push_str(", \"rust_component\": ");
+        write_json_string(
+            &mut output,
+            gap.rust_component.as_deref().unwrap_or("missing"),
+        );
+        output.push_str(", \"blocked_by\": [");
+        for (blocker_index, (source, symbol)) in gap.qualification_blockers.iter().enumerate() {
+            if blocker_index != 0 {
+                output.push_str(", ");
+            }
+            output.push_str("{\"source\": ");
+            write_json_string(&mut output, source);
+            output.push_str(", \"symbol\": ");
+            write_json_string(&mut output, symbol);
+            output.push('}');
+        }
+        output.push_str("]}");
+        output.push_str(if index + 1 == qualification_gaps.len() {
+            "\n"
+        } else {
+            ",\n"
+        });
+    }
+    output.push_str("  ],\n  \"artifacts\": [\n");
+    for (index, (role, artifact)) in artifacts.iter().enumerate() {
+        let bytes = fs::read(artifact)?;
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        output.push_str("    {\"role\": ");
+        write_json_string(&mut output, role);
+        output.push_str(", \"path\": ");
+        write_json_string(&mut output, &artifact.display().to_string());
+        output.push_str(", \"sha256\": ");
+        write_json_string(&mut output, &digest);
+        output.push('}');
+        output.push_str(if index + 1 == artifacts.len() {
+            "\n"
+        } else {
+            ",\n"
+        });
+    }
+    output.push_str("  ],\n  \"evidence\": [\n");
+    for (index, ((source, symbol), kind)) in evidence.iter().enumerate() {
+        output.push_str("    {\"source\": ");
+        write_json_string(&mut output, source);
+        output.push_str(", \"symbol\": ");
+        write_json_string(&mut output, symbol);
+        output.push_str(", \"kind\": ");
+        write_json_string(&mut output, kind);
+        output.push('}');
+        output.push_str(if index + 1 == evidence.len() {
+            "\n"
+        } else {
+            ",\n"
+        });
+    }
+    output.push_str("  ]\n}\n");
+    fs::write(path, output)?;
+    println!("JSON-REPORT\t{}", path.display());
+    Ok(())
+}
+
+fn profile_evidence(profile: &profiles::Profile) -> String {
+    // `Profile` is composed only of ordered vectors and ordered maps. Hashing
+    // its parsed canonical Debug form binds evidence to every scenario input,
+    // observation and response without making comments or whitespace part of
+    // the contract identity. The repository pins the Rust toolchain that
+    // defines this representation.
+    let canonical = format!("{profile:#?}");
+    format!(
+        "{}/profile:{}/sha256:{:x}",
+        profile.contract.evidence(),
+        profile.name,
+        Sha256::digest(canonical.as_bytes())
+    )
+}
+
+fn semantic_contract_digest_from_sources(label: &str, sources: &[(&str, &str)]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"open-esp-radio semantic contract\0");
+    digest.update(label.as_bytes());
+    for (name, source) in sources {
+        digest.update([0]);
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(source.as_bytes());
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn semantic_contract_evidence(label: &str) -> String {
+    // Composition evidence must identify the validator that produced it, not
+    // merely a human-maintained version label. `main.rs` owns the scenario
+    // matrix and qualification wiring, `semantic.rs` owns footprints and
+    // normalization, and `emulator.rs` owns execution and persistence.
+    let digest = semantic_contract_digest_from_sources(
+        label,
+        &[
+            ("main.rs", include_str!("main.rs")),
+            ("semantic.rs", include_str!("semantic.rs")),
+            ("emulator.rs", include_str!("emulator.rs")),
+        ],
+    );
+    format!("composition-state-scenario/{label}/sha256:{digest}")
 }
 
 fn child_text<'a, 'input>(node: roxmltree::Node<'a, 'input>, tag: &str) -> Option<&'a str> {
@@ -1484,7 +1788,7 @@ fn print_uncovered(symbol: &str, side: &str, trace: &Trace) -> usize {
 
 fn usage() {
     eprintln!(
-        "usage:\n  open-esp-radio-phy-trace execute --svd PATH --artifact PATH [--companion PATH] --symbol NAME [--concrete-only] [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--observe ADDRESS=LENGTH] [--max-steps COUNT]\n  open-esp-radio-phy-trace execute-compare --svd PATH --vendor-artifact PATH [--vendor-companion PATH] --vendor-symbol NAME --rust-artifact PATH [--rust-companion PATH] --rust-symbol NAME [--compare-return] [--case NAME [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--vendor-ram-symbol ADDRESS=SYMBOL] [--rust-ram-symbol ADDRESS=SYMBOL] [--observe ADDRESS=LENGTH] [--max-steps COUNT]]...\n  open-esp-radio-phy-trace verify-profiles --svd PATH --profiles PATH --vendor-artifact PATH [--vendor-companion PATH] --rust-artifact PATH [--rust-companion PATH]\n  open-esp-radio-phy-trace analyze --svd PATH --artifact PATH [--symbol-prefix PREFIX]\n  open-esp-radio-phy-trace verify --svd PATH --vendor-artifact PATH [--vendor-inventory PATH] --rust-artifact PATH [--profiles PATH] [--vendor-companion PATH] [--rust-companion PATH] [--vendor-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT]\n  open-esp-radio-phy-trace verify-all --svd PATH --rom-artifact PATH --archive-artifact PATH --archive-inventory PATH --rust-artifact PATH [--profiles PATH] [--dispositions PATH] [--rom-companion PATH] [--archive-companion PATH] [--rust-companion PATH] [--rom-prefix PREFIX] [--archive-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT]\n  open-esp-radio-phy-trace extract --svd PATH --artifact PATH [--member NAME] --symbol NAME\n  open-esp-radio-phy-trace compare --svd PATH --left-artifact PATH [--left-member NAME] --left-symbol NAME --right-artifact PATH [--right-member NAME] --right-symbol NAME"
+        "usage:\n  open-esp-radio-phy-trace execute --svd PATH [--svd PATH]... --artifact PATH [--companion PATH] --symbol NAME [--concrete-only] [--timeline] [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--observe ADDRESS=LENGTH] [--max-steps COUNT]\n  open-esp-radio-phy-trace execute-compare --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-companion PATH] --vendor-symbol NAME --rust-artifact PATH [--rust-companion PATH] --rust-symbol NAME [--compare-return] [--case NAME [--arg VALUE] [--mmio ADDRESS=VALUE] [--read ADDRESS=VALUE] [--ram ADDRESS=VALUE] [--vendor-ram-symbol ADDRESS=SYMBOL] [--rust-ram-symbol ADDRESS=SYMBOL] [--observe ADDRESS=LENGTH] [--max-steps COUNT]]...\n  open-esp-radio-phy-trace qualify-esp32s31-channel --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace qualify-esp32s31-rf-init --svd PATH [--svd PATH]... --vendor-artifact PATH --vendor-companion PATH\n  open-esp-radio-phy-trace verify-profiles --svd PATH [--svd PATH]... --profiles PATH --vendor-artifact PATH [--vendor-companion PATH] --rust-artifact PATH [--rust-companion PATH]\n  open-esp-radio-phy-trace analyze --svd PATH [--svd PATH]... --artifact PATH [--symbol-prefix PREFIX]\n  open-esp-radio-phy-trace verify --svd PATH [--svd PATH]... --vendor-artifact PATH [--vendor-inventory PATH] --rust-artifact PATH [--profiles PATH] [--vendor-companion PATH] [--rust-companion PATH] [--vendor-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH]\n  open-esp-radio-phy-trace verify-all --svd PATH [--svd PATH]... --rom-artifact PATH --archive-artifact PATH --archive-inventory PATH --rust-artifact PATH [--profiles PATH] [--dispositions PATH] [--rom-companion PATH] [--archive-companion PATH] [--rust-companion PATH] [--rom-prefix PREFIX] [--archive-prefix PREFIX] [--rust-prefix PREFIX] [--gate completion|regression] [--match-floor COUNT] [--evidence-baseline PATH] [--json-report PATH]\n  open-esp-radio-phy-trace extract --svd PATH [--svd PATH]... --artifact PATH [--member NAME] --symbol NAME\n  open-esp-radio-phy-trace compare --svd PATH [--svd PATH]... --left-artifact PATH [--left-member NAME] --left-symbol NAME --right-artifact PATH [--right-member NAME] --right-symbol NAME"
     );
 }
 
@@ -1831,6 +2135,10 @@ fn compare_execution_scenarios(
         "ORACLE\t{}\tsha256={vendor_digest}",
         vendor.artifact.display()
     );
+    if let Some(companion) = vendor.companion {
+        let companion_digest = pinned_vendor_digest(companion)?;
+        println!("ORACLE\t{}\tsha256={companion_digest}", companion.display());
+    }
     let mut vendor_image = emulator::ExecutableImage::load(vendor.artifact)?;
     if let Some(companion) = vendor.companion {
         vendor_image.add_companion(companion)?;
@@ -2041,6 +2349,7 @@ struct VerifySummary {
     symbolic_matches: usize,
     scenario_matches: usize,
     state_matches: usize,
+    composition_matches: usize,
     mismatched: usize,
     incomplete: usize,
     missing: usize,
@@ -2099,6 +2408,7 @@ impl VerifySummary {
         self.symbolic_matches += other.symbolic_matches;
         self.scenario_matches += other.scenario_matches;
         self.state_matches += other.state_matches;
+        self.composition_matches += other.composition_matches;
         self.mismatched += other.mismatched;
         self.incomplete += other.incomplete;
         self.missing += other.missing;
@@ -2141,6 +2451,10 @@ fn print_protocol_inventory(
     );
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "source verification keeps all artifact and policy inputs explicit"
+)]
 fn verify_source(
     svd: &SvdMap,
     source: VerifySource<'_>,
@@ -2149,6 +2463,7 @@ fn verify_source(
     rust_prefix: &str,
     execution_profiles: &[profiles::Profile],
     disposition_manifest: Option<&dispositions::Manifest>,
+    evidence: &mut EvidenceSet,
 ) -> Result<VerifySummary> {
     let vendor_digest = pinned_vendor_digest(source.artifact)?;
     println!(
@@ -2156,6 +2471,22 @@ fn verify_source(
         source.name,
         source.artifact.display()
     );
+    if let Some(inventory) = source.inventory.filter(|path| *path != source.artifact) {
+        let inventory_digest = pinned_vendor_digest(inventory)?;
+        println!(
+            "ORACLE\t{}-inventory\t{}\tsha256={inventory_digest}",
+            source.name,
+            inventory.display()
+        );
+    }
+    if let Some(companion) = source.companion {
+        let companion_digest = pinned_vendor_digest(companion)?;
+        println!(
+            "ORACLE\t{}-companion\t{}\tsha256={companion_digest}",
+            source.name,
+            companion.display()
+        );
+    }
     let vendor_symbols = vendor_symbols(source)?;
     let rust_symbols = list_code_symbols(rust_artifact, rust_prefix)?;
     let mut profiled_vendor_symbols = BTreeSet::new();
@@ -2226,27 +2557,187 @@ fn verify_source(
             .get(source_qualified_suffix.as_str())
             .or_else(|| rust_by_suffix.get(suffix))
         else {
-            summary.missing += 1;
             if let Some(manifest) = disposition_manifest {
                 let resolved = manifest.resolve(source.name, &vendor.name);
                 if resolved.disposition.is_implemented() {
-                    summary.implemented_unqualified += 1;
                     let entry = resolved
                         .entry
                         .expect("implemented disposition must be an exact function entry");
-                    println!(
-                        "FUNCTION\t{}\t{}\tIMPLEMENTED-UNQUALIFIED\tdisposition={}\tprotocol={}\trust-component={}\thil-evidence={}\tmissing-semantic-contract",
-                        source.name,
-                        vendor.name,
-                        resolved.disposition.label(),
-                        resolved.protocol.label(),
-                        entry
-                            .rust_component
-                            .as_deref()
-                            .expect("implemented entry has a Rust component"),
-                        entry.hil_evidence.as_deref().unwrap_or("none"),
-                    );
+                    if let Some(contract) = entry.semantic_contract {
+                        let matched = match contract {
+                            dispositions::SemanticContract::Esp32s31Channel => {
+                                if source.name != "archive" || vendor.name != "phy_chip_set_chan" {
+                                    return Err(format!(
+                                        "semantic contract {} cannot qualify {} {}",
+                                        contract.label(),
+                                        source.name,
+                                        vendor.name,
+                                    )
+                                    .into());
+                                }
+                                let companion = source.companion.ok_or_else(|| {
+                                    format!(
+                                        "semantic contract {} requires an archive companion",
+                                        contract.label()
+                                    )
+                                })?;
+                                qualify_esp32s31_channel(svd, source.artifact, companion, false)?
+                            }
+                            dispositions::SemanticContract::Esp32s31RfInit => {
+                                if source.name != "archive" || vendor.name != "phy_rf_init" {
+                                    return Err(format!(
+                                        "semantic contract {} cannot qualify {} {}",
+                                        contract.label(),
+                                        source.name,
+                                        vendor.name,
+                                    )
+                                    .into());
+                                }
+                                let companion = source.companion.ok_or_else(|| {
+                                    format!(
+                                        "semantic contract {} requires an archive companion",
+                                        contract.label()
+                                    )
+                                })?;
+                                qualify_esp32s31_rf_init(svd, source.artifact, companion, false)?
+                            }
+                            dispositions::SemanticContract::Esp32s31BluetoothTxDc => {
+                                if source.name != "archive" || vendor.name != "phy_bt_txdc_cal_new"
+                                {
+                                    return Err(format!(
+                                        "semantic contract {} cannot qualify {} {}",
+                                        contract.label(),
+                                        source.name,
+                                        vendor.name,
+                                    )
+                                    .into());
+                                }
+                                let companion = source.companion.ok_or_else(|| {
+                                    format!(
+                                        "semantic contract {} requires an archive companion",
+                                        contract.label()
+                                    )
+                                })?;
+                                qualify_esp32s31_bluetooth_txdc(
+                                    svd,
+                                    source.artifact,
+                                    companion,
+                                    false,
+                                )?
+                            }
+                            dispositions::SemanticContract::Esp32s31BluetoothTxDcPwdet => {
+                                if source.name != "archive"
+                                    || vendor.name != "phy_txdc_cal_pwdet_init"
+                                {
+                                    return Err(format!(
+                                        "semantic contract {} cannot qualify {} {}",
+                                        contract.label(),
+                                        source.name,
+                                        vendor.name,
+                                    )
+                                    .into());
+                                }
+                                let companion = source.companion.ok_or_else(|| {
+                                    format!(
+                                        "semantic contract {} requires an archive companion",
+                                        contract.label()
+                                    )
+                                })?;
+                                qualify_esp32s31_bluetooth_txdc_pwdet(
+                                    svd,
+                                    source.artifact,
+                                    companion,
+                                    false,
+                                )?
+                            }
+                            dispositions::SemanticContract::Esp32s31BluetoothTxPower => {
+                                if source.name != "archive"
+                                    || vendor.name != "phy_bt_tx_pwctrl_init"
+                                {
+                                    return Err(format!(
+                                        "semantic contract {} cannot qualify {} {}",
+                                        contract.label(),
+                                        source.name,
+                                        vendor.name,
+                                    )
+                                    .into());
+                                }
+                                let companion = source.companion.ok_or_else(|| {
+                                    format!(
+                                        "semantic contract {} requires an archive companion",
+                                        contract.label()
+                                    )
+                                })?;
+                                qualify_esp32s31_bluetooth_tx_power(
+                                    svd,
+                                    source.artifact,
+                                    companion,
+                                    false,
+                                )?
+                            }
+                        };
+                        if matched {
+                            summary.matched += 1;
+                            summary.composition_matches += 1;
+                            record_evidence(
+                                evidence,
+                                source.name,
+                                &vendor.name,
+                                semantic_contract_evidence(contract.label()),
+                            )?;
+                            println!(
+                                "FUNCTION\t{}\t{}\tMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}\thil-evidence={}",
+                                source.name,
+                                vendor.name,
+                                entry
+                                    .rust_component
+                                    .as_deref()
+                                    .expect("implemented entry has a Rust component"),
+                                contract.label(),
+                                entry.hil_evidence.as_deref().unwrap_or("none"),
+                            );
+                        } else {
+                            summary.mismatched += 1;
+                            println!(
+                                "FUNCTION\t{}\t{}\tMISMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}",
+                                source.name,
+                                vendor.name,
+                                entry
+                                    .rust_component
+                                    .as_deref()
+                                    .expect("implemented entry has a Rust component"),
+                                contract.label(),
+                            );
+                        }
+                    } else {
+                        summary.missing += 1;
+                        summary.implemented_unqualified += 1;
+                        let qualification_blockers = entry
+                            .qualification_blockers
+                            .iter()
+                            .map(|(source, symbol)| format!("{source}:{symbol}"))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        println!(
+                            "FUNCTION\t{}\t{}\tIMPLEMENTED-UNQUALIFIED\tdisposition={}\tprotocol={}\trust-component={}\thil-evidence={}\tqualification-blockers={}\tmissing-semantic-contract",
+                            source.name,
+                            vendor.name,
+                            resolved.disposition.label(),
+                            resolved.protocol.label(),
+                            entry
+                                .rust_component
+                                .as_deref()
+                                .expect("implemented entry has a Rust component"),
+                            entry.hil_evidence.as_deref().unwrap_or("none"),
+                            if qualification_blockers.is_empty() {
+                                "none"
+                            } else {
+                                &qualification_blockers
+                            },
+                        );
+                    }
                 } else {
+                    summary.missing += 1;
                     summary.not_yet_ported += 1;
                     println!(
                         "FUNCTION\t{}\t{}\tUNCOVERED\tdisposition={}\tprotocol={}\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
@@ -2259,6 +2750,7 @@ fn verify_source(
                     );
                 }
             } else {
+                summary.missing += 1;
                 println!(
                     "FUNCTION\t{}\t{}\tUNCOVERED\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
                     source.name, vendor.name, rust_prefix, rust_prefix
@@ -2311,6 +2803,12 @@ fn verify_source(
                         profiles::ProfileContract::Scenario => summary.scenario_matches += 1,
                         profiles::ProfileContract::State => summary.state_matches += 1,
                     }
+                    record_evidence(
+                        evidence,
+                        source.name,
+                        &vendor.name,
+                        profile_evidence(profile),
+                    )?;
                 }
                 ComparisonVerdict::Mismatch => summary.mismatched += 1,
                 ComparisonVerdict::Incomplete => summary.incomplete += 1,
@@ -2358,6 +2856,7 @@ fn verify_source(
         {
             summary.matched += 1;
             summary.symbolic_matches += 1;
+            record_evidence(evidence, source.name, &vendor.name, "symbolic")?;
             println!(
                 "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=symbolic\tevents={}\treturn={}",
                 source.name,
@@ -2379,13 +2878,14 @@ fn verify_source(
         }
     }
     println!(
-        "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
+        "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
         source.name,
         summary.vendor_functions,
         summary.matched,
         summary.symbolic_matches,
         summary.scenario_matches,
         summary.state_matches,
+        summary.composition_matches,
         summary.mismatched,
         summary.incomplete,
         summary.missing,
@@ -2431,36 +2931,670 @@ fn rust_probe_suffix_matches(source: &str, vendor_suffix: &str, rust_suffix: &st
             == Some(vendor_suffix)
 }
 
+fn qualify_esp32s31_channel(
+    svd: &SvdMap,
+    vendor_artifact: &Path,
+    vendor_companion: &Path,
+    print_oracles: bool,
+) -> Result<bool> {
+    let artifact_digest = pinned_vendor_digest(vendor_artifact)?;
+    let companion_digest = pinned_vendor_digest(vendor_companion)?;
+    if print_oracles {
+        println!(
+            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
+            vendor_artifact.display()
+        );
+        println!(
+            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
+            vendor_companion.display()
+        );
+    }
+
+    let mut image = emulator::ExecutableImage::load(vendor_artifact)?;
+    image.add_companion(vendor_companion)?;
+    let phy_param = image
+        .symbol_address("phy_param")
+        .ok_or("vendor artifact has no phy_param symbol")?;
+    let phy_functions_pointer = image
+        .symbol_address("g_phyFuns")
+        .ok_or("vendor artifact has no g_phyFuns symbol")?;
+
+    let mut cases = Vec::new();
+    for channel in 1_u16..=13 {
+        cases.push((format!("channel-{channel}-cbw-0"), channel, 0_u8));
+        cases.push((format!("channel-{channel}-cbw-1"), channel, 1_u8));
+        cases.push((
+            format!("frequency-{}-cbw-0", 2_407 + channel * 5),
+            2_407 + channel * 5,
+            0_u8,
+        ));
+    }
+    for frequency in [2_413_u16, 2_439, 2_476] {
+        for cbw in [0_u8, 1] {
+            cases.push((
+                format!("off-grid-frequency-{frequency}-cbw-{cbw}"),
+                frequency,
+                cbw,
+            ));
+        }
+    }
+    // A reproducible generated tail exercises state carry-over under a less
+    // regular sequence than the reviewed edge matrix. Keep the seed and LCG
+    // fixed so a failure is directly replayable from its printed case name.
+    let mut generated = 0x6d2b_79f5_u32;
+    for index in 0..32 {
+        generated = generated
+            .wrapping_mul(1_664_525)
+            .wrapping_add(1_013_904_223);
+        let frequency = 2_412 + ((generated >> 8) % 65) as u16;
+        let cbw = (generated >> 31) as u8;
+        cases.push((
+            format!("generated-{index:02}-seed-{generated:08x}-frequency-{frequency}-cbw-{cbw}"),
+            frequency,
+            cbw,
+        ));
+    }
+
+    let mut all_branches = BTreeSet::new();
+    let mut all_calls = BTreeSet::new();
+    let mut total_steps = 0_u64;
+    let mut passed = 0_usize;
+    let mut reported_full_diff = false;
+    let total = cases.len();
+    let mut vendor_session = emulator::ExecutionSession::default();
+    let mut rust_state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    for (case_index, (name, channel_or_frequency, cbw)) in cases.into_iter().enumerate() {
+        let mut scenario = semantic::vendor_channel_scenario(
+            channel_or_frequency,
+            cbw,
+            phy_param,
+            phy_functions_pointer,
+        )?;
+        scenario.reset_policy = if case_index == 0 {
+            emulator::ResetPolicy::ColdBoot
+        } else {
+            emulator::ResetPolicy::Continue
+        };
+        let result = vendor_session.execute(&image, svd, "phy_chip_set_chan", scenario)?;
+        let unmapped: BTreeSet<_> = result
+            .events
+            .iter()
+            .filter_map(unmapped_execution_address)
+            .collect();
+        if !unmapped.is_empty() {
+            for address in &unmapped {
+                println!("SEMANTIC-UNCOVERED\t{name}\tunmapped-mmio\t{address:#010x}");
+            }
+            println!(
+                "QUALIFICATION-CASE\t{name}\tINCOMPLETE\tunmapped-mmio={}",
+                unmapped.len()
+            );
+            continue;
+        }
+        let footprint = semantic::vendor_channel_state_footprint(&result, phy_param)?;
+        let vendor_events =
+            semantic::normalize_vendor_channel(&image, &result, phy_param, channel_or_frequency)?;
+        let (rust_events, next_state) =
+            semantic::rust_channel_events_with_state(rust_state, channel_or_frequency, cbw)?;
+        rust_state = next_state;
+        if vendor_events != rust_events {
+            let divergence = vendor_events
+                .iter()
+                .zip(&rust_events)
+                .position(|(vendor, rust)| vendor != rust)
+                .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
+            println!(
+                "SEMANTIC-DIFF\t{name}\tindex={divergence}\tvendor={:?}\trust={:?}",
+                vendor_events.get(divergence),
+                rust_events.get(divergence),
+            );
+            if !reported_full_diff {
+                for (index, event) in vendor_events.iter().enumerate() {
+                    println!("SEMANTIC-EVENT\t{name}\tvendor\t{index}\t{event:?}");
+                }
+                for (index, event) in rust_events.iter().enumerate() {
+                    println!("SEMANTIC-EVENT\t{name}\trust\t{index}\t{event:?}");
+                }
+                reported_full_diff = true;
+            }
+            println!(
+                "QUALIFICATION-CASE\t{name}\tMISMATCH\tvendor-events={}\trust-events={}",
+                vendor_events.len(),
+                rust_events.len(),
+            );
+            continue;
+        }
+
+        passed += 1;
+        total_steps = total_steps.saturating_add(result.steps);
+        all_branches.extend(result.branches.iter().copied());
+        all_calls.extend(result.calls.iter().cloned());
+        println!(
+            "QUALIFICATION-CASE\t{name}\tSTATE-SCENARIO-MATCH\tevents={}\tsteps={}\tbranch-outcomes={}\tbranch-events={}\tcalls={}\tcall-events={}\tstate-read-bytes={}\tstate-written-bytes={}\tstate-ranges={}",
+            vendor_events.len(),
+            result.steps,
+            result.branches.len(),
+            result.ordered_branches.len(),
+            result.calls.len(),
+            result.ordered_calls.len(),
+            footprint.read_bytes,
+            footprint.written_bytes,
+            footprint.classified_ranges,
+        );
+    }
+    let verdict = if passed == total {
+        "STATE-SCENARIO-MATCH"
+    } else {
+        "FAIL"
+    };
+    println!(
+        "QUALIFICATION-SUMMARY\tphy_chip_set_chan\t{verdict}\tscenarios={total}\tmatched={passed}\tfailed={}\tsteps={total_steps}\tbranch-outcomes={}\tcalls={}",
+        total - passed,
+        all_branches.len(),
+        all_calls.len(),
+    );
+    Ok(passed == total)
+}
+
+fn qualify_esp32s31_rf_init(
+    svd: &SvdMap,
+    vendor_artifact: &Path,
+    vendor_companion: &Path,
+    print_oracles: bool,
+) -> Result<bool> {
+    let artifact_digest = pinned_vendor_digest(vendor_artifact)?;
+    let companion_digest = pinned_vendor_digest(vendor_companion)?;
+    if print_oracles {
+        println!(
+            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
+            vendor_artifact.display()
+        );
+        println!(
+            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
+            vendor_companion.display()
+        );
+    }
+
+    let mut image = emulator::ExecutableImage::load(vendor_artifact)?;
+    image.add_companion(vendor_companion)?;
+    let phy_param = image
+        .symbol_address("phy_param")
+        .ok_or("vendor artifact has no phy_param symbol")?;
+    let phy_functions_pointer = image
+        .symbol_address("g_phyFuns")
+        .ok_or("vendor artifact has no g_phyFuns symbol")?;
+
+    let mut vendor_session = emulator::ExecutionSession::default();
+    let mut rust_state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut passed = 0_usize;
+    let mut total_steps = 0_u64;
+    let mut all_branches = BTreeSet::new();
+    let mut all_calls = BTreeSet::new();
+    let cases = ["cold-image", "retained-state"];
+    for (case_index, name) in cases.into_iter().enumerate() {
+        let mut scenario = semantic::vendor_rf_init_scenario(phy_param, phy_functions_pointer);
+        scenario.reset_policy = if case_index == 0 {
+            emulator::ResetPolicy::ColdBoot
+        } else {
+            emulator::ResetPolicy::Continue
+        };
+        let result = vendor_session.execute(&image, svd, "phy_rf_init", scenario)?;
+        let unmapped: BTreeSet<_> = result
+            .events
+            .iter()
+            .filter_map(unmapped_execution_address)
+            .collect();
+        if !unmapped.is_empty() {
+            for address in &unmapped {
+                println!("SEMANTIC-UNCOVERED\t{name}\tunmapped-mmio\t{address:#010x}");
+            }
+            println!(
+                "QUALIFICATION-CASE\t{name}\tINCOMPLETE\tunmapped-mmio={}",
+                unmapped.len()
+            );
+            continue;
+        }
+
+        let footprint = semantic::vendor_rf_init_state_footprint(&result, phy_param)?;
+        let vendor_events = semantic::normalize_vendor_rf_init(&image, &result, phy_param)?;
+        let (rust_events, next_state) = semantic::rust_rf_init_events(rust_state)?;
+        rust_state = next_state;
+        if vendor_events != rust_events {
+            let divergence = vendor_events
+                .iter()
+                .zip(&rust_events)
+                .position(|(vendor, rust)| vendor != rust)
+                .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
+            println!(
+                "SEMANTIC-DIFF\t{name}\tindex={divergence}\tvendor={:?}\trust={:?}",
+                vendor_events.get(divergence),
+                rust_events.get(divergence),
+            );
+            for (index, event) in vendor_events.iter().enumerate() {
+                println!("SEMANTIC-EVENT\t{name}\tvendor\t{index}\t{event:?}");
+            }
+            for (index, event) in rust_events.iter().enumerate() {
+                println!("SEMANTIC-EVENT\t{name}\trust\t{index}\t{event:?}");
+            }
+            println!(
+                "QUALIFICATION-CASE\t{name}\tMISMATCH\tvendor-events={}\trust-events={}",
+                vendor_events.len(),
+                rust_events.len(),
+            );
+            continue;
+        }
+
+        let retained_rc = vendor_session
+            .byte(&image, phy_param + 0xa6)
+            .ok_or("persistent vendor session lost phy_param RC state")?
+            & 0x80
+            != 0;
+        if retained_rc != rust_state.rc_calibration_complete() {
+            println!(
+                "QUALIFICATION-CASE\t{name}\tMISMATCH\tpersistent-rc-vendor={retained_rc}\tpersistent-rc-rust={}",
+                rust_state.rc_calibration_complete()
+            );
+            continue;
+        }
+
+        passed += 1;
+        total_steps = total_steps.saturating_add(result.steps);
+        all_branches.extend(result.branches.iter().copied());
+        all_calls.extend(result.calls.iter().cloned());
+        println!(
+            "QUALIFICATION-CASE\t{name}\tSTATE-SEQUENCE-MATCH\tevents={}\tsteps={}\tbranch-outcomes={}\tbranch-events={}\tcalls={}\tcall-events={}\tstate-read-bytes={}\tstate-written-bytes={}\tstate-ranges={}",
+            vendor_events.len(),
+            result.steps,
+            result.branches.len(),
+            result.ordered_branches.len(),
+            result.calls.len(),
+            result.ordered_calls.len(),
+            footprint.read_bytes,
+            footprint.written_bytes,
+            footprint.classified_ranges,
+        );
+    }
+
+    let verdict = if passed == cases.len() {
+        "STATE-SEQUENCE-MATCH"
+    } else {
+        "FAIL"
+    };
+    println!(
+        "QUALIFICATION-SUMMARY\tphy_rf_init\t{verdict}\tscenarios={}\tmatched={passed}\tfailed={}\tsteps={total_steps}\tbranch-outcomes={}\tcalls={}",
+        cases.len(),
+        cases.len() - passed,
+        all_branches.len(),
+        all_calls.len(),
+    );
+    Ok(passed == cases.len())
+}
+
+fn qualify_esp32s31_bluetooth_txdc(
+    svd: &SvdMap,
+    vendor_artifact: &Path,
+    vendor_companion: &Path,
+    print_oracles: bool,
+) -> Result<bool> {
+    let artifact_digest = pinned_vendor_digest(vendor_artifact)?;
+    let companion_digest = pinned_vendor_digest(vendor_companion)?;
+    if print_oracles {
+        println!(
+            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
+            vendor_artifact.display()
+        );
+        println!(
+            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
+            vendor_companion.display()
+        );
+    }
+
+    let mut image = emulator::ExecutableImage::load(vendor_artifact)?;
+    image.add_companion(vendor_companion)?;
+    let phy_param = image
+        .symbol_address("phy_param")
+        .ok_or("vendor artifact has no phy_param symbol")?;
+    let phy_functions_pointer = image
+        .symbol_address("g_phyFuns")
+        .ok_or("vendor artifact has no g_phyFuns symbol")?;
+    let scenario = semantic::vendor_bluetooth_txdc_scenario(phy_param, phy_functions_pointer);
+    let result = emulator::execute(&image, svd, "phy_bt_txdc_cal_new", scenario)?;
+    let unmapped: BTreeSet<_> = result
+        .events
+        .iter()
+        .filter_map(unmapped_execution_address)
+        .collect();
+    if !unmapped.is_empty() {
+        for address in &unmapped {
+            println!("SEMANTIC-UNCOVERED\tbluetooth-txdc\tunmapped-mmio\t{address:#010x}");
+        }
+        println!(
+            "QUALIFICATION-SUMMARY\tphy_bt_txdc_cal_new\tINCOMPLETE\tunmapped-mmio={}",
+            unmapped.len()
+        );
+        return Ok(false);
+    }
+
+    let vendor_events = semantic::normalize_vendor_bluetooth_txdc(&image, &result, phy_param)?;
+    let (rust_events, _) = semantic::rust_bluetooth_txdc_events(
+        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
+    )?;
+    let matched = vendor_events == rust_events;
+    if !matched {
+        let divergence = vendor_events
+            .iter()
+            .zip(&rust_events)
+            .position(|(vendor, rust)| vendor != rust)
+            .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
+        println!(
+            "SEMANTIC-DIFF\tbluetooth-txdc\tindex={divergence}\tvendor={:?}\trust={:?}",
+            vendor_events.get(divergence),
+            rust_events.get(divergence),
+        );
+        for (index, event) in vendor_events.iter().enumerate() {
+            println!("SEMANTIC-EVENT\tbluetooth-txdc\tvendor\t{index}\t{event:?}");
+        }
+        for (index, event) in rust_events.iter().enumerate() {
+            println!("SEMANTIC-EVENT\tbluetooth-txdc\trust\t{index}\t{event:?}");
+        }
+    }
+    let verdict = if matched {
+        "STATE-SCENARIO-MATCH"
+    } else {
+        "MISMATCH"
+    };
+    println!(
+        "QUALIFICATION-SUMMARY\tphy_bt_txdc_cal_new\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}",
+        usize::from(matched),
+        usize::from(!matched),
+        vendor_events.len(),
+        result.steps,
+        result.branches.len(),
+        result.calls.len(),
+    );
+    Ok(matched)
+}
+
+fn qualify_esp32s31_bluetooth_tx_power(
+    svd: &SvdMap,
+    vendor_artifact: &Path,
+    vendor_companion: &Path,
+    print_oracles: bool,
+) -> Result<bool> {
+    let artifact_digest = pinned_vendor_digest(vendor_artifact)?;
+    let companion_digest = pinned_vendor_digest(vendor_companion)?;
+    if print_oracles {
+        println!(
+            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
+            vendor_artifact.display()
+        );
+        println!(
+            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
+            vendor_companion.display()
+        );
+    }
+
+    let mut image = emulator::ExecutableImage::load(vendor_artifact)?;
+    image.add_companion(vendor_companion)?;
+    let phy_param = image
+        .symbol_address("phy_param")
+        .ok_or("vendor artifact has no phy_param symbol")?;
+    let phy_functions_pointer = image
+        .symbol_address("g_phyFuns")
+        .ok_or("vendor artifact has no g_phyFuns symbol")?;
+    let scenario = semantic::vendor_bluetooth_tx_power_scenario(phy_param, phy_functions_pointer);
+    let result = emulator::execute(&image, svd, "phy_bt_tx_pwctrl_init", scenario)?;
+    let unmapped: BTreeSet<_> = result
+        .events
+        .iter()
+        .filter_map(unmapped_execution_address)
+        .collect();
+    if !unmapped.is_empty() {
+        for address in &unmapped {
+            println!("SEMANTIC-UNCOVERED\tbluetooth-tx-power\tunmapped-mmio\t{address:#010x}");
+        }
+        println!(
+            "QUALIFICATION-SUMMARY\tphy_bt_tx_pwctrl_init\tINCOMPLETE\tunmapped-mmio={}",
+            unmapped.len()
+        );
+        return Ok(false);
+    }
+
+    let footprint = semantic::vendor_bluetooth_tx_power_state_footprint(&result, phy_param)?;
+    let vendor_events = semantic::normalize_vendor_bluetooth_tx_power(&image, &result, phy_param)?;
+    let (rust_events, _) = semantic::rust_bluetooth_tx_power_events(
+        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
+    )?;
+    let matched = vendor_events == rust_events;
+    if !matched {
+        let divergence = vendor_events
+            .iter()
+            .zip(&rust_events)
+            .position(|(vendor, rust)| vendor != rust)
+            .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
+        println!(
+            "SEMANTIC-DIFF\tbluetooth-tx-power\tindex={divergence}\tvendor={:?}\trust={:?}",
+            vendor_events.get(divergence),
+            rust_events.get(divergence),
+        );
+        for (index, event) in vendor_events.iter().enumerate() {
+            println!("SEMANTIC-EVENT\tbluetooth-tx-power\tvendor\t{index}\t{event:?}");
+        }
+        for (index, event) in rust_events.iter().enumerate() {
+            println!("SEMANTIC-EVENT\tbluetooth-tx-power\trust\t{index}\t{event:?}");
+        }
+    }
+    let verdict = if matched {
+        "STATE-SCENARIO-MATCH"
+    } else {
+        "MISMATCH"
+    };
+    println!(
+        "QUALIFICATION-SUMMARY\tphy_bt_tx_pwctrl_init\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}\tstate-read-bytes={}\tstate-write-bytes={}\tstate-ranges={}",
+        usize::from(matched),
+        usize::from(!matched),
+        vendor_events.len(),
+        result.steps,
+        result.branches.len(),
+        result.calls.len(),
+        footprint.read_bytes,
+        footprint.written_bytes,
+        footprint.classified_ranges,
+    );
+    Ok(matched)
+}
+
+fn qualify_esp32s31_bluetooth_txdc_pwdet(
+    svd: &SvdMap,
+    vendor_artifact: &Path,
+    vendor_companion: &Path,
+    print_oracles: bool,
+) -> Result<bool> {
+    let artifact_digest = pinned_vendor_digest(vendor_artifact)?;
+    let companion_digest = pinned_vendor_digest(vendor_companion)?;
+    if print_oracles {
+        println!(
+            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
+            vendor_artifact.display()
+        );
+        println!(
+            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
+            vendor_companion.display()
+        );
+    }
+
+    let mut image = emulator::ExecutableImage::load(vendor_artifact)?;
+    image.add_companion(vendor_companion)?;
+    let phy_param = image
+        .symbol_address("phy_param")
+        .ok_or("vendor artifact has no phy_param symbol")?;
+    let phy_functions_pointer = image
+        .symbol_address("g_phyFuns")
+        .ok_or("vendor artifact has no g_phyFuns symbol")?;
+    let scenario = semantic::vendor_bluetooth_txdc_pwdet_scenario(phy_param, phy_functions_pointer);
+    let result = emulator::execute(&image, svd, "phy_txdc_cal_pwdet_init", scenario)?;
+    let unmapped: BTreeSet<_> = result
+        .events
+        .iter()
+        .filter_map(unmapped_execution_address)
+        .collect();
+    if !unmapped.is_empty() {
+        for address in &unmapped {
+            println!("SEMANTIC-UNCOVERED\tbluetooth-txdc-pwdet\tunmapped-mmio\t{address:#010x}");
+        }
+        println!(
+            "QUALIFICATION-SUMMARY\tphy_txdc_cal_pwdet_init\tINCOMPLETE\tunmapped-mmio={}",
+            unmapped.len()
+        );
+        return Ok(false);
+    }
+
+    let footprint = semantic::vendor_bluetooth_txdc_pwdet_state_footprint(&result, phy_param)?;
+    let vendor_events =
+        semantic::normalize_vendor_bluetooth_txdc_pwdet(&image, &result, phy_param)?;
+    let (rust_events, _) = semantic::rust_bluetooth_txdc_pwdet_events(
+        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
+    )?;
+    let matched = vendor_events == rust_events;
+    if !matched {
+        let divergence = vendor_events
+            .iter()
+            .zip(&rust_events)
+            .position(|(vendor, rust)| vendor != rust)
+            .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
+        println!(
+            "SEMANTIC-DIFF\tbluetooth-txdc-pwdet\tindex={divergence}\tvendor={:?}\trust={:?}",
+            vendor_events.get(divergence),
+            rust_events.get(divergence),
+        );
+        let window_start = divergence.saturating_sub(8);
+        let window_end = divergence
+            .saturating_add(9)
+            .max(window_start)
+            .min(vendor_events.len().max(rust_events.len()));
+        for (index, event) in vendor_events
+            .iter()
+            .enumerate()
+            .skip(window_start)
+            .take(window_end - window_start)
+        {
+            println!("SEMANTIC-EVENT\tbluetooth-txdc-pwdet\tvendor\t{index}\t{event:?}");
+        }
+        for (index, event) in rust_events
+            .iter()
+            .enumerate()
+            .skip(window_start)
+            .take(window_end - window_start)
+        {
+            println!("SEMANTIC-EVENT\tbluetooth-txdc-pwdet\trust\t{index}\t{event:?}");
+        }
+    }
+    let verdict = if matched {
+        "STATE-SCENARIO-MATCH"
+    } else {
+        "MISMATCH"
+    };
+    println!(
+        "QUALIFICATION-SUMMARY\tphy_txdc_cal_pwdet_init\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}\tstate-read-bytes={}\tstate-write-bytes={}\tstate-ranges={}",
+        usize::from(matched),
+        usize::from(!matched),
+        vendor_events.len(),
+        result.steps,
+        result.branches.len(),
+        result.calls.len(),
+        footprint.read_bytes,
+        footprint.written_bytes,
+        footprint.classified_ranges,
+    );
+    Ok(matched)
+}
+
 fn run() -> Result<bool> {
     let mut arguments = env::args().skip(1);
     let command = arguments.next().ok_or("missing command")?;
     let remaining: Vec<String> = arguments.collect();
-    let svd_position = remaining
-        .iter()
-        .position(|argument| argument == "--svd")
-        .ok_or("missing --svd")?;
-    let svd_path = remaining
-        .get(svd_position + 1)
-        .ok_or("--svd requires a value")?
-        .clone();
-    let filtered: Vec<String> = remaining
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, value)| {
-            if index == svd_position || index == svd_position + 1 {
-                None
-            } else {
-                Some(value)
-            }
-        })
-        .collect();
-    let svd = SvdMap::load(Path::new(&svd_path))?;
+    let mut svd_paths = Vec::new();
+    let mut filtered = Vec::new();
+    let mut index = 0;
+    while index < remaining.len() {
+        if remaining[index] == "--svd" {
+            let path = remaining.get(index + 1).ok_or("--svd requires a value")?;
+            svd_paths.push(PathBuf::from(path));
+            index += 2;
+        } else {
+            filtered.push(remaining[index].clone());
+            index += 1;
+        }
+    }
+    if svd_paths.is_empty() {
+        return Err("missing --svd".into());
+    }
+    let svd = SvdMap::load_all(&svd_paths)?;
     match command.as_str() {
+        "qualify-esp32s31-channel" => {
+            let mut vendor_artifact = None;
+            let mut vendor_companion = None;
+            let mut arguments = filtered.into_iter();
+            while let Some(argument) = arguments.next() {
+                match argument.as_str() {
+                    "--vendor-artifact" => {
+                        vendor_artifact = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--vendor-artifact",
+                        )?));
+                    }
+                    "--vendor-companion" => {
+                        vendor_companion = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--vendor-companion",
+                        )?));
+                    }
+                    _ => {
+                        return Err(
+                            format!("unknown qualify-esp32s31-channel option: {argument}").into(),
+                        );
+                    }
+                }
+            }
+            let vendor_artifact = vendor_artifact.ok_or("missing --vendor-artifact")?;
+            let vendor_companion = vendor_companion.ok_or("missing --vendor-companion")?;
+            qualify_esp32s31_channel(&svd, &vendor_artifact, &vendor_companion, true)
+        }
+        "qualify-esp32s31-rf-init" => {
+            let mut vendor_artifact = None;
+            let mut vendor_companion = None;
+            let mut arguments = filtered.into_iter();
+            while let Some(argument) = arguments.next() {
+                match argument.as_str() {
+                    "--vendor-artifact" => {
+                        vendor_artifact = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--vendor-artifact",
+                        )?));
+                    }
+                    "--vendor-companion" => {
+                        vendor_companion = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--vendor-companion",
+                        )?));
+                    }
+                    _ => {
+                        return Err(
+                            format!("unknown qualify-esp32s31-rf-init option: {argument}").into(),
+                        );
+                    }
+                }
+            }
+            let vendor_artifact = vendor_artifact.ok_or("missing --vendor-artifact")?;
+            let vendor_companion = vendor_companion.ok_or("missing --vendor-companion")?;
+            qualify_esp32s31_rf_init(&svd, &vendor_artifact, &vendor_companion, true)
+        }
         "execute" => {
             let mut artifact = None;
             let mut companion = None;
             let mut symbol = None;
             let mut concrete_only = false;
+            let mut print_timeline = false;
             let mut scenario = emulator::Scenario::default();
             let mut arguments = filtered.into_iter();
             while let Some(argument) = arguments.next() {
@@ -2473,6 +3607,7 @@ fn run() -> Result<bool> {
                     }
                     "--symbol" => symbol = Some(take_value(&mut arguments, "--symbol")?),
                     "--concrete-only" => concrete_only = true,
+                    "--timeline" => print_timeline = true,
                     "--arg" => {
                         let value = take_value(&mut arguments, "--arg")?;
                         scenario
@@ -2560,6 +3695,46 @@ fn run() -> Result<bool> {
             for call in &result.calls {
                 println!("COVERED-CALL\t{call}");
             }
+            if print_timeline {
+                for (index, event) in result.timeline.iter().enumerate() {
+                    match event {
+                        emulator::ExecutionTimelineEvent::Observable(event) => {
+                            println!("TIMELINE-EVENT\t{index}\tOBSERVABLE\t{event:?}");
+                        }
+                        emulator::ExecutionTimelineEvent::Call(call) => println!(
+                            "TIMELINE-EVENT\t{index}\tCALL\t{}\t{}\targs={:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x}",
+                            image.location(call.site),
+                            call.symbol,
+                            call.arguments[0],
+                            call.arguments[1],
+                            call.arguments[2],
+                            call.arguments[3],
+                            call.arguments[4],
+                            call.arguments[5],
+                            call.arguments[6],
+                            call.arguments[7],
+                        ),
+                        emulator::ExecutionTimelineEvent::Branch { site, taken } => println!(
+                            "TIMELINE-EVENT\t{index}\tBRANCH\t{}\ttaken={taken}",
+                            image.location(*site)
+                        ),
+                        emulator::ExecutionTimelineEvent::RamRead {
+                            width,
+                            address,
+                            value,
+                        } => println!(
+                            "TIMELINE-EVENT\t{index}\tRAM-READ\t{width}\t{address:#010x}\tvalue={value:#010x}"
+                        ),
+                        emulator::ExecutionTimelineEvent::RamWrite {
+                            width,
+                            address,
+                            value,
+                        } => println!(
+                            "TIMELINE-EVENT\t{index}\tRAM-WRITE\t{width}\t{address:#010x}\tvalue={value:#010x}"
+                        ),
+                    }
+                }
+            }
             let uncovered_branches = print_branch_coverage(
                 "image",
                 &image,
@@ -2582,12 +3757,19 @@ fn run() -> Result<bool> {
                 );
             }
             println!(
-                "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tcalls={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunmapped-mmio={}",
-                if concrete_only { "concrete-only" } else { "branch-complete" },
+                "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tbranch-events={}\tcalls={}\tcall-events={}\ttimeline-events={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunmapped-mmio={}",
+                if concrete_only {
+                    "concrete-only"
+                } else {
+                    "branch-complete"
+                },
                 result.steps,
                 result.return_value,
                 result.branches.len(),
+                result.ordered_branches.len(),
                 result.calls.len(),
+                result.ordered_calls.len(),
+                result.timeline.len(),
                 result.memory_changes.len(),
                 inventory.unresolved_edges.len(),
                 unmapped.len(),
@@ -2911,6 +4093,8 @@ fn run() -> Result<bool> {
             let mut rust_prefix = "open_phy_trace_".to_owned();
             let mut gate_name = "completion".to_owned();
             let mut match_floor = None;
+            let mut evidence_baseline = None;
+            let mut json_report = None;
             let mut arguments = filtered.into_iter();
             while let Some(argument) = arguments.next() {
                 match argument.as_str() {
@@ -2959,10 +4143,8 @@ fn run() -> Result<bool> {
                             Some(PathBuf::from(take_value(&mut arguments, "--profiles")?));
                     }
                     "--dispositions" => {
-                        disposition_path = Some(PathBuf::from(take_value(
-                            &mut arguments,
-                            "--dispositions",
-                        )?));
+                        disposition_path =
+                            Some(PathBuf::from(take_value(&mut arguments, "--dispositions")?));
                     }
                     "--rom-prefix" => {
                         rom_prefix = take_value(&mut arguments, "--rom-prefix")?;
@@ -2978,6 +4160,16 @@ fn run() -> Result<bool> {
                         match_floor =
                             Some(take_value(&mut arguments, "--match-floor")?.parse::<usize>()?);
                     }
+                    "--evidence-baseline" => {
+                        evidence_baseline = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--evidence-baseline",
+                        )?));
+                    }
+                    "--json-report" => {
+                        json_report =
+                            Some(PathBuf::from(take_value(&mut arguments, "--json-report")?));
+                    }
                     _ => return Err(format!("unknown verify-all option: {argument}").into()),
                 }
             }
@@ -2986,6 +4178,9 @@ fn run() -> Result<bool> {
             let archive_inventory = archive_inventory.ok_or("missing --archive-inventory")?;
             let rust_artifact = rust_artifact.ok_or("missing --rust-artifact")?;
             let gate = VerificationGate::parse(&gate_name, match_floor)?;
+            if matches!(gate, VerificationGate::Regression { .. }) && evidence_baseline.is_none() {
+                return Err("--gate regression requires --evidence-baseline".into());
+            }
             let execution_profiles = profile_path
                 .as_deref()
                 .map(profiles::load)
@@ -3059,6 +4254,7 @@ fn run() -> Result<bool> {
                 rom_symbols.len() + archive_symbols.len()
             );
             let mut total = VerifySummary::default();
+            let mut evidence = EvidenceSet::new();
             total.add(verify_source(
                 &svd,
                 rom,
@@ -3067,6 +4263,7 @@ fn run() -> Result<bool> {
                 &rust_prefix,
                 &rom_profiles,
                 disposition_manifest.as_ref(),
+                &mut evidence,
             )?);
             total.add(verify_source(
                 &svd,
@@ -3076,6 +4273,7 @@ fn run() -> Result<bool> {
                 &rust_prefix,
                 &archive_profiles,
                 disposition_manifest.as_ref(),
+                &mut evidence,
             )?);
             let orphan_probes = orphan_probe_count(
                 &rust_artifact,
@@ -3083,19 +4281,74 @@ fn run() -> Result<bool> {
                 &[(rom, &rom_symbols), (archive, &archive_symbols)],
             )?;
             println!(
-                "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
+                "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
                 total.vendor_functions,
                 total.matched,
                 total.symbolic_matches,
                 total.scenario_matches,
                 total.state_matches,
+                total.composition_matches,
                 total.mismatched,
                 total.incomplete,
                 total.missing,
                 total.implemented_unqualified,
                 total.not_yet_ported,
             );
-            let passed = gate.passes(total, orphan_probes);
+            print_evidence(&evidence);
+            let evidence_passed = evidence_baseline
+                .as_deref()
+                .map(load_evidence_baseline)
+                .transpose()?
+                .is_none_or(|baseline| check_evidence_baseline(&baseline, &evidence));
+            let passed = gate.passes(total, orphan_probes) && evidence_passed;
+            if let Some(path) = json_report.as_deref() {
+                let mut artifacts = vec![
+                    ("rom", rom_artifact.as_path()),
+                    ("archive", archive_artifact.as_path()),
+                    ("archive-inventory", archive_inventory.as_path()),
+                    ("rust-probes", rust_artifact.as_path()),
+                ];
+                if let Some(companion) = rom_companion.as_deref() {
+                    artifacts.push(("rom-companion", companion));
+                }
+                if let Some(companion) = archive_companion.as_deref() {
+                    artifacts.push(("archive-companion", companion));
+                }
+                if let Some(companion) = rust_companion.as_deref() {
+                    artifacts.push(("rust-companion", companion));
+                }
+                if let Some(profiles) = profile_path.as_deref() {
+                    artifacts.push(("profiles", profiles));
+                }
+                if let Some(dispositions) = disposition_path.as_deref() {
+                    artifacts.push(("dispositions", dispositions));
+                }
+                if let Some(baseline) = evidence_baseline.as_deref() {
+                    artifacts.push(("evidence-baseline", baseline));
+                }
+                write_verification_json_report(
+                    path,
+                    gate,
+                    total,
+                    orphan_probes,
+                    evidence_passed,
+                    passed,
+                    &evidence,
+                    &artifacts,
+                    &disposition_manifest
+                        .as_ref()
+                        .map(|manifest| {
+                            manifest
+                                .entries()
+                                .filter(|entry| {
+                                    entry.disposition.is_implemented()
+                                        && entry.semantic_contract.is_none()
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default(),
+                )?;
+            }
             gate.report(passed);
             Ok(passed)
         }
@@ -3110,6 +4363,7 @@ fn run() -> Result<bool> {
             let mut rust_prefix = "open_phy_trace_".to_owned();
             let mut gate_name = "completion".to_owned();
             let mut match_floor = None;
+            let mut evidence_baseline = None;
             let mut arguments = filtered.into_iter();
             while let Some(argument) = arguments.next() {
                 match argument.as_str() {
@@ -3158,12 +4412,21 @@ fn run() -> Result<bool> {
                         match_floor =
                             Some(take_value(&mut arguments, "--match-floor")?.parse::<usize>()?);
                     }
+                    "--evidence-baseline" => {
+                        evidence_baseline = Some(PathBuf::from(take_value(
+                            &mut arguments,
+                            "--evidence-baseline",
+                        )?));
+                    }
                     _ => return Err(format!("unknown verify option: {argument}").into()),
                 }
             }
             let vendor_artifact = vendor_artifact.ok_or("missing --vendor-artifact")?;
             let rust_artifact = rust_artifact.ok_or("missing --rust-artifact")?;
             let gate = VerificationGate::parse(&gate_name, match_floor)?;
+            if matches!(gate, VerificationGate::Regression { .. }) && evidence_baseline.is_none() {
+                return Err("--gate regression requires --evidence-baseline".into());
+            }
             let execution_profiles = profile_path
                 .as_deref()
                 .map(profiles::load)
@@ -3177,6 +4440,7 @@ fn run() -> Result<bool> {
                 prefix: &vendor_prefix,
             };
             let symbols = vendor_symbols(source)?;
+            let mut evidence = EvidenceSet::new();
             let summary = verify_source(
                 &svd,
                 source,
@@ -3185,21 +4449,29 @@ fn run() -> Result<bool> {
                 &rust_prefix,
                 &execution_profiles,
                 None,
+                &mut evidence,
             )?;
             let orphan_probes =
                 orphan_probe_count(&rust_artifact, &rust_prefix, &[(source, &symbols)])?;
             println!(
-                "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
+                "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
                 summary.vendor_functions,
                 summary.matched,
                 summary.symbolic_matches,
                 summary.scenario_matches,
                 summary.state_matches,
+                summary.composition_matches,
                 summary.mismatched,
                 summary.incomplete,
                 summary.missing
             );
-            let passed = gate.passes(summary, orphan_probes);
+            print_evidence(&evidence);
+            let evidence_passed = evidence_baseline
+                .as_deref()
+                .map(load_evidence_baseline)
+                .transpose()?
+                .is_none_or(|baseline| check_evidence_baseline(&baseline, &evidence));
+            let passed = gate.passes(summary, orphan_probes) && evidence_passed;
             gate.report(passed);
             Ok(passed)
         }
@@ -3262,6 +4534,65 @@ mod tests {
                 end: 0x2020_0000,
             }],
         }
+    }
+
+    #[test]
+    fn composite_svd_catalog_resolves_platform_owned_radio_dependencies() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let map = SvdMap::load_all(&[
+            root.join("svd/esp32s31-radio.svd"),
+            root.join("svd/esp32s31-platform-radio-deps.svd"),
+        ])
+        .unwrap();
+
+        assert_eq!(map.register_name(0x2010_9c18), "MODEM_SYSCON.WIFI_BB_CFG");
+        assert_eq!(map.register_name(0x2010_f800), "I2C_ANA_MST.I2C0_CTRL");
+        assert_eq!(map.register_name(0x2010_f824), "I2C_ANA_MST.I2C0_CTRL1");
+        assert_eq!(map.register_name(0x2010_f828), "I2C_ANA_MST.I2C1_CTRL1");
+        assert_eq!(map.register_name(0x2010_f82c), "I2C_ANA_MST.HW_I2C_CTRL");
+        assert_eq!(
+            map.register_name(0x2070_1068),
+            "LP_AON_CLKRST.RTC_SAR2_PWDET_CCT"
+        );
+        assert_eq!(map.register_name(0x2070_401c), "PMU.HP_ACTIVE_HP_CK_POWER");
+        assert_eq!(map.register_name(0x2070_40f0), "PMU.IMM_HP_CK_POWER_0");
+        assert_eq!(map.register_name(0x2070_4184), "PMU.RF_PWC");
+        assert_eq!(map.register_name(0x2070_4208), "PMU.ANA_PERI_PWR_CTRL");
+        assert_eq!(map.register_name(0x2071_0030), "LP_PERICLKRST.TSENS_CTRL");
+        assert_eq!(map.register_name(0x2081_8000), "LP_TSENS.CTRL");
+        assert_eq!(map.register_name(0x2081_8018), "LP_TSENS.CLK_CONF");
+    }
+
+    #[test]
+    fn vendor_provenance_requires_the_complete_artifact_digest() {
+        assert!(is_pinned_vendor_digest(ESP32S31_LINKED_LIBPHY_SHA256));
+        assert!(is_pinned_vendor_digest(ESP32S31_LIBPHY_SHA256));
+        assert!(!is_pinned_vendor_digest(
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        ));
+    }
+
+    #[test]
+    fn composite_svd_catalog_rejects_same_address_with_different_names() {
+        let registers = [
+            Register {
+                address: 0x2010_0010,
+                name: "FIRST.REGISTER".to_owned(),
+            },
+            Register {
+                address: 0x2010_0010,
+                name: "SECOND.REGISTER".to_owned(),
+            },
+        ];
+        let error = reject_register_collisions(&registers).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("conflicting SVD register definitions")
+        );
     }
 
     #[test]
@@ -3482,22 +4813,116 @@ mod tests {
     fn regression_and_completion_gates_are_independent() {
         let summary = VerifySummary {
             vendor_functions: 466,
-            matched: 96,
+            matched: 103,
             symbolic_matches: 57,
-            scenario_matches: 32,
+            scenario_matches: 34,
             state_matches: 7,
-            missing: 370,
+            composition_matches: 5,
+            missing: 363,
             ..VerifySummary::default()
         };
-        assert!(VerificationGate::Regression { match_floor: 96 }.passes(summary, 0));
-        assert!(!VerificationGate::Regression { match_floor: 97 }.passes(summary, 0));
+        assert!(VerificationGate::Regression { match_floor: 103 }.passes(summary, 0));
+        assert!(!VerificationGate::Regression { match_floor: 104 }.passes(summary, 0));
         assert!(!VerificationGate::Completion.passes(summary, 0));
 
         let regressed = VerifySummary {
             mismatched: 1,
             ..summary
         };
-        assert!(!VerificationGate::Regression { match_floor: 96 }.passes(regressed, 0));
+        assert!(!VerificationGate::Regression { match_floor: 103 }.passes(regressed, 0));
         assert!(VerificationGate::parse("regression", None).is_err());
+    }
+
+    #[test]
+    fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("baselines/esp32s31.evidence");
+        let expected = load_evidence_baseline(&path).unwrap();
+        assert_eq!(expected.len(), 103);
+        assert!(check_evidence_baseline(&expected, &expected));
+
+        let mut downgraded = expected.clone();
+        downgraded.insert(
+            ("archive".to_owned(), "phy_rf_init".to_owned()),
+            "scenario/profile:weaker".to_owned(),
+        );
+        assert!(!check_evidence_baseline(&expected, &downgraded));
+
+        let mut missing = expected.clone();
+        missing.remove(&("rom".to_owned(), "phy_enable_agc".to_owned()));
+        assert!(!check_evidence_baseline(&expected, &missing));
+    }
+
+    #[test]
+    fn profile_evidence_is_bound_to_scenario_contents() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("phy-trace remains under tools/phy-trace");
+        let profiles =
+            profiles::load(&root.join("tools/phy-trace/profiles/esp32s31.profile")).unwrap();
+        let mut modified = profiles[0].clone();
+        let original = profile_evidence(&modified);
+        modified.scenarios[0].scenario.max_steps =
+            modified.scenarios[0].scenario.max_steps.saturating_add(1);
+        assert_ne!(profile_evidence(&modified), original);
+    }
+
+    #[test]
+    fn semantic_evidence_is_bound_to_validator_sources() {
+        let original = semantic_contract_digest_from_sources(
+            "esp32s31-channel",
+            &[("semantic.rs", "footprint-v1"), ("emulator.rs", "strict")],
+        );
+        let weakened = semantic_contract_digest_from_sources(
+            "esp32s31-channel",
+            &[
+                ("semantic.rs", "footprint-v1"),
+                ("emulator.rs", "permissive"),
+            ],
+        );
+        let other_contract = semantic_contract_digest_from_sources(
+            "esp32s31-rf-init",
+            &[("semantic.rs", "footprint-v1"), ("emulator.rs", "strict")],
+        );
+        assert_ne!(original, weakened);
+        assert_ne!(original, other_contract);
+        assert!(
+            semantic_contract_evidence("esp32s31-channel")
+                .starts_with("composition-state-scenario/esp32s31-channel/sha256:")
+        );
+    }
+
+    #[test]
+    fn verification_json_report_contains_reproducible_inputs() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let path = env::temp_dir().join(format!(
+            "open-esp-radio-phy-trace-report-{}.json",
+            std::process::id()
+        ));
+        let mut evidence = EvidenceSet::new();
+        record_evidence(&mut evidence, "archive", "symbol", "symbolic").unwrap();
+        write_verification_json_report(
+            &path,
+            VerificationGate::Regression { match_floor: 1 },
+            VerifySummary {
+                vendor_functions: 1,
+                matched: 1,
+                symbolic_matches: 1,
+                ..VerifySummary::default()
+            },
+            0,
+            true,
+            true,
+            &evidence,
+            &[("manifest", &manifest)],
+            &[],
+        )
+        .unwrap();
+        let report = fs::read_to_string(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        assert!(report.contains("\"schema_version\": 1"));
+        assert!(report.contains("\"passed\": true"));
+        assert!(report.contains("\"sha256\""));
+        assert!(report.contains("\"symbol\": \"symbol\""));
     }
 }

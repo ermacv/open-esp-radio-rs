@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device xmlns:xs="http://www.w3.org/2001/XMLSchema-instance"
+        schemaVersion="1.3"
+        xs:noNamespaceSchemaLocation="CMSIS-SVD.xsd">
+  <vendor>Espressif</vendor>
+  <vendorID>ESP</vendorID>
+  <name>ESP32S31_PLATFORM_RADIO_DEPENDENCIES</name>
+  <series>ESP32-S31</series>
+  <version>1.0</version>
+  <description>
+    Validator catalog for platform-owned registers reached by the ESP32-S31
+    radio call graph. The definitions mirror the pinned official platform PAC
+    SVD and do not create a second runtime owner; production code uses the
+    generated esp32s31 PAC through the esp-hal integration layer.
+  </description>
+  <licenseText>MIT OR Apache-2.0</licenseText>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>MODEM_SYSCON</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,S31_MODEM_SYSCON_STRUCT]. Platform-owned modem system configuration.</description>
+      <baseAddress>0x20109c00</baseAddress>
+      <registers>
+        <register>
+          <name>WIFI_BB_CFG</name>
+          <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]. Wi-Fi baseband configuration fields reached by the PHY call graph.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>COLD_START_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WIFI_ENABLE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BSS_CBW_40_DIGITAL_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BB_AGC_UPDATE_ENABLE_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>MAC_BASEBAND_ENABLE_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>I2C_ANA_MST</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_I2C,BLOB_LIBPHY_PHY_I2C]. Platform-owned analog-register I2C master.</description>
+      <baseAddress>0x2010f800</baseAddress>
+      <registers>
+        <register>
+          <name>I2C0_CTRL</name>
+          <description>Analog-register I2C host-0 command and completion word.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>SLAVE_ADDR</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>SLAVE_REG_ADDR</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>READ_WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C1_CTRL</name>
+          <description>Analog-register I2C host-1 command and completion word.</description>
+          <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>SLAVE_ADDR</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>SLAVE_REG_ADDR</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>READ_WRITE</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BUSY</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>START_OR_RESET</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>ANA_CONF0</name>
+          <description>Shared analog-I2C master control used by PHY register mode and BBPLL calibration.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><resetValue>0x0000e408</resetValue>
+          <fields>
+            <field><name>BBPLL_CAL_MODE_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>PHY_REGISTER_ENABLE</name><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PHY_REGISTER_MODE</name><bitOffset>9</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>ANA_STATUS0</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>ANA_CONF1</name>
+          <description>Shared analog-I2C routing and read-mask word.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access><resetValue>0x0000002d</resetValue>
+          <fields>
+            <field><name>ANA_CONF1</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field>
+            <field><name>ANA_STATUS1</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>ANA_CONF2</name>
+          <description>Shared analog-I2C host-selection word.</description>
+          <addressOffset>0x20</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000004</resetValue>
+          <fields>
+            <field><name>ANA_CONF2</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field>
+            <field><name>ANA_STATUS2</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C0_CTRL1</name>
+          <description>Host-0 timing and clock-selection control.</description>
+          <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000042</resetValue>
+          <fields>
+            <field><name>I2C0_SCL_PULSE_DUR</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>I2C0_SDA_SIDE_GUARD</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C1_CTRL1</name>
+          <description>Host-1 timing and clock-selection control.</description>
+          <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000042</resetValue>
+          <fields>
+            <field><name>I2C1_SCL_PULSE_DUR</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>I2C1_SDA_SIDE_GUARD</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>HW_I2C_CTRL</name>
+          <description>Hardware-host timing and clock-selection control.</description>
+          <addressOffset>0x2c</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000042</resetValue>
+          <fields>
+            <field><name>HW_I2C_SCL_PULSE_DUR</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>HW_I2C_SDA_SIDE_GUARD</name><bitOffset>6</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>ARBITER_DIS</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>PMU</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW,ROM_REV0_PHY_OPEN_FE_BB_CLK]. Platform-owned power-management registers reached by radio initialization.</description>
+      <baseAddress>0x20704000</baseAddress>
+      <registers>
+        <register>
+          <name>HP_ACTIVE_HP_CK_POWER</name>
+          <description>Active-state high-power clock and analog-I2C power control.</description>
+          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>ROM_OPEN_FE_BB_UNKNOWN_LOW</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>HP_ACTIVE_XPD_BB_I2C</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_HP_CK_POWER_0</name>
+          <description>Immediate high-power clock tie controls used by analog-I2C power-up.</description>
+          <addressOffset>0xf0</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>TIE_HIGH_XPD_BB_I2C</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>RF_PWC</name>
+          <description>RF circuit power control.</description>
+          <addressOffset>0x184</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>XPD_RF_CIRCUIT</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>ANA_PERI_PWR_CTRL</name>
+          <description>Analog peripheral I2C power and reset control.</description>
+          <addressOffset>0x208</addressOffset><size>32</size><access>read-write</access><resetValue>0x40000000</resetValue>
+          <fields>
+            <field><name>XPD_PERIF_I2C</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RSTB_PERIF_I2C</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>LP_AON_CLKRST</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_POWER_DETECTOR]. Platform-owned low-power always-on clock/reset registers.</description>
+      <baseAddress>0x20701000</baseAddress>
+      <registers>
+        <register>
+          <name>RTC_SAR2_PWDET_CCT</name>
+          <description>SAR2 power-detector circuit mode.</description>
+          <addressOffset>0x68</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>RTC_SAR2_PWDET_CCT</name><bitOffset>0</bitOffset><bitWidth>3</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>LP_PERICLKRST</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Platform-owned low-power peripheral clock/reset registers.</description>
+      <baseAddress>0x20710000</baseAddress>
+      <registers>
+        <register>
+          <name>TSENS_CTRL</name>
+          <description>Low-power temperature-sensor clock and reset control.</description>
+          <addressOffset>0x30</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>LP_TSENS_CLK_EN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>LP_TSENS_RST_EN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
+      <name>LP_TSENS</name>
+      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_TSENS]. Platform-owned low-power temperature sensor.</description>
+      <baseAddress>0x20818000</baseAddress>
+      <registers>
+        <register>
+          <name>CTRL</name>
+          <description>Temperature-sensor data and power control.</description>
+          <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><resetValue>0x00019400</resetValue>
+          <fields>
+            <field><name>OUT</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>READY</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>SAMPLE_EN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>WAKEUP_MASK</name><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>INT_EN</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>IN_INV</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLK_DIV</name><bitOffset>14</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>POWER_UP</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>POWER_UP_FORCE</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF</name>
+          <description>Temperature-sensor register-bank and PHY read-path control.</description>
+          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>CLK_EN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PHY_CONVERSION_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PHY_READOUT_ENABLE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+  <vendorExtensions>
+    <openEspRadioProvenance>
+      <source id="ESP32S31_PAC_3DF8DC7">ermacv/esp-pacs commit 3df8dc70514a55d2cf4d03283a39d7178fc50ca0, pinned by Cargo.lock; ESP32-S31 SVD and generated PAC definitions.</source>
+      <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, ESP32-S31 modem_syscon_struct.h.</source>
+      <source id="ROM_REV0_PHY_I2C">Pinned ESP32-S31 rev0 ROM PHY-I2C bodies.</source>
+      <source id="ROM_REV0_PHY_FREQUENCY_CHANNEL">Pinned ESP32-S31 rev0 ROM frequency/channel bodies.</source>
+      <source id="ROM_REV0_PHY_TSENS">Pinned ESP32-S31 rev0 ROM temperature-sensor bodies.</source>
+      <source id="BLOB_LIBPHY_PHY_I2C">Pinned ESP32-S31 libphy.a PHY-I2C bodies.</source>
+      <source id="BLOB_LIBPHY_PHY_BB_INIT">Pinned ESP32-S31 libphy.a baseband initialization body.</source>
+      <source id="BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW">Pinned ESP32-S31 libphy.a analog-I2C power/reset body.</source>
+      <source id="BLOB_LIBPHY_PHY_TSENS_READ_INIT">Pinned ESP32-S31 libphy.a temperature-sensor read initialization body.</source>
+      <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">Pinned ESP32-S31 rev0 ROM front-end/baseband clock body.</source>
+      <source id="ROM_REV0_PHY_POWER_DETECTOR">Pinned ESP32-S31 rev0 ROM power-detector bodies.</source>
+    </openEspRadioProvenance>
+    <openEspRadioAddressWindows>
+      <window name="MODEM_RADIO_CORE" start="0x20100000" endExclusive="0x20200000"/>
+      <window name="LP_PERIPHERAL" start="0x20800000" endExclusive="0x20900000"/>
+    </openEspRadioAddressWindows>
+  </vendorExtensions>
+</device>

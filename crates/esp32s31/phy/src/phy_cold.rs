@@ -236,6 +236,183 @@ impl PhyColdState {
         self.parameter[0x00b]
     }
 
+    /// Capture the shared and Bluetooth-only inputs of
+    /// `libphy.a::phy_bt_txdc_cal_new` without exposing `phy_param` offsets.
+    pub const fn bluetooth_tx_dc_transition(
+        &self,
+    ) -> crate::phy_bluetooth::PhyBluetoothTxDcTransition {
+        crate::phy_bluetooth::PhyBluetoothTxDcTransition::new(
+            crate::phy_txdc::PhyTxDcParameters {
+                pbus_rx_path_value: self.parameter[0x002],
+            },
+            self.parameter[0x014],
+        )
+    }
+
+    /// Commit the three BT TXDC rows and the vendor completion flag.
+    ///
+    /// The other two rows in the common outcome belong to the Wi-Fi gain plan
+    /// and are deliberately ignored here.
+    pub fn apply_bluetooth_tx_dc_outcome(&mut self, outcome: crate::phy_txdc::PhyTxDcOutcome) {
+        let mut row = 0;
+        while row != 3 {
+            let mut column = 0;
+            while column != outcome.dco[row].len() {
+                let bytes = outcome.dco[row][column].to_le_bytes();
+                let offset = 0x104 + row * 8 + column * 2;
+                self.parameter[offset] = bytes[0];
+                self.parameter[offset + 1] = bytes[1];
+                column += 1;
+            }
+            row += 1;
+        }
+        self.parameter[0x0a5] |= 0x10;
+    }
+
+    pub const fn bluetooth_tx_dc_calibrated(&self) -> bool {
+        self.parameter[0x0a5] & 0x10 != 0
+    }
+
+    /// Capture the three Bluetooth DCO rows used by
+    /// `phy_txdc_cal_pwdet_init(1, 0, 1)`.
+    pub fn bluetooth_tx_dc_pwdet_transition(
+        &self,
+    ) -> crate::phy_bluetooth::PhyBluetoothTxDcPwdetTransition {
+        let mut dco = [[0_u16; 4]; 3];
+        let mut row = 0;
+        while row != dco.len() {
+            let mut column = 0;
+            while column != dco[row].len() {
+                let offset = 0x104 + (row * 4 + column) * 2;
+                dco[row][column] =
+                    u16::from_le_bytes([self.parameter[offset], self.parameter[offset + 1]]);
+                column += 1;
+            }
+            row += 1;
+        }
+        crate::phy_bluetooth::PhyBluetoothTxDcPwdetTransition::new(
+            crate::phy_txdc_pwdet::PhyTxDcPwdetParameters {
+                dco,
+                clear_tone_after_ready: self.parameter[0x1aa] != 0,
+            },
+            self.parameter[0x014],
+        )
+    }
+
+    /// Commit only the Bluetooth DCO rows after the shared transition has
+    /// completed its unconditional radio cleanup.
+    pub fn apply_bluetooth_tx_dc_pwdet_outcome(
+        &mut self,
+        outcome: crate::phy_txdc_pwdet::PhyTxDcPwdetOutcome,
+    ) {
+        let mut row = 0;
+        while row != outcome.dco.len() {
+            let mut column = 0;
+            while column != outcome.dco[row].len() {
+                let offset = 0x104 + (row * 4 + column) * 2;
+                let bytes = outcome.dco[row][column].to_le_bytes();
+                self.parameter[offset] = bytes[0];
+                self.parameter[offset + 1] = bytes[1];
+                column += 1;
+            }
+            row += 1;
+        }
+    }
+
+    /// Capture all shared and Bluetooth-owned inputs of
+    /// `libphy.a::phy_bt_tx_pwctrl_init` as a typed value.
+    pub fn bluetooth_tx_power_parameters(
+        &self,
+    ) -> crate::phy_bluetooth::PhyBluetoothTxPowerParameters {
+        let mut calibration = self.tx_power_parameters();
+        let flags = u32::from_le_bytes([
+            self.parameter[0x0a4],
+            self.parameter[0x0a5],
+            self.parameter[0x0a6],
+            self.parameter[0x0a7],
+        ]);
+        calibration.already_calibrated = flags & 0x0000_8000 != 0;
+        let mut dco = [0_u16; 4];
+        for (index, destination) in dco.iter_mut().enumerate() {
+            let offset = 0x104 + index * 2;
+            *destination = u16::from_le_bytes([self.parameter[offset], self.parameter[offset + 1]]);
+        }
+        crate::phy_bluetooth::PhyBluetoothTxPowerParameters {
+            calibration,
+            pbus_power_path_value: self.parameter[0x013],
+            pbus_tx_path_value: self.parameter[0x014],
+            dco,
+            tone_selector: self.parameter[0x003] as u16,
+        }
+    }
+
+    pub fn bluetooth_tx_power_transition(
+        &self,
+    ) -> crate::phy_bluetooth::PhyBluetoothTxPowerTransition {
+        crate::phy_bluetooth::PhyBluetoothTxPowerTransition::new(
+            self.bluetooth_tx_power_parameters(),
+        )
+    }
+
+    /// Publish only the BT power-curve state written by the vendor root.
+    pub fn apply_bluetooth_tx_power_outcome(
+        &mut self,
+        outcome: crate::phy_bluetooth::PhyBluetoothTxPowerOutcome,
+    ) {
+        let calibration = outcome.calibration;
+        if !calibration.calibration_performed {
+            return;
+        }
+        for index in 0..3 {
+            self.parameter[0x0f8 + index] = calibration.point_corrections[index] as u8;
+            self.parameter[0x0fb + index] = calibration.power_curve[index] as u8;
+        }
+        self.parameter[0x0fe] = calibration.power_adjustment as u8;
+        self.parameter[0x018] = calibration.final_attenuation;
+        self.parameter[0x100] = 0;
+        self.parameter[0x101] = 0;
+        self.parameter[0x1aa] = 0;
+        self.parameter[0x0a5] |= 0x80;
+    }
+
+    pub const fn bluetooth_tx_power_calibrated(&self) -> bool {
+        self.parameter[0x0a5] & 0x80 != 0
+    }
+
+    /// Capture all former global inputs of `phy_bt_set_tx_gain_new(0)`.
+    pub const fn bluetooth_tx_gain_parameters(
+        &self,
+    ) -> crate::phy_bluetooth::PhyBluetoothTxGainParameters {
+        let mut seed = [0_u32; 6];
+        let mut index = 0;
+        while index != seed.len() {
+            let offset = 0x104 + index * 4;
+            seed[index] = u32::from_le_bytes([
+                self.parameter[offset],
+                self.parameter[offset + 1],
+                self.parameter[offset + 2],
+                self.parameter[offset + 3],
+            ]);
+            index += 1;
+        }
+        crate::phy_bluetooth::PhyBluetoothTxGainParameters {
+            seed,
+            config: u16::from_le_bytes([self.parameter[0x0d0], self.parameter[0x0d1]]),
+            calibration_curve: [
+                self.parameter[0x0fb],
+                self.parameter[0x0fc],
+                self.parameter[0x0fd],
+            ],
+            correction: self.parameter[0x0fe] as i8,
+            base: self.parameter[0x124],
+            attenuation: self.parameter[0x008],
+        }
+    }
+
+    pub const fn bluetooth_tx_gain_image(&self) -> crate::phy_bluetooth::PhyBluetoothTxGainImage {
+        crate::phy_bluetooth::calculate_bluetooth_tx_gain(self.bluetooth_tx_gain_parameters())
+    }
+
     /// Apply complete pinned `phy_ble_set_chan_base` to the BLE-owned byte.
     pub fn set_ble_channel_base(&mut self, value: u8) {
         self.parameter[0x193] = value;
@@ -651,6 +828,10 @@ impl PhyColdState {
             power_offset: i16::from_le_bytes([self.parameter[0x00e], self.parameter[0x00f]]),
             initial_attenuation: self.parameter[0x018],
             clear_tone_after_ready: self.parameter[0x1aa] != 0,
+            reference_codes: [
+                i16::from_le_bytes([self.parameter[0x01a], self.parameter[0x01b]]),
+                i16::from_le_bytes([self.parameter[0x01c], self.parameter[0x01d]]),
+            ],
         }
     }
 
@@ -880,7 +1061,7 @@ impl PhyColdState {
             tx_gain_curve: curve,
             tx_gain_correction: self.parameter[0x0f7] as i8,
             tx_gain_base: self.parameter[0x123],
-            tx_gain_delta: self.parameter[0x1b2],
+            tx_gain_attenuation: self.parameter[0x008],
             tx_capacitance: capacitance,
         }
     }
@@ -1111,7 +1292,7 @@ impl PhyColdI2cRequest {
         }
     }
 
-    const fn address(self) -> PhyI2cAddress {
+    pub const fn address(self) -> PhyI2cAddress {
         match self {
             Self::ReadByte { address }
             | Self::ReadMasked { address, .. }

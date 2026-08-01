@@ -1,6 +1,42 @@
 # Concrete compiled-equivalence scenarios. This is validator input, not a
 # prose function ledger. Every conditional branch outcome must be covered.
 
+profile rom-bluetooth-index-to-baseband
+vendor-source rom
+vendor-symbol phy_bt_index_to_bb
+rust-symbol open_phy_trace_ret_bt_index_to_bb
+compare-return true
+
+case zero
+arg 0
+
+case index-one
+arg 1
+
+case index-two
+arg 2
+
+case outside-domain
+arg 0xffffffff
+
+profile rom-bluetooth-baseband-to-index
+vendor-source rom
+vendor-symbol phy_bt_bb_to_index
+rust-symbol open_phy_trace_ret_bt_bb_to_index
+compare-return true
+
+case zero
+arg 0
+
+case baseband-one
+arg 0x80
+
+case baseband-two
+arg 0x100
+
+case outside-domain
+arg 0xffffffff
+
 profile frequency-band-registers
 vendor-source rom
 vendor-symbol phy_freq_band_reg_set

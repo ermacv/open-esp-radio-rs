@@ -25,19 +25,20 @@ use crate::{
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
-// Pinned `phy_tx_gain.o` `.rodata` slices at offsets 0x6c, 0x90 and 0xb4.
-// Their semantic units are not public. The recovered Rust translation below
-// uses the same 18 aligned little-endian halfwords.
+// Pinned rev0 ROM `phy_wifi_get_tx_tab_` tables at `0x2f848350`,
+// `0x2f848374`, and `0x2f848398`. Their semantic units are not public. The
+// recovered Rust translation below uses the same 18 aligned little-endian
+// halfwords selected by the actual channel path.
 const WIFI_TX_GAIN_TABLE_LOW: [u16; 18] = [
-    0x003f, 0x0037, 0x002f, 0x0027, 0x0027, 0x001f, 0x0017, 0x000f, 0x000f, 0x000d, 0x000c, 0x0007,
+    0x003f, 0x0037, 0x002f, 0x0027, 0x0027, 0x001f, 0x0017, 0x0015, 0x000f, 0x000d, 0x000c, 0x000b,
     0x0006, 0x0005, 0x0004, 0x0003, 0x0002, 0x0001,
 ];
 const WIFI_TX_GAIN_TABLE_MID: [u16; 18] = [
-    0x0100, 0x0100, 0x0100, 0x0100, 0x8000, 0x8000, 0x8000, 0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0x0080, 0x0080, 0x0080, 0x0080, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 const WIFI_TX_GAIN_TABLE_HIGH: [u16; 18] = [
-    0x001b, 0x0018, 0x0014, 0x000e, 0x0006, 0x0000, 0xfff6, 0xffe9, 0xffe1, 0xffd7, 0xffd0, 0xffc9,
-    0xffc4, 0xffbe, 0xffb8, 0xffb0, 0xffa5, 0xff97,
+    0x001d, 0x0019, 0x0014, 0x000e, 0x0006, 0x0000, 0xfff7, 0xffed, 0xffeb, 0xffe0, 0xffda, 0xffd4,
+    0xffcf, 0xffc8, 0xffc2, 0xffba, 0xffb1, 0xffa3,
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,7 +58,7 @@ pub struct PhyChipChannelParameters {
     pub tx_gain_curve: [u8; 6],
     pub tx_gain_correction: i8,
     pub tx_gain_base: u8,
-    pub tx_gain_delta: u8,
+    pub tx_gain_attenuation: u8,
     /// Former `phy_param[0xdc..=0xe1]`. Only bytes 0, 2 and 4 are selected
     /// by complete ROM `phy_set_txcap_reg`.
     pub tx_capacitance: [u8; 6],
@@ -85,7 +86,7 @@ pub struct PhyWifiTxGainImage {
     pub seed: [u32; 6],
     pub output_32: [u32; 8],
     pub output_64: [u32; 16],
-    pub output_72: [u32; 18],
+    pub output_72: [u32; 16],
     pub config: u16,
 }
 
@@ -161,7 +162,7 @@ pub const fn calculate_wifi_tx_gain(request: PhyWifiTxGainRequest) -> PhyWifiTxG
         seed: [0; 6],
         output_32: [0; 8],
         output_64: [0; 16],
-        output_72: [0; 18],
+        output_72: [0; 16],
         config: 0,
     };
     let mut output_index = 0;
@@ -248,9 +249,7 @@ pub enum PhyChipChannelAction {
     ConfigureBssCbw {
         cbw: u8,
     },
-    ConfigureRxCompensation {
-        pass: u8,
-    },
+    ConfigureRxCompensation,
     WriteI2c {
         phase: PhyChipChannelI2cPhase,
         address: PhyI2cAddress,
@@ -301,9 +300,7 @@ pub enum PhyChipChannelCompletion {
     BssCbwConfigured {
         cbw: u8,
     },
-    RxCompensationConfigured {
-        pass: u8,
-    },
+    RxCompensationConfigured,
     I2cWriteCompleted {
         phase: PhyChipChannelI2cPhase,
         address: PhyI2cAddress,
@@ -486,7 +483,7 @@ impl PhyChipChannelTransition {
                 .request
                 .parameters
                 .tx_gain_base
-                .wrapping_add(self.request.parameters.tx_gain_delta)
+                .wrapping_sub(self.request.parameters.tx_gain_attenuation)
                 as i8,
         }
     }
@@ -512,17 +509,20 @@ impl PhyChipChannelTransition {
             Step::AwaitFrequencyReady { samples } => {
                 PhyChipChannelAction::AwaitFrequencyReadyEdge { samples }
             }
-            Step::ConfigureNrxFirst | Step::ConfigureNrxSecond => {
-                PhyChipChannelAction::ConfigureNrx {
-                    frequency_mhz: self.frequency_mhz,
-                }
-            }
+            Step::ConfigureNrxFirst => PhyChipChannelAction::ConfigureNrx {
+                frequency_mhz: self.frequency_mhz,
+            },
+            // The pinned root accepts off-grid MHz inputs. Its first NRX
+            // update receives that raw input, while the second update follows
+            // TX-cap programming and receives the canonical frequency of the
+            // truncated channel number.
+            Step::ConfigureNrxSecond => PhyChipChannelAction::ConfigureNrx {
+                frequency_mhz: channel_to_frequency(self.channel),
+            },
             Step::ConfigureBssCbw => PhyChipChannelAction::ConfigureBssCbw {
                 cbw: self.request.cbw,
             },
-            Step::ConfigureRxCompensationFirst => {
-                PhyChipChannelAction::ConfigureRxCompensation { pass: 0 }
-            }
+            Step::ConfigureRxCompensationFirst => PhyChipChannelAction::ConfigureRxCompensation,
             Step::ProgramTxCap => PhyChipChannelAction::WriteI2c {
                 phase: PhyChipChannelI2cPhase::ProgramTxCap,
                 address: TX_CAP_ADDRESS,
@@ -540,9 +540,7 @@ impl PhyChipChannelTransition {
             Step::ConfigureChannelCbw => PhyChipChannelAction::ConfigureChannelCbw {
                 cbw: self.request.cbw,
             },
-            Step::ConfigureRxCompensationSecond => {
-                PhyChipChannelAction::ConfigureRxCompensation { pass: 1 }
-            }
+            Step::ConfigureRxCompensationSecond => PhyChipChannelAction::ConfigureRxCompensation,
             Step::DisableBbpll(_) => PhyChipChannelAction::SetBbpllCalibration { enabled: false },
             Step::ClearDcMemory(_) => PhyChipChannelAction::ClearDcMemory,
             Step::EnableAgc(_) => PhyChipChannelAction::SetAgc { enabled: true },
@@ -646,7 +644,7 @@ impl PhyChipChannelTransition {
             }
             (
                 Step::ConfigureRxCompensationFirst,
-                PhyChipChannelCompletion::RxCompensationConfigured { pass: 0 },
+                PhyChipChannelCompletion::RxCompensationConfigured,
             ) => Step::ProgramTxCap,
             (
                 Step::ProgramTxCap,
@@ -682,7 +680,7 @@ impl PhyChipChannelTransition {
             (
                 Step::ConfigureNrxSecond,
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz },
-            ) if frequency_mhz == self.frequency_mhz => Step::CalculateTxGain,
+            ) if frequency_mhz == channel_to_frequency(self.channel) => Step::CalculateTxGain,
             (
                 Step::CalculateTxGain,
                 PhyChipChannelCompletion::TxGainCalculated { request, mut image },
@@ -738,7 +736,7 @@ impl PhyChipChannelTransition {
             }
             (
                 Step::ConfigureRxCompensationSecond,
-                PhyChipChannelCompletion::RxCompensationConfigured { pass: 1 },
+                PhyChipChannelCompletion::RxCompensationConfigured,
             ) => Step::DisableBbpll(CleanupContinuation::Complete(self.outcome())),
             (
                 Step::DisableBbpll(continuation),
@@ -783,7 +781,7 @@ impl PhyChipChannelMmioBinding {
             | PhyChipChannelAction::AwaitFrequencyReadyEdge { .. }
             | PhyChipChannelAction::ConfigureNrx { .. }
             | PhyChipChannelAction::ConfigureBssCbw { .. }
-            | PhyChipChannelAction::ConfigureRxCompensation { .. }
+            | PhyChipChannelAction::ConfigureRxCompensation
             | PhyChipChannelAction::PublishTxGain(_)
             | PhyChipChannelAction::PublishTxCapCommandMemory { .. }
             | PhyChipChannelAction::ConfigureChannelCbw { .. }
@@ -853,9 +851,9 @@ impl PhyChipChannelMmioBinding {
                 );
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
-            PhyChipChannelAction::ConfigureRxCompensation { pass } => {
+            PhyChipChannelAction::ConfigureRxCompensation => {
                 open_esp_radio_esp32s31_hal::phy_agc::configure_rx_compensation(registers);
-                PhyChipChannelCompletion::RxCompensationConfigured { pass }
+                PhyChipChannelCompletion::RxCompensationConfigured
             }
             PhyChipChannelAction::PublishTxGain(image) => {
                 crate::radio_hal::publish_phy_tx_gain_memory(registers, false, image);
@@ -1105,7 +1103,7 @@ mod tests {
         tx_gain_curve: [7, 8, 9, 10, 11, 12],
         tx_gain_correction: -3,
         tx_gain_base: 20,
-        tx_gain_delta: 2,
+        tx_gain_attenuation: 2,
         tx_capacitance: [1, 2, 3, 4, 5, 6],
     };
 
@@ -1123,40 +1121,40 @@ mod tests {
             correction: PARAMETERS.tx_gain_correction,
             base_and_delta: PARAMETERS
                 .tx_gain_base
-                .wrapping_add(PARAMETERS.tx_gain_delta) as i8,
+                .wrapping_sub(PARAMETERS.tx_gain_attenuation) as i8,
         });
         assert_eq!(
             image.output_32,
             [
-                0x3d41_4549,
-                0x2d31_3539,
-                0x1d21_2529,
-                0x0d11_1519,
-                0xfd01_0509,
-                0xfaf8_f8f9,
-                0xf8fc_fafe,
-                0xff03_fafe,
+                0x373b_3f43,
+                0x272b_2f33,
+                0x171b_1f23,
+                0x070b_0f13,
+                0xf7fb_ff03,
+                0xfefa_f8f7,
+                0xfdf8_fcfa,
+                0xf7fb_fff9,
             ]
         );
         assert_eq!(
             image.output_64,
             [
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x0100_0100,
-                0x8000_8000,
-                0x8000_8000,
-                0x8000_8000,
-                0x8000_8000,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0080_0080,
+                0x0000_0080,
+                0,
+                0,
+                0,
+                0,
             ]
         );
         assert_eq!(
@@ -1172,14 +1170,12 @@ mod tests {
                 0x003f_003f,
                 0x003f_003f,
                 0x003f_003f,
-                0x0037_003f,
-                0x0027_002f,
+                0x002f_0037,
                 0x0027_0027,
-                0x001f_001f,
-                0x0017_0017,
-                0x000f_000f,
-                0,
-                0,
+                0x001f_0027,
+                0x0017_001f,
+                0x0015_0017,
+                0x0015_0015,
             ]
         );
         assert_eq!(image.seed, [0; 6]);
@@ -1249,8 +1245,8 @@ mod tests {
             PhyChipChannelAction::ConfigureBssCbw { cbw } => {
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
-            PhyChipChannelAction::ConfigureRxCompensation { pass } => {
-                PhyChipChannelCompletion::RxCompensationConfigured { pass }
+            PhyChipChannelAction::ConfigureRxCompensation => {
+                PhyChipChannelCompletion::RxCompensationConfigured
             }
             PhyChipChannelAction::WriteI2c {
                 phase,
@@ -1268,7 +1264,7 @@ mod tests {
                         seed: [0; 6],
                         output_32: [0x20; 8],
                         output_64: [0x40; 16],
-                        output_72: [0x48; 18],
+                        output_72: [0x48; 16],
                         config: 0,
                     },
                 }
@@ -1308,7 +1304,7 @@ mod tests {
         let mut transition = PhyChipChannelTransition::new(REQUEST);
         let mut actions = 0;
         let mut ready_samples = 0;
-        let mut rx_comp_passes = [false; 2];
+        let mut rx_compensation_count = 0;
         let mut saw_gain_image = false;
 
         loop {
@@ -1320,8 +1316,8 @@ mod tests {
                     assert_eq!(samples, ready_samples);
                     ready_samples += 1;
                 }
-                PhyChipChannelAction::ConfigureRxCompensation { pass } => {
-                    rx_comp_passes[pass as usize] = true;
+                PhyChipChannelAction::ConfigureRxCompensation => {
+                    rx_compensation_count += 1;
                 }
                 PhyChipChannelAction::PublishTxGain(image) => {
                     saw_gain_image = true;
@@ -1345,8 +1341,39 @@ mod tests {
         }
 
         assert_eq!(ready_samples, 3);
-        assert_eq!(rx_comp_passes, [true, true]);
+        assert_eq!(rx_compensation_count, 2);
         assert!(saw_gain_image);
+    }
+
+    #[test]
+    fn off_grid_frequency_uses_raw_then_channel_normalized_nrx_values() {
+        let mut request = REQUEST;
+        request.channel_or_frequency = 2_413;
+        let mut transition = PhyChipChannelTransition::new(request);
+        let mut nrx = [0_u16; 2];
+        let mut nrx_count = 0;
+
+        loop {
+            let action = transition.action();
+            match action {
+                PhyChipChannelAction::ConfigureNrx { frequency_mhz } => {
+                    nrx[nrx_count] = frequency_mhz;
+                    nrx_count += 1;
+                }
+                PhyChipChannelAction::Complete(outcome) => {
+                    assert_eq!(outcome.channel, 1);
+                    assert_eq!(outcome.frequency_mhz, 2_413);
+                    break;
+                }
+                PhyChipChannelAction::Failed(failure) => {
+                    panic!("off-grid channel transition failed: {failure:?}")
+                }
+                _ => {}
+            }
+            transition.advance(direct_completion(action, true)).unwrap();
+        }
+
+        assert_eq!(nrx, [2_413, 2_412]);
     }
 
     #[test]

@@ -21,6 +21,11 @@ as `MODEM_SYSCON`, `MODEM_LPCON`, `HP_SYS_CLKRST`, `PMU`, `LP_AON_CLK_RST`,
 `LP_PERI`, `LP_TSENS`, and `I2C_ANA_MST`. The custom SVD must not duplicate
 those peripherals.
 
+The compiled parity verifier composes the custom radio map with
+`svd/esp32s31-platform-radio-deps.svd`. That second file is only an address and
+field catalog for decoding vendor ELF traces; it is not passed to `svd2rust`
+and does not weaken the single-owner runtime rule above.
+
 Wi-Fi DMA descriptors are SRAM shared with the MAC DMA engine, not MMIO. Their
 memory-safety proof therefore belongs to the Wi-Fi MAC and integration layers,
 separately from peripheral singleton ownership.

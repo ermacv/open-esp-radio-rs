@@ -1,0 +1,78 @@
+name: Private oracle regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "crates/esp32s31/**"
+      - "hil/esp32s31/trace-probes/**"
+      - "hil/vendor-oracle/esp32s31/trace-elf/**"
+      - "svd/**"
+      - "tools/phy-trace/**"
+      - ".github/workflows/oracle-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    # This environment should require approval. The dedicated runner exposes
+    # pinned proprietary inputs read-only at ESP32S31_ORACLE_ROOT and never
+    # executes pull-request code.
+    environment: oracle-regression
+    runs-on: [self-hosted, linux, x64, esp32s31-oracles]
+    timeout-minutes: 30
+    env:
+      ESP32S31_ORACLE_ROOT: /opt/open-esp-radio/oracles/esp32s31
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: >-
+          rustup toolchain install 1.97.1 --profile minimal
+          --target riscv32imafc-unknown-none-elf
+          --component rust-src
+      - run: rustup default 1.97.1
+      - name: Attach read-only oracle inputs
+        run: |
+          test -r "$ESP32S31_ORACLE_ROOT/libphy.a"
+          test -r "$ESP32S31_ORACLE_ROOT/esp32s31_rev0_rom.elf"
+          ln -s "$ESP32S31_ORACLE_ROOT" _oracles
+      - name: Build pinned vendor oracle ELF
+        run: >-
+          cargo build --manifest-path hil/vendor-oracle/esp32s31/Cargo.toml
+          -p open-esp-radio-vendor-oracle-esp32s31-trace-elf
+          --target riscv32imafc-unknown-none-elf --release
+      - name: Build Rust trace probes
+        run: >-
+          cargo build --manifest-path hil/esp32s31/Cargo.toml
+          -p open-esp-radio-hil-esp32s31-trace-probes-elf
+          --target riscv32imafc-unknown-none-elf --release
+      - name: Run pinned regression qualification
+        run: |
+          set -o pipefail
+          cargo run --quiet --manifest-path tools/phy-trace/Cargo.toml -- \
+            verify-all \
+            --svd svd/esp32s31-radio.svd \
+            --svd svd/esp32s31-platform-radio-deps.svd \
+            --rom-artifact _oracles/esp32s31_rev0_rom.elf \
+            --archive-artifact hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+            --archive-inventory _oracles/libphy.a \
+            --rom-companion hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+            --archive-companion _oracles/esp32s31_rev0_rom.elf \
+            --rust-artifact hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-hil-esp32s31-trace-probes-elf \
+            --profiles tools/phy-trace/profiles/esp32s31.profile \
+            --dispositions tools/phy-trace/dispositions/esp32s31.disposition \
+            --gate regression --match-floor 103 \
+            --evidence-baseline tools/phy-trace/baselines/esp32s31.evidence \
+            --json-report oracle-regression.json \
+            | tee oracle-regression.log
+      - name: Upload qualification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32s31-oracle-regression
+          path: |
+            oracle-regression.json
+            oracle-regression.log
+          if-no-files-found: warn

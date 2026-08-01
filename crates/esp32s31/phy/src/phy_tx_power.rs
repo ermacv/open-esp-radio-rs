@@ -152,7 +152,6 @@ const fn rate_to_target_index(rate: u8) -> Option<usize> {
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const CHANNEL_CODES: [u16; 3] = [1, 6, 11];
-const POWER_CONTROL_BASE_ATTENUATION: i16 = 52;
 const POWER_CONTROL_MAX_ITERATIONS: u8 = 10;
 
 const fn clamp_i16(value: i16, low: i16, high: i16) -> i16 {
@@ -301,11 +300,15 @@ impl PhyPowerControlPointTransition {
     }
 
     const fn outcome(&self) -> PhyPowerControlPointOutcome {
-        let correction = clamp_i16(
-            self.attenuation as i16 - POWER_CONTROL_BASE_ATTENUATION,
-            -24,
-            48,
-        ) as i8;
+        // Complete ROM `phy_rfcal_pwrctrl` saturates only values below -24.
+        // Wi-Fi's baseline 52 naturally caps the positive side at 48, while
+        // Bluetooth's baseline 8 legitimately reaches 92.
+        let raw_correction = self.attenuation as i16 - self.request.base_attenuation;
+        let correction = if raw_correction < -24 {
+            -24
+        } else {
+            raw_correction
+        } as i8;
         PhyPowerControlPointOutcome {
             identity: self.request.identity,
             correction,
@@ -440,6 +443,10 @@ pub struct PhyTxPowerParameters {
     pub power_offset: i16,
     pub initial_attenuation: u8,
     pub clear_tone_after_ready: bool,
+    /// Existing SAR reference codes. Wi-Fi replaces these during its
+    /// reference phase; Bluetooth consumes the values established earlier in
+    /// the shared cold-calibration graph.
+    pub reference_codes: [i16; 2],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -537,8 +544,45 @@ enum TxPowerStep {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyTxPowerMode {
+    Wifi,
+    Bluetooth { tone_selector: u16 },
+}
+
+impl PhyTxPowerMode {
+    const fn base_attenuation(self) -> i16 {
+        match self {
+            Self::Wifi => 52,
+            Self::Bluetooth { .. } => 8,
+        }
+    }
+
+    const fn tone_selector(self) -> u16 {
+        match self {
+            Self::Wifi => 0x80,
+            Self::Bluetooth { tone_selector } => tone_selector,
+        }
+    }
+
+    const fn adjustment_center(self) -> i16 {
+        match self {
+            Self::Wifi => 12,
+            Self::Bluetooth { .. } => 10,
+        }
+    }
+
+    const fn accepted_first_power(self) -> core::ops::RangeInclusive<i16> {
+        match self {
+            Self::Wifi => 0..=16,
+            Self::Bluetooth { .. } => 0..=22,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyTxPowerTransition {
     parameters: PhyTxPowerParameters,
+    mode: PhyTxPowerMode,
     step: TxPowerStep,
     channel: u8,
     reference_codes: [i16; 2],
@@ -550,18 +594,35 @@ pub struct PhyTxPowerTransition {
 
 impl PhyTxPowerTransition {
     pub const fn new(parameters: PhyTxPowerParameters) -> Self {
+        Self::new_for_mode(parameters, PhyTxPowerMode::Wifi)
+    }
+
+    /// Construct the mode-one branch of archive
+    /// `phy_tx_pwctrl_init_cal_new`, used by `phy_bt_tx_pwctrl_init`.
+    pub const fn new_bluetooth(parameters: PhyTxPowerParameters, tone_selector: u16) -> Self {
+        Self::new_for_mode(parameters, PhyTxPowerMode::Bluetooth { tone_selector })
+    }
+
+    const fn new_for_mode(parameters: PhyTxPowerParameters, mode: PhyTxPowerMode) -> Self {
         let step = if parameters.already_calibrated {
             TxPowerStep::Complete
         } else {
-            TxPowerStep::Enter(PhyTxCalibrationEnvironmentTransition::enter(
-                parameters.environment,
-            ))
+            match mode {
+                PhyTxPowerMode::Wifi => TxPowerStep::Enter(
+                    PhyTxCalibrationEnvironmentTransition::enter(parameters.environment),
+                ),
+                // The Bluetooth parent owns debug-mode entry. Its shared
+                // child first applies the channel-six TX-cap row, then begins
+                // the three-channel RFPLL search.
+                PhyTxPowerMode::Bluetooth { .. } => TxPowerStep::TxCap,
+            }
         };
         Self {
             parameters,
+            mode,
             step,
             channel: 0,
-            reference_codes: [0; 2],
+            reference_codes: parameters.reference_codes,
             power_curve: [0; 3],
             point_corrections: [0; 3],
             power_adjustment: 0,
@@ -586,9 +647,17 @@ impl PhyTxPowerTransition {
     }
 
     fn exit(&mut self, terminal: TxPowerTerminal) {
-        self.step = TxPowerStep::Exit {
-            terminal,
-            transition: PhyTxCalibrationEnvironmentTransition::exit(self.parameters.environment),
+        self.step = match self.mode {
+            PhyTxPowerMode::Wifi => TxPowerStep::Exit {
+                terminal,
+                transition: PhyTxCalibrationEnvironmentTransition::exit(
+                    self.parameters.environment,
+                ),
+            },
+            PhyTxPowerMode::Bluetooth { .. } => match terminal {
+                TxPowerTerminal::Complete => TxPowerStep::Complete,
+                TxPowerTerminal::Failed(failure) => TxPowerStep::Failed(failure),
+            },
         };
     }
 
@@ -604,6 +673,13 @@ impl PhyTxPowerTransition {
         })
     }
 
+    const fn tx_cap_channel_code(&self) -> u16 {
+        match self.mode {
+            PhyTxPowerMode::Wifi => CHANNEL_CODES[self.channel as usize],
+            PhyTxPowerMode::Bluetooth { .. } => 6,
+        }
+    }
+
     fn reference_sample(&self, phase: u8) -> PhyToneSarTransition {
         PhyToneSarTransition::new(PhyToneSarRequest {
             measurement: 0x60 + phase,
@@ -614,12 +690,13 @@ impl PhyTxPowerTransition {
     }
 
     fn point(&self) -> PhyPowerControlPointTransition {
+        let base_attenuation = self.mode.base_attenuation();
         PhyPowerControlPointTransition::new(PhyPowerControlPointRequest {
             identity: self.channel,
             target: 56_i16.wrapping_sub(self.parameters.target_adjustment as i16),
-            tone_selector: 0x80,
-            base_attenuation: self.attenuation as i16,
-            initial_serial_error: 0,
+            tone_selector: self.mode.tone_selector(),
+            base_attenuation,
+            initial_serial_error: (self.attenuation as i16).wrapping_sub(base_attenuation),
             power_offset: self.parameters.power_offset,
             reference_codes: self.reference_codes,
             // `phy_tx_pwctrl_init_cal_new` forces former
@@ -630,8 +707,8 @@ impl PhyTxPowerTransition {
 
     fn finish_points(&mut self) {
         let first = self.power_curve[0] as i16;
-        let adjustment = if !(0..=16).contains(&first) {
-            clamp_i16(first - 12, -40, 40) as i8
+        let adjustment = if !self.mode.accepted_first_power().contains(&first) {
+            clamp_i16(first - self.mode.adjustment_center(), -40, 40) as i8
         } else {
             0
         };
@@ -656,10 +733,7 @@ impl PhyTxPowerTransition {
             TxPowerStep::Rfpll(transition) => PhyTxPowerAction::Rfpll(transition.action()),
             TxPowerStep::TxCap => PhyTxPowerAction::WriteI2c {
                 address: TX_CAP_ADDRESS,
-                value: tx_cap_value(
-                    self.parameters.capacitance,
-                    CHANNEL_CODES[self.channel as usize],
-                ),
+                value: tx_cap_value(self.parameters.capacitance, self.tx_cap_channel_code()),
             },
             TxPowerStep::ReferenceTone => PhyTxPowerAction::ConfigureTone {
                 selector: 0x80,
@@ -706,7 +780,12 @@ impl PhyTxPowerTransition {
                     .advance(completion)
                     .map_err(|_| PhyTxPowerTransitionError::WrongCompletion)?;
                 match transition.action() {
-                    RfpllFrequencyAction::Complete(_) => self.step = TxPowerStep::TxCap,
+                    RfpllFrequencyAction::Complete(_) => {
+                        self.step = match self.mode {
+                            PhyTxPowerMode::Wifi => TxPowerStep::TxCap,
+                            PhyTxPowerMode::Bluetooth { .. } => TxPowerStep::Point(self.point()),
+                        }
+                    }
                     RfpllFrequencyAction::Failed(failure) => {
                         self.fail(PhyTxPowerFailure::Rfpll(failure));
                     }
@@ -718,13 +797,13 @@ impl PhyTxPowerTransition {
                     && value
                         == tx_cap_value(
                             self.parameters.capacitance,
-                            CHANNEL_CODES[self.channel as usize],
+                            self.tx_cap_channel_code(),
                         ) =>
             {
-                self.step = if self.channel == 0 {
-                    TxPowerStep::ReferenceTone
-                } else {
-                    TxPowerStep::Point(self.point())
+                self.step = match self.mode {
+                    PhyTxPowerMode::Wifi if self.channel == 0 => TxPowerStep::ReferenceTone,
+                    PhyTxPowerMode::Wifi => TxPowerStep::Point(self.point()),
+                    PhyTxPowerMode::Bluetooth { .. } => TxPowerStep::Rfpll(self.rfpll()),
                 };
             }
             (
@@ -790,7 +869,9 @@ impl PhyTxPowerTransition {
                         } else {
                             outcome.correction
                         };
-                        self.attenuation = self.power_curve[index].wrapping_add(52_i8) as u8;
+                        self.attenuation = self.power_curve[index]
+                            .wrapping_add(self.mode.base_attenuation() as i8)
+                            as u8;
                         self.channel += 1;
                         if self.channel == 3 {
                             self.finish_points();
@@ -1349,6 +1430,50 @@ mod tests {
     }
 
     #[test]
+    fn bluetooth_point_preserves_rom_corrections_above_wifi_maximum() {
+        let mut transition = PhyPowerControlPointTransition::new(PhyPowerControlPointRequest {
+            identity: 0,
+            target: -100,
+            tone_selector: 0x20,
+            base_attenuation: 8,
+            initial_serial_error: 92,
+            power_offset: 0,
+            reference_codes: [0, 100],
+            clear_tone_after_ready: true,
+        });
+        loop {
+            let completion = match transition.action() {
+                PhyPowerControlPointAction::ConfigureTone {
+                    identity,
+                    iteration,
+                    selector,
+                    attenuation,
+                } => PhyPowerControlPointCompletion::ToneConfigured {
+                    identity,
+                    iteration,
+                    selector,
+                    attenuation,
+                },
+                PhyPowerControlPointAction::ToneSar(action) => {
+                    PhyPowerControlPointCompletion::ToneSar(tone_sar_completion(action, 50))
+                }
+                PhyPowerControlPointAction::StopTone { identity } => {
+                    PhyPowerControlPointCompletion::ToneStopped { identity }
+                }
+                PhyPowerControlPointAction::Complete(outcome) => {
+                    assert_eq!(outcome.attenuation, 100);
+                    assert_eq!(outcome.correction, 92);
+                    break;
+                }
+                PhyPowerControlPointAction::Failed(failure) => {
+                    panic!("unexpected failure {failure:?}")
+                }
+            };
+            transition.advance(completion).unwrap();
+        }
+    }
+
+    #[test]
     fn already_calibrated_root_emits_no_hardware_action() {
         let transition = PhyTxPowerTransition::new(PhyTxPowerParameters {
             already_calibrated: true,
@@ -1363,6 +1488,7 @@ mod tests {
             power_offset: 0,
             initial_attenuation: 0,
             clear_tone_after_ready: false,
+            reference_codes: [0; 2],
         });
         assert!(matches!(
             transition.action(),

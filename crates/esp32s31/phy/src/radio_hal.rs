@@ -169,6 +169,14 @@ fn tx_gain_seed_halfword(image: &crate::phy_channel::PhyWifiTxGainImage, index: 
     }
 }
 
+#[cfg(target_arch = "riscv32")]
+fn bluetooth_tx_gain_seed_halfword(
+    image: &crate::phy_bluetooth::PhyBluetoothTxGainImage,
+    index: usize,
+) -> u16 {
+    packed_halfword(&image.seed, index)
+}
+
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
@@ -442,6 +450,44 @@ pub(crate) fn publish_phy_tx_gain_memory(
     }
 }
 
+/// Publish the 16-entry Bluetooth bank produced by
+/// `phy_bt_get_tx_tab_new`. The common hardware encoding is identical to the
+/// Wi-Fi bank, while the table length, bank and typed input image remain
+/// explicitly Bluetooth-owned.
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn publish_bluetooth_tx_gain_memory(
+    registers: &mut RadioRegisters,
+    image: crate::phy_bluetooth::PhyBluetoothTxGainImage,
+) {
+    let hardware_base =
+        open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(registers);
+    let memory_base = hardware_base.wrapping_add(32);
+    let mut entry = 0_u8;
+    while entry != 16 {
+        let entry_index = usize::from(entry);
+        let gain_72 = image.output_72[entry_index];
+        let gain_64 = image.output_64[entry_index];
+        let gain_32 = image.output_32[entry_index];
+        let seed_index = tx_baseband_gain_index(gain_64) * 4;
+        let (word_0, word_1, word_2) = encode_phy_gain_memory_words(
+            gain_72,
+            gain_64,
+            gain_32,
+            bluetooth_tx_gain_seed_halfword(&image, seed_index),
+            bluetooth_tx_gain_seed_halfword(&image, seed_index + 1),
+            bluetooth_tx_gain_seed_halfword(&image, seed_index + 2),
+            bluetooth_tx_gain_seed_halfword(&image, seed_index + 3),
+            image.config,
+        );
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
+            registers,
+            [word_0, word_1, word_2],
+            memory_base.wrapping_add(entry),
+        );
+        entry += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -495,7 +541,7 @@ mod tests {
                 0,
             ],
             output_64: [0; 16],
-            output_72: [0; 18],
+            output_72: [0; 16],
             config: 0,
         };
 

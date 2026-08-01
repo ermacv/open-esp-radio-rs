@@ -94,6 +94,9 @@ enum SearchStep {
         kind: MeasurementKind,
         transition: PhyToneSarTransition,
     },
+    CommitDco {
+        transaction: u8,
+    },
     Complete,
     Failed(PhyTxDcPwdetSearchFailure),
 }
@@ -286,7 +289,7 @@ impl PhyTxDcPwdetSearchTransition {
 
         self.component += 1;
         if self.component == COMPONENT_COUNT {
-            self.step = SearchStep::Complete;
+            self.step = SearchStep::CommitDco { transaction: 0 };
         } else {
             self.precheck = 0;
             self.positive_step = 10;
@@ -314,6 +317,9 @@ impl PhyTxDcPwdetSearchTransition {
             },
             SearchStep::Measure { transition, .. } => {
                 PhyTxDcPwdetSearchAction::ToneSar(transition.action())
+            }
+            SearchStep::CommitDco { transaction } => {
+                PhyTxDcPwdetSearchAction::ForcePbus(self.dco_transaction(transaction))
             }
             SearchStep::Complete => PhyTxDcPwdetSearchAction::Complete(PhyTxDcPwdetSearchOutcome {
                 identity: self.request.identity,
@@ -351,6 +357,24 @@ impl PhyTxDcPwdetSearchTransition {
             }
             (
                 SearchStep::ProgramDco { transaction, .. },
+                PhyTxDcPwdetSearchCompletion::PbusTimedOut(completed),
+            ) if completed == self.dco_transaction(transaction) => {
+                self.step = SearchStep::Failed(PhyTxDcPwdetSearchFailure::PbusTimedOut(completed));
+            }
+            (
+                SearchStep::CommitDco { transaction },
+                PhyTxDcPwdetSearchCompletion::PbusCompleted(completed),
+            ) if completed == self.dco_transaction(transaction) => {
+                self.step = if transaction == 3 {
+                    SearchStep::Complete
+                } else {
+                    SearchStep::CommitDco {
+                        transaction: transaction + 1,
+                    }
+                };
+            }
+            (
+                SearchStep::CommitDco { transaction },
                 PhyTxDcPwdetSearchCompletion::PbusTimedOut(completed),
             ) if completed == self.dco_transaction(transaction) => {
                 self.step = SearchStep::Failed(PhyTxDcPwdetSearchFailure::PbusTimedOut(completed));
@@ -445,6 +469,10 @@ pub enum PhyTxDcPwdetAction {
     },
     ConfigurePowerDetector,
     ConfigurePbusDebugMode,
+    ReadPbus {
+        selector: u8,
+        path: u8,
+    },
     ForcePbus(PhyPbusForceTest),
     ConfigureTone {
         enabled: bool,
@@ -479,6 +507,11 @@ pub enum PhyTxDcPwdetCompletion {
     },
     PowerDetectorConfigured,
     PbusDebugModeConfigured,
+    PbusRead {
+        selector: u8,
+        path: u8,
+        value: u16,
+    },
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
     ToneConfigured {
@@ -526,6 +559,9 @@ enum RootStep {
     ToneOn,
     InitialDelay,
     TxOn { index: u8 },
+    BluetoothReadForcedPath,
+    BluetoothForcePath { value: u16 },
+    BluetoothForceTxPath,
     Sar,
     Gain,
     Search(PhyTxDcPwdetSearchTransition),
@@ -546,12 +582,19 @@ enum RootStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyTxDcPwdetTransition {
     parameters: PhyTxDcPwdetParameters,
+    mode: PhyTxDcPwdetMode,
     step: RootStep,
     dco: [[u16; 4]; 3],
     row: u8,
     total_measurements: u16,
     saved_power_table_low: u8,
     saved_power_control_field: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyTxDcPwdetMode {
+    Wifi,
+    Bluetooth { tx_path_value: u8 },
 }
 
 const fn tx_off(index: u8) -> PhyPbusForceTest {
@@ -599,8 +642,21 @@ const fn default_dco(index: u8) -> PhyPbusForceTest {
 
 impl PhyTxDcPwdetTransition {
     pub const fn new(parameters: PhyTxDcPwdetParameters) -> Self {
+        Self::new_with_mode(parameters, PhyTxDcPwdetMode::Wifi)
+    }
+
+    /// Build the Bluetooth use of archive `phy_txdc_cal_pwdet_init(1, 0, 1)`.
+    ///
+    /// The common search remains shared, while the Bluetooth-only PBus read
+    /// and TX-path force stay explicit in the action graph.
+    pub const fn new_bluetooth(parameters: PhyTxDcPwdetParameters, tx_path_value: u8) -> Self {
+        Self::new_with_mode(parameters, PhyTxDcPwdetMode::Bluetooth { tx_path_value })
+    }
+
+    const fn new_with_mode(parameters: PhyTxDcPwdetParameters, mode: PhyTxDcPwdetMode) -> Self {
         Self {
             parameters,
+            mode,
             step: RootStep::Capture,
             dco: parameters.dco,
             row: 0,
@@ -631,6 +687,23 @@ impl PhyTxDcPwdetTransition {
             RootStep::ClockOn => PhyTxDcPwdetAction::ConfigureTxClock { enabled: true },
             RootStep::PowerDetector => PhyTxDcPwdetAction::ConfigurePowerDetector,
             RootStep::Debug => PhyTxDcPwdetAction::ConfigurePbusDebugMode,
+            RootStep::BluetoothReadForcedPath => PhyTxDcPwdetAction::ReadPbus {
+                selector: 1,
+                path: 1,
+            },
+            RootStep::BluetoothForcePath { value } => {
+                PhyTxDcPwdetAction::ForcePbus(PhyPbusForceTest::new(1, 1, value | 2))
+            }
+            RootStep::BluetoothForceTxPath => {
+                let PhyTxDcPwdetMode::Bluetooth { tx_path_value } = self.mode else {
+                    unreachable!()
+                };
+                PhyTxDcPwdetAction::ForcePbus(PhyPbusForceTest::new(
+                    4,
+                    2,
+                    (tx_path_value as u16) << 3,
+                ))
+            }
             RootStep::TxOff { index } | RootStep::CleanupTxOff { index, .. } => {
                 PhyTxDcPwdetAction::ForcePbus(tx_off(index))
             }
@@ -710,11 +783,27 @@ impl PhyTxDcPwdetTransition {
             RootStep::TxOn { index } => (
                 tx_on(index),
                 if index == 10 {
-                    RootStep::Sar
+                    match self.mode {
+                        PhyTxDcPwdetMode::Wifi => RootStep::Sar,
+                        PhyTxDcPwdetMode::Bluetooth { .. } => RootStep::BluetoothReadForcedPath,
+                    }
                 } else {
                     RootStep::TxOn { index: index + 1 }
                 },
             ),
+            RootStep::BluetoothForcePath { value } => (
+                PhyPbusForceTest::new(1, 1, value | 2),
+                RootStep::BluetoothForceTxPath,
+            ),
+            RootStep::BluetoothForceTxPath => {
+                let PhyTxDcPwdetMode::Bluetooth { tx_path_value } = self.mode else {
+                    return Err(PhyTxDcPwdetTransitionError::WrongCompletion);
+                };
+                (
+                    PhyPbusForceTest::new(4, 2, u16::from(tx_path_value) << 3),
+                    RootStep::Sar,
+                )
+            }
             RootStep::Gain => (
                 PhyPbusForceTest::new(1, 2, TX_BB_GAIN[self.row as usize]),
                 RootStep::Search(PhyTxDcPwdetSearchTransition::new(
@@ -810,6 +899,14 @@ impl PhyTxDcPwdetTransition {
             (RootStep::Sar, PhyTxDcPwdetCompletion::SarCalibrationConfigured) => {
                 self.step = RootStep::Gain;
             }
+            (
+                RootStep::BluetoothReadForcedPath,
+                PhyTxDcPwdetCompletion::PbusRead {
+                    selector: 1,
+                    path: 1,
+                    value,
+                },
+            ) => self.step = RootStep::BluetoothForcePath { value },
             (RootStep::Search(mut transition), PhyTxDcPwdetCompletion::Search(completion)) => {
                 transition
                     .advance(completion)
@@ -898,6 +995,8 @@ impl PhyTxDcPwdetTransition {
                 RootStep::TxOff { .. }
                 | RootStep::RxOff { .. }
                 | RootStep::TxOn { .. }
+                | RootStep::BluetoothForcePath { .. }
+                | RootStep::BluetoothForceTxPath
                 | RootStep::Gain
                 | RootStep::CleanupDco { .. }
                 | RootStep::CleanupTxOff { .. },
@@ -907,6 +1006,8 @@ impl PhyTxDcPwdetTransition {
                 RootStep::TxOff { .. }
                 | RootStep::RxOff { .. }
                 | RootStep::TxOn { .. }
+                | RootStep::BluetoothForcePath { .. }
+                | RootStep::BluetoothForceTxPath
                 | RootStep::Gain
                 | RootStep::CleanupDco { .. }
                 | RootStep::CleanupTxOff { .. },
@@ -938,6 +1039,7 @@ impl PhyTxDcPwdetMmioBinding {
             | PhyTxDcPwdetAction::ConfigureTxClock { .. }
             | PhyTxDcPwdetAction::ConfigurePowerDetector
             | PhyTxDcPwdetAction::ConfigurePbusDebugMode
+            | PhyTxDcPwdetAction::ReadPbus { .. }
             | PhyTxDcPwdetAction::ConfigureTone { .. }
             | PhyTxDcPwdetAction::ConfigureSarCalibration
             | PhyTxDcPwdetAction::ConfigurePbusWorkMode
@@ -979,6 +1081,19 @@ impl PhyTxDcPwdetMmioBinding {
                 open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers);
                 PhyTxDcPwdetCompletion::PbusDebugModeConfigured
             }
+            PhyTxDcPwdetAction::ReadPbus { selector, path } => PhyTxDcPwdetCompletion::PbusRead {
+                selector,
+                path,
+                value: {
+                    let result =
+                        open_esp_radio_esp32s31_hal::pbus::read_result(registers, selector, path);
+                    debug_assert!(
+                        result.is_some(),
+                        "TX-DC PWDET transition emitted an unrecovered PBus selector"
+                    );
+                    result.unwrap_or(0)
+                },
+            },
             PhyTxDcPwdetAction::ConfigureTone {
                 enabled,
                 selector,
@@ -1411,6 +1526,85 @@ mod tests {
                 PhyPbusForceTest::new(1, 2, TX_BB_GAIN[index])
             );
         }
+    }
+
+    #[test]
+    fn bluetooth_mode_reads_and_forces_the_bluetooth_tx_path_before_sar_setup() {
+        let mut transition = PhyTxDcPwdetTransition::new_bluetooth(
+            PhyTxDcPwdetParameters {
+                dco: [[0; 4]; 3],
+                clear_tone_after_ready: false,
+            },
+            0x12,
+        );
+
+        loop {
+            let completion = match transition.action() {
+                PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
+                    power_table_low: 0,
+                    power_control_field: 0,
+                },
+                PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
+                    PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
+                }
+                PhyTxDcPwdetAction::ConfigurePowerDetector => {
+                    PhyTxDcPwdetCompletion::PowerDetectorConfigured
+                }
+                PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
+                    PhyTxDcPwdetCompletion::PbusDebugModeConfigured
+                }
+                PhyTxDcPwdetAction::ForcePbus(transaction) => {
+                    PhyTxDcPwdetCompletion::PbusCompleted(transaction)
+                }
+                PhyTxDcPwdetAction::ConfigureTone {
+                    enabled,
+                    selector,
+                    attenuation,
+                } => PhyTxDcPwdetCompletion::ToneConfigured {
+                    enabled,
+                    selector,
+                    attenuation,
+                },
+                PhyTxDcPwdetAction::DelayMicros { phase, micros } => {
+                    PhyTxDcPwdetCompletion::DelayElapsed { phase, micros }
+                }
+                PhyTxDcPwdetAction::ReadPbus { selector, path } => {
+                    assert_eq!((selector, path), (1, 1));
+                    transition
+                        .advance(PhyTxDcPwdetCompletion::PbusRead {
+                            selector,
+                            path,
+                            value: 0x34,
+                        })
+                        .unwrap();
+                    break;
+                }
+                action => panic!("unexpected Bluetooth prefix action {action:?}"),
+            };
+            transition.advance(completion).unwrap();
+        }
+
+        let forced_path = PhyPbusForceTest::new(1, 1, 0x36);
+        assert_eq!(
+            transition.action(),
+            PhyTxDcPwdetAction::ForcePbus(forced_path)
+        );
+        transition
+            .advance(PhyTxDcPwdetCompletion::PbusCompleted(forced_path))
+            .unwrap();
+
+        let forced_tx_path = PhyPbusForceTest::new(4, 2, 0x90);
+        assert_eq!(
+            transition.action(),
+            PhyTxDcPwdetAction::ForcePbus(forced_tx_path)
+        );
+        transition
+            .advance(PhyTxDcPwdetCompletion::PbusCompleted(forced_tx_path))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyTxDcPwdetAction::ConfigureSarCalibration
+        );
     }
 
     #[test]

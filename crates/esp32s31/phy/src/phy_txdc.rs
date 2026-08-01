@@ -42,6 +42,7 @@ pub enum PhyTxDcFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxDcDelayPhase {
     ComparatorSettle { gain_index: u8, iteration: u8 },
+    ToneStop,
     PbusWorkMode,
     PbusWorkModePulse,
 }
@@ -49,6 +50,10 @@ pub enum PhyTxDcDelayPhase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxDcAction {
     ConfigurePbusDebugMode,
+    ReadPbus {
+        selector: u8,
+        path: u8,
+    },
     ForcePbus(PhyPbusForceTest),
     ConfigureTxClock,
     ConfigureTone {
@@ -83,6 +88,11 @@ pub enum PhyTxDcAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxDcCompletion {
     PbusDebugModeConfigured,
+    PbusRead {
+        selector: u8,
+        path: u8,
+        value: u16,
+    },
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
     TxClockConfigured,
@@ -184,6 +194,9 @@ impl Search {
 enum Step {
     ConfigurePbusDebugMode,
     EnterPbus { index: u8 },
+    ReadBluetoothGainControl,
+    ForceBluetoothGainControl { value: u16 },
+    ConfigureBluetoothTxPath,
     SelectGain { gain_index: u8 },
     InitializeDco { gain_index: u8, index: u8 },
     ConfigureTxClock { gain_index: u8 },
@@ -198,7 +211,9 @@ enum Step {
     ForceFinalI { search: Search, average: [u16; 2] },
     ClearMeasurement { gain_index: u8 },
     DisableTone { gain_index: u8 },
+    ToneStopDelay { gain_index: u8 },
     CleanupTone(Terminal),
+    CleanupToneDelay(Terminal),
     ExitPbus { index: u8, terminal: Terminal },
     ConfigurePbusWorkMode(Terminal),
     PbusSettleDelay(Terminal),
@@ -207,6 +222,12 @@ enum Step {
     ClearPbusWorkModePulse(Terminal),
     Complete(PhyTxDcOutcome),
     Failed(PhyTxDcFailure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyTxDcMode {
+    Wifi,
+    Bluetooth { tx_path_value: u8 },
 }
 
 pub const fn tx_bb_gain(index: u8) -> u16 {
@@ -271,6 +292,7 @@ const fn preserve_failure(terminal: Terminal, transaction: PhyPbusForceTest) -> 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyTxDcTransition {
     parameters: PhyTxDcParameters,
+    mode: PhyTxDcMode,
     dco: [[u16; 4]; PHY_TX_DC_GAIN_COUNT as usize],
     step: Step,
 }
@@ -279,18 +301,67 @@ impl PhyTxDcTransition {
     pub const fn new(parameters: PhyTxDcParameters) -> Self {
         Self {
             parameters,
+            mode: PhyTxDcMode::Wifi,
             dco: [[INITIAL_DCO; 4]; PHY_TX_DC_GAIN_COUNT as usize],
             step: Step::ConfigurePbusDebugMode,
         }
+    }
+
+    /// Construct the complete archive `phy_bt_txdc_cal_new` graph.
+    ///
+    /// It reuses the same ROM `phy_txdc_cal` search for the three canonical
+    /// Bluetooth baseband gains while retaining the BT-only PBus preparation.
+    pub const fn new_bluetooth(parameters: PhyTxDcParameters, tx_path_value: u8) -> Self {
+        Self {
+            parameters,
+            mode: PhyTxDcMode::Bluetooth { tx_path_value },
+            dco: [[INITIAL_DCO; 4]; PHY_TX_DC_GAIN_COUNT as usize],
+            step: Step::ConfigurePbusDebugMode,
+        }
+    }
+
+    const fn gain_count(self) -> u8 {
+        match self.mode {
+            PhyTxDcMode::Wifi => PHY_TX_DC_GAIN_COUNT,
+            PhyTxDcMode::Bluetooth { .. } => 3,
+        }
+    }
+
+    const fn selected_gain(self, gain_index: u8) -> u16 {
+        match self.mode {
+            PhyTxDcMode::Wifi => tx_bb_gain(gain_index),
+            PhyTxDcMode::Bluetooth { .. } => {
+                crate::phy_bluetooth::bluetooth_gain_index_to_baseband(gain_index as u32) as u16
+            }
+        }
+    }
+
+    const fn bluetooth_tx_path_transaction(self) -> PhyPbusForceTest {
+        let PhyTxDcMode::Bluetooth { tx_path_value } = self.mode else {
+            unreachable!()
+        };
+        PhyPbusForceTest::new(4, 2, (tx_path_value as u16) << 3)
     }
 
     pub const fn action(self) -> PhyTxDcAction {
         match self.step {
             Step::ConfigurePbusDebugMode => PhyTxDcAction::ConfigurePbusDebugMode,
             Step::EnterPbus { index } => PhyTxDcAction::ForcePbus(enter_pbus_transaction(index)),
-            Step::SelectGain { gain_index } => {
-                PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(1, 2, tx_bb_gain(gain_index)))
+            Step::ReadBluetoothGainControl => PhyTxDcAction::ReadPbus {
+                selector: 1,
+                path: 1,
+            },
+            Step::ForceBluetoothGainControl { value } => {
+                PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(1, 1, value | 2))
             }
+            Step::ConfigureBluetoothTxPath => {
+                PhyTxDcAction::ForcePbus(self.bluetooth_tx_path_transaction())
+            }
+            Step::SelectGain { gain_index } => PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(
+                1,
+                2,
+                self.selected_gain(gain_index),
+            )),
             Step::InitializeDco { index, .. } => PhyTxDcAction::ForcePbus(if index == 0 {
                 PhyPbusForceTest::new(2, 2, INITIAL_DCO)
             } else {
@@ -339,6 +410,10 @@ impl PhyTxDcTransition {
                 selector: TONE_SELECTOR,
                 step: TONE_STEP,
             },
+            Step::ToneStopDelay { .. } | Step::CleanupToneDelay(_) => PhyTxDcAction::DelayMicros {
+                phase: PhyTxDcDelayPhase::ToneStop,
+                micros: 5,
+            },
             Step::ExitPbus { index, .. } => {
                 PhyTxDcAction::ForcePbus(exit_pbus_transaction(index, self.parameters))
             }
@@ -367,7 +442,10 @@ impl PhyTxDcTransition {
                 if transaction == enter_pbus_transaction(index) =>
             {
                 if index + 1 == ENTER_PBUS_COUNT {
-                    Step::SelectGain { gain_index: 0 }
+                    match self.mode {
+                        PhyTxDcMode::Wifi => Step::SelectGain { gain_index: 0 },
+                        PhyTxDcMode::Bluetooth { .. } => Step::ReadBluetoothGainControl,
+                    }
                 } else {
                     Step::EnterPbus { index: index + 1 }
                 }
@@ -379,8 +457,42 @@ impl PhyTxDcTransition {
                     transaction,
                 )))
             }
+            (
+                Step::ReadBluetoothGainControl,
+                PhyTxDcCompletion::PbusRead {
+                    selector: 1,
+                    path: 1,
+                    value,
+                },
+            ) => Step::ForceBluetoothGainControl { value },
+            (
+                Step::ForceBluetoothGainControl { value },
+                PhyTxDcCompletion::PbusCompleted(transaction),
+            ) if transaction == PhyPbusForceTest::new(1, 1, value | 2) => {
+                Step::ConfigureBluetoothTxPath
+            }
+            (
+                Step::ForceBluetoothGainControl { value },
+                PhyTxDcCompletion::PbusTimedOut(transaction),
+            ) if transaction == PhyPbusForceTest::new(1, 1, value | 2) => {
+                Step::ConfigurePbusWorkMode(Terminal::Failed(PhyTxDcFailure::PbusTimedOut(
+                    transaction,
+                )))
+            }
+            (Step::ConfigureBluetoothTxPath, PhyTxDcCompletion::PbusCompleted(transaction))
+                if transaction == self.bluetooth_tx_path_transaction() =>
+            {
+                Step::SelectGain { gain_index: 0 }
+            }
+            (Step::ConfigureBluetoothTxPath, PhyTxDcCompletion::PbusTimedOut(transaction))
+                if transaction == self.bluetooth_tx_path_transaction() =>
+            {
+                Step::ConfigurePbusWorkMode(Terminal::Failed(PhyTxDcFailure::PbusTimedOut(
+                    transaction,
+                )))
+            }
             (Step::SelectGain { gain_index }, PhyTxDcCompletion::PbusCompleted(transaction))
-                if transaction == PhyPbusForceTest::new(1, 2, tx_bb_gain(gain_index)) =>
+                if transaction == PhyPbusForceTest::new(1, 2, self.selected_gain(gain_index)) =>
             {
                 Step::InitializeDco {
                     gain_index,
@@ -388,7 +500,7 @@ impl PhyTxDcTransition {
                 }
             }
             (Step::SelectGain { gain_index }, PhyTxDcCompletion::PbusTimedOut(transaction))
-                if transaction == PhyPbusForceTest::new(1, 2, tx_bb_gain(gain_index)) =>
+                if transaction == PhyPbusForceTest::new(1, 2, self.selected_gain(gain_index)) =>
             {
                 Step::ConfigurePbusWorkMode(Terminal::Failed(PhyTxDcFailure::PbusTimedOut(
                     transaction,
@@ -568,8 +680,15 @@ impl PhyTxDcTransition {
                     selector: TONE_SELECTOR,
                     step: TONE_STEP,
                 },
+            ) => Step::ToneStopDelay { gain_index },
+            (
+                Step::ToneStopDelay { gain_index },
+                PhyTxDcCompletion::DelayElapsed {
+                    phase: PhyTxDcDelayPhase::ToneStop,
+                    micros: 5,
+                },
             ) => {
-                if gain_index + 1 == PHY_TX_DC_GAIN_COUNT {
+                if gain_index + 1 == self.gain_count() {
                     Step::ExitPbus {
                         index: 0,
                         terminal: Terminal::Complete(PhyTxDcOutcome { dco: self.dco }),
@@ -586,6 +705,13 @@ impl PhyTxDcTransition {
                     enabled: false,
                     selector: TONE_SELECTOR,
                     step: TONE_STEP,
+                },
+            ) => Step::CleanupToneDelay(terminal),
+            (
+                Step::CleanupToneDelay(terminal),
+                PhyTxDcCompletion::DelayElapsed {
+                    phase: PhyTxDcDelayPhase::ToneStop,
+                    micros: 5,
                 },
             ) => Step::ExitPbus { index: 0, terminal },
             (Step::ExitPbus { index, terminal }, PhyTxDcCompletion::PbusCompleted(transaction))
@@ -696,6 +822,7 @@ impl PhyTxDcMmioBinding {
     pub fn new(action: PhyTxDcAction) -> Result<Self, PhyTxDcBindingError> {
         match action {
             PhyTxDcAction::ConfigurePbusDebugMode
+            | PhyTxDcAction::ReadPbus { .. }
             | PhyTxDcAction::ConfigureTxClock
             | PhyTxDcAction::ConfigureTone { .. }
             | PhyTxDcAction::TriggerMeasurement { .. }
@@ -722,6 +849,19 @@ impl PhyTxDcMmioBinding {
                 open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers);
                 PhyTxDcCompletion::PbusDebugModeConfigured
             }
+            PhyTxDcAction::ReadPbus { selector, path } => PhyTxDcCompletion::PbusRead {
+                selector,
+                path,
+                value: {
+                    let result =
+                        open_esp_radio_esp32s31_hal::pbus::read_result(registers, selector, path);
+                    debug_assert!(
+                        result.is_some(),
+                        "TX-DC transition emitted an unrecovered PBus selector"
+                    );
+                    result.unwrap_or(0)
+                },
+            },
             PhyTxDcAction::ConfigureTxClock => {
                 open_esp_radio_esp32s31_hal::pbus::configure_tx_clock(registers, true);
                 PhyTxDcCompletion::TxClockConfigured
@@ -928,6 +1068,13 @@ mod tests {
             Ok(PhyTxDcExternalBinding::Mmio(_))
         ));
         assert!(matches!(
+            PhyTxDcExternalBinding::lower(PhyTxDcAction::ReadPbus {
+                selector: 1,
+                path: 1,
+            }),
+            Ok(PhyTxDcExternalBinding::Mmio(_))
+        ));
+        assert!(matches!(
             PhyTxDcExternalBinding::lower(PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(4, 1, 0))),
             Ok(PhyTxDcExternalBinding::Pbus(_))
         ));
@@ -994,6 +1141,7 @@ mod tests {
         let search = Search::new(2);
         let mut transition = PhyTxDcTransition {
             parameters,
+            mode: PhyTxDcMode::Wifi,
             dco: [[INITIAL_DCO; 4]; 5],
             step: Step::PollReady(search),
         };
@@ -1016,6 +1164,7 @@ mod tests {
             parameters: PhyTxDcParameters {
                 pbus_rx_path_value: 0xbf,
             },
+            mode: PhyTxDcMode::Wifi,
             dco: [[INITIAL_DCO; 4]; 5],
             step: Step::PollReady(search),
         };
@@ -1033,5 +1182,146 @@ mod tests {
                 step: 120,
             }
         );
+    }
+
+    #[test]
+    fn bluetooth_variant_retains_the_complete_extra_pbus_prefix() {
+        let mut transition = PhyTxDcTransition::new_bluetooth(
+            PhyTxDcParameters {
+                pbus_rx_path_value: 0xbf,
+            },
+            0x35,
+        );
+        assert_eq!(transition.action(), PhyTxDcAction::ConfigurePbusDebugMode);
+        transition
+            .advance(PhyTxDcCompletion::PbusDebugModeConfigured)
+            .unwrap();
+
+        for index in 0..ENTER_PBUS_COUNT {
+            let transaction = enter_pbus_transaction(index);
+            assert_eq!(transition.action(), PhyTxDcAction::ForcePbus(transaction));
+            transition
+                .advance(PhyTxDcCompletion::PbusCompleted(transaction))
+                .unwrap();
+        }
+
+        assert_eq!(
+            transition.action(),
+            PhyTxDcAction::ReadPbus {
+                selector: 1,
+                path: 1,
+            }
+        );
+        transition
+            .advance(PhyTxDcCompletion::PbusRead {
+                selector: 1,
+                path: 1,
+                value: 0x40,
+            })
+            .unwrap();
+
+        let gain_control = PhyPbusForceTest::new(1, 1, 0x42);
+        assert_eq!(transition.action(), PhyTxDcAction::ForcePbus(gain_control));
+        transition
+            .advance(PhyTxDcCompletion::PbusCompleted(gain_control))
+            .unwrap();
+
+        let tx_path = PhyPbusForceTest::new(4, 2, 0x35 << 3);
+        assert_eq!(transition.action(), PhyTxDcAction::ForcePbus(tx_path));
+        transition
+            .advance(PhyTxDcCompletion::PbusCompleted(tx_path))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyTxDcAction::ForcePbus(PhyPbusForceTest::new(1, 2, 0))
+        );
+        assert_eq!(transition.gain_count(), 3);
+        assert_eq!(transition.selected_gain(0), 0);
+        assert_eq!(transition.selected_gain(1), 0x80);
+        assert_eq!(transition.selected_gain(2), 0x100);
+    }
+
+    #[test]
+    fn bluetooth_variant_completes_exactly_three_common_comparator_searches() {
+        let mut transition = PhyTxDcTransition::new_bluetooth(
+            PhyTxDcParameters {
+                pbus_rx_path_value: 0xbf,
+            },
+            0x35,
+        );
+        let mut comparator_reads = [0_u8; 3];
+
+        loop {
+            let action = transition.action();
+            let completion = match action {
+                PhyTxDcAction::ConfigurePbusDebugMode => PhyTxDcCompletion::PbusDebugModeConfigured,
+                PhyTxDcAction::ReadPbus { selector, path } => PhyTxDcCompletion::PbusRead {
+                    selector,
+                    path,
+                    value: 0x40,
+                },
+                PhyTxDcAction::ForcePbus(transaction) => {
+                    PhyTxDcCompletion::PbusCompleted(transaction)
+                }
+                PhyTxDcAction::ConfigureTxClock => PhyTxDcCompletion::TxClockConfigured,
+                PhyTxDcAction::ConfigureTone {
+                    enabled,
+                    selector,
+                    step,
+                } => PhyTxDcCompletion::ToneConfigured {
+                    enabled,
+                    selector,
+                    step,
+                },
+                PhyTxDcAction::DelayMicros { phase, micros } => {
+                    PhyTxDcCompletion::DelayElapsed { phase, micros }
+                }
+                PhyTxDcAction::TriggerMeasurement {
+                    gain_index,
+                    iteration,
+                } => PhyTxDcCompletion::MeasurementTriggered {
+                    gain_index,
+                    iteration,
+                },
+                PhyTxDcAction::PollReady {
+                    gain_index,
+                    iteration,
+                } => PhyTxDcCompletion::ReadySampled {
+                    gain_index,
+                    iteration,
+                    ready: true,
+                },
+                PhyTxDcAction::ReadComparators {
+                    gain_index,
+                    iteration,
+                } => {
+                    comparator_reads[gain_index as usize] += 1;
+                    PhyTxDcCompletion::ComparatorsRead {
+                        gain_index,
+                        iteration,
+                        comparator_high: [false, false],
+                    }
+                }
+                PhyTxDcAction::ClearMeasurement => PhyTxDcCompletion::MeasurementCleared,
+                PhyTxDcAction::ConfigurePbusWorkMode => PhyTxDcCompletion::PbusWorkModeConfigured {
+                    settle_required: false,
+                },
+                PhyTxDcAction::ConfigurePbusWorkModePulse
+                | PhyTxDcAction::ClearPbusWorkModePulse => {
+                    panic!("no pulse is emitted when work mode needs no settling")
+                }
+                PhyTxDcAction::Complete(outcome) => {
+                    assert_eq!(comparator_reads, [12, 12, 12]);
+                    assert_eq!(outcome.dco[0], [0x1ff, 0x1ff, 0x100, 0x100]);
+                    assert_eq!(outcome.dco[1], [0x1ff, 0x1ff, 0x100, 0x100]);
+                    assert_eq!(outcome.dco[2], [0x1ff, 0x1ff, 0x100, 0x100]);
+                    assert_eq!(outcome.dco[3], [0x100; 4]);
+                    assert_eq!(outcome.dco[4], [0x100; 4]);
+                    break;
+                }
+                PhyTxDcAction::Failed(failure) => panic!("unexpected failure: {failure:?}"),
+            };
+            transition.advance(completion).unwrap();
+        }
     }
 }

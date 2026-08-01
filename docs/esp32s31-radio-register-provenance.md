@@ -16,6 +16,11 @@ The SVD answers the first two for recovered radio blocks. HAL semantic
 operations carry the third in comments; documented system blocks are decoded
 only by the official PAC in the integration adapter.
 
+For binary validation only, `svd/esp32s31-platform-radio-deps.svd` mirrors the
+small official-PAC subset reached by the vendor radio graph. It lets one trace
+resolve both ownership domains without adding those peripherals to the custom
+generated PAC.
+
 ## Clock and power chain
 
 | Stage | Registers | Layout evidence | Operation evidence |

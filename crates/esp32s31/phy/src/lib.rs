@@ -15,6 +15,7 @@ pub mod target_executor;
 pub mod target_port;
 
 pub mod phy_bb;
+pub mod phy_bluetooth;
 pub mod phy_channel;
 pub mod phy_cold;
 pub mod phy_dc_iq;

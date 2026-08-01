@@ -1133,6 +1133,7 @@ name = "open-esp-radio-phy-trace"
 version = "0.1.0"
 dependencies = [
  "object",
+ "open-esp-radio-esp32s31-phy",
  "roxmltree",
  "rv-asm",
  "sha2",

@@ -188,6 +188,17 @@ pub mod analog_registers {
     pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 0x02);
     pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
     pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
+
+    /// Block 0x67 registers 0x1c..0x1f are temporarily forced to value two
+    /// around archive `phy_bt_tx_pwctrl_init`. Only the first byte and the low
+    /// six bits of the third byte are sampled; the same saved values are
+    /// restored to both members of each pair after calibration.
+    pub const BT_TX_POWER_CONTROL_LOW_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x67, 0x1c);
+    pub const BT_TX_POWER_CONTROL_LOW_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x67, 0x1d);
+    pub const BT_TX_POWER_CONTROL_HIGH_0: Field =
+        Field::new(PhyI2cAddress::new_internal(0x67, 0x1e), 5, 0);
+    pub const BT_TX_POWER_CONTROL_HIGH_1: Field =
+        Field::new(PhyI2cAddress::new_internal(0x67, 0x1f), 5, 0);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

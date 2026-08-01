@@ -1216,9 +1216,39 @@
         </register>
         <register>
           <name>POWER_DETECTOR_SAR_RESULT</name>
-          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample.</description>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. First of four consecutive SAR result words. phy_get_tone_sar_dout_ consumes its upper thirteen-bit sample; phy_get_fm_sar_dout consumes both thirteen-bit halves from all four words.</description>
           <addressOffset>0x081c</addressOffset><size>32</size><access>read-only</access>
-          <fields><field><name>SAR_SAMPLE</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field></fields>
+          <fields>
+            <field><name>SAR_SAMPLE_LOW</name><bitOffset>1</bitOffset><bitWidth>13</bitWidth></field>
+            <field><name>SAR_SAMPLE</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_SAR_RESULT_1</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. Second of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.</description>
+          <addressOffset>0x0820</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>SAR_SAMPLE_LOW</name><bitOffset>1</bitOffset><bitWidth>13</bitWidth></field>
+            <field><name>SAR_SAMPLE_HIGH</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_SAR_RESULT_2</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. Third of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.</description>
+          <addressOffset>0x0824</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>SAR_SAMPLE_LOW</name><bitOffset>1</bitOffset><bitWidth>13</bitWidth></field>
+            <field><name>SAR_SAMPLE_HIGH</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>POWER_DETECTOR_SAR_RESULT_3</name>
+          <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. Fourth of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.</description>
+          <addressOffset>0x0828</addressOffset><size>32</size><access>read-only</access>
+          <fields>
+            <field><name>SAR_SAMPLE_LOW</name><bitOffset>1</bitOffset><bitWidth>13</bitWidth></field>
+            <field><name>SAR_SAMPLE_HIGH</name><bitOffset>17</bitOffset><bitWidth>13</bitWidth></field>
+          </fields>
         </register>
         <register>
           <name>TX_PA_CONTROL_0</name>
@@ -3698,7 +3728,7 @@
       <source id="ROM_REV0_PHY_CBW_FEATURE_WATCHDOG">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; register-access evidence from complete phy_bb_cbw_chan_cfg, phy_vht_support, phy_csidump_force_lltf_cfg, phy_hemu_ru26_good_res, phy_freq_band_reg_set, phy_bbtx_outfilter, phy_bb_wdt_rst_enable, phy_bb_wdt_int_enable, phy_bb_wdt_timeout_clear, phy_bb_wdt_get_status and phy_lltf_mask_en bodies; machine comparison is owned by tools/phy-trace</source>
       <source id="ROM_REV0_PHY_READ_NOISE_FLOOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_read_hw_noisefloor at 0x2f827d72, size 0x1a. It reads 0x2010708c, masks the low twelve bits, subtracts 0x1000, sign-extends and arithmetic-shifts right by two.</source>
       <source id="HIL_OPEN_STA_RATE_CONTROL_2026_07_30">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC, standard psram-code-psram-data profile and nearby FRITZ HE20 peer, 2026-07-30. The generated PAC plus complete ROM/wDev transform read -92 dBm, scan RSSI was -20 dBm and the blob-compatible signed-byte metric was 72. The Rust-owned association selected Dot11Ax schedule 1, rate code 0x19, maximum schedule 13, 16 entries and BF report mode/rate 1/16. WPA2/CCMP, TID0/TID7/TID5 AddBA, a three-subframe TX A-MPDU and DHCP completed; 100/100 ICMP packets completed with 3.692 ms mean RTT and zero driver RX drops or duplicates.</source>
-      <source id="ROM_REV0_PHY_POWER_DETECTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pwdet_reg_init at 0x2f82634a size 0x5c, phy_pwdet_sar2_init at 0x2f8263a6 size 0x34, phy_en_pwdet at 0x2f8263da size 0x26, phy_tx_pwctrl_bg_init at 0x2f8267f6 size 0x1e, phy_get_tone_sar_dout_ at 0x2f8266da size 0x40 and phy_txcal_debuge_mode_ at 0x2f8244fe size 0x56</source>
+      <source id="ROM_REV0_PHY_POWER_DETECTOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pwdet_reg_init at 0x2f82634a size 0x5c, phy_pwdet_sar2_init at 0x2f8263a6 size 0x34, phy_en_pwdet at 0x2f8263da size 0x26, phy_tx_pwctrl_bg_init at 0x2f8267f6 size 0x1e, phy_get_fm_sar_dout at 0x2f8264b2 size 0x2a, phy_get_tone_sar_dout_ at 0x2f8266da size 0x40 and phy_txcal_debuge_mode_ at 0x2f8244fe size 0x56</source>
       <source id="ROM_REV0_PHY_IQ_COEFFICIENTS">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_set_reg at 0x2f827c16 size 0x68 and phy_rxiq_set_reg at 0x2f827c7e size 0x54</source>
       <source id="ROM_REV0_PHY_IQ_ESTIMATOR">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_iq_est_enable at 0x2f8289d4 size 0xb4, phy_iq_est_disable at 0x2f828a88 size 0x2c, phy_dc_iq_est at 0x2f828ab4 size 0x84, phy_rxiq_get_mis at 0x2f828b84 size 0x13e, phy_set_rx_gain_cal_iq at 0x2f82964c size 0x20c and phy_get_rx_sig_pwr at 0x2f829ea2 size 0x76</source>
       <source id="ROM_REV0_PHY_WAIT_I2C_SDM_STABLE">_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_wait_i2c_sdm_stable at 0x2f823e76 size 0x4a</source>

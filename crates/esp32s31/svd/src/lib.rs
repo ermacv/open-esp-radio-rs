@@ -6867,70 +6867,73 @@ pub mod phy_baseband_config_oracle {
         power_detector_table_1: PowerDetectorTable1,
         power_detector_reference: PowerDetectorReference,
         power_detector_sar_result: PowerDetectorSarResult,
-        _reserved17: [u8; 0x4c],
+        power_detector_sar_result_1: PowerDetectorSarResult1,
+        power_detector_sar_result_2: PowerDetectorSarResult2,
+        power_detector_sar_result_3: PowerDetectorSarResult3,
+        _reserved20: [u8; 0x40],
         tx_pa_control_0: TxPaControl0,
         tx_pa_control_1: TxPaControl1,
-        _reserved19: [u8; 0x0390],
+        _reserved22: [u8; 0x0390],
         dac_scale_control: DacScaleControl,
         front_end_init_0c08: FrontEndInit0c08,
         iq_correction_aux: IqCorrectionAux,
-        _reserved22: [u8; 0x10],
+        _reserved25: [u8; 0x10],
         front_end_init_0c20: FrontEndInit0c20,
-        _reserved23: [u8; 0x3868],
+        _reserved26: [u8; 0x3868],
         i2c_tx_rate_control: I2cTxRateControl,
-        _reserved24: [u8; 0x2b88],
+        _reserved27: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved25: [u8; 0x70],
+        _reserved28: [u8; 0x70],
         noise_floor_measurement: NoiseFloorMeasurement,
-        _reserved26: [u8; 0x0370],
+        _reserved29: [u8; 0x0370],
         baseband_init_7400: BasebandInit7400,
-        _reserved27: [u8; 0x24],
+        _reserved30: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved28: [u8; 0x10],
+        _reserved31: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
         tx_output_filter_control: TxOutputFilterControl,
-        _reserved30: [u8; 0x10],
+        _reserved33: [u8; 0x10],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved34: [u8; 0x04],
+        _reserved37: [u8; 0x04],
         hccfr_control: HccfrControl,
         hccfr_value: HccfrValue,
-        _reserved36: [u8; 0x08],
+        _reserved39: [u8; 0x08],
         iccfr_force_control: IccfrForceControl,
         iccfr_enable_control: IccfrEnableControl,
-        _reserved38: [u8; 0x0388],
+        _reserved41: [u8; 0x0388],
         baseband_init_7808: BasebandInit7808,
-        _reserved39: [u8; 0x84],
+        _reserved42: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved40: [u8; 0x48],
+        _reserved43: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved41: [u8; 0x04],
+        _reserved44: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved42: [u8; 0x24],
+        _reserved45: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved43: [u8; 0x70],
+        _reserved46: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved44: [u8; 0xa4],
+        _reserved47: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved45: [u8; 0x01d4],
+        _reserved48: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved46: [u8; 0x04],
+        _reserved49: [u8; 0x04],
         baseband_watchdog_status: BasebandWatchdogStatus,
-        _reserved47: [u8; 0x24],
+        _reserved50: [u8; 0x24],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved48: [u8; 0x08],
+        _reserved51: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved51: [u8; 0x08],
+        _reserved54: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved52: [u8; 0x18],
+        _reserved55: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved53: [u8; 0x38],
+        _reserved56: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved54: [u8; 0x24],
+        _reserved57: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -7014,10 +7017,25 @@ pub mod phy_baseband_config_oracle {
         pub const fn power_detector_reference(&self) -> &PowerDetectorReference {
             &self.power_detector_reference
         }
-        #[doc = "0x81c - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample."]
+        #[doc = "0x81c - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. First of four consecutive SAR result words. phy_get_tone_sar_dout_ consumes its upper thirteen-bit sample; phy_get_fm_sar_dout consumes both thirteen-bit halves from all four words."]
         #[inline(always)]
         pub const fn power_detector_sar_result(&self) -> &PowerDetectorSarResult {
             &self.power_detector_sar_result
+        }
+        #[doc = "0x820 - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Second of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+        #[inline(always)]
+        pub const fn power_detector_sar_result_1(&self) -> &PowerDetectorSarResult1 {
+            &self.power_detector_sar_result_1
+        }
+        #[doc = "0x824 - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Third of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+        #[inline(always)]
+        pub const fn power_detector_sar_result_2(&self) -> &PowerDetectorSarResult2 {
+            &self.power_detector_sar_result_2
+        }
+        #[doc = "0x828 - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Fourth of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+        #[inline(always)]
+        pub const fn power_detector_sar_result_3(&self) -> &PowerDetectorSarResult3 {
+            &self.power_detector_sar_result_3
         }
         #[doc = "0x86c - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Shared front-end low byte and PA-on high byte."]
         #[inline(always)]
@@ -8354,30 +8372,133 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "POWER_DETECTOR_SAR_RESULT (r) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_result`] module"]
+    #[doc = "POWER_DETECTOR_SAR_RESULT (r) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. First of four consecutive SAR result words. phy_get_tone_sar_dout_ consumes its upper thirteen-bit sample; phy_get_fm_sar_dout consumes both thirteen-bit halves from all four words.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_result`] module"]
     #[doc(alias = "POWER_DETECTOR_SAR_RESULT")]
     pub type PowerDetectorSarResult =
         crate::Reg<power_detector_sar_result::PowerDetectorSarResultSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample."]
+    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. First of four consecutive SAR result words. phy_get_tone_sar_dout_ consumes its upper thirteen-bit sample; phy_get_fm_sar_dout consumes both thirteen-bit halves from all four words."]
     pub mod power_detector_sar_result {
         #[doc = "Register `POWER_DETECTOR_SAR_RESULT` reader"]
         pub type R = crate::R<PowerDetectorSarResultSpec>;
+        #[doc = "Field `SAR_SAMPLE_LOW` reader - "]
+        pub type SarSampleLowR = crate::FieldReader<u16>;
         #[doc = "Field `SAR_SAMPLE` reader - "]
         pub type SarSampleR = crate::FieldReader<u16>;
         impl R {
+            #[doc = "Bits 1:13"]
+            #[inline(always)]
+            pub fn sar_sample_low(&self) -> SarSampleLowR {
+                SarSampleLowR::new(((self.bits >> 1) & 0x1fff) as u16)
+            }
             #[doc = "Bits 17:29"]
             #[inline(always)]
             pub fn sar_sample(&self) -> SarSampleR {
                 SarSampleR::new(((self.bits >> 17) & 0x1fff) as u16)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. phy_get_tone_sar_dout_ consumes the upper thirteen-bit sample.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. First of four consecutive SAR result words. phy_get_tone_sar_dout_ consumes its upper thirteen-bit sample; phy_get_fm_sar_dout consumes both thirteen-bit halves from all four words.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PowerDetectorSarResultSpec;
         impl crate::RegisterSpec for PowerDetectorSarResultSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`power_detector_sar_result::R`](R) reader structure"]
         impl crate::Readable for PowerDetectorSarResultSpec {}
+    }
+    #[doc = "POWER_DETECTOR_SAR_RESULT_1 (r) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Second of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_result_1`] module"]
+    #[doc(alias = "POWER_DETECTOR_SAR_RESULT_1")]
+    pub type PowerDetectorSarResult1 =
+        crate::Reg<power_detector_sar_result_1::PowerDetectorSarResult1Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Second of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+    pub mod power_detector_sar_result_1 {
+        #[doc = "Register `POWER_DETECTOR_SAR_RESULT_1` reader"]
+        pub type R = crate::R<PowerDetectorSarResult1Spec>;
+        #[doc = "Field `SAR_SAMPLE_LOW` reader - "]
+        pub type SarSampleLowR = crate::FieldReader<u16>;
+        #[doc = "Field `SAR_SAMPLE_HIGH` reader - "]
+        pub type SarSampleHighR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 1:13"]
+            #[inline(always)]
+            pub fn sar_sample_low(&self) -> SarSampleLowR {
+                SarSampleLowR::new(((self.bits >> 1) & 0x1fff) as u16)
+            }
+            #[doc = "Bits 17:29"]
+            #[inline(always)]
+            pub fn sar_sample_high(&self) -> SarSampleHighR {
+                SarSampleHighR::new(((self.bits >> 17) & 0x1fff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Second of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorSarResult1Spec;
+        impl crate::RegisterSpec for PowerDetectorSarResult1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_sar_result_1::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorSarResult1Spec {}
+    }
+    #[doc = "POWER_DETECTOR_SAR_RESULT_2 (r) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Third of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_result_2`] module"]
+    #[doc(alias = "POWER_DETECTOR_SAR_RESULT_2")]
+    pub type PowerDetectorSarResult2 =
+        crate::Reg<power_detector_sar_result_2::PowerDetectorSarResult2Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Third of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+    pub mod power_detector_sar_result_2 {
+        #[doc = "Register `POWER_DETECTOR_SAR_RESULT_2` reader"]
+        pub type R = crate::R<PowerDetectorSarResult2Spec>;
+        #[doc = "Field `SAR_SAMPLE_LOW` reader - "]
+        pub type SarSampleLowR = crate::FieldReader<u16>;
+        #[doc = "Field `SAR_SAMPLE_HIGH` reader - "]
+        pub type SarSampleHighR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 1:13"]
+            #[inline(always)]
+            pub fn sar_sample_low(&self) -> SarSampleLowR {
+                SarSampleLowR::new(((self.bits >> 1) & 0x1fff) as u16)
+            }
+            #[doc = "Bits 17:29"]
+            #[inline(always)]
+            pub fn sar_sample_high(&self) -> SarSampleHighR {
+                SarSampleHighR::new(((self.bits >> 17) & 0x1fff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Third of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorSarResult2Spec;
+        impl crate::RegisterSpec for PowerDetectorSarResult2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_sar_result_2::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorSarResult2Spec {}
+    }
+    #[doc = "POWER_DETECTOR_SAR_RESULT_3 (r) register accessor: SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Fourth of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_3::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_result_3`] module"]
+    #[doc(alias = "POWER_DETECTOR_SAR_RESULT_3")]
+    pub type PowerDetectorSarResult3 =
+        crate::Reg<power_detector_sar_result_3::PowerDetectorSarResult3Spec>;
+    #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Fourth of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout."]
+    pub mod power_detector_sar_result_3 {
+        #[doc = "Register `POWER_DETECTOR_SAR_RESULT_3` reader"]
+        pub type R = crate::R<PowerDetectorSarResult3Spec>;
+        #[doc = "Field `SAR_SAMPLE_LOW` reader - "]
+        pub type SarSampleLowR = crate::FieldReader<u16>;
+        #[doc = "Field `SAR_SAMPLE_HIGH` reader - "]
+        pub type SarSampleHighR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 1:13"]
+            #[inline(always)]
+            pub fn sar_sample_low(&self) -> SarSampleLowR {
+                SarSampleLowR::new(((self.bits >> 1) & 0x1fff) as u16)
+            }
+            #[doc = "Bits 17:29"]
+            #[inline(always)]
+            pub fn sar_sample_high(&self) -> SarSampleHighR {
+                SarSampleHighR::new(((self.bits >> 17) & 0x1fff) as u16)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR\\]; CONFIDENCE\\[instruction-exact\\]. Fourth of four consecutive dual thirteen-bit SAR result words consumed by complete phy_get_fm_sar_dout.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_result_3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorSarResult3Spec;
+        impl crate::RegisterSpec for PowerDetectorSarResult3Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_sar_result_3::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorSarResult3Spec {}
     }
     #[doc = "TX_PA_CONTROL_0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION\\]; CONFIDENCE\\[instruction-exact\\]. Shared front-end low byte and PA-on high byte.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_0`] module"]
     #[doc(alias = "TX_PA_CONTROL_0")]

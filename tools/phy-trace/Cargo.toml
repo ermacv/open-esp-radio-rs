@@ -10,6 +10,7 @@ description = "Compiled RISC-V MMIO trace extractor and SVD-aware comparator"
 
 [dependencies]
 object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
+open-esp-radio-esp32s31-phy = { path = "../../crates/esp32s31/phy" }
 roxmltree = "=0.20.0"
 rv-asm = "=0.2.1"
 sha2 = "=0.10.9"

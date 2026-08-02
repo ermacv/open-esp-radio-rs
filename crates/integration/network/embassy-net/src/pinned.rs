@@ -544,6 +544,57 @@ impl<
     }
 }
 
+/// Narrow radio-side capability that can only publish received Ethernet
+/// frames to `embassy-net`.
+///
+/// This view deliberately contains neither the TX-ready receiver nor the
+/// pinned-slot table. It can therefore be moved into an RX protocol sink
+/// while [`PinnedRadioRunner`] remains the unique owner of TX leases.
+#[derive(Clone, Copy)]
+pub struct PinnedRxPublisher<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    rx: Sender<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    PinnedRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub fn try_send(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+        let owned = EthernetFrame::copy_from_slice(frame).map_err(RxEnqueueError::InvalidLength)?;
+        self.rx.try_send(owned).map_err(|error| match error {
+            TrySendError::Full(_) => RxEnqueueError::QueueFull,
+        })
+    }
+
+    pub fn try_send_parts(
+        &self,
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload: &[u8],
+    ) -> Result<(), RxEnqueueError> {
+        let owned = EthernetFrame::copy_from_parts(destination, source, ether_type, payload)
+            .map_err(RxEnqueueError::InvalidLength)?;
+        self.rx.try_send(owned).map_err(|error| match error {
+            TrySendError::Full(_) => RxEnqueueError::QueueFull,
+        })
+    }
+
+    pub async fn send(&self, frame: &[u8]) -> Result<(), FrameLengthError> {
+        let owned = EthernetFrame::copy_from_slice(frame)?;
+        self.rx.send(owned).await;
+        Ok(())
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.rx.len()
+    }
+}
+
 pub struct PinnedRadioRunner<
     'resources,
     M: RawMutex,
@@ -568,6 +619,13 @@ impl<
     const QUEUE_DEPTH: usize,
 > PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
+    /// Derive the receive-only capability before moving this runner into the
+    /// production Wi-Fi event loop. The returned handle cannot observe or
+    /// claim any network-owned TX slot.
+    pub fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+        PinnedRxPublisher { rx: self.rx }
+    }
+
     pub fn set_link_state(&self, state: LinkState) {
         self.link.set(state);
     }

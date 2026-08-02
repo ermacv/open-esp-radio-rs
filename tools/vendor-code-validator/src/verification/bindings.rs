@@ -60,6 +60,7 @@ impl BindingVersion {
 pub(crate) struct Binding {
     pub(crate) version: BindingVersion,
     pub(crate) rust_probe: String,
+    pub(crate) compare_return: bool,
     pub(crate) driver_adapter: Option<DriverAdapter>,
 }
 
@@ -67,6 +68,7 @@ impl Binding {
     pub(crate) fn new(
         version: BindingVersion,
         rust_probe: String,
+        compare_return: bool,
         driver_adapter: Option<DriverAdapter>,
     ) -> Result<Self> {
         if rust_probe.is_empty() || rust_probe.chars().any(char::is_whitespace) {
@@ -75,6 +77,7 @@ impl Binding {
         Ok(Self {
             version,
             rust_probe,
+            compare_return,
             driver_adapter,
         })
     }
@@ -94,6 +97,9 @@ impl Binding {
         output.push_str("rust-probe ");
         output.push_str(&self.rust_probe);
         output.push('\n');
+        if self.compare_return {
+            output.push_str("compare-return true\n");
+        }
         if let Some(adapter) = &self.driver_adapter {
             output.push_str("driver-adapter ");
             output.push_str(adapter.label());
@@ -108,7 +114,13 @@ mod tests {
     use super::*;
 
     fn binding() -> Binding {
-        Binding::new(BindingVersion::V1, "open_phy_trace_leaf".to_owned(), None).unwrap()
+        Binding::new(
+            BindingVersion::V1,
+            "open_phy_trace_leaf".to_owned(),
+            false,
+            None,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -119,5 +131,20 @@ mod tests {
         }];
         binding().validate(&symbols).unwrap();
         assert!(binding().validate(&[]).is_err());
+    }
+
+    #[test]
+    fn return_comparison_is_an_explicit_evidence_bound_property() {
+        let return_binding = Binding::new(
+            BindingVersion::V1,
+            "open_custom_trace_leaf".to_owned(),
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert!(return_binding.compare_return);
+        assert!(return_binding.canonical().contains("compare-return true\n"));
+        assert!(!binding().canonical().contains("compare-return"));
     }
 }

@@ -105,7 +105,12 @@ pub(super) fn run(
         None,
         &mut evidence,
     )?;
-    let orphan_probes = orphan_probe_count(&rust_artifact, &rust_prefix, &[(source, &symbols)])?;
+    let orphan_probes = orphan_probe_count(
+        &rust_artifact,
+        &rust_prefix,
+        &[(source, &symbols)],
+        &BTreeSet::new(),
+    )?;
     println!(
         "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
         summary.vendor_functions,

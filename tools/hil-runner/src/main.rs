@@ -399,47 +399,19 @@ struct Artifacts {
 enum Scenario {
     BootSmoke,
     Radio,
-    Bidirectional,
     UdpTx,
-    Amsdu,
-    NetworkAmsdu,
-    HeMcsGiMatrix,
-    HeLdpcMatrix,
-    HeDcmMatrix,
-    HeTb,
-    HeDelimiter,
 }
 
 impl Scenario {
-    const ALL: [Self; 11] = [
-        Self::BootSmoke,
-        Self::Radio,
-        Self::Bidirectional,
-        Self::UdpTx,
-        Self::Amsdu,
-        Self::NetworkAmsdu,
-        Self::HeMcsGiMatrix,
-        Self::HeLdpcMatrix,
-        Self::HeDcmMatrix,
-        Self::HeTb,
-        Self::HeDelimiter,
-    ];
+    const ALL: [Self; 3] = [Self::BootSmoke, Self::Radio, Self::UdpTx];
 
     fn parse(value: &str) -> Result<Self> {
         match value {
             "boot-smoke" => Ok(Self::BootSmoke),
             "radio" | "open-radio-hil" => Ok(Self::Radio),
-            "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
-            "amsdu" | "open-radio-amsdu" => Ok(Self::Amsdu),
-            "network-amsdu" | "open-radio-network-amsdu" => Ok(Self::NetworkAmsdu),
-            "he-mcs-gi-matrix" | "open-radio-he-mcs-gi-matrix" => Ok(Self::HeMcsGiMatrix),
-            "he-ldpc-matrix" | "open-radio-he-ldpc-matrix" => Ok(Self::HeLdpcMatrix),
-            "he-dcm-matrix" | "open-radio-he-dcm-matrix" => Ok(Self::HeDcmMatrix),
-            "he-tb" | "open-radio-he-tb" => Ok(Self::HeTb),
-            "he-delimiter" | "open-radio-he-delimiter" => Ok(Self::HeDelimiter),
             _ => Err(format!(
-                "unsupported HIL scenario `{value}`; run `cargo hil scenarios` for the list"
+                "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
             )
             .into()),
         }
@@ -449,15 +421,7 @@ impl Scenario {
         match self {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "radio",
-            Self::Bidirectional => "bidirectional",
             Self::UdpTx => "udp-tx",
-            Self::Amsdu => "amsdu",
-            Self::NetworkAmsdu => "network-amsdu",
-            Self::HeMcsGiMatrix => "he-mcs-gi-matrix",
-            Self::HeLdpcMatrix => "he-ldpc-matrix",
-            Self::HeDcmMatrix => "he-dcm-matrix",
-            Self::HeTb => "he-tb",
-            Self::HeDelimiter => "he-delimiter",
         }
     }
 
@@ -465,68 +429,29 @@ impl Scenario {
         match self {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
-            Self::Bidirectional => "open-radio-bidirectional",
             Self::UdpTx => "open-radio-udp-tx",
-            Self::Amsdu => "open-radio-amsdu",
-            Self::NetworkAmsdu => "open-radio-network-amsdu",
-            Self::HeMcsGiMatrix => "open-radio-he-mcs-gi-matrix",
-            Self::HeLdpcMatrix => "open-radio-he-ldpc-matrix",
-            Self::HeDcmMatrix => "open-radio-he-dcm-matrix",
-            Self::HeTb => "open-radio-he-tb",
-            Self::HeDelimiter => "open-radio-he-delimiter",
         }
     }
 
     const fn runtime_feature(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke",
-            Self::Radio
-            | Self::Bidirectional
-            | Self::UdpTx
-            | Self::Amsdu
-            | Self::NetworkAmsdu
-            | Self::HeMcsGiMatrix
-            | Self::HeLdpcMatrix
-            | Self::HeDcmMatrix
-            | Self::HeTb
-            | Self::HeDelimiter => "open-radio-hil",
+            Self::Radio | Self::UdpTx => "open-radio-hil",
         }
     }
 
     const fn environment(self) -> &'static [(&'static str, &'static str)] {
         match self {
             Self::BootSmoke | Self::Radio => &[],
-            Self::Bidirectional => &[("OPEN_RADIO_RAW_MAC_BENCH", "1")],
             Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
-            Self::Amsdu => &[
-                ("OPEN_RADIO_RAW_MAC_BENCH", "1"),
-                ("OPEN_RADIO_AMSDU_BENCH", "1"),
-            ],
-            Self::NetworkAmsdu => &[
-                ("OPEN_RADIO_TX_BENCH", "1"),
-                ("OPEN_RADIO_NETWORK_AMSDU_BENCH", "1"),
-            ],
-            Self::HeMcsGiMatrix => &[("OPEN_RADIO_HE_MATRIX_HIL", "1")],
-            Self::HeLdpcMatrix => &[("OPEN_RADIO_HE_LDPC_HIL", "1")],
-            Self::HeDcmMatrix => &[("OPEN_RADIO_HE_DCM_HIL", "1")],
-            Self::HeTb => &[("OPEN_RADIO_HE_TB_HIL", "1")],
-            Self::HeDelimiter => &[("OPEN_RADIO_HE_DELIMITER_HIL", "1")],
         }
     }
 
     const fn description(self) -> &'static str {
         match self {
             Self::BootSmoke => "bootstrap, Flash/PSRAM and runtime smoke test",
-            Self::Radio => "baseline open PHY/MAC/STA/WPA2 HIL",
-            Self::Bidirectional => "synthetic raw-MAC uplink plus host downlink",
-            Self::UdpTx => "embassy-net device-to-host UDP throughput",
-            Self::Amsdu => "synthetic A-MSDU/A-MPDU ownership path",
-            Self::NetworkAmsdu => "copy-free embassy-net A-MSDU/A-MPDU path",
-            Self::HeMcsGiMatrix => "HE SU MCS0..9 and GI/LTF matrix",
-            Self::HeLdpcMatrix => "HE SU LDPC MCS/GI matrix",
-            Self::HeDcmMatrix => "HE DCM constellation/GI matrix",
-            Self::HeTb => "Trigger-based HE-TB transmit path",
-            Self::HeDelimiter => "HE delimiter and empty-delimiter matrix",
+            Self::Radio => "production WifiRunner PHY/MAC/STA/WPA2 HIL",
+            Self::UdpTx => "production WifiRunner embassy-net UDP throughput",
         }
     }
 }
@@ -1045,11 +970,8 @@ mod tests {
         assert_eq!(Scenario::parse("boot-smoke").unwrap(), Scenario::BootSmoke);
         assert_eq!(Scenario::parse("radio").unwrap(), Scenario::Radio);
         assert_eq!(Scenario::Radio.name(), "open-radio-hil");
-        assert_eq!(
-            Scenario::parse("he-dcm-matrix").unwrap(),
-            Scenario::HeDcmMatrix
-        );
-        assert_eq!(Scenario::HeDcmMatrix.name(), "open-radio-he-dcm-matrix");
+        assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
+        assert!(Scenario::parse("he-dcm-matrix").is_err());
     }
 
     #[test]
@@ -1066,13 +988,8 @@ mod tests {
     fn scenario_environment_selects_one_reproducible_mode() {
         assert!(Scenario::Radio.environment().is_empty());
         assert_eq!(
-            Scenario::HeLdpcMatrix.environment(),
-            &[("OPEN_RADIO_HE_LDPC_HIL", "1")]
-        );
-        assert!(
-            Scenario::NetworkAmsdu
-                .environment()
-                .contains(&("OPEN_RADIO_TX_BENCH", "1"))
+            Scenario::UdpTx.environment(),
+            &[("OPEN_RADIO_TX_BENCH", "1")]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {
@@ -1085,10 +1002,10 @@ mod tests {
 
     #[test]
     fn scenario_manifest_records_identity_without_external_configuration() {
-        let manifest = scenario_manifest(Scenario::HeDcmMatrix);
-        assert!(manifest.contains("scenario=he-dcm-matrix\n"));
-        assert!(manifest.contains("artifact=open-radio-he-dcm-matrix\n"));
-        assert!(manifest.contains("OPEN_RADIO_HE_DCM_HIL=1\n"));
+        let manifest = scenario_manifest(Scenario::UdpTx);
+        assert!(manifest.contains("scenario=udp-tx\n"));
+        assert!(manifest.contains("artifact=open-radio-udp-tx\n"));
+        assert!(manifest.contains("OPEN_RADIO_TX_BENCH=1\n"));
         assert!(!manifest.contains("OPEN_RADIO_STA_PASSWORD"));
     }
 

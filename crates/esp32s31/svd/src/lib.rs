@@ -12467,14 +12467,14 @@ pub mod wifi_mac_control {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Wi-Fi MAC REGDMA link selection updated by the complete ic_mac_init tail after every vendor channel change. Exact pre-auth vendor state and connected open HIL require link four."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared WDEVPWR control word. The channel-change leaf proves the REGDMA selector, while complete modem-power leaves prove the wake-protect lead time and TBTT auto-period fields. Hardware interactions between these fields remain unqualified."]
 pub type WifiMacRegdmaControl = crate::Periph<wifi_mac_regdma_control::RegisterBlock, 0x2010_d83c>;
 impl core::fmt::Debug for WifiMacRegdmaControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacRegdmaControl").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Wi-Fi MAC REGDMA link selection updated by the complete ic_mac_init tail after every vendor channel change. Exact pre-auth vendor state and connected open HIL require link four."]
+#[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared WDEVPWR control word. The channel-change leaf proves the REGDMA selector, while complete modem-power leaves prove the wake-protect lead time and TBTT auto-period fields. Hardware interactions between these fields remain unqualified."]
 pub mod wifi_mac_regdma_control {
     #[repr(C)]
     #[doc = "Register block"]
@@ -12482,68 +12482,102 @@ pub mod wifi_mac_regdma_control {
         control: Control,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+        pub type ModemWakeupProtectEarlyTimeR = crate::FieldReader<u16>;
+        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+        pub type ModemWakeupProtectEarlyTimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
         #[doc = "Field `LOW_CONTROL_UNKNOWN` reader - "]
-        pub type LowControlUnknownR = crate::FieldReader<u32>;
+        pub type LowControlUnknownR = crate::BitReader;
         #[doc = "Field `LOW_CONTROL_UNKNOWN` writer - "]
-        pub type LowControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        pub type LowControlUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `ACTIVE_LINK` reader - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
         pub type ActiveLinkR = crate::FieldReader;
         #[doc = "Field `ACTIVE_LINK` writer - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
         pub type ActiveLinkW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
-        pub type HighControlUnknownR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
-        pub type HighControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+        pub type ModemTbttAutoPeriodIntervalR = crate::FieldReader<u16>;
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+        pub type ModemTbttAutoPeriodIntervalW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
+        pub type ModemTbttAutoPeriodEnableR = crate::BitReader;
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
+        pub type ModemTbttAutoPeriodEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:15 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+            #[inline(always)]
+            pub fn modem_wakeup_protect_early_time(&self) -> ModemWakeupProtectEarlyTimeR {
+                ModemWakeupProtectEarlyTimeR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16"]
             #[inline(always)]
             pub fn low_control_unknown(&self) -> LowControlUnknownR {
-                LowControlUnknownR::new(self.bits & 0x0001_ffff)
+                LowControlUnknownR::new(((self.bits >> 16) & 1) != 0)
             }
             #[doc = "Bits 17:20 - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
             #[inline(always)]
             pub fn active_link(&self) -> ActiveLinkR {
                 ActiveLinkR::new(((self.bits >> 17) & 0x0f) as u8)
             }
-            #[doc = "Bits 21:31"]
+            #[doc = "Bits 21:30 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
             #[inline(always)]
-            pub fn high_control_unknown(&self) -> HighControlUnknownR {
-                HighControlUnknownR::new(((self.bits >> 21) & 0x07ff) as u16)
+            pub fn modem_tbtt_auto_period_interval(&self) -> ModemTbttAutoPeriodIntervalR {
+                ModemTbttAutoPeriodIntervalR::new(((self.bits >> 21) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
+            #[inline(always)]
+            pub fn modem_tbtt_auto_period_enable(&self) -> ModemTbttAutoPeriodEnableR {
+                ModemTbttAutoPeriodEnableR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:15 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+            #[inline(always)]
+            pub fn modem_wakeup_protect_early_time(
+                &mut self,
+            ) -> ModemWakeupProtectEarlyTimeW<'_, ControlSpec> {
+                ModemWakeupProtectEarlyTimeW::new(self, 0)
+            }
+            #[doc = "Bit 16"]
             #[inline(always)]
             pub fn low_control_unknown(&mut self) -> LowControlUnknownW<'_, ControlSpec> {
-                LowControlUnknownW::new(self, 0)
+                LowControlUnknownW::new(self, 16)
             }
             #[doc = "Bits 17:20 - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
             #[inline(always)]
             pub fn active_link(&mut self) -> ActiveLinkW<'_, ControlSpec> {
                 ActiveLinkW::new(self, 17)
             }
-            #[doc = "Bits 21:31"]
+            #[doc = "Bits 21:30 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
             #[inline(always)]
-            pub fn high_control_unknown(&mut self) -> HighControlUnknownW<'_, ControlSpec> {
-                HighControlUnknownW::new(self, 21)
+            pub fn modem_tbtt_auto_period_interval(
+                &mut self,
+            ) -> ModemTbttAutoPeriodIntervalW<'_, ControlSpec> {
+                ModemTbttAutoPeriodIntervalW::new(self, 21)
+            }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
+            #[inline(always)]
+            pub fn modem_tbtt_auto_period_enable(
+                &mut self,
+            ) -> ModemTbttAutoPeriodEnableW<'_, ControlSpec> {
+                ModemTbttAutoPeriodEnableW::new(self, 31)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-partial\\]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -20789,14 +20823,14 @@ pub mod wifi_mac_sta_tbtt_target {
         }
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Shared station TSF load and coherent snapshot transaction."]
 pub type WifiMacStaTsfLoad = crate::Periph<wifi_mac_sta_tsf_load::RegisterBlock, 0x2010_d814>;
 impl core::fmt::Debug for WifiMacStaTsfLoad {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacStaTsfLoad").finish()
     }
 }
-#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW."]
+#[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Shared station TSF load and coherent snapshot transaction."]
 pub mod wifi_mac_sta_tsf_load {
     #[repr(C)]
     #[doc = "Register block"]
@@ -20804,9 +20838,11 @@ pub mod wifi_mac_sta_tsf_load {
         control: Control,
         value_low: ValueLow,
         value_high: ValueHigh,
+        snapshot_low: SnapshotLow,
+        snapshot_high: SnapshotHigh,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words."]
+        #[doc = "0x00 - SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -20821,21 +20857,40 @@ pub mod wifi_mac_sta_tsf_load {
         pub const fn value_high(&self) -> &ValueHigh {
             &self.value_high
         }
+        #[doc = "0x0c - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[inline(always)]
+        pub const fn snapshot_low(&self) -> &SnapshotLow {
+            &self.snapshot_low
+        }
+        #[doc = "0x10 - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[inline(always)]
+        pub const fn snapshot_high(&self) -> &SnapshotHigh {
+            &self.snapshot_high
+        }
     }
-    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        pub type SnapshotStationTsfR = crate::BitReader;
+        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        pub type SnapshotStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LOAD_STATION_TSF` reader - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfR = crate::BitReader;
         #[doc = "Field `LOAD_STATION_TSF` writer - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bit 0 - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[inline(always)]
+            pub fn snapshot_station_tsf(&self) -> SnapshotStationTsfR {
+                SnapshotStationTsfR::new((self.bits & 1) != 0)
+            }
             #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
             #[inline(always)]
             pub fn load_station_tsf(&self) -> LoadStationTsfR {
@@ -20843,13 +20898,18 @@ pub mod wifi_mac_sta_tsf_load {
             }
         }
         impl W {
+            #[doc = "Bit 0 - SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[inline(always)]
+            pub fn snapshot_station_tsf(&mut self) -> SnapshotStationTsfW<'_, ControlSpec> {
+                SnapshotStationTsfW::new(self, 0)
+            }
             #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
             #[inline(always)]
             pub fn load_station_tsf(&mut self) -> LoadStationTsfW<'_, ControlSpec> {
                 LoadStationTsfW::new(self, 4)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -20913,6 +20973,54 @@ pub mod wifi_mac_sta_tsf_load {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "SNAPSHOT_LOW (r) register accessor: SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
+    #[doc(alias = "SNAPSHOT_LOW")]
+    pub type SnapshotLow = crate::Reg<snapshot_low::SnapshotLowSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+    pub mod snapshot_low {
+        #[doc = "Register `SNAPSHOT_LOW` reader"]
+        pub type R = crate::R<SnapshotLowSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SnapshotLowSpec;
+        impl crate::RegisterSpec for SnapshotLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`snapshot_low::R`](R) reader structure"]
+        impl crate::Readable for SnapshotLowSpec {}
+    }
+    #[doc = "SNAPSHOT_HIGH (r) register accessor: SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
+    #[doc(alias = "SNAPSHOT_HIGH")]
+    pub type SnapshotHigh = crate::Reg<snapshot_high::SnapshotHighSpec>;
+    #[doc = "SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+    pub mod snapshot_high {
+        #[doc = "Register `SNAPSHOT_HIGH` reader"]
+        pub type R = crate::R<SnapshotHighSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SnapshotHighSpec;
+        impl crate::RegisterSpec for SnapshotHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`snapshot_high::R`](R) reader structure"]
+        impl crate::Readable for SnapshotHighSpec {}
+    }
 }
 #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
 pub type WifiMacRtcTimerUpdate =
@@ -20929,13 +21037,14 @@ pub mod wifi_mac_rtc_timer_update {
     pub struct RegisterBlock {
         control: Control,
         soc_wakeup_clear: SocWakeupClear,
-        _reserved2: [u8; 0x08],
+        modem_sleep_limit_control: ModemSleepLimitControl,
+        _reserved3: [u8; 0x04],
         sta_light_sleep_wake_ahead: StaLightSleepWakeAhead,
-        _reserved3: [u8; 0x10],
+        _reserved4: [u8; 0x10],
         rx_beacon_time_low: RxBeaconTimeLow,
         sta_tsf_control: StaTsfControl,
         sta_tbtt_interval: StaTbttInterval,
-        _reserved6: [u8; 0x18],
+        _reserved7: [u8; 0x18],
         slow_clock_calibration: SlowClockCalibration,
     }
     impl RegisterBlock {
@@ -20944,17 +21053,22 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn control(&self) -> &Control {
             &self.control
         }
-        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred."]
+        #[doc = "0x04 - SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
         #[inline(always)]
         pub const fn soc_wakeup_clear(&self) -> &SocWakeupClear {
             &self.soc_wakeup_clear
+        }
+        #[doc = "0x08 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown."]
+        #[inline(always)]
+        pub const fn modem_sleep_limit_control(&self) -> &ModemSleepLimitControl {
+            &self.modem_sleep_limit_control
         }
         #[doc = "0x10 - SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field."]
         #[inline(always)]
         pub const fn sta_light_sleep_wake_ahead(&self) -> &StaLightSleepWakeAhead {
             &self.sta_light_sleep_wake_ahead
         }
-        #[doc = "0x24 - SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH."]
+        #[doc = "0x24 - SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
         #[inline(always)]
         pub const fn rx_beacon_time_low(&self) -> &RxBeaconTimeLow {
             &self.rx_beacon_time_low
@@ -21030,34 +21144,144 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
+    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
     #[doc(alias = "SOC_WAKEUP_CLEAR")]
     pub type SocWakeupClear = crate::Reg<soc_wakeup_clear::SocWakeupClearSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
     pub mod soc_wakeup_clear {
         #[doc = "Register `SOC_WAKEUP_CLEAR` reader"]
         pub type R = crate::R<SocWakeupClearSpec>;
         #[doc = "Register `SOC_WAKEUP_CLEAR` writer"]
         pub type W = crate::W<SocWakeupClearSpec>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 9:0."]
+        pub type BeaconFilterForceSyncLimitR = crate::FieldReader<u16>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 9:0."]
+        pub type BeaconFilterForceSyncLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 10."]
+        pub type BeaconFilterForceSyncEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 10."]
+        pub type BeaconFilterForceSyncEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 17:11."]
+        pub type BeaconFilterForceDumpLimitR = crate::FieldReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 17:11."]
+        pub type BeaconFilterForceDumpLimitW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 21."]
+        pub type BeaconFilterForceDumpEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 21."]
+        pub type BeaconFilterForceDumpEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_SLEEP_COUNTER` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 28."]
+        pub type ClearBeaconSleepCounterR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_SLEEP_COUNTER` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 28."]
+        pub type ClearBeaconSleepCounterW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_MISS_COUNTER` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 29."]
+        pub type ClearBeaconMissCounterR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_MISS_COUNTER` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 29."]
+        pub type ClearBeaconMissCounterW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CLEAR_REQUEST` reader - "]
         pub type ClearRequestR = crate::BitReader;
         #[doc = "Field `CLEAR_REQUEST` writer - "]
         pub type ClearRequestW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_INFO` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 31."]
+        pub type ClearBeaconInfoR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_INFO` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 31."]
+        pub type ClearBeaconInfoW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:9 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 9:0."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_limit(&self) -> BeaconFilterForceSyncLimitR {
+                BeaconFilterForceSyncLimitR::new((self.bits & 0x03ff) as u16)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 10."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_enable(&self) -> BeaconFilterForceSyncEnableR {
+                BeaconFilterForceSyncEnableR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bits 11:17 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 17:11."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_limit(&self) -> BeaconFilterForceDumpLimitR {
+                BeaconFilterForceDumpLimitR::new(((self.bits >> 11) & 0x7f) as u8)
+            }
+            #[doc = "Bit 21 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 21."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_enable(&self) -> BeaconFilterForceDumpEnableR {
+                BeaconFilterForceDumpEnableR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 28."]
+            #[inline(always)]
+            pub fn clear_beacon_sleep_counter(&self) -> ClearBeaconSleepCounterR {
+                ClearBeaconSleepCounterR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 29."]
+            #[inline(always)]
+            pub fn clear_beacon_miss_counter(&self) -> ClearBeaconMissCounterR {
+                ClearBeaconMissCounterR::new(((self.bits >> 29) & 1) != 0)
+            }
             #[doc = "Bit 30"]
             #[inline(always)]
             pub fn clear_request(&self) -> ClearRequestR {
                 ClearRequestR::new(((self.bits >> 30) & 1) != 0)
             }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 31."]
+            #[inline(always)]
+            pub fn clear_beacon_info(&self) -> ClearBeaconInfoR {
+                ClearBeaconInfoR::new(((self.bits >> 31) & 1) != 0)
+            }
         }
         impl W {
+            #[doc = "Bits 0:9 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 9:0."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_limit(
+                &mut self,
+            ) -> BeaconFilterForceSyncLimitW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceSyncLimitW::new(self, 0)
+            }
+            #[doc = "Bit 10 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 10."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_enable(
+                &mut self,
+            ) -> BeaconFilterForceSyncEnableW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceSyncEnableW::new(self, 10)
+            }
+            #[doc = "Bits 11:17 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated setter replaces bits 17:11."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_limit(
+                &mut self,
+            ) -> BeaconFilterForceDumpLimitW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceDumpLimitW::new(self, 11)
+            }
+            #[doc = "Bit 21 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit 21."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_enable(
+                &mut self,
+            ) -> BeaconFilterForceDumpEnableW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceDumpEnableW::new(self, 21)
+            }
+            #[doc = "Bit 28 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 28."]
+            #[inline(always)]
+            pub fn clear_beacon_sleep_counter(
+                &mut self,
+            ) -> ClearBeaconSleepCounterW<'_, SocWakeupClearSpec> {
+                ClearBeaconSleepCounterW::new(self, 28)
+            }
+            #[doc = "Bit 29 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 29."]
+            #[inline(always)]
+            pub fn clear_beacon_miss_counter(
+                &mut self,
+            ) -> ClearBeaconMissCounterW<'_, SocWakeupClearSpec> {
+                ClearBeaconMissCounterW::new(self, 29)
+            }
             #[doc = "Bit 30"]
             #[inline(always)]
             pub fn clear_request(&mut self) -> ClearRequestW<'_, SocWakeupClearSpec> {
                 ClearRequestW::new(self, 30)
             }
+            #[doc = "Bit 31 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated clear leaf sets bit 31."]
+            #[inline(always)]
+            pub fn clear_beacon_info(&mut self) -> ClearBeaconInfoW<'_, SocWakeupClearSpec> {
+                ClearBeaconInfoW::new(self, 31)
+            }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SocWakeupClearSpec;
         impl crate::RegisterSpec for SocWakeupClearSpec {
             type Ux = u32;
@@ -21066,6 +21290,98 @@ pub mod wifi_mac_rtc_timer_update {
         impl crate::Readable for SocWakeupClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`soc_wakeup_clear::W`](W) writer structure"]
         impl crate::Writable for SocWakeupClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "MODEM_SLEEP_LIMIT_CONTROL (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_sleep_limit_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_sleep_limit_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_sleep_limit_control`] module"]
+    #[doc(alias = "MODEM_SLEEP_LIMIT_CONTROL")]
+    pub type ModemSleepLimitControl =
+        crate::Reg<modem_sleep_limit_control::ModemSleepLimitControlSpec>;
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown."]
+    pub mod modem_sleep_limit_control {
+        #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` reader"]
+        pub type R = crate::R<ModemSleepLimitControlSpec>;
+        #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` writer"]
+        pub type W = crate::W<ModemSleepLimitControlSpec>;
+        #[doc = "Field `BEACON_MISS_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        pub type BeaconMissLimitR = crate::FieldReader;
+        #[doc = "Field `BEACON_MISS_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
+        pub type BeaconMissLimitWakeupEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
+        pub type BeaconMissLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        pub type ModemStateSleepLimitR = crate::FieldReader<u16>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
+        pub type ModemStateSleepLimitWakeupEnableR = crate::BitReader;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
+        pub type ModemStateSleepLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[inline(always)]
+            pub fn beacon_miss_limit(&self) -> BeaconMissLimitR {
+                BeaconMissLimitR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
+            #[inline(always)]
+            pub fn beacon_miss_limit_wakeup_enable(&self) -> BeaconMissLimitWakeupEnableR {
+                BeaconMissLimitWakeupEnableR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bits 5:14 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit(&self) -> ModemStateSleepLimitR {
+                ModemStateSleepLimitR::new(((self.bits >> 5) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 15 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit_wakeup_enable(
+                &self,
+            ) -> ModemStateSleepLimitWakeupEnableR {
+                ModemStateSleepLimitWakeupEnableR::new(((self.bits >> 15) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[inline(always)]
+            pub fn beacon_miss_limit(
+                &mut self,
+            ) -> BeaconMissLimitW<'_, ModemSleepLimitControlSpec> {
+                BeaconMissLimitW::new(self, 0)
+            }
+            #[doc = "Bit 4 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
+            #[inline(always)]
+            pub fn beacon_miss_limit_wakeup_enable(
+                &mut self,
+            ) -> BeaconMissLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
+                BeaconMissLimitWakeupEnableW::new(self, 4)
+            }
+            #[doc = "Bits 5:14 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit(
+                &mut self,
+            ) -> ModemStateSleepLimitW<'_, ModemSleepLimitControlSpec> {
+                ModemStateSleepLimitW::new(self, 5)
+            }
+            #[doc = "Bit 15 - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit_wakeup_enable(
+                &mut self,
+            ) -> ModemStateSleepLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
+                ModemStateSleepLimitWakeupEnableW::new(self, 15)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_sleep_limit_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_sleep_limit_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemSleepLimitControlSpec;
+        impl crate::RegisterSpec for ModemSleepLimitControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_sleep_limit_control::R`](R) reader structure"]
+        impl crate::Readable for ModemSleepLimitControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_sleep_limit_control::W`](W) writer structure"]
+        impl crate::Writable for ModemSleepLimitControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -21109,10 +21425,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
+    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
     #[doc(alias = "RX_BEACON_TIME_LOW")]
     pub type RxBeaconTimeLow = crate::Reg<rx_beacon_time_low::RxBeaconTimeLowSpec>;
-    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH."]
+    #[doc = "SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
     pub mod rx_beacon_time_low {
         #[doc = "Register `RX_BEACON_TIME_LOW` reader"]
         pub type R = crate::R<RxBeaconTimeLowSpec>;
@@ -21136,7 +21452,7 @@ pub mod wifi_mac_rtc_timer_update {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBeaconTimeLowSpec;
         impl crate::RegisterSpec for RxBeaconTimeLowSpec {
             type Ux = u32;

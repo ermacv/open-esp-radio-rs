@@ -72,7 +72,6 @@ enum Operation {
     InitializeHeSuffix,
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
-    ReadInterruptEnable,
     WriteInterruptEnable(u32),
     ClearInterrupt(u32),
     Fence,
@@ -174,10 +173,9 @@ impl RxDma for MockMmio {
 }
 
 impl MacInterrupt for MockMmio {
-    fn snapshot(&mut self) -> (u32, u32) {
+    fn status(&mut self) -> u32 {
         self.operations.push(Operation::ReadInterruptStatus);
-        self.operations.push(Operation::ReadInterruptEnable);
-        (self.interrupt_status, self.interrupt_enable)
+        self.interrupt_status
     }
 
     fn acknowledge(&mut self, events: u32) {
@@ -552,6 +550,10 @@ impl MacColdRxBufferHardware for MockMmio {
 }
 
 impl TxHardware for MockMmio {
+    fn tx_descriptor_address(&self, _cpu_address: u32) -> u32 {
+        0x2f00_1000
+    }
+
     fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
         let index = usize::from(queue);
         if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
@@ -777,6 +779,20 @@ impl TxHardware for MockMmio {
         self.write32(TX_STATE_CLEAR, timeout_mask);
         Mmio::fence(self);
         Some(self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID == 0)
+    }
+
+    fn abort_tx_collision(&mut self, queue: u8) -> bool {
+        let index = usize::from(queue);
+        let collision_mask = 1_u32 << queue;
+        if self.read32(TX_STATE) & collision_mask == 0 {
+            return false;
+        }
+        let control = self.read32(mac::TX_Q_CONTROL[index]);
+        self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
+        Mmio::fence(self);
+        self.write32(TX_STATE_CLEAR, collision_mask);
+        Mmio::fence(self);
+        self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID == 0
     }
 
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
@@ -2187,6 +2203,33 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
 }
 
 #[test]
+fn tx_slot_cancels_only_an_unpublished_reservation() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+
+    assert_eq!(slot.as_mut().cancel_reservation(cookie), Ok(()));
+    assert_eq!(slot.state(), TxSlotState::Free);
+    assert_eq!(slot.descriptor_word0(), 0);
+    assert!(slot.as_mut().buffer_mut().is_ok());
+    assert_eq!(
+        slot.as_mut().cancel_reservation(cookie),
+        Err(TxError::Stale)
+    );
+}
+
+#[test]
+fn executor_deadline_quarantines_hardware_owned_tx_storage() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    slot.as_mut().mark_hardware_owned(cookie).unwrap();
+
+    assert_eq!(slot.as_mut().require_reset(cookie), Ok(()));
+    assert_eq!(slot.state(), TxSlotState::ResetRequired);
+    assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
+    assert_eq!(slot.as_mut().require_reset(cookie), Err(TxError::Stale));
+}
+
+#[test]
 fn tx_completion_decodes_the_blob_ack_snr_byte() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
@@ -2278,6 +2321,38 @@ fn tx_slot_reproduces_the_migration_timeout_abort_order() {
         .unwrap();
     assert!(invalidation < cca_release);
     assert!(cca_release < timeout_clear);
+}
+
+#[test]
+fn tx_slot_disables_before_acknowledging_one_collision_queue() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    slot.as_mut().mark_hardware_owned(cookie).unwrap();
+
+    let mut mmio = MockMmio::default();
+    mmio.set(TX_STATE, 1);
+    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
+
+    assert_eq!(slot.as_mut().abort_collision(&mut mmio, cookie), Ok(true));
+    assert_eq!(slot.state(), TxSlotState::Free);
+
+    let disable = mmio
+        .operations()
+        .iter()
+        .position(|operation| {
+            matches!(operation, Operation::Write(register, value)
+                if *register == TX_Q0_CONTROL && value & TX_Q_ENABLE_VALID == 0)
+        })
+        .unwrap();
+    let acknowledge = mmio
+        .operations()
+        .iter()
+        .position(|operation| {
+            matches!(operation, Operation::Write(register, value)
+                if *register == TX_STATE_CLEAR && *value == 1)
+        })
+        .unwrap();
+    assert!(disable < acknowledge);
 }
 
 #[test]

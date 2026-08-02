@@ -14,11 +14,6 @@ SECTIONS
     *(.text .text.*)
   } > TRACE
 
-  .note.open_esp_radio.oracle : ALIGN(4)
-  {
-    KEEP(*(.note.open_esp_radio.oracle))
-  } > TRACE
-
   .rodata : ALIGN(4)
   {
     *(.rodata .rodata.*)

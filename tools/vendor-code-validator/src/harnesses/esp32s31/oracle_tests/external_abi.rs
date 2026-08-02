@@ -108,6 +108,45 @@ fn real_libpp_hal_random_resolves_through_wifi_osi_abi() {
 }
 
 #[test]
+fn real_wdev_append_rx_blocks_recognizes_wifi_assert_as_a_diagnostic_boundary() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("validator facade remains under tools");
+    let artifact = private_input("OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE").unwrap_or_default();
+    if !artifact.exists() {
+        eprintln!("private libpp fixture is not installed; integration test skipped");
+        return;
+    }
+    let svd = MmioRegisterMap::load_all(&[
+        root.join("svd/esp32s31-radio.svd"),
+        root.join("svd/esp32s31-platform-radio-deps.svd"),
+    ])
+    .unwrap();
+
+    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
+        .unwrap()
+        .trace(Some("wdev.o"), "wDev_AppendRxBlocks", &svd)
+        .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(
+        trace.reference_blockers.iter().all(|blocker| {
+            !(blocker.contains("unresolved-call-relocation") && blocker.contains("wifi_assert"))
+        }),
+        "wifi_assert must be a known diagnostic boundary, not an unknown ABI: {trace:#?}"
+    );
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("symbolic-cfg")
+                && blocker.contains("unmodeled-memory")),
+        "the remaining boundary must be caller-owned descriptor/state memory: {trace:#?}"
+    );
+}
+
+#[test]
 fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()

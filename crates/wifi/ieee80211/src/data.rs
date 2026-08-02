@@ -101,6 +101,38 @@ pub struct DataDecapPlan {
     pub ethernet_length: usize,
 }
 
+/// Borrowed Ethernet-II frame represented without an intermediate contiguous
+/// scratch allocation.
+///
+/// Receive integrations can copy these four parts directly into their final
+/// owned network-queue slot. The view never outlives the validated MPDU or
+/// A-MSDU subframe from which its payload was borrowed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EthernetFrameParts<'payload> {
+    pub destination: [u8; 6],
+    pub source: [u8; 6],
+    pub ether_type: u16,
+    pub payload: &'payload [u8],
+}
+
+impl EthernetFrameParts<'_> {
+    pub const fn length(self) -> usize {
+        ETHERNET_HEADER_LEN + self.payload.len()
+    }
+
+    pub fn copy_to(self, output: &mut [u8]) -> Result<usize, DataDecapError> {
+        let required = self.length();
+        if output.len() < required {
+            return Err(DataDecapError::OutputTooSmall { required });
+        }
+        output[..6].copy_from_slice(&self.destination);
+        output[6..12].copy_from_slice(&self.source);
+        output[12..14].copy_from_slice(&self.ether_type.to_be_bytes());
+        output[14..required].copy_from_slice(self.payload);
+        Ok(required)
+    }
+}
+
 /// One Ethernet MSDU borrowed from a validated 802.11 A-MSDU payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmsduSubframe<'a> {

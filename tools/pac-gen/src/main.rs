@@ -37,12 +37,32 @@ struct MmioWindow {
 struct ExpandedRegister {
     identity: String,
     peripheral: String,
-    scope: String,
+    scope: Vec<ExpandedScope>,
     name: String,
+    rust_name: String,
+    array_index: Option<u32>,
     size_bits: u32,
     access: Option<Access>,
     alternate_group: Option<String>,
     alternate_register: Option<String>,
+    fields: Vec<ExpandedField>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ExpandedScope {
+    identity_name: String,
+    rust_name: String,
+    array_index: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ExpandedField {
+    name: String,
+    rust_name: String,
+    array_index: Option<u32>,
+    bit_offset: u32,
+    bit_width: u32,
+    access: Option<Access>,
 }
 
 const fn inherited_properties(
@@ -654,11 +674,40 @@ fn validate_confidence(input: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn remove_dimension_placeholder(value: &str) -> String {
+    value.replace("[%s]", "").replace("%s", "")
+}
+
+fn member_binding_name(value: &str) -> String {
+    remove_dimension_placeholder(value).to_ascii_lowercase()
+}
+
+fn array_binding_name(value: &str, dim_name: Option<&str>) -> String {
+    member_binding_name(dim_name.unwrap_or(value))
+}
+
+fn type_binding_name(value: &str) -> String {
+    let value = remove_dimension_placeholder(value);
+    let mut output = String::new();
+    let mut capitalize = true;
+    for character in value.chars() {
+        if character == '_' || character == '-' {
+            capitalize = true;
+        } else if capitalize {
+            output.push(character.to_ascii_uppercase());
+            capitalize = false;
+        } else {
+            output.push(character.to_ascii_lowercase());
+        }
+    }
+    output
+}
+
 fn expanded_register_addresses(
     peripheral_name: &str,
     peripheral_base: u64,
     parent_offset: u64,
-    scope: &str,
+    scope: &[ExpandedScope],
     children: &[RegisterCluster],
     inherited: RegisterProperties,
     addresses: &mut BTreeMap<u64, Vec<ExpandedRegister>>,
@@ -667,27 +716,51 @@ fn expanded_register_addresses(
         match child {
             RegisterCluster::Register(register) => {
                 let instances = match register {
-                    MaybeArray::Single(info) => vec![info.clone()],
-                    MaybeArray::Array(info, dim) => {
-                        svd_parser::svd::register::expand(info, dim).collect()
+                    MaybeArray::Single(info) => {
+                        vec![(info.clone(), member_binding_name(&info.name), None)]
                     }
+                    MaybeArray::Array(info, dim) => svd_parser::svd::register::expand(info, dim)
+                        .enumerate()
+                        .map(|(index, expanded)| {
+                            (
+                                expanded,
+                                array_binding_name(&info.name, dim.dim_name.as_deref()),
+                                Some(index as u32),
+                            )
+                        })
+                        .collect(),
                 };
-                for info in instances {
+                for (info, rust_name, array_index) in instances {
                     let properties = inherited_properties(inherited, info.properties);
                     let size_bits = properties
                         .size
                         .ok_or_else(|| format!("register {} has no inherited size", info.name))?;
+                    let mut expanded_fields = Vec::new();
                     if let Some(fields) = &info.fields {
                         let mut names = BTreeSet::new();
                         let mut occupied = 0_u128;
                         for field in fields {
                             let instances = match field {
-                                MaybeArray::Single(info) => vec![info.clone()],
+                                MaybeArray::Single(info) => {
+                                    vec![(info.clone(), member_binding_name(&info.name), None)]
+                                }
                                 MaybeArray::Array(info, dim) => {
-                                    svd_parser::svd::field::expand(info, dim).collect()
+                                    svd_parser::svd::field::expand(info, dim)
+                                        .enumerate()
+                                        .map(|(index, expanded)| {
+                                            (
+                                                expanded,
+                                                array_binding_name(
+                                                    &info.name,
+                                                    dim.dim_name.as_deref(),
+                                                ),
+                                                Some(index as u32),
+                                            )
+                                        })
+                                        .collect()
                                 }
                             };
-                            for field in instances {
+                            for (field, rust_name, array_index) in instances {
                                 if !names.insert(field.name.clone()) {
                                     return Err(format!(
                                         "register {} contains duplicate expanded field name {}",
@@ -719,48 +792,74 @@ fn expanded_register_addresses(
                                     .into());
                                 }
                                 occupied |= mask;
+                                expanded_fields.push(ExpandedField {
+                                    name: field.name,
+                                    rust_name,
+                                    array_index,
+                                    bit_offset: offset,
+                                    bit_width: width,
+                                    access: field.access.or(properties.access),
+                                });
                             }
                         }
                     }
+                    expanded_fields.sort_by(|left, right| {
+                        (left.bit_offset, &left.name).cmp(&(right.bit_offset, &right.name))
+                    });
                     let address = peripheral_base
                         .checked_add(parent_offset)
                         .and_then(|base| base.checked_add(u64::from(info.address_offset)))
                         .ok_or("SVD register address overflow")?;
-                    let identity = if scope.is_empty() {
-                        format!("{peripheral_name}.{}", info.name)
-                    } else {
-                        format!("{peripheral_name}.{scope}.{}", info.name)
-                    };
+                    let mut identity = peripheral_name.to_owned();
+                    for item in scope {
+                        identity.push('.');
+                        identity.push_str(&item.identity_name);
+                    }
+                    identity.push('.');
+                    identity.push_str(&info.name);
                     addresses
                         .entry(address)
                         .or_default()
                         .push(ExpandedRegister {
                             identity,
                             peripheral: peripheral_name.to_owned(),
-                            scope: scope.to_owned(),
+                            scope: scope.to_vec(),
                             name: info.name.clone(),
+                            rust_name,
+                            array_index,
                             size_bits,
                             access: properties.access,
                             alternate_group: info.alternate_group.clone(),
                             alternate_register: info.alternate_register.clone(),
+                            fields: expanded_fields,
                         });
                 }
             }
             RegisterCluster::Cluster(cluster) => {
                 let instances = match cluster {
-                    MaybeArray::Single(info) => vec![info.clone()],
-                    MaybeArray::Array(info, dim) => {
-                        svd_parser::svd::cluster::expand(info, dim).collect()
+                    MaybeArray::Single(info) => {
+                        vec![(info.clone(), member_binding_name(&info.name), None)]
                     }
+                    MaybeArray::Array(info, dim) => svd_parser::svd::cluster::expand(info, dim)
+                        .enumerate()
+                        .map(|(index, expanded)| {
+                            (
+                                expanded,
+                                array_binding_name(&info.name, dim.dim_name.as_deref()),
+                                Some(index as u32),
+                            )
+                        })
+                        .collect(),
                 };
-                for info in instances {
+                for (info, rust_name, array_index) in instances {
                     let properties =
                         inherited_properties(inherited, info.default_register_properties);
-                    let child_scope = if scope.is_empty() {
-                        info.name.clone()
-                    } else {
-                        format!("{scope}.{}", info.name)
-                    };
+                    let mut child_scope = scope.to_vec();
+                    child_scope.push(ExpandedScope {
+                        identity_name: info.name.clone(),
+                        rust_name,
+                        array_index,
+                    });
                     expanded_register_addresses(
                         peripheral_name,
                         peripheral_base,
@@ -844,7 +943,9 @@ fn validate_alias_group(
     Ok(())
 }
 
-fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
+fn expanded_register_map(
+    input: &str,
+) -> Result<BTreeMap<u64, Vec<ExpandedRegister>>, Box<dyn Error>> {
     let device = svd_parser::parse(input)?;
     let mut addresses = BTreeMap::new();
     for peripheral in &device.peripherals {
@@ -866,7 +967,7 @@ fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
                     &peripheral.name,
                     peripheral.base_address,
                     0,
-                    "",
+                    &[],
                     registers,
                     properties,
                     addresses,
@@ -878,6 +979,11 @@ fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
             validate_instance(instance, &mut addresses)?;
         }
     }
+    Ok(addresses)
+}
+
+fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
+    let addresses = expanded_register_map(input)?;
     let mut identities = BTreeSet::new();
     let mut previous_range: Option<(u64, u64, String)> = None;
     for (address, registers) in addresses {
@@ -922,6 +1028,67 @@ fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn access_label(access: Option<Access>) -> &'static str {
+    access.map(Access::as_str).unwrap_or("unspecified")
+}
+
+fn generate_binding_index(input: &str) -> Result<String, Box<dyn Error>> {
+    let addresses = expanded_register_map(input)?;
+    let mut output = String::from("pac-binding-index 2\ncrate open_esp_radio_esp32s31_svd\n");
+    for (address, registers) in addresses {
+        for register in registers {
+            let peripheral_type = type_binding_name(&register.peripheral);
+            let peripheral_module = member_binding_name(&register.peripheral);
+            let scope = if register.scope.is_empty() {
+                "-".to_owned()
+            } else {
+                register
+                    .scope
+                    .iter()
+                    .map(|scope| match scope.array_index {
+                        Some(index) => format!("{}[{index}]", scope.rust_name),
+                        None => scope.rust_name.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(".")
+            };
+            let register_index = register
+                .array_index
+                .map_or_else(|| "-".to_owned(), |index| index.to_string());
+            let alternate = register.alternate_register.as_deref().unwrap_or("-");
+            output.push_str(&format!(
+                "register 0x{address:08x} {} {} {} {} {} {} {} {} {} {}\n",
+                register.size_bits,
+                access_label(register.access),
+                register.identity,
+                register.peripheral,
+                peripheral_type,
+                peripheral_module,
+                scope,
+                register.rust_name,
+                register_index,
+                alternate,
+            ));
+            for field in register.fields {
+                let field_index = field
+                    .array_index
+                    .map_or_else(|| "-".to_owned(), |index| index.to_string());
+                output.push_str(&format!(
+                    "field 0x{address:08x} {} {} {} {} {} {} {}\n",
+                    register.identity,
+                    field.name,
+                    field.rust_name,
+                    field_index,
+                    field.bit_offset,
+                    field.bit_width,
+                    access_label(field.access),
+                ));
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     let document = Document::parse(input)?;
     validate_dimension_order(&document)?;
@@ -944,6 +1111,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let root = repository_root();
     let output_path = root.join("crates/esp32s31/svd/src/lib.rs");
+    let binding_index_path = root.join("svd/esp32s31-radio.bindings");
     let assembled = radio_svd::assemble(&root)?;
     radio_svd::synchronize_aggregate(&assembled, check)?;
     let svd_path = assembled.aggregate_path;
@@ -964,6 +1132,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     config.target = Target::None;
     config.strict = true;
     let generated = format_generated(&svd2rust::generate(&input, &config)?.lib_rs)?;
+    let binding_index = generate_binding_index(&input)?;
 
     if check {
         let checked_in = fs::read_to_string(&output_path)?;
@@ -975,6 +1144,15 @@ fn run() -> Result<(), Box<dyn Error>> {
             )
             .into());
         }
+        let checked_in_index = fs::read_to_string(&binding_index_path)?;
+        if checked_in_index != binding_index {
+            return Err(format!(
+                "{} differs from {}; run `cargo pac-gen`",
+                binding_index_path.display(),
+                svd_path.display()
+            )
+            .into());
+        }
     } else {
         fs::create_dir_all(
             output_path
@@ -982,6 +1160,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 .expect("generated source path must have a parent"),
         )?;
         fs::write(&output_path, generated)?;
+        fs::write(&binding_index_path, binding_index)?;
     }
 
     Ok(())
@@ -1000,7 +1179,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExpandedRegister, MmioWindow, explicitly_alternate, mmio_window, parse_mmio_windows,
+        ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
+        member_binding_name, mmio_window, parse_mmio_windows, type_binding_name,
         validate_alias_group, validate_confidence, validate_dimension_order,
         validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
         validate_register_layout,
@@ -1112,12 +1292,15 @@ mod tests {
         let canonical = ExpandedRegister {
             identity: "RADIO.CONTROL".to_owned(),
             peripheral: "RADIO".to_owned(),
-            scope: String::new(),
+            scope: Vec::new(),
             name: "CONTROL".to_owned(),
+            rust_name: "control".to_owned(),
+            array_index: None,
             size_bits: 32,
             access: Some(Access::ReadWrite),
             alternate_group: None,
             alternate_register: None,
+            fields: Vec::new(),
         };
         let mut alternate = canonical.clone();
         alternate.identity = "RADIO.STATUS_VIEW".to_owned();
@@ -1139,6 +1322,23 @@ mod tests {
         );
         alternate.peripheral = "ANOTHER_SINGLETON".to_owned();
         assert!(!explicitly_alternate(&[canonical, alternate]));
+    }
+
+    #[test]
+    fn binding_names_match_svd2rust_default_case_and_arrays() {
+        assert_eq!(
+            member_binding_name("I2C_NUMBER_CONTROL"),
+            "i2c_number_control"
+        );
+        assert_eq!(
+            array_binding_name("I2C_NUMBER_WORD%s", None),
+            "i2c_number_word"
+        );
+        assert_eq!(
+            array_binding_name("IGNORED%s", Some("RX_BLOCK_ACK_ENTRY")),
+            "rx_block_ack_entry"
+        );
+        assert_eq!(type_binding_name("WIFI_MAC_INTERRUPT"), "WifiMacInterrupt");
     }
 
     #[test]

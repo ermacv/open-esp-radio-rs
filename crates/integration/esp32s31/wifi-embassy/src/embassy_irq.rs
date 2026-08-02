@@ -7,7 +7,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_embassy_net::{RawMutex, Signal};
-use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork};
+use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork, PowerIrqSink};
 
 /// Driver-owned S31 MAC interrupt handoff for one Embassy radio task.
 ///
@@ -29,6 +29,7 @@ pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     state: IrqState,
     rx: Signal<M, ()>,
     tx: Signal<M, ()>,
+    tx_pending: AtomicU32,
     rx_post_count: AtomicU32,
 }
 
@@ -38,6 +39,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             state: IrqState::new(),
             rx: Signal::new(),
             tx: Signal::new(),
+            tx_pending: AtomicU32::new(0),
             rx_post_count: AtomicU32::new(0),
         }
     }
@@ -56,6 +58,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
                     self.rx.signal(());
                 }
                 IrqWork::TxComplete | IrqWork::TxTimeout | IrqWork::Collision => {
+                    self.tx_pending.fetch_or(work.mac_bit(), Ordering::Release);
                     self.tx.signal(());
                 }
             }
@@ -67,9 +70,21 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx.wait().await;
     }
 
-    /// Wait for any TX completion, timeout or collision edge.
-    pub async fn wait_tx(&self) {
+    /// Schedule another finite RX bottom-half pass without pretending that a
+    /// second hardware interrupt occurred.
+    ///
+    /// Descriptor ownership is the durable source of work. A bounded RX
+    /// service uses this edge when it consumed its complete per-pass budget
+    /// while more completions may already be present.
+    #[inline]
+    pub fn continue_rx(&self) {
+        self.rx.signal(());
+    }
+
+    /// Wait for and consume coalesced TX completion, timeout or collision bits.
+    pub async fn wait_tx(&self) -> u32 {
         self.tx.wait().await;
+        self.tx_pending.swap(0, Ordering::Acquire)
     }
 
     /// Whether the RX bottom half has durable pending work.
@@ -80,8 +95,9 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
 
     /// Consume a stale TX wake before publishing a new transaction.
     #[inline]
-    pub fn try_take_tx(&self) -> Option<()> {
-        self.tx.try_take()
+    pub fn try_take_tx(&self) -> Option<u32> {
+        self.tx.try_take()?;
+        Some(self.tx_pending.swap(0, Ordering::Acquire))
     }
 
     /// Number of RX-success work publications, with wrapping semantics.
@@ -115,14 +131,70 @@ impl<M: RawMutex> Default for EmbassyMacIrqRuntime<M> {
     }
 }
 
+/// Embassy handoff for acknowledged WDEVPWR snapshots.
+///
+/// The event remains an opaque bit image here. A later power-policy slice may
+/// decode only causes whose hardware meaning and lifecycle have their own
+/// qualification evidence.
+pub struct EmbassyPowerIrqRuntime<M: RawMutex> {
+    signal: Signal<M, ()>,
+    pending: AtomicU32,
+}
+
+impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
+    pub const fn new() -> Self {
+        Self {
+            signal: Signal::new(),
+            pending: AtomicU32::new(0),
+        }
+    }
+
+    #[inline]
+    pub fn publish(&self, pending: u32) {
+        if pending != 0 {
+            self.pending.fetch_or(pending, Ordering::Release);
+            self.signal.signal(());
+        }
+    }
+
+    /// Wait for and consume the complete coalesced WDEVPWR image.
+    pub async fn wait(&self) -> u32 {
+        self.signal.wait().await;
+        self.pending.swap(0, Ordering::Acquire)
+    }
+
+    /// Consume a pending image without blocking the executor.
+    pub fn try_take(&self) -> Option<u32> {
+        self.signal.try_take()?;
+        Some(self.pending.swap(0, Ordering::Acquire))
+    }
+}
+
+impl<M: RawMutex> PowerIrqSink for EmbassyPowerIrqRuntime<M> {
+    #[inline]
+    fn post_power(&self, pending: u32) {
+        self.publish(pending);
+    }
+}
+
+impl<M: RawMutex> Default for EmbassyPowerIrqRuntime<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use open_esp_radio_embassy_net::NoopRawMutex;
     use open_esp_radio_esp32s31_wifi_mac::irq::{
-        IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+        IrqDisposition, IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
+        MAC_INT_TX_TIMEOUT, MacInterrupt, MacPowerInterrupt, PowerIrqDisposition, handle_mac_irq,
+        handle_power_irq,
     };
 
-    use super::EmbassyMacIrqRuntime;
+    use super::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
 
     #[test]
     fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
@@ -134,9 +206,22 @@ mod tests {
 
         assert_eq!(runtime.rx_post_count(), 1);
         assert!(runtime.rx_signaled());
-        assert_eq!(runtime.try_take_tx(), Some(()));
-        // Three TX causes intentionally coalesce into one worker wake.
+        assert_eq!(
+            runtime.try_take_tx(),
+            Some(MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION | MAC_INT_TX_COMPLETE)
+        );
+        // Three TX causes coalesce into one wake without losing their bits.
         assert_eq!(runtime.try_take_tx(), None);
+    }
+
+    #[test]
+    fn software_rx_continuation_does_not_forge_interrupt_evidence() {
+        let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+        runtime.continue_rx();
+
+        assert!(runtime.rx_signaled());
+        assert_eq!(runtime.rx_post_count(), 0);
     }
 
     #[test]
@@ -144,5 +229,104 @@ mod tests {
         let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         IrqSink::record_unhandled(&runtime, 0x8000_0000);
         assert_eq!(runtime.observed_unhandled(), 0x8000_0000);
+    }
+
+    struct Interrupt {
+        status: u32,
+        acknowledged: Cell<Option<u32>>,
+    }
+
+    impl MacInterrupt for Interrupt {
+        fn status(&mut self) -> u32 {
+            self.status
+        }
+
+        fn acknowledge(&mut self, events: u32) {
+            self.acknowledged.set(Some(events));
+        }
+    }
+
+    #[test]
+    fn production_handler_acknowledges_before_publishing_embassy_work() {
+        let status = MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE;
+        let mut interrupt = Interrupt {
+            status,
+            acknowledged: Cell::new(None),
+        };
+        let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+        let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
+
+        assert_eq!(disposition, IrqDisposition::Posted);
+        assert_eq!(snapshot.status, status);
+        assert_eq!(interrupt.acknowledged.get(), Some(status));
+        assert!(runtime.rx_signaled());
+        assert_eq!(runtime.try_take_tx(), Some(MAC_INT_TX_COMPLETE));
+    }
+
+    #[test]
+    fn spurious_status_neither_acknowledges_nor_wakes_embassy() {
+        let mut interrupt = Interrupt {
+            status: 0,
+            acknowledged: Cell::new(None),
+        };
+        let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+        assert_eq!(
+            handle_mac_irq(&mut interrupt, &runtime).0,
+            IrqDisposition::Spurious
+        );
+        assert_eq!(interrupt.acknowledged.get(), None);
+        assert!(!runtime.rx_signaled());
+        assert_eq!(runtime.try_take_tx(), None);
+    }
+
+    struct PowerInterrupt {
+        status: u32,
+        acknowledged: Cell<Option<u32>>,
+    }
+
+    impl MacPowerInterrupt for PowerInterrupt {
+        fn status(&mut self) -> u32 {
+            self.status
+        }
+
+        fn acknowledge(&mut self, events: u32) {
+            self.acknowledged.set(Some(events));
+        }
+    }
+
+    #[test]
+    fn power_irq_retains_the_complete_acknowledged_image_without_decoding_it() {
+        let status = 0x8040_0010;
+        let mut interrupt = PowerInterrupt {
+            status,
+            acknowledged: Cell::new(None),
+        };
+        let runtime = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+
+        let (disposition, snapshot) = handle_power_irq(&mut interrupt, &runtime);
+
+        assert_eq!(disposition, PowerIrqDisposition::Posted);
+        assert_eq!(snapshot.status, status);
+        assert_eq!(interrupt.acknowledged.get(), Some(status));
+        assert_eq!(runtime.try_take(), Some(status));
+        assert_eq!(runtime.try_take(), None);
+    }
+
+    #[test]
+    fn spurious_power_irq_neither_acknowledges_nor_wakes_embassy() {
+        let mut interrupt = PowerInterrupt {
+            status: 0,
+            acknowledged: Cell::new(None),
+        };
+        let runtime = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+
+        assert_eq!(
+            handle_power_irq(&mut interrupt, &runtime).0,
+            PowerIrqDisposition::Spurious
+        );
+        assert_eq!(interrupt.acknowledged.get(), None);
+        assert_eq!(runtime.try_take(), None);
     }
 }

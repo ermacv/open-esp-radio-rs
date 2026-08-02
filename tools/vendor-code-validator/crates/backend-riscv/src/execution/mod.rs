@@ -16,7 +16,7 @@ use image::{RETURN_SENTINEL, STACK_POINTER, execution_stack_contains};
 #[cfg(test)]
 use image::{RelocatedCall, Segment};
 #[cfg(test)]
-use machine::Machine;
+use machine::{Machine, atomic_word_result};
 use model::MmioValue;
 
 #[cfg(test)]

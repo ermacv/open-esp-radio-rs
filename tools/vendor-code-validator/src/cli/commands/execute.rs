@@ -41,6 +41,21 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
                     .or_default()
                     .push_back(value);
             }
+            "--stack-fill" => {
+                let value = take_value(&mut arguments, "--stack-fill")?;
+                let value = parse_u32(&value).ok_or("invalid --stack-fill value")?;
+                scenario.private_stack_fill =
+                    Some(u8::try_from(value).map_err(|_| "--stack-fill value exceeds one byte")?);
+            }
+            "--call" => {
+                let assignment = take_value(&mut arguments, "--call")?;
+                let (symbol, value) = parse_call_return(&assignment, "--call")?;
+                scenario
+                    .call_returns
+                    .entry(symbol)
+                    .or_default()
+                    .push_back(value);
+            }
             "--ram" => {
                 let assignment = take_value(&mut arguments, "--ram")?;
                 let (address, value) = parse_assignment(&assignment, "--ram")?;

@@ -14,8 +14,14 @@ use open_esp_radio_esp32s31_pac::{
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    registers::Mmio, tx::TxHardware, tx_ampdu::HtAmpduHardware,
+    registers::Mmio,
+    rx::RxDma,
+    rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
+    tx::TxHardware,
+    tx_ampdu::HtAmpduHardware,
 };
+
+use crate::connected_control::ConnectedControlHardware;
 
 /// Short-lived TX facade over the task's sole [`RadioRegisters`] owner.
 ///
@@ -97,6 +103,10 @@ impl TxHardware for CooperativeTxHardware<'_, '_> {
         TxHardware::finish_tx_timeout_abort(&mut **self.registers.borrow_mut(), queue)
     }
 
+    fn abort_tx_collision(&mut self, queue: u8) -> bool {
+        TxHardware::abort_tx_collision(&mut **self.registers.borrow_mut(), queue)
+    }
+
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
         TxHardware::detach_completed_tx(&mut **self.registers.borrow_mut(), queue)
     }
@@ -137,5 +147,83 @@ impl HtAmpduHardware for CooperativeTxHardware<'_, '_> {
         reservation: MacHeTbLinkReservation,
     ) -> Option<MacHeTriggerTxQueueSnapshot> {
         HtAmpduHardware::he_trigger_based_queue_snapshot(&**self.registers.borrow(), reservation)
+    }
+}
+
+impl RxDma for CooperativeTxHardware<'_, '_> {
+    fn last_descriptor_low(&mut self) -> u32 {
+        RxDma::last_descriptor_low(&mut **self.registers.borrow_mut())
+    }
+
+    fn next_descriptor_low(&mut self) -> u32 {
+        RxDma::next_descriptor_low(&mut **self.registers.borrow_mut())
+    }
+
+    fn walker_enabled(&mut self) -> bool {
+        RxDma::walker_enabled(&mut **self.registers.borrow_mut())
+    }
+
+    fn reload_pending(&mut self) -> bool {
+        RxDma::reload_pending(&mut **self.registers.borrow_mut())
+    }
+
+    fn set_descriptor_high_window(&mut self, address_high: u16) {
+        RxDma::set_descriptor_high_window(&mut **self.registers.borrow_mut(), address_high);
+    }
+
+    fn write_descriptor_base(&mut self, address: u32) {
+        RxDma::write_descriptor_base(&mut **self.registers.borrow_mut(), address);
+    }
+
+    fn publish_walker_enable(&mut self) {
+        RxDma::publish_walker_enable(&mut **self.registers.borrow_mut());
+    }
+
+    fn request_reload(&mut self) {
+        RxDma::request_reload(&mut **self.registers.borrow_mut());
+    }
+
+    fn try_enable_walker(&mut self) -> bool {
+        RxDma::try_enable_walker(&mut **self.registers.borrow_mut())
+    }
+
+    fn try_disable_walker(&mut self) -> bool {
+        RxDma::try_disable_walker(&mut **self.registers.borrow_mut())
+    }
+
+    fn fence(&mut self) {
+        RxDma::fence(&mut **self.registers.borrow_mut());
+    }
+}
+
+impl ConnectedControlHardware for CooperativeTxHardware<'_, '_> {
+    fn station_tsf(&mut self) -> u64 {
+        self.registers.borrow_mut().station_tsf()
+    }
+
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::program(&mut self.registers.borrow_mut(), agreement)
+    }
+
+    fn clear_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::clear(&mut self.registers.borrow_mut(), hardware_index)
+    }
+
+    fn set_he_tid_enabled(
+        &mut self,
+        tid: u8,
+        enabled: bool,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        let tid = MacHeTid::new(tid).ok_or(S31RxBlockAckAgreementError::Tid(tid))?;
+        self.registers
+            .borrow_mut()
+            .set_he_trigger_based_tid_enabled(tid, enabled);
+        Ok(())
     }
 }

@@ -2147,7 +2147,7 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
     Ok(selected)
 }
 
-fn validate_peer(bssid: [u8; 6], sequence_number: u16) -> Result<(), StationFrameError> {
+pub(crate) fn validate_peer(bssid: [u8; 6], sequence_number: u16) -> Result<(), StationFrameError> {
     if bssid == [0; 6] || bssid == [0xff; 6] || bssid[0] & 1 != 0 {
         return Err(StationFrameError::InvalidBssid);
     }

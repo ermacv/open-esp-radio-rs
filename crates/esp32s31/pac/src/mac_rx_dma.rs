@@ -1,6 +1,6 @@
 //! Generated-PAC ownership for the MAC RX descriptor walker.
 
-use super::{RadioRegisters, device_fence};
+use super::{RadioRegisters, device_fence, generated};
 
 impl RadioRegisters {
     /// Initialize the RX buffer geometry without publishing a descriptor.
@@ -21,21 +21,25 @@ impl RadioRegisters {
     }
 
     pub fn mac_rx_last_descriptor_low(&self) -> u32 {
-        self.peripherals
-            .wifi_mac_rx_dma
-            .rx_last_descriptor()
-            .read()
-            .address_low()
-            .bits()
+        generated::hal_mac_rx_read_rxdscrlast::generated_hal_mac_rx_read_rxdscrlast(
+            &self.peripherals.wifi_mac_rx_dma,
+        ) & 0x000f_ffff
     }
 
     pub fn mac_rx_next_descriptor_low(&self) -> u32 {
-        self.peripherals
-            .wifi_mac_rx_dma
-            .rx_next_descriptor()
-            .read()
-            .address_low()
-            .bits()
+        generated::hal_mac_rx_read_rxdscrnext::generated_hal_mac_rx_read_rxdscrnext(
+            &self.peripherals.wifi_mac_rx_dma,
+        ) & 0x000f_ffff
+    }
+
+    /// Reconstruct the complete last descriptor pointer exactly as the
+    /// vendor leaf does. Ring ownership normally needs only the low index,
+    /// but this form keeps the high-window composition available without a
+    /// duplicated handwritten register transaction.
+    pub fn mac_rx_last_descriptor_address(&self) -> u32 {
+        generated::hal_mac_rx_get_last_dscr::generated_hal_mac_rx_get_last_dscr(
+            &self.peripherals.wifi_mac_rx_dma,
+        )
     }
 
     pub fn mac_rx_walker_enabled(&self) -> bool {
@@ -48,12 +52,9 @@ impl RadioRegisters {
     }
 
     pub fn mac_rx_reload_pending(&self) -> bool {
-        self.peripherals
-            .wifi_mac_rx_dma
-            .rx_control()
-            .read()
-            .append_descriptor_reload()
-            .bit()
+        generated::hal_mac_rx_is_dscr_reload::generated_hal_mac_rx_is_dscr_reload(
+            &self.peripherals.wifi_mac_rx_dma,
+        ) != 0
     }
 
     pub fn set_mac_rx_descriptor_high_window(&mut self, address_high: u16) {
@@ -67,29 +68,24 @@ impl RadioRegisters {
     }
 
     pub fn write_mac_rx_descriptor_base(&mut self, address: u32) {
-        // SAFETY: the caller validates the complete DMA address; the recovered
-        // ROM leaf publishes the full address image even though the hardware
-        // consumes its generated low 20-bit field.
-        unsafe {
-            self.peripherals
-                .wifi_mac_rx_dma
-                .rx_descriptor_base()
-                .write_with_zero(|w| w.bits(address));
-        }
+        let _ = generated::hal_mac_rx_set_base::generated_hal_mac_rx_set_base(
+            &self.peripherals.wifi_mac_rx_dma,
+            address,
+        );
     }
 
     pub fn publish_mac_rx_walker_enable(&mut self) {
-        self.peripherals
-            .wifi_mac_rx_dma
-            .rx_control()
-            .modify(|_, w| w.walker_enable().set_bit());
+        let _ = generated::hal_mac_rx_enable::generated_hal_mac_rx_enable(
+            &self.peripherals.wifi_mac_rx_dma,
+            0,
+        );
     }
 
     pub fn request_mac_rx_descriptor_reload(&mut self) {
-        self.peripherals
-            .wifi_mac_rx_dma
-            .rx_control()
-            .modify(|_, w| w.append_descriptor_reload().set_bit());
+        let _ = generated::hal_mac_rx_set_dscr_reload::generated_hal_mac_rx_set_dscr_reload(
+            &self.peripherals.wifi_mac_rx_dma,
+            0,
+        );
     }
 
     pub fn try_enable_mac_rx_walker(&mut self) -> bool {
@@ -98,22 +94,20 @@ impl RadioRegisters {
         if previous.walker_enable().bit() {
             return false;
         }
-        // SAFETY: this full write preserves the exact single-read ROM image.
-        unsafe {
-            control.write_with_zero(|w| w.bits(previous.bits() | 0x8000_0000));
-        }
+        let _ = generated::hal_mac_rx_enable::generated_hal_mac_rx_enable(
+            &self.peripherals.wifi_mac_rx_dma,
+            0,
+        );
         device_fence();
         control.read().walker_enable().bit()
     }
 
     pub fn try_disable_mac_rx_walker(&mut self) -> bool {
         let control = self.peripherals.wifi_mac_rx_dma.rx_control();
-        let previous = control.read();
-        // SAFETY: this full write preserves the exact single-read ROM image
-        // while clearing only the generated walker-enable bit.
-        unsafe {
-            control.write_with_zero(|w| w.bits(previous.bits() & !0x8000_0000));
-        }
+        let _ = generated::hal_mac_rx_disable::generated_hal_mac_rx_disable(
+            &self.peripherals.wifi_mac_rx_dma,
+            0,
+        );
         device_fence();
         !control.read().walker_enable().bit()
     }

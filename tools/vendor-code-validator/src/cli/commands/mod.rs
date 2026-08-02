@@ -6,6 +6,7 @@ mod compare;
 mod execute;
 mod execute_compare;
 mod extract;
+mod generate_driver;
 mod generate_reference;
 mod generate_reference_batch;
 mod qualify_channel;
@@ -31,6 +32,7 @@ pub(super) fn run(
         Command::VerifyProfiles => verify_profiles::run(arguments, svd),
         Command::GenerateReference => generate_reference::run(arguments, svd, target),
         Command::GenerateReferenceBatch => generate_reference_batch::run(arguments, svd, target),
+        Command::GenerateDriver => generate_driver::run(arguments, svd, target),
         Command::Analyze => analyze::run(arguments, svd, target),
         Command::VerifyAll => verify_all::run(arguments, svd, target),
         Command::Verify => verify::run(arguments, svd, target),

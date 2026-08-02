@@ -543,6 +543,7 @@ fn generated_reference_identity(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
+    source_code_identity: &str,
 ) -> Result<String> {
     let companions = vendor_companion
         .into_iter()
@@ -559,28 +560,15 @@ fn generated_reference_identity(
         return Err("phy_iq_est_enable is no longer eligible for fail-closed generation".into());
     }
     let program = crate::ResolvedReferenceProgram::try_from(&trace)?;
-    let artifact_digest = artifact_sha256(vendor_artifact)?;
-    let companion_identities = companions
-        .iter()
-        .map(|path| {
-            Ok((
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("companion")
-                    .to_owned(),
-                artifact_sha256(path)?,
-            ))
-        })
-        .collect::<Result<Vec<_>>>()?;
     let generated = crate::codegen::generate(
         &program,
         vendor_artifact
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("vendor-rom.elf"),
-        &artifact_digest,
+        source_code_identity,
         None,
-        &companion_identities,
+        &[],
     )
     .map_err(|error| format!("IQ reference generation failed: {error}"))?;
     Ok(format!(
@@ -604,9 +592,8 @@ pub fn qualify_esp32s31_iq_est_enable(
     policy: &EffectPolicy,
     print_oracles: bool,
 ) -> Result<DriverAdapterQualification> {
-    let vendor_digest = artifact_sha256(vendor_artifact)?;
-    let rust_digest = crate::artifact_sha256(rust_artifact)?;
     if print_oracles {
+        let vendor_digest = artifact_sha256(vendor_artifact)?;
         println!(
             "ORACLE\trom\t{}\tsha256={vendor_digest}",
             vendor_artifact.display()
@@ -621,12 +608,17 @@ pub fn qualify_esp32s31_iq_est_enable(
         rust_image.add_companion(companion)?;
     }
 
-    let generated_identity = generated_reference_identity(svd, vendor_artifact, vendor_companion)?;
+    let vendor_code_digest = code_closure_sha256(&vendor_image, "phy_iq_est_enable")?;
+    let rust_code_digest = code_closure_sha256(&rust_image, rust_symbol)?;
+    let generated_identity =
+        generated_reference_identity(svd, vendor_artifact, vendor_companion, &vendor_code_digest)?;
     let vendor_inventory = vendor_image.coverage_inventory("phy_iq_est_enable")?;
     let mut vendor_covered = std::collections::BTreeSet::new();
     let mut matched = true;
     let mut canonical = String::from("driver-adapter esp32s31-iq-est-enable-v1\n");
-    canonical.push_str(&format!("rust-artifact-sha256 {rust_digest}\n"));
+    canonical.push_str(&format!(
+        "vendor-linked-code-closure-sha256 {vendor_code_digest}\nrust-code-closure-sha256 {rust_code_digest}\n"
+    ));
     canonical.push_str(&generated_identity);
 
     for case in CASES {

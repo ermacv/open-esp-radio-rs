@@ -20,6 +20,7 @@ mod cold_last_rx_buffer;
 mod cold_rx_buffer;
 mod cold_rx_policy;
 mod cold_txrx;
+pub mod connected_rx;
 pub mod crypto;
 pub mod descriptor;
 pub mod edca;

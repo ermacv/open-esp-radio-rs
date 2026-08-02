@@ -7,7 +7,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.49</version>
+  <version>3.51</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -1980,17 +1980,19 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_REGDMA_CONTROL</name>
-      <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Wi-Fi MAC REGDMA link selection updated by the complete ic_mac_init tail after every vendor channel change. Exact pre-auth vendor state and connected open HIL require link four.</description>
+      <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-partial]. Shared WDEVPWR control word. The channel-change leaf proves the REGDMA selector, while complete modem-power leaves prove the wake-protect lead time and TBTT auto-period fields. Hardware interactions between these fields remain unqualified.</description>
       <baseAddress>0x2010d83c</baseAddress>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four.</description>
+          <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-partial]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field>
+            <field><name>MODEM_WAKEUP_PROTECT_EARLY_TIME</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits.</description><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field>
+            <field><name>MODEM_TBTT_AUTO_PERIOD_INTERVAL</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits.</description><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MODEM_TBTT_AUTO_PERIOD_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated enable and disable leaves set or clear bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
       </registers>
@@ -2880,14 +2882,15 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_STA_TSF_LOAD</name>
-      <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW.</description>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Shared station TSF load and coherent snapshot transaction.</description>
       <baseAddress>0x2010d814</baseAddress>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
+            <field><name>SNAPSHOT_STATION_TSF</name><description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>LOAD_STATION_TSF</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -2901,6 +2904,18 @@
           <name>VALUE_HIGH</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. High 32 bits written second by complete hal_set_sta_tsf.</description>
           <addressOffset>0x08</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_LOW</name>
+          <description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_HIGH</name>
+          <description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
       </registers>
@@ -2924,9 +2939,29 @@
         </register>
         <register>
           <name>SOC_WAKEUP_CLEAR</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>CLEAR_REQUEST</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields>
+            <field><name>BEACON_FILTER_FORCE_SYNC_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated setter replaces bits 9:0.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_SYNC_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit 10.</description><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_DUMP_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated setter replaces bits 17:11.</description><bitOffset>11</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_DUMP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit 21.</description><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_SLEEP_COUNTER</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 28.</description><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_MISS_COUNTER</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 29.</description><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_REQUEST</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_INFO</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_SLEEP_LIMIT_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BEACON_MISS_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>BEACON_MISS_LIMIT_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit four.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_STATE_SLEEP_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit.</description><bitOffset>5</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit fifteen.</description><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
         </register>
         <register>
           <name>STA_LIGHT_SLEEP_WAKE_AHEAD</name>
@@ -2936,7 +2971,7 @@
         </register>
         <register>
           <name>RX_BEACON_TIME_LOW</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-partial]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.</description>
           <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
         </register>
@@ -4013,6 +4048,7 @@
   </peripherals>
   <vendorExtensions>
     <openEspRadioProvenance>
+      <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
       <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
@@ -4041,7 +4077,7 @@
       <source id="BLOB_LIBPP_HAL_TSF_RUNTIME">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_enable_nan_tsf size 0x26, hal_disable_nan_tsf size 0x22, hal_disable_softap_tsf size 0x12, hal_set_sta_tbtt size 0x6e, hal_set_sta_tbtt_interval size 0x18, hal_set_sta_light_sleep_wake_ahead_time size 0x16, hal_is_sta_tsf_active size 0x0c and hal_tsf_clear_soc_wakeup_request size 0x14; complete hal_mac.o hal_enable_sta_btwt_tsf size 0x3e.</source>
       <source id="BLOB_LIBPP_HAL_COEX_RUNTIME">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_coex.o hal_set_rx_beacon_time size 0x2c, hal_set_rx_beacon_pti size 0x2a, hal_clear_rx_beacon_pti size 0x12, hal_set_itwt_pti size 0x26 and hal_clr_itwt_pti size 0x16.</source>
       <source id="BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_sta_beacon_filter size 0x2c, hal_disable_sta_beacon_filter size 0x22 and hal_beacon_ie_crc_get size 0x0c; complete hal_mac_ctl.o hal_mac_interrupt_clr_bsscolor size 0x12, hal_he_set_hw_qos_null_ra_to_trans size 0x44 and hal_ifc_get_bb_err_bitmap size 0x30; complete hal_mac_rx.o hal_mac_rx_get_end_state size 0x0c and hal_mac_rx_get_end_info size 0x3c; complete hal_sniffer.o hal_sniffer_rx_clr_statistics size 0x1e.</source>
-      <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o pwr_hal_set_mac_modem_state_wakeup_protect_enable size 0x14 and disable size 0x16, plus their shared control-word leaves.</source>
+      <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o modem-power leaves from pwr_hal_set_mac_modem_beacon_miss_timeout size 0x18 through pwr_hal_set_mac_modem_tbtt_auto_period_interval size 0x20. The promoted fields are limited to complete no-call RMW bodies at 0x2010d834, 0x2010d838, 0x2010d83c, 0x2010d854 and 0x2010d858.</source>
       <source id="BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_set_mmss_and_aid body, size 0x82.</source>
       <source id="BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_bssid_init size 0x4c, hal_he_bssid_deinit size 0x1e and hal_he_set_power_save size 0x36. Interface-zero init performs four ordered fresh-read RMW edges: set WDEV_HE_BSSID0_CONF bit 31, clear bits 30:29, set WDEV_RX_POWER_SAVE_CONF bit 29, then set bit 28. _oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f; complete wl_cnx.o cnx_connect_to_bss size 0x2b6 calls interface-zero init after associated-STA receive policy when the peer and cipher admit HE, before clearing the color bitmap and calling hal_he_set_bss_color.</source>
       <source id="HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC, standard psram-code-psram-data profile and controlled HE20 AP, 2026-07-30. After association, WPA2/CCMP, TID0 AddBA and sustained 32-MPDU HE MCS9 transmission, typed PAC diagnostics read HE_BSSID_ENABLE=1, BSSID_SELECT=0, INTRA_PPDU_PS_ENABLE=1 and INTRA_PS_CHECK_BSS_COLOR_ENABLE=1. The AP advertised disabled BSS color 0x99, so BSS_COLOR_ENABLE correctly remained zero.</source>

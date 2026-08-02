@@ -1,5 +1,39 @@
 use super::*;
 
+#[test]
+fn inventory_symbol_identity_binds_only_the_selected_definition() {
+    let definition = crate::artifact::ArtifactSymbolDefinition {
+        member: Some("selected.o".to_owned()),
+        name: "selected".to_owned(),
+        address: 0x20,
+        bytes: vec![1, 2, 3, 4],
+        addresses_resolved: false,
+        memory_regions: Vec::new(),
+        relocations: vec![crate::artifact::SymbolRelocation {
+            address: 0x22,
+            kind: crate::artifact::RelocationKind::Call,
+            symbol: "callee".to_owned(),
+            addend: 4,
+        }],
+    };
+    let same = definition.clone();
+    let mut code_changed = definition.clone();
+    code_changed.bytes[0] ^= 1;
+    let mut relocation_changed = definition.clone();
+    relocation_changed.relocations[0].symbol = "other_callee".to_owned();
+
+    let identity = inventory_symbol_definition_sha256(&definition).unwrap();
+    assert_eq!(identity, inventory_symbol_definition_sha256(&same).unwrap());
+    assert_ne!(
+        identity,
+        inventory_symbol_definition_sha256(&code_changed).unwrap()
+    );
+    assert_ne!(
+        identity,
+        inventory_symbol_definition_sha256(&relocation_changed).unwrap()
+    );
+}
+
 fn execution_result_with_timeline(
     timeline: Vec<execution::ExecutionTimelineEvent>,
 ) -> execution::ExecutionResult {

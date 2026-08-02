@@ -56,6 +56,7 @@ pub enum Disposition {
     Direct,
     StateTransition,
     ReplacedByComposition,
+    GenerationCandidate,
     NotYetPorted,
 }
 
@@ -87,6 +88,7 @@ impl Disposition {
             "direct" => Ok(Self::Direct),
             "state-transition" => Ok(Self::StateTransition),
             "replaced-by-composition" => Ok(Self::ReplacedByComposition),
+            "generation-candidate" => Ok(Self::GenerationCandidate),
             "not-yet-ported" => Ok(Self::NotYetPorted),
             _ => Err(format!("invalid disposition {value:?} at line {line}").into()),
         }
@@ -97,6 +99,7 @@ impl Disposition {
             Self::Direct => "direct",
             Self::StateTransition => "state-transition",
             Self::ReplacedByComposition => "replaced-by-composition",
+            Self::GenerationCandidate => "generation-candidate",
             Self::NotYetPorted => "not-yet-ported",
         }
     }
@@ -143,6 +146,7 @@ struct EntryBuilder {
     effect_rules: Vec<(EffectSelector, EffectDisposition)>,
     binding_version: Option<BindingVersion>,
     rust_probe: Option<String>,
+    compare_return: Option<bool>,
     driver_adapter: Option<DriverAdapter>,
     qualification_blockers: Vec<(String, String)>,
     line: usize,
@@ -170,7 +174,10 @@ impl EntryBuilder {
             )
             .into());
         }
-        if self.effect_comparison.is_some() && !disposition.is_implemented() {
+        if self.effect_comparison.is_some()
+            && !disposition.is_implemented()
+            && disposition != Disposition::GenerationCandidate
+        {
             return Err(format!(
                 "unimplemented function {} {} cannot have an effect-contract",
                 self.source, self.symbol
@@ -211,13 +218,16 @@ impl EntryBuilder {
             .effect_comparison
             .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
             .transpose()?;
-        let has_binding_fields = self.rust_probe.is_some() || self.driver_adapter.is_some();
+        let has_binding_fields = self.rust_probe.is_some()
+            || self.compare_return.is_some()
+            || self.driver_adapter.is_some();
         let binding = match self.binding_version {
             Some(version) => Some(Binding::new(
                 version,
                 self.rust_probe.ok_or_else(|| {
                     format!("binding {} {} has no rust-probe", self.source, self.symbol)
                 })?,
+                self.compare_return.unwrap_or(false),
                 self.driver_adapter,
             )?),
             None if has_binding_fields => {
@@ -229,7 +239,10 @@ impl EntryBuilder {
             }
             None => None,
         };
-        if effect_contract.is_some() && binding.is_none() {
+        if effect_contract.is_some()
+            && binding.is_none()
+            && disposition != Disposition::GenerationCandidate
+        {
             return Err(format!(
                 "effect contract {} {} has no executable binding",
                 self.source, self.symbol
@@ -291,12 +304,16 @@ fn directive_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
         .ok_or_else(|| format!("disposition directive needs a value at line {line_number}").into())
 }
 
-fn parse_source(value: &str, line: usize) -> Result<&str> {
-    if matches!(value, "rom" | "archive") {
-        Ok(value)
-    } else {
-        Err(format!("invalid vendor source {value:?} at line {line}").into())
+pub(crate) fn validate_source_id(value: &str, line: usize) -> Result<&str> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
+        || !value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+    {
+        return Err(format!("invalid vendor source id {value:?} at line {line}").into());
     }
+    Ok(value)
 }
 
 impl Manifest {
@@ -336,7 +353,7 @@ impl Manifest {
                 if words.next().is_some() {
                     return Err(format!("function has extra fields at line {line_number}").into());
                 }
-                parse_source(source, line_number)?;
+                validate_source_id(source, line_number)?;
                 current = Some(EntryBuilder {
                     source: source.to_owned(),
                     symbol: symbol.to_owned(),
@@ -349,6 +366,7 @@ impl Manifest {
                     effect_rules: Vec::new(),
                     binding_version: None,
                     rust_probe: None,
+                    compare_return: None,
                     driver_adapter: None,
                     qualification_blockers: Vec::new(),
                     line: line_number,
@@ -402,7 +420,7 @@ impl Manifest {
                         )
                         .into());
                     }
-                    parse_source(source, line_number)?;
+                    validate_source_id(source, line_number)?;
                     protocol_prefixes.push(ProtocolPrefix {
                         source: source.to_owned(),
                         prefix: prefix.to_owned(),
@@ -411,7 +429,7 @@ impl Manifest {
                 }
                 "disposition" | "protocol" | "rust-component" | "hil-evidence"
                 | "semantic-contract" | "effect-contract" | "effect" | "binding" | "rust-probe"
-                | "driver-adapter" | "blocked-by" => {
+                | "compare-return" | "driver-adapter" | "blocked-by" => {
                     let builder = current.as_mut().ok_or_else(|| {
                         format!("{directive} outside function at line {line_number}")
                     })?;
@@ -501,6 +519,20 @@ impl Manifest {
                                 );
                             }
                         }
+                        "compare-return" => {
+                            if value != "true" {
+                                return Err(format!(
+                                    "compare-return must be true at line {line_number}"
+                                )
+                                .into());
+                            }
+                            if builder.compare_return.replace(true).is_some() {
+                                return Err(format!(
+                                    "duplicate compare-return at line {line_number}"
+                                )
+                                .into());
+                            }
+                        }
                         "driver-adapter" => {
                             if builder
                                 .driver_adapter
@@ -527,7 +559,7 @@ impl Manifest {
                                 )
                                 .into());
                             }
-                            parse_source(source, line_number)?;
+                            validate_source_id(source, line_number)?;
                             let blocker = (source.to_owned(), symbol.to_owned());
                             if builder.qualification_blockers.contains(&blocker) {
                                 return Err(format!(

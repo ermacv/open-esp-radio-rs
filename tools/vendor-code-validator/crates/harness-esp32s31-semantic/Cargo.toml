@@ -10,6 +10,8 @@ description = "ESP32-S31 reviewed summaries and typed production-driver qualific
 
 [dependencies]
 open-esp-radio-esp32s31-phy = { path = "../../../../crates/esp32s31/phy" }
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../../crates/esp32s31/wifi/mac" }
+open-esp-radio-ieee80211 = { path = "../../../../crates/wifi/ieee80211" }
 open-radio-vendor-backend-riscv = { path = "../backend-riscv" }
 open-radio-vendor-harness-esp32s31 = { path = "../harness-esp32s31" }
 open-radio-vendor-validator-semantic = { path = "../semantic" }

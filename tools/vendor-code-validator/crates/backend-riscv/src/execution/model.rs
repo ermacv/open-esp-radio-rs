@@ -153,6 +153,12 @@ pub struct Scenario {
     pub arguments: Vec<u32>,
     pub mmio_initial: BTreeMap<u32, u32>,
     pub mmio_reads: BTreeMap<u32, VecDeque<u32>>,
+    /// Optional deterministic contents for otherwise-uninitialized bytes in
+    /// the executor's private stack. This exists for optimized Rust ABIs that
+    /// copy enum/struct padding. Qualification should execute at least two
+    /// distinct fills and require identical observables; `None` retains the
+    /// ordinary poison-on-read behavior.
+    pub private_stack_fill: Option<u8>,
     pub memory_initial: BTreeMap<u32, u8>,
     pub observed_memory: Vec<MemoryRange>,
     pub memory_aliases: Vec<MemoryAlias>,
@@ -163,6 +169,10 @@ pub struct Scenario {
     /// Reviewed ownership of RAM that can outlive this call. Externally owned
     /// ranges become poison at every call boundary unless explicitly seeded.
     pub memory_ownership: Vec<MemoryOwnership>,
+    /// Explicit scalar results for named linked calls that form a reviewed
+    /// platform/driver boundary. Each invocation consumes one value. A
+    /// declared model with too few or unused responses fails closed.
+    pub call_returns: BTreeMap<String, VecDeque<u32>>,
     pub reset_policy: ResetPolicy,
     pub max_steps: u64,
 }

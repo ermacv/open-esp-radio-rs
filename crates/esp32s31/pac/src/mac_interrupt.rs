@@ -1,6 +1,6 @@
 //! Generated-PAC ownership for the finite MAC interrupt transaction.
 
-use super::{device_fence, svd};
+use super::{device_fence, generated, svd};
 
 /// One-shot task-side setup for the MAC interrupt handoff.
 ///
@@ -31,14 +31,21 @@ impl MacInterruptSetup {
     /// executes. The returned value should be installed in its final static
     /// storage before the platform route is enabled.
     pub fn activate(self, event_mask: u32) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
-        // Preserve the HIL-qualified task order: publish the complete mask,
-        // acknowledge every stale event, then order both MMIO writes before
-        // the caller exposes the ISR capability.
+        // Preserve the HIL-qualified task order: publish the complete MAC
+        // mask, explicitly keep the still-unqualified WDEVPWR causes masked,
+        // acknowledge every stale event, then order all MMIO writes before
+        // the caller exposes either ISR capability.
         unsafe {
             self.peripheral
                 .enable()
                 .write_with_zero(|w| w.event_mask().bits(event_mask));
+            self.power_peripheral
+                .enable()
+                .write_with_zero(|w| w.event_mask().bits(0));
             self.peripheral
+                .clear()
+                .write_with_zero(|w| w.events().bits(u32::MAX));
+            self.power_peripheral
                 .clear()
                 .write_with_zero(|w| w.events().bits(u32::MAX));
         }
@@ -64,22 +71,26 @@ pub struct MacPowerInterruptRegisters {
 }
 
 impl MacPowerInterruptRegisters {
-    /// Sample the masked WDEVPWR event image and acknowledge that exact image.
+    /// Sample the complete masked WDEVPWR event image.
     ///
-    /// SOURCE: complete `_oracles/libpp.a[hal_pwr.o]::
-    /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`; complete
-    /// `hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
-    pub fn acknowledge_pending_power_interrupts(&mut self) -> u32 {
-        let events = self.peripheral.status().read().events().bits();
-        // SAFETY: CLEAR is the instruction-proven full-width W1C event image;
-        // writing the status snapshot is the complete recovered transaction.
-        unsafe {
-            self.peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(events))
-        };
+    /// SOURCE: complete `_oracles/libpp.a[hal_tsf.o]::
+    /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`.
+    pub fn power_interrupt_status(&self) -> u32 {
+        generated::hal_pwr_interrupt_get_event::generated_hal_pwr_interrupt_get_event(
+            &self.peripheral,
+        )
+    }
+
+    /// Acknowledge the complete sampled WDEVPWR event image.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_tsf.o]::
+    /// hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
+    pub fn acknowledge_power_interrupts(&mut self, events: u32) {
+        let _ = generated::hal_pwr_interrupt_clr_event::generated_hal_pwr_interrupt_clr_event(
+            &self.peripheral,
+            events,
+        );
         device_fence();
-        events
     }
 }
 
@@ -93,16 +104,16 @@ pub struct MacInterruptRegisters {
 }
 
 impl MacInterruptRegisters {
-    /// Sample status and enable in the recovered common-ISR order.
+    /// Sample the complete MAC interrupt status image.
     ///
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_get_event` proves the
-    /// status address; the recovered `wDev_ProcessFiq` transaction and cold
-    /// initializer prove the paired enable snapshot.
-    pub fn mac_interrupt_snapshot(&self) -> (u32, u32) {
-        let block = &self.peripheral;
-        let status = block.status().read().bits();
-        let enabled = block.enable().read().event_mask().bits();
-        (status, enabled)
+    /// status address and complete `wDev_ProcessFiq` consumes exactly this
+    /// status image. The runtime mask is configured before IRQ activation and
+    /// is not sampled by the vendor FIQ transaction.
+    pub fn mac_interrupt_status(&self) -> u32 {
+        generated::hal_mac_interrupt_get_event::generated_hal_mac_interrupt_get_event(
+            &self.peripheral,
+        )
     }
 
     /// Acknowledge the complete sampled event image, then order the ISR edge.
@@ -112,11 +123,19 @@ impl MacInterruptRegisters {
     pub fn acknowledge_mac_interrupts(&mut self, events: u32) {
         // SAFETY: all 32 bits are the evidenced write-to-clear event bitmap;
         // writing back the sampled image is the complete recovered leaf.
-        unsafe {
-            self.peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(events))
-        };
+        let _ = generated::hal_mac_interrupt_clr_event::generated_hal_mac_interrupt_clr_event(
+            &self.peripheral,
+            events,
+        );
         device_fence();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) unsafe fn steal_for_validation() -> Self {
+        Self {
+            // SAFETY: this constructor exists only in the isolated validation
+            // image, whose exported probe is the sole peripheral owner.
+            peripheral: unsafe { svd::WifiMacInterrupt::steal() },
+        }
     }
 }

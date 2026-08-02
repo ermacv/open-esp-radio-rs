@@ -20,6 +20,9 @@ pub enum SoftwareAesKeyUnwrapError {
     IntegrityCheckFailed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Wpa2UnwrappedKeyDataCapacityError;
+
 /// Fixed owned plaintext returned by an async key-unwrap backend.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Wpa2UnwrappedKeyData {
@@ -28,6 +31,23 @@ pub struct Wpa2UnwrappedKeyData {
 }
 
 impl Wpa2UnwrappedKeyData {
+    /// Copy plaintext produced by an external or test key-unwrap backend.
+    ///
+    /// The public constructor is required for implementations of
+    /// [`AsyncWpa2KeyUnwrap`] outside this crate; keeping the fields private
+    /// still prevents an invalid length from being fabricated.
+    pub fn try_copy(bytes: &[u8]) -> Result<Self, Wpa2UnwrappedKeyDataCapacityError> {
+        if bytes.len() > WPA2_UNWRAPPED_KEY_DATA_CAPACITY {
+            return Err(Wpa2UnwrappedKeyDataCapacityError);
+        }
+        let mut owned = Self {
+            len: bytes.len(),
+            bytes: [0; WPA2_UNWRAPPED_KEY_DATA_CAPACITY],
+        };
+        owned.bytes[..bytes.len()].copy_from_slice(bytes);
+        Ok(owned)
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
     }
@@ -165,6 +185,19 @@ mod tests {
         assert_eq!(
             software_aes128_key_unwrap(&[0; 16], &[0; 25]).err(),
             Some(SoftwareAesKeyUnwrapError::InvalidLength)
+        );
+    }
+
+    #[test]
+    fn external_unwrap_backends_can_construct_only_bounded_plaintext() {
+        let bytes = [0x5a; WPA2_UNWRAPPED_KEY_DATA_CAPACITY];
+        let owned = Wpa2UnwrappedKeyData::try_copy(&bytes).unwrap();
+        assert_eq!(owned.as_bytes(), &bytes);
+
+        let oversized = [0; WPA2_UNWRAPPED_KEY_DATA_CAPACITY + 1];
+        assert_eq!(
+            Wpa2UnwrappedKeyData::try_copy(&oversized).err(),
+            Some(Wpa2UnwrappedKeyDataCapacityError)
         );
     }
 }

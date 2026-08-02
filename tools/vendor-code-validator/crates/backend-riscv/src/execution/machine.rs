@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use rv_asm::{Inst, Reg};
+use rv_asm::{AmoOp, Inst, Reg};
 
 use super::{
     ExecutableImage, ExecutionEvent, ExecutionResult, ExecutionTimelineEvent, IndirectCall,
@@ -18,6 +18,7 @@ pub(super) struct Machine<'a> {
     pub(super) pc: u32,
     pub(super) overlay: BTreeMap<u32, u8>,
     pub(super) initial_overlay: BTreeMap<u32, u8>,
+    pub(super) private_stack_fill: Option<u8>,
     pub(super) observed_memory: Vec<MemoryRange>,
     pub(super) memory_aliases: Vec<MemoryAlias>,
     pub(super) persistent_memory: Vec<MemoryRange>,
@@ -34,8 +35,35 @@ pub(super) struct Machine<'a> {
     pub(super) calls: BTreeSet<String>,
     pub(super) ordered_calls: Vec<OrderedCall>,
     pub(super) indirect_calls: BTreeSet<IndirectCall>,
+    pub(super) call_returns: BTreeMap<String, VecDeque<u32>>,
     pub(super) steps: u64,
     pub(super) max_steps: u64,
+}
+
+pub(super) fn atomic_word_result(operation: AmoOp, current: u32, source: u32) -> u32 {
+    match operation {
+        AmoOp::Swap => source,
+        AmoOp::Add => current.wrapping_add(source),
+        AmoOp::Xor => current ^ source,
+        AmoOp::And => current & source,
+        AmoOp::Or => current | source,
+        AmoOp::Min => {
+            if (current as i32) < (source as i32) {
+                current
+            } else {
+                source
+            }
+        }
+        AmoOp::Max => {
+            if (current as i32) > (source as i32) {
+                current
+            } else {
+                source
+            }
+        }
+        AmoOp::Minu => current.min(source),
+        AmoOp::Maxu => current.max(source),
+    }
 }
 
 impl<'a> Machine<'a> {
@@ -62,6 +90,7 @@ impl<'a> Machine<'a> {
             pc: start,
             overlay: initial_overlay.clone(),
             initial_overlay,
+            private_stack_fill: scenario.private_stack_fill,
             observed_memory: scenario.observed_memory,
             memory_aliases: scenario.memory_aliases,
             persistent_memory: scenario.persistent_memory,
@@ -75,6 +104,7 @@ impl<'a> Machine<'a> {
             calls: BTreeSet::new(),
             ordered_calls: Vec::new(),
             indirect_calls: BTreeSet::new(),
+            call_returns: scenario.call_returns,
             steps: 0,
             max_steps: if scenario.max_steps == 0 {
                 100_000
@@ -98,6 +128,9 @@ impl<'a> Machine<'a> {
         if let Some(value) = self.overlay.get(&address).copied() {
             return Ok(value);
         }
+        if let Some(error) = self.image.unresolved_relocation_error(address, "RAM read") {
+            return Err(error.into());
+        }
         if self.memory_ownership.iter().any(|ownership| {
             ownership.range.contains(address) && ownership.owner.may_change_outside_cpu()
         }) {
@@ -106,9 +139,18 @@ impl<'a> Machine<'a> {
             )
             .into());
         }
-        self.image
-            .byte(address)
-            .ok_or_else(|| format!("read from poison/unmapped memory at {address:#010x}").into())
+        if execution_stack_contains(address)
+            && let Some(value) = self.private_stack_fill
+        {
+            return Ok(value);
+        }
+        self.image.byte(address).ok_or_else(|| {
+            format!(
+                "read from poison/unmapped memory at {address:#010x} from pc={:#010x}",
+                self.pc
+            )
+            .into()
+        })
     }
 
     pub(super) fn read(&mut self, address: u32, width: u8) -> Result<u32> {
@@ -234,6 +276,18 @@ impl<'a> Machine<'a> {
         self.timeline.push(ExecutionTimelineEvent::Call(call));
     }
 
+    fn modeled_call_result(&mut self, symbol: &str, site: u32) -> Result<Option<u32>> {
+        let Some(responses) = self.call_returns.get_mut(symbol) else {
+            return Ok(None);
+        };
+        responses.pop_front().map(Some).ok_or_else(|| {
+            format!(
+                "execution reached modeled call {symbol} at {site:#010x} without a remaining response"
+            )
+            .into()
+        })
+    }
+
     pub(super) fn record_event(&mut self, event: ExecutionEvent) {
         self.events.push(event.clone());
         self.timeline
@@ -349,6 +403,21 @@ impl<'a> Machine<'a> {
         if let Some(call) = self.image.relocated_call_at(self.pc).cloned() {
             let link = self.image.relocated_call_link_register(self.pc)?;
             let continuation = self.pc.wrapping_add(8);
+            if let Some(result) = self.modeled_call_result(&call.name, self.pc)? {
+                self.record_call(self.pc, call.name);
+                self.set_register(Reg::A0, result);
+                if link == Reg::ZERO {
+                    let return_address = self.register(Reg::RA);
+                    if return_address == RETURN_SENTINEL {
+                        return Ok(false);
+                    }
+                    self.pc = return_address;
+                } else {
+                    self.set_register(link, continuation);
+                    self.pc = continuation;
+                }
+                return Ok(true);
+            }
             if link != Reg::ZERO {
                 self.set_register(link, continuation);
             }
@@ -541,6 +610,32 @@ impl<'a> Machine<'a> {
                     self.register(src),
                 )?;
             }
+            Inst::AmoW {
+                order: _,
+                op,
+                dest,
+                addr,
+                src,
+            } => {
+                let address = self.register(addr);
+                if address & 3 != 0 {
+                    return Err(format!(
+                        "misaligned atomic word access at {address:#010x} from pc={:#010x}",
+                        self.pc
+                    )
+                    .into());
+                }
+                if self.svd.contains_mmio(address) {
+                    return Err(format!(
+                        "atomic word access to MMIO at {address:#010x} requires an explicit peripheral model"
+                    )
+                    .into());
+                }
+                let source = self.register(src);
+                let previous = self.read(address, 32)?;
+                self.write(address, 32, atomic_word_result(op, previous, source))?;
+                self.set_register(dest, previous);
+            }
             Inst::Beq { offset, src1, src2 } => {
                 self.branch(
                     self.register(src1) == self.register(src2),
@@ -591,6 +686,23 @@ impl<'a> Machine<'a> {
             }
             Inst::Jal { offset, dest } => {
                 let target = self.pc.wrapping_add(offset.as_u32());
+                if let Some(symbol) = self.image.symbol_at(target)
+                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                {
+                    self.record_call(self.pc, symbol.to_owned());
+                    self.set_register(Reg::A0, result);
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
                 self.set_register(dest, next);
                 let leaves_call_trampoline =
                     self.image.call_trampoline_addresses.contains(&self.pc);
@@ -602,6 +714,30 @@ impl<'a> Machine<'a> {
             }
             Inst::Jalr { offset, base, dest } => {
                 let target = self.register(base).wrapping_add(offset.as_u32()) & !1;
+                if let Some(symbol) = self.image.symbol_at(target)
+                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                {
+                    self.record_call(self.pc, symbol.to_owned());
+                    self.indirect_calls.insert(IndirectCall {
+                        site: self.pc,
+                        symbol: symbol.to_owned(),
+                        arguments: core::array::from_fn(|index| {
+                            self.registers[usize::from(Reg::A0.0) + index]
+                        }),
+                    });
+                    self.set_register(Reg::A0, result);
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
                 self.set_register(dest, next);
                 if target == RETURN_SENTINEL {
                     return Ok(false);
@@ -672,6 +808,14 @@ pub fn execute(
         .collect();
     if !unconsumed.is_empty() {
         return Err(format!("unconsumed MMIO read responses: {unconsumed:?}").into());
+    }
+    let unconsumed_calls: Vec<_> = machine
+        .call_returns
+        .iter()
+        .filter_map(|(symbol, values)| (!values.is_empty()).then_some((symbol, values.len())))
+        .collect();
+    if !unconsumed_calls.is_empty() {
+        return Err(format!("unconsumed modeled call responses: {unconsumed_calls:?}").into());
     }
     let return_value = machine.register(Reg::A0);
     let memory_changes = machine.memory_changes()?;

@@ -131,6 +131,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
     let vendor_symbol = vendor_symbol.ok_or("missing --vendor-symbol")?;
     let rust_artifact = rust_artifact.ok_or("missing --rust-artifact")?;
     let rust_symbol = rust_symbol.ok_or("missing --rust-symbol")?;
+    let unconstrained_arguments = [[None; 8]];
     Ok(compare_execution_scenarios(
         svd,
         ExecutionInput {
@@ -144,6 +145,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
             symbol: &rust_symbol,
         },
         compare_return,
+        &unconstrained_arguments,
         &scenarios,
     )? == ComparisonVerdict::Match)
 }

@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 description = "Source-described ESP32-S31 radio register access"
 
+[features]
+validation-probes = []
+
 [dependencies]
 open-esp-radio-esp32s31-svd = { path = "../svd" }
 

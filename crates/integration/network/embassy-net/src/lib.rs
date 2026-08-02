@@ -24,11 +24,11 @@ use core::{
     task::{Context, Poll},
 };
 
-pub use embassy_net_driver::{Driver, TxToken};
+pub use embassy_net_driver::{Driver, LinkState, TxToken};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
 
-use embassy_net_driver::{Capabilities, HardwareAddress, LinkState};
+use embassy_net_driver::{Capabilities, HardwareAddress};
 use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
     waitqueue::GenericAtomicWaker,
@@ -37,8 +37,8 @@ use embassy_sync::{
 mod pinned;
 
 pub use pinned::{
-    PinnedDevice, PinnedRadioRunner, PinnedResources, PinnedTransmitToken, PinnedTxFrame,
-    PinnedTxPool,
+    PinnedDevice, PinnedRadioRunner, PinnedResources, PinnedRxPublisher, PinnedTransmitToken,
+    PinnedTxFrame, PinnedTxPool,
 };
 
 /// Ethernet header length, excluding an FCS.
@@ -64,6 +64,28 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
 
         let mut owned = Self::with_length(frame.len());
         owned.as_mut_slice().copy_from_slice(frame);
+        Ok(owned)
+    }
+
+    /// Copies one borrowed Ethernet-II header/payload view directly into its
+    /// final owned queue allocation.
+    pub fn copy_from_parts(
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload: &[u8],
+    ) -> Result<Self, FrameLengthError> {
+        let length = ETHERNET_HEADER_LEN
+            .checked_add(payload.len())
+            .ok_or(FrameLengthError::TooLong)?;
+        if length > CAPACITY {
+            return Err(FrameLengthError::TooLong);
+        }
+        let mut owned = Self::with_length(length);
+        owned.bytes[..6].copy_from_slice(&destination);
+        owned.bytes[6..12].copy_from_slice(&source);
+        owned.bytes[12..14].copy_from_slice(&ether_type.to_be_bytes());
+        owned.bytes[14..length].copy_from_slice(payload);
         Ok(owned)
     }
 

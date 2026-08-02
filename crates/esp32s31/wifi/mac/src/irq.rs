@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_pac::MacInterruptRegisters;
+use open_esp_radio_esp32s31_pac::{MacInterruptRegisters, MacPowerInterruptRegisters};
 
 pub const MAC_INT_TX_COMPLETE: u32 = 0x0000_0080;
 pub const MAC_INT_COLLISION: u32 = 0x0000_0100;
@@ -15,17 +15,38 @@ pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
 /// Production delegates both operations to generated PAC registers. Tests
 /// can model the same ordering without receiving arbitrary MMIO identities.
 pub trait MacInterrupt {
-    fn snapshot(&mut self) -> (u32, u32);
+    fn status(&mut self) -> u32;
     fn acknowledge(&mut self, events: u32);
 }
 
 impl MacInterrupt for MacInterruptRegisters {
-    fn snapshot(&mut self) -> (u32, u32) {
-        self.mac_interrupt_snapshot()
+    fn status(&mut self) -> u32 {
+        self.mac_interrupt_status()
     }
 
     fn acknowledge(&mut self, events: u32) {
         self.acknowledge_mac_interrupts(events);
+    }
+}
+
+/// Finite opaque WDEVPWR interrupt capability used by the hard ISR.
+///
+/// Cause meanings deliberately do not appear in this trait. The current
+/// qualification proves only the complete masked STATUS image and exact W1C
+/// acknowledgement; policy code must not infer sleep semantics from an
+/// unqualified bit number.
+pub trait MacPowerInterrupt {
+    fn status(&mut self) -> u32;
+    fn acknowledge(&mut self, events: u32);
+}
+
+impl MacPowerInterrupt for MacPowerInterruptRegisters {
+    fn status(&mut self) -> u32 {
+        self.power_interrupt_status()
+    }
+
+    fn acknowledge(&mut self, events: u32) {
+        self.acknowledge_power_interrupts(events);
     }
 }
 
@@ -83,7 +104,6 @@ pub struct IrqEvent {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqSnapshot {
-    pub enabled: u32,
     pub status: u32,
     pub pending: u32,
     pub handled: u32,
@@ -101,6 +121,22 @@ pub enum IrqDisposition {
 pub trait IrqSink {
     fn post(&self, mac_pending: u32);
     fn record_unhandled(&self, bits: u32);
+}
+
+/// Sink for an acknowledged but otherwise opaque WDEVPWR event image.
+pub trait PowerIrqSink {
+    fn post_power(&self, pending: u32);
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PowerIrqSnapshot {
+    pub status: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerIrqDisposition {
+    Posted,
+    Spurious,
 }
 
 /// Executor-neutral coalescing state shared by the ISR and its task.
@@ -144,17 +180,7 @@ impl IrqState {
     pub fn try_take_next(&self) -> Option<IrqWork> {
         let mut pending = self.pending_mac.load(Ordering::Acquire);
         loop {
-            let work = if pending & MAC_INT_RX_SUCCESS != 0 {
-                IrqWork::RxSuccess
-            } else if pending & MAC_INT_TX_COMPLETE != 0 {
-                IrqWork::TxComplete
-            } else if pending & MAC_INT_TX_TIMEOUT != 0 {
-                IrqWork::TxTimeout
-            } else if pending & MAC_INT_COLLISION != 0 {
-                IrqWork::Collision
-            } else {
-                return None;
-            };
+            let work = next_irq_work(pending)?;
             match self.pending_mac.compare_exchange_weak(
                 pending,
                 pending & !work.mac_bit(),
@@ -173,6 +199,24 @@ impl IrqState {
             mac_pending,
             event_mask: event_mask(mac_pending),
         })
+    }
+}
+
+/// Select one action from a raw pending image in recovered vendor order.
+///
+/// Keeping selection pure lets validation probes exercise the same production
+/// decision without depending on the executor's atomic-instruction model.
+pub const fn next_irq_work(pending: u32) -> Option<IrqWork> {
+    if pending & MAC_INT_RX_SUCCESS != 0 {
+        Some(IrqWork::RxSuccess)
+    } else if pending & MAC_INT_TX_COMPLETE != 0 {
+        Some(IrqWork::TxComplete)
+    } else if pending & MAC_INT_TX_TIMEOUT != 0 {
+        Some(IrqWork::TxTimeout)
+    } else if pending & MAC_INT_COLLISION != 0 {
+        Some(IrqWork::Collision)
+    } else {
+        None
     }
 }
 
@@ -216,11 +260,10 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
     interrupt: &mut M,
     sink: &S,
 ) -> (IrqDisposition, IrqSnapshot) {
-    let (status, enabled) = interrupt.snapshot();
+    let status = interrupt.status();
     let handled = status & HANDLED_MAC_MASK;
     let unhandled = status & !HANDLED_MAC_MASK;
     let snapshot = IrqSnapshot {
-        enabled,
         status,
         pending: status,
         handled,
@@ -239,4 +282,24 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
         sink.post(handled);
         (IrqDisposition::Posted, snapshot)
     }
+}
+
+/// Acknowledge one complete masked WDEVPWR snapshot before publishing it.
+///
+/// This intentionally stops at the ISR/executor boundary. Decoding beacon
+/// miss, sleep-limit, TSF or other causes requires separate vendor evidence
+/// and is not implied by a nonzero raw bit.
+pub fn handle_power_irq<P: MacPowerInterrupt, S: PowerIrqSink>(
+    interrupt: &mut P,
+    sink: &S,
+) -> (PowerIrqDisposition, PowerIrqSnapshot) {
+    let status = interrupt.status();
+    let snapshot = PowerIrqSnapshot { status };
+    if status == 0 {
+        return (PowerIrqDisposition::Spurious, snapshot);
+    }
+
+    interrupt.acknowledge(status);
+    sink.post_power(status);
+    (PowerIrqDisposition::Posted, snapshot)
 }

@@ -14,6 +14,7 @@ pub(crate) enum Command {
     VerifyProfiles,
     GenerateReference,
     GenerateReferenceBatch,
+    GenerateDriver,
     Analyze,
     VerifyAll,
     Verify,
@@ -47,6 +48,10 @@ impl Command {
             ("reference", Some("generate-batch")) => {
                 remaining.remove(0);
                 Self::GenerateReferenceBatch
+            }
+            ("driver", Some("generate")) => {
+                remaining.remove(0);
+                Self::GenerateDriver
             }
             ("execute", Some("run")) => {
                 remaining.remove(0);
@@ -85,10 +90,10 @@ impl Command {
                     None => return Err("verify contract requires a contract name".into()),
                 }
             }
-            ("image" | "inspect" | "reference", Some(command)) => {
+            ("image" | "inspect" | "reference" | "driver", Some(command)) => {
                 return Err(format!("unknown {value} command: {command}").into());
             }
-            ("image" | "inspect" | "reference", None) => {
+            ("image" | "inspect" | "reference" | "driver", None) => {
                 return Err(format!("{value} requires a command").into());
             }
             ("audit-direct-targets", _) => Self::AuditDirectTargets,

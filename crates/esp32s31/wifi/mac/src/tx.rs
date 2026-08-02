@@ -132,6 +132,12 @@ impl LegacyTxQueue {
 
 /// Finite ordinary-queue hardware authority used by one owned TX slot.
 pub trait TxHardware {
+    /// Translate the pinned CPU descriptor address for a hardware/simulator.
+    /// Real ESP32-S31 implementations retain the identity mapping; host
+    /// executors may supply a deterministic internal-SRAM address.
+    fn tx_descriptor_address(&self, cpu_address: u32) -> u32 {
+        cpu_address
+    }
     fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool;
     fn start_legacy_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool;
@@ -147,6 +153,9 @@ pub trait TxHardware {
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
+    fn abort_tx_collision(&mut self, _queue: u8) -> bool {
+        false
+    }
     fn detach_completed_tx(&mut self, queue: u8) -> bool;
 }
 
@@ -189,6 +198,10 @@ impl TxHardware for RadioRegisters {
 
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
         self.finish_mac_tx_timeout_abort(queue)
+    }
+
+    fn abort_tx_collision(&mut self, queue: u8) -> bool {
+        self.abort_mac_tx_collision(queue)
     }
 
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
@@ -235,6 +248,10 @@ impl TxHardware for ColdRadioRegisters {
 
     fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
         TxHardware::finish_tx_timeout_abort(&mut **self, queue)
+    }
+
+    fn abort_tx_collision(&mut self, queue: u8) -> bool {
+        TxHardware::abort_tx_collision(&mut **self, queue)
     }
 
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
@@ -2777,6 +2794,27 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         Ok(slot.active)
     }
 
+    /// Cancel a descriptor that has not been published to an ordinary queue.
+    ///
+    /// Queue preparation can fail after the descriptor image is built but
+    /// before [`submit_legacy`](Self::submit_legacy) or
+    /// [`submit_ht`](Self::submit_ht) transfers ownership to hardware. This
+    /// edge makes that pre-publication failure recoverable without inventing
+    /// a hardware detach transaction.
+    pub fn cancel_reservation(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
+        // SAFETY: `Reserved` proves that no queue can reach the descriptor.
+        // The pinned allocation stays in place; only its unpublished image
+        // and scalar ownership state are reset.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        slot.descriptor.publish(0, 0, 0);
+        slot.active = TxCookie(0);
+        slot.state = TxSlotState::Free;
+        Ok(())
+    }
+
     /// Programs and starts one legacy q0 attempt.
     ///
     /// Pinning keeps both the private descriptor and its enclosed source
@@ -2805,7 +2843,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             return Err(TxError::Stale);
         }
         let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
-        let image = legacy_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
+        let hardware_address = hardware.tx_descriptor_address(actual_address);
+        let image = legacy_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacLegacyTxProgram {
             plcp0: image.plcp0,
@@ -2852,7 +2891,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             return Err(TxError::Stale);
         }
         let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
-        let image = ht_q0_image(actual_address, config).ok_or(TxError::Invalid)?;
+        let hardware_address = hardware.tx_descriptor_address(actual_address);
+        let image = ht_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacHtTxProgram {
             plcp0: image.plcp0,
@@ -2946,6 +2986,44 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if !hardware.begin_tx_timeout_abort(slot.queue.index()) {
             return Ok(false);
         }
+        Ok(true)
+    }
+
+    /// Permanently quarantine a hardware-owned slot until the radio resets.
+    ///
+    /// An executor deadline can expire without the qualified hardware timeout
+    /// bit becoming visible. Safe code must not free or reuse the DMA storage
+    /// in that state. The caller returns control to the unique radio lifecycle
+    /// owner, which performs a full reset before reconstructing TX storage.
+    pub fn require_reset(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
+        // SAFETY: only scalar ownership state changes; hardware may still
+        // address the pinned descriptor and buffer until the radio reset.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        slot.state = TxSlotState::ResetRequired;
+        Ok(())
+    }
+
+    /// Disable and release one collision-owned ordinary queue.
+    pub fn abort_collision<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+    ) -> Result<bool, TxError> {
+        // SAFETY: hardware release is completed before scalar ownership
+        // returns to `Free`; the pinned storage is never moved.
+        let slot = unsafe { self.get_unchecked_mut() };
+        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        if !hardware.abort_tx_collision(slot.queue.index()) {
+            return Ok(false);
+        }
+        slot.descriptor.publish(0, 0, 0);
+        slot.active = TxCookie(0);
+        slot.state = TxSlotState::Free;
         Ok(true)
     }
 

@@ -800,6 +800,19 @@ pub struct RxCcmpDataFrame {
     pub mic_present_in_dma: bool,
 }
 
+/// Borrowed view of one contiguous hardware-verified CCMP MPDU.
+///
+/// The ordinary connected path first copies a completed DMA unit into an
+/// independently owned staging slot. When that unit contains one complete
+/// MPDU, parsing can borrow the staged bytes directly instead of copying the
+/// complete MPDU into a second scratch buffer. [`frame`](Self::frame) retains
+/// the same validated offsets and metadata as [`extract_ccmp_data`].
+#[derive(Clone, Copy, Debug)]
+pub struct RxCcmpDataView<'frame> {
+    pub mpdu: &'frame [u8],
+    pub frame: RxCcmpDataFrame,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RxError {
     Invalid,
@@ -1823,14 +1836,77 @@ pub fn extract_ccmp_data(
 ) -> Result<RxCcmpDataFrame, RxError> {
     let (frame, consumed_trailer_length) =
         extract_mpdu_allowing_consumed_trailer(segments, config, output, CCMP_MIC_SIZE)?;
+    validate_ccmp_data(&output[..frame.length], frame, consumed_trailer_length)
+}
+
+/// Validate and borrow one contiguous CCMP MPDU from independently owned RX
+/// storage.
+///
+/// This has the same admission contract as [`extract_ccmp_data`], but it is
+/// intentionally restricted to one completed descriptor. Split hardware
+/// units must continue through the copying extractor so no non-contiguous
+/// bytes can escape as a slice.
+#[inline(never)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".rwtext.open_radio_rx_hot")
+)]
+pub fn view_ccmp_data<'frame>(
+    segment: &RxSegment<'frame>,
+    config: RxIngressConfig,
+) -> Result<RxCcmpDataView<'frame>, RxError> {
+    if config.ring_entry_limit == 0
+        || config.flags & !INGRESS_VALID_FLAGS != 0
+        || !segment_valid(segment)
+        || !rx_done(segment.descriptor_word0)
+    {
+        return Err(RxError::Invalid);
+    }
+    let layout = first_segment_layout(segment, config)?;
+    let consumed_trailer_length = layout.frame_shortfall;
+    if consumed_trailer_length > CCMP_MIC_SIZE {
+        return Err(RxError::Bounds);
+    }
+    let frame_length = if consumed_trailer_length == 0 {
+        layout.expected_frame_length
+    } else {
+        layout.available_frame_bytes
+    };
+    let frame_end = layout
+        .frame_offset
+        .checked_add(frame_length)
+        .ok_or(RxError::Bounds)?;
+    let mpdu = segment
+        .buffer
+        .get(layout.frame_offset..frame_end)
+        .ok_or(RxError::Bounds)?;
+    let metadata = RxMpduFrame {
+        length: frame_length,
+        tail_offset: layout.tail_offset,
+        signal_length: layout.signal_length as u16,
+        dump_length: layout.dump_length as u16,
+        rxend_state: layout.rxend_state,
+        rx_state: layout.rx_state,
+        internal_state: layout.internal_state,
+        dump_length_matches: layout.dump_length_matches,
+    };
+    let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length)?;
+    Ok(RxCcmpDataView { mpdu, frame })
+}
+
+fn validate_ccmp_data(
+    mpdu: &[u8],
+    frame: RxMpduFrame,
+    consumed_trailer_length: usize,
+) -> Result<RxCcmpDataFrame, RxError> {
     if frame.length < MLME_HEADER_SIZE {
         return Err(RxError::Bounds);
     }
-    let frame_control = u16::from_le_bytes([output[0], output[1]]);
+    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
     if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
         return Err(RxError::Ignored);
     }
-    if frame_control & (1 << 10) != 0 || frame_control & (1 << 14) == 0 || output[22] & 0x0f != 0 {
+    if frame_control & (1 << 10) != 0 || frame_control & (1 << 14) == 0 || mpdu[22] & 0x0f != 0 {
         return Err(RxError::Unsupported);
     }
 
@@ -1870,7 +1946,7 @@ pub fn extract_ccmp_data(
         return Err(RxError::Bounds);
     }
     // `ccmp_decap` rejects a protected frame whose CCMP ExtIV bit is clear.
-    if output
+    if mpdu
         .get(ccmp_header_offset + 3)
         .is_none_or(|value| value & 0x20 == 0)
     {

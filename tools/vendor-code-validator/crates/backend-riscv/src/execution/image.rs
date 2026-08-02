@@ -39,12 +39,32 @@ pub(super) struct RelocatedCall {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct UnresolvedRelocation {
+    pub(super) name: String,
+    pub(super) r_type: u32,
+    pub(super) width: u8,
+}
+
+#[derive(Clone, Debug)]
 pub struct ExecutableImage {
     pub(super) segments: Vec<Segment>,
     pub(super) symbols_by_name: HashMap<String, u32>,
     pub(super) symbols_by_address: BTreeMap<u32, String>,
+    /// Exact linked sizes for text symbols which carry one in the ELF symbol
+    /// table. Unlike `symbols_by_address`, this deliberately excludes
+    /// absolute call targets and zero-sized labels.
+    pub(super) symbol_sizes_by_address: BTreeMap<u32, u32>,
+    /// Text definitions with local ELF binding. These form the implementation
+    /// closure of a selected public probe; calls to another global definition
+    /// remain named ABI boundaries even when that definition is linked into
+    /// the same diagnostic image.
+    pub(super) local_text_symbols: BTreeSet<u32>,
     pub(super) call_trampoline_addresses: BTreeSet<u32>,
     pub(super) relocated_calls_by_address: BTreeMap<u32, RelocatedCall>,
+    /// Allocated bytes whose linked value still depends on an undefined
+    /// symbol. Keeping these as poison lets an unrelated function in a large
+    /// linked oracle run while any reachable use still fails closed.
+    pub(super) unresolved_relocations_by_address: BTreeMap<u32, UnresolvedRelocation>,
     pub(super) global_pointer: Option<u32>,
 }
 
@@ -90,6 +110,8 @@ impl ExecutableImage {
 
         let mut symbols_by_name = HashMap::new();
         let mut symbols_by_address = BTreeMap::new();
+        let mut symbol_sizes_by_address: BTreeMap<u32, u32> = BTreeMap::new();
+        let mut local_text_symbols = BTreeSet::new();
         let mut call_trampoline_addresses = BTreeSet::new();
         let mut global_pointer = None;
         for symbol in file.symbols() {
@@ -116,16 +138,36 @@ impl ExecutableImage {
                     .entry(address)
                     .or_insert_with(|| name.to_owned());
             }
+            if symbol.kind() == SymbolKind::Text
+                && let Ok(size) = u32::try_from(symbol.size())
+                && size != 0
+            {
+                symbol_sizes_by_address
+                    .entry(address)
+                    .and_modify(|current| *current = (*current).max(size))
+                    .or_insert(size);
+                if !symbol.is_global() && !symbol.is_weak() {
+                    local_text_symbols.insert(address);
+                }
+            }
             if name == "__global_pointer$" {
                 global_pointer = Some(address);
             }
         }
         let mut relocated_calls_by_address = BTreeMap::new();
+        let mut unresolved_relocations_by_address = BTreeMap::new();
         for section in file.sections() {
             for (offset, relocation) in section.relocations() {
                 let RelocationFlags::Elf { r_type } = relocation.flags() else {
                     continue;
                 };
+                let section_start = section.address();
+                let section_end = section_start.wrapping_add(section.size());
+                let address = if offset >= section_start && offset < section_end {
+                    offset
+                } else {
+                    section_start.wrapping_add(offset)
+                } as u32;
                 if !matches!(
                     r_type,
                     object::elf::R_RISCV_CALL | object::elf::R_RISCV_CALL_PLT
@@ -144,11 +186,18 @@ impl ExecutableImage {
                     {
                         let symbol = file.symbol_by_index(index)?;
                         if !symbol.is_definition() && symbol.section() != SymbolSection::Absolute {
-                            return Err(format!(
-                                "unresolved alloc-section relocation type {r_type} to {}",
-                                symbol.name().unwrap_or("<unnamed>")
-                            )
-                            .into());
+                            unresolved_relocations_by_address.insert(
+                                address,
+                                UnresolvedRelocation {
+                                    name: symbol.name().unwrap_or("<unnamed>").to_owned(),
+                                    r_type,
+                                    width: unresolved_relocation_width(
+                                        r_type,
+                                        relocation.size(),
+                                        section.kind() == SectionKind::Text,
+                                    ),
+                                },
+                            );
                         }
                     }
                     continue;
@@ -158,13 +207,6 @@ impl ExecutableImage {
                 };
                 let symbol = file.symbol_by_index(index)?;
                 let name = symbol.name()?.to_owned();
-                let section_start = section.address();
-                let section_end = section_start.wrapping_add(section.size());
-                let address = if offset >= section_start && offset < section_end {
-                    offset
-                } else {
-                    section_start.wrapping_add(offset)
-                } as u32;
                 let target = (symbol.is_definition()
                     || symbol.section() == SymbolSection::Absolute)
                     .then_some(symbol.address() as u32)
@@ -177,8 +219,11 @@ impl ExecutableImage {
             segments,
             symbols_by_name,
             symbols_by_address,
+            symbol_sizes_by_address,
+            local_text_symbols,
             call_trampoline_addresses,
             relocated_calls_by_address,
+            unresolved_relocations_by_address,
             global_pointer,
         })
     }
@@ -193,12 +238,24 @@ impl ExecutableImage {
         for (address, name) in companion.symbols_by_address {
             self.symbols_by_address.entry(address).or_insert(name);
         }
+        for (address, size) in companion.symbol_sizes_by_address {
+            self.symbol_sizes_by_address
+                .entry(address)
+                .and_modify(|current| *current = (*current).max(size))
+                .or_insert(size);
+        }
+        self.local_text_symbols.extend(companion.local_text_symbols);
         self.call_trampoline_addresses
             .extend(companion.call_trampoline_addresses);
         for (address, call) in companion.relocated_calls_by_address {
             self.relocated_calls_by_address
                 .entry(address)
                 .or_insert(call);
+        }
+        for (address, relocation) in companion.unresolved_relocations_by_address {
+            self.unresolved_relocations_by_address
+                .entry(address)
+                .or_insert(relocation);
         }
         self.resolve_external_relocations();
         Ok(())
@@ -224,6 +281,9 @@ impl ExecutableImage {
     /// end boundary even when the input symbol table omits explicit sizes.
     pub fn symbol_extent(&self, name: &str) -> Option<std::ops::Range<u32>> {
         let start = self.symbol_address(name)?;
+        if let Some(size) = self.symbol_sizes_by_address.get(&start) {
+            return start.checked_add(*size).map(|end| start..end);
+        }
         let end = self
             .symbols_by_address
             .range((std::ops::Bound::Excluded(start), std::ops::Bound::Unbounded))
@@ -232,12 +292,262 @@ impl ExecutableImage {
         Some(start..end)
     }
 
+    /// Canonicalize the linked code closure rooted at one exact text symbol.
+    ///
+    /// The identity is deliberately independent of the surrounding ELF and
+    /// of linked addresses. Exact function bytes are retained, except for
+    /// direct inter-function call encodings: those are represented as stable
+    /// edges to recursively canonicalized local callees. Calls to another
+    /// global symbol remain named ABI edges. This makes qualification evidence
+    /// local to the selected probe while still binding compiler/internal
+    /// helpers which were not inlined.
+    ///
+    /// Direct `JAL` and adjacent `AUIPC`/`JALR` edges are followed. A symbolic
+    /// ELF call relocation is retained by name. Indirect calls remain part of
+    /// the caller bytes and therefore still require execution scenarios or an
+    /// explicit ABI adapter to qualify their possible targets.
+    pub fn code_closure_identity(&self, root_symbol: &str) -> Result<String> {
+        const MAX_FUNCTIONS: usize = 4_096;
+        const MAX_INSTRUCTIONS: usize = 1_000_000;
+
+        let root = self
+            .symbol_address(root_symbol)
+            .ok_or_else(|| format!("execution symbol {root_symbol} was not found"))?;
+        if !self.symbol_sizes_by_address.contains_key(&root) {
+            return Err(
+                format!("execution symbol {root_symbol} has no exact linked text size").into(),
+            );
+        }
+
+        let mut addresses = vec![root];
+        let mut indices = BTreeMap::from([(root, 0_usize)]);
+        let mut canonical = String::from("riscv32-code-closure-v1\n");
+        let mut instruction_count = 0_usize;
+        let mut node = 0_usize;
+
+        while node < addresses.len() {
+            if addresses.len() > MAX_FUNCTIONS {
+                return Err(format!(
+                    "code closure for {root_symbol} exceeds {MAX_FUNCTIONS} functions"
+                )
+                .into());
+            }
+            let start = addresses[node];
+            let size = self.symbol_sizes_by_address[&start];
+            let end = start
+                .checked_add(size)
+                .ok_or("linked text symbol extent overflows RV32 address space")?;
+            canonical.push_str(&format!("node {node} size={size}\n"));
+
+            let mut address = start;
+            while address < end {
+                instruction_count += 1;
+                if instruction_count > MAX_INSTRUCTIONS {
+                    return Err(format!(
+                        "code closure for {root_symbol} exceeds {MAX_INSTRUCTIONS} instructions"
+                    )
+                    .into());
+                }
+                let offset = address - start;
+
+                if let Some((relocation_site, relocation)) = self.unresolved_relocation_at(address)
+                {
+                    if relocation_site < start {
+                        return Err(format!(
+                            "linked symbol at {start:#x} begins inside unresolved relocation at {relocation_site:#x}"
+                        )
+                        .into());
+                    }
+                    let relocation_offset = relocation_site - start;
+                    canonical.push_str(&format!(
+                        "unresolved-relocation +{relocation_offset:#x} type={} width={} symbol={}\n",
+                        relocation.r_type, relocation.width, relocation.name
+                    ));
+                    let relocation_end =
+                        relocation_site
+                            .checked_add(u32::from(relocation.width))
+                            .ok_or("unresolved relocation extent overflows RV32 address space")?;
+                    if relocation_end > end {
+                        return Err(format!(
+                            "unresolved relocation at {address:#x} crosses linked symbol extent"
+                        )
+                        .into());
+                    }
+                    address = relocation_end;
+                    continue;
+                }
+
+                if let Some(call) = self.relocated_call_at(address) {
+                    let target_node = call
+                        .target
+                        .filter(|target| self.closure_owns(root, *target))
+                        .map(|target| closure_node(target, &mut addresses, &mut indices));
+                    canonical.push_str(&format!(
+                        "reloc-call +{offset:#x} symbol={} target={}\n",
+                        call.name,
+                        target_node
+                            .map_or_else(|| "external".to_owned(), |index| index.to_string())
+                    ));
+                    let pair_end = address
+                        .checked_add(8)
+                        .ok_or("R_RISCV_CALL pair overflows RV32 address space")?;
+                    if pair_end > end {
+                        return Err(format!(
+                            "R_RISCV_CALL at {address:#x} exceeds linked symbol extent"
+                        )
+                        .into());
+                    }
+                    // Validate the pair even though its address-bearing bytes
+                    // are intentionally excluded from the identity.
+                    self.relocated_call_link_register(address)?;
+                    address = pair_end;
+                    continue;
+                }
+
+                let Ok((instruction, width)) = self.instruction(address) else {
+                    // Rust and vendor linkers may place jump tables or literal
+                    // data inside a FUNC-sized range. The exact remainder is
+                    // still part of this local implementation identity, but
+                    // it cannot safely be interpreted as more call edges.
+                    canonical.push_str(&format!("opaque-bytes +{offset:#x} "));
+                    for byte_address in address..end {
+                        let byte = self.byte(byte_address).ok_or_else(|| {
+                            format!("linked symbol byte is absent at {byte_address:#x}")
+                        })?;
+                        canonical.push_str(&format!("{byte:02x}"));
+                    }
+                    canonical.push('\n');
+                    break;
+                };
+                let next = address
+                    .checked_add(width)
+                    .ok_or("instruction extent overflows RV32 address space")?;
+                if next > end {
+                    return Err(format!(
+                        "instruction at {address:#x} crosses linked symbol extent"
+                    )
+                    .into());
+                }
+
+                if let Inst::Jal { offset: jump, dest } = instruction {
+                    let target = address.wrapping_add(jump.as_u32());
+                    if !(start..end).contains(&target) {
+                        write_closure_edge(
+                            &mut canonical,
+                            "jal",
+                            offset,
+                            dest,
+                            target,
+                            root,
+                            self,
+                            &mut addresses,
+                            &mut indices,
+                        );
+                        address = next;
+                        continue;
+                    }
+                }
+
+                if let Inst::Auipc { uimm, dest: base } = instruction
+                    && next < end
+                {
+                    let (following, following_width) = self.instruction(next)?;
+                    if let Inst::Jalr {
+                        offset: jump,
+                        base: jump_base,
+                        dest,
+                    } = following
+                        && jump_base == base
+                    {
+                        let pair_end = next
+                            .checked_add(following_width)
+                            .ok_or("AUIPC/JALR extent overflows RV32 address space")?;
+                        if pair_end > end {
+                            return Err(format!(
+                                "AUIPC/JALR at {address:#x} crosses linked symbol extent"
+                            )
+                            .into());
+                        }
+                        let target = address
+                            .wrapping_add(uimm.as_u32())
+                            .wrapping_add(jump.as_u32())
+                            & !1;
+                        write_closure_edge(
+                            &mut canonical,
+                            "auipc-jalr",
+                            offset,
+                            dest,
+                            target,
+                            root,
+                            self,
+                            &mut addresses,
+                            &mut indices,
+                        );
+                        address = pair_end;
+                        continue;
+                    }
+                }
+
+                canonical.push_str(&format!("bytes +{offset:#x} "));
+                for byte_address in address..next {
+                    let byte = self.byte(byte_address).ok_or_else(|| {
+                        format!("linked symbol byte is absent at {byte_address:#x}")
+                    })?;
+                    canonical.push_str(&format!("{byte:02x}"));
+                }
+                canonical.push('\n');
+                address = next;
+            }
+            node += 1;
+        }
+
+        Ok(canonical)
+    }
+
+    fn closure_owns(&self, root: u32, address: u32) -> bool {
+        address == root
+            || (self.symbol_sizes_by_address.contains_key(&address)
+                && self.local_text_symbols.contains(&address))
+    }
+
     pub(super) fn symbol_at(&self, address: u32) -> Option<&str> {
         self.symbols_by_address.get(&address).map(String::as_str)
     }
 
     pub(super) fn relocated_call_at(&self, address: u32) -> Option<&RelocatedCall> {
         self.relocated_calls_by_address.get(&address)
+    }
+
+    pub(super) fn unresolved_relocation_at(
+        &self,
+        address: u32,
+    ) -> Option<(u32, &UnresolvedRelocation)> {
+        // RISC-V relocations in allocated sections are at most eight bytes in
+        // the supported RV32 oracle format. Searching the preceding seven
+        // sites also detects a read/fetch into the middle of a relocated word.
+        self.unresolved_relocations_by_address
+            .range(address.saturating_sub(7)..=address)
+            .rev()
+            .find_map(|(start, relocation)| {
+                address
+                    .checked_sub(*start)
+                    .is_some_and(|offset| offset < u32::from(relocation.width))
+                    .then_some((*start, relocation))
+            })
+    }
+
+    pub(super) fn unresolved_relocation_error(
+        &self,
+        address: u32,
+        operation: &str,
+    ) -> Option<String> {
+        self.unresolved_relocation_at(address)
+            .map(|(site, relocation)| {
+                format!(
+                    "{operation} reached unresolved ELF relocation type {} to {} at {site:#010x}",
+                    relocation.r_type, relocation.name
+                )
+            })
     }
 
     pub fn relocated_calls(&self) -> BTreeMap<u32, (String, Option<u32>)> {
@@ -269,12 +579,14 @@ impl ExecutableImage {
 
     /// Finds every conditional branch reachable through direct control flow.
     ///
-    /// Both successors of a conditional branch are explored. Direct calls are
-    /// followed as well as their return continuation, so branch coverage also
-    /// includes statically linked children. Indirect calls deliberately stop
-    /// that edge: the executor cannot claim coverage for an unknown target.
+    /// Both feasible successors of a conditional branch are explored. With no
+    /// argument constraints both remain feasible; a concrete ABI fact prunes
+    /// the complete unreachable descendant graph. Direct calls are followed
+    /// as well as their return continuation, so branch coverage also includes
+    /// statically linked children. An indirect edge is retained as unresolved
+    /// only when propagated constants cannot determine its target.
     pub fn coverage_inventory(&self, symbol: &str) -> Result<CoverageInventory> {
-        self.coverage_inventory_with_arguments(symbol, None)
+        self.coverage_inventory_with_argument_constraints(symbol, &[None; 8])
     }
 
     pub fn coverage_inventory_with_arguments(
@@ -282,95 +594,31 @@ impl ExecutableImage {
         symbol: &str,
         arguments: Option<&[u32; 8]>,
     ) -> Result<CoverageInventory> {
+        let constraints = arguments.map_or([None; 8], |arguments| {
+            core::array::from_fn(|index| Some(arguments[index]))
+        });
+        self.coverage_inventory_with_argument_constraints(symbol, &constraints)
+    }
+
+    /// Inventories control flow reachable under partial ABI argument facts.
+    ///
+    /// `None` leaves one `a0..a7` input unconstrained. A concrete value prunes
+    /// both conditional outcomes and all descendants of an infeasible edge,
+    /// including panic paths and their non-returning fallthrough bytes.
+    pub fn coverage_inventory_with_argument_constraints(
+        &self,
+        symbol: &str,
+        arguments: &[Option<u32>; 8],
+    ) -> Result<CoverageInventory> {
         let start = self
             .symbol_address(symbol)
             .ok_or_else(|| format!("execution symbol {symbol} was not found"))?;
-        let mut pending = vec![start];
-        let mut visited = BTreeSet::new();
-        let mut inventory = CoverageInventory::default();
-
-        while let Some(address) = pending.pop() {
-            if !visited.insert(address) {
-                continue;
-            }
-            if self.symbol_at(address) == Some("ets_delay_us") {
-                continue;
-            }
-            if let Some(call) = self.relocated_call_at(address) {
-                if self.relocated_call_link_register(address)? != Reg::ZERO {
-                    pending.push(address.wrapping_add(8));
-                }
-                if let Some(target) = call.target {
-                    if self.symbol_at(target) != Some("ets_delay_us") {
-                        pending.push(target);
-                    }
-                } else {
-                    inventory
-                        .unresolved_edges
-                        .insert(address, format!("external-call {}", call.name));
-                }
-                continue;
-            }
-            let (instruction, width) = self.instruction(address)?;
-            let next = address.wrapping_add(width);
-            match instruction {
-                Inst::Beq { offset, .. }
-                | Inst::Bne { offset, .. }
-                | Inst::Blt { offset, .. }
-                | Inst::Bge { offset, .. }
-                | Inst::Bltu { offset, .. }
-                | Inst::Bgeu { offset, .. } => {
-                    inventory.branch_sites.insert(address);
-                    pending.push(next);
-                    pending.push(address.wrapping_add(offset.as_u32()));
-                }
-                Inst::Jal { offset, dest } => {
-                    pending.push(address.wrapping_add(offset.as_u32()));
-                    if dest != Reg::ZERO {
-                        pending.push(next);
-                    }
-                }
-                Inst::Jalr { offset, base, dest }
-                    if !(dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0) =>
-                {
-                    // An indirect edge is intentionally not guessed. A normal
-                    // call may still return to the following instruction.
-                    if dest != Reg::ZERO {
-                        pending.push(next);
-                    }
-                    inventory
-                        .unresolved_edges
-                        .insert(address, instruction.to_string());
-                }
-                Inst::Jalr { .. } => {}
-                Inst::Ecall | Inst::Ebreak => {}
-                _ => pending.push(next),
-            }
-        }
-        let feasible = self.feasible_branch_outcomes(start, arguments)?;
-        for site in &inventory.branch_sites {
-            for taken in [false, true] {
-                if feasible.contains(&(*site, taken)) {
-                    inventory.branch_outcomes.insert((*site, taken));
-                }
-            }
-        }
-        Ok(inventory)
-    }
-
-    pub(super) fn feasible_branch_outcomes(
-        &self,
-        start: u32,
-        arguments: Option<&[u32; 8]>,
-    ) -> Result<BTreeSet<(u32, bool)>> {
         const MAX_ABSTRACT_STATES: usize = 200_000;
 
         let mut initial = [None; 32];
         initial[usize::from(Reg::ZERO.0)] = Some(0);
-        if let Some(arguments) = arguments {
-            for (index, value) in arguments.iter().copied().enumerate() {
-                initial[usize::from(Reg::A0.0) + index] = Some(value);
-            }
+        for (index, value) in arguments.iter().copied().enumerate() {
+            initial[usize::from(Reg::A0.0) + index] = value;
         }
         let unknown_after_call = || {
             let mut registers = [None; 32];
@@ -379,7 +627,7 @@ impl ExecutableImage {
         };
         let mut pending = vec![(start, initial)];
         let mut visited = BTreeSet::new();
-        let mut outcomes = BTreeSet::new();
+        let mut inventory = CoverageInventory::default();
 
         while let Some((address, mut registers)) = pending.pop() {
             if !visited.insert((address, registers)) {
@@ -403,6 +651,10 @@ impl ExecutableImage {
                     && self.symbol_at(target) != Some("ets_delay_us")
                 {
                     pending.push((target, registers));
+                } else if call.target.is_none() {
+                    inventory
+                        .unresolved_edges
+                        .insert(address, format!("external-call {}", call.name));
                 }
                 continue;
             }
@@ -558,6 +810,7 @@ impl ExecutableImage {
                 | Inst::Bge { offset, src1, src2 }
                 | Inst::Bltu { offset, src1, src2 }
                 | Inst::Bgeu { offset, src1, src2 } => {
+                    inventory.branch_sites.insert(address);
                     let known = get(&registers, src1).zip(get(&registers, src2));
                     let taken = known.map(|(left, right)| match instruction {
                         Inst::Beq { .. } => left == right,
@@ -574,7 +827,7 @@ impl ExecutableImage {
                         let Some(outcome) = outcome else {
                             continue;
                         };
-                        outcomes.insert((address, outcome));
+                        inventory.branch_outcomes.insert((address, outcome));
                         pending.push((
                             if outcome {
                                 address.wrapping_add(offset.as_u32())
@@ -607,6 +860,13 @@ impl ExecutableImage {
                             pending.push((target, registers));
                             pending.push((next, unknown_after_call()));
                         }
+                    } else {
+                        if dest != Reg::ZERO {
+                            pending.push((next, unknown_after_call()));
+                        }
+                        inventory
+                            .unresolved_edges
+                            .insert(address, instruction.to_string());
                     }
                 }
                 Inst::Ecall | Inst::Ebreak => {}
@@ -618,10 +878,13 @@ impl ExecutableImage {
                 }
             }
         }
-        Ok(outcomes)
+        Ok(inventory)
     }
 
     pub(super) fn byte(&self, address: u32) -> Option<u8> {
+        if self.unresolved_relocation_at(address).is_some() {
+            return None;
+        }
         self.segments.iter().find_map(|segment| {
             let offset = address.checked_sub(segment.address)? as usize;
             if offset >= segment.memory_size as usize {
@@ -656,6 +919,9 @@ impl ExecutableImage {
     }
 
     pub(super) fn instruction(&self, address: u32) -> Result<(Inst, u32)> {
+        if let Some(error) = self.unresolved_relocation_error(address, "instruction fetch") {
+            return Err(error.into());
+        }
         let low = self
             .byte(address)
             .ok_or_else(|| format!("instruction fetch outside image at {address:#x}"))?;
@@ -666,12 +932,113 @@ impl ExecutableImage {
         };
         let mut word = [0_u8; 4];
         for (offset, byte) in word.iter_mut().take(width as usize).enumerate() {
+            let byte_address = address.wrapping_add(offset as u32);
+            if let Some(error) = self.unresolved_relocation_error(byte_address, "instruction fetch")
+            {
+                return Err(error.into());
+            }
             *byte = self
-                .byte(address.wrapping_add(offset as u32))
+                .byte(byte_address)
                 .ok_or_else(|| format!("truncated instruction at {address:#x}"))?;
         }
         let (instruction, _) = Inst::decode(u32::from_le_bytes(word), Xlen::Rv32)
             .map_err(|error| format!("cannot decode instruction at {address:#x}: {error}"))?;
         Ok((instruction, width))
+    }
+}
+
+fn closure_node(
+    address: u32,
+    addresses: &mut Vec<u32>,
+    indices: &mut BTreeMap<u32, usize>,
+) -> usize {
+    if let Some(index) = indices.get(&address) {
+        return *index;
+    }
+    let index = addresses.len();
+    addresses.push(address);
+    indices.insert(address, index);
+    index
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "closure edge rendering keeps traversal state explicit and architecture-local"
+)]
+fn write_closure_edge(
+    canonical: &mut String,
+    encoding: &str,
+    offset: u32,
+    destination: Reg,
+    target: u32,
+    root: u32,
+    image: &ExecutableImage,
+    addresses: &mut Vec<u32>,
+    indices: &mut BTreeMap<u32, usize>,
+) {
+    if image.closure_owns(root, target) {
+        let target_node = closure_node(target, addresses, indices);
+        canonical.push_str(&format!(
+            "edge {encoding} +{offset:#x} dest={} target={target_node}\n",
+            destination.0
+        ));
+    } else if let Some(symbol) = image.symbol_at(target) {
+        canonical.push_str(&format!(
+            "edge {encoding} +{offset:#x} dest={} external-symbol={symbol}\n",
+            destination.0
+        ));
+    } else {
+        canonical.push_str(&format!(
+            "edge {encoding} +{offset:#x} dest={} external-address={target:#010x}\n",
+            destination.0
+        ));
+    }
+}
+
+fn unresolved_relocation_width(r_type: u32, reported_bits: u8, executable_text: bool) -> u8 {
+    // Espressif RV32 vendor objects use R_RISCV_64 on a four-byte instruction
+    // image for unresolved pointer materialization. The relocation name still
+    // describes the source C type; it does not make an RV32 instruction eight
+    // bytes wide.
+    if executable_text && r_type == object::elf::R_RISCV_64 {
+        return 4;
+    }
+    let reported_bytes = reported_bits.div_ceil(8);
+    if reported_bytes != 0 {
+        return reported_bytes.min(8);
+    }
+    match r_type {
+        object::elf::R_RISCV_64 => 8,
+        object::elf::R_RISCV_RVC_BRANCH | object::elf::R_RISCV_RVC_JUMP => 2,
+        // One poisoned byte is sufficient to reject a use of an unfamiliar
+        // relocation without guessing its encoding. Known RV32 instruction
+        // and pointer relocations occupy four bytes.
+        object::elf::R_RISCV_32
+        | object::elf::R_RISCV_RELATIVE
+        | object::elf::R_RISCV_HI20
+        | object::elf::R_RISCV_LO12_I
+        | object::elf::R_RISCV_LO12_S
+        | object::elf::R_RISCV_PCREL_HI20
+        | object::elf::R_RISCV_PCREL_LO12_I
+        | object::elf::R_RISCV_PCREL_LO12_S
+        | object::elf::R_RISCV_GOT_HI20 => 4,
+        _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rv32_vendor_text_does_not_treat_one_instruction_as_an_eight_byte_pointer() {
+        assert_eq!(
+            unresolved_relocation_width(object::elf::R_RISCV_64, 64, true),
+            4
+        );
+        assert_eq!(
+            unresolved_relocation_width(object::elf::R_RISCV_64, 64, false),
+            8
+        );
     }
 }

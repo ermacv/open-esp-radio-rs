@@ -129,7 +129,10 @@ scenarios. `--ram ADDRESS=VALUE` seeds and observes one little-endian word;
 `--observe ADDRESS=LENGTH` adds a byte range whose final mutations are compared
 without treating compiler-private stack traffic as behavior. This is the
 mechanism for `phy_param` and other caller-owned state. Delay stubs and RISC-V
-`FENCE` instructions are emitted as ordered trace events.
+`FENCE` instructions are emitted as ordered trace events. Ordinary RV32A
+`AMO.W` operations are executed on aligned RAM so optimized Rust ownership
+code using atomics can participate in composition probes; atomics against
+MMIO remain rejected without an explicit peripheral model.
 
 Pass `--timeline` to `execute` to print one unified ordered stream containing
 calls (with all eight register arguments), conditional-branch outcomes,
@@ -147,7 +150,11 @@ explicit peripheral model. Scripted MMIO responses must be consumed exactly.
 This prevents an unresolved table pointer, data relocation, polling
 expectation or invented write-readback from silently becoming zero. At most
 eight integer arguments are accepted until stack-argument ABI support is
-implemented.
+implemented. Optimized Rust may copy otherwise-uninitialized struct/enum
+padding. `--stack-fill BYTE` explicitly supplies those private bytes for a
+compiled probe while the default remains poison. A qualification using this
+escape hatch must repeat the scenario with distinct fills and require the same
+observable MMIO, delays and result.
 
 Persistent execution has explicit reset and RAM-ownership semantics. A normal
 call retains writable CPU-owned ELF state, `ColdBoot` discards the overlay and
@@ -205,10 +212,10 @@ The ESP32-S31 profile file contains both ROM and archive entries, so it is
 executed by the source-aware `verify-all` command below. `verify-profiles`
 remains available for a focused profile file that targets one vendor artifact.
 
-The profile format has `profile`, required `vendor-source` (`rom` or
-`archive`), `vendor-symbol`, `rust-symbol`, optional `contract` (`scenario` or
-`state`), optional `compare-return`, and one or more `case` sections. Case
-directives are `arg`,
+The profile format has `profile`, required `vendor-source`, `vendor-symbol`,
+`rust-symbol`, optional `contract` (`scenario` or `state`), optional
+`compare-return`, optional profile-level `arg-range INDEX MIN MAX`, and one or
+more `case` sections. Case directives are `arg`,
 `mmio`, `read`, `ram`, `vendor-ram-symbol`, `rust-ram-symbol`, `observe`, and
 `max-steps`. Source-specific `vendor-observe`/`rust-observe` ranges and
 `vendor-observe-symbol`/`rust-observe-symbol` ranges normalize corresponding
@@ -223,6 +230,14 @@ reported as `COVERED-CONTROL-FLOW`; their child branch inventory is included
 in coverage.
 Profiles are executable coverage input; they are not a parallel function
 ledger.
+
+`arg-range` is a closed ABI precondition, not a hint inferred from the listed
+cases. The loader requires an executed case for every value combination in
+the declared finite domain (currently at most 4096 combinations). Static
+reachability is then computed separately for every admissible combination,
+so an out-of-domain Rust safety panic does not create a false coverage hole,
+while any in-domain branch, child call, or unresolved edge remains required.
+Arguments without a declared range remain unknown.
 
 `contract state` means the vendor bytes are decoded at the binary boundary
 while the Rust probe publishes a stable canonical projection through typed
@@ -692,16 +707,23 @@ and 802.15.4 scope are not inferred from completion status.
 
 Effect Contract v1 is the common boundary between a vendor implementation and
 a Rust implementation. Its closed effect vocabulary is MMIO read/write,
-projected state read/write, delay, await-ready and typed platform call. Each
-vendor effect must resolve to one exact manifest rule with one of these closed
-dispositions: `required`, `replaced-by-async`, `platform-owned`, `forbidden`,
-or `allowed-omission` with one of `debug-diagnostic`,
+projected state read/write, delay, await-ready, typed platform call and four
+named semantic-boundary events. Each vendor effect must resolve to one exact
+manifest rule with one of these closed dispositions: `required`,
+`replaced-by-async`, `platform-provided-input`, `platform-provided-service`,
+`published-event`, `initialization-prerequisite`, `platform-owned`,
+`forbidden`, or `allowed-omission` with one of `debug-diagnostic`,
 `nvs-calibration-cache`, `rtos-scheduling-adapter`, and
-`unused-instrumentation`. Unknown effect kinds, platform operations, omission
-reasons, unclassified vendor effects and extra Rust effects are errors. An
-async replacement also fixes one named condition and one non-zero
-`attempts=COUNT` or `deadline-us=COUNT`; an arbitrary await or a changed
-deadline cannot satisfy the rule.
+`unused-instrumentation`. The four semantic replacements require the compiled
+Rust trace to publish the exact named boundary; declaring one is not permission
+to silently omit the vendor effect. This is how a constructor-supplied MAC
+address, an Embassy wake service, a typed driver event or a separately proven
+MAC-clock prerequisite replaces vendor-owned eFuse/RTOS/global-init behavior.
+Unknown effect kinds, platform operations, omission reasons, unclassified
+vendor effects and extra Rust effects are errors. An async replacement also
+fixes one named condition and one non-zero `attempts=COUNT` or
+`deadline-us=COUNT`; an arbitrary await or a changed deadline cannot satisfy
+the rule.
 
 The first direct vertical slice is intentionally small and exact:
 
@@ -721,7 +743,10 @@ the recompiled generated reference and the compiled production Rust probe.
 Binding v1 verifies that the exact `rust-probe` symbol exists in the supplied
 Rust ELF. Input revision and authenticity are deliberately caller-owned. The
 verifier selects that probe from the binding instead of falling back to the
-naming convention.
+naming convention. `compare-return true` additionally binds the observable
+ABI return register; without it the contract compares effects only. The flag
+is deliberately opt-in because a machine value in `a0` is not evidence that
+an unavailable C prototype declared a return value.
 The effect evidence digest covers the canonical binding, policy, comparator,
 binding validator, generator, generated harness, normalized generated source,
 re-extracted effects and exact Rust compiler identity, so weakening or changing
@@ -740,8 +765,10 @@ outcomes. The vendor `phy_param+0x1ac` halfword is projected onto the typed
 `timer-1us deadline-us=1`, each live ready sample must become
 `iq-estimator-ready attempts=10000`, and the typed timeout must traverse the
 complete disable tail. The evidence also binds the generated reference source,
-the exact release probe ELF, scenario inputs, adapter, transition, target-port,
-execution engine and comparator sources.
+the selected vendor and release-probe code closures, scenario inputs, adapter,
+transition, target-port, execution engine and comparator sources. Whole
+artifact digests remain reported as caller-owned provenance, but unrelated
+linked functions do not enter this adapter baseline.
 
 `PROTOCOL-INVENTORY` reports `executable-bindings` separately from exact
 disposition entries. This keeps migration honest: legacy semantic contracts
@@ -759,11 +786,19 @@ The two verification gates answer different questions:
   retains the same evidence kind. A lost state proof cannot be hidden by a new
   scenario match elsewhere. New evidence is reported as `EVIDENCE-ADDITION`
   and does not require weakening the existing baseline. Profile evidence also
-  contains a hash of the parsed scenario contract, so narrowing inputs,
-  observations or scripted responses requires a reviewed baseline change.
+  contains a hash of the parsed scenario contract, its explicit ABI argument
+  domain, and the parser, comparison, reachability and execution-engine
+  sources. Narrowing inputs or `arg-range`, changing observations or scripted
+  responses, or weakening the verifier therefore requires a reviewed baseline
+  change.
   Composition evidence contains a SHA-256 over the contract label, scenario
   wiring, semantic normalizer/footprints and execution engine sources. Editing
   the validator itself therefore also requires an explicit baseline review.
+- `--rust-prefix` scopes convention-paired probes and orphan accounting for a
+  particular verification run. Exact Binding v1 probes remain selectable by
+  their full symbol names even when they use another prefix. A focused pilot
+  sharing one Rust probe ELF with other suites must set its own prefix so
+  unrelated probes do not weaken or fail its orphan-probe gate.
 - `--gate completion` (the default) additionally requires every vendor
   function in the selected inventory to have a matching Rust probe.
 

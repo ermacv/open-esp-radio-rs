@@ -176,6 +176,18 @@ pub enum ContractEffect {
         operation: PlatformOperation,
         arguments: Vec<ContractValue>,
     },
+    PlatformProvidedInput {
+        input: String,
+    },
+    PlatformProvidedService {
+        service: String,
+    },
+    PublishedEvent {
+        event: String,
+    },
+    InitializationPrerequisite {
+        prerequisite: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -187,6 +199,10 @@ pub enum EffectSelector {
     Delay,
     AwaitReady { condition: String },
     PlatformCall { operation: PlatformOperation },
+    PlatformProvidedInput { input: String },
+    PlatformProvidedService { service: String },
+    PublishedEvent { event: String },
+    InitializationPrerequisite { prerequisite: String },
 }
 
 impl EffectSelector {
@@ -204,6 +220,16 @@ impl EffectSelector {
             Self::AwaitReady { condition } => format!("await-ready {condition}"),
             Self::PlatformCall { operation } => {
                 format!("platform-call {}", operation.label())
+            }
+            Self::PlatformProvidedInput { input } => {
+                format!("platform-provided-input {input}")
+            }
+            Self::PlatformProvidedService { service } => {
+                format!("platform-provided-service {service}")
+            }
+            Self::PublishedEvent { event } => format!("published-event {event}"),
+            Self::InitializationPrerequisite { prerequisite } => {
+                format!("initialization-prerequisite {prerequisite}")
             }
         }
     }
@@ -235,6 +261,20 @@ impl ContractEffect {
             Self::PlatformCall { operation, .. } => EffectSelector::PlatformCall {
                 operation: operation.clone(),
             },
+            Self::PlatformProvidedInput { input } => EffectSelector::PlatformProvidedInput {
+                input: input.clone(),
+            },
+            Self::PlatformProvidedService { service } => EffectSelector::PlatformProvidedService {
+                service: service.clone(),
+            },
+            Self::PublishedEvent { event } => EffectSelector::PublishedEvent {
+                event: event.clone(),
+            },
+            Self::InitializationPrerequisite { prerequisite } => {
+                EffectSelector::InitializationPrerequisite {
+                    prerequisite: prerequisite.clone(),
+                }
+            }
         }
     }
 
@@ -305,6 +345,23 @@ impl ContractEffect {
                     arguments: right_arguments,
                 },
             ) => left_operation == right_operation && left_arguments == right_arguments,
+            (
+                Self::PlatformProvidedInput { input: left },
+                Self::PlatformProvidedInput { input: right },
+            ) => left == right,
+            (
+                Self::PlatformProvidedService { service: left },
+                Self::PlatformProvidedService { service: right },
+            ) => left == right,
+            (Self::PublishedEvent { event: left }, Self::PublishedEvent { event: right }) => {
+                left == right
+            }
+            (
+                Self::InitializationPrerequisite { prerequisite: left },
+                Self::InitializationPrerequisite {
+                    prerequisite: right,
+                },
+            ) => left == right,
             _ => false,
         }
     }
@@ -343,6 +400,10 @@ impl OmissionReason {
 pub enum EffectDisposition {
     Required,
     ReplacedByAsync { condition: String, timeout: Timeout },
+    PlatformProvidedInput { input: String },
+    PlatformProvidedService { service: String },
+    PublishedEvent { event: String },
+    InitializationPrerequisite { prerequisite: String },
     AllowedOmission(OmissionReason),
     PlatformOwned,
     Forbidden,
@@ -354,6 +415,16 @@ impl EffectDisposition {
             Self::Required => "required".to_owned(),
             Self::ReplacedByAsync { condition, timeout } => {
                 format!("replaced-by-async {condition} {}", timeout.canonical())
+            }
+            Self::PlatformProvidedInput { input } => {
+                format!("platform-provided-input {input}")
+            }
+            Self::PlatformProvidedService { service } => {
+                format!("platform-provided-service {service}")
+            }
+            Self::PublishedEvent { event } => format!("published-event {event}"),
+            Self::InitializationPrerequisite { prerequisite } => {
+                format!("initialization-prerequisite {prerequisite}")
             }
             Self::AllowedOmission(reason) => {
                 format!("allowed-omission {}", reason.label())
@@ -384,6 +455,17 @@ fn parse_state_field(value: &str, line: usize) -> Result<String> {
     };
     if projection.is_empty() || field.is_empty() || field.contains('.') {
         return Err(format!("invalid state field {value:?} at line {line}").into());
+    }
+    Ok(value.to_owned())
+}
+
+fn parse_boundary_id(value: &str, kind: &str, line: usize) -> Result<String> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
+        })
+    {
+        return Err(format!("invalid {kind} id {value:?} at line {line}").into());
     }
     Ok(value.to_owned())
 }
@@ -447,6 +529,42 @@ pub fn parse_effect_rule(value: &str, line: usize) -> Result<(EffectSelector, Ef
                 line,
             )?,
         },
+        "platform-provided-input" => EffectSelector::PlatformProvidedInput {
+            input: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("platform-provided-input has no input id at line {line}")
+                })?,
+                "platform-provided-input",
+                line,
+            )?,
+        },
+        "platform-provided-service" => EffectSelector::PlatformProvidedService {
+            service: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("platform-provided-service has no service id at line {line}")
+                })?,
+                "platform-provided-service",
+                line,
+            )?,
+        },
+        "published-event" => EffectSelector::PublishedEvent {
+            event: parse_boundary_id(
+                words
+                    .next()
+                    .ok_or_else(|| format!("published-event has no event id at line {line}"))?,
+                "published-event",
+                line,
+            )?,
+        },
+        "initialization-prerequisite" => EffectSelector::InitializationPrerequisite {
+            prerequisite: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("initialization-prerequisite has no prerequisite id at line {line}")
+                })?,
+                "initialization-prerequisite",
+                line,
+            )?,
+        },
         _ => return Err(format!("unknown effect kind {kind:?} at line {line}").into()),
     };
     let disposition_name = words
@@ -464,6 +582,42 @@ pub fn parse_effect_rule(value: &str, line: usize) -> Result<(EffectSelector, Ef
                 words
                     .next()
                     .ok_or_else(|| format!("replaced-by-async has no timeout at line {line}"))?,
+                line,
+            )?,
+        },
+        "platform-provided-input" => EffectDisposition::PlatformProvidedInput {
+            input: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("platform-provided-input has no input id at line {line}")
+                })?,
+                "platform-provided-input",
+                line,
+            )?,
+        },
+        "platform-provided-service" => EffectDisposition::PlatformProvidedService {
+            service: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("platform-provided-service has no service id at line {line}")
+                })?,
+                "platform-provided-service",
+                line,
+            )?,
+        },
+        "published-event" => EffectDisposition::PublishedEvent {
+            event: parse_boundary_id(
+                words
+                    .next()
+                    .ok_or_else(|| format!("published-event has no event id at line {line}"))?,
+                "published-event",
+                line,
+            )?,
+        },
+        "initialization-prerequisite" => EffectDisposition::InitializationPrerequisite {
+            prerequisite: parse_boundary_id(
+                words.next().ok_or_else(|| {
+                    format!("initialization-prerequisite has no prerequisite id at line {line}")
+                })?,
+                "initialization-prerequisite",
                 line,
             )?,
         },
@@ -492,6 +646,21 @@ pub fn parse_effect_rule(value: &str, line: usize) -> Result<(EffectSelector, Ef
             EffectSelector::Delay | EffectSelector::MmioRead { .. },
             EffectDisposition::ReplacedByAsync { .. },
         ) => {}
+        (
+            EffectSelector::MmioRead { .. }
+            | EffectSelector::StateRead { .. }
+            | EffectSelector::PlatformCall { .. },
+            EffectDisposition::PlatformProvidedInput { .. },
+        )
+        | (
+            EffectSelector::PlatformCall { .. },
+            EffectDisposition::PlatformProvidedService { .. },
+        )
+        | (
+            EffectSelector::StateWrite { .. } | EffectSelector::PlatformCall { .. },
+            EffectDisposition::PublishedEvent { .. },
+        )
+        | (_, EffectDisposition::InitializationPrerequisite { .. }) => {}
         (_, EffectDisposition::AllowedOmission(_)) => {
             return Err(format!(
                 "allowed-omission applies only to platform-call effects at line {line}"
@@ -507,6 +676,24 @@ pub fn parse_effect_rule(value: &str, line: usize) -> Result<(EffectSelector, Ef
         (_, EffectDisposition::ReplacedByAsync { .. }) => {
             return Err(format!(
                 "replaced-by-async applies only to delay or MMIO-read effects at line {line}"
+            )
+            .into());
+        }
+        (_, EffectDisposition::PlatformProvidedInput { .. }) => {
+            return Err(format!(
+                "platform-provided-input applies only to read or platform-call effects at line {line}"
+            )
+            .into());
+        }
+        (_, EffectDisposition::PlatformProvidedService { .. }) => {
+            return Err(format!(
+                "platform-provided-service applies only to platform-call effects at line {line}"
+            )
+            .into());
+        }
+        (_, EffectDisposition::PublishedEvent { .. }) => {
+            return Err(format!(
+                "published-event applies only to state-write or platform-call effects at line {line}"
             )
             .into());
         }
@@ -574,6 +761,10 @@ impl EffectPolicy {
 
     pub fn rules(&self) -> impl Iterator<Item = (&EffectSelector, &EffectDisposition)> {
         self.rules.iter()
+    }
+
+    pub fn disposition(&self, selector: &EffectSelector) -> Option<&EffectDisposition> {
+        self.rules.get(selector)
     }
 }
 
@@ -684,6 +875,42 @@ pub fn compare_effects(
                 }
                 rust_index += 1;
             }
+            EffectDisposition::PlatformProvidedInput { input } => {
+                let expected = ContractEffect::PlatformProvidedInput {
+                    input: input.clone(),
+                };
+                rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
+                    Ok(next) => next,
+                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                };
+            }
+            EffectDisposition::PlatformProvidedService { service } => {
+                let expected = ContractEffect::PlatformProvidedService {
+                    service: service.clone(),
+                };
+                rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
+                    Ok(next) => next,
+                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                };
+            }
+            EffectDisposition::PublishedEvent { event } => {
+                let expected = ContractEffect::PublishedEvent {
+                    event: event.clone(),
+                };
+                rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
+                    Ok(next) => next,
+                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                };
+            }
+            EffectDisposition::InitializationPrerequisite { prerequisite } => {
+                let expected = ContractEffect::InitializationPrerequisite {
+                    prerequisite: prerequisite.clone(),
+                };
+                rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
+                    Ok(next) => next,
+                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                };
+            }
             EffectDisposition::AllowedOmission(_) => {
                 if rust
                     .get(rust_index)
@@ -718,6 +945,30 @@ pub fn compare_effects(
         }
     }
     Ok(EffectComparisonVerdict::Match)
+}
+
+fn consume_replacement(
+    vendor_selector: &EffectSelector,
+    expected: &ContractEffect,
+    rust: &[ContractEffect],
+    rust_index: usize,
+) -> core::result::Result<usize, String> {
+    let Some(actual) = rust.get(rust_index) else {
+        return Err(format!(
+            "{} requires Rust replacement {}, but it is missing",
+            vendor_selector.canonical(),
+            expected.selector().canonical(),
+        ));
+    };
+    if !expected.equivalent(actual) {
+        return Err(format!(
+            "{} requires Rust replacement {}, received {} at index {rust_index}",
+            vendor_selector.canonical(),
+            expected.selector().canonical(),
+            actual.selector().canonical(),
+        ));
+    }
+    Ok(rust_index + 1)
 }
 
 #[cfg(test)]
@@ -822,6 +1073,121 @@ mod tests {
                 9,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn semantic_boundary_dispositions_require_exact_typed_replacements() {
+        let state_field = |field: &str| StateField {
+            projection: "sta".to_owned(),
+            field: field.to_owned(),
+            width: 32,
+        };
+        let vendor = [
+            read(),
+            ContractEffect::PlatformCall {
+                operation: PlatformOperation::RtosSchedulingAdapter,
+                arguments: Vec::new(),
+            },
+            ContractEffect::StateWrite {
+                field: state_field("event"),
+                value: ContractValue::Concrete(1),
+            },
+            ContractEffect::StateWrite {
+                field: state_field("initialized"),
+                value: ContractValue::Concrete(1),
+            },
+        ];
+        let policy = EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [
+                (
+                    vendor[0].selector(),
+                    EffectDisposition::PlatformProvidedInput {
+                        input: "station-mac".to_owned(),
+                    },
+                ),
+                (
+                    vendor[1].selector(),
+                    EffectDisposition::PlatformProvidedService {
+                        service: "embassy-wakeup".to_owned(),
+                    },
+                ),
+                (
+                    vendor[2].selector(),
+                    EffectDisposition::PublishedEvent {
+                        event: "rx-ready".to_owned(),
+                    },
+                ),
+                (
+                    vendor[3].selector(),
+                    EffectDisposition::InitializationPrerequisite {
+                        prerequisite: "mac-clock-enabled".to_owned(),
+                    },
+                ),
+            ],
+        )
+        .unwrap();
+        let rust = [
+            ContractEffect::PlatformProvidedInput {
+                input: "station-mac".to_owned(),
+            },
+            ContractEffect::PlatformProvidedService {
+                service: "embassy-wakeup".to_owned(),
+            },
+            ContractEffect::PublishedEvent {
+                event: "rx-ready".to_owned(),
+            },
+            ContractEffect::InitializationPrerequisite {
+                prerequisite: "mac-clock-enabled".to_owned(),
+            },
+        ];
+        assert_eq!(
+            compare_effects(&vendor, &rust, &policy).unwrap(),
+            EffectComparisonVerdict::Match
+        );
+        assert!(matches!(
+            compare_effects(&vendor, &rust[..3], &policy).unwrap(),
+            EffectComparisonVerdict::Mismatch(reason)
+                if reason.contains("initialization-prerequisite")
+        ));
+    }
+
+    #[test]
+    fn boundary_effect_selectors_are_valid_contract_rules() {
+        for rule in [
+            "platform-provided-input station-mac required",
+            "platform-provided-service embassy-wakeup required",
+            "published-event rx-success required",
+            "initialization-prerequisite power-irqs-disabled required",
+        ] {
+            assert!(parse_effect_rule(rule, 17).is_ok(), "{rule}");
+        }
+    }
+
+    #[test]
+    fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
+        for rule in [
+            "mmio-read 32 0x20107030 platform-provided-input station-mac",
+            "platform-call rtos-scheduling-adapter platform-provided-service embassy-wakeup",
+            "state-write 32 sta.event published-event rx-ready",
+            "mmio-write 32 0x20107030 initialization-prerequisite mac-clock-enabled",
+        ] {
+            let (selector, disposition) = parse_effect_rule(rule, 11).unwrap();
+            assert_eq!(
+                format!("{} {}", selector.canonical(), disposition.canonical()),
+                rule
+            );
+        }
+        assert!(
+            parse_effect_rule(
+                "mmio-write 32 0x20107030 platform-provided-input station-mac",
+                12,
+            )
+            .is_err()
+        );
+        assert!(
+            parse_effect_rule("platform-call random published-event Invalid/Event", 13,).is_err()
         );
     }
 }

@@ -14,8 +14,10 @@ use open_esp_radio_esp32s31_pac::{
     RadioRegisters,
 };
 
+#[cfg(target_arch = "riscv32")]
+use crate::descriptor::{descriptor_address_valid, dma_range_valid};
 use crate::{
-    descriptor::{BIT_30, Descriptor, descriptor_address_valid, dma_range_valid, tx_owned_word},
+    descriptor::{BIT_30, Descriptor, tx_owned_word},
     tx::{
         HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HeSmpduTxConfig, HtAmpduDensity, HtAmpduTxConfig,
         HtRate, LegacyTxQueue, TxCompletion, TxCookie, TxHardware, TxSlotState,
@@ -1634,24 +1636,33 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
             return Err(HtAmpduTxError::RegisterImageMismatch);
         }
-        let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        let first_descriptor = hardware
+            .tx_descriptor_address(core::ptr::addr_of!(storage.descriptors[0]).addr() as u32);
         for index in 0..count {
-            let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
+            #[cfg(target_arch = "riscv32")]
+            let descriptor_address = hardware.tx_descriptor_address(
+                core::ptr::addr_of!(storage.descriptors[index]).addr() as u32,
+            );
             let buffer_address = u32::try_from(storage.buffer_addresses[index]).unwrap_or(u32::MAX);
             let capacity = u32::from(storage.descriptor_capacities[index]);
             let transfer_length =
                 (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
-            if !descriptor_address_valid(descriptor_address)
-                || !dma_range_valid(buffer_address, capacity)
+            #[cfg(target_arch = "riscv32")]
             {
-                return Err(HtAmpduTxError::InvalidDmaRange {
-                    descriptor_address,
-                    buffer_address,
-                    capacity,
-                });
+                if !descriptor_address_valid(descriptor_address)
+                    || !dma_range_valid(buffer_address, capacity)
+                {
+                    return Err(HtAmpduTxError::InvalidDmaRange {
+                        descriptor_address,
+                        buffer_address,
+                        capacity,
+                    });
+                }
             }
             let next_address = if index + 1 < count {
-                core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
+                hardware.tx_descriptor_address(
+                    core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32,
+                )
             } else {
                 0
             };
@@ -1734,24 +1745,33 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let trigger = storage.prepared_he_trigger(queue, config)?;
 
-        let first_descriptor = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        let first_descriptor = hardware
+            .tx_descriptor_address(core::ptr::addr_of!(storage.descriptors[0]).addr() as u32);
         for index in 0..count {
-            let descriptor_address = core::ptr::addr_of!(storage.descriptors[index]).addr() as u32;
+            #[cfg(target_arch = "riscv32")]
+            let descriptor_address = hardware.tx_descriptor_address(
+                core::ptr::addr_of!(storage.descriptors[index]).addr() as u32,
+            );
             let buffer_address = u32::try_from(storage.buffer_addresses[index]).unwrap_or(u32::MAX);
             let capacity = u32::from(storage.descriptor_capacities[index]);
             let transfer_length =
                 (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]);
-            if !descriptor_address_valid(descriptor_address)
-                || !dma_range_valid(buffer_address, capacity)
+            #[cfg(target_arch = "riscv32")]
             {
-                return Err(HtAmpduTxError::InvalidDmaRange {
-                    descriptor_address,
-                    buffer_address,
-                    capacity,
-                });
+                if !descriptor_address_valid(descriptor_address)
+                    || !dma_range_valid(buffer_address, capacity)
+                {
+                    return Err(HtAmpduTxError::InvalidDmaRange {
+                        descriptor_address,
+                        buffer_address,
+                        capacity,
+                    });
+                }
             }
             let next_address = if index + 1 < count {
-                core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32
+                hardware.tx_descriptor_address(
+                    core::ptr::addr_of!(storage.descriptors[index + 1]).addr() as u32,
+                )
             } else {
                 0
             };
@@ -1849,7 +1869,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::RegisterImageMismatch);
         }
 
-        let descriptor_address = core::ptr::addr_of!(storage.descriptors[0]).addr() as u32;
+        let descriptor_address = hardware
+            .tx_descriptor_address(core::ptr::addr_of!(storage.descriptors[0]).addr() as u32);
         let buffer_address = u32::try_from(storage.buffer_addresses[0]).unwrap_or(u32::MAX);
         // HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29 captured the complete
         // vendor DMA word c0090040: capacity 64 and used length 36. Preserve
@@ -1858,14 +1879,17 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let capacity =
             u32::from(storage.descriptor_capacities[0]).max(HE_SMPDU_VENDOR_DMA_CAPACITY);
         let transfer_length = (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[0]);
-        if !descriptor_address_valid(descriptor_address)
-            || !dma_range_valid(buffer_address, capacity)
+        #[cfg(target_arch = "riscv32")]
         {
-            return Err(HtAmpduTxError::InvalidDmaRange {
-                descriptor_address,
-                buffer_address,
-                capacity,
-            });
+            if !descriptor_address_valid(descriptor_address)
+                || !dma_range_valid(buffer_address, capacity)
+            {
+                return Err(HtAmpduTxError::InvalidDmaRange {
+                    descriptor_address,
+                    buffer_address,
+                    capacity,
+                });
+            }
         }
 
         // `commit_frame` already wrote MPDU+FCS length and reserved the four
@@ -2008,6 +2032,45 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::Stale);
         }
         Ok(hardware.begin_tx_timeout_abort(storage.queue.index()))
+    }
+
+    /// Permanently quarantine an aggregate whose executor deadline expired
+    /// without a qualified hardware completion/timeout edge.
+    ///
+    /// The referenced network leases must remain retained until the unique
+    /// radio lifecycle owner resets the MAC; returning them would make
+    /// potentially DMA-visible allocations writable by `embassy-net`.
+    pub fn require_reset(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
+        // SAFETY: only scalar ownership state changes. Descriptors, referenced
+        // buffers and their pinned addresses remain untouched for reset.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        storage.state = TxSlotState::ResetRequired;
+        Ok(())
+    }
+
+    /// Disable and release one collision-owned aggregate queue.
+    pub fn abort_collision<H: HtAmpduHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+    ) -> Result<bool, HtAmpduTxError> {
+        // SAFETY: hardware confirms the queue release before software clears
+        // its scalar ownership image; no pinned allocation is moved.
+        let storage = unsafe { self.get_unchecked_mut() };
+        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+            return Err(HtAmpduTxError::Stale);
+        }
+        if !hardware.abort_tx_collision(storage.queue.index()) {
+            return Ok(false);
+        }
+        if let Some(reservation) = storage.trigger_reservation.take() {
+            hardware.clear_he_trigger_based_queue(reservation);
+        }
+        storage.release();
+        Ok(true)
     }
 
     pub fn finish_timeout_abort<H: HtAmpduHardware>(
@@ -3126,9 +3189,7 @@ pub unsafe fn apply_basic_ht_ampdu_completion(
 const BA_PARAMETER_AMSDU: u16 = 1;
 const BA_PARAMETER_IMMEDIATE: u16 = 1 << 1;
 const BA_PARAMETER_TID_SHIFT: u32 = 2;
-const BA_PARAMETER_TID_MASK: u16 = 0x0f << BA_PARAMETER_TID_SHIFT;
 const BA_PARAMETER_WINDOW_SHIFT: u32 = 6;
-const BA_PARAMETER_WINDOW_MASK: u16 = 0x03ff << BA_PARAMETER_WINDOW_SHIFT;
 const SEQUENCE_NUMBER_MASK: u16 = 0x0fff;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3363,9 +3424,29 @@ impl StaTxBlockAckSessions {
         &mut self,
         body: &[u8],
     ) -> Result<StaTxBlockAckResponse, StaTxBlockAckSessionsError> {
-        let response_token = *body
-            .get(2)
-            .ok_or(StaTxBlockAckSessionsError::MalformedResponse)?;
+        let action =
+            parse_block_ack_action(body).ok_or(StaTxBlockAckSessionsError::MalformedResponse)?;
+        self.on_response_action(action)
+    }
+
+    /// Route an already parsed ADDBA response without retaining its borrowed
+    /// management-frame body.
+    ///
+    /// This is the ownership boundary used by an async RX dispatcher: the
+    /// fixed fields are copied into [`BlockAckAction`] while the staged frame
+    /// is live, then protocol state can be updated after that storage is
+    /// released.
+    pub fn on_response_action(
+        &mut self,
+        action: BlockAckAction,
+    ) -> Result<StaTxBlockAckResponse, StaTxBlockAckSessionsError> {
+        let BlockAckAction::AddbaResponse {
+            dialog_token: response_token,
+            ..
+        } = action
+        else {
+            return Err(StaTxBlockAckSessionsError::MalformedResponse);
+        };
         let index = self
             .sessions
             .iter()
@@ -3375,7 +3456,7 @@ impl StaTxBlockAckSessions {
             ))?;
         let tid = STA_TX_BLOCK_ACK_TIDS[index];
         let response = self.sessions[index]
-            .on_response(body)
+            .on_response_action(action)
             .map_err(|error| StaTxBlockAckSessionsError::Session { tid, error })?;
         self.alarms[index] = None;
         Ok(StaTxBlockAckResponse { tid, response })
@@ -3812,12 +3893,27 @@ impl TxBlockAckSession {
         // prefix here: the negotiated low ten-bit window remains bounded by
         // `self.config.window` and `TX_BLOCK_ACK_MAX_WINDOW`; a future owner
         // of extended (>1024) windows must parse the IE separately.
-        if body.len() < ADDBA_ACTION_BODY_LEN
-            || body[0] != BLOCK_ACK_CATEGORY
-            || body[1] != ADDBA_RESPONSE_ACTION
-        {
+        let action = parse_block_ack_action(body).ok_or(TxBlockAckError::MalformedResponse)?;
+        self.on_response_action(action)
+    }
+
+    /// Apply the fixed fields of an already parsed ADDBA response.
+    pub fn on_response_action(
+        &mut self,
+        action: BlockAckAction,
+    ) -> Result<TxBlockAckResponse, TxBlockAckError> {
+        let BlockAckAction::AddbaResponse {
+            dialog_token: response_dialog_token,
+            status,
+            tid,
+            immediate,
+            amsdu,
+            window,
+            timeout_tu,
+        } = action
+        else {
             return Err(TxBlockAckError::MalformedResponse);
-        }
+        };
         let TxBlockAckPhase::Awaiting {
             dialog_token,
             starting_sequence,
@@ -3825,35 +3921,31 @@ impl TxBlockAckSession {
         else {
             return Err(TxBlockAckError::UnexpectedResponse);
         };
-        if body[2] != dialog_token {
+        if response_dialog_token != dialog_token {
             return Err(TxBlockAckError::UnexpectedResponse);
         }
 
-        let status = u16::from_le_bytes([body[3], body[4]]);
         if status != 0 {
             self.phase = TxBlockAckPhase::Idle;
             self.generation = next_generation(self.generation);
             return Ok(TxBlockAckResponse::Rejected(status));
         }
 
-        let parameters = u16::from_le_bytes([body[5], body[6]]);
-        if parameters & BA_PARAMETER_IMMEDIATE == 0 {
+        if !immediate {
             return Err(TxBlockAckError::DelayedPolicyUnsupported);
         }
-        let tid = ((parameters & BA_PARAMETER_TID_MASK) >> BA_PARAMETER_TID_SHIFT) as u8;
         if tid != self.config.tid {
             return Err(TxBlockAckError::UnexpectedResponse);
         }
-        let window = (parameters & BA_PARAMETER_WINDOW_MASK) >> BA_PARAMETER_WINDOW_SHIFT;
         if window == 0 || window > self.config.window || window > TX_BLOCK_ACK_MAX_WINDOW {
             return Err(TxBlockAckError::WindowExceedsCapacity(window));
         }
         let agreement = OperationalTxBlockAck {
             tid,
             window,
-            timeout_tu: u16::from_le_bytes([body[7], body[8]]),
+            timeout_tu,
             starting_sequence,
-            amsdu: self.config.amsdu && parameters & BA_PARAMETER_AMSDU != 0,
+            amsdu: self.config.amsdu && amsdu,
         };
         self.phase = TxBlockAckPhase::Operational(agreement);
         self.generation = next_generation(self.generation);
@@ -5009,6 +5101,35 @@ mod tests {
         assert_eq!(sessions.expire_next(100_000), Some(5));
         assert_eq!(sessions.expire_next(100_000), None);
         assert!(sessions.operational(7).is_some());
+    }
+
+    #[test]
+    fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
+        let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
+        let request = sessions.begin(0, 0x123, 0).unwrap();
+
+        assert_eq!(
+            sessions.on_response_action(BlockAckAction::AddbaResponse {
+                dialog_token: request.dialog_token,
+                status: 0,
+                tid: 0,
+                immediate: true,
+                amsdu: true,
+                window: 16,
+                timeout_tu: 7,
+            }),
+            Ok(StaTxBlockAckResponse {
+                tid: 0,
+                response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+                    tid: 0,
+                    window: 16,
+                    timeout_tu: 7,
+                    starting_sequence: 0x123,
+                    amsdu: true,
+                }),
+            })
+        );
+        assert_eq!(sessions.alarm(0), None);
     }
 
     #[test]

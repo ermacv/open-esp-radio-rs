@@ -37,10 +37,9 @@ Common commands from the repository root:
 cargo hil scenarios
 cargo hil doctor
 cargo hil build radio
-cargo hil flash bidirectional --port /dev/ttyACM0
-cargo hil traffic bidirectional <device-ip> --phy he20
+cargo hil flash radio --port /dev/ttyACM0
+cargo hil build udp-tx
 cargo hil traffic trigger <monitor-interface> --transmitter <bssid> --aid <aid>
-cargo hil traffic trigger-hil <monitor-interface> --transmitter <bssid> --aid <aid>
 cargo hil oracle verify
 cargo hil oracle build
 cargo hil oracle flash --port /dev/ttyACM0
@@ -58,27 +57,39 @@ named mode, so an old shell export cannot silently combine two HIL workloads.
 | Scenario | Firmware workload | Host-side follow-up |
 | --- | --- | --- |
 | `boot-smoke` | bootstrap, Flash/PSRAM and stage-two runtime | inspect UART PASS marker |
-| `radio` | baseline open PHY/MAC/STA/WPA2 path | scenario-specific UART inspection |
-| `bidirectional` | synthetic raw-MAC uplink while receiving host UDP | `cargo hil traffic bidirectional ...` |
+| `radio` | production `WifiRunner` PHY/MAC/STA/WPA2 path | scenario-specific UART inspection |
 | `udp-tx` | `embassy-net` device-to-host UDP throughput | provide the configured UDP receiver |
-| `amsdu` | synthetic A-MSDU inside A-MPDU | inspect raw-MAC HIL markers |
-| `network-amsdu` | copy-free `embassy-net` A-MSDU/A-MPDU ownership | provide the configured UDP receiver |
-| `he-mcs-gi-matrix` | HE SU MCS0..9 and GI/LTF matrix | inspect matrix terminal marker |
-| `he-ldpc-matrix` | HE SU LDPC MCS/GI matrix | use an LDPC-capable AP |
-| `he-dcm-matrix` | HE DCM constellation/GI matrix | use an AP advertising the required DCM cells |
-| `he-tb` | Trigger-based HE-TB transmit path | `cargo hil traffic trigger-hil ...` |
-| `he-delimiter` | HE empty-delimiter/length matrix | inspect delimiter terminal marker |
 
-Build and flash any named scenario with the same identifier:
+The `radio` path uses the production `StaJoinRunner` for Open Authentication
+and Association, `Wpa2HandshakeRunner` for the WPA2 Message 1/3 exchange, and
+`Wpa2KeyInstallRunner` for typed PTK/GTK publication, Message 4 and rollback.
+`Esp32s31ControlTx` owns Probe, Authentication, Association, EAPOL and the
+protected bootstrap publication until it transfers the same pinned descriptor,
+EDCA state, calibrated power and executor adapters to `Esp32s31SingleMpduTx`.
+Their HIL adapters now own diagnostics and finite PAC/RX capabilities only;
+absolute Embassy deadlines, retry state, RX-before-timeout ordering and
+live-ring/key/TX ownership are shared driver behavior rather than parallel
+test-only loops. The connected handoff wraps that ordinary owner in
+`Esp32s31ConnectedTx`: referenced A-MPDU leases, BlockAck retry and the
+beacon-loss deadline now run on this one production runner. The opt-in
+connected power planner also ACK-gates PM=1 and restores PM=0 before queued
+network data, but the HIL does not enable it or consume its doze permit. Actual
+modem sleep remains disabled until its complete PAC sleep/wakeup transaction
+is qualified.
+
+Build and flash a named scenario with the same identifier:
 
 ```text
-cargo hil build he-mcs-gi-matrix
-cargo hil flash he-mcs-gi-matrix --port /dev/ttyACM0
-
-cargo hil flash he-tb --port /dev/ttyACM0
-cargo hil traffic trigger-hil <monitor-interface> \
-  --transmitter <bssid> --aid <aid>
+cargo hil build radio
+cargo hil flash radio --port /dev/ttyACM0
 ```
+
+The former raw-MAC, A-MPDU/A-MSDU and HE matrix scenarios depended on the
+second connected event loop that predated the production backend. They are
+intentionally absent from `cargo hil scenarios`; selecting their old build
+environment fails at compile time. Reintroduce each workload only after its
+aggregate/HE transaction is owned by the production backend and scheduled by
+`WifiRunner`, so a HIL result cannot accidentally qualify a parallel driver.
 
 SSID, passphrase, peer address, channel and bounded rate/MCS overrides remain
 external HIL configuration. They are intentionally not written to

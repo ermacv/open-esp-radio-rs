@@ -658,7 +658,6 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "esp-bootloader-esp-idf"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "crc",
  "document-features",
@@ -676,7 +675,6 @@ dependencies = [
 [[package]]
 name = "esp-config"
 version = "0.7.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -688,7 +686,6 @@ dependencies = [
 [[package]]
 name = "esp-hal"
 version = "1.1.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "bitfield",
  "bytemuck",
@@ -747,7 +744,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "proc-macro-crate",
@@ -760,12 +756,10 @@ dependencies = [
 [[package]]
 name = "esp-metadata-generated"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 
 [[package]]
 name = "esp-riscv-rt"
 version = "0.14.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "riscv 0.15.0",
@@ -775,7 +769,6 @@ dependencies = [
 [[package]]
 name = "esp-rom-sys"
 version = "0.1.4"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -785,7 +778,6 @@ dependencies = [
 [[package]]
 name = "esp-storage"
 version = "0.9.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "embedded-storage",
@@ -800,7 +792,6 @@ dependencies = [
 [[package]]
 name = "esp-sync"
 version = "0.2.1"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
@@ -1291,11 +1282,16 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-embassy"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wpa2",
 ]
 
 [[package]]
@@ -1368,8 +1364,13 @@ dependencies = [
 name = "open-esp-radio-hil-esp32s31-trace-probes"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
 ]
 
 [[package]]
@@ -2033,7 +2034,6 @@ dependencies = [
 [[package]]
 name = "xtensa-lx"
 version = "0.13.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "critical-section",
 ]
@@ -2041,7 +2041,6 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt"
 version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "document-features",
  "xtensa-lx",
@@ -2051,7 +2050,6 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 dependencies = [
  "proc-macro2",
  "quote",

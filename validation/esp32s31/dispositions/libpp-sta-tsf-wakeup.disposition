@@ -1,0 +1,16 @@
+# Finite two-register station TSF wake gate. The accepted argument domain is
+# the Rust bool image 0..=1 and is closed by the companion profile.
+default-disposition not-yet-ported
+default-protocol wifi
+
+function libpp hal_set_sta_tsf_wakeup
+disposition direct
+protocol wifi
+rust-component open_esp_radio_esp32s31_pac::RadioRegisters::set_station_tsf_wakeup
+binding v1
+rust-probe open_libpp_power_tsf_trace_hal_set_sta_tsf_wakeup
+effect-contract exact-effects-v1
+effect mmio-read 32 0x2010d858 required
+effect mmio-write 32 0x2010d858 required
+effect mmio-read 32 0x2010d830 required
+effect mmio-write 32 0x2010d830 required

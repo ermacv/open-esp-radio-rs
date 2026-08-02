@@ -9,6 +9,7 @@ mod agc;
 mod baseband;
 pub mod clock;
 mod frequency;
+mod generated;
 mod iq_estimator;
 pub mod mac;
 mod mac_antenna_init;
@@ -41,6 +42,8 @@ pub mod phy;
 pub mod phy_i2c;
 pub mod power;
 mod table_memory;
+#[cfg(feature = "validation-probes")]
+pub mod validation;
 pub use mac_block_ack::{
     InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckRegisterImage,
 };
@@ -65,6 +68,7 @@ pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
 };
+pub use mac_tsf::{StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod};
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters,
@@ -650,6 +654,8 @@ mod tests {
         assert_eq!(load.control().as_ptr() as usize, 0x2010_d814);
         assert_eq!(load.value_low().as_ptr() as usize, 0x2010_d818);
         assert_eq!(load.value_high().as_ptr() as usize, 0x2010_d81c);
+        assert_eq!(load.snapshot_low().as_ptr() as usize, 0x2010_d820);
+        assert_eq!(load.snapshot_high().as_ptr() as usize, 0x2010_d824);
         assert_eq!(
             registers
                 .peripherals

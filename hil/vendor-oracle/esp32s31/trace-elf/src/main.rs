@@ -1,6 +1,8 @@
 #![no_main]
 #![no_std]
 
+include!(concat!(env!("OUT_DIR"), "/linked_oracle_stubs.rs"));
+
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     loop {
@@ -14,8 +16,3 @@ pub extern "C" fn _start() -> ! {
         core::hint::spin_loop();
     }
 }
-
-#[used]
-#[unsafe(link_section = ".note.open_esp_radio.oracle")]
-static ORACLE_PROVENANCE: [u8; 80] =
-    *b"libphy.a sha256=51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223";

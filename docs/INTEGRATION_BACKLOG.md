@@ -1,66 +1,184 @@
 # Integration backlog
 
-Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-07-31
-(10,400 lines).
+Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-02
+(4,491 lines).
 
-The HIL workspace intentionally owns board clocks and boot, PSRAM/flash
-placement, the executor, concrete `embassy-net`/smoltcp scenarios,
-credentials, traffic generation and reporting. Reusable radio behavior must
-instead live in a driver, protocol or integration crate. This file lists only
-the remaining ownership violations; completed transfer history is archived in
-the [2026-07-31 integration report](archive/integration/2026-07-31-esp32s31-rust-integration-audit.md).
+The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
+executor, concrete `embassy-net` scenarios, credentials, traffic generation
+and reporting. Reusable radio behavior belongs in a driver, protocol or
+integration crate.
 
-## 1. Wi-Fi MAC TX executor
+The production path now has reusable owners for generated PAC register leaves,
+MAC IRQ dispatch, RX/DMA frontier and recycle, ordinary connected TX,
+pre-connected management/EAPOL TX,
+connected BlockAck control, the single `WifiRunner` event loop,
+Authentication/Association through `StaJoinRunner`, and WPA2 Message 1/3
+response handling through `Wpa2HandshakeRunner`. `Wpa2KeyInstallRunner` owns
+request validation, PTK/GTK publication ordering, Message 4 completion and
+rollback. Referenced HT/HE A-MPDU, partial BlockAck retry, one-MPDU HT retry
+handoff and beacon-loss timing are now owned by that same runner. The HIL
+consumes those owners; it no longer contains parallel
+Authentication, Association, WPA2 response-deadline or key-install state
+machines. Completed transfer history is archived in the
+[2026-07-31 integration report](archive/integration/2026-07-31-esp32s31-rust-integration-audit.md).
 
-The HIL still owns the production portion of `TxStorage` and the executor
-functions beginning with:
+## 1. Completed: concrete WPA2 TX backend
 
-- `transmit_encoded_frame`;
-- `transmit_encoded_unicast_with_retry`;
-- `transmit_protected_ethernet_frame`;
-- the protected Ethernet A-MPDU/A-MSDU append and transmit functions;
-- the policy-neutral part of connected protected Ethernet transmission.
+`Wpa2HandshakeRunner` now accepts the still-live RX ring through a finite
+backend, enforces the exact absolute Message 1 and Message 3 deadlines,
+services RX before simultaneous timeout, transmits Message 2 only in response
+to a peer Message 1, stops RX and returns a typed `Wpa2PendingKeyInstall`.
+The HIL has deleted its former Message 3 receive/deadline loop.
 
-Move finite TX/retry/EDCA transitions into the ESP32-S31 Wi-Fi MAC crate and
-keep async completion/wakeup composition in the S31 Wi-Fi/Embassy integration
-crate. Synthetic payloads, matrix selection, counters and throughput reporting
-remain HIL policy. Reuse the existing `TxSlot`, `HtAmpduTxStorage`,
-`AmpduRetryState`, `StaTxRuntimePolicy`, `UnicastRetryState` and pinned network
-lease owners; do not copy the HIL functions verbatim.
+`Wpa2KeyInstallRunner` now consumes `Wpa2PendingKeyInstall`, validates the
+station PTK/GTK request, publishes both keys atomically through its backend,
+builds and transmits the exact Message 4, rolls both keys back on every later
+failure, and returns typed installed-key ownership for `WifiRunner`. Its host
+tests include the complete successful M1/M2/M3/key/M4 transition, atomic
+install failure and Message 4 rollback.
 
-## 2. Connected Wi-Fi STA dispatcher
+The HIL implementation now calls the shared management/EAPOL owner from
+section 2. Credentials, diagnostics and the protected ARP end-to-end assertion
+remain HIL policy. No RTOS event queue or vendor supplicant context is retained.
 
-The connected RX loop still combines Trigger, NDPA, AddBA/DELBA, CCMP,
-BlockAck and `embassy-net` routing. Split protocol classification and typed STA
-actions from the executor. The generic network adapter must continue to know
-nothing about ESP32-S31 registers, while the interrupt adapter must not absorb
-STA protocol policy.
+## 2. Completed: management/EAPOL TX transaction owner
 
-Authentication, association, WPA2 phase/key/deadline ownership and TX/RX
-BlockAck session state already have reusable owners. Their HIL functions are
-hardware/timer executors, not a reason to recreate those state machines.
+`ordinary_tx.rs` is now the single owner of the pinned ordinary descriptor,
+EDCA/retry state, calibrated power, entropy and per-publication deadline.
+`control_tx.rs` provides typed Probe, Authentication, Association, unprotected
+EAPOL and protected-data transactions before connection. It transfers the
+same owner directly into `Esp32s31SingleMpduTx` after WPA2 Message 4.
 
-## 3. Shrink the HIL surface
+The HIL-local `transmit_encoded_frame` and
+`transmit_encoded_unicast_with_retry` state machines are deleted. `TxStorage`
+is only a board fixture containing the movable production owner. Register
+snapshots, synthetic ARP payloads and PASS/FAIL reporting remain HIL policy.
 
-After the two runtime slices above move, `radio_hil.rs` should contain only:
+Host tests cover successful management publication, exact management versus
+Voice-data PTI, retry of the same sequence with the Retry bit, fail-closed
+deadline quarantine and preservation of association policy across the
+control-to-connected ownership transition. A rejected handoff returns the TX
+owner, key token, sequence owner and connected config together, so cancelling
+a pre-connected TX future cannot silently lose a live DMA or crypto resource.
+
+## 3. Completed production aggregate ownership; optional HE workloads remain
+
+`Esp32s31ConnectedTx` now owns the ordinary descriptor and the descriptor-only
+referenced A-MPDU arena together. It claims pinned `embassy-net` leases only
+after ADDBA becomes operational, retains them through detach/BlockAck and
+aggregate retry, and releases them at the first safe ownership edge. A single
+missing HT MPDU moves into the private ordinary descriptor without allocating
+a second sequence number or CCMP PN. The connected control owner mirrors
+ADDBA response, rejection, timeout and DELBA state directly into this TX
+scheduler.
+
+The production HIL constructs this owner and runs it through the same
+`WifiRunner`; both debug and optimized RISC-V images link successfully. Host
+tests cover full BlockAck release, partial-BlockAck compaction/republication
+and the individual retry handoff. The former raw-MAC, A-MSDU and HE matrix
+traffic scenarios remain disabled until their workload/reporting layer is
+reattached to this owner and real-board results are repeated. Historical HIL
+evidence does not by itself qualify the new runtime owner.
+
+Connected RX now publishes typed Beacon/TIM observations. An executor-clock
+monitor uses the association beacon interval and a finite miss limit; a beacon
+received on the exact deadline wins because RX is serviced first. Expiry
+stops TX BlockAck sessions, publishes `embassy-net` link-down and returns the
+runner.
+
+The first finite power-save hardware slice is now closed. Ten generated PAC
+leaves and a focused exact-effects baseline qualify the connected modem
+beacon-miss counters, sleep-limit wake gates, wake-protect lead time and TBTT
+auto-period transaction. Two additional generated leaves qualify WDEVPWR
+STATUS/CLEAR, and the hard ISR now retains the complete acknowledged image in
+an opaque Embassy handoff. HIL explicitly writes a zero WDEVPWR enable mask
+and remains always awake.
+
+The chip-independent STA path now encodes an exact legacy Null Data PM frame.
+The production connected transmitter publishes it through the same pinned
+descriptor, bounded retry owner and final ACK outcome as ordinary/control
+traffic. A pure Embassy policy refuses a doze permit until PM=1 was
+acknowledged, fails closed for missing or inconsistent TIM/DTIM, buffered or
+pending traffic, and expresses the wake deadline in the STA TSF clock domain.
+The coherent `hal_get_sta_tsf` ROM transaction is represented in SVD/PAC and
+passes a four-case compiled profile covering both optional output pointers.
+
+The policy is now integrated into `Esp32s31ConnectedControl` behind an
+explicit opt-in. `WifiRunner` supplies one coherent `WifiControlContext`
+instead of a growing positional argument list, and re-runs control while
+holding a newly arrived pinned network lease. Consequently a station that has
+advertised PM=1 must complete an acknowledged PM=0 transaction before the
+lease can reach MAC/DMA, including when the frame arrived inside the
+executor's `select`. A final PM=0 failure publishes link-down rather than
+transmitting data under a split AP/station power-state assumption. The
+controller can produce a single-use `StaDozePermit`, but no production caller
+consumes it yet.
+
+Actual modem sleep remains deliberately disabled. The next slice must qualify
+individual WDEVPWR cause bits and the RF/PHY and platform-clock sleep/restore
+transaction, then add a platform sleep owner that revalidates the permit in
+the live STA-TSF domain immediately before touching hardware. It must not port
+vendor semaphores, notifications, NVS reads or private PM/interface layout.
+The non-symmetric two-register
+`set_station_tsf_wakeup` bool domain is now a separate passing scenario gate;
+it does not broaden the still-missing RF/PHY lifecycle claim.
+
+## 4. Shrink the HIL surface
+
+Continue reducing `radio_hil.rs` toward only:
 
 - board/resource selection and linker-profile hooks;
-- task spawning, timers, interrupt entry points and logging;
+- task spawning, interrupt entry points and logging;
 - credentials, peer addresses and traffic configuration;
-- raw-MAC, UDP/iperf, rate-matrix, DCM, Trigger and power scenarios;
+- UDP/iperf and explicitly selected qualification workloads;
 - synthetic packets, qualification markers and diagnostic snapshots.
 
 Stable diagnostic register meanings move to SVD/PAC with provenance. Raw
-reads may remain only when they are explicitly comparison or HIL evidence and
-cannot affect runtime transitions.
+reads may remain only when they are explicit comparison evidence and cannot
+affect runtime transitions.
+
+The WPA2/connected transition no longer exposes 23–28 positional arguments.
+After extracting key/M4 orchestration, its entry points take three or four
+coherent owners: `StaConnectedLink` for peer/BSSID/AID/PHY facts,
+`StaConnectedSession` for network/rate/sequence state, and
+`RadioHilConnectedFixture` for the concrete board-owned resources. Keep this
+rule while shrinking other HIL paths: create a type only for one ownership or
+domain invariant, never merely to hide an arbitrary argument list.
+
+The same rule now covers the earlier join boundary. `authenticate_target`
+accepts a `RadioHilJoinFixture`, `StaJoinTarget` and the non-QoS sequence
+owner; `associate_target` accepts the connected fixture, target and
+`StaAssociationSecurity`. Production TX construction likewise uses
+`WifiTxResources` plus a phase configuration or `ConnectedTxHandoff`, rather
+than exposing slot/policy/power/entropy/timer/key/sequence fields as unrelated
+positional arguments.
+
+## 5. Make executable evidence local to each probe
+
+Completed for driver adapters. Their canonical proof now binds the exact raw
+inventory symbol (bytes plus relative relocation schema), the linked vendor
+root with its local implementation helpers, and the compiled Rust probe with
+its local implementation helpers. Calls to another global definition remain
+named ABI boundaries; companion code is included only when reached as a local
+helper. Whole ELF/archive hashes remain descriptive caller-owned provenance
+and no longer enter adapter baselines. Direct JAL and AUIPC/JALR targets are
+address-normalized, so unrelated linked layout does not change the proof.
+
+The backend tests require an unrelated linked function mutation to preserve
+the closure identity, while mutations of the root, a local callee, or the raw
+symbol/relocation identity change it. Keep accepting baseline refreshes only
+after comparing every effect row and confirming zero mismatch, incomplete and
+orphan probes; verifier-source changes intentionally remain evidence changes.
 
 ## Completion gate
 
 For each extracted slice:
 
-1. add host tests for the finite state and ownership rules;
-2. change the HIL to consume the new API and delete its duplicate logic;
-3. run workspace formatting, tests and lints;
-4. repeat the HIL cells named by
+1. add host tests for finite state, exact deadlines and ownership rules;
+2. compile the production owner in the vendor semantic probe where applicable;
+3. change HIL to consume the API and delete its duplicate logic;
+4. run formatting, host tests, embedded debug/release checks and focused
+   evidence baselines;
+5. repeat the hardware cells named by
    [the feature ledger](ESP32S31_WIFI_FEATURE_STATUS.md) when DMA lifetime,
    interrupt ordering, target placement or protocol behavior changes.

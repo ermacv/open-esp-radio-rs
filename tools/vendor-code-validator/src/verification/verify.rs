@@ -170,6 +170,10 @@ pub(crate) fn verify_source(
         );
     }
     let vendor_symbols = vendor_symbols(source)?;
+    // Binding v1 names one exact compiled symbol and is independent of the
+    // legacy convention prefix. Keep the filtered inventory only for
+    // convention-based pairing and orphan reporting.
+    let all_rust_symbols = list_code_symbols(rust_artifact, "")?;
     let rust_symbols = list_code_symbols(rust_artifact, rust_prefix)?;
     if let Some(manifest) = disposition_manifest {
         for entry in manifest
@@ -177,7 +181,7 @@ pub(crate) fn verify_source(
             .filter(|entry| entry.source == source.name)
         {
             if let Some(binding) = &entry.binding {
-                binding.validate(&rust_symbols)?;
+                binding.validate(&all_rust_symbols)?;
             }
         }
     }
@@ -266,6 +270,7 @@ pub(crate) fn verify_source(
                     source: source.name,
                     vendor_symbol: &vendor.name,
                     svd,
+                    vendor_inventory: source.inventory,
                     vendor_artifact: source.artifact,
                     vendor_companion: source.companion,
                     rust_artifact,
@@ -305,15 +310,17 @@ pub(crate) fn verify_source(
             }
             continue;
         }
-        let selected_rust =
+        let selected_rust: Option<(&ArtifactSymbolIdentity, bool)> =
             if let Some(binding) = manifest_entry.and_then(|entry| entry.binding.as_ref()) {
-                rust_by_suffix
-                    .values()
-                    .find(|(symbol, _)| symbol.name == binding.rust_probe)
+                all_rust_symbols
+                    .iter()
+                    .find(|symbol| symbol.name == binding.rust_probe)
+                    .map(|symbol| (symbol, binding.compare_return))
             } else {
                 rust_by_suffix
                     .get(source_qualified_suffix.as_str())
                     .or_else(|| rust_by_suffix.get(suffix))
+                    .copied()
             };
         let Some((rust, compare_return)) = selected_rust else {
             if let Some(manifest) = disposition_manifest {
@@ -438,12 +445,14 @@ pub(crate) fn verify_source(
             },
             svd,
         )?;
-        let effect_policy = manifest_entry.and_then(|entry| entry.effect_contract.as_ref());
+        let effect_policy = manifest_entry
+            .and_then(|entry| entry.binding.as_ref().and(entry.effect_contract.as_ref()));
         if let Some(profile) = execution_profiles
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
             println!("PROFILE\t{}\t{}\tBEGIN", source.name, profile.name);
+            let argument_domain = profile.coverage_argument_constraints();
             let verdict = compare_execution_scenarios(
                 svd,
                 ExecutionInput {
@@ -457,6 +466,7 @@ pub(crate) fn verify_source(
                     symbol: &profile.rust_symbol,
                 },
                 profile.compare_return,
+                &argument_domain,
                 &profile.scenarios,
             )?;
             match verdict {
@@ -489,21 +499,21 @@ pub(crate) fn verify_source(
         }
         if !vendor_trace.is_exact()
             || !rust_trace.is_exact()
-            || (*compare_return
+            || (compare_return
                 && (!vendor_trace.return_value.is_resolved()
                     || !rust_trace.return_value.is_resolved()))
         {
             summary.incomplete += 1;
             let mut uncovered = print_uncovered(&vendor.name, source.name, &vendor_trace)
                 + print_uncovered(&vendor.name, "rust", &rust_trace);
-            if *compare_return && !vendor_trace.return_value.is_resolved() {
+            if compare_return && !vendor_trace.return_value.is_resolved() {
                 println!(
                     "UNCOVERED\t{}\t{}\tvendor\tunresolved-return",
                     source.name, vendor.name
                 );
                 uncovered += 1;
             }
-            if *compare_return && !rust_trace.return_value.is_resolved() {
+            if compare_return && !rust_trace.return_value.is_resolved() {
                 println!(
                     "UNCOVERED\t{}\t{}\trust\tunresolved-return",
                     source.name, vendor.name
@@ -548,7 +558,7 @@ pub(crate) fn verify_source(
                 (
                     effect_contract::EffectComparisonVerdict::Match,
                     effect_contract::EffectComparisonVerdict::Match,
-                ) if !*compare_return || returns_equal(&vendor_trace, &rust_trace) => {
+                ) if !compare_return || returns_equal(&vendor_trace, &rust_trace) => {
                     summary.matched += 1;
                     summary.effect_contract_matches += 1;
                     record_evidence(
@@ -570,7 +580,7 @@ pub(crate) fn verify_source(
                         rust.name,
                         policy.comparison.label(),
                         vendor_effects.len(),
-                        if *compare_return { "checked" } else { "void" },
+                        if compare_return { "checked" } else { "void" },
                     );
                 }
                 (
@@ -608,7 +618,7 @@ pub(crate) fn verify_source(
                 }
             }
         } else if traces_equal(&vendor_trace, &rust_trace)
-            && (!*compare_return || returns_equal(&vendor_trace, &rust_trace))
+            && (!compare_return || returns_equal(&vendor_trace, &rust_trace))
         {
             summary.matched += 1;
             summary.symbolic_matches += 1;
@@ -619,7 +629,7 @@ pub(crate) fn verify_source(
                 vendor.name,
                 rust.name,
                 vendor_trace.events.len(),
-                if *compare_return { "checked" } else { "void" }
+                if compare_return { "checked" } else { "void" }
             );
         } else {
             summary.mismatched += 1;
@@ -656,11 +666,15 @@ pub(crate) fn orphan_probe_count(
     rust_artifact: &Path,
     rust_prefix: &str,
     sources: &[(VerifySource<'_>, &[ArtifactSymbolIdentity])],
+    explicitly_bound_probes: &BTreeSet<String>,
 ) -> Result<usize> {
     let rust_symbols = list_code_symbols(rust_artifact, rust_prefix)?;
     Ok(rust_symbols
         .iter()
         .filter(|rust| {
+            if explicitly_bound_probes.contains(&rust.name) {
+                return false;
+            }
             let suffix = rust
                 .name
                 .strip_prefix(rust_prefix)

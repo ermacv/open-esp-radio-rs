@@ -201,6 +201,22 @@ impl UnicastRetryState {
         }
     }
 
+    /// Apply one detached ordinary-queue collision.
+    ///
+    /// A collision consumes the same bounded publication/EDCA budget as the
+    /// recovered timeout retry body, but the caller does not set the 802.11
+    /// Retry bit: hardware never completed the original MPDU exchange.
+    pub fn observe_collision(&mut self, policy: &mut StaTxRuntimePolicy) -> UnicastRetryDecision {
+        if self.attempt < self.attempt_limit {
+            policy.record_retry_failure(self.queue);
+            self.attempt += 1;
+            UnicastRetryDecision::Retry
+        } else {
+            policy.reset_terminal_exchange(self.queue);
+            UnicastRetryDecision::Complete
+        }
+    }
+
     /// End ownership after a non-retryable executor or hardware error.
     pub fn abort(&self, policy: &mut StaTxRuntimePolicy) {
         policy.reset_terminal_exchange(self.queue);

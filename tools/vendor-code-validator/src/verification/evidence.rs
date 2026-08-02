@@ -98,6 +98,7 @@ pub(crate) fn driver_adapter_effect_evidence(
         digest.update(source.contents.as_bytes());
     }
     digest.update(b"\0execution-engine\0");
+    digest.update(include_str!("../../crates/backend-riscv/src/execution/image.rs").as_bytes());
     digest.update(include_str!("../../crates/backend-riscv/src/execution/machine.rs").as_bytes());
     digest.update(include_str!("../../crates/backend-riscv/src/execution/model.rs").as_bytes());
     digest.update(b"\0reference-generator\0");
@@ -197,7 +198,7 @@ pub(crate) fn write_json_string(output: &mut String, value: &str) {
     clippy::too_many_arguments,
     reason = "the report boundary deliberately receives a complete immutable proof record"
 )]
-pub(crate) fn write_verification_json_report(
+pub(crate) fn write_verification_json_report<S: AsRef<str>>(
     path: &Path,
     target: &TargetSpec,
     gate: VerificationGate,
@@ -206,7 +207,7 @@ pub(crate) fn write_verification_json_report(
     evidence_baseline_passed: bool,
     passed: bool,
     evidence: &EvidenceSet,
-    artifacts: &[(&str, &Path)],
+    artifacts: &[(S, &Path)],
     qualification_gaps: &[&dispositions::Entry],
 ) -> Result<()> {
     let mut output = String::new();
@@ -308,7 +309,7 @@ pub(crate) fn write_verification_json_report(
         let bytes = fs::read(artifact)?;
         let digest = format!("{:x}", Sha256::digest(&bytes));
         output.push_str("    {\"role\": ");
-        write_json_string(&mut output, role);
+        write_json_string(&mut output, role.as_ref());
         output.push_str(", \"path\": ");
         write_json_string(&mut output, &artifact.display().to_string());
         output.push_str(", \"sha256\": ");
@@ -342,17 +343,30 @@ pub(crate) fn write_verification_json_report(
 }
 
 pub(crate) fn profile_evidence(profile: &profiles::Profile) -> String {
-    // `Profile` is composed only of ordered vectors and ordered maps. Hashing
-    // its parsed canonical Debug form binds evidence to every scenario input,
-    // observation and response without making comments or whitespace part of
-    // the contract identity. The repository pins the Rust toolchain that
-    // defines this representation.
+    // `Profile` is composed only of ordered vectors and ordered maps. Its
+    // parsed Debug form binds every scenario input, domain, observation and
+    // response without making comments or whitespace part of the identity.
+    // The verifier sources are equally part of the proof: a weaker executor
+    // or reachability pass must invalidate a previously accepted baseline.
     let canonical = format!("{profile:#?}");
+    let mut digest = Sha256::new();
+    digest.update(b"open-esp-radio-execution-profile-v2\0");
+    digest.update(canonical.as_bytes());
+    digest.update(b"\0profile-parser\0");
+    digest.update(include_str!("profiles.rs").as_bytes());
+    digest.update(b"\0comparison-orchestrator\0");
+    digest.update(include_str!("execution.rs").as_bytes());
+    digest.update(b"\0execution-image\0");
+    digest.update(include_str!("../../crates/backend-riscv/src/execution/image.rs").as_bytes());
+    digest.update(b"\0execution-machine\0");
+    digest.update(include_str!("../../crates/backend-riscv/src/execution/machine.rs").as_bytes());
+    digest.update(b"\0execution-model\0");
+    digest.update(include_str!("../../crates/backend-riscv/src/execution/model.rs").as_bytes());
     format!(
         "{}/profile:{}/sha256:{:x}",
         profile.contract.evidence(),
         profile.name,
-        Sha256::digest(canonical.as_bytes())
+        digest.finalize()
     )
 }
 

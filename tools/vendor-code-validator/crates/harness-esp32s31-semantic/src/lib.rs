@@ -40,23 +40,103 @@ pub fn qualify_driver_adapter(
     let id = request.id;
     let source = request.source;
     let vendor_symbol = request.vendor_symbol;
-    if id != "esp32s31-iq-est-enable-v1" {
-        return Ok(None);
+    match id {
+        "esp32s31-iq-est-enable-v1" => {
+            if source != "rom" || vendor_symbol != "phy_iq_est_enable" {
+                return Err(
+                    format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into(),
+                );
+            }
+            qualification::qualify_esp32s31_iq_est_enable(
+                request.svd,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+                false,
+            )
+            .map(Some)
+        }
+        "esp32s31-wdev-process-fiq-mac-slice-v1" => {
+            if source != "libpp" || vendor_symbol != "wDev_ProcessFiq" {
+                return Err(
+                    format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into(),
+                );
+            }
+            qualification::qualify_esp32s31_wdev_process_fiq_mac_slice(
+                request.svd,
+                request.vendor_inventory,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+                false,
+            )
+            .map(Some)
+        }
+        "esp32s31-hal-mac-txq-enable-register-slice-v1" => {
+            if source != "libpp" || vendor_symbol != "hal_mac_txq_enable" {
+                return Err(
+                    format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into(),
+                );
+            }
+            qualification::qualify_esp32s31_hal_mac_txq_enable_register_slice(
+                request.svd,
+                request.vendor_inventory,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+                false,
+            )
+            .map(Some)
+        }
+        "esp32s31-wdev-append-rx-blocks-v1" => {
+            if source != "libpp" || vendor_symbol != "wDev_AppendRxBlocks" {
+                return Err(
+                    format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into(),
+                );
+            }
+            qualification::qualify_esp32s31_wdev_append_rx_blocks(
+                request.svd,
+                request.vendor_inventory,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+                false,
+            )
+            .map(Some)
+        }
+        "esp32s31-sta-join-state-v1" => {
+            if source != "libnet80211" || vendor_symbol != "ieee80211_sta_new_state" {
+                return Err(
+                    format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into(),
+                );
+            }
+            qualification::qualify_esp32s31_sta_join_state(
+                request.svd,
+                request.vendor_inventory,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+                false,
+            )
+            .map(Some)
+        }
+        _ => Ok(None),
     }
-    if source != "rom" || vendor_symbol != "phy_iq_est_enable" {
-        return Err(format!("driver adapter {id} cannot qualify {source} {vendor_symbol}").into());
-    }
-    qualification::qualify_esp32s31_iq_est_enable(
-        request.svd,
-        request.vendor_artifact,
-        request.vendor_companion,
-        request.rust_artifact,
-        request.rust_companion,
-        request.rust_symbol,
-        request.policy,
-        false,
-    )
-    .map(Some)
 }
 
 pub fn qualify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result<Option<bool>> {
@@ -115,10 +195,54 @@ pub fn qualify_semantic_contract(request: &SemanticContractRequest<'_>) -> Resul
     Ok(Some(matched))
 }
 
-const DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+const IQ_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
         name: "qualification/iq_estimator.rs",
         contents: include_str!("qualification/iq_estimator.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/mod.rs",
+        contents: include_str!("qualification/mod.rs"),
+    },
+];
+
+const WDEV_PROCESS_FIQ_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+    EvidenceSource {
+        name: "qualification/wdev_process_fiq.rs",
+        contents: include_str!("qualification/wdev_process_fiq.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/mod.rs",
+        contents: include_str!("qualification/mod.rs"),
+    },
+];
+
+const HAL_MAC_TXQ_ENABLE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+    EvidenceSource {
+        name: "qualification/hal_mac_txq_enable.rs",
+        contents: include_str!("qualification/hal_mac_txq_enable.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/mod.rs",
+        contents: include_str!("qualification/mod.rs"),
+    },
+];
+
+const WDEV_APPEND_RX_BLOCKS_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+    EvidenceSource {
+        name: "qualification/wdev_append_rx_blocks.rs",
+        contents: include_str!("qualification/wdev_append_rx_blocks.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/mod.rs",
+        contents: include_str!("qualification/mod.rs"),
+    },
+];
+
+const STA_JOIN_STATE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+    EvidenceSource {
+        name: "qualification/sta_join_state.rs",
+        contents: include_str!("qualification/sta_join_state.rs"),
     },
     EvidenceSource {
         name: "qualification/mod.rs",
@@ -142,8 +266,18 @@ const SEMANTIC_COMMON_SOURCES: &[EvidenceSource] = &[
 ];
 
 pub fn driver_adapter_evidence_sources(id: &str) -> Option<DriverAdapterEvidenceSources> {
-    (id == "esp32s31-iq-est-enable-v1").then_some(DriverAdapterEvidenceSources {
-        adapter: DRIVER_ADAPTER_SOURCES,
+    let adapter = match id {
+        "esp32s31-iq-est-enable-v1" => IQ_DRIVER_ADAPTER_SOURCES,
+        "esp32s31-wdev-process-fiq-mac-slice-v1" => WDEV_PROCESS_FIQ_DRIVER_ADAPTER_SOURCES,
+        "esp32s31-hal-mac-txq-enable-register-slice-v1" => {
+            HAL_MAC_TXQ_ENABLE_DRIVER_ADAPTER_SOURCES
+        }
+        "esp32s31-wdev-append-rx-blocks-v1" => WDEV_APPEND_RX_BLOCKS_DRIVER_ADAPTER_SOURCES,
+        "esp32s31-sta-join-state-v1" => STA_JOIN_STATE_DRIVER_ADAPTER_SOURCES,
+        _ => return None,
+    };
+    Some(DriverAdapterEvidenceSources {
+        adapter,
         reviewed_summary: EvidenceSource {
             name: "reviewed_summaries.rs",
             contents: include_str!("reviewed_summaries.rs"),

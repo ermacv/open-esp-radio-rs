@@ -8,11 +8,16 @@ repository.workspace = true
 description = "Embassy runtime integration for the open ESP32-S31 Wi-Fi radio"
 
 [dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+embassy-time = "0.5.1"
 open-esp-radio-embassy-net = { path = "../../network/embassy-net" }
 open-esp-radio-esp32s31-hal = { path = "../../../esp32s31/hal" }
 open-esp-radio-esp32s31-pac = { path = "../../../esp32s31/pac" }
+open-esp-radio-esp32s31-phy = { path = "../../../esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../esp32s31/wifi/mac" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 
 [lints]
 workspace = true

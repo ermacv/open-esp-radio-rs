@@ -1084,11 +1084,16 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-embassy"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wpa2",
 ]
 
 [[package]]
@@ -1176,6 +1181,8 @@ name = "open-radio-vendor-harness-esp32s31-semantic"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-validator-semantic",

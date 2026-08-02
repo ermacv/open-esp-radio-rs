@@ -13,6 +13,17 @@ pub(crate) fn parse_assignment(value: &str, option: &str) -> Result<(u32, u32)> 
     Ok((address, value))
 }
 
+pub(crate) fn parse_call_return(value: &str, option: &str) -> Result<(String, u32)> {
+    let (symbol, value) = value
+        .split_once('=')
+        .ok_or_else(|| format!("{option} requires SYMBOL=VALUE"))?;
+    if symbol.is_empty() || symbol.chars().any(char::is_whitespace) {
+        return Err(format!("{option} requires one non-empty symbol").into());
+    }
+    let value = parse_u32(value).ok_or_else(|| format!("invalid {option} value"))?;
+    Ok((symbol.to_owned(), value))
+}
+
 pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord> {
     let (address, symbol) = value
         .split_once('=')
@@ -236,6 +247,26 @@ pub(crate) fn extend_dynamic_inventory(
     Ok(())
 }
 
+fn static_inventory_for_argument_domain(
+    image: &execution::ExecutableImage,
+    symbol: &str,
+    argument_domain: &[[Option<u32>; 8]],
+) -> Result<execution::CoverageInventory> {
+    if argument_domain.is_empty() {
+        return Err("static argument domain must not be empty".into());
+    }
+    let mut aggregate = execution::CoverageInventory::default();
+    for constraints in argument_domain {
+        let inventory = image.coverage_inventory_with_argument_constraints(symbol, constraints)?;
+        aggregate.branch_sites.extend(inventory.branch_sites);
+        aggregate.branch_outcomes.extend(inventory.branch_outcomes);
+        aggregate
+            .unresolved_edges
+            .extend(inventory.unresolved_edges);
+    }
+    Ok(aggregate)
+}
+
 pub(crate) fn print_control_flow_coverage(
     side: &str,
     image: &execution::ExecutableImage,
@@ -344,6 +375,7 @@ pub(crate) fn compare_execution_scenarios(
     vendor: ExecutionInput<'_>,
     rust: ExecutionInput<'_>,
     compare_return: bool,
+    argument_domain: &[[Option<u32>; 8]],
     scenarios: &[NamedScenario],
 ) -> Result<ComparisonVerdict> {
     let vendor_digest = artifact_sha256(vendor.artifact)?;
@@ -363,8 +395,10 @@ pub(crate) fn compare_execution_scenarios(
     if let Some(companion) = rust.companion {
         rust_image.add_companion(companion)?;
     }
-    let mut vendor_inventory = vendor_image.coverage_inventory(vendor.symbol)?;
-    let mut rust_inventory = rust_image.coverage_inventory(rust.symbol)?;
+    let mut vendor_inventory =
+        static_inventory_for_argument_domain(&vendor_image, vendor.symbol, argument_domain)?;
+    let mut rust_inventory =
+        static_inventory_for_argument_domain(&rust_image, rust.symbol, argument_domain)?;
     let mut vendor_covered = BTreeSet::new();
     let mut rust_covered = BTreeSet::new();
     let mut vendor_calls = BTreeSet::new();

@@ -61,6 +61,16 @@ fn profile_evidence_is_bound_to_scenario_contents() {
     modified.scenarios[0].scenario.max_steps =
         modified.scenarios[0].scenario.max_steps.saturating_add(1);
     assert_ne!(profile_evidence(&modified), original);
+
+    let mut narrowed_domain = profiles[0].clone();
+    narrowed_domain
+        .argument_ranges
+        .push(profiles::ArgumentRange {
+            index: 0,
+            min: 0,
+            max: 0,
+        });
+    assert_ne!(profile_evidence(&narrowed_domain), original);
 }
 
 #[test]
@@ -93,6 +103,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     let binding = bindings::Binding::new(
         bindings::BindingVersion::V1,
         "open_phy_trace_leaf".to_owned(),
+        false,
         None,
     )
     .unwrap();

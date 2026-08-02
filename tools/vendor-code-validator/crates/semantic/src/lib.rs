@@ -4,10 +4,12 @@
 //! platform harness. Implementations may bind a production driver, while the
 //! interface itself contains no chip registry or driver dependency.
 
+mod driver_plan;
 mod effect_contract;
 
 use std::path::Path;
 
+pub use driver_plan::*;
 pub use effect_contract::*;
 pub use open_radio_vendor_validator_model::*;
 
@@ -19,6 +21,9 @@ pub struct DriverAdapterRequest<'a> {
     pub source: &'a str,
     pub vendor_symbol: &'a str,
     pub svd: &'a MmioRegisterMap,
+    /// Caller-owned authoritative symbol inventory (for example a raw `.a`).
+    pub vendor_inventory: Option<&'a Path>,
+    /// Executable linked view used for concrete qualification.
     pub vendor_artifact: &'a Path,
     pub vendor_companion: Option<&'a Path>,
     pub rust_artifact: &'a Path,

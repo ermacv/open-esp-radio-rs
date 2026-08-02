@@ -1,5 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
+use rv_asm::AmoOp;
+
+use super::image::UnresolvedRelocation;
 use super::*;
 use crate::MmioRegisterMap;
 
@@ -13,8 +16,11 @@ fn tiny_image(bytes: Vec<u8>, memory_size: u32) -> ExecutableImage {
         }],
         symbols_by_name: HashMap::from([("test".to_owned(), 0x1000)]),
         symbols_by_address: BTreeMap::from([(0x1000, "test".to_owned())]),
+        symbol_sizes_by_address: BTreeMap::new(),
+        local_text_symbols: BTreeSet::new(),
         call_trampoline_addresses: BTreeSet::new(),
         relocated_calls_by_address: BTreeMap::new(),
+        unresolved_relocations_by_address: BTreeMap::new(),
         global_pointer: None,
     }
 }
@@ -24,6 +30,69 @@ fn empty_svd() -> MmioRegisterMap {
         registers: Vec::new(),
         windows: Vec::new(),
     }
+}
+
+fn direct_call_closure_image(unrelated: [u8; 8], callee: [u8; 4]) -> ExecutableImage {
+    let mut image = tiny_image(
+        [
+            &[0xef, 0x00, 0x00, 0x01], // jal ra, +16
+            &[0x67, 0x80, 0x00, 0x00], // ret
+            unrelated.as_slice(),
+            callee.as_slice(),
+        ]
+        .concat(),
+        20,
+    );
+    image.symbols_by_name.extend([
+        ("unrelated".to_owned(), 0x1008),
+        ("callee".to_owned(), 0x1010),
+    ]);
+    image.symbols_by_address.extend([
+        (0x1008, "unrelated".to_owned()),
+        (0x1010, "callee".to_owned()),
+    ]);
+    image.symbol_sizes_by_address = BTreeMap::from([(0x1000, 8), (0x1008, 8), (0x1010, 4)]);
+    image.local_text_symbols.insert(0x1010);
+    image
+}
+
+#[test]
+fn code_closure_identity_ignores_unrelated_linked_code_and_binds_direct_callees() {
+    let first = direct_call_closure_image(
+        [0x67, 0x80, 0x00, 0x00, 0x67, 0x80, 0x00, 0x00],
+        [0x67, 0x80, 0x00, 0x00],
+    );
+    let unrelated_changed = direct_call_closure_image(
+        [0x73, 0x00, 0x10, 0x00, 0x67, 0x80, 0x00, 0x00],
+        [0x67, 0x80, 0x00, 0x00],
+    );
+    let callee_changed = direct_call_closure_image(
+        [0x67, 0x80, 0x00, 0x00, 0x67, 0x80, 0x00, 0x00],
+        [0x73, 0x00, 0x10, 0x00],
+    );
+
+    let identity = first.code_closure_identity("test").unwrap();
+    assert_eq!(
+        identity,
+        unrelated_changed.code_closure_identity("test").unwrap()
+    );
+    assert_ne!(
+        identity,
+        callee_changed.code_closure_identity("test").unwrap()
+    );
+    assert!(identity.contains("target=1"));
+    assert!(identity.contains("node 1 size=4"));
+
+    let mut global_callee = first;
+    global_callee.local_text_symbols.clear();
+    let mut changed_global_callee = callee_changed;
+    changed_global_callee.local_text_symbols.clear();
+    let global_identity = global_callee.code_closure_identity("test").unwrap();
+    assert_eq!(
+        global_identity,
+        changed_global_callee.code_closure_identity("test").unwrap()
+    );
+    assert!(global_identity.contains("external-symbol=callee"));
 }
 
 fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
@@ -53,6 +122,8 @@ fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
         segments,
         symbols_by_name,
         symbols_by_address,
+        symbol_sizes_by_address: BTreeMap::new(),
+        local_text_symbols: BTreeSet::new(),
         call_trampoline_addresses: BTreeSet::new(),
         relocated_calls_by_address: BTreeMap::from([(
             0x1000,
@@ -61,6 +132,7 @@ fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
                 target: None,
             },
         )]),
+        unresolved_relocations_by_address: BTreeMap::new(),
         global_pointer: None,
     }
 }
@@ -86,6 +158,43 @@ fn companion_symbol_resolves_external_tail_relocation_without_fallthrough() {
     assert_eq!(result.ordered_calls.len(), 1);
     assert_eq!(result.ordered_calls[0].symbol, "callee");
     assert!(result.events.is_empty());
+}
+
+#[test]
+fn argument_constraints_prune_a_resolved_auipc_jalr_child_and_its_fallthrough() {
+    let mut image = tiny_image(
+        vec![
+            0x63, 0x06, 0x05, 0x00, // beq a0, zero, +12 (valid return)
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x01, // jalr ra, 16(ra) (panic-like child)
+            0x67, 0x80, 0x00, 0x00, // valid return
+            0x00, 0x00, 0x00, 0x00, // padding
+            0x63, 0x00, 0x00, 0x00, // child: beq zero, zero, 0
+        ],
+        24,
+    );
+    image
+        .symbols_by_name
+        .insert("panic_child".to_owned(), 0x1014);
+    image
+        .symbols_by_address
+        .insert(0x1014, "panic_child".to_owned());
+
+    let unconstrained = image.coverage_inventory("test").unwrap();
+    assert_eq!(unconstrained.branch_sites, BTreeSet::from([0x1000, 0x1014]));
+    assert!(unconstrained.unresolved_edges.is_empty());
+
+    let mut zero = [None; 8];
+    zero[0] = Some(0);
+    let constrained = image
+        .coverage_inventory_with_argument_constraints("test", &zero)
+        .unwrap();
+    assert_eq!(constrained.branch_sites, BTreeSet::from([0x1000]));
+    assert_eq!(
+        constrained.branch_outcomes,
+        BTreeSet::from([(0x1000, true)])
+    );
+    assert!(constrained.unresolved_edges.is_empty());
 }
 
 #[test]
@@ -122,6 +231,8 @@ fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
             (0x2000, "__call_callee".to_owned()),
             (0x2010, "callee".to_owned()),
         ]),
+        symbol_sizes_by_address: BTreeMap::new(),
+        local_text_symbols: BTreeSet::new(),
         call_trampoline_addresses: BTreeSet::from([0x2000]),
         relocated_calls_by_address: BTreeMap::from([(
             0x1000,
@@ -130,6 +241,7 @@ fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
                 target: Some(0x2000),
             },
         )]),
+        unresolved_relocations_by_address: BTreeMap::new(),
         global_pointer: None,
     };
     let result = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap();
@@ -161,8 +273,11 @@ fn ordered_control_flow_retains_call_multiplicity_and_loop_iterations() {
             (0x1000, "wrapper".to_owned()),
             (0x1014, "callee".to_owned()),
         ]),
+        symbol_sizes_by_address: BTreeMap::new(),
+        local_text_symbols: BTreeSet::new(),
         call_trampoline_addresses: BTreeSet::new(),
         relocated_calls_by_address: BTreeMap::new(),
+        unresolved_relocations_by_address: BTreeMap::new(),
         global_pointer: None,
     };
     let result = execute(&calls, &empty_svd(), "wrapper", Scenario::default()).unwrap();
@@ -509,6 +624,82 @@ fn unresolved_external_tail_call_fails_closed() {
 }
 
 #[test]
+fn reviewed_call_model_intercepts_linked_code_and_is_fully_consumed() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xef, 0x00, 0x00, 0x01, // jal ra, 16
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // padding
+            0x73, 0x00, 0x10, 0x00, // callee: ebreak (must not execute)
+        ],
+        24,
+    );
+    image
+        .symbols_by_name
+        .insert("platform_service".to_owned(), 0x1014);
+    image
+        .symbols_by_address
+        .insert(0x1014, "platform_service".to_owned());
+    let scenario = Scenario {
+        call_returns: BTreeMap::from([(
+            "platform_service".to_owned(),
+            VecDeque::from([0x1234_5678]),
+        )]),
+        ..Scenario::default()
+    };
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.return_value, 0x1234_5678);
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(result.ordered_calls[0].symbol, "platform_service");
+}
+
+#[test]
+fn reviewed_call_model_rejects_missing_and_unused_responses() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xef, 0x00, 0x00, 0x01, // jal ra, 16
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // padding
+            0x67, 0x80, 0x00, 0x00, // callee: ret
+        ],
+        24,
+    );
+    image
+        .symbols_by_name
+        .insert("platform_service".to_owned(), 0x1014);
+    image
+        .symbols_by_address
+        .insert(0x1014, "platform_service".to_owned());
+
+    let missing = Scenario {
+        call_returns: BTreeMap::from([("platform_service".to_owned(), VecDeque::new())]),
+        ..Scenario::default()
+    };
+    assert!(
+        execute(&image, &empty_svd(), "test", missing)
+            .unwrap_err()
+            .to_string()
+            .contains("without a remaining response")
+    );
+
+    let unused = Scenario {
+        call_returns: BTreeMap::from([("platform_service".to_owned(), VecDeque::from([1, 2]))]),
+        ..Scenario::default()
+    };
+    assert!(
+        execute(&image, &empty_svd(), "test", unused)
+            .unwrap_err()
+            .to_string()
+            .contains("unconsumed modeled call responses")
+    );
+}
+
+#[test]
 fn poison_memory_and_unseeded_mmio_fail_closed() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
     let empty_svd = empty_svd();
@@ -535,6 +726,97 @@ fn poison_memory_and_unseeded_mmio_fail_closed() {
             .unwrap_err()
             .to_string()
             .contains("no explicit seed or response")
+    );
+}
+
+#[test]
+fn unreachable_unresolved_relocation_does_not_block_an_independent_function() {
+    let mut image = tiny_image(
+        vec![
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // unrelated relocated data
+        ],
+        8,
+    );
+    image.unresolved_relocations_by_address.insert(
+        0x1004,
+        UnresolvedRelocation {
+            name: "unrelated_global".to_owned(),
+            r_type: object::elf::R_RISCV_32,
+            width: 4,
+        },
+    );
+
+    assert!(image.coverage_inventory("test").is_ok());
+    assert!(execute(&image, &empty_svd(), "test", Scenario::default()).is_ok());
+    assert_eq!(image.loaded_byte(0x1004), None);
+}
+
+#[test]
+fn instruction_fetch_through_unresolved_relocation_fails_closed() {
+    let mut image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    image.unresolved_relocations_by_address.insert(
+        0x1000,
+        UnresolvedRelocation {
+            name: "instruction_target".to_owned(),
+            r_type: object::elf::R_RISCV_HI20,
+            width: 4,
+        },
+    );
+
+    let inventory_error = image.coverage_inventory("test").unwrap_err().to_string();
+    assert!(inventory_error.contains("instruction fetch reached unresolved ELF relocation"));
+    assert!(inventory_error.contains("instruction_target"));
+    let execution_error = execute(&image, &empty_svd(), "test", Scenario::default())
+        .unwrap_err()
+        .to_string();
+    assert!(execution_error.contains("instruction fetch reached unresolved ELF relocation"));
+}
+
+#[test]
+fn ram_read_through_unresolved_relocated_word_requires_an_explicit_seed() {
+    let mut image = tiny_image(
+        vec![
+            0x03, 0xa5, 0x05, 0x00, // lw a0, 0(a1)
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // unresolved relocated word
+        ],
+        12,
+    );
+    image.unresolved_relocations_by_address.insert(
+        0x1008,
+        UnresolvedRelocation {
+            name: "global_pointer".to_owned(),
+            r_type: object::elf::R_RISCV_32,
+            width: 4,
+        },
+    );
+    let scenario = Scenario {
+        arguments: vec![0, 0x1008],
+        ..Scenario::default()
+    };
+    let error = execute(&image, &empty_svd(), "test", scenario)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("RAM read reached unresolved ELF relocation"));
+    assert!(error.contains("global_pointer"));
+
+    let mut seeded = Scenario {
+        arguments: vec![0, 0x1008],
+        ..Scenario::default()
+    };
+    seeded.memory_initial.extend(
+        0x1234_5678_u32
+            .to_le_bytes()
+            .into_iter()
+            .enumerate()
+            .map(|(offset, byte)| (0x1008 + offset as u32, byte)),
+    );
+    assert_eq!(
+        execute(&image, &empty_svd(), "test", seeded)
+            .unwrap()
+            .return_value,
+        0x1234_5678
     );
 }
 
@@ -626,6 +908,70 @@ fn fence_is_an_ordered_execution_event() {
             successor: 3,
         }]
     );
+}
+
+#[test]
+fn atomic_word_operations_preserve_rv32_wrapping_and_comparison_semantics() {
+    assert_eq!(atomic_word_result(AmoOp::Swap, 7, 11), 11);
+    assert_eq!(atomic_word_result(AmoOp::Add, u32::MAX, 2), 1);
+    assert_eq!(atomic_word_result(AmoOp::Xor, 0xaa, 0x0f), 0xa5);
+    assert_eq!(atomic_word_result(AmoOp::And, 0xaa, 0x0f), 0x0a);
+    assert_eq!(atomic_word_result(AmoOp::Or, 0xa0, 0x0f), 0xaf);
+    assert_eq!(atomic_word_result(AmoOp::Min, u32::MAX, 1), u32::MAX);
+    assert_eq!(atomic_word_result(AmoOp::Max, u32::MAX, 1), 1);
+    assert_eq!(atomic_word_result(AmoOp::Minu, u32::MAX, 1), 1);
+    assert_eq!(atomic_word_result(AmoOp::Maxu, u32::MAX, 1), u32::MAX);
+}
+
+#[test]
+fn executes_atomic_or_on_private_stack_memory() {
+    let image = tiny_image(
+        [
+            0xffc1_0293_u32, // addi t0, sp, -4
+            0x0002_a023,     // sw zero, 0(t0)
+            0x0550_0313,     // addi t1, zero, 0x55
+            0x4662_a52f,     // amoor.w.aqrl a0, t1, (t0)
+            0x0002_a583,     // lw a1, 0(t0)
+            0x00b5_6533,     // or a0, a0, a1
+            0x0000_8067,     // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        28,
+    );
+    let result = execute(&image, &empty_svd(), "test", Scenario::default()).unwrap();
+    assert_eq!(result.return_value, 0x55);
+    assert!(
+        result
+            .timeline
+            .iter()
+            .any(|event| matches!(event, ExecutionTimelineEvent::RamWrite { value: 0x55, .. }))
+    );
+}
+
+#[test]
+fn private_stack_fill_is_explicit_and_default_stack_remains_poison() {
+    let image = tiny_image(
+        [
+            0xfff1_0293_u32, // addi t0, sp, -1
+            0x0002_c503,     // lbu a0, 0(t0)
+            0x0000_8067,     // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        12,
+    );
+    let error = execute(&image, &empty_svd(), "test", Scenario::default()).unwrap_err();
+    assert!(error.to_string().contains("poison/unmapped memory"));
+
+    let scenario = Scenario {
+        private_stack_fill: Some(0xa5),
+        ..Scenario::default()
+    };
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.return_value, 0xa5);
 }
 
 #[test]

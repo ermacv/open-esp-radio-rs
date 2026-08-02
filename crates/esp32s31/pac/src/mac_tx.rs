@@ -1,11 +1,9 @@
 //! Generated-PAC ownership for ordinary EDCA TX queue transactions.
 
-use super::{RadioRegisters, device_fence};
+use super::{RadioRegisters, device_fence, generated};
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const ENABLE_VALID_MASK: u32 = 0xc000_0000;
-const ENABLE_MASK: u32 = 0x8000_0000;
-const VALID_MASK: u32 = 0x4000_0000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacLegacyTxProgram {
@@ -580,13 +578,10 @@ impl RadioRegisters {
         // the caller's earlier software image: formatter leaves may have
         // changed control fields after the initial PLCP0 publication.
         //
-        // SAFETY: the corresponding prepare method validated this ordinary
-        // queue. The RMW preserves its complete prepared hardware image and
-        // asserts only the two recovered ownership bits.
-        self.peripherals
-            .wifi_mac_tx_queue_control
-            .control(physical_bank(queue))
-            .modify(|r, w| unsafe { w.bits(r.bits() | ENABLE_VALID_MASK) });
+        generated::hal_mac_txq_enable_register_slice::generated_hal_mac_txq_enable_register_slice(
+            &self.peripherals.wifi_mac_tx_queue_control,
+            u32::from(queue),
+        );
         device_fence();
     }
 
@@ -635,7 +630,9 @@ impl RadioRegisters {
         let aux_c = completion.aux_c(bank).read().bits();
         let primary = completion.primary(bank).read().bits();
         let alternate = completion.alternate(bank).read().bits();
-        let trigger_flow = common.queue_state().read().trigger_flow().bits() & (1_u8 << queue) != 0;
+        let trigger_flow = generated::hal_mac_get_txq_in_trig_flow_state::generated_hal_mac_get_txq_in_trig_flow_state(common)
+            & (1_u32 << queue)
+            != 0;
         let clear = common.complete_clear().read().bits();
         // SAFETY: the complete recovery writes the preserved register image
         // with only this bounded ordinary-queue completion bit asserted.
@@ -695,11 +692,7 @@ impl RadioRegisters {
         if common.queue_state().read().bits() & timeout_mask == 0 {
             return false;
         }
-        // SAFETY: value three is the complete hal_mac_tx_set_cca disable
-        // encoding recovered for the bounded timeout transaction.
-        common
-            .cca_control()
-            .modify(|_, w| unsafe { w.force().bits(3) });
+        let _ = generated::hal_mac_tx_set_cca::generated_hal_mac_tx_set_cca(common, 3);
         device_fence();
         true
     }
@@ -712,25 +705,19 @@ impl RadioRegisters {
             return None;
         }
 
-        let control = self
-            .peripherals
-            .wifi_mac_tx_queue_control
-            .control(physical_bank(queue));
-        let control_image = control.read().bits();
-        let was_valid = control_image & VALID_MASK != 0;
-        // SAFETY: exact recovered full-image invalidate edge.
-        unsafe { control.write_with_zero(|w| w.bits(control_image & !VALID_MASK)) };
-        let cca_image = common.cca_control().read().bits();
-        // SAFETY: preserve the fresh image and clear only the generated field.
-        unsafe {
-            common
-                .cca_control()
-                .write_with_zero(|w| w.bits(cca_image & 0x3fff_ffff));
-        }
+        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
+        let queue = u32::from(queue);
+        let was_valid =
+            generated::hal_mac_is_txq_valid::generated_hal_mac_is_txq_valid(queue_control, queue)
+                != 0;
+        let _ = generated::hal_mac_set_txq_invalid::generated_hal_mac_set_txq_invalid(
+            queue_control,
+            queue,
+        );
+        let _ = generated::hal_mac_tx_set_cca::generated_hal_mac_tx_set_cca(common, 0);
         if was_valid {
-            let invalid_image = control.read().bits();
-            // SAFETY: exact recovered conditional disable edge.
-            unsafe { control.write_with_zero(|w| w.bits(invalid_image & !ENABLE_MASK)) };
+            let _ =
+                generated::hal_mac_txq_disable::generated_hal_mac_txq_disable(queue_control, queue);
         }
         // SAFETY: bounded queue maps to one instruction-proven W1C timeout bit.
         unsafe {
@@ -739,19 +726,70 @@ impl RadioRegisters {
                 .write_with_zero(|w| w.bits(timeout_mask));
         }
         device_fence();
-        Some(control.read().bits() & ENABLE_VALID_MASK == 0)
+        Some(
+            generated::hal_mac_is_txq_enabled::generated_hal_mac_is_txq_enabled(
+                queue_control,
+                queue,
+            ) == 0
+                && generated::hal_mac_is_txq_valid::generated_hal_mac_is_txq_valid(
+                    queue_control,
+                    queue,
+                ) == 0,
+        )
+    }
+
+    /// Disable and acknowledge one ordinary-queue collision edge.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[lmac.o]::lmacProcessCollisions`
+    /// reaches `hal_mac_txq_disable` before `hal_mac_clr_txq_state(0, q)`.
+    /// The recovered strict runtime additionally proves the low-nibble queue
+    /// bitmap and the absence of the MPLEN branch for an ordinary MPDU.
+    pub fn abort_mac_tx_collision(&mut self, queue: u8) -> bool {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let collision_mask = 1_u32 << queue;
+        let common = &self.peripherals.wifi_mac_tx_common;
+        if common.queue_state().read().bits() & collision_mask == 0 {
+            return false;
+        }
+
+        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
+        let _ = generated::hal_mac_txq_disable::generated_hal_mac_txq_disable(
+            queue_control,
+            u32::from(queue),
+        );
+        device_fence();
+        // SAFETY: the bounded queue maps to one low-nibble W1C collision bit.
+        unsafe {
+            common
+                .queue_state_clear()
+                .write_with_zero(|w| w.bits(collision_mask));
+        }
+        device_fence();
+        generated::hal_mac_is_txq_enabled::generated_hal_mac_is_txq_enabled(
+            queue_control,
+            u32::from(queue),
+        ) == 0
+            && generated::hal_mac_is_txq_valid::generated_hal_mac_is_txq_valid(
+                queue_control,
+                u32::from(queue),
+            ) == 0
     }
 
     pub fn detach_completed_mac_tx(&mut self, queue: u8) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let control = self
-            .peripherals
-            .wifi_mac_tx_queue_control
-            .control(physical_bank(queue));
-        let image = control.read().bits();
-        // SAFETY: exact recovered full-image queue close edge.
-        unsafe { control.write_with_zero(|w| w.bits(image & !ENABLE_VALID_MASK)) };
+        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
+        let _ = generated::hal_mac_txq_disable::generated_hal_mac_txq_disable(
+            queue_control,
+            u32::from(queue),
+        );
         device_fence();
-        control.read().bits() & ENABLE_VALID_MASK == 0
+        generated::hal_mac_is_txq_enabled::generated_hal_mac_is_txq_enabled(
+            queue_control,
+            u32::from(queue),
+        ) == 0
+            && generated::hal_mac_is_txq_valid::generated_hal_mac_is_txq_valid(
+                queue_control,
+                u32::from(queue),
+            ) == 0
     }
 }

@@ -7,7 +7,7 @@
   <vendorID>ESP</vendorID>
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
-  <version>3.49</version>
+  <version>3.51</version>
   <description>
     Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
@@ -125,6 +125,7 @@
   </peripherals>
   <vendorExtensions>
     <openEspRadioProvenance>
+      <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453</source>
       <source id="S31_ESP_PACS_SVD">local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/svd/esp32s31.svd</source>
@@ -153,7 +154,7 @@
       <source id="BLOB_LIBPP_HAL_TSF_RUNTIME">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_enable_nan_tsf size 0x26, hal_disable_nan_tsf size 0x22, hal_disable_softap_tsf size 0x12, hal_set_sta_tbtt size 0x6e, hal_set_sta_tbtt_interval size 0x18, hal_set_sta_light_sleep_wake_ahead_time size 0x16, hal_is_sta_tsf_active size 0x0c and hal_tsf_clear_soc_wakeup_request size 0x14; complete hal_mac.o hal_enable_sta_btwt_tsf size 0x3e.</source>
       <source id="BLOB_LIBPP_HAL_COEX_RUNTIME">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_coex.o hal_set_rx_beacon_time size 0x2c, hal_set_rx_beacon_pti size 0x2a, hal_clear_rx_beacon_pti size 0x12, hal_set_itwt_pti size 0x26 and hal_clr_itwt_pti size 0x16.</source>
       <source id="BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_sta_beacon_filter size 0x2c, hal_disable_sta_beacon_filter size 0x22 and hal_beacon_ie_crc_get size 0x0c; complete hal_mac_ctl.o hal_mac_interrupt_clr_bsscolor size 0x12, hal_he_set_hw_qos_null_ra_to_trans size 0x44 and hal_ifc_get_bb_err_bitmap size 0x30; complete hal_mac_rx.o hal_mac_rx_get_end_state size 0x0c and hal_mac_rx_get_end_info size 0x3c; complete hal_sniffer.o hal_sniffer_rx_clr_statistics size 0x1e.</source>
-      <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o pwr_hal_set_mac_modem_state_wakeup_protect_enable size 0x14 and disable size 0x16, plus their shared control-word leaves.</source>
+      <source id="BLOB_LIBPP_HAL_PWR">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_pwr.o modem-power leaves from pwr_hal_set_mac_modem_beacon_miss_timeout size 0x18 through pwr_hal_set_mac_modem_tbtt_auto_period_interval size 0x20. The promoted fields are limited to complete no-call RMW bodies at 0x2010d834, 0x2010d838, 0x2010d83c, 0x2010d854 and 0x2010d858.</source>
       <source id="BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_set_mmss_and_aid body, size 0x82.</source>
       <source id="BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE">_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac_ctl.o hal_he_bssid_init size 0x4c, hal_he_bssid_deinit size 0x1e and hal_he_set_power_save size 0x36. Interface-zero init performs four ordered fresh-read RMW edges: set WDEV_HE_BSSID0_CONF bit 31, clear bits 30:29, set WDEV_RX_POWER_SAVE_CONF bit 29, then set bit 28. _oracles/libnet80211.a sha256 92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f; complete wl_cnx.o cnx_connect_to_bss size 0x2b6 calls interface-zero init after associated-STA receive policy when the peer and cipher admit HE, before clearing the color bitmap and calling hal_he_set_bss_color.</source>
       <source id="HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30">../esp32s31_rust/firmware/esp32s31/app/src/open_radio_phy_prelude_hil.rs on ESP32-S31 rev0, open PHY/MAC, standard psram-code-psram-data profile and controlled HE20 AP, 2026-07-30. After association, WPA2/CCMP, TID0 AddBA and sustained 32-MPDU HE MCS9 transmission, typed PAC diagnostics read HE_BSSID_ENABLE=1, BSSID_SELECT=0, INTRA_PPDU_PS_ENABLE=1 and INTRA_PS_CHECK_BSS_COLOR_ENABLE=1. The AP advertised disabled BSS color 0x99, so BSS_COLOR_ENABLE correctly remained zero.</source>

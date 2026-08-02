@@ -23,6 +23,16 @@ const PATH_ROLES: &[&str] = &[
     "rust-companion",
 ];
 
+fn is_source_path_role(role: &str) -> bool {
+    let Some((kind, source)) = role.split_once(':') else {
+        return false;
+    };
+    matches!(
+        kind,
+        "source-artifact" | "source-inventory" | "source-companion"
+    ) && crate::verification::dispositions::validate_source_id(source, 0).is_ok()
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RunSpec {
     inputs: Vec<(String, PathBuf)>,
@@ -51,7 +61,7 @@ impl RunSpec {
                 }
                 "input" => {
                     let (role, path) = split_value(value, line_number)?;
-                    if !PATH_ROLES.contains(&role) {
+                    if !PATH_ROLES.contains(&role) && !is_source_path_role(role) {
                         return Err(format!(
                             "unsupported input role {role:?} at line {line_number}"
                         )
@@ -141,5 +151,28 @@ mod tests {
         assert_eq!(arguments[0], "--rom-artifact");
         assert!(arguments[1].ends_with("inputs/rom.elf"));
         assert_eq!(&arguments[2..], ["--rust-artifact", "/tmp/probes.elf"]);
+    }
+
+    #[test]
+    fn arbitrary_source_roles_become_source_qualified_options() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-validator-source-run-spec-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.run");
+        std::fs::write(
+            &path,
+            "schema 1\ninput source-artifact:libpp inputs/libpp.elf\ninput source-inventory:libpp inputs/libpp.a\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        let mut arguments = Vec::new();
+        run.append_defaults(&mut arguments);
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(arguments[0], "--source-artifact:libpp");
+        assert!(arguments[1].ends_with("inputs/libpp.elf"));
+        assert_eq!(arguments[2], "--source-inventory:libpp");
+        assert!(arguments[3].ends_with("inputs/libpp.a"));
     }
 }

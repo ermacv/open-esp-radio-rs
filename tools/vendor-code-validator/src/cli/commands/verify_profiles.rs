@@ -49,6 +49,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
     let mut mismatched = 0_usize;
     for profile in &loaded_profiles {
         println!("PROFILE\t{}\tBEGIN", profile.name);
+        let argument_domain = profile.coverage_argument_constraints();
         let result = compare_execution_scenarios(
             svd,
             ExecutionInput {
@@ -62,6 +63,7 @@ pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> 
                 symbol: &profile.rust_symbol,
             },
             profile.compare_return,
+            &argument_domain,
             &profile.scenarios,
         )?;
         match result {

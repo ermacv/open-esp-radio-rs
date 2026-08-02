@@ -1,11 +1,13 @@
 //! Machine-readable concrete equivalence profiles.
 
-use std::{fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use crate::{
     MemoryObservation, NamedScenario, Result, execution, observe_memory, parse_assignment,
     parse_symbol_observation, parse_symbol_word, parse_u32, seed_ram_word,
 };
+
+use super::dispositions::validate_source_id;
 
 #[derive(Clone, Debug)]
 pub struct Profile {
@@ -15,7 +17,35 @@ pub struct Profile {
     pub rust_symbol: String,
     pub contract: ProfileContract,
     pub compare_return: bool,
+    pub argument_ranges: Vec<ArgumentRange>,
     pub scenarios: Vec<NamedScenario>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArgumentRange {
+    pub index: usize,
+    pub min: u32,
+    pub max: u32,
+}
+
+impl Profile {
+    /// Enumerates the explicitly admissible ABI argument domain for static
+    /// reachability. Arguments without an `arg-range` remain unknown.
+    pub fn coverage_argument_constraints(&self) -> Vec<[Option<u32>; 8]> {
+        let mut constraints = vec![[None; 8]];
+        for range in &self.argument_ranges {
+            let mut expanded = Vec::new();
+            for constraint in constraints {
+                for value in range.min..=range.max {
+                    let mut constraint = constraint;
+                    constraint[range.index] = Some(value);
+                    expanded.push(constraint);
+                }
+            }
+            constraints = expanded;
+        }
+        constraints
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -42,6 +72,7 @@ struct ProfileBuilder {
     rust_symbol: Option<String>,
     contract: ProfileContract,
     compare_return: bool,
+    argument_ranges: Vec<ArgumentRange>,
     scenarios: Vec<NamedScenario>,
     current_scenario: Option<NamedScenario>,
 }
@@ -58,6 +89,8 @@ impl ProfileBuilder {
         if self.scenarios.is_empty() {
             return Err(format!("profile {} has no cases", self.name).into());
         }
+        self.argument_ranges.sort_by_key(|range| range.index);
+        validate_argument_domain(&self.name, &self.argument_ranges, &self.scenarios)?;
         Ok(Profile {
             name: self.name,
             vendor_source: self.vendor_source.ok_or("profile has no vendor-source")?,
@@ -65,6 +98,7 @@ impl ProfileBuilder {
             rust_symbol: self.rust_symbol.ok_or("profile has no rust-symbol")?,
             contract: self.contract,
             compare_return: self.compare_return,
+            argument_ranges: self.argument_ranges,
             scenarios: self.scenarios,
         })
     }
@@ -75,6 +109,113 @@ impl ProfileBuilder {
             .map(|scenario| &mut scenario.scenario)
             .ok_or_else(|| format!("profile directive before case at line {line}").into())
     }
+}
+
+fn parse_argument_range(value: &str, line: usize) -> Result<ArgumentRange> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    let [index, min, max] = fields.as_slice() else {
+        return Err(format!("arg-range requires INDEX MIN MAX at line {line}").into());
+    };
+    let index = parse_u32(index)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or_else(|| format!("invalid arg-range index at line {line}"))?;
+    let min = parse_u32(min).ok_or_else(|| format!("invalid arg-range minimum at line {line}"))?;
+    let max = parse_u32(max).ok_or_else(|| format!("invalid arg-range maximum at line {line}"))?;
+    Ok(ArgumentRange { index, min, max })
+}
+
+fn validate_argument_domain(
+    profile: &str,
+    ranges: &[ArgumentRange],
+    scenarios: &[NamedScenario],
+) -> Result<()> {
+    const MAX_DOMAIN_CASES: u64 = 4_096;
+
+    for pair in ranges.windows(2) {
+        if pair[0].index == pair[1].index {
+            return Err(format!("profile {profile} repeats arg-range {}", pair[0].index).into());
+        }
+    }
+    let mut domain_size = 1_u64;
+    for range in ranges {
+        if range.index >= 8 {
+            return Err(
+                format!("profile {profile} arg-range index exceeds RV32 ABI a0..a7").into(),
+            );
+        }
+        if range.min > range.max {
+            return Err(format!(
+                "profile {profile} arg-range {} has minimum above maximum",
+                range.index
+            )
+            .into());
+        }
+        domain_size = domain_size
+            .checked_mul(u64::from(range.max) - u64::from(range.min) + 1)
+            .ok_or_else(|| format!("profile {profile} argument domain overflows"))?;
+        if domain_size > MAX_DOMAIN_CASES {
+            return Err(format!(
+                "profile {profile} argument domain has {domain_size} cases; maximum is {MAX_DOMAIN_CASES}"
+            )
+            .into());
+        }
+    }
+
+    if ranges.is_empty() {
+        return Ok(());
+    }
+
+    let mut covered = BTreeSet::new();
+    for scenario in scenarios {
+        let mut projection = [None; 8];
+        for range in ranges {
+            let value = scenario
+                .scenario
+                .arguments
+                .get(range.index)
+                .copied()
+                .ok_or_else(|| {
+                    format!(
+                        "profile {profile} case {} does not provide constrained argument {}",
+                        scenario.name, range.index
+                    )
+                })?;
+            if !(range.min..=range.max).contains(&value) {
+                return Err(format!(
+                    "profile {profile} case {} argument {} value {value:#x} is outside {:#x}..={:#x}",
+                    scenario.name, range.index, range.min, range.max
+                )
+                .into());
+            }
+            projection[range.index] = Some(value);
+        }
+        covered.insert(projection);
+    }
+
+    let profile_stub = Profile {
+        name: String::new(),
+        vendor_source: String::new(),
+        vendor_symbol: String::new(),
+        rust_symbol: String::new(),
+        contract: ProfileContract::Scenario,
+        compare_return: false,
+        argument_ranges: ranges.to_vec(),
+        scenarios: Vec::new(),
+    };
+    for expected in profile_stub.coverage_argument_constraints() {
+        if !covered.contains(&expected) {
+            let values = ranges
+                .iter()
+                .map(|range| format!("a{}={:#x}", range.index, expected[range.index].unwrap()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "profile {profile} has no case for admissible argument combination {values}"
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn split_directive(line: &str, line_number: usize) -> Result<(&str, &str)> {
@@ -111,11 +252,7 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
             .ok_or_else(|| format!("directive before profile at line {line_number}"))?;
         match directive {
             "vendor-source" => {
-                if !matches!(value, "rom" | "archive") {
-                    return Err(
-                        format!("invalid vendor-source {value:?} at line {line_number}").into(),
-                    );
-                }
+                validate_source_id(value, line_number)?;
                 profile.vendor_source = Some(value.to_owned());
             }
             "vendor-symbol" => profile.vendor_symbol = Some(value.to_owned()),
@@ -136,6 +273,9 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
                     .parse()
                     .map_err(|_| format!("invalid boolean at line {line_number}"))?;
             }
+            "arg-range" => profile
+                .argument_ranges
+                .push(parse_argument_range(value, line_number)?),
             "case" => {
                 profile.finish_scenario();
                 profile.current_scenario = Some(NamedScenario::new(value.to_owned()));

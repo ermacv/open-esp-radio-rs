@@ -27,17 +27,19 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_REGDMA_CONTROL</name>
-      <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Wi-Fi MAC REGDMA link selection updated by the complete ic_mac_init tail after every vendor channel change. Exact pre-auth vendor state and connected open HIL require link four.</description>
+      <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-partial]. Shared WDEVPWR control word. The channel-change leaf proves the REGDMA selector, while complete modem-power leaves prove the wake-protect lead time and TBTT auto-period fields. Hardware interactions between these fields remain unqualified.</description>
       <baseAddress>0x2010d83c</baseAddress>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. pwr_hal_select_wifimac_regdma_link replaces bits 20:17; ic_mac_init and the working open no-power-save restart select link four.</description>
+          <description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,BLOB_LIBPP_HAL_PWR,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-partial]. Shared REGDMA and modem wakeup configuration word. Every promoted field has a complete independent setter; their combined hardware lifecycle is not inferred.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>17</bitWidth></field>
+            <field><name>MODEM_WAKEUP_PROTECT_EARLY_TIME</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits.</description><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field>
+            <field><name>MODEM_TBTT_AUTO_PERIOD_INTERVAL</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits.</description><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MODEM_TBTT_AUTO_PERIOD_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated enable and disable leaves set or clear bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
       </registers>
@@ -70,14 +72,15 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_STA_TSF_LOAD</name>
-      <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf transaction: publish the low and high 32-bit station TSF value, then assert the station load request through a fresh-read RMW.</description>
+      <description>SOURCE[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Shared station TSF load and coherent snapshot transaction.</description>
       <baseAddress>0x2010d814</baseAddress>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF,ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
+            <field><name>SNAPSHOT_STATION_TSF</name><description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>LOAD_STATION_TSF</name><description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -91,6 +94,18 @@
           <name>VALUE_HIGH</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TSF]; CONFIDENCE[instruction-exact]. High 32 bits written second by complete hal_set_sta_tsf.</description>
           <addressOffset>0x08</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_LOW</name>
+          <description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0x0c</addressOffset><size>32</size><access>read-only</access>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_HIGH</name>
+          <description>SOURCE[ROM_REV0_HAL_GET_STA_TSF]; CONFIDENCE[instruction-exact]. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0x10</addressOffset><size>32</size><access>read-only</access>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
         </register>
       </registers>
@@ -114,9 +129,29 @@
         </register>
         <register>
           <name>SOC_WAKEUP_CLEAR</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30 through a fresh-read RMW. Whether the hardware treats the bit as a pulse or retained request acknowledgement is not inferred.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_TSF_RUNTIME,BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>CLEAR_REQUEST</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields>
+            <field><name>BEACON_FILTER_FORCE_SYNC_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated setter replaces bits 9:0.</description><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_SYNC_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit 10.</description><bitOffset>10</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_DUMP_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated setter replaces bits 17:11.</description><bitOffset>11</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>BEACON_FILTER_FORCE_DUMP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit 21.</description><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_SLEEP_COUNTER</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 28.</description><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_MISS_COUNTER</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 29.</description><bitOffset>29</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_REQUEST</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CLEAR_BEACON_INFO</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated clear leaf sets bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_SLEEP_LIMIT_CONTROL</name>
+          <description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.</description>
+          <addressOffset>0x08</addressOffset><size>32</size><access>read-write</access>
+          <fields>
+            <field><name>BEACON_MISS_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>BEACON_MISS_LIMIT_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit four.</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>MODEM_STATE_SLEEP_LIMIT</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit.</description><bitOffset>5</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. Dedicated enable/disable leaves set or clear bit fifteen.</description><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
         </register>
         <register>
           <name>STA_LIGHT_SLEEP_WAKE_AHEAD</name>
@@ -126,7 +161,7 @@
         </register>
         <register>
           <name>RX_BEACON_TIME_LOW</name>
-          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME]; CONFIDENCE[instruction-exact]. Complete hal_set_rx_beacon_time replaces the low sixteen bits from its first argument before publishing the remaining recovered byte in WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.</description>
+          <description>SOURCE[BLOB_LIBPP_HAL_COEX_RUNTIME,BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-partial]. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.</description>
           <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
           <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
         </register>

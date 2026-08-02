@@ -98,6 +98,7 @@ pub(crate) struct TargetSpec {
     pub(crate) pointer_width: u8,
     pub(crate) rust_target: String,
     pub(crate) svd_paths: Vec<PathBuf>,
+    pub(crate) pac_bindings: Option<PathBuf>,
     pub(crate) profiles: Option<PathBuf>,
     pub(crate) dispositions: Option<PathBuf>,
     pub(crate) evidence_baseline: Option<PathBuf>,
@@ -115,6 +116,7 @@ impl TargetSpec {
         let mut pointer_width = None;
         let mut rust_target = None;
         let mut svd_paths = Vec::new();
+        let mut pac_bindings = None;
         let mut profiles = None;
         let mut dispositions = None;
         let mut evidence_baseline = None;
@@ -179,6 +181,12 @@ impl TargetSpec {
                     set_token(&mut rust_target, value, directive, line_number)?;
                 }
                 "svd" => svd_paths.push(resolve_path(base, value)),
+                "pac-bindings" => set_once(
+                    &mut pac_bindings,
+                    resolve_path(base, value),
+                    directive,
+                    line_number,
+                )?,
                 "profiles" => set_once(
                     &mut profiles,
                     resolve_path(base, value),
@@ -219,6 +227,7 @@ impl TargetSpec {
             pointer_width: pointer_width.ok_or("target spec has no pointer-width")?,
             rust_target: rust_target.ok_or("target spec has no rust-target")?,
             svd_paths,
+            pac_bindings,
             profiles,
             dispositions,
             evidence_baseline,

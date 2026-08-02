@@ -9,7 +9,7 @@ on:
       - "hil/esp32s31/trace-probes/**"
       - "hil/vendor-oracle/esp32s31/trace-elf/**"
       - "svd/**"
-      - "tools/phy-trace/**"
+      - "tools/vendor-code-validator/**"
       - ".github/workflows/oracle-regression.yml"
 
 permissions:
@@ -18,13 +18,16 @@ permissions:
 jobs:
   qualify:
     # This environment should require approval. The dedicated runner exposes
-    # pinned proprietary inputs read-only at ESP32S31_ORACLE_ROOT and never
+    # authenticated proprietary inputs read-only at ESP32S31_ORACLE_ROOT and never
     # executes pull-request code.
     environment: oracle-regression
     runs-on: [self-hosted, linux, x64, esp32s31-oracles]
     timeout-minutes: 30
     env:
       ESP32S31_ORACLE_ROOT: /opt/open-esp-radio/oracles/esp32s31
+      ESP32S31_ROM_SHA256: ${{ vars.ESP32S31_ROM_SHA256 }}
+      ESP32S31_LIBPHY_SHA256: ${{ vars.ESP32S31_LIBPHY_SHA256 }}
+      VALIDATOR_RUN_SPEC: ${{ runner.temp }}/esp32s31-oracle.run
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Rust toolchain
@@ -33,10 +36,16 @@ jobs:
           --target riscv32imafc-unknown-none-elf
           --component rust-src
       - run: rustup default 1.97.1
-      - name: Attach read-only oracle inputs
+      - name: Authenticate caller-owned oracle inputs
         run: |
+          test -n "$ESP32S31_ROM_SHA256"
+          test -n "$ESP32S31_LIBPHY_SHA256"
           test -r "$ESP32S31_ORACLE_ROOT/libphy.a"
           test -r "$ESP32S31_ORACLE_ROOT/esp32s31_rev0_rom.elf"
+          printf '%s  %s\n' "$ESP32S31_ROM_SHA256" "$ESP32S31_ORACLE_ROOT/esp32s31_rev0_rom.elf" | sha256sum --check --strict
+          printf '%s  %s\n' "$ESP32S31_LIBPHY_SHA256" "$ESP32S31_ORACLE_ROOT/libphy.a" | sha256sum --check --strict
+      - name: Attach read-only oracle inputs
+        run: |
           ln -s "$ESP32S31_ORACLE_ROOT" _oracles
       - name: Build pinned vendor oracle ELF
         run: >-
@@ -48,23 +57,25 @@ jobs:
           cargo build --manifest-path hil/esp32s31/Cargo.toml
           -p open-esp-radio-hil-esp32s31-trace-probes-elf
           --target riscv32imafc-unknown-none-elf --release
-      - name: Run pinned regression qualification
+      - name: Bind caller-owned validation inputs
+        run: |
+          printf '%s\n' \
+            'schema 1' \
+            "input rom-artifact $ESP32S31_ORACLE_ROOT/esp32s31_rev0_rom.elf" \
+            "input archive-artifact $GITHUB_WORKSPACE/hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf" \
+            "input archive-inventory $ESP32S31_ORACLE_ROOT/libphy.a" \
+            "input rom-companion $GITHUB_WORKSPACE/hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf" \
+            "input archive-companion $ESP32S31_ORACLE_ROOT/esp32s31_rev0_rom.elf" \
+            "input rust-artifact $GITHUB_WORKSPACE/hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-hil-esp32s31-trace-probes-elf" \
+            > "$VALIDATOR_RUN_SPEC"
+      - name: Run authenticated regression qualification
         run: |
           set -o pipefail
-          cargo run --quiet --manifest-path tools/phy-trace/Cargo.toml -- \
-            verify-all \
-            --svd svd/esp32s31-radio.svd \
-            --svd svd/esp32s31-platform-radio-deps.svd \
-            --rom-artifact _oracles/esp32s31_rev0_rom.elf \
-            --archive-artifact hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
-            --archive-inventory _oracles/libphy.a \
-            --rom-companion hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
-            --archive-companion _oracles/esp32s31_rev0_rom.elf \
-            --rust-artifact hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-hil-esp32s31-trace-probes-elf \
-            --profiles tools/phy-trace/profiles/esp32s31.profile \
-            --dispositions tools/phy-trace/dispositions/esp32s31.disposition \
+          cargo run --quiet --manifest-path tools/vendor-code-validator/Cargo.toml -- \
+            verify inventory \
+            --target-spec validation/esp32s31/target.spec \
+            --run-spec "$VALIDATOR_RUN_SPEC" \
             --gate regression --match-floor 104 \
-            --evidence-baseline tools/phy-trace/baselines/esp32s31.evidence \
             --json-report oracle-regression.json \
             | tee oracle-regression.log
       - name: Upload qualification report

@@ -91,7 +91,7 @@ for package in "${production_packages[@]}"; do
         --edges normal,build \
         --prefix none >"$audit_dir/dependencies-$package"
     if rg \
-        '^open-esp-radio-(phy-trace|pac-gen|hil-runner|.*trace-probes|.*vendor-oracle)' \
+        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|.*trace-probes|.*vendor-oracle))' \
         "$audit_dir/dependencies-$package"
     then
         echo "qualification dependency survived in production package $package" >&2
@@ -118,7 +118,8 @@ test -f "$runtime_elf"
 # executable sections and reject statically resolved jumps/calls into the
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
-cargo phy-trace audit-direct-targets \
+cargo vendor-code-validator image audit-targets \
+    --target-spec validation/esp32s31/target.spec \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \
     --forbid 'esp32s31-eco0-radio-body=0x2f823c12..0x2f83e6d0'

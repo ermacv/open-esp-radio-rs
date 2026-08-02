@@ -3,8 +3,9 @@
 //! Link-time probes for compiled vendor/Rust MMIO comparison.
 //!
 //! These wrappers are test-harness artifacts, never driver entry points. Fat
-//! LTO inlines the safe HAL leaf into each retained symbol so `phy-trace` can
-//! compare the resulting instruction-level MMIO transaction sequence.
+//! LTO inlines the safe HAL leaf into each retained symbol so the vendor-code
+//! validator can compare the resulting instruction-level MMIO transaction
+//! sequence.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
 
@@ -57,7 +58,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     }
 }
 
-/// Harness-only delay edge intercepted by `phy-trace` before this body runs.
+/// Harness-only delay edge intercepted by the vendor-code validator before this body runs.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn ets_delay_us(micros: u32) {

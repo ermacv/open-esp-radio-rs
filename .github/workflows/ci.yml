@@ -32,7 +32,7 @@ jobs:
           --all-targets --no-deps --locked -- -D warnings
       - name: Lint the validator
         run: >-
-          cargo clippy --manifest-path tools/phy-trace/Cargo.toml
+          cargo clippy --manifest-path tools/vendor-code-validator/Cargo.toml
           --all-targets --no-deps --locked -- -D warnings
       - name: Check generated PAC files
         run: cargo pac-gen --check

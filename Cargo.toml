@@ -14,7 +14,13 @@ members = [
     "tools/hil-runner",
     "tools/capability-ledger",
     "tools/pac-gen",
-    "tools/phy-trace",
+    "tools/vendor-code-validator",
+    "tools/vendor-code-validator/crates/backend-riscv",
+    "tools/vendor-code-validator/crates/core",
+    "tools/vendor-code-validator/crates/harness-esp32s31",
+    "tools/vendor-code-validator/crates/harness-esp32s31-semantic",
+    "tools/vendor-code-validator/crates/model",
+    "tools/vendor-code-validator/crates/semantic",
 ]
 exclude = ["hil/esp32s31", "hil/vendor-oracle/esp32s31"]
 resolver = "3"

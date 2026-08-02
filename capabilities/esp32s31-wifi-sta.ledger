@@ -4,7 +4,7 @@
 # qualification and bounded/non-applicable scheduling.
 ledger-version 1
 target esp32s31-wifi-sta
-disposition-manifest tools/phy-trace/dispositions/esp32s31.disposition
+disposition-manifest validation/esp32s31/dispositions/phy.disposition
 require-capability cold-registration
 require-capability rf-bb-initialization
 require-capability channel-selection-switch

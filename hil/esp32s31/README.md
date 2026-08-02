@@ -28,8 +28,8 @@ explicitly excluded sibling workspace at `../vendor-oracle/esp32s31` and is
 reachable only through `cargo hil oracle ...`.
 
 The `trace-probes` member is another test-only artifact. It contains retained
-LTO wrappers used by `cargo phy-trace` to compare compiled PAC/HAL leaves with
-vendor ELF/archive symbols; it is not linked into board firmware.
+LTO wrappers used by `cargo vendor-code-validator` to compare compiled PAC/HAL
+leaves with vendor ELF/archive symbols; it is not linked into board firmware.
 
 Common commands from the repository root:
 

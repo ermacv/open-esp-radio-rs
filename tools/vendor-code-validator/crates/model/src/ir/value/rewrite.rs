@@ -1,0 +1,431 @@
+//! Token and caller/private-stack context substitution.
+
+use super::*;
+
+impl SymbolicValue {
+    pub fn substitute(
+        &self,
+        arguments: &[SymbolicValue],
+        read_tokens: &[u32],
+        memory_read_tokens: &[u32],
+        external_tokens: &[u32],
+    ) -> std::result::Result<Self, String> {
+        if let Some(index) = self.direct_input_index() {
+            return arguments
+                .get(usize::from(index))
+                .cloned()
+                .ok_or_else(|| format!("call argument {index} is outside the modeled call"));
+        }
+        if let Self::SymbolAddress { lo_addend, .. } = self {
+            return lo_addend
+                .is_some()
+                .then(|| self.clone())
+                .ok_or_else(|| "incomplete relocation escaped across a call boundary".to_owned());
+        }
+        if matches!(self, Self::FunctionTable(_) | Self::FunctionPointer { .. }) {
+            return Ok(self.clone());
+        }
+        if let Self::Expression {
+            operation,
+            left,
+            right,
+        } = self
+        {
+            return Ok(Self::Expression {
+                operation: *operation,
+                left: Box::new(left.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                right: Box::new(right.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+            });
+        }
+        if let Self::WideSignedDivide {
+            dividend_low,
+            dividend_high,
+            divisor_low,
+            divisor_high,
+            high_word,
+        } = self
+        {
+            return Ok(Self::WideSignedDivide {
+                dividend_low: Box::new(dividend_low.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                dividend_high: Box::new(dividend_high.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                divisor_low: Box::new(divisor_low.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                divisor_high: Box::new(divisor_high.substitute(
+                    arguments,
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                )?),
+                high_word: *high_word,
+            });
+        }
+        if let Self::StackAddress(_) = self {
+            return Ok(self.clone());
+        }
+        if matches!(self, Self::ExternalTable(_) | Self::ExternalFunction { .. }) {
+            return Err("non-scalar value escaped across a call boundary".to_owned());
+        }
+        let bits = self.bits();
+        let mut substituted = [BitSource::Unknown; 32];
+        for (destination, source) in bits.into_iter().enumerate() {
+            substituted[destination] = match source {
+                BitSource::Unknown => BitSource::Unknown,
+                BitSource::Constant(value) => BitSource::Constant(value),
+                BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                } => {
+                    let argument = arguments.get(usize::from(index)).ok_or_else(|| {
+                        format!("call argument {index} is outside the modeled call")
+                    })?;
+                    let source = argument.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit,
+                    inverted,
+                } => BitSource::Register {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("callee MMIO read token {read_token} has no caller mapping")
+                    })?,
+                    address,
+                    bit,
+                    inverted,
+                },
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::IndexedRegister {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("callee MMIO read token {read_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::Memory {
+                    read_token,
+                    bit,
+                    inverted,
+                } => {
+                    let read_token =
+                        *memory_read_tokens.get(read_token as usize).ok_or_else(|| {
+                            format!("callee memory read token {read_token} has no caller mapping")
+                        })?;
+                    if read_token & PRIVATE_STACK_READ_TOKEN_FLAG != 0 {
+                        BitSource::PrivateStack {
+                            read_token: read_token & !PRIVATE_STACK_READ_TOKEN_FLAG,
+                            bit,
+                            inverted,
+                        }
+                    } else {
+                        BitSource::Memory {
+                            read_token,
+                            bit,
+                            inverted,
+                        }
+                    }
+                }
+                BitSource::PrivateStack { .. } => {
+                    return Err(
+                        "callee private-stack read escaped across a call boundary".to_owned()
+                    );
+                }
+                BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                },
+                BitSource::ExternalResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResult {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("callee external-call token {call_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+            };
+        }
+        Ok(Self::from_bits(substituted))
+    }
+
+    pub fn rewrite_call_context(
+        &self,
+        read_tokens: &[u32],
+        memory_read_tokens: &[u32],
+        external_tokens: &[u32],
+        call_results: &BTreeMap<u32, SymbolicValue>,
+        private_stack_reads: &BTreeMap<u32, SymbolicValue>,
+    ) -> std::result::Result<Self, String> {
+        if let Self::SymbolAddress { lo_addend, .. } = self {
+            return lo_addend
+                .is_some()
+                .then(|| self.clone())
+                .ok_or_else(|| "incomplete relocation escaped across a call boundary".to_owned());
+        }
+        if matches!(self, Self::FunctionTable(_) | Self::FunctionPointer { .. }) {
+            return Ok(self.clone());
+        }
+        if let Self::Expression {
+            operation,
+            left,
+            right,
+        } = self
+        {
+            return Ok(Self::Expression {
+                operation: *operation,
+                left: Box::new(left.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+                right: Box::new(right.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+            });
+        }
+        if let Self::WideSignedDivide {
+            dividend_low,
+            dividend_high,
+            divisor_low,
+            divisor_high,
+            high_word,
+        } = self
+        {
+            return Ok(Self::WideSignedDivide {
+                dividend_low: Box::new(dividend_low.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+                dividend_high: Box::new(dividend_high.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+                divisor_low: Box::new(divisor_low.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+                divisor_high: Box::new(divisor_high.rewrite_call_context(
+                    read_tokens,
+                    memory_read_tokens,
+                    external_tokens,
+                    call_results,
+                    private_stack_reads,
+                )?),
+                high_word: *high_word,
+            });
+        }
+        if let Self::StackAddress(_) = self {
+            return Ok(self.clone());
+        }
+        if matches!(self, Self::ExternalTable(_) | Self::ExternalFunction { .. }) {
+            return Err("non-scalar value escaped across a call boundary".to_owned());
+        }
+        let bits = self.bits();
+        let mut rewritten = [BitSource::Unknown; 32];
+        for (destination, source) in bits.into_iter().enumerate() {
+            rewritten[destination] = match source {
+                BitSource::Unknown => BitSource::Unknown,
+                BitSource::Constant(value) => BitSource::Constant(value),
+                BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                } => BitSource::Input {
+                    index,
+                    bit,
+                    inverted,
+                },
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit,
+                    inverted,
+                } => BitSource::Register {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller MMIO read token {read_token} has no flattened mapping")
+                    })?,
+                    address,
+                    bit,
+                    inverted,
+                },
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::IndexedRegister {
+                    read_token: *read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller MMIO read token {read_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::Memory {
+                    read_token,
+                    bit,
+                    inverted,
+                } => BitSource::Memory {
+                    read_token: *memory_read_tokens.get(read_token as usize).ok_or_else(|| {
+                        format!("caller memory read token {read_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::PrivateStack {
+                    read_token,
+                    bit,
+                    inverted,
+                } => {
+                    let value = private_stack_reads.get(&read_token).ok_or_else(|| {
+                        format!("private-stack read {read_token} is not available")
+                    })?;
+                    let source = value.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => {
+                    let result = call_results
+                        .get(&call_token)
+                        .ok_or_else(|| format!("call result {call_token} is not available"))?;
+                    let source = result.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                BitSource::ExternalResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResult {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("caller external-call token {call_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+            };
+        }
+        Ok(Self::from_bits(rewritten))
+    }
+
+    pub fn rewrite_private_stack_context(
+        &self,
+        private_stack_reads: &BTreeMap<u32, SymbolicValue>,
+    ) -> std::result::Result<Self, String> {
+        if let Self::Expression {
+            operation,
+            left,
+            right,
+        } = self
+        {
+            return Ok(Self::Expression {
+                operation: *operation,
+                left: Box::new(left.rewrite_private_stack_context(private_stack_reads)?),
+                right: Box::new(right.rewrite_private_stack_context(private_stack_reads)?),
+            });
+        }
+        if let Self::WideSignedDivide {
+            dividend_low,
+            dividend_high,
+            divisor_low,
+            divisor_high,
+            high_word,
+        } = self
+        {
+            return Ok(Self::WideSignedDivide {
+                dividend_low: Box::new(
+                    dividend_low.rewrite_private_stack_context(private_stack_reads)?,
+                ),
+                dividend_high: Box::new(
+                    dividend_high.rewrite_private_stack_context(private_stack_reads)?,
+                ),
+                divisor_low: Box::new(
+                    divisor_low.rewrite_private_stack_context(private_stack_reads)?,
+                ),
+                divisor_high: Box::new(
+                    divisor_high.rewrite_private_stack_context(private_stack_reads)?,
+                ),
+                high_word: *high_word,
+            });
+        }
+        if matches!(
+            self,
+            Self::SymbolAddress { .. }
+                | Self::StackAddress(_)
+                | Self::ExternalTable(_)
+                | Self::ExternalFunction { .. }
+                | Self::FunctionTable(_)
+                | Self::FunctionPointer { .. }
+        ) {
+            return Ok(self.clone());
+        }
+        let mut rewritten = [BitSource::Unknown; 32];
+        for (destination, source) in self.bits().into_iter().enumerate() {
+            rewritten[destination] = match source {
+                BitSource::PrivateStack {
+                    read_token,
+                    bit,
+                    inverted,
+                } => {
+                    let value = private_stack_reads.get(&read_token).ok_or_else(|| {
+                        format!("private-stack read {read_token} is not available")
+                    })?;
+                    let source = value.bits()[usize::from(bit)];
+                    if inverted { source.inverted() } else { source }
+                }
+                other => other,
+            };
+        }
+        Ok(Self::from_bits(rewritten))
+    }
+}

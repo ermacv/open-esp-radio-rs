@@ -1,0 +1,12 @@
+[package]
+name = "open-radio-vendor-validator-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Architecture-neutral contract model for vendor code validation"
+
+[lints]
+workspace = true

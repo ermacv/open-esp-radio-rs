@@ -1,0 +1,17 @@
+[package]
+name = "open-radio-vendor-backend-riscv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "RISC-V 32-bit analysis, execution and reference-code backend"
+
+[dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
+open-radio-vendor-validator-model = { path = "../model" }
+rv-asm = "=0.2.1"
+
+[lints]
+workspace = true

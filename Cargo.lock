@@ -1133,17 +1133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-phy-trace"
-version = "0.1.0"
-dependencies = [
- "object",
- "open-esp-radio-esp32s31-phy",
- "roxmltree",
- "rv-asm",
- "sha2",
-]
-
-[[package]]
 name = "open-esp-radio-wpa2"
 version = "0.1.0"
 dependencies = [
@@ -1152,6 +1141,64 @@ dependencies = [
  "pbkdf2",
  "sha1",
  "zeroize",
+]
+
+[[package]]
+name = "open-radio-vendor-backend-riscv"
+version = "0.1.0"
+dependencies = [
+ "object",
+ "open-radio-vendor-validator-model",
+ "rv-asm",
+]
+
+[[package]]
+name = "open-radio-vendor-code-validator"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-harness-esp32s31",
+ "open-radio-vendor-harness-esp32s31-semantic",
+ "open-radio-vendor-validator-model",
+ "open-radio-vendor-validator-semantic",
+ "sha2",
+]
+
+[[package]]
+name = "open-radio-vendor-harness-esp32s31"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-validator-core",
+]
+
+[[package]]
+name = "open-radio-vendor-harness-esp32s31-semantic"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-phy",
+ "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-harness-esp32s31",
+ "open-radio-vendor-validator-semantic",
+ "sha2",
+]
+
+[[package]]
+name = "open-radio-vendor-validator-core"
+version = "0.1.0"
+
+[[package]]
+name = "open-radio-vendor-validator-model"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-validator-core",
+ "roxmltree",
+]
+
+[[package]]
+name = "open-radio-vendor-validator-semantic"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-validator-model",
 ]
 
 [[package]]

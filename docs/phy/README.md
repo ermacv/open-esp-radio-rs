@@ -1,7 +1,7 @@
 # PHY binary parity
 
 PHY parity is verified from compiled vendor and Rust code by
-[`open-esp-radio-phy-trace`](../../tools/phy-trace/README.md). The generated
+[`vendor-code-validator`](../../tools/vendor-code-validator/README.md). The generated
 report is the inventory and open-work list; this directory does not maintain a
 parallel, hand-written function ledger.
 

@@ -1,0 +1,24 @@
+[package]
+name = "open-radio-vendor-code-validator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Compiled vendor-code analysis, reference generation and Rust behavior validation"
+
+[[bin]]
+name = "vendor-code-validator"
+path = "src/main.rs"
+
+[dependencies]
+open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
+open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31" }
+open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-semantic" }
+open-radio-vendor-validator-model = { path = "crates/model" }
+open-radio-vendor-validator-semantic = { path = "crates/semantic" }
+sha2 = "=0.10.9"
+
+[lints]
+workspace = true

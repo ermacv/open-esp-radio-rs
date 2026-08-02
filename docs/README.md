@@ -31,8 +31,11 @@ change; do not append completed chronology to a live backlog.
 
 ## Research and qualification evidence
 
-- The [compiled PHY verifier](../tools/phy-trace/README.md) inventories vendor
-  functions and reports instruction-level parity gaps directly from binaries.
+- The [vendor code validator](../tools/vendor-code-validator/README.md)
+  inventories vendor functions and reports instruction-level parity gaps
+  directly from binaries.
+- The [validator migration architecture](VENDOR_CODE_VALIDATOR_ARCHITECTURE.md)
+  separates the generic engine, ISA backends, CLI and chip-specific harnesses.
 - [Register provenance](esp32s31-radio-register-provenance.md) records the
   basis and confidence for recovered register descriptions.
 - [Debug oracles](esp32s31-debug-oracles.md) records comparison-only symbol and

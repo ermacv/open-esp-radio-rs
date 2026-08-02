@@ -24,7 +24,8 @@ only opt-in exception.
 | `crates/esp32s31/phy` | PHY initialization and calibration state machines |
 | `crates/esp32s31/wifi/mac` | ESP32-S31 Wi-Fi MAC, RX/TX and rate control |
 | `hil/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
-| `tools` | Capability/PHY validators, PAC generator, HIL runner and source-only artifact audit |
+| `tools/vendor-code-validator` | Compiled vendor/Rust analysis, reference generation and validation workflows |
+| `tools` | Capability ledger, PAC generator, HIL runner and source-only artifact audit |
 | `svd` | Editable ESP32-S31 radio register description |
 
 Chip-wide packages follow `open-esp-radio-esp32s31-<layer>`. Protocol-specific

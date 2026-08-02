@@ -1,0 +1,9 @@
+# Copy this file outside the repository or keep the copy untracked.
+# Paths are resolved relative to the copied run spec.
+schema 1
+input rom-artifact /path/to/esp32s31_rev0_rom.elf
+input archive-artifact /path/to/linked-libphy.elf
+input archive-inventory /path/to/libphy.a
+input rom-companion /path/to/linked-libphy.elf
+input archive-companion /path/to/esp32s31_rev0_rom.elf
+input rust-artifact /path/to/rust-trace-probes.elf

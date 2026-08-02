@@ -1495,6 +1495,46 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
 }
 
 #[test]
+fn live_rx_ring_snapshots_only_the_current_contiguous_frontier() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    assert_eq!(live.completed_frontier_len(), 0);
+    descriptors[0].write_word0(completed);
+    descriptors[1].write_word0(completed);
+    descriptors[3].write_word0(completed);
+    assert_eq!(live.completed_frontier_len(), 2);
+
+    assert!(live.take_completed(0).is_some());
+    assert_eq!(live.completed_frontier_len(), 0);
+    let first = live
+        .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.descriptor_count, 1);
+
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
+    assert_eq!(live.completed_frontier_len(), 1);
+}
+
+#[test]
 fn live_rx_ring_replenishes_the_available_variable_prefix() {
     const COUNT: usize = 4;
     const BASE: u32 = 0x2f00_1000;

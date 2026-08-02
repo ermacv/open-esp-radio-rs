@@ -28,6 +28,7 @@ use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork, PowerIrq
 pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     state: IrqState,
     rx: Signal<M, ()>,
+    rx_capacity: Signal<M, ()>,
     tx: Signal<M, ()>,
     tx_pending: AtomicU32,
     rx_post_count: AtomicU32,
@@ -38,6 +39,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         Self {
             state: IrqState::new(),
             rx: Signal::new(),
+            rx_capacity: Signal::new(),
             tx: Signal::new(),
             tx_pending: AtomicU32::new(0),
             rx_post_count: AtomicU32::new(0),
@@ -70,15 +72,20 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx.wait().await;
     }
 
-    /// Schedule another finite RX bottom-half pass without pretending that a
-    /// second hardware interrupt occurred.
+    /// Wake a radio actor stopped by staging ownership backpressure.
     ///
-    /// Descriptor ownership is the durable source of work. A bounded RX
-    /// service uses this edge when it consumed its complete per-pass budget
-    /// while more completions may already be present.
+    /// This is distinct from a hardware RX edge: while backpressured, new RX
+    /// interrupts must not repeatedly win ordered arbitration over a pending TX
+    /// completion. The protocol consumer emits this only after it has actually
+    /// returned one staging credit.
     #[inline]
-    pub fn continue_rx(&self) {
-        self.rx.signal(());
+    pub fn notify_rx_capacity(&self) {
+        self.rx_capacity.signal(());
+    }
+
+    /// Wait until protocol processing returns at least one staging credit.
+    pub async fn wait_rx_capacity(&self) {
+        self.rx_capacity.wait().await;
     }
 
     /// Wait for and consume coalesced TX completion, timeout or collision bits.
@@ -215,12 +222,13 @@ mod tests {
     }
 
     #[test]
-    fn software_rx_continuation_does_not_forge_interrupt_evidence() {
+    fn staging_capacity_wake_does_not_forge_interrupt_evidence() {
         let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
-        runtime.continue_rx();
+        runtime.notify_rx_capacity();
+        embassy_futures::block_on(runtime.wait_rx_capacity());
 
-        assert!(runtime.rx_signaled());
+        assert!(!runtime.rx_signaled());
         assert_eq!(runtime.rx_post_count(), 0);
     }
 

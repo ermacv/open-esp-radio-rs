@@ -190,6 +190,18 @@ impl ConnectedRxDispatcher {
         self.config
     }
 
+    /// Return whether this staged unit can publish an Ethernet frame.
+    ///
+    /// This deliberately performs only immutable public-header
+    /// classification. It does not advance duplicate history or authenticate
+    /// payload bytes, so an async integration may acquire network capacity
+    /// before the finite dispatch without changing protocol state.
+    pub fn may_publish_ethernet(&self, segment: RxSegment<'_>) -> bool {
+        public_frame_control(segment.buffer).is_some_and(|frame_control| {
+            frame_control & (DATA_TYPE_MASK | PROTECTED) == DATA_TYPE | PROTECTED
+        })
+    }
+
     /// Consume one staged S31 frame and publish its connected-station effects.
     ///
     /// The supplied segment is already detached from DMA ownership. This call

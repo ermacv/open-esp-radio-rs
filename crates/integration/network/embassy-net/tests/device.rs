@@ -1,5 +1,7 @@
 use core::{
+    future::Future,
     mem::MaybeUninit,
+    pin::pin,
     task::{Context, Waker},
 };
 
@@ -71,6 +73,66 @@ fn invalid_and_full_rx_frames_are_reported() {
         radio.try_send_rx(&[0; ETHERNET_HEADER_LEN]),
         Err(RxEnqueueError::QueueFull)
     );
+}
+
+#[test]
+fn pinned_rx_publisher_exposes_a_real_capacity_edge() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+    publisher.try_send(&[0; ETHERNET_HEADER_LEN]).unwrap();
+    assert_eq!(publisher.free_capacity(), 0);
+
+    {
+        let mut ready = pin!(publisher.wait_ready());
+        assert!(ready.as_mut().poll(&mut context()).is_pending());
+        let received = device.receive(&mut context()).unwrap();
+        drop(received);
+        assert!(ready.as_mut().poll(&mut context()).is_ready());
+    }
+    assert_eq!(publisher.free_capacity(), 1);
+    drop(publisher);
+
+    let mut replacement = radio.rx_publisher();
+    replacement
+        .try_send(&[0; ETHERNET_HEADER_LEN])
+        .expect("dropping a reservation returns its unique RX slot");
+}
+
+#[test]
+fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+
+    publisher
+        .try_send_parts([1; 6], [2; 6], 0x0800, &[3; 8])
+        .unwrap();
+    let (first, reply) = device.receive(&mut context()).unwrap();
+    let first_address = first.consume(|frame| {
+        assert_eq!(&frame[..6], &[1; 6]);
+        assert_eq!(&frame[6..12], &[2; 6]);
+        assert_eq!(&frame[12..14], &0x0800_u16.to_be_bytes());
+        assert_eq!(&frame[14..], &[3; 8]);
+        frame.as_mut_ptr()
+    });
+    drop(reply);
+
+    publisher.try_send(&[0xa5; ETHERNET_HEADER_LEN]).unwrap();
+    let (second, reply) = device.receive(&mut context()).unwrap();
+    let second_address = second.consume(|frame| {
+        assert_eq!(frame, &[0xa5; ETHERNET_HEADER_LEN]);
+        frame.as_mut_ptr()
+    });
+    drop(reply);
+
+    assert_eq!(first_address, second_address);
 }
 
 #[test]

@@ -1,0 +1,384 @@
+//! Host receiver and report writer for the production UDP TX qualification.
+
+use std::{
+    fs,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
+
+use crate::{
+    Result,
+    bidirectional::{AmpduEvidence, SerialCapture, qualify_tx_log},
+};
+
+const DEFAULT_PORT: u16 = 9_002;
+const DEVICE_SOURCE_PORT: u16 = 4_324;
+const DEFAULT_DURATION: Duration = Duration::from_secs(16);
+const BURST_IDLE: Duration = Duration::from_millis(500);
+const MIN_BURST_DATAGRAMS: u64 = 1_000;
+
+#[derive(Debug, Eq, PartialEq)]
+struct Options {
+    device: Ipv4Addr,
+    port: u16,
+    duration: Duration,
+    serial: PathBuf,
+    bandwidth_mhz: u16,
+    rate_kbps: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Burst {
+    bytes: u64,
+    datagrams: u64,
+    missing: u64,
+    reordered: u64,
+    elapsed_us: u64,
+    started_at_zero: bool,
+}
+
+impl Burst {
+    fn throughput_kbps(self) -> u64 {
+        self.bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(self.elapsed_us.max(1))
+            .unwrap_or(0)
+    }
+}
+
+struct ActiveBurst {
+    evidence: Burst,
+    started: Instant,
+    last: Instant,
+    next_sequence: u32,
+}
+
+impl ActiveBurst {
+    fn new(sequence: u32, length: usize, now: Instant) -> Self {
+        Self {
+            evidence: Burst {
+                bytes: length as u64,
+                datagrams: 1,
+                started_at_zero: sequence == 0,
+                ..Burst::default()
+            },
+            started: now,
+            last: now,
+            next_sequence: sequence.wrapping_add(1),
+        }
+    }
+
+    fn push(&mut self, sequence: u32, length: usize, now: Instant) {
+        if sequence >= self.next_sequence {
+            self.evidence.missing = self
+                .evidence
+                .missing
+                .saturating_add(u64::from(sequence - self.next_sequence));
+        } else {
+            self.evidence.reordered = self.evidence.reordered.saturating_add(1);
+        }
+        self.next_sequence = sequence.wrapping_add(1);
+        self.evidence.bytes = self.evidence.bytes.saturating_add(length as u64);
+        self.evidence.datagrams = self.evidence.datagrams.saturating_add(1);
+        self.last = now;
+    }
+
+    fn finish(mut self) -> Burst {
+        self.evidence.elapsed_us = self
+            .last
+            .duration_since(self.started)
+            .as_micros()
+            .try_into()
+            .unwrap_or(u64::MAX)
+            .max(1);
+        self.evidence
+    }
+}
+
+pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+    if arguments
+        .first()
+        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
+    {
+        print_help();
+        return Ok(());
+    }
+    let options = parse_options(&arguments)?;
+    let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
+    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let route_probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
+    route_probe.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
+    let host_address = match route_probe.local_addr()? {
+        SocketAddr::V4(address) => *address.ip(),
+        SocketAddr::V6(_) => return Err("TX qualification requires IPv4".into()),
+    };
+    // Admit the reverse benchmark flow through stateful host firewalls
+    // without changing firewall policy. The TX-only firmware owns a bounded
+    // one-packet RX queue on this port, so the probe cannot grow unbounded or
+    // enter the measured radio TX accounting.
+    socket.send_to(&[0], SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
+
+    let capture = SerialCapture::start(&options.serial);
+    let bursts = receive_bursts(&socket, options.device, options.duration)?;
+    let log = capture.finish();
+    let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
+    fs::create_dir_all(&output)?;
+    fs::write(output.join("uart.log"), &log)?;
+
+    let qualified: Vec<_> = bursts
+        .iter()
+        .copied()
+        .filter(|burst| burst.started_at_zero && burst.datagrams >= MIN_BURST_DATAGRAMS)
+        .collect();
+    if qualified.len() < 2 {
+        return Err(format!(
+            "received only {} complete TX bursts; rebuild/flash with OPEN_RADIO_TX_BENCH_TARGET_IPV4={host_address}",
+            qualified.len(),
+        )
+        .into());
+    }
+    let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
+    let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
+    if missing != 0 || reordered != 0 {
+        return Err(format!(
+            "host observed TX loss/reordering: missing={missing} reordered={reordered}"
+        )
+        .into());
+    }
+    let host_floor = qualified
+        .iter()
+        .map(|burst| burst.throughput_kbps())
+        .min()
+        .expect("at least two qualified bursts");
+    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.rate_kbps)?;
+    write_report(
+        &output,
+        TxReport {
+            options: &options,
+            host_address,
+            bursts: &qualified,
+            host_floor_kbps: host_floor,
+            device_floor_kbps: tx.throughput_floor_kbps,
+            device_samples: tx.sample_count,
+            ampdu: tx.ampdu,
+        },
+    )?;
+    println!(
+        "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
+         device_floor_kbps={} bursts={} missing=0 reordered=0 \
+         ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",
+        tx.throughput_floor_kbps,
+        qualified.len(),
+        tx.ampdu.subframes as f64 / tx.ampdu.aggregates.max(1) as f64,
+        tx.ampdu.thirtyone,
+        tx.ampdu.full32,
+        output.join("report.md").display(),
+    );
+    Ok(())
+}
+
+fn print_help() {
+    println!(
+        "cargo hil traffic tx <device-ipv4> [options]\n\
+         \n\
+         --seconds <8..300> capture duration (default 16)\n\
+         --port <port>      host UDP sink (default 9002)\n\
+         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
+         --phy <he20|ht40> expected TX vector (default he20)\n\n\
+         Build and flash `udp-tx` with OPEN_RADIO_TX_BENCH_TARGET_IPV4 set to \
+         this host's LAN IPv4 before starting the capture."
+    );
+}
+
+fn parse_options(arguments: &[String]) -> Result<Options> {
+    let device = arguments
+        .first()
+        .ok_or("missing ESP32-S31 IPv4 address")?
+        .parse::<Ipv4Addr>()?;
+    let mut options = Options {
+        device,
+        port: DEFAULT_PORT,
+        duration: DEFAULT_DURATION,
+        serial: PathBuf::from("/dev/ttyACM0"),
+        bandwidth_mhz: 20,
+        rate_kbps: 114_700,
+    };
+    let mut index = 1;
+    while index < arguments.len() {
+        let value = arguments
+            .get(index + 1)
+            .ok_or("TX option requires a value")?;
+        match arguments[index].as_str() {
+            "--seconds" => {
+                let seconds = value.parse::<u64>()?;
+                if !(8..=300).contains(&seconds) {
+                    return Err("--seconds must be in 8..=300".into());
+                }
+                options.duration = Duration::from_secs(seconds);
+            }
+            "--port" => options.port = value.parse::<u16>()?,
+            "--serial" => options.serial = PathBuf::from(value),
+            "--phy" => match value.as_str() {
+                "he20" => {
+                    options.bandwidth_mhz = 20;
+                    options.rate_kbps = 114_700;
+                }
+                "ht40" => {
+                    options.bandwidth_mhz = 40;
+                    options.rate_kbps = 150_000;
+                }
+                _ => return Err("--phy must be he20 or ht40".into()),
+            },
+            other => return Err(format!("unknown TX option `{other}`").into()),
+        }
+        index += 2;
+    }
+    if options.port == 0 {
+        return Err("--port must be nonzero".into());
+    }
+    Ok(options)
+}
+
+fn receive_bursts(
+    socket: &UdpSocket,
+    expected_device: Ipv4Addr,
+    duration: Duration,
+) -> Result<Vec<Burst>> {
+    let deadline = Instant::now() + duration;
+    let mut packet = [0_u8; 2_048];
+    let mut active: Option<ActiveBurst> = None;
+    let mut bursts = Vec::new();
+    while Instant::now() < deadline {
+        match socket.recv_from(&mut packet) {
+            Ok((length, source)) => {
+                if !matches!(source, SocketAddr::V4(source) if *source.ip() == expected_device) {
+                    continue;
+                }
+                let Some(encoded) = packet.get(..4).and_then(|bytes| bytes.try_into().ok()) else {
+                    continue;
+                };
+                let sequence = u32::from_be_bytes(encoded);
+                let now = Instant::now();
+                if sequence == 0 && active.is_some() {
+                    bursts.push(active.take().expect("checked active burst").finish());
+                }
+                match &mut active {
+                    Some(active) => active.push(sequence, length, now),
+                    None => active = Some(ActiveBurst::new(sequence, length, now)),
+                }
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if active
+                    .as_ref()
+                    .is_some_and(|active| active.last.elapsed() >= BURST_IDLE)
+                {
+                    bursts.push(active.take().expect("checked active burst").finish());
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    if let Some(active) = active {
+        bursts.push(active.finish());
+    }
+    Ok(bursts)
+}
+
+struct TxReport<'a> {
+    options: &'a Options,
+    host_address: Ipv4Addr,
+    bursts: &'a [Burst],
+    host_floor_kbps: u64,
+    device_floor_kbps: u64,
+    device_samples: usize,
+    ampdu: AmpduEvidence,
+}
+
+fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
+    let datagrams: u64 = report.bursts.iter().map(|burst| burst.datagrams).sum();
+    let bytes: u64 = report.bursts.iter().map(|burst| burst.bytes).sum();
+    let terminal_exchanges = report
+        .ampdu
+        .completed
+        .saturating_add(report.ampdu.timeout)
+        .saturating_add(report.ampdu.collision);
+    fs::write(
+        output.join("report.md"),
+        format!(
+            "# Open-radio TX-only HIL\n\n\
+             - Result: `PASS`\n\
+             - Device/host: `{}` / `{}`\n\
+             - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
+             - Host receive floor: `{:.3} Mbit/s`\n\
+             - Device socket floor: `{:.3} Mbit/s` across `{}` samples\n\
+             - Host missing/reordered datagrams: `0` / `0`\n\n\
+             ## A-MPDU evidence\n\n\
+             - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
+             - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
+             - Exact 31 / full 32: `{}` / `{}`\n\
+             - Build stop at frame / capacity / empty queue: `{}` / `{}` / `{}`\n\
+             - Acknowledged/individual fallback: `{}` / `{}`\n\
+             - Hardware timeouts/collisions: `{}` / `{}`\n\
+             - Preparation average/max: `{:.2}` / `{}` us\n\
+             - Publication average/max: `{:.2}` / `{}` us\n\
+             - Exchange average/max: `{:.2}` / `{}` us\n\n\
+             UART evidence is in [`uart.log`](uart.log).\n",
+            report.options.device,
+            report.host_address,
+            report.bursts.len(),
+            report.host_floor_kbps as f64 / 1_000.0,
+            report.device_floor_kbps as f64 / 1_000.0,
+            report.device_samples,
+            report.ampdu.aggregates,
+            report.ampdu.completed,
+            report.ampdu.publications,
+            report.ampdu.subframes,
+            report.ampdu.subframes as f64 / report.ampdu.aggregates.max(1) as f64,
+            report.ampdu.minimum,
+            report.ampdu.maximum,
+            report.ampdu.thirtyone,
+            report.ampdu.full32,
+            report.ampdu.stop_frame,
+            report.ampdu.stop_capacity,
+            report.ampdu.stop_empty,
+            report.ampdu.acknowledged,
+            report.ampdu.individual_retry,
+            report.ampdu.timeout,
+            report.ampdu.collision,
+            report.ampdu.preparation_us as f64 / report.ampdu.aggregates.max(1) as f64,
+            report.ampdu.preparation_max_us,
+            report.ampdu.publication_us as f64 / report.ampdu.publications.max(1) as f64,
+            report.ampdu.publication_max_us,
+            report.ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64,
+            report.ampdu.exchange_max_us,
+        ),
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_tx_options() {
+        let options = parse_options(&[
+            "192.168.178.141".into(),
+            "--seconds".into(),
+            "8".into(),
+            "--phy".into(),
+            "ht40".into(),
+        ])
+        .unwrap();
+        assert_eq!(options.duration, Duration::from_secs(8));
+        assert_eq!(options.bandwidth_mhz, 40);
+        assert_eq!(options.rate_kbps, 150_000);
+    }
+}

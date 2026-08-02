@@ -12,10 +12,13 @@
 //! descriptor and vendor-object pointers never escape into the network stack,
 //! and both directions apply explicit bounded backpressure.
 //!
-//! [`PinnedResources`] provides the high-throughput alternative: the network
-//! stack writes directly into a permanently located slot with caller-selected
-//! headroom and trailer space. The radio receives a lease to that same slot,
-//! so an IEEE 802.11 encoder can replace the prefix without copying payload.
+//! [`PinnedResources`] provides the high-throughput alternative. On RX, the
+//! protocol adapter copies directly into a permanently located final slot and
+//! passes only its index to the network stack. On TX, the network stack writes
+//! directly into a separate permanently located slot with caller-selected
+//! headroom and trailer space. The radio receives a lease to that same TX
+//! slot, so an IEEE 802.11 encoder can replace the prefix without copying
+//! payload.
 
 use core::{
     mem::MaybeUninit,
@@ -37,8 +40,8 @@ use embassy_sync::{
 mod pinned;
 
 pub use pinned::{
-    PinnedDevice, PinnedRadioRunner, PinnedResources, PinnedRxPublisher, PinnedTransmitToken,
-    PinnedTxFrame, PinnedTxPool,
+    PinnedDevice, PinnedRadioRunner, PinnedReceiveToken, PinnedResources, PinnedRxPublisher,
+    PinnedTransmitToken, PinnedTxFrame, PinnedTxPool,
 };
 
 /// Ethernet header length, excluding an FCS.

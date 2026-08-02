@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::console::emergency_log;
-use embassy_futures::select::select4;
+use embassy_futures::select::{select, select5};
 use embassy_net::{
     Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
     udp::{PacketMetadata, UdpSocket},
@@ -58,9 +58,9 @@ use open_esp_radio::{
             },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxRingError,
-                RxRingLive, RxRingStopped, RxSegment, build_cold_ring, disable_receive,
-                enable_receive, extract_ccmp_data, extract_data, extract_management,
-                first_segment_layout, publish_cold_ring,
+                RxRingLive, RxRingStopped, RxSegment, build_cold_ring, decode_rx_phy_info,
+                disable_receive, enable_receive, extract_ccmp_data, extract_data,
+                extract_management, first_segment_layout, publish_cold_ring,
             },
             rx_pool::{RxStagePool, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
             scan::{ScanObservation, ScanRecord, ScanTable},
@@ -75,7 +75,10 @@ use open_esp_radio::{
     },
     integration::{
         esp32s31::wifi_embassy::{
-            aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
+            aggregate_tx::{
+                AggregateTxConfig, AggregateTxCounterSnapshot, AggregateTxCounters,
+                Esp32s31ConnectedTx,
+            },
             backend::Esp32s31WifiBackend,
             connected_control::Esp32s31ConnectedControl,
             control_tx::{
@@ -91,11 +94,13 @@ use open_esp_radio::{
                 ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE, EmbassyNetConnectedRxSink,
                 Esp32s31ConnectedRx, Esp32s31RxDmaStorage, RxEnqueueCounters,
             },
+            rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
             single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxConfig},
             sta_join::{
                 EmbassyStaJoinTimer, StaJoinBackend, StaJoinRunner, StaJoinRxDirective,
                 StaJoinRxObserver,
             },
+            staged_rx::{Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue},
             wpa2::{
                 EmbassyWpa2HandshakeTimer, Wpa2HandshakeBackend, Wpa2HandshakeConfig,
                 Wpa2HandshakeRunner, Wpa2KeyInstallBackend, Wpa2KeyInstallRunner,
@@ -202,6 +207,17 @@ const OPEN_RADIO_UDP_RX_PORT: u16 = 4_323;
 const OPEN_RADIO_UDP_RX_QUEUE_DEPTH: usize = 64;
 const OPEN_RADIO_UDP_PAYLOAD_CAPACITY: usize = 1_472;
 const OPEN_RADIO_UDP_TX_QUEUE_DEPTH: usize = 16;
+// The simultaneous qualification owns a second socket so RX can remain bound
+// while the ordinary TX benchmark socket drives uplink traffic. It retains two
+// complete 32-MPDU bursts for the same reason as the RX-only profile: a socket
+// resource bound must not turn one cooperative executor interval into packet
+// loss. This is PSRAM-backed socket storage, not a per-poll processing limit.
+const OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH {
+    OPEN_RADIO_UDP_RX_QUEUE_DEPTH
+} else {
+    1
+};
+const OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH: usize = 1;
 // Only one benchmark direction is compiled into a HIL image. Keep the
 // inactive direction at one packet instead of reserving another 23 KiB of
 // internal SRAM. HIL 2026-07-29: retaining two 16-packet payload rings reduced
@@ -221,6 +237,9 @@ const OPEN_RADIO_UDP_TX_BENCH_PORT: u16 = 9_002;
 const OPEN_RADIO_UDP_TX_BENCH_DURATION: Duration = Duration::from_secs(5);
 const OPEN_RADIO_UDP_RX_IDLE: Duration = Duration::from_millis(750);
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
+const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
+    option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
+const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 // Every HE matrix owns a synthetic A-MPDU traffic source. Requiring a second
 // independent build flag previously allowed the matrix selector and its log
 // labels to be active while no matrix traffic was generated.
@@ -630,6 +649,10 @@ const STA_ARP_TARGET_IPV4: [u8; 4] = selected_ipv4(
     option_env!("OPEN_RADIO_STA_GATEWAY_IPV4"),
     DEFAULT_STA_ARP_TARGET_IPV4,
 );
+const OPEN_RADIO_TX_BENCH_TARGET_IPV4: [u8; 4] = selected_ipv4(
+    option_env!("OPEN_RADIO_TX_BENCH_TARGET_IPV4"),
+    STA_ARP_TARGET_IPV4,
+);
 const STA_HIL_IPV4: [u8; 4] =
     selected_ipv4(option_env!("OPEN_RADIO_STA_IPV4"), DEFAULT_STA_HIL_IPV4);
 // The controlled Linux AP normally serves both as the gateway and as the
@@ -754,6 +777,9 @@ static OPEN_RADIO_RX_STAGE_POOL: RxStagePool<
     VENDOR_LARGE_RX_SLOT_COUNT,
     VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
 > = RxStagePool::new();
+type StagedRxQueue =
+    Esp32s31StagedRxQueue<'static, CriticalSectionRawMutex, VENDOR_LARGE_RX_SLOT_COUNT>;
+static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
 type NetworkResources = OpenRadioNetworkResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -860,10 +886,11 @@ impl<'a> RadioHilJoinFixture<'a> {
         self.radio
     }
 }
-// The embassy-net queues are CPU-owned and are never presented to the Wi-Fi
-// DMA engine. In the qualified `psram-code-psram-data` runtime ordinary `.bss`
-// already lives in PSRAM; an explicit `.psram.bss` input section would bypass
-// the runtime payload layout and overlap `.runtime.payload_end`.
+// The embassy-net RX slots and index queues are CPU-owned and are never
+// presented to the Wi-Fi DMA engine. In the qualified
+// `psram-code-psram-data` runtime ordinary `.bss` already lives in PSRAM; an
+// explicit `.psram.bss` input section would bypass the runtime payload layout
+// and overlap `.runtime.payload_end`.
 //
 // Standalone flash-XIP A-MSDU HIL previously left 33,160 bytes between
 // `_stack_end` and `_stack_start`. The WPA2 path crossed that frontier and
@@ -873,7 +900,7 @@ impl<'a> RadioHilJoinFixture<'a> {
 static OPEN_RADIO_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
 static OPEN_RADIO_CONTROL_RESOURCES: StaticCell<ControlResources> = StaticCell::new();
 // Only allocations actually addressed by Wi-Fi DMA are forced into SRAM.
-// Embassy RX frames, channels and link state remain ordinary PSRAM data.
+// Embassy RX slots, channels and link state remain ordinary PSRAM data.
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
@@ -882,7 +909,8 @@ static OPEN_RADIO_NETWORK_TX_POOL: StaticCell<NetworkTxPool> = StaticCell::new()
 // the selected UDP benchmark, and the post-DHCP external-network probe.
 // The probe intentionally remains alive after it primes the neighbor cache,
 // so its slot cannot be shared with the benchmark socket.
-static OPEN_RADIO_STACK_RESOURCES: StaticCell<StackResources<4>> = StaticCell::new();
+static OPEN_RADIO_STACK_RESOURCES: StaticCell<StackResources<OPEN_RADIO_STACK_SOCKET_COUNT>> =
+    StaticCell::new();
 static OPEN_RADIO_UDP_RX_METADATA: StaticCell<[PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]> =
     StaticCell::new();
 static OPEN_RADIO_UDP_RX_BUFFER: StaticCell<
@@ -894,6 +922,20 @@ static OPEN_RADIO_UDP_TX_BUFFER: StaticCell<
     [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
 > = StaticCell::new();
 static OPEN_RADIO_UDP_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]> = StaticCell::new();
+static OPEN_RADIO_BIDIRECTIONAL_RX_METADATA: StaticCell<
+    [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
+> = StaticCell::new();
+static OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER: StaticCell<
+    [u8; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+> = StaticCell::new();
+static OPEN_RADIO_BIDIRECTIONAL_TX_METADATA: StaticCell<
+    [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH],
+> = StaticCell::new();
+static OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER: StaticCell<
+    [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+> = StaticCell::new();
+static OPEN_RADIO_BIDIRECTIONAL_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]> =
+    StaticCell::new();
 static OPEN_RADIO_LOCAL_IPV4: AtomicU32 = AtomicU32::new(0);
 static OPEN_RADIO_LAN_PROBE_RESPONSE: AtomicBool = AtomicBool::new(false);
 // These counters are touched for every admitted RX frame or IRQ-side reload
@@ -901,8 +943,50 @@ static OPEN_RADIO_LAN_PROBE_RESPONSE: AtomicBool = AtomicBool::new(false);
 // become part of the throughput limit it is trying to measure.
 #[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
 static OPEN_RADIO_RX_ENQUEUE_COUNTERS: RxEnqueueCounters = RxEnqueueCounters::new();
+#[unsafe(link_section = ".critical.bss.open_radio_tx_telemetry")]
+static OPEN_RADIO_TX_AGGREGATE_COUNTERS: AggregateTxCounters = AggregateTxCounters::new();
 #[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
 static OPEN_RADIO_RX_RELOAD_DELAYS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+static OPEN_RADIO_RX_LAST_UDP_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
+// Packed last-data-PPDU observation, written once per benchmark UDP frame and
+// decoded only after the measured interval. Bits 0..=3 are the BB format,
+// 4..=8 the public RX rate, 9..=12 HE-SU MCS, 13..=14 GI/LTF, 15..=16 BW,
+// 17 DCM, 18 LDPC, and 31 marks a decoded HE-SU signal.
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+static OPEN_RADIO_RX_LAST_UDP_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
+const OPEN_RADIO_RX_HE_MCS_BUCKETS: usize = 12;
+
+struct OpenRadioRxPhyCounters {
+    he_mcs: [AtomicU32; OPEN_RADIO_RX_HE_MCS_BUCKETS],
+    other: AtomicU32,
+}
+
+impl OpenRadioRxPhyCounters {
+    const fn new() -> Self {
+        Self {
+            he_mcs: [const { AtomicU32::new(0) }; OPEN_RADIO_RX_HE_MCS_BUCKETS],
+            other: AtomicU32::new(0),
+        }
+    }
+
+    fn snapshot(&self) -> ([u32; OPEN_RADIO_RX_HE_MCS_BUCKETS], u32) {
+        (
+            core::array::from_fn(|index| self.he_mcs[index].load(Ordering::Relaxed)),
+            self.other.load(Ordering::Relaxed),
+        )
+    }
+}
+
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+static OPEN_RADIO_RX_PHY_COUNTERS: OpenRadioRxPhyCounters = OpenRadioRxPhyCounters::new();
+// Unlike the zero-initialized counters above, this object owns a nonzero
+// platform clock function pointer and therefore must be copied as initialized
+// critical data. Placing it in NOLOAD `.critical.bss` would erase the callback
+// and trap on the first connected RX observation.
+#[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
+static OPEN_RADIO_RX_PIPELINE_COUNTERS: RxPipelineCounters =
+    RxPipelineCounters::new(open_radio_rx_telemetry_now_micros);
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
     EmbassyMacIrqRuntime::new();
@@ -2495,6 +2579,11 @@ async fn report_network_configuration(stack: Stack<'_>) -> ! {
 #[inline(never)]
 fn open_radio_runtime_code_marker() {}
 
+#[unsafe(link_section = ".rwtext.open_radio_rx_hot")]
+fn open_radio_rx_telemetry_now_micros() -> u64 {
+    Instant::now().as_micros()
+}
+
 struct OpenRadioRxReloadDelay;
 
 impl RxReloadDelay for OpenRadioRxReloadDelay {
@@ -2517,7 +2606,7 @@ struct HilConnectedRxObserver<S> {
 
 impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
-        if let ConnectedRxEvent::Ethernet { frame, .. } = event {
+        if let ConnectedRxEvent::Ethernet { frame, raw, .. } = event {
             let local_ipv4 = OPEN_RADIO_LOCAL_IPV4.load(Ordering::Acquire).to_be_bytes();
             let is_probe_reply = frame.destination == self.station_address
                 && frame.ether_type == 0x0806
@@ -2529,6 +2618,43 @@ impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
             if is_probe_reply {
                 OPEN_RADIO_LAN_PROBE_RESPONSE.store(true, Ordering::Release);
             }
+            if ipv4_udp_destination_port(frame) == Some(OPEN_RADIO_UDP_RX_PORT)
+                && let Some(phy) = decode_rx_phy_info(raw)
+            {
+                OPEN_RADIO_RX_LAST_UDP_FORMAT
+                    .store(u32::from(phy.baseband_format().raw()), Ordering::Relaxed);
+                let mut packed = u32::from(phy.baseband_format().raw())
+                    | (u32::from(phy.rate) << 4);
+                if let Some(signal) = phy.he_su_signal() {
+                    let bandwidth = match signal.bandwidth.mhz() {
+                        20 => 0,
+                        40 => 1,
+                        80 => 2,
+                        _ => 3,
+                    };
+                    packed |= (1 << 31)
+                        | (u32::from(signal.mcs) << 9)
+                        | (u32::from(signal.guard_interval_and_ltf.encoding()) << 13)
+                        | (bandwidth << 15)
+                        | (u32::from(signal.dcm) << 17)
+                        | (u32::from(signal.ldpc) << 18);
+                    if let Some(counter) = OPEN_RADIO_RX_PHY_COUNTERS
+                        .he_mcs
+                        .get(usize::from(signal.mcs))
+                    {
+                        counter.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        OPEN_RADIO_RX_PHY_COUNTERS
+                            .other
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                } else {
+                    OPEN_RADIO_RX_PHY_COUNTERS
+                        .other
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                OPEN_RADIO_RX_LAST_UDP_PHY.store(packed, Ordering::Relaxed);
+            }
         }
         if let ConnectedRxEvent::BlockAck { action, .. } = event {
             emergency_log(format_args!(
@@ -2537,6 +2663,26 @@ impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
         }
         self.control.publish(event);
     }
+}
+
+fn ipv4_udp_destination_port(
+    frame: open_esp_radio::wifi::ieee80211::data::EthernetFrameParts<'_>,
+) -> Option<u16> {
+    if frame.ether_type != 0x0800 {
+        return None;
+    }
+    let version_and_ihl = *frame.payload.first()?;
+    if version_and_ihl >> 4 != 4 || *frame.payload.get(9)? != 17 {
+        return None;
+    }
+    let header_length = usize::from(version_and_ihl & 0x0f).checked_mul(4)?;
+    if header_length < 20 {
+        return None;
+    }
+    Some(u16::from_be_bytes([
+        *frame.payload.get(header_length + 2)?,
+        *frame.payload.get(header_length + 3)?,
+    ]))
 }
 
 fn iperf2_udp_sequence(packet: &[u8]) -> Option<i32> {
@@ -2554,6 +2700,17 @@ async fn run_open_radio_udp_benchmark(
         loop {
             Timer::after_secs(60).await;
         }
+    } else if OPEN_RADIO_BIDIRECTIONAL_BENCH {
+        match select(
+            run_open_radio_udp_tx_benchmark(stack, association_phy, data_tx_rate),
+            run_open_radio_bidirectional_rx_benchmark(
+                stack,
+                association_phy,
+                data_tx_rate,
+                registers,
+            ),
+        )
+        .await {}
     } else if option_env!("OPEN_RADIO_TX_BENCH").is_some() {
         run_open_radio_udp_tx_benchmark(stack, association_phy, data_tx_rate).await
     } else {
@@ -2590,12 +2747,12 @@ async fn run_open_radio_udp_tx_benchmark(
             Timer::after_secs(60).await;
         }
     }
-    let server = Ipv4Address::from_octets(STA_ARP_TARGET_IPV4);
+    let server = Ipv4Address::from_octets(OPEN_RADIO_TX_BENCH_TARGET_IPV4);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
          target={server}:{OPEN_RADIO_UDP_TX_BENCH_PORT} \
          queue={OPEN_RADIO_UDP_TX_QUEUE_DEPTH} payload={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
-         tx_mode=single-mpdu \
+         tx_mode=ampdu \
          offered_tx_kbps={OPEN_RADIO_TX_BENCH_RATE_KBPS:?} \
          rate_code={:#04x} rate_kbps={}",
         data_tx_rate.code(),
@@ -2605,6 +2762,8 @@ async fn run_open_radio_udp_tx_benchmark(
 
     loop {
         let started = Instant::now();
+        let aggregate_start = (!OPEN_RADIO_BIDIRECTIONAL_BENCH)
+            .then(|| OPEN_RADIO_TX_AGGREGATE_COUNTERS.snapshot());
         let mut next_send = started;
         let mut bytes = 0_u64;
         let mut datagrams = 0_u32;
@@ -2670,8 +2829,60 @@ async fn run_open_radio_udp_tx_benchmark(
             },
             open_radio_runtime_code_marker as *const () as usize,
         ));
+        if let Some(aggregate_start) = aggregate_start {
+            log_open_radio_ampdu_interval(aggregate_start);
+        }
         Timer::after_secs(2).await;
     }
+}
+
+fn log_open_radio_ampdu_interval(earlier: AggregateTxCounterSnapshot) {
+    let aggregate = OPEN_RADIO_TX_AGGREGATE_COUNTERS
+        .snapshot()
+        .wrapping_delta_since(earlier);
+    let aggregate_min = aggregate.minimum_prepared_subframes().unwrap_or(0);
+    let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
+    emergency_log(format_args!(
+        "OAMP aggregates={} publications={} completed={} subframes={} \
+         acknowledged={} single={} individual_retry={} timeout={} collision={} \
+         min={} max={} stop_frame={} stop_capacity={} stop_empty={}",
+        aggregate.aggregates_prepared,
+        aggregate.aggregate_publications,
+        aggregate.aggregates_completed,
+        aggregate.prepared_subframe_total(),
+        aggregate.subframes_acknowledged,
+        aggregate.network_single_mpdu_started,
+        aggregate.individual_retries,
+        aggregate.hardware_timeouts,
+        aggregate.collisions,
+        aggregate_min,
+        aggregate_max,
+        aggregate.stopped_at_frame_limit,
+        aggregate.stopped_at_capacity_limit,
+        aggregate.stopped_on_empty_queue,
+    ));
+    emergency_log(format_args!(
+        "OAMPH one={} two_three={} four_seven={} eight_fifteen={} \
+         sixteen_twentythree={} twentyfour_thirty={} thirtyone={} full32={}",
+        aggregate.prepared_in_range(1, 1),
+        aggregate.prepared_in_range(2, 3),
+        aggregate.prepared_in_range(4, 7),
+        aggregate.prepared_in_range(8, 15),
+        aggregate.prepared_in_range(16, 23),
+        aggregate.prepared_in_range(24, 30),
+        aggregate.prepared_in_range(31, 31),
+        aggregate.prepared_in_range(32, 32),
+    ));
+    emergency_log(format_args!(
+        "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
+         publication_max_us={} exchange_us={} exchange_max_us={}",
+        aggregate.preparation_micros,
+        aggregate.preparation_lifetime_max_micros,
+        aggregate.publication_program_micros,
+        aggregate.publication_program_lifetime_max_micros,
+        aggregate.exchange_micros,
+        aggregate.exchange_lifetime_max_micros,
+    ));
 }
 
 /// Host-to-device UDP throughput baseline for the fully open data path.
@@ -2699,6 +2910,63 @@ async fn run_open_radio_udp_rx_benchmark(
     let tx_buffer = OPEN_RADIO_UDP_TX_BUFFER
         .init([0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
     let packet = OPEN_RADIO_UDP_PACKET.init([0; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
+    run_open_radio_udp_rx_benchmark_with_buffers(
+        stack,
+        association_phy,
+        data_tx_rate,
+        registers,
+        rx_metadata,
+        rx_buffer,
+        tx_metadata,
+        tx_buffer,
+        packet,
+        OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH,
+    )
+    .await
+}
+
+async fn run_open_radio_bidirectional_rx_benchmark(
+    stack: Stack<'static>,
+    association_phy: StaAssociationPhy,
+    data_tx_rate: TxPhyRate,
+    registers: &RefCell<&mut RadioRegisters>,
+) -> ! {
+    let rx_metadata = OPEN_RADIO_BIDIRECTIONAL_RX_METADATA
+        .init([PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH]);
+    let rx_buffer = OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER
+        .init([0; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
+    let tx_metadata = OPEN_RADIO_BIDIRECTIONAL_TX_METADATA
+        .init([PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH]);
+    let tx_buffer = OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER
+        .init([0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
+    let packet = OPEN_RADIO_BIDIRECTIONAL_PACKET.init([0; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
+    run_open_radio_udp_rx_benchmark_with_buffers(
+        stack,
+        association_phy,
+        data_tx_rate,
+        registers,
+        rx_metadata,
+        rx_buffer,
+        tx_metadata,
+        tx_buffer,
+        packet,
+        OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH,
+    )
+    .await
+}
+
+async fn run_open_radio_udp_rx_benchmark_with_buffers(
+    stack: Stack<'static>,
+    association_phy: StaAssociationPhy,
+    data_tx_rate: TxPhyRate,
+    registers: &RefCell<&mut RadioRegisters>,
+    rx_metadata: &'static mut [PacketMetadata],
+    rx_buffer: &'static mut [u8],
+    tx_metadata: &'static mut [PacketMetadata],
+    tx_buffer: &'static mut [u8],
+    packet: &'static mut [u8],
+    rx_queue_depth: usize,
+) -> ! {
     let mut socket = UdpSocket::new(stack, rx_metadata, rx_buffer, tx_metadata, tx_buffer);
     if let Err(error) = socket.bind(OPEN_RADIO_UDP_RX_PORT) {
         emergency_log(format_args!(
@@ -2711,7 +2979,7 @@ async fn run_open_radio_udp_rx_benchmark(
     }
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-rx-ready \
-         port={OPEN_RADIO_UDP_RX_PORT} queue={OPEN_RADIO_UDP_RX_QUEUE_DEPTH} \
+         port={OPEN_RADIO_UDP_RX_PORT} queue={rx_queue_depth} \
          payload_capacity={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
          bandwidth_mhz={} phy={} rate_code={:#04x} rate_kbps={}",
         association_phy.bandwidth_mhz(),
@@ -2721,7 +2989,11 @@ async fn run_open_radio_udp_rx_benchmark(
     ));
 
     loop {
+        OPEN_RADIO_RX_LAST_UDP_FORMAT.store(u32::MAX, Ordering::Relaxed);
+        OPEN_RADIO_RX_LAST_UDP_PHY.store(u32::MAX, Ordering::Relaxed);
         let hardware_start = registers.borrow().rx_statistics_snapshot().primary;
+        let phy_start = OPEN_RADIO_RX_PHY_COUNTERS.snapshot();
+        let pipeline_start = OPEN_RADIO_RX_PIPELINE_COUNTERS.snapshot();
         let enqueue_start = OPEN_RADIO_RX_ENQUEUE_COUNTERS.snapshot();
         let reload_delay_start = OPEN_RADIO_RX_RELOAD_DELAYS.load(Ordering::Relaxed);
         let irq_start = OPEN_RADIO_IRQ_RUNTIME.rx_post_count();
@@ -2734,6 +3006,8 @@ async fn run_open_radio_udp_rx_benchmark(
             }
             break length;
         };
+        let aggregate_start = OPEN_RADIO_BIDIRECTIONAL_BENCH
+            .then(|| OPEN_RADIO_TX_AGGREGATE_COUNTERS.snapshot());
         let started = Instant::now();
         let mut last_packet = started;
         let mut bytes = first_length as u64;
@@ -2777,30 +3051,103 @@ async fn run_open_radio_udp_rx_benchmark(
         let rx_irqs = OPEN_RADIO_IRQ_RUNTIME
             .rx_post_count()
             .wrapping_sub(irq_start);
+        let rx_format = OPEN_RADIO_RX_LAST_UDP_FORMAT.load(Ordering::Relaxed);
+        let rx_phy = OPEN_RADIO_RX_LAST_UDP_PHY.load(Ordering::Relaxed);
+        let rx_he_valid = rx_phy >> 31;
+        let rx_rate = (rx_phy >> 4) & 0x1f;
+        let rx_mcs = (rx_phy >> 9) & 0x0f;
+        let rx_gi_ltf = (rx_phy >> 13) & 0x03;
+        let rx_bandwidth_mhz = 20_u32 << ((rx_phy >> 15) & 0x03);
+        let rx_dcm = (rx_phy >> 17) & 1;
+        let rx_ldpc = (rx_phy >> 18) & 1;
+        let phy_end = OPEN_RADIO_RX_PHY_COUNTERS.snapshot();
+        let rx_mcs_histogram = core::array::from_fn::<_, OPEN_RADIO_RX_HE_MCS_BUCKETS, _>(|index| {
+            phy_end.0[index].wrapping_sub(phy_start.0[index])
+        });
+        let rx_other_phy = phy_end.1.wrapping_sub(phy_start.1);
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx \
              bytes={bytes} datagrams={datagrams} elapsed_us={elapsed_us} \
              throughput_kbps={throughput_kbps} receive_errors={receive_errors} \
              terminal={} bandwidth_mhz={} phy={} \
-             rate_code={:#04x} rate_kbps={}",
+             rate_code={:#04x} rate_kbps={} code_address={}",
             u8::from(terminal_seen),
             association_phy.bandwidth_mhz(),
             association_phy.name(),
             data_tx_rate.code(),
             data_tx_rate.nominal_kbps(),
+            open_radio_runtime_code_marker as *const () as usize,
         ));
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path \
              mpdu={} data_success={} fcs_error={} buffer_full={} fifo_overflow={} \
              enqueued={enqueued} queue_dropped={queue_dropped} rx_irqs={rx_irqs} \
-             reload_delays={reload_delays}",
+             reload_delays={reload_delays} rx_format={rx_format} rx_rate={rx_rate} \
+             rx_he_valid={rx_he_valid} rx_mcs={rx_mcs} rx_gi_ltf={rx_gi_ltf} \
+             rx_bandwidth_mhz={rx_bandwidth_mhz} rx_dcm={rx_dcm} rx_ldpc={rx_ldpc}",
             hardware_delta.mpdu_count,
             hardware_delta.data_success,
             hardware_delta.fcs_error,
             hardware_delta.buffer_full,
             hardware_delta.fifo_overflow,
         ));
+        emergency_log(format_args!(
+            "ORXM m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} m8={} \
+             m9={} m10={} m11={} other={rx_other_phy}",
+            rx_mcs_histogram[0],
+            rx_mcs_histogram[1],
+            rx_mcs_histogram[2],
+            rx_mcs_histogram[3],
+            rx_mcs_histogram[4],
+            rx_mcs_histogram[5],
+            rx_mcs_histogram[6],
+            rx_mcs_histogram[7],
+            rx_mcs_histogram[8],
+            rx_mcs_histogram[9],
+            rx_mcs_histogram[10],
+            rx_mcs_histogram[11],
+        ));
+        log_open_radio_rx_pipeline_interval(pipeline_start);
+        if let Some(aggregate_start) = aggregate_start {
+            log_open_radio_ampdu_interval(aggregate_start);
+        }
     }
+}
+
+fn log_open_radio_rx_pipeline_interval(earlier: RxPipelineCounterSnapshot) {
+    let pipeline = OPEN_RADIO_RX_PIPELINE_COUNTERS
+        .snapshot()
+        .wrapping_delta_since(earlier);
+    emergency_log(format_args!(
+        "ORXS calls={} frontier={} admitted={} bytes={} back={} pool={} queue={} \
+         fmax={} amax={} service_us={} service_max_us={}",
+        pipeline.service_calls,
+        pipeline.completion_frontier_frames,
+        pipeline.admitted_frames,
+        pipeline.staged_bytes,
+        pipeline.backpressured_services,
+        pipeline.pool_credit_limited_services,
+        pipeline.queue_credit_limited_services,
+        pipeline.maximum_frontier,
+        pipeline.maximum_admitted,
+        pipeline.service_micros,
+        pipeline.service_lifetime_max_micros,
+    ));
+    emergency_log(format_args!(
+        "ORXD frames={} data={} waits={} wait_us={} wait_max_us={} dispatch_us={} \
+         dispatch_max_us={} publications={} bytes={} publish_us={} publish_max_us={}",
+        pipeline.protocol_frames,
+        pipeline.protocol_data_frames,
+        pipeline.network_ready_waits,
+        pipeline.network_ready_wait_micros,
+        pipeline.network_ready_wait_lifetime_max_micros,
+        pipeline.dispatch_micros,
+        pipeline.dispatch_lifetime_max_micros,
+        pipeline.network_publications,
+        pipeline.network_published_bytes,
+        pipeline.network_publish_micros,
+        pipeline.network_publish_lifetime_max_micros,
+    ));
 }
 
 async fn run_connected_network(
@@ -2922,16 +3269,17 @@ async fn run_connected_network(
             station_address,
         },
     )
-    .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS);
+    .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS)
+    .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
+    let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
     let rx = Esp32s31ConnectedRx::new(
         rx_ring,
         rx_storage.buffers(),
         &OPEN_RADIO_RX_STAGE_POOL,
         OpenRadioRxReloadDelay,
-        rx_sink,
-        frame,
-        ethernet,
-    );
+        staged_rx_sender,
+    )
+    .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
     let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
         station_address,
         bssid,
@@ -2942,6 +3290,15 @@ async fn run_connected_network(
             flags: 0,
         },
     });
+    let mut rx_protocol = Esp32s31ConnectedRxProtocol::new(
+        staged_rx_receiver,
+        &OPEN_RADIO_IRQ_RUNTIME,
+        dispatcher,
+        rx_sink,
+        frame,
+        ethernet,
+    )
+    .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
 
     let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
     let control_tx = tx_storage
@@ -2976,7 +3333,8 @@ async fn run_connected_network(
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
-    .expect("fixed connected aggregate TX configuration");
+    .expect("fixed connected aggregate TX configuration")
+    .with_counters(&OPEN_RADIO_TX_AGGREGATE_COUNTERS);
     let tx_block_ack = StaTxBlockAckSessions::new(
         TX_BLOCK_ACK_WINDOW as u16,
         500_000,
@@ -3000,11 +3358,11 @@ async fn run_connected_network(
     let registers = RefCell::new(mmio);
     let hardware = CooperativeTxHardware::new(&registers);
     let backend = Esp32s31WifiBackend::with_control(hardware, rx, tx, control);
-    let mut radio_runner =
-        WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, dispatcher, backend);
+    let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
 
-    match select4(
+    match select5(
         stack_runner.run(),
+        rx_protocol.run(),
         async {
             match radio_runner.run().await {
                 Ok(()) => emergency_log(format_args!(

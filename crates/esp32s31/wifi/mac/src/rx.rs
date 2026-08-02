@@ -1016,6 +1016,27 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
 }
 
 impl<const COUNT: usize> RxRingLive<'_, COUNT> {
+    /// Snapshot the contiguous, newly completed prefix at the current recycle
+    /// frontier without transferring ownership or rearming any descriptor.
+    ///
+    /// The returned count is a finite receive epoch. A caller may subsequently
+    /// take and recycle exactly this many descriptors without accidentally
+    /// extending the same service pass to descriptors completed after the
+    /// snapshot. This is important when recycled descriptors can already be
+    /// filled again while the task is still draining an RX-success wake.
+    pub fn completed_frontier_len(&self) -> usize {
+        let mut completed = 0;
+        while completed < COUNT {
+            let index = wrap_add::<COUNT>(self.recycle_start, completed);
+            let bit = 1_u64 << index;
+            if self.observed_mask & bit != 0 || !rx_done(self.descriptors[index].word0()) {
+                break;
+            }
+            completed += 1;
+        }
+        completed
+    }
+
     /// Takes one newly completed descriptor exactly once for this ring epoch.
     ///
     /// Kept in internal SRAM for PSRAM-code profiles: this is invoked once for

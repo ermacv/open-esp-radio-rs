@@ -181,6 +181,15 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         self.claimed.load(Ordering::Acquire).count_ones()
     }
 
+    /// Number of slots that can still accept an independent DMA copy.
+    ///
+    /// A Network-owned slot remains claimed until its unique token is dropped,
+    /// so this is the complete producer credit rather than merely the number
+    /// of entries absent from an intermediate queue.
+    pub fn available_slots(&self) -> usize {
+        SLOTS.saturating_sub(self.claimed_slots() as usize)
+    }
+
     pub fn network_slots(&self) -> u32 {
         self.network.load(Ordering::Acquire).count_ones()
     }

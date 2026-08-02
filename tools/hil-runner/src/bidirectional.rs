@@ -25,6 +25,7 @@ const DEFAULT_RATE_BPS: u64 = 10_000_000;
 const DEFAULT_DURATION: Duration = Duration::from_secs(12);
 const DEFAULT_PAYLOAD: usize = 1_200;
 const MIN_QUALIFIED_SAMPLE: Duration = Duration::from_secs(4);
+const MIN_QUALIFIED_AGGREGATES: u64 = 100;
 const PSRAM_CODE_START: u64 = 0x5000_0000;
 const PSRAM_CODE_END: u64 = 0x5100_0000;
 
@@ -82,12 +83,254 @@ struct TxSample {
     rate_kbps: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AmpduSample {
+    aggregates: u64,
+    publications: u64,
+    completed: u64,
+    subframes: u64,
+    acknowledged: u64,
+    single: u64,
+    individual_retry: u64,
+    timeout: u64,
+    collision: u64,
+    minimum: u8,
+    maximum: u8,
+    stop_frame: u64,
+    stop_capacity: u64,
+    stop_empty: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AmpduHistogramSample {
+    one: u64,
+    two_three: u64,
+    four_seven: u64,
+    eight_fifteen: u64,
+    sixteen_twentythree: u64,
+    twentyfour_thirty: u64,
+    thirtyone: u64,
+    full32: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AmpduTimingSample {
+    preparation_us: u64,
+    preparation_max_us: u64,
+    publication_us: u64,
+    publication_max_us: u64,
+    exchange_us: u64,
+    exchange_max_us: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AmpduEvidence {
+    pub(crate) aggregates: u64,
+    pub(crate) publications: u64,
+    pub(crate) completed: u64,
+    pub(crate) subframes: u64,
+    pub(crate) acknowledged: u64,
+    pub(crate) single: u64,
+    pub(crate) individual_retry: u64,
+    pub(crate) timeout: u64,
+    pub(crate) collision: u64,
+    pub(crate) minimum: u8,
+    pub(crate) maximum: u8,
+    pub(crate) stop_frame: u64,
+    pub(crate) stop_capacity: u64,
+    pub(crate) stop_empty: u64,
+    pub(crate) one: u64,
+    pub(crate) two_three: u64,
+    pub(crate) four_seven: u64,
+    pub(crate) eight_fifteen: u64,
+    pub(crate) sixteen_twentythree: u64,
+    pub(crate) twentyfour_thirty: u64,
+    pub(crate) thirtyone: u64,
+    pub(crate) full32: u64,
+    pub(crate) preparation_us: u64,
+    pub(crate) preparation_max_us: u64,
+    pub(crate) publication_us: u64,
+    pub(crate) publication_max_us: u64,
+    pub(crate) exchange_us: u64,
+    pub(crate) exchange_max_us: u64,
+}
+
+impl AmpduEvidence {
+    fn from_report(report: &DeviceReport) -> Self {
+        let mut evidence = Self::default();
+        for sample in &report.ampdu {
+            evidence.aggregates = evidence.aggregates.saturating_add(sample.aggregates);
+            evidence.publications = evidence.publications.saturating_add(sample.publications);
+            evidence.completed = evidence.completed.saturating_add(sample.completed);
+            evidence.subframes = evidence.subframes.saturating_add(sample.subframes);
+            evidence.acknowledged = evidence.acknowledged.saturating_add(sample.acknowledged);
+            evidence.single = evidence.single.saturating_add(sample.single);
+            evidence.individual_retry = evidence
+                .individual_retry
+                .saturating_add(sample.individual_retry);
+            evidence.timeout = evidence.timeout.saturating_add(sample.timeout);
+            evidence.collision = evidence.collision.saturating_add(sample.collision);
+            if sample.minimum != 0 {
+                evidence.minimum = if evidence.minimum == 0 {
+                    sample.minimum
+                } else {
+                    evidence.minimum.min(sample.minimum)
+                };
+            }
+            evidence.maximum = evidence.maximum.max(sample.maximum);
+            evidence.stop_frame = evidence.stop_frame.saturating_add(sample.stop_frame);
+            evidence.stop_capacity = evidence.stop_capacity.saturating_add(sample.stop_capacity);
+            evidence.stop_empty = evidence.stop_empty.saturating_add(sample.stop_empty);
+        }
+        for sample in &report.ampdu_histograms {
+            evidence.one = evidence.one.saturating_add(sample.one);
+            evidence.two_three = evidence.two_three.saturating_add(sample.two_three);
+            evidence.four_seven = evidence.four_seven.saturating_add(sample.four_seven);
+            evidence.eight_fifteen = evidence.eight_fifteen.saturating_add(sample.eight_fifteen);
+            evidence.sixteen_twentythree = evidence
+                .sixteen_twentythree
+                .saturating_add(sample.sixteen_twentythree);
+            evidence.twentyfour_thirty = evidence
+                .twentyfour_thirty
+                .saturating_add(sample.twentyfour_thirty);
+            evidence.thirtyone = evidence.thirtyone.saturating_add(sample.thirtyone);
+            evidence.full32 = evidence.full32.saturating_add(sample.full32);
+        }
+        for sample in &report.ampdu_timings {
+            evidence.preparation_us = evidence
+                .preparation_us
+                .saturating_add(sample.preparation_us);
+            evidence.preparation_max_us =
+                evidence.preparation_max_us.max(sample.preparation_max_us);
+            evidence.publication_us = evidence
+                .publication_us
+                .saturating_add(sample.publication_us);
+            evidence.publication_max_us =
+                evidence.publication_max_us.max(sample.publication_max_us);
+            evidence.exchange_us = evidence.exchange_us.saturating_add(sample.exchange_us);
+            evidence.exchange_max_us = evidence.exchange_max_us.max(sample.exchange_max_us);
+        }
+        evidence
+    }
+
+    fn histogram_total(self) -> u64 {
+        self.one
+            .saturating_add(self.two_three)
+            .saturating_add(self.four_seven)
+            .saturating_add(self.eight_fifteen)
+            .saturating_add(self.sixteen_twentythree)
+            .saturating_add(self.twentyfour_thirty)
+            .saturating_add(self.thirtyone)
+            .saturating_add(self.full32)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TxQualification {
+    pub(crate) throughput_floor_kbps: u64,
+    pub(crate) sample_count: usize,
+    pub(crate) ampdu: AmpduEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RxQualification {
+    pub(crate) throughput_median_kbps: u64,
+    pub(crate) sample_count: usize,
+    pub(crate) enqueued: u64,
+    pub(crate) dropped: u64,
+    pub(crate) he_mcs_histogram: [u64; 12],
+    pub(crate) other_phy_frames: u64,
+    pub(crate) pipeline: RxPipelineEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RxPipelineEvidence {
+    pub(crate) service_calls: u64,
+    pub(crate) frontier_frames: u64,
+    pub(crate) admitted_frames: u64,
+    pub(crate) staged_bytes: u64,
+    pub(crate) backpressured_services: u64,
+    pub(crate) pool_credit_limited_services: u64,
+    pub(crate) queue_credit_limited_services: u64,
+    pub(crate) maximum_frontier: u64,
+    pub(crate) maximum_admitted: u64,
+    pub(crate) service_us: u64,
+    pub(crate) service_max_us: u64,
+    pub(crate) protocol_frames: u64,
+    pub(crate) protocol_data_frames: u64,
+    pub(crate) network_ready_waits: u64,
+    pub(crate) network_ready_wait_us: u64,
+    pub(crate) network_ready_wait_max_us: u64,
+    pub(crate) dispatch_us: u64,
+    pub(crate) dispatch_max_us: u64,
+    pub(crate) network_publications: u64,
+    pub(crate) network_published_bytes: u64,
+    pub(crate) network_publish_us: u64,
+    pub(crate) network_publish_max_us: u64,
+}
+
+impl RxPipelineEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.service_calls = self.service_calls.saturating_add(sample.service_calls);
+        self.frontier_frames = self.frontier_frames.saturating_add(sample.frontier_frames);
+        self.admitted_frames = self.admitted_frames.saturating_add(sample.admitted_frames);
+        self.staged_bytes = self.staged_bytes.saturating_add(sample.staged_bytes);
+        self.backpressured_services = self
+            .backpressured_services
+            .saturating_add(sample.backpressured_services);
+        self.pool_credit_limited_services = self
+            .pool_credit_limited_services
+            .saturating_add(sample.pool_credit_limited_services);
+        self.queue_credit_limited_services = self
+            .queue_credit_limited_services
+            .saturating_add(sample.queue_credit_limited_services);
+        self.maximum_frontier = self.maximum_frontier.max(sample.maximum_frontier);
+        self.maximum_admitted = self.maximum_admitted.max(sample.maximum_admitted);
+        self.service_us = self.service_us.saturating_add(sample.service_us);
+        self.service_max_us = self.service_max_us.max(sample.service_max_us);
+        self.protocol_frames = self.protocol_frames.saturating_add(sample.protocol_frames);
+        self.protocol_data_frames = self
+            .protocol_data_frames
+            .saturating_add(sample.protocol_data_frames);
+        self.network_ready_waits = self
+            .network_ready_waits
+            .saturating_add(sample.network_ready_waits);
+        self.network_ready_wait_us = self
+            .network_ready_wait_us
+            .saturating_add(sample.network_ready_wait_us);
+        self.network_ready_wait_max_us = self
+            .network_ready_wait_max_us
+            .max(sample.network_ready_wait_max_us);
+        self.dispatch_us = self.dispatch_us.saturating_add(sample.dispatch_us);
+        self.dispatch_max_us = self.dispatch_max_us.max(sample.dispatch_max_us);
+        self.network_publications = self
+            .network_publications
+            .saturating_add(sample.network_publications);
+        self.network_published_bytes = self
+            .network_published_bytes
+            .saturating_add(sample.network_published_bytes);
+        self.network_publish_us = self
+            .network_publish_us
+            .saturating_add(sample.network_publish_us);
+        self.network_publish_max_us = self
+            .network_publish_max_us
+            .max(sample.network_publish_max_us);
+    }
+}
+
 #[derive(Debug, Default, Eq, PartialEq)]
 struct DeviceReport {
     rx: Vec<ThroughputSample>,
     tx: Vec<TxSample>,
+    ampdu: Vec<AmpduSample>,
+    ampdu_histograms: Vec<AmpduHistogramSample>,
+    ampdu_timings: Vec<AmpduTimingSample>,
+    rx_mcs_histograms: Vec<([u64; 12], u64)>,
+    rx_service: Vec<RxPipelineEvidence>,
+    rx_dispatch: Vec<RxPipelineEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
+    software_health: Vec<(u64, u64)>,
     code_addresses: Vec<u64>,
     failures: Vec<String>,
 }
@@ -133,29 +376,27 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
     fs::create_dir_all(&output)?;
     fs::write(output.join("uart.log"), &log)?;
-    qualify(&options, host, &report)?;
-
-    let rx_median = median(
-        qualified_rx_samples(&report)
-            .iter()
-            .map(|sample| sample.throughput_kbps)
-            .collect(),
-    )
-    .ok_or("missing qualified direct-RX sample")?;
+    let rx = qualify(&options, host, &report)?;
+    let rx_median = rx.throughput_median_kbps;
     let tx_floor = report
         .tx
         .iter()
         .map(|sample| sample.throughput_kbps)
         .min()
         .ok_or("missing concurrent TX sample")?;
-    write_report(&output, &options, host, rx_median, tx_floor)?;
+    let ampdu = AmpduEvidence::from_report(&report);
+    write_report(&output, &options, host, rx, tx_floor, ampdu)?;
     println!(
         "OPENRADIOHOST result=PASS mode={}-bidirectional offered_kbps={} \
          host_kbps={} rx_median_kbps={rx_median} concurrent_tx_floor_kbps={tx_floor} \
+         ampdu_avg_subframes={:.2} ampdu_max_subframes={} full32={} \
          combined_floor_sum_kbps={} report={}",
         options.phy.name(),
         options.rate_bps / 1_000,
         host.throughput_bps() / 1_000,
+        ampdu.subframes as f64 / ampdu.aggregates.max(1) as f64,
+        ampdu.maximum,
+        ampdu.full32,
         rx_median.saturating_add(tx_floor),
         output.join("report.md").display(),
     );
@@ -289,7 +530,166 @@ fn send_paced_udp(options: &Options) -> Result<HostTransmission> {
 fn parse_device_report(log: &str) -> DeviceReport {
     let mut report = DeviceReport::default();
     for line in log.lines() {
-        if line.starts_with("ORX ") || line.contains(" ORX ") {
+        if line.contains("OAMP aggregates=") {
+            if let (
+                Some(aggregates),
+                Some(publications),
+                Some(completed),
+                Some(subframes),
+                Some(acknowledged),
+                Some(single),
+                Some(individual_retry),
+                Some(timeout),
+                Some(collision),
+                Some(minimum),
+                Some(maximum),
+                Some(stop_frame),
+                Some(stop_capacity),
+                Some(stop_empty),
+            ) = (
+                field(line, "aggregates"),
+                field(line, "publications"),
+                field(line, "completed"),
+                field(line, "subframes"),
+                field(line, "acknowledged"),
+                field(line, "single"),
+                field(line, "individual_retry"),
+                field(line, "timeout"),
+                field(line, "collision"),
+                field(line, "min"),
+                field(line, "max"),
+                field(line, "stop_frame"),
+                field(line, "stop_capacity"),
+                field(line, "stop_empty"),
+            ) {
+                if let (Ok(minimum), Ok(maximum)) = (u8::try_from(minimum), u8::try_from(maximum)) {
+                    report.ampdu.push(AmpduSample {
+                        aggregates,
+                        publications,
+                        completed,
+                        subframes,
+                        acknowledged,
+                        single,
+                        individual_retry,
+                        timeout,
+                        collision,
+                        minimum,
+                        maximum,
+                        stop_frame,
+                        stop_capacity,
+                        stop_empty,
+                    });
+                }
+            }
+        }
+        if line.contains("OAMPH one=") {
+            if let (
+                Some(one),
+                Some(two_three),
+                Some(four_seven),
+                Some(eight_fifteen),
+                Some(sixteen_twentythree),
+                Some(twentyfour_thirty),
+                Some(thirtyone),
+                Some(full32),
+            ) = (
+                field(line, "one"),
+                field(line, "two_three"),
+                field(line, "four_seven"),
+                field(line, "eight_fifteen"),
+                field(line, "sixteen_twentythree"),
+                field(line, "twentyfour_thirty"),
+                field(line, "thirtyone"),
+                field(line, "full32"),
+            ) {
+                report.ampdu_histograms.push(AmpduHistogramSample {
+                    one,
+                    two_three,
+                    four_seven,
+                    eight_fifteen,
+                    sixteen_twentythree,
+                    twentyfour_thirty,
+                    thirtyone,
+                    full32,
+                });
+            }
+        }
+        if line.contains("OAMPT preparation_us=") {
+            if let (
+                Some(preparation_us),
+                Some(preparation_max_us),
+                Some(publication_us),
+                Some(publication_max_us),
+                Some(exchange_us),
+                Some(exchange_max_us),
+            ) = (
+                field(line, "preparation_us"),
+                field(line, "preparation_max_us"),
+                field(line, "publication_us"),
+                field(line, "publication_max_us"),
+                field(line, "exchange_us"),
+                field(line, "exchange_max_us"),
+            ) {
+                report.ampdu_timings.push(AmpduTimingSample {
+                    preparation_us,
+                    preparation_max_us,
+                    publication_us,
+                    publication_max_us,
+                    exchange_us,
+                    exchange_max_us,
+                });
+            }
+        }
+        if line.starts_with("ORXS ") || line.contains(" ORXS ") {
+            let sample = (|| {
+                Some(RxPipelineEvidence {
+                    service_calls: field(line, "calls")?,
+                    frontier_frames: field(line, "frontier")?,
+                    admitted_frames: field(line, "admitted")?,
+                    staged_bytes: field(line, "bytes")?,
+                    backpressured_services: field(line, "back")?,
+                    pool_credit_limited_services: field(line, "pool")?,
+                    queue_credit_limited_services: field(line, "queue")?,
+                    maximum_frontier: field(line, "fmax")?,
+                    maximum_admitted: field(line, "amax")?,
+                    service_us: field(line, "service_us")?,
+                    service_max_us: field(line, "service_max_us")?,
+                    ..RxPipelineEvidence::default()
+                })
+            })();
+            if let Some(sample) = sample {
+                report.rx_service.push(sample);
+            }
+        } else if line.starts_with("ORXD ") || line.contains(" ORXD ") {
+            let sample = (|| {
+                Some(RxPipelineEvidence {
+                    protocol_frames: field(line, "frames")?,
+                    protocol_data_frames: field(line, "data")?,
+                    network_ready_waits: field(line, "waits")?,
+                    network_ready_wait_us: field(line, "wait_us")?,
+                    network_ready_wait_max_us: field(line, "wait_max_us")?,
+                    dispatch_us: field(line, "dispatch_us")?,
+                    dispatch_max_us: field(line, "dispatch_max_us")?,
+                    network_publications: field(line, "publications")?,
+                    network_published_bytes: field(line, "bytes")?,
+                    network_publish_us: field(line, "publish_us")?,
+                    network_publish_max_us: field(line, "publish_max_us")?,
+                    ..RxPipelineEvidence::default()
+                })
+            })();
+            if let Some(sample) = sample {
+                report.rx_dispatch.push(sample);
+            }
+        } else if line.starts_with("ORXM ") || line.contains(" ORXM ") {
+            let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
+            if histogram.iter().all(Option::is_some)
+                && let Some(other) = field(line, "other")
+            {
+                report
+                    .rx_mcs_histograms
+                    .push((histogram.map(Option::unwrap), other));
+            }
+        } else if line.starts_with("ORX ") || line.contains(" ORX ") {
             if let (Some(datagrams), Some(elapsed_us), Some(throughput_kbps)) =
                 (field(line, "d"), field(line, "u"), field(line, "k"))
             {
@@ -327,6 +727,37 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     elapsed_us,
                     throughput_kbps,
                 });
+            }
+        } else if line.contains("result=BENCH") && has_token(line, "stage=udp-rx") {
+            if let (Some(datagrams), Some(elapsed_us), Some(throughput_kbps)) = (
+                field(line, "datagrams"),
+                field(line, "elapsed_us"),
+                field(line, "throughput_kbps"),
+            ) {
+                report.rx.push(ThroughputSample {
+                    datagrams,
+                    elapsed_us,
+                    throughput_kbps,
+                });
+            }
+            if let Some(address) = field(line, "code_address") {
+                report.code_addresses.push(address);
+            }
+        } else if line.contains("result=BENCH") && has_token(line, "stage=udp-rx-path") {
+            if let (Some(buffer_full), Some(fifo_overflow)) =
+                (field(line, "buffer_full"), field(line, "fifo_overflow"))
+            {
+                report.dma_health.push((buffer_full, fifo_overflow));
+            }
+            if let (Some(enqueued), Some(dropped)) =
+                (field(line, "enqueued"), field(line, "queue_dropped"))
+            {
+                report.software_health.push((enqueued, dropped));
+            }
+            if let Some(format) =
+                field(line, "rx_format").filter(|format| *format <= u8::MAX.into())
+            {
+                report.rx_formats.push(format as u8);
             }
         } else if line.contains("result=BENCH") && line.contains("stage=raw-mac-tx") {
             if let (Some(throughput_kbps), Some(bandwidth_mhz), Some(rate_kbps)) = (
@@ -373,6 +804,10 @@ fn field(line: &str, key: &str) -> Option<u64> {
     })
 }
 
+fn has_token(line: &str, expected: &str) -> bool {
+    line.split_whitespace().any(|token| token == expected)
+}
+
 fn qualified_rx_samples(report: &DeviceReport) -> Vec<ThroughputSample> {
     report
         .rx
@@ -386,7 +821,7 @@ fn qualified_rx_samples(report: &DeviceReport) -> Vec<ThroughputSample> {
         .collect()
 }
 
-fn qualify(options: &Options, host: HostTransmission, report: &DeviceReport) -> Result<()> {
+fn qualify_runtime_marker(report: &DeviceReport) -> Result<()> {
     if report.code_addresses.is_empty()
         || report
             .code_addresses
@@ -395,6 +830,84 @@ fn qualify(options: &Options, host: HostTransmission, report: &DeviceReport) -> 
     {
         return Err("missing psram-code runtime marker".into());
     }
+    Ok(())
+}
+
+fn qualify_tx_samples(
+    report: &DeviceReport,
+    expected_width: u16,
+    expected_rate: u64,
+) -> Result<u64> {
+    if report.tx.is_empty()
+        || report.tx.iter().any(|sample| {
+            sample.bandwidth_mhz != expected_width || sample.rate_kbps != expected_rate
+        })
+    {
+        return Err(
+            format!("TX did not remain at {expected_width} MHz / {expected_rate} kbit/s").into(),
+        );
+    }
+    Ok(report
+        .tx
+        .iter()
+        .map(|sample| sample.throughput_kbps)
+        .min()
+        .expect("nonempty TX samples"))
+}
+
+fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
+    let ampdu = AmpduEvidence::from_report(report);
+    if ampdu.aggregates < MIN_QUALIFIED_AGGREGATES || ampdu.completed == 0 {
+        return Err(format!(
+            "insufficient A-MPDU evidence: prepared={} completed={} required={MIN_QUALIFIED_AGGREGATES}",
+            ampdu.aggregates, ampdu.completed,
+        )
+        .into());
+    }
+    if ampdu.maximum > 32 || ampdu.minimum == 0 {
+        return Err(format!(
+            "invalid A-MPDU size range: min={} max={}",
+            ampdu.minimum, ampdu.maximum,
+        )
+        .into());
+    }
+    if ampdu.subframes <= ampdu.aggregates {
+        return Err("TX never formed a multi-MPDU aggregate".into());
+    }
+    if ampdu.histogram_total() != ampdu.aggregates {
+        return Err(format!(
+            "incomplete A-MPDU histogram: buckets={} prepared={}",
+            ampdu.histogram_total(),
+            ampdu.aggregates,
+        )
+        .into());
+    }
+    let build_stop_total = ampdu
+        .stop_frame
+        .saturating_add(ampdu.stop_capacity)
+        .saturating_add(ampdu.stop_empty);
+    if build_stop_total != ampdu.aggregates {
+        return Err(format!(
+            "incomplete A-MPDU build-stop evidence: stops={build_stop_total} prepared={}",
+            ampdu.aggregates,
+        )
+        .into());
+    }
+    if report.ampdu_timings.is_empty() {
+        return Err("missing A-MPDU preparation/publication/exchange timing".into());
+    }
+    if ampdu.timeout != 0 || ampdu.collision != 0 {
+        return Err(format!(
+            "terminal A-MPDU failure: timeout={} collision={}",
+            ampdu.timeout, ampdu.collision,
+        )
+        .into());
+    }
+    Ok(ampdu)
+}
+
+fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQualification> {
+    qualify_runtime_marker(report)?;
     if report.dma_health.is_empty() {
         return Err("missing RX DMA-health interval".into());
     }
@@ -407,47 +920,110 @@ fn qualify(options: &Options, host: HostTransmission, report: &DeviceReport) -> 
             format!("RX DMA starvation: buffer_full={full} fifo_overflow={overflow}").into(),
         );
     }
+    if report.software_health.is_empty() {
+        return Err("missing RX software-queue health interval".into());
+    }
+    if let Some((_, dropped)) = report
+        .software_health
+        .iter()
+        .find(|(_, dropped)| *dropped != 0)
+    {
+        return Err(format!("RX software queue dropped {dropped} frames").into());
+    }
     let rx = qualified_rx_samples(report);
     if rx.is_empty() {
         return Err("missing complete device-side direct-RX sample".into());
-    }
-    let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
-    if host.throughput_bps() < minimum_bps {
-        return Err("host failed to offer at least 90% of the requested rate".into());
-    }
-    let rx_median = median(rx.iter().map(|sample| sample.throughput_kbps).collect())
-        .expect("nonempty direct-RX samples");
-    if rx_median < minimum_bps / 1_000 {
-        return Err(format!("device RX {rx_median} kbit/s is below the acceptance floor").into());
-    }
-    let (expected_width, expected_rate) = options.phy.expected_tx();
-    if report.tx.is_empty()
-        || report.tx.iter().any(|sample| {
-            sample.bandwidth_mhz != expected_width || sample.rate_kbps != expected_rate
-        })
-    {
-        return Err(format!(
-            "concurrent TX did not remain at {} / {expected_rate} kbit/s",
-            options.phy.name()
-        )
-        .into());
     }
     if report.rx_formats.is_empty()
         || report
             .rx_formats
             .iter()
-            .any(|format| *format != options.phy.expected_rx_format())
+            .any(|format| *format != expected_format)
     {
-        return Err(format!(
-            "RX did not remain in the {} baseband format",
-            options.phy.name()
-        )
-        .into());
+        return Err(format!("RX did not remain in baseband format {expected_format}").into());
     }
     if let Some(failure) = report.failures.first() {
         return Err(format!("device reported a data-path failure: {failure}").into());
     }
-    Ok(())
+    if report.rx_service.is_empty() || report.rx_dispatch.is_empty() {
+        return Err("missing RX pipeline phase telemetry".into());
+    }
+    let mut pipeline = RxPipelineEvidence::default();
+    for sample in report.rx_service.iter().chain(&report.rx_dispatch) {
+        pipeline.merge(*sample);
+    }
+    let mut he_mcs_histogram = [0_u64; 12];
+    let mut other_phy_frames = 0_u64;
+    for (histogram, other) in &report.rx_mcs_histograms {
+        for (total, sample) in he_mcs_histogram.iter_mut().zip(histogram) {
+            *total = total.saturating_add(*sample);
+        }
+        other_phy_frames = other_phy_frames.saturating_add(*other);
+    }
+    Ok(RxQualification {
+        throughput_median_kbps: median(rx.iter().map(|sample| sample.throughput_kbps).collect())
+            .expect("nonempty RX samples"),
+        sample_count: rx.len(),
+        enqueued: report
+            .software_health
+            .iter()
+            .map(|(enqueued, _)| *enqueued)
+            .sum(),
+        dropped: report
+            .software_health
+            .iter()
+            .map(|(_, dropped)| *dropped)
+            .sum(),
+        he_mcs_histogram,
+        other_phy_frames,
+        pipeline,
+    })
+}
+
+pub(crate) fn qualify_rx_log(log: &str, expected_format: u8) -> Result<RxQualification> {
+    qualify_rx_report(&parse_device_report(log), expected_format)
+}
+
+pub(crate) fn qualify_tx_log(
+    log: &str,
+    expected_width: u16,
+    expected_rate: u64,
+) -> Result<TxQualification> {
+    let report = parse_device_report(log);
+    qualify_runtime_marker(&report)?;
+    let throughput_floor_kbps = qualify_tx_samples(&report, expected_width, expected_rate)?;
+    let ampdu = qualify_ampdu(&report)?;
+    if let Some(failure) = report.failures.first() {
+        return Err(format!("device reported a data-path failure: {failure}").into());
+    }
+    Ok(TxQualification {
+        throughput_floor_kbps,
+        sample_count: report.tx.len(),
+        ampdu,
+    })
+}
+
+fn qualify(
+    options: &Options,
+    host: HostTransmission,
+    report: &DeviceReport,
+) -> Result<RxQualification> {
+    let rx = qualify_rx_report(report, options.phy.expected_rx_format())?;
+    let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
+    if host.throughput_bps() < minimum_bps {
+        return Err("host failed to offer at least 90% of the requested rate".into());
+    }
+    if rx.throughput_median_kbps < minimum_bps / 1_000 {
+        return Err(format!(
+            "device RX {} kbit/s is below the acceptance floor",
+            rx.throughput_median_kbps,
+        )
+        .into());
+    }
+    let (expected_width, expected_rate) = options.phy.expected_tx();
+    qualify_tx_samples(report, expected_width, expected_rate)?;
+    qualify_ampdu(report)?;
+    Ok(rx)
 }
 
 fn median(mut values: Vec<u64>) -> Option<u64> {
@@ -464,9 +1040,27 @@ fn write_report(
     output: &Path,
     options: &Options,
     host: HostTransmission,
-    rx_median: u64,
+    rx: RxQualification,
     tx_floor: u64,
+    ampdu: AmpduEvidence,
 ) -> Result<()> {
+    let rx_median = rx.throughput_median_kbps;
+    let pipeline = rx.pipeline;
+    let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
+    let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
+    let average_publish_us =
+        pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
+    let average_wait_us =
+        pipeline.network_ready_wait_us as f64 / pipeline.network_ready_waits.max(1) as f64;
+    let average_subframes = ampdu.subframes as f64 / ampdu.aggregates.max(1) as f64;
+    let full32_percent = ampdu.full32 as f64 * 100.0 / ampdu.aggregates.max(1) as f64;
+    let average_preparation_us = ampdu.preparation_us as f64 / ampdu.aggregates.max(1) as f64;
+    let average_publication_us = ampdu.publication_us as f64 / ampdu.publications.max(1) as f64;
+    let terminal_exchanges = ampdu
+        .completed
+        .saturating_add(ampdu.timeout)
+        .saturating_add(ampdu.collision);
+    let average_exchange_us = ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64;
     fs::write(
         output.join("report.md"),
         format!(
@@ -479,6 +1073,29 @@ fn write_report(
              - Direct RX median: `{:.3} Mbit/s`\n\
              - Concurrent open-radio TX floor: `{:.3} Mbit/s`\n\
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
+             ## RX evidence\n\n\
+             - Enqueued/software-dropped frames: `{}` / `{}`\n\
+             - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
+             - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
+             - Staged bytes: `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
+             - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
+             ## A-MPDU evidence\n\n\
+             - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
+             - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
+             - Full 32-member aggregates: `{}` (`{:.2}%`)\n\
+             - Size buckets 1 / 2-3 / 4-7 / 8-15 / 16-23 / 24-30 / 31 / 32: \
+               `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - Build stop at frame limit / capacity limit / empty queue: \
+               `{}` / `{}` / `{}`\n\
+             - Acknowledged subframes: `{}`; individual fallback retries: `{}`\n\
+             - Hardware timeouts/collisions: `{}` / `{}`\n\
+             - Preparation: `{:.2} us` average, `{}` us boot maximum\n\
+             - Hardware publication programming: `{:.2} us` average, \
+               `{}` us boot maximum\n\
+             - Aggregate exchange: `{:.2} us` average, `{}` us boot maximum\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.name().to_uppercase(),
             options.address,
@@ -489,6 +1106,62 @@ fn write_report(
             rx_median as f64 / 1_000.0,
             tx_floor as f64 / 1_000.0,
             rx_median.saturating_add(tx_floor) as f64 / 1_000.0,
+            rx.enqueued,
+            rx.dropped,
+            rx.he_mcs_histogram,
+            rx.other_phy_frames,
+            pipeline.service_calls,
+            pipeline.frontier_frames,
+            pipeline.admitted_frames,
+            pipeline.maximum_frontier,
+            pipeline.maximum_admitted,
+            pipeline.staged_bytes,
+            average_service_us,
+            pipeline.service_max_us,
+            pipeline.backpressured_services,
+            pipeline.pool_credit_limited_services,
+            pipeline.queue_credit_limited_services,
+            pipeline.protocol_frames,
+            pipeline.protocol_data_frames,
+            average_dispatch_us,
+            pipeline.dispatch_max_us,
+            pipeline.network_publications,
+            pipeline.network_published_bytes,
+            average_publish_us,
+            pipeline.network_publish_max_us,
+            pipeline.network_ready_waits,
+            average_wait_us,
+            pipeline.network_ready_wait_max_us,
+            ampdu.aggregates,
+            ampdu.completed,
+            ampdu.publications,
+            ampdu.subframes,
+            average_subframes,
+            ampdu.minimum,
+            ampdu.maximum,
+            ampdu.full32,
+            full32_percent,
+            ampdu.one,
+            ampdu.two_three,
+            ampdu.four_seven,
+            ampdu.eight_fifteen,
+            ampdu.sixteen_twentythree,
+            ampdu.twentyfour_thirty,
+            ampdu.thirtyone,
+            ampdu.full32,
+            ampdu.stop_frame,
+            ampdu.stop_capacity,
+            ampdu.stop_empty,
+            ampdu.acknowledged,
+            ampdu.individual_retry,
+            ampdu.timeout,
+            ampdu.collision,
+            average_preparation_us,
+            ampdu.preparation_max_us,
+            average_publication_us,
+            ampdu.publication_max_us,
+            average_exchange_us,
+            ampdu.exchange_max_us,
         ),
     )?;
     Ok(())
@@ -565,9 +1238,14 @@ mod tests {
     fn qualifies_complete_he20_evidence() {
         let report = parse_device_report(
             "OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
+             OAMP aggregates=120 publications=121 completed=120 subframes=3744 acknowledged=3744 single=2 individual_retry=0 timeout=0 collision=0 min=2 max=32 stop_frame=116 stop_capacity=0 stop_empty=4\n\
+             OAMPH one=0 two_three=1 four_seven=1 eight_fifteen=1 sixteen_twentythree=1 twentyfour_thirty=0 thirtyone=0 full32=116\n\
+             OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240\n\
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
-             OPEN_RADIO_PHY_HIL stage=rx-runtime-delta buffer_full=0 fifo_overflow=0\n",
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
+             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
+             OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
         let options = parse_options(&["192.168.178.141".into()]).unwrap();
         let host = HostTransmission {
@@ -576,5 +1254,44 @@ mod tests {
             elapsed: Duration::from_secs(5),
         };
         qualify(&options, host, &report).unwrap();
+        let ampdu = AmpduEvidence::from_report(&report);
+        assert_eq!(ampdu.aggregates, 120);
+        assert_eq!(ampdu.histogram_total(), 120);
+        assert_eq!(ampdu.full32, 116);
+        assert_eq!(ampdu.maximum, 32);
+        assert_eq!(ampdu.preparation_us, 1_200);
+    }
+
+    #[test]
+    fn parses_current_production_rx_benchmark_evidence() {
+        let report = parse_device_report(
+            "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 receive_errors=0 terminal=1\n\
+             OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path mpdu=5000 data_success=5000 fcs_error=0 buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_irqs=5000 reload_delays=0 rx_format=4\n\
+             ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
+             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
+             OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
+             OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
+             OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
+             OAMPT preparation_us=1200 preparation_max_us=12 publication_us=600 publication_max_us=6 exchange_us=24000 exchange_max_us=210\n",
+        );
+
+        assert_eq!(report.rx.len(), 1);
+        assert_eq!(report.rx[0].throughput_kbps, 9_600);
+        assert_eq!(report.rx_formats, [4]);
+        assert_eq!(report.dma_health, [(0, 0)]);
+        assert_eq!(report.software_health, [(5_000, 0)]);
+        assert_eq!(
+            report.rx_mcs_histograms,
+            [([0, 0, 0, 0, 0, 0, 0, 20, 30, 4_950, 0, 0], 0)]
+        );
+        let rx = qualify_rx_report(&report, 4).unwrap();
+        assert_eq!(rx.he_mcs_histogram[9], 4_950);
+        assert_eq!(rx.pipeline.service_calls, 5_000);
+        assert_eq!(rx.pipeline.service_us, 100_000);
+        assert_eq!(rx.pipeline.network_publish_us, 60_000);
+        assert_eq!(report.ampdu.len(), 1);
+        assert_eq!(report.ampdu_histograms[0].full32, 120);
+        assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);
     }
 }

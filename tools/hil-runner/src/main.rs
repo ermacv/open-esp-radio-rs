@@ -11,7 +11,9 @@ use std::{
 };
 
 mod bidirectional;
+mod rx_traffic;
 mod trigger;
+mod tx_traffic;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -29,6 +31,7 @@ const OTA_0_OFFSET: u32 = 0x1_0000;
 const OTA_DATA_SIZE: usize = 0x2000;
 
 const SCENARIO_ENVIRONMENT: &[&str] = &[
+    "OPEN_RADIO_BIDIRECTIONAL_BENCH",
     "OPEN_RADIO_RAW_MAC_BENCH",
     "OPEN_RADIO_TX_BENCH",
     "OPEN_RADIO_AMSDU_BENCH",
@@ -93,9 +96,13 @@ fn run() -> Result<()> {
         }
         Some("traffic") => match arguments.next().as_deref() {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
+            Some("rx") => rx_traffic::run(arguments.collect(), &root),
+            Some("tx") => tx_traffic::run(arguments.collect(), &root),
             Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
             Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
-            _ => Err("usage: cargo hil traffic <bidirectional|trigger|trigger-hil> ...".into()),
+            _ => {
+                Err("usage: cargo hil traffic <rx|tx|bidirectional|trigger|trigger-hil> ...".into())
+            }
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
@@ -144,6 +151,8 @@ fn print_help() {
          cargo hil doctor\n\
          cargo hil build [scenario]\n\n\
          cargo hil flash [scenario] [--port /dev/ttyACM0]\n\
+         cargo hil traffic rx <device-ipv4> [options]\n\
+         cargo hil traffic tx <device-ipv4> [options]\n\
          cargo hil traffic bidirectional <ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
@@ -400,16 +409,23 @@ enum Scenario {
     BootSmoke,
     Radio,
     UdpTx,
+    Bidirectional,
 }
 
 impl Scenario {
-    const ALL: [Self; 3] = [Self::BootSmoke, Self::Radio, Self::UdpTx];
+    const ALL: [Self; 4] = [
+        Self::BootSmoke,
+        Self::Radio,
+        Self::UdpTx,
+        Self::Bidirectional,
+    ];
 
     fn parse(value: &str) -> Result<Self> {
         match value {
             "boot-smoke" => Ok(Self::BootSmoke),
             "radio" | "open-radio-hil" => Ok(Self::Radio),
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
+            "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
             _ => Err(format!(
                 "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
             )
@@ -422,6 +438,7 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "radio",
             Self::UdpTx => "udp-tx",
+            Self::Bidirectional => "bidirectional",
         }
     }
 
@@ -430,13 +447,14 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::UdpTx => "open-radio-udp-tx",
+            Self::Bidirectional => "open-radio-bidirectional",
         }
     }
 
     const fn runtime_feature(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke",
-            Self::Radio | Self::UdpTx => "open-radio-hil",
+            Self::Radio | Self::UdpTx | Self::Bidirectional => "open-radio-hil",
         }
     }
 
@@ -444,6 +462,10 @@ impl Scenario {
         match self {
             Self::BootSmoke | Self::Radio => &[],
             Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
+            Self::Bidirectional => &[
+                ("OPEN_RADIO_TX_BENCH", "1"),
+                ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
+            ],
         }
     }
 
@@ -452,6 +474,7 @@ impl Scenario {
             Self::BootSmoke => "bootstrap, Flash/PSRAM and runtime smoke test",
             Self::Radio => "production WifiRunner PHY/MAC/STA/WPA2 HIL",
             Self::UdpTx => "production WifiRunner embassy-net UDP throughput",
+            Self::Bidirectional => "production WifiRunner simultaneous RX/TX throughput",
         }
     }
 }
@@ -971,6 +994,10 @@ mod tests {
         assert_eq!(Scenario::parse("radio").unwrap(), Scenario::Radio);
         assert_eq!(Scenario::Radio.name(), "open-radio-hil");
         assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
+        assert_eq!(
+            Scenario::parse("bidirectional").unwrap(),
+            Scenario::Bidirectional
+        );
         assert!(Scenario::parse("he-dcm-matrix").is_err());
     }
 
@@ -990,6 +1017,13 @@ mod tests {
         assert_eq!(
             Scenario::UdpTx.environment(),
             &[("OPEN_RADIO_TX_BENCH", "1")]
+        );
+        assert_eq!(
+            Scenario::Bidirectional.environment(),
+            &[
+                ("OPEN_RADIO_TX_BENCH", "1"),
+                ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
+            ]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {

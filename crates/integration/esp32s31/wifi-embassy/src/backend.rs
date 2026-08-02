@@ -6,7 +6,7 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
-use open_esp_radio_esp32s31_wifi_mac::{connected_rx::ConnectedRxDispatcher, tx::TxHardware};
+use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 
 use crate::{
     runner::{
@@ -18,16 +18,16 @@ use crate::{
     },
 };
 
-/// One RX owner that drains a durable descriptor frontier and dispatches every
-/// staged frame. Implementations may await bounded reload timer edges but must
-/// not retain the mutable hardware borrow across an await.
+/// One RX owner that copies a finite descriptor frontier into independent
+/// staging ownership. Protocol dispatch belongs to a separate consumer.
+/// Implementations may await bounded reload timer edges but must not retain the
+/// mutable hardware borrow across an await.
 pub trait Esp32s31ConnectedRxService<H> {
     type Error;
 
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        dispatcher: &'a mut ConnectedRxDispatcher,
     ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a;
 }
 
@@ -196,13 +196,10 @@ where
 {
     type Error = Esp32s31WifiBackendError<R::Error, C::Error, X::Error>;
 
-    fn service_rx<'a>(
-        &'a mut self,
-        dispatcher: &'a mut ConnectedRxDispatcher,
-    ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
+    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
         async move {
             self.rx
-                .service(&mut self.hardware, dispatcher)
+                .service(&mut self.hardware)
                 .await
                 .map_err(Esp32s31WifiBackendError::Rx)
         }

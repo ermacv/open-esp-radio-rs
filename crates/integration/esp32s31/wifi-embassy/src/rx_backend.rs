@@ -1,9 +1,9 @@
 //! Production ownership of the ESP32-S31 Wi-Fi RX descriptor ring.
 //!
-//! DMA storage, the live descriptor frontier, independent staging storage and
-//! connected-frame dispatch are kept in one finite service. No DMA pointer is
-//! exposed to `embassy-net`: a completed unit is copied and recycled before
-//! the dispatcher receives it.
+//! DMA storage, the live descriptor frontier and independent staging storage
+//! are kept in one finite service. No DMA pointer escapes this owner: a
+//! completed unit is copied and recycled before its staging lease is handed to
+//! the separate protocol consumer.
 
 use core::{
     cell::UnsafeCell,
@@ -16,13 +16,11 @@ use core::{
 use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
 use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::{
-    connected_rx::{
-        ConnectedRxControlEvent, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
-    },
+    connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
     descriptor::Descriptor,
     rx::{RxDma, RxRingError, RxRingLive, prepare_recycled_buffer},
     rx_pool::{
-        RxFrameQueue, RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+        RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
         VENDOR_LARGE_RX_SLOT_COUNT,
     },
 };
@@ -31,6 +29,8 @@ use crate::{
     backend::Esp32s31ConnectedRxService,
     embassy_rx::{RxReloadDelay, await_staged_rx_reload},
     runner::WifiRxProgress,
+    rx_telemetry::RxPipelineCounters,
+    staged_rx::{ConnectedRxProtocolSink, Esp32s31StagedRxFrame},
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
@@ -38,14 +38,6 @@ use crate::{
 pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 32;
 pub const ESP32S31_RX_BUFFER_SIZE: usize = 4_608;
 pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
-// Reclaim a short RX burst before returning through the cooperative runner.
-// The vendor path drains completed DMA units promptly into independent ESF
-// objects, while a one-descriptor pass adds an executor handoff to every MPDU
-// and measurably limits downlink throughput. Eight remains smaller than both
-// the 32-descriptor DMA ring and no larger than half the ordinary network
-// queue; the runner yields after a full pass so the stack can release queue
-// capacity between bursts.
-const ESP32S31_CONNECTED_RX_SERVICE_BUDGET: usize = 8;
 
 #[repr(C, align(4))]
 pub struct Esp32s31RxDmaBuffer(UnsafeCell<[u8; ESP32S31_RX_BUFFER_STORAGE_SIZE]>);
@@ -172,79 +164,85 @@ impl<const COUNT: usize> Default for Esp32s31RxDmaStorage<COUNT> {
 pub struct Esp32s31ConnectedRx<
     'storage,
     'pool,
-    'scratch,
+    'queue,
     D,
-    S,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
 > {
     ring: RxRingLive<'storage, COUNT>,
     buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
     pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>,
-    queue: RxFrameQueue<'pool, VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>,
+    frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool>, QUEUE_DEPTH>,
     delay: D,
-    sink: S,
-    mpdu: &'scratch mut [u8; ESP32S31_RX_BUFFER_SIZE],
-    ethernet: &'scratch mut [u8; ESP32S31_RX_BUFFER_SIZE],
+    pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
 
-impl<'storage, 'pool, 'scratch, D, S, const COUNT: usize>
-    Esp32s31ConnectedRx<'storage, 'pool, 'scratch, D, S, COUNT>
+impl<'storage, 'pool, 'queue, D, M: RawMutex, const QUEUE_DEPTH: usize, const COUNT: usize>
+    Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT>
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
         buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
         pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>,
         delay: D,
-        sink: S,
-        mpdu: &'scratch mut [u8; ESP32S31_RX_BUFFER_SIZE],
-        ethernet: &'scratch mut [u8; ESP32S31_RX_BUFFER_SIZE],
+        frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool>, QUEUE_DEPTH>,
     ) -> Self {
         Self {
             ring,
             buffers,
             pool,
-            queue: RxFrameQueue::new(),
+            frames,
             delay,
-            sink,
-            mpdu,
-            ethernet,
+            pipeline_counters: None,
         }
+    }
+
+    pub fn with_pipeline_counters(mut self, counters: &'pool RxPipelineCounters) -> Self {
+        self.pipeline_counters = Some(counters);
+        self
     }
 
     pub const fn ring(&self) -> &RxRingLive<'storage, COUNT> {
         &self.ring
     }
 
-    pub const fn sink(&self) -> &S {
-        &self.sink
-    }
-
-    pub fn sink_mut(&mut self) -> &mut S {
-        &mut self.sink
+    pub fn queued_frames(&self) -> usize {
+        self.frames.len()
     }
 }
 
-impl<'storage, 'pool, 'scratch, H, D, S, const COUNT: usize> Esp32s31ConnectedRxService<H>
-    for Esp32s31ConnectedRx<'storage, 'pool, 'scratch, D, S, COUNT>
+impl<'storage, 'pool, 'queue, H, D, M: RawMutex, const QUEUE_DEPTH: usize, const COUNT: usize>
+    Esp32s31ConnectedRxService<H>
+    for Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT>
 where
     H: RxDma,
     D: RxReloadDelay,
-    S: ConnectedRxSink,
 {
     type Error = RxStageTransactionError;
 
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        dispatcher: &'a mut ConnectedRxDispatcher,
     ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
         async move {
-            let mut staged_count = 0;
-            while staged_count < ESP32S31_CONNECTED_RX_SERVICE_BUDGET && !self.queue.is_full() {
+            let service_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
+            // Freeze the completion frontier before any descriptor is rearmed.
+            // A saturated producer can therefore only create a later epoch; it
+            // cannot make this service call unbounded by refilling the ring.
+            let frontier = self.ring.completed_frontier_len();
+            let pool_credits = self.pool.available_slots();
+            let queue_credits = self.frames.free_capacity();
+            let credits = pool_credits.min(queue_credits);
+            let admitted = frontier.min(credits);
+            let mut staged_bytes = 0_usize;
+
+            for _ in 0..admitted {
                 let index = self.ring.recycle_start();
-                let Some(completed) = self.ring.take_completed(index) else {
-                    break;
-                };
+                let completed = self
+                    .ring
+                    .take_completed(index)
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
                 // SAFETY: `take_completed` uniquely transferred the matching
                 // descriptor. `stage_recycle` copies this view before its
                 // rearm closure publishes the buffer to DMA again.
@@ -263,18 +261,25 @@ where
                 let frame =
                     await_staged_rx_reload(pending, hardware, &mut self.ring, &mut self.delay)
                         .await?;
-                self.queue
-                    .try_push(frame)
-                    .map_err(|_| RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                staged_count += 1;
+                staged_bytes = staged_bytes.saturating_add(frame.length());
+                self.frames.try_send(frame).map_err(|error| match error {
+                    TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
+                })?;
             }
 
-            while let Some(frame) = self.queue.pop() {
-                dispatcher.dispatch(frame.segment(), self.mpdu, self.ethernet, &mut self.sink);
+            if let (Some(counters), Some(started)) = (self.pipeline_counters, service_started) {
+                counters.record_service(
+                    frontier,
+                    pool_credits,
+                    queue_credits,
+                    admitted,
+                    staged_bytes,
+                    counters.elapsed_micros_since(started),
+                );
             }
 
-            Ok(if staged_count == ESP32S31_CONNECTED_RX_SERVICE_BUDGET {
-                WifiRxProgress::More
+            Ok(if admitted < frontier {
+                WifiRxProgress::Backpressured
             } else {
                 WifiRxProgress::Drained
             })
@@ -335,6 +340,7 @@ pub struct EmbassyNetConnectedRxSink<
     dropped: u32,
     last_enqueue_error: Option<RxEnqueueError>,
     counters: Option<&'resources RxEnqueueCounters>,
+    pipeline_counters: Option<&'resources RxPipelineCounters>,
 }
 
 impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
@@ -351,11 +357,17 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
             dropped: 0,
             last_enqueue_error: None,
             counters: None,
+            pipeline_counters: None,
         }
     }
 
     pub fn with_counters(mut self, counters: &'resources RxEnqueueCounters) -> Self {
         self.counters = Some(counters);
+        self
+    }
+
+    pub fn with_pipeline_counters(mut self, counters: &'resources RxPipelineCounters) -> Self {
+        self.pipeline_counters = Some(counters);
         self
     }
 
@@ -385,12 +397,20 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::Ethernet { frame, .. } = event {
-            match self.network.try_send_parts(
+            let publish_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
+            let result = self.network.try_send_parts(
                 frame.destination,
                 frame.source,
                 frame.ether_type,
                 frame.payload,
-            ) {
+            );
+            if let (Some(counters), Some(started)) = (self.pipeline_counters, publish_started) {
+                counters.record_network_publish(
+                    frame.payload.len().saturating_add(14),
+                    counters.elapsed_micros_since(started),
+                );
+            }
+            match result {
                 Ok(()) => {
                     self.enqueued = self.enqueued.saturating_add(1);
                     if let Some(counters) = self.counters {
@@ -407,6 +427,14 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
             }
         }
         self.observer.publish(event);
+    }
+}
+
+impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    ConnectedRxProtocolSink for EmbassyNetConnectedRxSink<'_, M, O, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
+        self.network.wait_ready()
     }
 }
 
@@ -600,7 +628,7 @@ mod tests {
 
     use open_esp_radio_embassy_net::{Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool};
     use open_esp_radio_esp32s31_wifi_mac::{
-        connected_rx::{ConnectedRxConfig, ConnectedRxEvent},
+        connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent},
         descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT},
         rx::{RxIngressConfig, RxRingStopped},
         tx_ampdu::BlockAckAction,
@@ -608,6 +636,10 @@ mod tests {
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
     use super::*;
+    use crate::{
+        embassy_irq::EmbassyMacIrqRuntime,
+        staged_rx::{Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue},
+    };
 
     const BASE: u32 = 0x2f00_1000;
 
@@ -680,8 +712,9 @@ mod tests {
     }
 
     #[test]
-    fn finite_service_stages_recycles_and_dispatches_one_completed_prefix() {
+    fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
         const COUNT: usize = 2;
+        const STAGED_DEPTH: usize = 1;
         let storage = Esp32s31RxDmaStorage::<COUNT>::new();
         let addresses = [0x2f00_2000, 0x2f00_3200];
         let mut hardware = MockRxDma::default();
@@ -697,29 +730,47 @@ mod tests {
         let ring = stopped.start(&mut hardware).unwrap();
         storage.descriptors()[0]
             .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (8 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+        storage.descriptors()[1]
+            .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (8 << LENGTH_SHIFT) | BIT_30 | BIT_31);
         let pool = RxStagePool::new();
+        let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
+        let (sender, receiver) = queue.split();
+        let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
         let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
-        let mut service = Esp32s31ConnectedRx::new(
-            ring,
-            storage.buffers(),
-            &pool,
-            NoDelay,
-            Observer::default(),
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut protocol = Esp32s31ConnectedRxProtocol::new(
+            receiver,
+            &irq,
+            dispatcher(),
+            crate::staged_rx::AlwaysReadyConnectedRxSink(Observer::default()),
             &mut mpdu,
             &mut ethernet,
         );
-        let mut dispatcher = dispatcher();
 
         assert_eq!(
-            embassy_futures::block_on(service.service(&mut hardware, &mut dispatcher)),
-            Ok(WifiRxProgress::Drained),
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Backpressured),
         );
+        assert_eq!(pool.claimed_slots(), 1);
+        assert_eq!(pool.network_slots(), 1);
+        assert_eq!(protocol.queue_len(), 1);
+        embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
         assert_eq!(service.ring().recycle_start(), 1);
         assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
         assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
+
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        assert_eq!(service.ring().recycle_start(), 0);
+        assert_eq!(protocol.queue_len(), 1);
+        embassy_futures::block_on(protocol.dispatch_next());
+        assert_eq!(pool.claimed_slots(), 0);
+        assert_eq!(pool.network_slots(), 0);
     }
 
     #[test]

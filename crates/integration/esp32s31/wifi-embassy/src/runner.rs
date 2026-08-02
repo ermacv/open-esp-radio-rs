@@ -1,8 +1,9 @@
 //! Production Embassy event loop for one ESP32-S31 Wi-Fi radio owner.
 //!
-//! The runner owns scheduling and connected-frame protocol state. A backend
-//! owns only finite PAC/DMA transactions: it must never wait for an executor
-//! primitive while holding a mutable PAC borrow.
+//! The runner owns PAC/DMA/TX scheduling. Connected-frame protocol state lives
+//! in a separate staged-RX consumer, so parsing cannot extend one hardware
+//! service epoch. A backend owns only finite PAC/DMA transactions: it must
+//! never wait for an executor primitive while holding a mutable PAC borrow.
 
 use core::future::{Future, pending, ready};
 
@@ -11,7 +12,6 @@ use embassy_futures::{
     yield_now,
 };
 use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
-use open_esp_radio_esp32s31_wifi_mac::connected_rx::ConnectedRxDispatcher;
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
 
@@ -29,8 +29,9 @@ pub enum WifiTxProgress {
 pub enum WifiRxProgress {
     /// The durable completion frontier was drained within this pass.
     Drained,
-    /// The pass reached its budget; schedule a fresh RX-priority pass.
-    More,
+    /// Completed descriptors remain, but no independent staging owner is
+    /// available. Resume only after protocol processing returns a credit.
+    Backpressured,
 }
 
 /// Result of one finite control-plane scheduling step.
@@ -75,11 +76,10 @@ pub enum WifiTxWake {
 /// Finite chip-specific operations used by [`WifiRunner`].
 ///
 /// An implementation normally owns the live RX descriptor ring, staging
-/// storage, protocol-event sink, TX descriptor state and a short-lived PAC
-/// facade such as `RadioRegisters`. `service_rx` must drain the durable RX
-/// frontier and pass every admitted frame through the supplied dispatcher.
-/// The dispatcher is supplied by the runner so ordinary RX and RX interleaved
-/// with TX share exactly one duplicate/protocol history.
+/// storage, staging publisher, TX descriptor state and a short-lived PAC
+/// facade such as `RadioRegisters`. `service_rx` must snapshot and drain one
+/// durable RX frontier into independent staging ownership. A separate
+/// protocol consumer retains duplicate/protocol history.
 ///
 /// Every method must finish after a bounded number of hardware observations.
 /// A method may await a timer edge needed by a typed transaction, but it must
@@ -96,11 +96,8 @@ pub trait WifiRunnerBackend<
 {
     type Error;
 
-    /// Drain the current RX-success frontier and publish semantic events.
-    fn service_rx<'a>(
-        &'a mut self,
-        dispatcher: &'a mut ConnectedRxDispatcher,
-    ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a;
+    /// Drain one snapshotted RX-success frontier into independent ownership.
+    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_;
 
     /// Apply at most one owned control event or publish one control frame.
     ///
@@ -162,7 +159,7 @@ pub trait WifiRunnerBackend<
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
 }
 
-/// Single-task Embassy owner for connected RX, control, network TX and MAC IRQ order.
+/// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.
 pub struct WifiRunner<
     'resources,
     'irq,
@@ -175,8 +172,8 @@ pub struct WifiRunner<
 > {
     irq: &'irq EmbassyMacIrqRuntime<M>,
     network: PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    dispatcher: ConnectedRxDispatcher,
     backend: B,
+    rx_backpressured: bool,
 }
 
 impl<
@@ -193,15 +190,11 @@ where
     B: WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 {
     async fn service_rx(&mut self) -> Result<(), B::Error> {
-        if self.backend.service_rx(&mut self.dispatcher).await? == WifiRxProgress::More {
-            self.irq.continue_rx();
-            // A full bounded pass can leave another durable descriptor batch
-            // ready immediately. Yield once before consuming the software
-            // continuation so sibling stack/application tasks can release
-            // the bounded network queue. RX remains signaled and therefore
-            // retains priority on the next radio-runner poll.
-            yield_now().await;
-        }
+        self.rx_backpressured = self.backend.service_rx().await? == WifiRxProgress::Backpressured;
+        // One service call owns exactly the completion frontier captured at
+        // its start. Yield at that hardware epoch boundary so a separate
+        // protocol task can consume staged ownership before another RX epoch.
+        yield_now().await;
         Ok(())
     }
 
@@ -212,12 +205,16 @@ where
     async fn drive_active_tx(&mut self) -> Result<(), B::Error> {
         let mut progress = WifiTxProgress::Pending;
         while progress == WifiTxProgress::Pending {
-            let wake = select3(
-                self.irq.wait_rx(),
-                self.irq.wait_tx(),
-                self.backend.wait_tx_deadline(),
-            )
-            .await;
+            let irq = self.irq;
+            let rx_backpressured = self.rx_backpressured;
+            let wait_rx = async move {
+                if rx_backpressured {
+                    irq.wait_rx_capacity().await;
+                } else {
+                    irq.wait_rx().await;
+                }
+            };
+            let wake = select3(wait_rx, self.irq.wait_tx(), self.backend.wait_tx_deadline()).await;
             match wake {
                 Either3::First(()) => self.service_rx().await?,
                 Either3::Second(events) => {
@@ -237,14 +234,13 @@ where
     pub const fn new(
         irq: &'irq EmbassyMacIrqRuntime<M>,
         network: PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        dispatcher: ConnectedRxDispatcher,
         backend: B,
     ) -> Self {
         Self {
             irq,
             network,
-            dispatcher,
             backend,
+            rx_backpressured: false,
         }
     }
 
@@ -254,10 +250,6 @@ where
 
     pub fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
-    }
-
-    pub const fn dispatcher(&self) -> &ConnectedRxDispatcher {
-        &self.dispatcher
     }
 
     /// Run the production radio event loop.
@@ -290,8 +282,17 @@ where
                 WifiControlProgress::Idle => {}
             }
 
+            let irq = self.irq;
+            let rx_backpressured = self.rx_backpressured;
+            let wait_rx = async move {
+                if rx_backpressured {
+                    irq.wait_rx_capacity().await;
+                } else {
+                    irq.wait_rx().await;
+                }
+            };
             match select3(
-                self.irq.wait_rx(),
+                wait_rx,
                 self.backend.wait_control_ready(),
                 self.network.receive_tx(),
             )
@@ -347,11 +348,7 @@ mod tests {
     use open_esp_radio_embassy_net::{
         Driver as _, NoopRawMutex, PinnedDevice, PinnedResources, PinnedTxPool, TxToken as _,
     };
-    use open_esp_radio_esp32s31_wifi_mac::{
-        connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher},
-        irq::{MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE},
-        rx::RxIngressConfig,
-    };
+    use open_esp_radio_esp32s31_wifi_mac::irq::{MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE};
 
     use super::*;
 
@@ -382,6 +379,8 @@ mod tests {
         complete_tx_before_control: bool,
         disconnect: bool,
         network_pending_seen: bool,
+        backpressure_once: bool,
+        repost_rx_when_backpressured: bool,
     }
 
     impl Backend {
@@ -396,12 +395,16 @@ mod tests {
     {
         type Error = TestError;
 
-        fn service_rx<'a>(
-            &'a mut self,
-            _dispatcher: &'a mut ConnectedRxDispatcher,
-        ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
+        fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
             async move {
                 self.push(1);
+                if self.backpressure_once {
+                    self.backpressure_once = false;
+                    if self.repost_rx_when_backpressured {
+                        self.irq.publish(MAC_INT_RX_SUCCESS);
+                    }
+                    return Ok(WifiRxProgress::Backpressured);
+                }
                 if self.queue_control_on_rx {
                     self.control_pending = true;
                 }
@@ -502,16 +505,6 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [8, 9, 10, 11, 12, 13],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        });
         let backend = Backend {
             irq,
             order: [0; 3],
@@ -524,8 +517,10 @@ mod tests {
             complete_tx_before_control: false,
             disconnect: false,
             network_pending_seen: false,
+            backpressure_once: false,
+            repost_rx_when_backpressured: false,
         };
-        let mut runner = WifiRunner::new(irq, network, dispatcher, backend);
+        let mut runner = WifiRunner::new(irq, network, backend);
         let mut run = std::boxed::Box::pin(runner.run());
         let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -551,16 +546,6 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [8, 9, 10, 11, 12, 13],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        });
         let backend = Backend {
             irq,
             order: [0; 3],
@@ -573,8 +558,10 @@ mod tests {
             complete_tx_before_control: false,
             disconnect: false,
             network_pending_seen: false,
+            backpressure_once: false,
+            repost_rx_when_backpressured: false,
         };
-        let mut runner = WifiRunner::new(irq, network, dispatcher, backend);
+        let mut runner = WifiRunner::new(irq, network, backend);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
@@ -590,6 +577,49 @@ mod tests {
     }
 
     #[test]
+    fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
+        let resources =
+            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
+        let resources = Resources::init_in_place(resources);
+        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
+        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+        enqueue_frame(&mut device);
+        let irq = std::boxed::Box::leak(std::boxed::Box::new(
+            EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+        ));
+        let backend = Backend {
+            irq,
+            order: [0; 3],
+            count: 0,
+            publish_irq: true,
+            deadline_ready: false,
+            tx_wake: None,
+            queue_control_on_rx: false,
+            control_pending: false,
+            complete_tx_before_control: false,
+            disconnect: false,
+            network_pending_seen: false,
+            backpressure_once: true,
+            repost_rx_when_backpressured: true,
+        };
+        let mut runner = WifiRunner::new(irq, network, backend);
+
+        assert_eq!(
+            embassy_futures::block_on(runner.run()),
+            Err(TestError::Finished)
+        );
+        assert_eq!(runner.backend().order[..2], [1, 2]);
+        assert_eq!(
+            runner.backend().tx_wake,
+            Some(WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            })
+        );
+        assert!(irq.rx_signaled());
+    }
+
+    #[test]
     fn executor_deadline_services_tx_without_an_interrupt() {
         let resources =
             std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
@@ -601,16 +631,6 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [8, 9, 10, 11, 12, 13],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        });
         let backend = Backend {
             irq,
             order: [0; 3],
@@ -623,8 +643,10 @@ mod tests {
             complete_tx_before_control: false,
             disconnect: false,
             network_pending_seen: false,
+            backpressure_once: false,
+            repost_rx_when_backpressured: false,
         };
-        let mut runner = WifiRunner::new(irq, network, dispatcher, backend);
+        let mut runner = WifiRunner::new(irq, network, backend);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
@@ -646,16 +668,6 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [8, 9, 10, 11, 12, 13],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        });
         let backend = Backend {
             irq,
             order: [0; 3],
@@ -668,8 +680,10 @@ mod tests {
             complete_tx_before_control: true,
             disconnect: false,
             network_pending_seen: false,
+            backpressure_once: false,
+            repost_rx_when_backpressured: false,
         };
-        let mut runner = WifiRunner::new(irq, network, dispatcher, backend);
+        let mut runner = WifiRunner::new(irq, network, backend);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
@@ -690,16 +704,6 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [8, 9, 10, 11, 12, 13],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        });
         let backend = Backend {
             irq,
             order: [0; 3],
@@ -712,8 +716,10 @@ mod tests {
             complete_tx_before_control: false,
             disconnect: true,
             network_pending_seen: false,
+            backpressure_once: false,
+            repost_rx_when_backpressured: false,
         };
-        let mut runner = WifiRunner::new(irq, network, dispatcher, backend);
+        let mut runner = WifiRunner::new(irq, network, backend);
 
         assert_eq!(embassy_futures::block_on(runner.run()), Ok(()));
         let mut context = Context::from_waker(core::task::Waker::noop());

@@ -6,7 +6,12 @@
 //! contention state, power profile and clock through
 //! [`Esp32s31SingleMpduTx`]; no parallel HIL TX state exists.
 
-use core::{future::Future, mem, pin::Pin};
+use core::{
+    future::Future,
+    mem,
+    pin::Pin,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -114,11 +119,302 @@ pub enum AggregateTxOutcome {
     Collision,
 }
 
+/// Number of histogram entries required for all legal A-MPDU sizes.
+///
+/// Index zero is deliberately unused; indexes `1..=32` are the number of
+/// original MPDUs prepared for one aggregate exchange.
+pub const AGGREGATE_TX_HISTOGRAM_BUCKETS: usize = 33;
+
+/// Lock-free observations of the production connected TX owner.
+///
+/// The counters are diagnostic only and never participate in scheduling.
+/// Relaxed atomics keep a HIL observer from adding synchronization to the
+/// radio path it is measuring.
+pub struct AggregateTxCounters {
+    network_single_mpdu_started: AtomicU32,
+    aggregates_prepared: AtomicU32,
+    aggregate_publications: AtomicU32,
+    aggregates_completed: AtomicU32,
+    subframes_acknowledged: AtomicU32,
+    individual_retries: AtomicU32,
+    hardware_timeouts: AtomicU32,
+    collisions: AtomicU32,
+    preparation_micros: AtomicU32,
+    preparation_lifetime_max_micros: AtomicU32,
+    publication_program_micros: AtomicU32,
+    publication_program_lifetime_max_micros: AtomicU32,
+    exchange_micros: AtomicU32,
+    exchange_lifetime_max_micros: AtomicU32,
+    stopped_at_frame_limit: AtomicU32,
+    stopped_at_capacity_limit: AtomicU32,
+    stopped_on_empty_queue: AtomicU32,
+    prepared_subframes: [AtomicU32; AGGREGATE_TX_HISTOGRAM_BUCKETS],
+}
+
+impl AggregateTxCounters {
+    pub const fn new() -> Self {
+        Self {
+            network_single_mpdu_started: AtomicU32::new(0),
+            aggregates_prepared: AtomicU32::new(0),
+            aggregate_publications: AtomicU32::new(0),
+            aggregates_completed: AtomicU32::new(0),
+            subframes_acknowledged: AtomicU32::new(0),
+            individual_retries: AtomicU32::new(0),
+            hardware_timeouts: AtomicU32::new(0),
+            collisions: AtomicU32::new(0),
+            preparation_micros: AtomicU32::new(0),
+            preparation_lifetime_max_micros: AtomicU32::new(0),
+            publication_program_micros: AtomicU32::new(0),
+            publication_program_lifetime_max_micros: AtomicU32::new(0),
+            exchange_micros: AtomicU32::new(0),
+            exchange_lifetime_max_micros: AtomicU32::new(0),
+            stopped_at_frame_limit: AtomicU32::new(0),
+            stopped_at_capacity_limit: AtomicU32::new(0),
+            stopped_on_empty_queue: AtomicU32::new(0),
+            prepared_subframes: [const { AtomicU32::new(0) }; AGGREGATE_TX_HISTOGRAM_BUCKETS],
+        }
+    }
+
+    pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
+        AggregateTxCounterSnapshot {
+            network_single_mpdu_started: self.network_single_mpdu_started.load(Ordering::Relaxed),
+            aggregates_prepared: self.aggregates_prepared.load(Ordering::Relaxed),
+            aggregate_publications: self.aggregate_publications.load(Ordering::Relaxed),
+            aggregates_completed: self.aggregates_completed.load(Ordering::Relaxed),
+            subframes_acknowledged: self.subframes_acknowledged.load(Ordering::Relaxed),
+            individual_retries: self.individual_retries.load(Ordering::Relaxed),
+            hardware_timeouts: self.hardware_timeouts.load(Ordering::Relaxed),
+            collisions: self.collisions.load(Ordering::Relaxed),
+            preparation_micros: self.preparation_micros.load(Ordering::Relaxed),
+            preparation_lifetime_max_micros: self
+                .preparation_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            publication_program_micros: self.publication_program_micros.load(Ordering::Relaxed),
+            publication_program_lifetime_max_micros: self
+                .publication_program_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
+            exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
+            stopped_at_frame_limit: self.stopped_at_frame_limit.load(Ordering::Relaxed),
+            stopped_at_capacity_limit: self.stopped_at_capacity_limit.load(Ordering::Relaxed),
+            stopped_on_empty_queue: self.stopped_on_empty_queue.load(Ordering::Relaxed),
+            prepared_subframes: core::array::from_fn(|index| {
+                self.prepared_subframes[index].load(Ordering::Relaxed)
+            }),
+        }
+    }
+
+    fn record_network_single_mpdu(&self) {
+        self.network_single_mpdu_started
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_prepared(&self, subframes: u8, stop: AggregateBuildStop) {
+        let index = usize::from(subframes);
+        debug_assert!((1..AGGREGATE_TX_HISTOGRAM_BUCKETS).contains(&index));
+        self.aggregates_prepared.fetch_add(1, Ordering::Relaxed);
+        if let Some(bucket) = self.prepared_subframes.get(index) {
+            bucket.fetch_add(1, Ordering::Relaxed);
+        }
+        match stop {
+            AggregateBuildStop::FrameLimit => {
+                self.stopped_at_frame_limit.fetch_add(1, Ordering::Relaxed);
+            }
+            AggregateBuildStop::CapacityLimit => {
+                self.stopped_at_capacity_limit
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            AggregateBuildStop::QueueEmpty => {
+                self.stopped_on_empty_queue.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn record_preparation_time(&self, micros: u64) {
+        Self::record_time(
+            &self.preparation_micros,
+            &self.preparation_lifetime_max_micros,
+            micros,
+        );
+    }
+
+    fn record_publication(&self, program_micros: u64) {
+        self.aggregate_publications.fetch_add(1, Ordering::Relaxed);
+        Self::record_time(
+            &self.publication_program_micros,
+            &self.publication_program_lifetime_max_micros,
+            program_micros,
+        );
+    }
+
+    fn record_complete(&self, acknowledged: u8, individual_retry: bool) {
+        self.aggregates_completed.fetch_add(1, Ordering::Relaxed);
+        self.subframes_acknowledged
+            .fetch_add(u32::from(acknowledged), Ordering::Relaxed);
+        if individual_retry {
+            self.individual_retries.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn record_hardware_timeout(&self) {
+        self.hardware_timeouts.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_collision(&self) {
+        self.collisions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_exchange_time(&self, micros: u64) {
+        Self::record_time(
+            &self.exchange_micros,
+            &self.exchange_lifetime_max_micros,
+            micros,
+        );
+    }
+
+    fn record_time(total: &AtomicU32, maximum: &AtomicU32, micros: u64) {
+        let micros = u32::try_from(micros).unwrap_or(u32::MAX);
+        total.fetch_add(micros, Ordering::Relaxed);
+        maximum.fetch_max(micros, Ordering::Relaxed);
+    }
+}
+
+impl Default for AggregateTxCounters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One coherent-enough diagnostic observation of [`AggregateTxCounters`].
+///
+/// The fields may straddle a live TX update, so interval qualification must
+/// tolerate one aggregate crossing a sample boundary. Individual counters
+/// remain exact monotonic observations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AggregateTxCounterSnapshot {
+    pub network_single_mpdu_started: u32,
+    pub aggregates_prepared: u32,
+    pub aggregate_publications: u32,
+    pub aggregates_completed: u32,
+    pub subframes_acknowledged: u32,
+    pub individual_retries: u32,
+    pub hardware_timeouts: u32,
+    pub collisions: u32,
+    pub preparation_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub preparation_lifetime_max_micros: u32,
+    pub publication_program_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub publication_program_lifetime_max_micros: u32,
+    pub exchange_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub exchange_lifetime_max_micros: u32,
+    pub stopped_at_frame_limit: u32,
+    pub stopped_at_capacity_limit: u32,
+    pub stopped_on_empty_queue: u32,
+    pub prepared_subframes: [u32; AGGREGATE_TX_HISTOGRAM_BUCKETS],
+}
+
+impl AggregateTxCounterSnapshot {
+    pub fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            network_single_mpdu_started: self
+                .network_single_mpdu_started
+                .wrapping_sub(earlier.network_single_mpdu_started),
+            aggregates_prepared: self
+                .aggregates_prepared
+                .wrapping_sub(earlier.aggregates_prepared),
+            aggregate_publications: self
+                .aggregate_publications
+                .wrapping_sub(earlier.aggregate_publications),
+            aggregates_completed: self
+                .aggregates_completed
+                .wrapping_sub(earlier.aggregates_completed),
+            subframes_acknowledged: self
+                .subframes_acknowledged
+                .wrapping_sub(earlier.subframes_acknowledged),
+            individual_retries: self
+                .individual_retries
+                .wrapping_sub(earlier.individual_retries),
+            hardware_timeouts: self
+                .hardware_timeouts
+                .wrapping_sub(earlier.hardware_timeouts),
+            collisions: self.collisions.wrapping_sub(earlier.collisions),
+            preparation_micros: self
+                .preparation_micros
+                .wrapping_sub(earlier.preparation_micros),
+            preparation_lifetime_max_micros: self.preparation_lifetime_max_micros,
+            publication_program_micros: self
+                .publication_program_micros
+                .wrapping_sub(earlier.publication_program_micros),
+            publication_program_lifetime_max_micros: self.publication_program_lifetime_max_micros,
+            exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
+            exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
+            stopped_at_frame_limit: self
+                .stopped_at_frame_limit
+                .wrapping_sub(earlier.stopped_at_frame_limit),
+            stopped_at_capacity_limit: self
+                .stopped_at_capacity_limit
+                .wrapping_sub(earlier.stopped_at_capacity_limit),
+            stopped_on_empty_queue: self
+                .stopped_on_empty_queue
+                .wrapping_sub(earlier.stopped_on_empty_queue),
+            prepared_subframes: core::array::from_fn(|index| {
+                self.prepared_subframes[index].wrapping_sub(earlier.prepared_subframes[index])
+            }),
+        }
+    }
+
+    pub fn prepared_subframe_total(&self) -> u32 {
+        self.prepared_subframes
+            .iter()
+            .enumerate()
+            .map(|(subframes, count)| (subframes as u32).saturating_mul(*count))
+            .fold(0, u32::saturating_add)
+    }
+
+    pub fn prepared_in_range(&self, minimum: usize, maximum: usize) -> u32 {
+        let start = minimum.max(1).min(AGGREGATE_TX_HISTOGRAM_BUCKETS);
+        let end = maximum
+            .saturating_add(1)
+            .min(AGGREGATE_TX_HISTOGRAM_BUCKETS);
+        self.prepared_subframes[start..end]
+            .iter()
+            .copied()
+            .fold(0, u32::saturating_add)
+    }
+
+    pub fn minimum_prepared_subframes(&self) -> Option<u8> {
+        self.prepared_subframes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find_map(|(subframes, count)| (*count != 0).then_some(subframes as u8))
+    }
+
+    pub fn maximum_prepared_subframes(&self) -> Option<u8> {
+        self.prepared_subframes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .rev()
+            .find_map(|(subframes, count)| (*count != 0).then_some(subframes as u8))
+    }
+}
+
 struct AggregateActive<const SLOTS: usize> {
     config: AmpduTxConfig,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
     deadline_micros: u64,
+    first_publication_micros: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateBuildStop {
+    FrameLimit,
+    CapacityLimit,
+    QueueEmpty,
 }
 
 enum ConnectedTxActive<const SLOTS: usize> {
@@ -154,6 +450,7 @@ pub struct Esp32s31ConnectedTx<
     config: AggregateTxConfig,
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_outcome: Option<AggregateTxOutcome>,
+    counters: Option<&'ampdu AggregateTxCounters>,
 }
 
 impl<
@@ -228,7 +525,15 @@ where
             config,
             active: ConnectedTxActive::Idle,
             last_aggregate_outcome: None,
+            counters: None,
         })
+    }
+
+    /// Attach optional production/HIL observations without changing TX
+    /// scheduling or completion ownership.
+    pub fn with_counters(mut self, counters: &'ampdu AggregateTxCounters) -> Self {
+        self.counters = Some(counters);
+        self
     }
 
     pub fn ordinary(&self) -> &Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE> {
@@ -296,11 +601,18 @@ where
         {
             let progress = self.ordinary.start(hardware, first.ethernet())?;
             drop(first);
+            if let Some(counters) = self.counters {
+                counters.record_network_single_mpdu();
+            }
             self.active = ConnectedTxActive::Ordinary;
             return Ok(progress);
         }
 
+        let preparation_started = self.counters.map(|_| self.ordinary.now_micros());
         self.prepare_aggregate(first, network)?;
+        if let (Some(counters), Some(started)) = (self.counters, preparation_started) {
+            counters.record_preparation_time(self.ordinary.now_micros().wrapping_sub(started));
+        }
         self.publish_initial(hardware)
     }
 
@@ -353,15 +665,18 @@ where
     ) -> Result<(), AggregateTxError> {
         self.push_frame(first)?;
 
-        while self.held_frames < usize::from(self.config.frame_limit) {
+        let build_stop = loop {
+            if self.held_frames >= usize::from(self.config.frame_limit) {
+                break AggregateBuildStop::FrameLimit;
+            }
             if !self.can_push(FRAME_CAPACITY)? {
-                break;
+                break AggregateBuildStop::CapacityLimit;
             }
             let Some(frame) = network.try_receive_tx() else {
-                break;
+                break AggregateBuildStop::QueueEmpty;
             };
             self.push_frame(frame)?;
-        }
+        };
 
         let aggregate = self.ampdu.prepared_aggregate(cookie)?;
         let retry = AmpduRetryState::<SLOTS>::new(
@@ -378,7 +693,11 @@ where
             retry,
             original_subframes: aggregate.subframes,
             deadline_micros: 0,
+            first_publication_micros: None,
         });
+        if let Some(counters) = self.counters {
+            counters.record_prepared(aggregate.subframes, build_stop);
+        }
         Ok(())
     }
 
@@ -570,9 +889,8 @@ where
         hardware: &mut H,
         active: &mut AggregateActive<SLOTS>,
     ) -> Result<(), AggregateTxError> {
-        let deadline = self
-            .ordinary
-            .now_micros()
+        let publication_started = self.ordinary.now_micros();
+        let deadline = publication_started
             .checked_add(self.config.completion_timeout_us)
             .ok_or(AggregateTxError::DeadlineOverflow)?;
         match active.config {
@@ -588,6 +906,13 @@ where
                 LegacyTxQueue::BestEffort,
                 config,
             )?,
+        }
+        if let Some(counters) = self.counters {
+            let publication_finished = self.ordinary.now_micros();
+            if active.first_publication_micros.is_none() {
+                active.first_publication_micros = Some(publication_started);
+            }
+            counters.record_publication(publication_finished.wrapping_sub(publication_started));
         }
         active.deadline_micros = deadline;
         Ok(())
@@ -675,6 +1000,10 @@ where
                     acknowledged: active.retry.acknowledged(),
                     individual_retry: true,
                 });
+                if let Some(counters) = self.counters {
+                    counters.record_complete(active.retry.acknowledged(), true);
+                    Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+                }
                 self.active = ConnectedTxActive::Ordinary;
                 return Ok(progress);
             }
@@ -686,6 +1015,10 @@ where
                 acknowledged: active.retry.acknowledged(),
                 individual_retry: false,
             });
+            if let Some(counters) = self.counters {
+                counters.record_complete(active.retry.acknowledged(), false);
+                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            }
             return Ok(WifiTxProgress::Complete);
         }
 
@@ -712,6 +1045,10 @@ where
                 .ordinary_mut()
                 .reset_terminal_exchange(LegacyTxQueue::BestEffort);
             self.last_aggregate_outcome = Some(AggregateTxOutcome::HardwareTimeout);
+            if let Some(counters) = self.counters {
+                counters.record_hardware_timeout();
+                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            }
             return Ok(WifiTxProgress::Complete);
         }
         if tx_events == MAC_INT_COLLISION {
@@ -725,11 +1062,25 @@ where
                 .ordinary_mut()
                 .reset_terminal_exchange(LegacyTxQueue::BestEffort);
             self.last_aggregate_outcome = Some(AggregateTxOutcome::Collision);
+            if let Some(counters) = self.counters {
+                counters.record_collision();
+                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            }
             return Ok(WifiTxProgress::Complete);
         }
 
         self.active = ConnectedTxActive::Aggregate(active);
         Ok(WifiTxProgress::Pending)
+    }
+
+    fn record_exchange_time(
+        counters: &AggregateTxCounters,
+        active: &AggregateActive<SLOTS>,
+        finished_micros: u64,
+    ) {
+        if let Some(started_micros) = active.first_publication_micros {
+            counters.record_exchange_time(finished_micros.wrapping_sub(started_micros));
+        }
     }
 
     fn cancel_prepared(&mut self) {
@@ -1031,6 +1382,48 @@ mod tests {
         let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
         let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         resources.split(pool, STATION)
+    }
+
+    #[test]
+    fn aggregate_counters_preserve_distribution_and_timing_deltas() {
+        let counters = AggregateTxCounters::new();
+        let before = counters.snapshot();
+        counters.record_network_single_mpdu();
+        counters.record_prepared(2, AggregateBuildStop::QueueEmpty);
+        counters.record_prepared(32, AggregateBuildStop::FrameLimit);
+        counters.record_publication(3);
+        counters.record_publication(5);
+        counters.record_complete(31, true);
+        counters.record_hardware_timeout();
+        counters.record_exchange_time(41);
+        counters.record_exchange_time(59);
+        counters.record_preparation_time(7);
+        counters.record_preparation_time(11);
+
+        let delta = counters.snapshot().wrapping_delta_since(before);
+        assert_eq!(delta.network_single_mpdu_started, 1);
+        assert_eq!(delta.aggregates_prepared, 2);
+        assert_eq!(delta.aggregate_publications, 2);
+        assert_eq!(delta.aggregates_completed, 1);
+        assert_eq!(delta.subframes_acknowledged, 31);
+        assert_eq!(delta.individual_retries, 1);
+        assert_eq!(delta.hardware_timeouts, 1);
+        assert_eq!(delta.collisions, 0);
+        assert_eq!(delta.prepared_subframe_total(), 34);
+        assert_eq!(delta.prepared_in_range(1, 1), 0);
+        assert_eq!(delta.prepared_in_range(2, 3), 1);
+        assert_eq!(delta.prepared_in_range(32, 32), 1);
+        assert_eq!(delta.minimum_prepared_subframes(), Some(2));
+        assert_eq!(delta.maximum_prepared_subframes(), Some(32));
+        assert_eq!(delta.preparation_micros, 18);
+        assert_eq!(delta.preparation_lifetime_max_micros, 11);
+        assert_eq!(delta.publication_program_micros, 8);
+        assert_eq!(delta.publication_program_lifetime_max_micros, 5);
+        assert_eq!(delta.exchange_micros, 100);
+        assert_eq!(delta.exchange_lifetime_max_micros, 59);
+        assert_eq!(delta.stopped_at_frame_limit, 1);
+        assert_eq!(delta.stopped_at_capacity_limit, 0);
+        assert_eq!(delta.stopped_on_empty_queue, 1);
     }
 
     #[test]

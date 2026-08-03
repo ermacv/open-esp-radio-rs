@@ -81,6 +81,7 @@ restore_managed_interface() {
 
 start_ap() {
     config=$1
+    expected_width=$2
     take_network_manager_ownership
     remember_wifi_identity
     stop_radio_services
@@ -90,6 +91,25 @@ start_ap() {
     /bin/mkdir -m 0750 "$CTRL_DIR"
     /bin/chown root:network "$CTRL_DIR"
     "$HOSTAPD" -B -P "$HOSTAPD_PID" "$config"
+    attempts=0
+    while test "$attempts" -lt 50; do
+        if /usr/bin/iw dev wlan0 info 2>/dev/null \
+            | /usr/bin/grep -Fq "width: $expected_width MHz"
+        then
+            break
+        fi
+        attempts=$((attempts + 1))
+        /bin/sleep 0.1
+    done
+    if test "$attempts" -eq 50; then
+        echo "open-radio-net: AP did not enter the required $expected_width MHz channel width" >&2
+        if test "$expected_width" -eq 40; then
+            echo "open-radio-net: HT40 may have been rejected by 20/40 BSS coexistence; do not qualify this run as HT40" >&2
+        fi
+        /usr/bin/iw dev wlan0 info >&2 2>/dev/null || true
+        stop_radio_services
+        exit 1
+    fi
     /usr/bin/ip address add 10.42.0.1/24 dev wlan0
     /usr/bin/dnsmasq \
         --conf-file=/dev/null \
@@ -130,10 +150,10 @@ restore_managed() {
 
 case "$1" in
     start-ht40)
-        start_ap /etc/open-radio/hostapd-ht40.conf
+        start_ap /etc/open-radio/hostapd-ht40.conf 40
         ;;
     start-he20)
-        start_ap /etc/open-radio/hostapd-he20.conf
+        start_ap /etc/open-radio/hostapd-he20.conf 20
         ;;
     monitor)
         # Compatibility mode: retain an associated/AP wlan0 and add a monitor

@@ -12,7 +12,7 @@ use open_esp_radio_ieee80211::trigger::{
     TriggerCommonEncoding, TriggerGiLtf, TriggerScheduledUserEncoding,
 };
 
-use crate::{Result, bidirectional::SerialCapture};
+use crate::{Result, traffic_capture::SerialCapture};
 
 const RADIOTAP_HEADER: [u8; 8] = [0, 0, 8, 0, 0, 0, 0, 0];
 const ARPHRD_IEEE80211_RADIOTAP: u16 = 803;

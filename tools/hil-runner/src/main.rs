@@ -12,6 +12,7 @@ use std::{
 
 mod bidirectional;
 mod rx_traffic;
+mod traffic_capture;
 mod trigger;
 mod tx_traffic;
 

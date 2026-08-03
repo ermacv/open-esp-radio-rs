@@ -7,18 +7,16 @@
 
 use std::{
     fs,
-    io::Read,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
     thread,
     time::{Duration, Instant},
 };
 
-use crate::Result;
+use crate::{
+    Result,
+    traffic_capture::{SerialCapture, await_udp_rx_ready},
+};
 
 const DEFAULT_PORT: u16 = 4_323;
 const DEFAULT_RATE_BPS: u64 = 10_000_000;
@@ -26,6 +24,7 @@ const DEFAULT_DURATION: Duration = Duration::from_secs(12);
 const DEFAULT_PAYLOAD: usize = 1_200;
 const MIN_QUALIFIED_SAMPLE: Duration = Duration::from_secs(4);
 const MIN_QUALIFIED_AGGREGATES: u64 = 100;
+const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const PSRAM_CODE_START: u64 = 0x5000_0000;
 const PSRAM_CODE_END: u64 = 0x5100_0000;
 
@@ -236,6 +235,7 @@ pub(crate) struct TxQualification {
 pub(crate) struct RxQualification {
     pub(crate) throughput_median_kbps: u64,
     pub(crate) sample_count: usize,
+    pub(crate) received_datagrams: u64,
     pub(crate) enqueued: u64,
     pub(crate) dropped: u64,
     pub(crate) he_mcs_histogram: [u64; 12],
@@ -246,9 +246,18 @@ pub(crate) struct RxQualification {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct RxPipelineEvidence {
     pub(crate) service_calls: u64,
+    pub(crate) frontier_zero_services: u64,
+    pub(crate) frontier_one_services: u64,
+    pub(crate) frontier_two_three_services: u64,
+    pub(crate) frontier_four_seven_services: u64,
+    pub(crate) frontier_eight_fifteen_services: u64,
+    pub(crate) frontier_sixteen_thirty_one_services: u64,
+    pub(crate) frontier_thirty_two_plus_services: u64,
     pub(crate) frontier_frames: u64,
     pub(crate) admitted_frames: u64,
     pub(crate) staged_bytes: u64,
+    pub(crate) stage_empty_discards: u64,
+    pub(crate) stage_too_long_discards: u64,
     pub(crate) backpressured_services: u64,
     pub(crate) pool_credit_limited_services: u64,
     pub(crate) queue_credit_limited_services: u64,
@@ -267,14 +276,48 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) network_published_bytes: u64,
     pub(crate) network_publish_us: u64,
     pub(crate) network_publish_max_us: u64,
+    pub(crate) rx_irq_posts: u64,
+    pub(crate) rx_irq_epochs: u64,
+    pub(crate) rx_irq_coalesced_posts: u64,
+    pub(crate) rx_irq_service_samples: u64,
+    pub(crate) rx_irq_clock_skew_samples: u64,
+    pub(crate) rx_irq_to_service_us: u64,
+    pub(crate) rx_irq_to_service_max_us: u64,
 }
 
 impl RxPipelineEvidence {
     fn merge(&mut self, sample: Self) {
         self.service_calls = self.service_calls.saturating_add(sample.service_calls);
+        self.frontier_zero_services = self
+            .frontier_zero_services
+            .saturating_add(sample.frontier_zero_services);
+        self.frontier_one_services = self
+            .frontier_one_services
+            .saturating_add(sample.frontier_one_services);
+        self.frontier_two_three_services = self
+            .frontier_two_three_services
+            .saturating_add(sample.frontier_two_three_services);
+        self.frontier_four_seven_services = self
+            .frontier_four_seven_services
+            .saturating_add(sample.frontier_four_seven_services);
+        self.frontier_eight_fifteen_services = self
+            .frontier_eight_fifteen_services
+            .saturating_add(sample.frontier_eight_fifteen_services);
+        self.frontier_sixteen_thirty_one_services = self
+            .frontier_sixteen_thirty_one_services
+            .saturating_add(sample.frontier_sixteen_thirty_one_services);
+        self.frontier_thirty_two_plus_services = self
+            .frontier_thirty_two_plus_services
+            .saturating_add(sample.frontier_thirty_two_plus_services);
         self.frontier_frames = self.frontier_frames.saturating_add(sample.frontier_frames);
         self.admitted_frames = self.admitted_frames.saturating_add(sample.admitted_frames);
         self.staged_bytes = self.staged_bytes.saturating_add(sample.staged_bytes);
+        self.stage_empty_discards = self
+            .stage_empty_discards
+            .saturating_add(sample.stage_empty_discards);
+        self.stage_too_long_discards = self
+            .stage_too_long_discards
+            .saturating_add(sample.stage_too_long_discards);
         self.backpressured_services = self
             .backpressured_services
             .saturating_add(sample.backpressured_services);
@@ -315,6 +358,33 @@ impl RxPipelineEvidence {
         self.network_publish_max_us = self
             .network_publish_max_us
             .max(sample.network_publish_max_us);
+        self.rx_irq_posts = self.rx_irq_posts.saturating_add(sample.rx_irq_posts);
+        self.rx_irq_epochs = self.rx_irq_epochs.saturating_add(sample.rx_irq_epochs);
+        self.rx_irq_coalesced_posts = self
+            .rx_irq_coalesced_posts
+            .saturating_add(sample.rx_irq_coalesced_posts);
+        self.rx_irq_service_samples = self
+            .rx_irq_service_samples
+            .saturating_add(sample.rx_irq_service_samples);
+        self.rx_irq_clock_skew_samples = self
+            .rx_irq_clock_skew_samples
+            .saturating_add(sample.rx_irq_clock_skew_samples);
+        self.rx_irq_to_service_us = self
+            .rx_irq_to_service_us
+            .saturating_add(sample.rx_irq_to_service_us);
+        self.rx_irq_to_service_max_us = self
+            .rx_irq_to_service_max_us
+            .max(sample.rx_irq_to_service_max_us);
+    }
+
+    fn frontier_histogram_total(self) -> u64 {
+        self.frontier_zero_services
+            .saturating_add(self.frontier_one_services)
+            .saturating_add(self.frontier_two_three_services)
+            .saturating_add(self.frontier_four_seven_services)
+            .saturating_add(self.frontier_eight_fifteen_services)
+            .saturating_add(self.frontier_sixteen_thirty_one_services)
+            .saturating_add(self.frontier_thirty_two_plus_services)
     }
 }
 
@@ -328,6 +398,7 @@ struct DeviceReport {
     rx_mcs_histograms: Vec<([u64; 12], u64)>,
     rx_service: Vec<RxPipelineEvidence>,
     rx_dispatch: Vec<RxPipelineEvidence>,
+    rx_frontier: Vec<RxPipelineEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
@@ -364,17 +435,30 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments)?;
+    let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
+    fs::create_dir_all(&output)?;
     let capture = SerialCapture::start(&options.serial);
-    thread::sleep(Duration::from_secs(1));
+    let discovered_address = match await_udp_rx_ready(
+        &capture,
+        options.address,
+        options.port,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(address) => address,
+        Err(error) => {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+    };
+    options.address = discovered_address;
     let host = send_paced_udp(&options)?;
     // The direct RX sample closes on the terminal datagram. Leave time for
     // the ten-second DMA-health interval and the bounded USB logger backlog.
     thread::sleep(Duration::from_secs(5));
     let log = capture.finish();
     let report = parse_device_report(&log);
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
-    fs::create_dir_all(&output)?;
     fs::write(output.join("uart.log"), &log)?;
     let rx = qualify(&options, host, &report)?;
     let rx_median = rx.throughput_median_kbps;
@@ -647,6 +731,8 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     frontier_frames: field(line, "frontier")?,
                     admitted_frames: field(line, "admitted")?,
                     staged_bytes: field(line, "bytes")?,
+                    stage_empty_discards: field(line, "discard_empty").unwrap_or(0),
+                    stage_too_long_discards: field(line, "discard_long").unwrap_or(0),
                     backpressured_services: field(line, "back")?,
                     pool_credit_limited_services: field(line, "pool")?,
                     queue_credit_limited_services: field(line, "queue")?,
@@ -679,6 +765,29 @@ fn parse_device_report(log: &str) -> DeviceReport {
             })();
             if let Some(sample) = sample {
                 report.rx_dispatch.push(sample);
+            }
+        } else if line.starts_with("ORXF ") || line.contains(" ORXF ") {
+            let sample = (|| {
+                Some(RxPipelineEvidence {
+                    frontier_zero_services: field(line, "zero")?,
+                    frontier_one_services: field(line, "one")?,
+                    frontier_two_three_services: field(line, "two_three")?,
+                    frontier_four_seven_services: field(line, "four_seven")?,
+                    frontier_eight_fifteen_services: field(line, "eight_fifteen")?,
+                    frontier_sixteen_thirty_one_services: field(line, "sixteen_thirty_one")?,
+                    frontier_thirty_two_plus_services: field(line, "thirty_two_plus")?,
+                    rx_irq_posts: field(line, "irq_posts")?,
+                    rx_irq_epochs: field(line, "irq_epochs")?,
+                    rx_irq_coalesced_posts: field(line, "irq_coalesced")?,
+                    rx_irq_service_samples: field(line, "irq_samples")?,
+                    rx_irq_clock_skew_samples: field(line, "irq_skew")?,
+                    rx_irq_to_service_us: field(line, "irq_service_us")?,
+                    rx_irq_to_service_max_us: field(line, "irq_service_max_us")?,
+                    ..RxPipelineEvidence::default()
+                })
+            })();
+            if let Some(sample) = sample {
+                report.rx_frontier.push(sample);
             }
         } else if line.starts_with("ORXM ") || line.contains(" ORXM ") {
             let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
@@ -945,12 +1054,28 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
     if let Some(failure) = report.failures.first() {
         return Err(format!("device reported a data-path failure: {failure}").into());
     }
-    if report.rx_service.is_empty() || report.rx_dispatch.is_empty() {
+    if report.rx_service.is_empty()
+        || report.rx_dispatch.is_empty()
+        || report.rx_frontier.is_empty()
+    {
         return Err("missing RX pipeline phase telemetry".into());
     }
     let mut pipeline = RxPipelineEvidence::default();
-    for sample in report.rx_service.iter().chain(&report.rx_dispatch) {
+    for sample in report
+        .rx_service
+        .iter()
+        .chain(&report.rx_dispatch)
+        .chain(&report.rx_frontier)
+    {
         pipeline.merge(*sample);
+    }
+    if pipeline.frontier_histogram_total() != pipeline.service_calls {
+        return Err(format!(
+            "incomplete RX frontier histogram: buckets={} services={}",
+            pipeline.frontier_histogram_total(),
+            pipeline.service_calls,
+        )
+        .into());
     }
     let mut he_mcs_histogram = [0_u64; 12];
     let mut other_phy_frames = 0_u64;
@@ -964,6 +1089,7 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         throughput_median_kbps: median(rx.iter().map(|sample| sample.throughput_kbps).collect())
             .expect("nonempty RX samples"),
         sample_count: rx.len(),
+        received_datagrams: rx.iter().map(|sample| sample.datagrams).sum(),
         enqueued: report
             .software_health
             .iter()
@@ -1020,6 +1146,14 @@ fn qualify(
         )
         .into());
     }
+    let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
+    if rx.received_datagrams < minimum_delivery {
+        return Err(format!(
+            "device received only {}/{} host UDP datagrams; required at least {minimum_delivery}",
+            rx.received_datagrams, host.datagrams,
+        )
+        .into());
+    }
     let (expected_width, expected_rate) = options.phy.expected_tx();
     qualify_tx_samples(report, expected_width, expected_rate)?;
     qualify_ampdu(report)?;
@@ -1052,6 +1186,8 @@ fn write_report(
         pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
     let average_wait_us =
         pipeline.network_ready_wait_us as f64 / pipeline.network_ready_waits.max(1) as f64;
+    let average_irq_service_us =
+        pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
     let average_subframes = ampdu.subframes as f64 / ampdu.aggregates.max(1) as f64;
     let full32_percent = ampdu.full32 as f64 * 100.0 / ampdu.aggregates.max(1) as f64;
     let average_preparation_us = ampdu.preparation_us as f64 / ampdu.aggregates.max(1) as f64;
@@ -1070,14 +1206,17 @@ fn write_report(
              - Requested downlink: `{:.3} Mbit/s`\n\
              - Actual host offer: `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
-             - Direct RX median: `{:.3} Mbit/s`\n\
-             - Concurrent open-radio TX floor: `{:.3} Mbit/s`\n\
+            - Direct RX median: `{:.3} Mbit/s`\n\
+             - Received host UDP datagrams: `{}` / `{}`\n\
+            - Concurrent open-radio TX floor: `{:.3} Mbit/s`\n\
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
-             - Staged bytes: `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - RX IRQ posts/wake epochs/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -1104,6 +1243,8 @@ fn write_report(
             host.bytes,
             host.datagrams,
             rx_median as f64 / 1_000.0,
+            rx.received_datagrams,
+            host.datagrams,
             tx_floor as f64 / 1_000.0,
             rx_median.saturating_add(tx_floor) as f64 / 1_000.0,
             rx.enqueued,
@@ -1115,7 +1256,23 @@ fn write_report(
             pipeline.admitted_frames,
             pipeline.maximum_frontier,
             pipeline.maximum_admitted,
+            pipeline.frontier_zero_services,
+            pipeline.frontier_one_services,
+            pipeline.frontier_two_three_services,
+            pipeline.frontier_four_seven_services,
+            pipeline.frontier_eight_fifteen_services,
+            pipeline.frontier_sixteen_thirty_one_services,
+            pipeline.frontier_thirty_two_plus_services,
+            pipeline.rx_irq_posts,
+            pipeline.rx_irq_epochs,
+            pipeline.rx_irq_coalesced_posts,
+            pipeline.rx_irq_service_samples,
+            pipeline.rx_irq_clock_skew_samples,
+            average_irq_service_us,
+            pipeline.rx_irq_to_service_max_us,
             pipeline.staged_bytes,
+            pipeline.stage_empty_discards,
+            pipeline.stage_too_long_discards,
             average_service_us,
             pipeline.service_max_us,
             pipeline.backpressured_services,
@@ -1167,53 +1324,6 @@ fn write_report(
     Ok(())
 }
 
-pub(crate) struct SerialCapture {
-    stop: Arc<AtomicBool>,
-    worker: thread::JoinHandle<String>,
-}
-
-impl SerialCapture {
-    pub(crate) fn start(port: &Path) -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
-        let port = port.to_owned();
-        let worker = thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let mut serial = match serialport::new(port.to_string_lossy(), 115_200)
-                .timeout(Duration::from_millis(100))
-                .open()
-            {
-                Ok(serial) => serial,
-                Err(error) => {
-                    return format!("serial capture failed for {}: {error}\n", port.display());
-                }
-            };
-            let mut buffer = [0_u8; 2_048];
-            while !worker_stop.load(Ordering::Acquire) {
-                match serial.read(&mut buffer) {
-                    Ok(length) => bytes.extend_from_slice(&buffer[..length]),
-                    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
-                    Err(error) => {
-                        bytes.extend_from_slice(
-                            format!("\nserial read failed: {error}\n").as_bytes(),
-                        );
-                        break;
-                    }
-                }
-            }
-            String::from_utf8_lossy(&bytes).into_owned()
-        });
-        Self { stop, worker }
-    }
-
-    pub(crate) fn finish(self) -> String {
-        self.stop.store(true, Ordering::Release);
-        self.worker
-            .join()
-            .unwrap_or_else(|_| "serial capture thread panicked\n".to_owned())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1245,12 +1355,13 @@ mod tests {
              ORXP f=4 r=11 m=11\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
         let options = parse_options(&["192.168.178.141".into()]).unwrap();
         let host = HostTransmission {
             bytes: 6_250_000,
-            datagrams: 5_208,
+            datagrams: 5_000,
             elapsed: Duration::from_secs(5),
         };
         qualify(&options, host, &report).unwrap();
@@ -1270,6 +1381,7 @@ mod tests {
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
@@ -1290,6 +1402,8 @@ mod tests {
         assert_eq!(rx.pipeline.service_calls, 5_000);
         assert_eq!(rx.pipeline.service_us, 100_000);
         assert_eq!(rx.pipeline.network_publish_us, 60_000);
+        assert_eq!(rx.pipeline.frontier_one_services, 5_000);
+        assert_eq!(rx.pipeline.rx_irq_to_service_us, 25_000);
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);

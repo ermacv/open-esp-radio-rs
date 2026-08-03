@@ -10,13 +10,15 @@ use std::{
 
 use crate::{
     Result,
-    bidirectional::{SerialCapture, qualify_rx_log},
+    bidirectional::qualify_rx_log,
+    traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
 const DEFAULT_PORT: u16 = 4_323;
 const DEFAULT_RATE_BPS: u64 = 20_000_000;
 const DEFAULT_DURATION: Duration = Duration::from_secs(12);
 const DEFAULT_PAYLOAD: usize = 1_200;
+const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 struct Options {
@@ -59,14 +61,27 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments)?;
+    let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
+    fs::create_dir_all(&output)?;
     let capture = SerialCapture::start(&options.serial);
-    thread::sleep(Duration::from_secs(1));
+    let discovered_address = match await_udp_rx_ready(
+        &capture,
+        options.address,
+        options.port,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(address) => address,
+        Err(error) => {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+    };
+    options.address = discovered_address;
     let host = send_paced_udp(&options)?;
     thread::sleep(Duration::from_secs(5));
     let log = capture.finish();
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
-    fs::create_dir_all(&output)?;
     fs::write(output.join("uart.log"), &log)?;
     let rx = qualify_rx_log(&log, options.expected_rx_format)?;
     let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
@@ -80,6 +95,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         )
         .into());
     }
+    let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
+    if rx.received_datagrams < minimum_delivery {
+        return Err(format!(
+            "device received only {}/{} host UDP datagrams; required at least {minimum_delivery}",
+            rx.received_datagrams, host.datagrams,
+        )
+        .into());
+    }
     let pipeline = rx.pipeline;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
     let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
@@ -87,6 +110,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
     let average_wait_us =
         pipeline.network_ready_wait_us as f64 / pipeline.network_ready_waits.max(1) as f64;
+    let average_irq_service_us =
+        pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
     fs::write(
         output.join("report.md"),
         format!(
@@ -95,13 +120,15 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Device: `{}`\n\
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
-             - Device RX median: `{:.3} Mbit/s` across `{}` samples\n\
+             - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `0` / `0`\n\n\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
-             - Staged bytes: `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - RX IRQ posts/wake epochs/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -115,6 +142,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             host.datagrams,
             rx.throughput_median_kbps as f64 / 1_000.0,
             rx.sample_count,
+            rx.received_datagrams,
             rx.enqueued,
             rx.dropped,
             rx.he_mcs_histogram,
@@ -124,7 +152,23 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             pipeline.admitted_frames,
             pipeline.maximum_frontier,
             pipeline.maximum_admitted,
+            pipeline.frontier_zero_services,
+            pipeline.frontier_one_services,
+            pipeline.frontier_two_three_services,
+            pipeline.frontier_four_seven_services,
+            pipeline.frontier_eight_fifteen_services,
+            pipeline.frontier_sixteen_thirty_one_services,
+            pipeline.frontier_thirty_two_plus_services,
+            pipeline.rx_irq_posts,
+            pipeline.rx_irq_epochs,
+            pipeline.rx_irq_coalesced_posts,
+            pipeline.rx_irq_service_samples,
+            pipeline.rx_irq_clock_skew_samples,
+            average_irq_service_us,
+            pipeline.rx_irq_to_service_max_us,
             pipeline.staged_bytes,
+            pipeline.stage_empty_discards,
+            pipeline.stage_too_long_discards,
             average_service_us,
             pipeline.service_max_us,
             pipeline.backpressured_services,

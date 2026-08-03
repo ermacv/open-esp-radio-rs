@@ -9,7 +9,8 @@ use std::{
 
 use crate::{
     Result,
-    bidirectional::{AmpduEvidence, SerialCapture, qualify_tx_log},
+    bidirectional::{AmpduEvidence, qualify_tx_log},
+    traffic_capture::{SerialCapture, await_device_marker},
 };
 
 const DEFAULT_PORT: u16 = 9_002;
@@ -17,6 +18,8 @@ const DEVICE_SOURCE_PORT: u16 = 4_324;
 const DEFAULT_DURATION: Duration = Duration::from_secs(16);
 const BURST_IDLE: Duration = Duration::from_millis(500);
 const MIN_BURST_DATAGRAMS: u64 = 1_000;
+const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
+const DEVICE_TX_READY_MARKER: &str = "result=PASS stage=udp-tx-ready ";
 
 #[derive(Debug, Eq, PartialEq)]
 struct Options {
@@ -105,9 +108,26 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments)?;
+    let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
+    fs::create_dir_all(&output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let capture = SerialCapture::start(&options.serial);
+    let discovered_address = match await_device_marker(
+        &capture,
+        DEVICE_TX_READY_MARKER,
+        options.device,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(address) => address,
+        Err(error) => {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+    };
+    options.device = discovered_address;
     let route_probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     route_probe.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
     let host_address = match route_probe.local_addr()? {
@@ -120,11 +140,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     // enter the measured radio TX accounting.
     socket.send_to(&[0], SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
 
-    let capture = SerialCapture::start(&options.serial);
     let bursts = receive_bursts(&socket, options.device, options.duration)?;
     let log = capture.finish();
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
-    fs::create_dir_all(&output)?;
     fs::write(output.join("uart.log"), &log)?;
 
     let qualified: Vec<_> = bursts

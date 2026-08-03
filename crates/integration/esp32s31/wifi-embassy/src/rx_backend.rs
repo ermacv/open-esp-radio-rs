@@ -18,9 +18,9 @@ use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
     descriptor::Descriptor,
-    rx::{RxDma, RxRingError, RxRingLive, prepare_recycled_buffer},
+    rx::{RxDma, RxReloadObservation, RxRingError, RxRingLive, prepare_recycled_buffer},
     rx_pool::{
-        RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+        RxStageError, RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
         VENDOR_LARGE_RX_SLOT_COUNT,
     },
 };
@@ -226,7 +226,9 @@ where
         hardware: &'a mut H,
     ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
         async move {
-            let service_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
+            let service_started = self
+                .pipeline_counters
+                .map(RxPipelineCounters::begin_service);
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
@@ -257,7 +259,48 @@ where
                         // completed prefix immediately before publication.
                         unsafe { self.buffers[recycled].prepare_for_recycle() }
                     },
-                )?;
+                );
+                let pending = match pending {
+                    Ok(pending) => pending,
+                    Err(RxStageTransactionError::Stage(
+                        error @ (RxStageError::Empty | RxStageError::TooLong),
+                    )) => {
+                        // Length is supplied by an untrusted receive unit. A
+                        // malformed/FCS/oversize unit must not terminate the
+                        // sole radio owner: the vendor path discards such a
+                        // frame and immediately returns its descriptor to the
+                        // DMA walker. Preserve that ownership order and the
+                        // asynchronous reload edge without publishing a
+                        // staging token.
+                        if let Some(counters) = self.pipeline_counters {
+                            counters.record_stage_discard(error);
+                        }
+                        let append = self
+                            .ring
+                            .recycle_completed_prefix::<1, _, _>(hardware, |recycled| {
+                                // SAFETY: this is the same uniquely observed
+                                // descriptor rejected before staging copied it.
+                                unsafe { self.buffers[recycled].prepare_for_recycle() }
+                            })
+                            .map_err(RxStageTransactionError::Ring)?
+                            .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+                        if append.descriptor_count != 1 {
+                            return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+                        }
+                        loop {
+                            match self
+                                .ring
+                                .poll_pending_reload(hardware)
+                                .map_err(RxStageTransactionError::Ring)?
+                            {
+                                RxReloadObservation::Pending => self.delay.after_micros(1).await,
+                                RxReloadObservation::Settled => break,
+                            }
+                        }
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
                 let frame =
                     await_staged_rx_reload(pending, hardware, &mut self.ring, &mut self.delay)
                         .await?;
@@ -771,6 +814,48 @@ mod tests {
         embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
+    }
+
+    #[test]
+    fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
+        const COUNT: usize = 2;
+        const STAGED_DEPTH: usize = 1;
+        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let addresses = [0x2f00_2000, 0x2f00_3200];
+        let mut hardware = MockRxDma::default();
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+        storage.descriptors()[0].write_word0(
+            ESP32S31_RX_BUFFER_SIZE as u32
+                | ((VENDOR_LARGE_RX_PAYLOAD_CAPACITY as u32 + 1) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+        );
+        let pool = RxStagePool::new();
+        let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
+        let (sender, receiver) = queue.split();
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        assert_eq!(service.ring().recycle_start(), 1);
+        assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+        assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
+        assert_eq!(pool.claimed_slots(), 0);
+        assert!(matches!(
+            receiver.try_receive(),
+            Err(TryReceiveError::Empty)
+        ));
     }
 
     #[test]

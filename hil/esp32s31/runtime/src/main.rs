@@ -281,7 +281,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
-            let Ok(hil) = open_radio_hil_task(radio, trng, trng_source) else {
+            let Ok(hil) = open_radio_hil_task(spawner, radio, trng, trng_source) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };
             spawner.spawn(hil);
@@ -303,11 +303,12 @@ async fn boot_smoke() {
 #[cfg(feature = "open-radio-hil")]
 #[embassy_executor::task]
 async fn open_radio_hil_task(
+    spawner: embassy_executor::Spawner,
     radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
     _trng_source: esp_hal::rng::TrngSource<'static>,
 ) {
-    radio_hil::run(radio, trng).await;
+    radio_hil::run(spawner, radio, trng).await;
 }
 
 fn validate_runtime_layout() {

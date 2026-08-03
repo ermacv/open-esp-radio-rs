@@ -6,15 +6,25 @@
 //! and prints interval deltas only after the traffic sample has ended.
 
 use core::sync::atomic::{AtomicU32, Ordering};
+use open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStageError;
 
 /// Diagnostic observations spanning DMA staging, protocol dispatch and the
 /// final `embassy-net` publication copy.
 pub struct RxPipelineCounters {
     now_micros: fn() -> u64,
     service_calls: AtomicU32,
+    frontier_zero_services: AtomicU32,
+    frontier_one_services: AtomicU32,
+    frontier_two_three_services: AtomicU32,
+    frontier_four_seven_services: AtomicU32,
+    frontier_eight_fifteen_services: AtomicU32,
+    frontier_sixteen_thirty_one_services: AtomicU32,
+    frontier_thirty_two_plus_services: AtomicU32,
     completion_frontier_frames: AtomicU32,
     admitted_frames: AtomicU32,
     staged_bytes: AtomicU32,
+    stage_empty_discards: AtomicU32,
+    stage_too_long_discards: AtomicU32,
     backpressured_services: AtomicU32,
     pool_credit_limited_services: AtomicU32,
     queue_credit_limited_services: AtomicU32,
@@ -33,16 +43,35 @@ pub struct RxPipelineCounters {
     network_published_bytes: AtomicU32,
     network_publish_micros: AtomicU32,
     network_publish_lifetime_max_micros: AtomicU32,
+    rx_irq_epochs: AtomicU32,
+    rx_irq_service_samples: AtomicU32,
+    rx_irq_clock_skew_samples: AtomicU32,
+    rx_irq_to_service_micros: AtomicU32,
+    rx_irq_to_service_lifetime_max_micros: AtomicU32,
+    pending_rx_irq_micros: AtomicU32,
 }
 
 impl RxPipelineCounters {
+    const IRQ_TIME_VALID: u32 = 1 << 31;
+    const IRQ_TIME_MASK: u32 = Self::IRQ_TIME_VALID - 1;
+    const IRQ_SAMPLE_MASK: u32 = 63;
+
     pub const fn new(now_micros: fn() -> u64) -> Self {
         Self {
             now_micros,
             service_calls: AtomicU32::new(0),
+            frontier_zero_services: AtomicU32::new(0),
+            frontier_one_services: AtomicU32::new(0),
+            frontier_two_three_services: AtomicU32::new(0),
+            frontier_four_seven_services: AtomicU32::new(0),
+            frontier_eight_fifteen_services: AtomicU32::new(0),
+            frontier_sixteen_thirty_one_services: AtomicU32::new(0),
+            frontier_thirty_two_plus_services: AtomicU32::new(0),
             completion_frontier_frames: AtomicU32::new(0),
             admitted_frames: AtomicU32::new(0),
             staged_bytes: AtomicU32::new(0),
+            stage_empty_discards: AtomicU32::new(0),
+            stage_too_long_discards: AtomicU32::new(0),
             backpressured_services: AtomicU32::new(0),
             pool_credit_limited_services: AtomicU32::new(0),
             queue_credit_limited_services: AtomicU32::new(0),
@@ -61,6 +90,12 @@ impl RxPipelineCounters {
             network_published_bytes: AtomicU32::new(0),
             network_publish_micros: AtomicU32::new(0),
             network_publish_lifetime_max_micros: AtomicU32::new(0),
+            rx_irq_epochs: AtomicU32::new(0),
+            rx_irq_service_samples: AtomicU32::new(0),
+            rx_irq_clock_skew_samples: AtomicU32::new(0),
+            rx_irq_to_service_micros: AtomicU32::new(0),
+            rx_irq_to_service_lifetime_max_micros: AtomicU32::new(0),
+            pending_rx_irq_micros: AtomicU32::new(0),
         }
     }
 
@@ -72,12 +107,79 @@ impl RxPipelineCounters {
         self.now_micros().wrapping_sub(started)
     }
 
+    /// Sample one newly published RX wake epoch at the ISR-to-executor handoff.
+    ///
+    /// The ISR adapter calls this only before publishing a wake when no older
+    /// RX wake is pending. Timestamp reads and cross-core CAS operations in the
+    /// hard ISR are not free, so only one in 64 wake epochs is timed; the epoch
+    /// count itself remains exact. The 31-bit microsecond image wraps every 35
+    /// minutes, and modular subtraction remains exact for the bounded
+    /// ISR-to-service interval.
+    #[inline]
+    pub fn record_rx_irq_epoch(&self) {
+        let epoch = self.rx_irq_epochs.fetch_add(1, Ordering::Relaxed);
+        if epoch & Self::IRQ_SAMPLE_MASK != 0 {
+            return;
+        }
+        let timestamp = Self::IRQ_TIME_VALID | (self.now_micros() as u32 & Self::IRQ_TIME_MASK);
+        let _ = self.pending_rx_irq_micros.compare_exchange(
+            0,
+            timestamp,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(crate) fn begin_service(&self) -> u64 {
+        let started = self.now_micros();
+        let pending = if self.pending_rx_irq_micros.load(Ordering::Acquire) == 0 {
+            0
+        } else {
+            self.pending_rx_irq_micros.swap(0, Ordering::AcqRel)
+        };
+        if pending != 0 {
+            let started_modulo = started as u32 & Self::IRQ_TIME_MASK;
+            let posted_modulo = pending & Self::IRQ_TIME_MASK;
+            let elapsed = started_modulo.wrapping_sub(posted_modulo) & Self::IRQ_TIME_MASK;
+            if elapsed <= Self::IRQ_TIME_MASK / 2 {
+                self.rx_irq_service_samples.fetch_add(1, Ordering::Relaxed);
+                Self::record_time(
+                    &self.rx_irq_to_service_micros,
+                    &self.rx_irq_to_service_lifetime_max_micros,
+                    u64::from(elapsed),
+                );
+            } else {
+                // The platform clock can differ by a few microseconds across
+                // cores. A modular value in the upper half is therefore a
+                // negative cross-core skew, not a multi-minute service delay.
+                self.rx_irq_clock_skew_samples
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        started
+    }
+
     pub fn snapshot(&self) -> RxPipelineCounterSnapshot {
         RxPipelineCounterSnapshot {
             service_calls: self.service_calls.load(Ordering::Relaxed),
+            frontier_zero_services: self.frontier_zero_services.load(Ordering::Relaxed),
+            frontier_one_services: self.frontier_one_services.load(Ordering::Relaxed),
+            frontier_two_three_services: self.frontier_two_three_services.load(Ordering::Relaxed),
+            frontier_four_seven_services: self.frontier_four_seven_services.load(Ordering::Relaxed),
+            frontier_eight_fifteen_services: self
+                .frontier_eight_fifteen_services
+                .load(Ordering::Relaxed),
+            frontier_sixteen_thirty_one_services: self
+                .frontier_sixteen_thirty_one_services
+                .load(Ordering::Relaxed),
+            frontier_thirty_two_plus_services: self
+                .frontier_thirty_two_plus_services
+                .load(Ordering::Relaxed),
             completion_frontier_frames: self.completion_frontier_frames.load(Ordering::Relaxed),
             admitted_frames: self.admitted_frames.load(Ordering::Relaxed),
             staged_bytes: self.staged_bytes.load(Ordering::Relaxed),
+            stage_empty_discards: self.stage_empty_discards.load(Ordering::Relaxed),
+            stage_too_long_discards: self.stage_too_long_discards.load(Ordering::Relaxed),
             backpressured_services: self.backpressured_services.load(Ordering::Relaxed),
             pool_credit_limited_services: self.pool_credit_limited_services.load(Ordering::Relaxed),
             queue_credit_limited_services: self
@@ -102,6 +204,13 @@ impl RxPipelineCounters {
             network_publish_lifetime_max_micros: self
                 .network_publish_lifetime_max_micros
                 .load(Ordering::Relaxed),
+            rx_irq_epochs: self.rx_irq_epochs.load(Ordering::Relaxed),
+            rx_irq_service_samples: self.rx_irq_service_samples.load(Ordering::Relaxed),
+            rx_irq_clock_skew_samples: self.rx_irq_clock_skew_samples.load(Ordering::Relaxed),
+            rx_irq_to_service_micros: self.rx_irq_to_service_micros.load(Ordering::Relaxed),
+            rx_irq_to_service_lifetime_max_micros: self
+                .rx_irq_to_service_lifetime_max_micros
+                .load(Ordering::Relaxed),
         }
     }
 
@@ -115,6 +224,16 @@ impl RxPipelineCounters {
         micros: u64,
     ) {
         self.service_calls.fetch_add(1, Ordering::Relaxed);
+        match frontier {
+            0 => &self.frontier_zero_services,
+            1 => &self.frontier_one_services,
+            2..=3 => &self.frontier_two_three_services,
+            4..=7 => &self.frontier_four_seven_services,
+            8..=15 => &self.frontier_eight_fifteen_services,
+            16..=31 => &self.frontier_sixteen_thirty_one_services,
+            _ => &self.frontier_thirty_two_plus_services,
+        }
+        .fetch_add(1, Ordering::Relaxed);
         Self::add_usize(&self.completion_frontier_frames, frontier);
         Self::add_usize(&self.admitted_frames, admitted);
         Self::add_usize(&self.staged_bytes, staged_bytes);
@@ -153,6 +272,15 @@ impl RxPipelineCounters {
         );
     }
 
+    pub(crate) fn record_stage_discard(&self, error: RxStageError) {
+        match error {
+            RxStageError::Empty => &self.stage_empty_discards,
+            RxStageError::TooLong => &self.stage_too_long_discards,
+            _ => return,
+        }
+        .fetch_add(1, Ordering::Relaxed);
+    }
+
     pub(crate) fn record_dispatch(&self, data: bool, micros: u64) {
         self.protocol_frames.fetch_add(1, Ordering::Relaxed);
         if data {
@@ -189,9 +317,18 @@ impl RxPipelineCounters {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxPipelineCounterSnapshot {
     pub service_calls: u32,
+    pub frontier_zero_services: u32,
+    pub frontier_one_services: u32,
+    pub frontier_two_three_services: u32,
+    pub frontier_four_seven_services: u32,
+    pub frontier_eight_fifteen_services: u32,
+    pub frontier_sixteen_thirty_one_services: u32,
+    pub frontier_thirty_two_plus_services: u32,
     pub completion_frontier_frames: u32,
     pub admitted_frames: u32,
     pub staged_bytes: u32,
+    pub stage_empty_discards: u32,
+    pub stage_too_long_discards: u32,
     pub backpressured_services: u32,
     pub pool_credit_limited_services: u32,
     pub queue_credit_limited_services: u32,
@@ -216,17 +353,50 @@ pub struct RxPipelineCounterSnapshot {
     pub network_publish_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub network_publish_lifetime_max_micros: u32,
+    pub rx_irq_epochs: u32,
+    pub rx_irq_service_samples: u32,
+    pub rx_irq_clock_skew_samples: u32,
+    pub rx_irq_to_service_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub rx_irq_to_service_lifetime_max_micros: u32,
 }
 
 impl RxPipelineCounterSnapshot {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
             service_calls: self.service_calls.wrapping_sub(earlier.service_calls),
+            frontier_zero_services: self
+                .frontier_zero_services
+                .wrapping_sub(earlier.frontier_zero_services),
+            frontier_one_services: self
+                .frontier_one_services
+                .wrapping_sub(earlier.frontier_one_services),
+            frontier_two_three_services: self
+                .frontier_two_three_services
+                .wrapping_sub(earlier.frontier_two_three_services),
+            frontier_four_seven_services: self
+                .frontier_four_seven_services
+                .wrapping_sub(earlier.frontier_four_seven_services),
+            frontier_eight_fifteen_services: self
+                .frontier_eight_fifteen_services
+                .wrapping_sub(earlier.frontier_eight_fifteen_services),
+            frontier_sixteen_thirty_one_services: self
+                .frontier_sixteen_thirty_one_services
+                .wrapping_sub(earlier.frontier_sixteen_thirty_one_services),
+            frontier_thirty_two_plus_services: self
+                .frontier_thirty_two_plus_services
+                .wrapping_sub(earlier.frontier_thirty_two_plus_services),
             completion_frontier_frames: self
                 .completion_frontier_frames
                 .wrapping_sub(earlier.completion_frontier_frames),
             admitted_frames: self.admitted_frames.wrapping_sub(earlier.admitted_frames),
             staged_bytes: self.staged_bytes.wrapping_sub(earlier.staged_bytes),
+            stage_empty_discards: self
+                .stage_empty_discards
+                .wrapping_sub(earlier.stage_empty_discards),
+            stage_too_long_discards: self
+                .stage_too_long_discards
+                .wrapping_sub(earlier.stage_too_long_discards),
             backpressured_services: self
                 .backpressured_services
                 .wrapping_sub(earlier.backpressured_services),
@@ -263,16 +433,41 @@ impl RxPipelineCounterSnapshot {
                 .network_publish_micros
                 .wrapping_sub(earlier.network_publish_micros),
             network_publish_lifetime_max_micros: self.network_publish_lifetime_max_micros,
+            rx_irq_epochs: self.rx_irq_epochs.wrapping_sub(earlier.rx_irq_epochs),
+            rx_irq_service_samples: self
+                .rx_irq_service_samples
+                .wrapping_sub(earlier.rx_irq_service_samples),
+            rx_irq_clock_skew_samples: self
+                .rx_irq_clock_skew_samples
+                .wrapping_sub(earlier.rx_irq_clock_skew_samples),
+            rx_irq_to_service_micros: self
+                .rx_irq_to_service_micros
+                .wrapping_sub(earlier.rx_irq_to_service_micros),
+            rx_irq_to_service_lifetime_max_micros: self.rx_irq_to_service_lifetime_max_micros,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    use open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStageError;
+
     use super::RxPipelineCounters;
+
+    static IRQ_CLOCK: AtomicU64 = AtomicU64::new(0);
+    static IRQ_SKEW_CLOCK: AtomicU64 = AtomicU64::new(0);
 
     fn test_clock() -> u64 {
         0
+    }
+
+    fn irq_clock() -> u64 {
+        IRQ_CLOCK.load(Ordering::Relaxed)
+    }
+
+    fn irq_skew_clock() -> u64 {
+        IRQ_SKEW_CLOCK.load(Ordering::Relaxed)
     }
 
     #[test]
@@ -280,15 +475,20 @@ mod tests {
         let counters = RxPipelineCounters::new(test_clock);
         let before = counters.snapshot();
         counters.record_service(4, 3, 5, 3, 4_500, 70);
+        counters.record_stage_discard(RxStageError::Empty);
+        counters.record_stage_discard(RxStageError::TooLong);
         counters.record_network_ready_wait(2);
         counters.record_network_publish(1_514, 13);
         counters.record_dispatch(true, 31);
         let delta = counters.snapshot().wrapping_delta_since(before);
 
         assert_eq!(delta.service_calls, 1);
+        assert_eq!(delta.frontier_four_seven_services, 1);
         assert_eq!(delta.completion_frontier_frames, 4);
         assert_eq!(delta.admitted_frames, 3);
         assert_eq!(delta.staged_bytes, 4_500);
+        assert_eq!(delta.stage_empty_discards, 1);
+        assert_eq!(delta.stage_too_long_discards, 1);
         assert_eq!(delta.backpressured_services, 1);
         assert_eq!(delta.pool_credit_limited_services, 1);
         assert_eq!(delta.queue_credit_limited_services, 0);
@@ -300,5 +500,44 @@ mod tests {
         assert_eq!(delta.network_publish_micros, 13);
         assert_eq!(delta.protocol_data_frames, 1);
         assert_eq!(delta.dispatch_micros, 31);
+    }
+
+    #[test]
+    fn sampled_irq_latency_wraps_and_frontiers_cover_every_service() {
+        IRQ_CLOCK.store((1_u64 << 31) - 3, Ordering::Relaxed);
+        let counters = RxPipelineCounters::new(irq_clock);
+        let before = counters.snapshot();
+        counters.record_rx_irq_epoch();
+        IRQ_CLOCK.store((1_u64 << 31) - 1, Ordering::Relaxed);
+        counters.record_rx_irq_epoch();
+        IRQ_CLOCK.store((1_u64 << 31) + 4, Ordering::Relaxed);
+        let started = counters.begin_service();
+        counters.record_service(32, 32, 32, 32, 48_000, 80);
+        counters.begin_service();
+        counters.record_service(0, 32, 32, 0, 0, 1);
+        let delta = counters.snapshot().wrapping_delta_since(before);
+
+        assert_eq!(started, (1_u64 << 31) + 4);
+        assert_eq!(delta.rx_irq_epochs, 2);
+        assert_eq!(delta.rx_irq_service_samples, 1);
+        assert_eq!(delta.rx_irq_to_service_micros, 7);
+        assert_eq!(delta.rx_irq_to_service_lifetime_max_micros, 7);
+        assert_eq!(delta.frontier_zero_services, 1);
+        assert_eq!(delta.frontier_thirty_two_plus_services, 1);
+        assert_eq!(delta.service_calls, 2);
+    }
+
+    #[test]
+    fn negative_cross_core_clock_skew_is_not_reported_as_latency() {
+        IRQ_SKEW_CLOCK.store(100, Ordering::Relaxed);
+        let counters = RxPipelineCounters::new(irq_skew_clock);
+        counters.record_rx_irq_epoch();
+        IRQ_SKEW_CLOCK.store(96, Ordering::Relaxed);
+        counters.begin_service();
+        let snapshot = counters.snapshot();
+
+        assert_eq!(snapshot.rx_irq_service_samples, 0);
+        assert_eq!(snapshot.rx_irq_clock_skew_samples, 1);
+        assert_eq!(snapshot.rx_irq_to_service_micros, 0);
     }
 }

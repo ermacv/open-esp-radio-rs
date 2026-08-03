@@ -10,6 +10,18 @@ pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;
 pub const MAC_INT_RX_SUCCESS: u32 = 0x0000_4000;
 pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
 
+/// Status bits observed alongside [`MAC_INT_RX_SUCCESS`] during sustained
+/// HE20 receive traffic. The vendor FIQ acknowledges both in its full-image
+/// W1C but does not dispatch either as an independent work item. Their
+/// hardware semantics remain unknown, so they intentionally stay outside
+/// [`HANDLED_MAC_MASK`].
+pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_5: u32 =
+    open_esp_radio_esp32s31_pac::mac::int_status::RX_ASSOCIATED_AUXILIARY_5.mask();
+pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_24: u32 =
+    open_esp_radio_esp32s31_pac::mac::int_status::RX_ASSOCIATED_AUXILIARY_24.mask();
+pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 =
+    MAC_INT_RX_ASSOCIATED_AUXILIARY_5 | MAC_INT_RX_ASSOCIATED_AUXILIARY_24;
+
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
 /// Production delegates both operations to generated PAC registers. Tests
@@ -107,6 +119,10 @@ pub struct IrqSnapshot {
     pub status: u32,
     pub pending: u32,
     pub handled: u32,
+    /// Known W1C status which does not create an independent work item.
+    pub auxiliary: u32,
+    /// Bits which have neither a qualified work mapping nor an observed
+    /// acknowledgement-only classification.
     pub unhandled: u32,
 }
 
@@ -114,7 +130,8 @@ pub struct IrqSnapshot {
 pub enum IrqDisposition {
     Posted,
     Spurious,
-    Unhandled,
+    /// A nonzero image was acknowledged but contained no task-side work.
+    AcknowledgedOnly,
 }
 
 /// Duplicate interrupts coalesce by raw MAC bit, matching the C worker latch.
@@ -262,11 +279,13 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
 ) -> (IrqDisposition, IrqSnapshot) {
     let status = interrupt.status();
     let handled = status & HANDLED_MAC_MASK;
-    let unhandled = status & !HANDLED_MAC_MASK;
+    let auxiliary = status & MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
+    let unhandled = status & !(HANDLED_MAC_MASK | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
     let snapshot = IrqSnapshot {
         status,
         pending: status,
         handled,
+        auxiliary,
         unhandled,
     };
 
@@ -275,9 +294,14 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
     }
 
     interrupt.acknowledge(status);
-    sink.record_unhandled(unhandled);
+    // Avoid an atomic RMW on every qualified RX interrupt. The two observed
+    // auxiliary bits are acknowledged above but neither they nor a wholly
+    // known work image need to mutate unknown-event telemetry.
+    if unhandled != 0 {
+        sink.record_unhandled(unhandled);
+    }
     if handled == 0 {
-        (IrqDisposition::Unhandled, snapshot)
+        (IrqDisposition::AcknowledgedOnly, snapshot)
     } else {
         sink.post(handled);
         (IrqDisposition::Posted, snapshot)

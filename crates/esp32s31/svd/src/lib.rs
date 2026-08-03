@@ -23852,6 +23852,8 @@ pub mod wifi_mac_interrupt {
     pub mod status {
         #[doc = "Register `STATUS` reader"]
         pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        pub type RxAssociatedAuxiliary5R = crate::BitReader;
         #[doc = "Field `TX_COMPLETE` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. At least one hardware TX queue completed."]
         pub type TxCompleteR = crate::BitReader;
         #[doc = "Field `BSS_COLOR_COLLISION` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR\\]; CONFIDENCE\\[instruction-exact\\]. HE BSS-color collision event."]
@@ -23862,7 +23864,14 @@ pub mod wifi_mac_interrupt {
         pub type RxSuccessR = crate::BitReader;
         #[doc = "Field `TX_TIMEOUT` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Hardware TX queue timeout/abort event."]
         pub type TxTimeoutR = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        pub type RxAssociatedAuxiliary24R = crate::BitReader;
         impl R {
+            #[doc = "Bit 5 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
+                RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
+            }
             #[doc = "Bit 7 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. At least one hardware TX queue completed."]
             #[inline(always)]
             pub fn tx_complete(&self) -> TxCompleteR {
@@ -23887,6 +23896,11 @@ pub mod wifi_mac_interrupt {
             #[inline(always)]
             pub fn tx_timeout(&self) -> TxTimeoutR {
                 TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 24 - SOURCE\\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
+                RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
             }
         }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ\\]; CONFIDENCE\\[instruction-exact\\]. Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

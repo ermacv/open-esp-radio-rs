@@ -104,6 +104,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .into());
     }
     let pipeline = rx.pipeline;
+    let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
     let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
     let average_publish_us =
@@ -127,7 +128,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
-             - RX IRQ posts/wake epochs/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -161,11 +163,23 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             pipeline.frontier_thirty_two_plus_services,
             pipeline.rx_irq_posts,
             pipeline.rx_irq_epochs,
+            pipeline.mac_irq_entries,
             pipeline.rx_irq_coalesced_posts,
             pipeline.rx_irq_service_samples,
             pipeline.rx_irq_clock_skew_samples,
             average_irq_service_us,
             pipeline.rx_irq_to_service_max_us,
+            irq.spurious_entries,
+            irq.rx_only_entries,
+            irq.rx_mixed_entries,
+            irq.tx_only_entries,
+            irq.tx_mixed_entries,
+            irq.other_only_entries,
+            irq.classified_entries(),
+            irq.extra_nonzero_snapshots,
+            irq.saturated_entries,
+            irq.auxiliary_status_or,
+            irq.unknown_status_or,
             pipeline.staged_bytes,
             pipeline.stage_empty_discards,
             pipeline.stage_too_long_discards,

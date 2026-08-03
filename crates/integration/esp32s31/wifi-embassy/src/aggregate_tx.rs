@@ -125,6 +125,14 @@ pub enum AggregateTxOutcome {
 /// original MPDUs prepared for one aggregate exchange.
 pub const AGGREGATE_TX_HISTOGRAM_BUCKETS: usize = 33;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NetworkSingleMpduReason {
+    LegacyRate,
+    BlockAckUnavailable,
+    HtNeedsPair,
+    FreshAggregateCapacity,
+}
+
 /// Lock-free observations of the production connected TX owner.
 ///
 /// The counters are diagnostic only and never participate in scheduling.
@@ -132,6 +140,11 @@ pub const AGGREGATE_TX_HISTOGRAM_BUCKETS: usize = 33;
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
     network_single_mpdu_started: AtomicU32,
+    network_single_legacy_rate: AtomicU32,
+    network_single_block_ack_unavailable: AtomicU32,
+    network_single_ht_needs_pair: AtomicU32,
+    network_single_fresh_aggregate_capacity: AtomicU32,
+    network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32,
     aggregates_prepared: AtomicU32,
     aggregate_publications: AtomicU32,
     aggregates_completed: AtomicU32,
@@ -155,6 +168,11 @@ impl AggregateTxCounters {
     pub const fn new() -> Self {
         Self {
             network_single_mpdu_started: AtomicU32::new(0),
+            network_single_legacy_rate: AtomicU32::new(0),
+            network_single_block_ack_unavailable: AtomicU32::new(0),
+            network_single_ht_needs_pair: AtomicU32::new(0),
+            network_single_fresh_aggregate_capacity: AtomicU32::new(0),
+            network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32::new(0),
             aggregates_prepared: AtomicU32::new(0),
             aggregate_publications: AtomicU32::new(0),
             aggregates_completed: AtomicU32::new(0),
@@ -178,6 +196,17 @@ impl AggregateTxCounters {
     pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
         AggregateTxCounterSnapshot {
             network_single_mpdu_started: self.network_single_mpdu_started.load(Ordering::Relaxed),
+            network_single_legacy_rate: self.network_single_legacy_rate.load(Ordering::Relaxed),
+            network_single_block_ack_unavailable: self
+                .network_single_block_ack_unavailable
+                .load(Ordering::Relaxed),
+            network_single_ht_needs_pair: self.network_single_ht_needs_pair.load(Ordering::Relaxed),
+            network_single_fresh_aggregate_capacity: self
+                .network_single_fresh_aggregate_capacity
+                .load(Ordering::Relaxed),
+            network_single_fresh_capacity_lifetime_max_ethernet_length: self
+                .network_single_fresh_capacity_lifetime_max_ethernet_length
+                .load(Ordering::Relaxed),
             aggregates_prepared: self.aggregates_prepared.load(Ordering::Relaxed),
             aggregate_publications: self.aggregate_publications.load(Ordering::Relaxed),
             aggregates_completed: self.aggregates_completed.load(Ordering::Relaxed),
@@ -204,9 +233,25 @@ impl AggregateTxCounters {
         }
     }
 
-    fn record_network_single_mpdu(&self) {
+    fn record_network_single_mpdu(&self, reason: NetworkSingleMpduReason, ethernet_length: usize) {
         self.network_single_mpdu_started
             .fetch_add(1, Ordering::Relaxed);
+        let reason = match reason {
+            NetworkSingleMpduReason::LegacyRate => &self.network_single_legacy_rate,
+            NetworkSingleMpduReason::BlockAckUnavailable => {
+                &self.network_single_block_ack_unavailable
+            }
+            NetworkSingleMpduReason::HtNeedsPair => &self.network_single_ht_needs_pair,
+            NetworkSingleMpduReason::FreshAggregateCapacity => {
+                self.network_single_fresh_capacity_lifetime_max_ethernet_length
+                    .fetch_max(
+                        u32::try_from(ethernet_length).unwrap_or(u32::MAX),
+                        Ordering::Relaxed,
+                    );
+                &self.network_single_fresh_aggregate_capacity
+            }
+        };
+        reason.fetch_add(1, Ordering::Relaxed);
     }
 
     fn record_prepared(&self, subframes: u8, stop: AggregateBuildStop) {
@@ -293,6 +338,12 @@ impl Default for AggregateTxCounters {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
     pub network_single_mpdu_started: u32,
+    pub network_single_legacy_rate: u32,
+    pub network_single_block_ack_unavailable: u32,
+    pub network_single_ht_needs_pair: u32,
+    pub network_single_fresh_aggregate_capacity: u32,
+    /// Maximum rejected Ethernet length since boot, not an interval delta.
+    pub network_single_fresh_capacity_lifetime_max_ethernet_length: u32,
     pub aggregates_prepared: u32,
     pub aggregate_publications: u32,
     pub aggregates_completed: u32,
@@ -321,6 +372,20 @@ impl AggregateTxCounterSnapshot {
             network_single_mpdu_started: self
                 .network_single_mpdu_started
                 .wrapping_sub(earlier.network_single_mpdu_started),
+            network_single_legacy_rate: self
+                .network_single_legacy_rate
+                .wrapping_sub(earlier.network_single_legacy_rate),
+            network_single_block_ack_unavailable: self
+                .network_single_block_ack_unavailable
+                .wrapping_sub(earlier.network_single_block_ack_unavailable),
+            network_single_ht_needs_pair: self
+                .network_single_ht_needs_pair
+                .wrapping_sub(earlier.network_single_ht_needs_pair),
+            network_single_fresh_aggregate_capacity: self
+                .network_single_fresh_aggregate_capacity
+                .wrapping_sub(earlier.network_single_fresh_aggregate_capacity),
+            network_single_fresh_capacity_lifetime_max_ethernet_length: self
+                .network_single_fresh_capacity_lifetime_max_ethernet_length,
             aggregates_prepared: self
                 .aggregates_prepared
                 .wrapping_sub(earlier.aggregates_prepared),
@@ -595,17 +660,39 @@ where
         }
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));
         let ht_requires_pair = matches!(self.config.rate, TxPhyRate::Ht(_));
-        if !aggregate_rate
-            || !self.block_ack_operational(DATA_TID)
-            || (ht_requires_pair && network.tx_queue_len() == 0)
-        {
-            let progress = self.ordinary.start(hardware, first.ethernet())?;
-            drop(first);
-            if let Some(counters) = self.counters {
-                counters.record_network_single_mpdu();
-            }
-            self.active = ConnectedTxActive::Ordinary;
-            return Ok(progress);
+        if !aggregate_rate {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                NetworkSingleMpduReason::LegacyRate,
+            );
+        }
+        if !self.block_ack_operational(DATA_TID) {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                NetworkSingleMpduReason::BlockAckUnavailable,
+            );
+        }
+        if ht_requires_pair && network.tx_queue_len() == 0 {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                NetworkSingleMpduReason::HtNeedsPair,
+            );
+        }
+
+        // BlockAck eligibility does not imply that every network frame fits
+        // the peer/rate/TXOP ceiling of a fresh aggregate. In particular,
+        // control-plane traffic can arrive immediately after ADDBA. Such a
+        // frame remains a valid ordinary QoS MPDU and must not terminate the
+        // complete radio runner with `AggregateFull`.
+        if !self.first_frame_fits_fresh_aggregate(first.ethernet_length())? {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                NetworkSingleMpduReason::FreshAggregateCapacity,
+            );
         }
 
         let preparation_started = self.counters.map(|_| self.ordinary.now_micros());
@@ -614,6 +701,53 @@ where
             counters.record_preparation_time(self.ordinary.now_micros().wrapping_sub(started));
         }
         self.publish_initial(hardware)
+    }
+
+    fn start_network_ordinary<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        reason: NetworkSingleMpduReason,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        let ethernet_length = first.ethernet_length();
+        let progress = self.ordinary.start(hardware, first.ethernet())?;
+        drop(first);
+        if let Some(counters) = self.counters {
+            counters.record_network_single_mpdu(reason, ethernet_length);
+        }
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(progress)
+    }
+
+    fn first_frame_fits_fresh_aggregate(
+        &self,
+        ethernet_length: usize,
+    ) -> Result<bool, AggregateTxError> {
+        let frame_length = ethernet_length
+            .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
+            .ok_or(AggregateTxError::BufferSizeOverflow)?;
+        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
+        match self.config.rate {
+            TxPhyRate::Ht(rate) => Ok(self.ampdu.can_fit_fresh_referenced_ht_frame(
+                frame_length,
+                hardware_mic_length,
+                rate,
+                maximum_aggregate_bytes,
+                dma_capacity,
+            )?),
+            TxPhyRate::He(rate) => Ok(self.ampdu.can_fit_fresh_referenced_he_frame_with_txop(
+                frame_length,
+                hardware_mic_length,
+                rate,
+                self.ordinary.policy().ht_ampdu().density(),
+                self.config.he_txop_limit,
+                maximum_aggregate_bytes,
+                dma_capacity,
+            )?),
+            TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
+        }
     }
 
     pub async fn service<H: HtAmpduHardware>(
@@ -646,6 +780,13 @@ where
             .ordinary
             .peek_qos_sequence(DATA_TID)
             .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
+        // Association policy is owned outside the DMA-visible descriptor
+        // arena. Reinstall its byte ceiling at every Free -> Reserved edge so
+        // a new batch cannot depend on cold scalar contents retained beside
+        // hardware-owned words.
+        self.ampdu.as_mut().configure_max_aggregate_bytes(
+            self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
+        )?;
         let cookie = self.ampdu.as_mut().begin()?;
         self.cookie = Some(cookie);
 
@@ -1144,7 +1285,8 @@ mod tests {
     };
     use open_esp_radio_esp32s31_wifi_mac::{
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-        tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxSlot},
+        rx::HeGuardIntervalAndLtf,
+        tx::{HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxSlot},
         tx_runtime::StaTxRuntimePolicy,
     };
     use open_esp_radio_ieee80211::station::{
@@ -1192,7 +1334,9 @@ mod tests {
 
     #[derive(Default)]
     struct Hardware {
+        legacy_publications: usize,
         ht_publications: usize,
+        he_publications: usize,
         ordinary_completion: Option<MacTxCompletionRegisters>,
         aggregate_completion: Option<MacHtAmpduCompletionRegisters>,
     }
@@ -1211,6 +1355,7 @@ mod tests {
         }
 
         fn prepare_legacy_tx(&mut self, _queue: u8, _program: MacLegacyTxProgram) -> bool {
+            self.legacy_publications += 1;
             true
         }
 
@@ -1224,7 +1369,8 @@ mod tests {
         fn start_ht_tx(&mut self, _queue: u8, _plcp0: u32) {}
 
         fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
-            false
+            self.he_publications += 1;
+            true
         }
 
         fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
@@ -1336,10 +1482,10 @@ mod tests {
         }
     }
 
-    fn make_ordinary<'a>(
-        slot: Pin<&'a mut TxSlot<TEST_BUFFER_SIZE>>,
+    fn make_ordinary<'a, const BUFFER_SIZE: usize>(
+        slot: Pin<&'a mut TxSlot<BUFFER_SIZE>>,
         hardware: &mut Hardware,
-    ) -> Esp32s31SingleMpduTx<'a, Power, fn() -> u32, Timer, TEST_BUFFER_SIZE> {
+    ) -> Esp32s31SingleMpduTx<'a, Power, fn() -> u32, Timer, BUFFER_SIZE> {
         fn entropy() -> u32 {
             0x1234_5678
         }
@@ -1388,7 +1534,7 @@ mod tests {
     fn aggregate_counters_preserve_distribution_and_timing_deltas() {
         let counters = AggregateTxCounters::new();
         let before = counters.snapshot();
-        counters.record_network_single_mpdu();
+        counters.record_network_single_mpdu(NetworkSingleMpduReason::BlockAckUnavailable, 42);
         counters.record_prepared(2, AggregateBuildStop::QueueEmpty);
         counters.record_prepared(32, AggregateBuildStop::FrameLimit);
         counters.record_publication(3);
@@ -1402,6 +1548,14 @@ mod tests {
 
         let delta = counters.snapshot().wrapping_delta_since(before);
         assert_eq!(delta.network_single_mpdu_started, 1);
+        assert_eq!(delta.network_single_legacy_rate, 0);
+        assert_eq!(delta.network_single_block_ack_unavailable, 1);
+        assert_eq!(delta.network_single_ht_needs_pair, 0);
+        assert_eq!(delta.network_single_fresh_aggregate_capacity, 0);
+        assert_eq!(
+            delta.network_single_fresh_capacity_lifetime_max_ethernet_length,
+            0
+        );
         assert_eq!(delta.aggregates_prepared, 2);
         assert_eq!(delta.aggregate_publications, 2);
         assert_eq!(delta.aggregates_completed, 1);
@@ -1424,6 +1578,105 @@ mod tests {
         assert_eq!(delta.stopped_at_frame_limit, 1);
         assert_eq!(delta.stopped_at_capacity_limit, 0);
         assert_eq!(delta.stopped_on_empty_queue, 1);
+    }
+
+    #[test]
+    fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
+        let (mut device, network) = make_network();
+        send_frame(&mut device, 1);
+        let first = network.try_receive_tx().unwrap();
+        let mut hardware = Hardware::default();
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
+        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
+        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let counters = AggregateTxCounters::new();
+        let mut tx = Esp32s31ConnectedTx::new(
+            ordinary,
+            ampdu,
+            AggregateTxConfig {
+                rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
+                frame_limit: TEST_SLOTS as u8,
+                attempt_limit: 2,
+                completion_timeout_us: 250_000,
+                he_txop_limit: HeEdcaTxopLimit::from_units_32_us(5).unwrap(),
+            },
+        )
+        .unwrap()
+        .with_counters(&counters);
+        tx.set_block_ack_operational(0, true);
+
+        assert_eq!(
+            tx.start_network(&mut hardware, first, &network),
+            Ok(WifiTxProgress::Pending),
+        );
+        assert_eq!(hardware.legacy_publications, 1);
+        assert_eq!(hardware.ht_publications, 0);
+        assert_eq!(counters.snapshot().network_single_mpdu_started, 1);
+        assert_eq!(
+            counters.snapshot().network_single_fresh_aggregate_capacity,
+            1
+        );
+    }
+
+    #[test]
+    fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
+        const FRAME_CAPACITY: usize = 1_600;
+        const HEADROOM: usize = TEST_HEADROOM;
+        const TRAILER: usize = 12;
+        const QUEUE_DEPTH: usize = 3;
+        type LargeResources =
+            PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+        type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
+        let pool = LargePool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+            LargePool::new(),
+        )));
+        let (mut device, network) = resources.split(pool, STATION);
+        for marker in 1..=2 {
+            device
+                .transmit(&mut context())
+                .expect("free production-sized pinned network slot")
+                .consume(1_514, |frame| {
+                    frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                    frame[6..12].copy_from_slice(&STATION);
+                    frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                    frame[14..].fill(marker);
+                });
+        }
+        let first = network.try_receive_tx().unwrap();
+        let mut hardware = Hardware::default();
+        let mut slot = core::pin::pin!(TxSlot::<2_048>::new());
+        let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
+        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
+        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let counters = AggregateTxCounters::new();
+        let mut tx = Esp32s31ConnectedTx::new(
+            ordinary,
+            ampdu,
+            AggregateTxConfig {
+                rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
+                frame_limit: TEST_SLOTS as u8,
+                attempt_limit: 2,
+                completion_timeout_us: 250_000,
+                he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            },
+        )
+        .unwrap()
+        .with_counters(&counters);
+        tx.set_block_ack_operational(0, true);
+
+        assert_eq!(
+            tx.start_network(&mut hardware, first, &network),
+            Ok(WifiTxProgress::Pending),
+        );
+        assert_eq!(hardware.he_publications, 1);
+        assert_eq!(hardware.legacy_publications, 0);
+        assert_eq!(counters.snapshot().aggregates_prepared, 1);
+        assert_eq!(counters.snapshot().network_single_mpdu_started, 0);
     }
 
     #[test]

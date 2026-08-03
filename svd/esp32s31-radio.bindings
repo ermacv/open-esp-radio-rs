@@ -1113,11 +1113,13 @@ field 0x20104c40 WIFI_MAC_INTERRUPT.ENABLE EVENT_MASK event_mask - 0 32 read-wri
 register 0x20104c44 32 read-only WIFI_MAC_INTERRUPT.RAW WIFI_MAC_INTERRUPT WifiMacInterrupt wifi_mac_interrupt - raw - -
 field 0x20104c44 WIFI_MAC_INTERRUPT.RAW EVENTS events - 0 32 read-only
 register 0x20104c48 32 read-only WIFI_MAC_INTERRUPT.STATUS WIFI_MAC_INTERRUPT WifiMacInterrupt wifi_mac_interrupt - status - -
+field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS RX_ASSOCIATED_AUXILIARY_5 rx_associated_auxiliary_5 - 5 1 read-only
 field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS TX_COMPLETE tx_complete - 7 1 read-only
 field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS BSS_COLOR_COLLISION bss_color_collision - 8 1 read-only
 field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS WATCHDOG watchdog - 11 1 read-only
 field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS RX_SUCCESS rx_success - 14 1 read-only
 field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS TX_TIMEOUT tx_timeout - 19 1 read-only
+field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS RX_ASSOCIATED_AUXILIARY_24 rx_associated_auxiliary_24 - 24 1 read-only
 register 0x20104c4c 32 write-only WIFI_MAC_INTERRUPT.CLEAR WIFI_MAC_INTERRUPT WifiMacInterrupt wifi_mac_interrupt - clear - -
 field 0x20104c4c WIFI_MAC_INTERRUPT.CLEAR EVENTS events - 0 32 write-only
 register 0x20104c54 32 read-write WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY WIFI_MAC_TXRX_CALLBACKS WifiMacTxrxCallbacks wifi_mac_txrx_callbacks - delay_secondary - -

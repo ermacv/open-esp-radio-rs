@@ -880,6 +880,32 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
     }
 
+    /// Check one referenced HT frame against a fresh aggregate without
+    /// reserving or cancelling the descriptor pool.
+    ///
+    /// A scheduler can use this to route an individually valid frame to the
+    /// ordinary queue when it exceeds a peer/rate aggregate ceiling. Keeping
+    /// the probe value-only avoids consuming a generation or mutating the
+    /// caller-supplied association byte limit before the real batch begins.
+    pub fn can_fit_fresh_referenced_ht_frame(
+        &self,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HtRate,
+        maximum_aggregate_bytes: u16,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        let psdu_length =
+            Self::fresh_referenced_psdu_length(frame_length, hardware_mic_length, dma_capacity)?;
+        let aggregate_length = 4_u32 + u32::from(psdu_length);
+        if maximum_aggregate_bytes == 0 || aggregate_length > u32::from(maximum_aggregate_bytes) {
+            return Ok(false);
+        }
+        Ok(rate
+            .vendor_ampdu_byte_limit()
+            .is_none_or(|limit| aggregate_length <= u32::from(limit)))
+    }
+
     fn can_commit_frame_with_hardware_he_control(
         &self,
         cookie: TxCookie,
@@ -1040,6 +1066,51 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         Ok(u32::from(self.length_after_append(psdu_length, false)?)
             <= rate.maximum_apep_bytes(txop_limit))
+    }
+
+    /// Check one referenced HE frame against a fresh aggregate without
+    /// changing descriptor ownership.
+    pub fn can_fit_fresh_referenced_he_frame_with_txop(
+        &self,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+        maximum_aggregate_bytes: u16,
+        dma_capacity: usize,
+    ) -> Result<bool, HtAmpduTxError> {
+        let psdu_length =
+            Self::fresh_referenced_psdu_length(frame_length, hardware_mic_length, dma_capacity)?;
+        let _empty_delimiters = rate
+            .ampdu_empty_delimiters(psdu_length, density)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let aggregate_length = 4_u32 + u32::from(psdu_length);
+        Ok(maximum_aggregate_bytes != 0
+            && aggregate_length <= u32::from(maximum_aggregate_bytes)
+            && aggregate_length <= rate.maximum_apep_bytes(txop_limit))
+    }
+
+    fn fresh_referenced_psdu_length(
+        frame_length: usize,
+        hardware_mic_length: u8,
+        dma_capacity: usize,
+    ) -> Result<u16, HtAmpduTxError> {
+        let psdu_length = frame_length
+            .checked_add(usize::from(hardware_mic_length))
+            .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
+            .and_then(|length| u16::try_from(length).ok())
+            .filter(|length| *length != 0 && *length <= 0x3fff)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let descriptor_capacity = TX_AMPDU_METADATA_SIZE
+            .checked_add(usize::from(psdu_length))
+            .and_then(|length| length.checked_add(3))
+            .map(|length| length & !3)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        if descriptor_capacity > dma_capacity {
+            return Err(HtAmpduTxError::FrameTooLong);
+        }
+        Ok(psdu_length)
     }
 
     /// Check one HE frame whose four-byte HE-Control is inserted by hardware.

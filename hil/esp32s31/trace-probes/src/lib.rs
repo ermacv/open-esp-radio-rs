@@ -18,7 +18,10 @@ use open_esp_radio_esp32s31_wifi_embassy::sta_join::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT},
-    irq::{HANDLED_MAC_MASK, IrqDisposition, IrqSink, IrqWork, handle_mac_irq, next_irq_work},
+    irq::{
+        HANDLED_MAC_MASK, IrqDisposition, IrqSink, IrqWork,
+        MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK, handle_mac_irq, next_irq_work,
+    },
     rx::RxRingStopped,
     rx_pool::RxStagePool,
 };
@@ -860,7 +863,7 @@ pub extern "C" fn open_libpp_trace_wdev_process_fiq_mac_slice() -> u32 {
     let disposition = match disposition {
         IrqDisposition::Posted => 1,
         IrqDisposition::Spurious => 2,
-        IrqDisposition::Unhandled => 3,
+        IrqDisposition::AcknowledgedOnly => 3,
     };
     let mut encoded = disposition;
     if snapshot.status != 0 {
@@ -869,7 +872,9 @@ pub extern "C" fn open_libpp_trace_wdev_process_fiq_mac_slice() -> u32 {
     // Exact acknowledgement is proved independently by the emitted CLEAR
     // value; retain the bit so the semantic encoding remains stable.
     encoded |= 1 << 7;
-    if sink.unhandled.get() == snapshot.status & !HANDLED_MAC_MASK {
+    if sink.unhandled.get()
+        == snapshot.status & !(HANDLED_MAC_MASK | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK)
+    {
         encoded |= 1 << 31;
     }
     let mut pending = sink.posted.get();

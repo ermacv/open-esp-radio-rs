@@ -169,24 +169,33 @@ pub struct Esp32s31ConnectedRx<
     M: RawMutex,
     const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
+    const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
 > {
     ring: RxRingLive<'storage, COUNT>,
     buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
-    pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>,
-    frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool>, QUEUE_DEPTH>,
+    pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, STAGE_CAPACITY>,
+    frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY>, QUEUE_DEPTH>,
     delay: D,
     pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
 
-impl<'storage, 'pool, 'queue, D, M: RawMutex, const QUEUE_DEPTH: usize, const COUNT: usize>
-    Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT>
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+> Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT, STAGE_CAPACITY>
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
         buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
-        pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, VENDOR_LARGE_RX_PAYLOAD_CAPACITY>,
+        pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, STAGE_CAPACITY>,
         delay: D,
-        frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool>, QUEUE_DEPTH>,
+        frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY>, QUEUE_DEPTH>,
     ) -> Self {
         Self {
             ring,
@@ -212,9 +221,18 @@ impl<'storage, 'pool, 'queue, D, M: RawMutex, const QUEUE_DEPTH: usize, const CO
     }
 }
 
-impl<'storage, 'pool, 'queue, H, D, M: RawMutex, const QUEUE_DEPTH: usize, const COUNT: usize>
-    Esp32s31ConnectedRxService<H>
-    for Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT>
+impl<
+    'storage,
+    'pool,
+    'queue,
+    H,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+> Esp32s31ConnectedRxService<H>
+    for Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT, STAGE_CAPACITY>
 where
     H: RxDma,
     D: RxReloadDelay,
@@ -856,6 +874,45 @@ mod tests {
             receiver.try_receive(),
             Err(TryReceiveError::Empty)
         ));
+    }
+
+    #[test]
+    fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
+        const COUNT: usize = 2;
+        const STAGED_DEPTH: usize = 1;
+        const WIDE_STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY + 1;
+        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let addresses = [0x2f00_2000, 0x2f00_3200];
+        let mut hardware = MockRxDma::default();
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+        storage.descriptors()[0].write_word0(
+            ESP32S31_RX_BUFFER_SIZE as u32
+                | ((WIDE_STAGE_CAPACITY as u32) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+        );
+        let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
+        let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
+        let (sender, receiver) = queue.split();
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        let frame = receiver.try_receive().expect("wide staged frame");
+        assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);
+        drop(frame);
+        assert_eq!(pool.claimed_slots(), 0);
     }
 
     #[test]

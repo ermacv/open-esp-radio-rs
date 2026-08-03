@@ -9,6 +9,27 @@ use crate::{Register32, RegisterAccess};
 
 pub const INT_RAW: Register32 = Register32::new(0x2010_4c44);
 pub const INT_STATUS: Register32 = Register32::new(0x2010_4c48);
+pub mod int_status {
+    use crate::Field32;
+
+    /// SOURCE\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,
+    /// HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\];
+    /// CONFIDENCE\[instruction-exact-semantics-unknown\].
+    ///
+    /// Observed with `RX_SUCCESS` under sustained receive traffic and
+    /// acknowledged only as part of the full STATUS image. It is not an
+    /// independently dispatched RX work item.
+    pub const RX_ASSOCIATED_AUXILIARY_5: Field32 = Field32::new(5, 1);
+
+    /// SOURCE\[BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL,
+    /// HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03\];
+    /// CONFIDENCE\[instruction-exact-semantics-unknown\].
+    ///
+    /// Observed with `RX_SUCCESS` under sustained receive traffic and
+    /// acknowledged only as part of the full STATUS image. It is not an
+    /// independently dispatched RX work item.
+    pub const RX_ASSOCIATED_AUXILIARY_24: Field32 = Field32::new(24, 1);
+}
 
 /// RX descriptor-walker control.
 ///

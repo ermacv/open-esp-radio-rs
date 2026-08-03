@@ -49,7 +49,11 @@ use open_esp_radio::{
                 MAC_COLD_RX_INTERRUPT_MASK, StaPeerScanPolicy, StaWmmSource,
                 configure_sta_link_receive_policy, initialize_promiscuous_receive,
             },
-            irq::{IrqSink, MAC_INT_RX_SUCCESS, handle_mac_irq, handle_power_irq},
+            irq::{
+                IrqSink, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
+                MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, handle_mac_irq,
+                handle_power_irq,
+            },
             rate_control::{StaRateControlAssociation, StaTxRatePolicy},
             rate_schedule::schedule_state,
             registers::{
@@ -63,7 +67,7 @@ use open_esp_radio::{
                 disable_receive, enable_receive, extract_ccmp_data, extract_data,
                 extract_management, first_segment_layout, publish_cold_ring,
             },
-            rx_pool::{RxStagePool, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
+            rx_pool::{RxStagePool, VENDOR_LARGE_RX_SLOT_COUNT},
             scan::{ScanObservation, ScanRecord, ScanTable},
             tx::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
@@ -179,6 +183,11 @@ const RX_DESCRIPTOR_COMPLETE_MASK: u64 = (1_u64 << RX_DESCRIPTOR_COUNT) - 1;
 // negotiated MPDU in one descriptor avoids a descriptor-frontier stall while
 // the upper Rust path decapsulates its bounded A-MSDU subframes.
 const RX_BUFFER_SIZE: usize = 4_608;
+// Staging owns the complete negotiated MPDU after DMA recycle. Keeping the
+// older 1,700-byte vendor singleton capacity here silently discarded valid
+// A-MSDU units even though both the DMA owner and connected dispatcher already
+// support the negotiated 3,839-byte class.
+const RX_STAGE_CAPACITY: usize = RX_BUFFER_SIZE;
 const NETWORK_FRAME_CAPACITY: usize = 1_600;
 const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
 // Raw A-MSDU/A-MPDU HIL generates TX below the network stack, and its direct
@@ -779,18 +788,23 @@ static SCAN_FRAME: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
 static ETHERNET_FRAME: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
 // The vendor `wDev_IndicateFrame` allocates an ESF buffer and copies the
 // completed RX unit before `wDev_DiscardFrame` returns the DMA descriptors.
-// Keep the same ownership boundary explicit in the open HIL. This ordinary
-// object follows the selected data profile (PSRAM in psram-code-psram-data);
-// unlike OPEN_RADIO_RX_DMA_STORAGE, the Wi-Fi DMA master never addresses it.
+// Keep the same ownership boundary explicit in the open HIL. This hot staging
+// object stays in internal CPU-owned SRAM; unlike OPEN_RADIO_RX_DMA_STORAGE,
+// the Wi-Fi DMA master never addresses it. Its capacity follows the negotiated
+// MPDU geometry rather than the narrower ordinary vendor singleton profile.
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
 static OPEN_RADIO_RX_STAGE_POOL: RxStagePool<
     VENDOR_LARGE_RX_SLOT_COUNT,
-    VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    RX_STAGE_CAPACITY,
 > = RxStagePool::new();
-type StagedRxQueue =
-    Esp32s31StagedRxQueue<'static, CriticalSectionRawMutex, VENDOR_LARGE_RX_SLOT_COUNT>;
+type StagedRxQueue = Esp32s31StagedRxQueue<
+    'static,
+    CriticalSectionRawMutex,
+    VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_CAPACITY,
+>;
 static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
 type NetworkResources = OpenRadioNetworkResources<
     CriticalSectionRawMutex,
@@ -851,6 +865,7 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     CriticalSectionRawMutex,
     ConnectedNetworkRxSink,
     VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_CAPACITY,
 >;
 type ConnectedRxOwner = Esp32s31ConnectedRx<
     'static,
@@ -860,6 +875,7 @@ type ConnectedRxOwner = Esp32s31ConnectedRx<
     CriticalSectionRawMutex,
     VENDOR_LARGE_RX_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
+    RX_STAGE_CAPACITY,
 >;
 type ConnectedTxOwner = Esp32s31ConnectedTx<
     'static,
@@ -1020,6 +1036,154 @@ static OPEN_RADIO_BIDIRECTIONAL_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_C
     StaticCell::new();
 static OPEN_RADIO_LOCAL_IPV4: AtomicU32 = AtomicU32::new(0);
 static OPEN_RADIO_LAN_PROBE_RESPONSE: AtomicBool = AtomicBool::new(false);
+
+const OPEN_RADIO_MAC_TX_IRQ_MASK: u32 =
+    MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
+
+#[derive(Clone, Copy, Default)]
+struct OpenRadioMacIrqClassificationSnapshot {
+    spurious_entries: u32,
+    rx_only_entries: u32,
+    rx_mixed_entries: u32,
+    tx_only_entries: u32,
+    tx_mixed_entries: u32,
+    other_only_entries: u32,
+    extra_nonzero_snapshots: u32,
+    saturated_entries: u32,
+}
+
+impl OpenRadioMacIrqClassificationSnapshot {
+    fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            spurious_entries: self
+                .spurious_entries
+                .wrapping_sub(earlier.spurious_entries),
+            rx_only_entries: self
+                .rx_only_entries
+                .wrapping_sub(earlier.rx_only_entries),
+            rx_mixed_entries: self
+                .rx_mixed_entries
+                .wrapping_sub(earlier.rx_mixed_entries),
+            tx_only_entries: self
+                .tx_only_entries
+                .wrapping_sub(earlier.tx_only_entries),
+            tx_mixed_entries: self
+                .tx_mixed_entries
+                .wrapping_sub(earlier.tx_mixed_entries),
+            other_only_entries: self
+                .other_only_entries
+                .wrapping_sub(earlier.other_only_entries),
+            extra_nonzero_snapshots: self
+                .extra_nonzero_snapshots
+                .wrapping_sub(earlier.extra_nonzero_snapshots),
+            saturated_entries: self
+                .saturated_entries
+                .wrapping_sub(earlier.saturated_entries),
+        }
+    }
+}
+
+struct OpenRadioMacIrqClassificationCounters {
+    spurious_entries: AtomicU32,
+    rx_only_entries: AtomicU32,
+    rx_mixed_entries: AtomicU32,
+    tx_only_entries: AtomicU32,
+    tx_mixed_entries: AtomicU32,
+    other_only_entries: AtomicU32,
+    extra_nonzero_snapshots: AtomicU32,
+    saturated_entries: AtomicU32,
+    auxiliary_status_or: AtomicU32,
+    unknown_status_or: AtomicU32,
+}
+
+impl OpenRadioMacIrqClassificationCounters {
+    const fn new() -> Self {
+        Self {
+            spurious_entries: AtomicU32::new(0),
+            rx_only_entries: AtomicU32::new(0),
+            rx_mixed_entries: AtomicU32::new(0),
+            tx_only_entries: AtomicU32::new(0),
+            tx_mixed_entries: AtomicU32::new(0),
+            other_only_entries: AtomicU32::new(0),
+            extra_nonzero_snapshots: AtomicU32::new(0),
+            saturated_entries: AtomicU32::new(0),
+            auxiliary_status_or: AtomicU32::new(0),
+            unknown_status_or: AtomicU32::new(0),
+        }
+    }
+
+    #[inline]
+    fn record(&self, first_status: u32, observed_status: u32, nonzero_snapshots: u32) {
+        let rx = first_status & MAC_INT_RX_SUCCESS != 0;
+        let tx = first_status & OPEN_RADIO_MAC_TX_IRQ_MASK != 0;
+        let auxiliary = first_status & MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK != 0;
+        let unknown = first_status
+            & !(MAC_INT_RX_SUCCESS
+                | OPEN_RADIO_MAC_TX_IRQ_MASK
+                | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK)
+            != 0;
+        let counter = if first_status == 0 {
+            &self.spurious_entries
+        } else if rx && !tx && !unknown {
+            // The two acknowledged auxiliary bits do not make this a mixed
+            // work entry because they have no independent dispatcher action.
+            &self.rx_only_entries
+        } else if rx {
+            &self.rx_mixed_entries
+        } else if tx && !auxiliary && !unknown {
+            &self.tx_only_entries
+        } else if tx {
+            &self.tx_mixed_entries
+        } else {
+            &self.other_only_entries
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+
+        let extra = nonzero_snapshots.saturating_sub(1);
+        if extra != 0 {
+            self.extra_nonzero_snapshots
+                .fetch_add(extra, Ordering::Relaxed);
+        }
+        if nonzero_snapshots == 32 {
+            self.saturated_entries.fetch_add(1, Ordering::Relaxed);
+        }
+        let auxiliary_status = observed_status & MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
+        if auxiliary_status != 0 {
+            self.auxiliary_status_or
+                .fetch_or(auxiliary_status, Ordering::Relaxed);
+        }
+        let unknown_status = observed_status
+            & !(MAC_INT_RX_SUCCESS
+                | OPEN_RADIO_MAC_TX_IRQ_MASK
+                | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
+        if unknown_status != 0 {
+            self.unknown_status_or
+                .fetch_or(unknown_status, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self) -> OpenRadioMacIrqClassificationSnapshot {
+        OpenRadioMacIrqClassificationSnapshot {
+            spurious_entries: self.spurious_entries.load(Ordering::Relaxed),
+            rx_only_entries: self.rx_only_entries.load(Ordering::Relaxed),
+            rx_mixed_entries: self.rx_mixed_entries.load(Ordering::Relaxed),
+            tx_only_entries: self.tx_only_entries.load(Ordering::Relaxed),
+            tx_mixed_entries: self.tx_mixed_entries.load(Ordering::Relaxed),
+            other_only_entries: self.other_only_entries.load(Ordering::Relaxed),
+            extra_nonzero_snapshots: self.extra_nonzero_snapshots.load(Ordering::Relaxed),
+            saturated_entries: self.saturated_entries.load(Ordering::Relaxed),
+        }
+    }
+
+    fn take_auxiliary_status_or(&self) -> u32 {
+        self.auxiliary_status_or.swap(0, Ordering::Relaxed)
+    }
+
+    fn take_unknown_status_or(&self) -> u32 {
+        self.unknown_status_or.swap(0, Ordering::Relaxed)
+    }
+}
+
 // These counters are touched for every admitted RX frame or IRQ-side reload
 // edge. Keep the diagnostic atomics off PSRAM so HIL observation does not
 // become part of the throughput limit it is trying to measure.
@@ -1029,6 +1193,13 @@ static OPEN_RADIO_RX_ENQUEUE_COUNTERS: RxEnqueueCounters = RxEnqueueCounters::ne
 static OPEN_RADIO_TX_AGGREGATE_COUNTERS: AggregateTxCounters = AggregateTxCounters::new();
 #[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
 static OPEN_RADIO_RX_RELOAD_DELAYS: AtomicU32 = AtomicU32::new(0);
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+static OPEN_RADIO_MAC_IRQ_ENTRIES: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+static OPEN_RADIO_MAC_IRQ_CLASSIFICATION: OpenRadioMacIrqClassificationCounters =
+    OpenRadioMacIrqClassificationCounters::new();
 #[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
 static OPEN_RADIO_RX_LAST_UDP_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
 // Packed last-data-PPDU observation, written once per benchmark UDP frame and
@@ -1519,6 +1690,7 @@ impl Wpa2KeyInstallBackend for RadioHilWpa2KeyBackend<'_, '_> {
 #[esp_hal::handler]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn open_radio_mac_interrupt() {
+    OPEN_RADIO_MAC_IRQ_ENTRIES.fetch_add(1, Ordering::Relaxed);
     let registers = OPEN_RADIO_MAC_INTERRUPT_PTR.load(Ordering::Acquire);
     if registers.is_null() {
         return;
@@ -1528,12 +1700,25 @@ fn open_radio_mac_interrupt() {
     // and no task-side code receives this finite capability, so calls cannot
     // overlap and this is its sole mutable reference.
     let interrupt = unsafe { &mut *registers };
+    let mut first_status = 0;
+    let mut observed_status = 0;
+    let mut nonzero_snapshots = 0;
     for _ in 0..32 {
         let (_, snapshot) = handle_mac_irq(&mut *interrupt, &OpenRadioMacIrqSink);
         if snapshot.status == 0 {
             break;
         }
+        if nonzero_snapshots == 0 {
+            first_status = snapshot.status;
+        }
+        observed_status |= snapshot.status;
+        nonzero_snapshots += 1;
     }
+    OPEN_RADIO_MAC_IRQ_CLASSIFICATION.record(
+        first_status,
+        observed_status,
+        nonzero_snapshots,
+    );
 }
 
 struct OpenRadioMacIrqSink;
@@ -2948,7 +3133,8 @@ fn log_open_radio_ampdu_interval(earlier: AggregateTxCounterSnapshot) {
     let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
     emergency_log(format_args!(
         "OAMP aggregates={} publications={} completed={} subframes={} \
-         acknowledged={} single={} individual_retry={} timeout={} collision={} \
+         acknowledged={} single={} single_rate={} single_ba={} single_pair={} \
+         single_capacity={} single_capacity_max_len={} individual_retry={} timeout={} collision={} \
          min={} max={} stop_frame={} stop_capacity={} stop_empty={}",
         aggregate.aggregates_prepared,
         aggregate.aggregate_publications,
@@ -2956,6 +3142,11 @@ fn log_open_radio_ampdu_interval(earlier: AggregateTxCounterSnapshot) {
         aggregate.prepared_subframe_total(),
         aggregate.subframes_acknowledged,
         aggregate.network_single_mpdu_started,
+        aggregate.network_single_legacy_rate,
+        aggregate.network_single_block_ack_unavailable,
+        aggregate.network_single_ht_needs_pair,
+        aggregate.network_single_fresh_aggregate_capacity,
+        aggregate.network_single_fresh_capacity_lifetime_max_ethernet_length,
         aggregate.individual_retries,
         aggregate.hardware_timeouts,
         aggregate.collisions,
@@ -3102,6 +3293,10 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let enqueue_start = OPEN_RADIO_RX_ENQUEUE_COUNTERS.snapshot();
         let reload_delay_start = OPEN_RADIO_RX_RELOAD_DELAYS.load(Ordering::Relaxed);
         let irq_start = OPEN_RADIO_IRQ_RUNTIME.rx_post_count();
+        let irq_entry_start = OPEN_RADIO_MAC_IRQ_ENTRIES.load(Ordering::Relaxed);
+        let irq_classification_start = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.snapshot();
+        let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_auxiliary_status_or();
+        let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_unknown_status_or();
         let first_length = loop {
             let received = socket.recv_from(packet).await;
             yield_to_pending_radio_rx(&mut last_radio_handoff).await;
@@ -3160,6 +3355,15 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let rx_irqs = OPEN_RADIO_IRQ_RUNTIME
             .rx_post_count()
             .wrapping_sub(irq_start);
+        let irq_entries = OPEN_RADIO_MAC_IRQ_ENTRIES
+            .load(Ordering::Relaxed)
+            .wrapping_sub(irq_entry_start);
+        let irq_classification = OPEN_RADIO_MAC_IRQ_CLASSIFICATION
+            .snapshot()
+            .wrapping_delta_since(irq_classification_start);
+        let irq_auxiliary_status_or =
+            OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_auxiliary_status_or();
+        let irq_unknown_status_or = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_unknown_status_or();
         let rx_format = OPEN_RADIO_RX_LAST_UDP_FORMAT.load(Ordering::Relaxed);
         let rx_phy = OPEN_RADIO_RX_LAST_UDP_PHY.load(Ordering::Relaxed);
         let rx_he_valid = rx_phy >> 31;
@@ -3216,7 +3420,14 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             rx_mcs_histogram[10],
             rx_mcs_histogram[11],
         ));
-        log_open_radio_rx_pipeline_interval(pipeline_start, rx_irqs);
+        log_open_radio_rx_pipeline_interval(
+            pipeline_start,
+            rx_irqs,
+            irq_entries,
+            irq_classification,
+            irq_auxiliary_status_or,
+            irq_unknown_status_or,
+        );
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start);
         }
@@ -3236,7 +3447,14 @@ async fn yield_to_pending_radio_rx(last_handoff: &mut Instant) {
     }
 }
 
-fn log_open_radio_rx_pipeline_interval(earlier: RxPipelineCounterSnapshot, rx_irq_posts: u32) {
+fn log_open_radio_rx_pipeline_interval(
+    earlier: RxPipelineCounterSnapshot,
+    rx_irq_posts: u32,
+    mac_irq_entries: u32,
+    irq_classification: OpenRadioMacIrqClassificationSnapshot,
+    irq_auxiliary_status_or: u32,
+    irq_unknown_status_or: u32,
+) {
     let pipeline = OPEN_RADIO_RX_PIPELINE_COUNTERS
         .snapshot()
         .wrapping_delta_since(earlier);
@@ -3276,7 +3494,8 @@ fn log_open_radio_rx_pipeline_interval(earlier: RxPipelineCounterSnapshot, rx_ir
     emergency_log(format_args!(
         "ORXF zero={} one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_thirty_one={} thirty_two_plus={} irq_posts={} irq_epochs={} \
-         irq_coalesced={} irq_samples={} irq_skew={} irq_service_us={} irq_service_max_us={}",
+         irq_entries={} irq_coalesced={} irq_samples={} irq_skew={} \
+         irq_service_us={} irq_service_max_us={}",
         pipeline.frontier_zero_services,
         pipeline.frontier_one_services,
         pipeline.frontier_two_three_services,
@@ -3286,11 +3505,26 @@ fn log_open_radio_rx_pipeline_interval(earlier: RxPipelineCounterSnapshot, rx_ir
         pipeline.frontier_thirty_two_plus_services,
         rx_irq_posts,
         pipeline.rx_irq_epochs,
+        mac_irq_entries,
         rx_irq_posts.saturating_sub(pipeline.rx_irq_epochs),
         pipeline.rx_irq_service_samples,
         pipeline.rx_irq_clock_skew_samples,
         pipeline.rx_irq_to_service_micros,
         pipeline.rx_irq_to_service_lifetime_max_micros,
+    ));
+    emergency_log(format_args!(
+        "ORXI spurious={} rx_only={} rx_mixed={} tx_only={} tx_mixed={} \
+         other_only={} extra={} saturated={} aux_or={} unknown_or={}",
+        irq_classification.spurious_entries,
+        irq_classification.rx_only_entries,
+        irq_classification.rx_mixed_entries,
+        irq_classification.tx_only_entries,
+        irq_classification.tx_mixed_entries,
+        irq_classification.other_only_entries,
+        irq_classification.extra_nonzero_snapshots,
+        irq_classification.saturated_entries,
+        irq_auxiliary_status_or,
+        irq_unknown_status_or,
     ));
 }
 
@@ -3423,17 +3657,40 @@ async fn run_connected_network(
         peer_supports_ldpc,
         peer_dcm_receive,
     ));
-    let tx_ampdu_storage = HtAmpduTxStorage::pin_static(HtAmpduTxStorage::init_in_place(
-        OPEN_RADIO_TX_AMPDU_STORAGE.uninit(),
-    ));
+    let peer_ampdu_limit = tx_storage
+        .control
+        .as_ref()
+        .expect("control TX owner is present before connected handoff")
+        .policy()
+        .ht_ampdu()
+        .maximum_aggregate_bytes();
+    let rate_ampdu_limit = match benchmark_tx_rate {
+        TxPhyRate::Legacy(_) => 0,
+        TxPhyRate::Ht(rate) => u32::from(rate.vendor_ampdu_byte_limit().unwrap_or(u16::MAX)),
+        TxPhyRate::He(rate) => rate.maximum_apep_bytes(HeEdcaTxopLimit::DEFAULT),
+    };
+    // The production aggregate owner is descriptor-only (`BUFFER_SIZE == 0`),
+    // so constructing it in the static cell does not materialize the former
+    // 55-KiB payload arena on this task's stack. Prefer the fully typed
+    // constructor here: all scalar policy fields, including the conservative
+    // pre-association byte ceiling, are initialized as Rust values before the
+    // object is pinned.
+    let tx_ampdu_storage = HtAmpduTxStorage::pin_static(
+        OPEN_RADIO_TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
+    );
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-start \
          frame_capacity={NETWORK_FRAME_CAPACITY} queue_depth={NETWORK_QUEUE_DEPTH} \
-         bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={}",
+         bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={} \
+         ampdu_rate_code={:#04x} ampdu_rate_kbps={} peer_ampdu_limit={} rate_ampdu_limit={}",
         association_phy.bandwidth_mhz(),
         association_phy.name(),
         data_tx_rate.code(),
         data_tx_rate.nominal_kbps(),
+        benchmark_tx_rate.code(),
+        benchmark_tx_rate.nominal_kbps(),
+        peer_ampdu_limit,
+        rate_ampdu_limit,
     ));
 
     let rx_ring =

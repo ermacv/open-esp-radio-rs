@@ -14,8 +14,8 @@ use std::{
 };
 
 use open_esp_radio_esp32s31_wifi_mac::irq::{
-    HANDLED_MAC_MASK, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
-    MAC_INT_TX_TIMEOUT,
+    HANDLED_MAC_MASK, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK, MAC_INT_RX_SUCCESS,
+    MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };
 use open_radio_vendor_validator_semantic::{
     DriverAdapterQualification, EffectDisposition, EffectPolicy, EffectSelector,
@@ -78,6 +78,14 @@ const CASES: &[Case] = &[
     Case {
         name: "all-supported",
         status: HANDLED_MAC_MASK,
+    },
+    Case {
+        name: "rx-with-observed-auxiliary",
+        status: MAC_INT_RX_SUCCESS | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
+    },
+    Case {
+        name: "observed-auxiliary-only",
+        status: MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
     },
     Case {
         name: "unsupported-watchdog",
@@ -500,6 +508,14 @@ mod tests {
     fn semantic_encoding_covers_spurious_supported_and_unhandled_images() {
         assert_eq!(expected_semantic_encoding(0), 0x8000_0082);
         assert_eq!(expected_semantic_encoding(MAC_INT_RX_SUCCESS), 0x8000_018d);
+        assert_eq!(
+            expected_semantic_encoding(MAC_INT_RX_SUCCESS | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK),
+            0x8000_018d
+        );
+        assert_eq!(
+            expected_semantic_encoding(MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK),
+            0x8000_0087
+        );
         assert_eq!(expected_semantic_encoding(HANDLED_MAC_MASK), 0x8043_21a5);
         assert_eq!(expected_semantic_encoding(0x800), 0x8000_0087);
         assert_eq!(

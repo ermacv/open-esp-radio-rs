@@ -23,8 +23,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
         initialize_promiscuous_receive,
     },
     irq::{
-        IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS,
-        MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterrupt, handle_mac_irq,
+        IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
+        MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterrupt, handle_mac_irq,
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     registers::{
@@ -2169,16 +2169,40 @@ fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
 fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
     let mut mmio = MockMmio::default();
     mmio.interrupt_enable = u32::MAX;
-    mmio.interrupt_status = MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS | 0x20;
+    mmio.interrupt_status = MAC_INT_TX_COMPLETE
+        | MAC_INT_RX_SUCCESS
+        | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK
+        | 0x8000_0000;
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
     assert_eq!(disposition, IrqDisposition::Posted);
-    assert_eq!(snapshot.unhandled, 0x20);
-    assert_eq!(state.observed_unhandled(), 0x20);
+    assert_eq!(snapshot.auxiliary, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
+    assert_eq!(snapshot.unhandled, 0x8000_0000);
+    assert_eq!(state.observed_unhandled(), 0x8000_0000);
     let event = state.try_take().unwrap();
     assert_eq!(event.mac_pending, MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
+    assert!(
+        mmio.operations()
+            .contains(&Operation::ClearInterrupt(snapshot.status))
+    );
+}
+
+#[test]
+fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
+    let mut mmio = MockMmio::default();
+    mmio.interrupt_enable = u32::MAX;
+    mmio.interrupt_status = MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
+    let state = IrqState::new();
+    let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
+
+    assert_eq!(disposition, IrqDisposition::AcknowledgedOnly);
+    assert_eq!(snapshot.handled, 0);
+    assert_eq!(snapshot.auxiliary, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
+    assert_eq!(snapshot.unhandled, 0);
+    assert_eq!(state.try_take(), None);
+    assert_eq!(state.observed_unhandled(), 0);
     assert!(
         mmio.operations()
             .contains(&Operation::ClearInterrupt(snapshot.status))

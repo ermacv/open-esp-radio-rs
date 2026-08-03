@@ -198,6 +198,137 @@ regressions also passed:
   85.378-Mbit/s conservative sum. Hardware starvation, FIFO overflow,
   software queue drops, TX timeouts and collisions were all zero.
 
+## Negotiated RX-unit capacity follow-up
+
+Three additional cold-boot 70-Mbit/s runs exposed a separate ownership-size
+bug. The DMA buffers and connected dispatcher already supported the negotiated
+3,839-byte A-MSDU class, but the intermediate 32-slot staging pool still used
+the ordinary vendor singleton capacity of 1,700 bytes. Two boots happened to
+see zero or 51 oversize units. A third boot recycled 1,163 otherwise valid
+units and delivered only 433,719 of 437,504 host datagrams, despite zero
+hardware `BUFFER_FULL`, FIFO overflow or software queue drop. The correlation
+shows why a hardware-clean result alone was insufficient.
+
+The staged frame, queue, protocol owner and DMA service now carry an explicit
+const-generic capacity. The production HIL selects 4,608 bytes, matching its
+already-qualified DMA buffer geometry; the default library type retains the
+1,700-byte vendor profile for configurations which do not negotiate a wider
+unit. A unit test covers admission immediately above the old limit.
+
+On a reset-separated 60-second final run, the wider path received 436,944 of
+437,504 host datagrams at 69.912 Mbit/s, published 437,113 network frames and
+recorded zero empty/oversize recycle, hardware starvation, FIFO overflow or
+software drop. Protocol data units numbered 436,486 while network publications
+numbered 437,113. The additional 627 publications are direct evidence that the
+dispatcher emitted multiple Ethernet MSDUs from some staged units; reducing
+the staging capacity back to one ordinary MPDU is therefore invalid for this
+association.
+
+## Descriptor-only TX policy and admission follow-up
+
+Adding a legitimate ordinary-MPDU fallback exposed a latent ownership error in
+the descriptor-only A-MPDU owner. The first implementation tested capacity by
+performing a speculative `begin -> can_push -> cancel` transaction. On the
+target, the peer byte ceiling retained beside the DMA descriptors was zero by
+the time the next network frame was admitted, even though construction had
+installed 65,535 bytes and the selected HE MCS9 default APEP ceiling was
+50,000 bytes. Every 1,514-byte Ethernet frame was consequently sent as an
+ordinary MPDU and TX fell to roughly 17--21 Mbit/s.
+
+The final boundary no longer mutates descriptor ownership to answer a value
+question. Fresh-frame admission is a pure calculation over encoded length,
+DMA capacity, negotiated peer limit, PHY-rate limit and HE TXOP. The peer limit
+comes from `StaTxRuntimePolicy`; immediately before each real `Free ->
+Reserved` transition the connected owner reinstalls that limit in the DMA
+storage. Thus association policy is not inferred from cold scalar contents
+co-located with hardware-owned descriptors. This also removes one complete
+reservation/cancellation cycle per aggregate.
+
+Reset-separated HE20 hardware regressions on the final implementation were:
+
+- TX-only: `PASS`; host/device floors 90.585/91.351 Mbit/s, 77,756 datagrams,
+  zero missing or reordered. A-MPDU averaged 30.99 MPDUs, with 2,505 exact
+  31-member aggregates and one 32-member aggregate. Preparation/publication
+  averaged 297.66/23.76 us; there were no timeouts or collisions.
+- Bidirectional: `PASS`; all 12,501 downlink datagrams arrived at 10.002
+  Mbit/s while concurrent TX remained at least 65.232 Mbit/s. A-MPDU averaged
+  30.94 MPDUs and reached 32; no hardware RX starvation, FIFO overflow,
+  software drop, unknown interrupt cause, TX timeout or collision occurred.
+- RX-only: `PASS` at a 70.001-Mbit/s host offer; device median was 69.637
+  Mbit/s, with zero hardware starvation, FIFO overflow, software drop,
+  empty discard or oversize discard. This particular 30-second run observed
+  376 transient staging-credit-limited services and delivered 217,072 of
+  218,752 UDP datagrams, so it is a regression check rather than a replacement
+  for the earlier exact-delivery 70-Mbit/s qualification.
+
+These results establish that the old roughly 70-Mbit/s TX observation was not
+a PHY ceiling. The remaining RX-only variance is in staging/protocol credit
+turnaround and is independent of the repaired aggregate admission path.
+
+## Interrupt-to-poll experiment
+
+The recovered vendor `wDev_ProcessFiq` is not NAPI-like: it reads one masked
+STATUS image, acknowledges the complete image with W1C, publishes RX before
+the known TX causes, and repeats until STATUS becomes zero. The open ISR keeps
+that transaction and ordering as its equivalence boundary.
+
+The runtime now counts entries into the hard MAC ISR separately from RX event
+posts and coalesced Embassy wake epochs. In an ungated 30-second 70-Mbit/s
+classification baseline, 220,732 RX-bearing first STATUS snapshots came from
+220,734 hard ISR entries and collapsed to 99,929 task wake epochs. There were
+no spurious entries, acknowledgement-loop saturations, hardware
+`BUFFER_FULL`/FIFO overflow or software drops. Embassy `Signal` was already
+coalescing bottom-half work, but it could not avoid the hardware interrupt
+cost.
+
+Every sustained-RX snapshot also carried bits 5 and 24, so the ordinary image
+was `0x01004020`, not RX_SUCCESS alone. Both bits are enabled by the recovered
+cold mask `0x19a879e0`. Complete `wDev_ProcessFiq` acknowledges the full image
+but does not dispatch an independent worker for either bit. They are therefore
+now named `RX_ASSOCIATED_AUXILIARY_5` and
+`RX_ASSOCIATED_AUXILIARY_24` in the source SVD and PAC with
+`instruction-exact-semantics-unknown` confidence. They remain outside the
+work-producing `HANDLED_MAC_MASK`; the ISR no longer records them as unknown
+events, but it still clears them in the exact full-image W1C transaction. Their
+electrical meaning and independent transition rules remain open, so neither
+bit is an RX ownership or frame-count oracle.
+
+A NAPI-like experiment masked only `RX_SUCCESS` in the MAC `ENABLE` register
+after the first event and restored it after one frozen descriptor frontier.
+It did reduce RX posts to 114,899, but hard ISR entries increased to 278,537.
+Moving the mask before W1C acknowledgement produced the same result: 111,127
+posts and 275,638 hard entries. Both runs retained roughly 70-Mbit/s delivery,
+but the extra empty/combined-line entries made this policy strictly worse, so
+the masking API and runtime gate were removed rather than retained as dormant
+production machinery.
+
+The next experiment owned the complete combined CPU `WIFI_MAC` route. The hard
+ISR disabled that route after acknowledging and publishing the first event;
+the radio task serviced RX/TX, repeatedly inspected newly completed frontiers
+for at most 500 microseconds, and reenabled the level route only at a quiescent
+boundary. This was race-safe, but not a useful NAPI regime for this workload.
+One repeat delivered all 72,918 datagrams at 70.003 Mbit/s with zero hardware
+or software loss and reduced hard entries to 42,802 in ten seconds. It needed
+51,514 DMA service calls, however, of which 15,191 had an empty frontier, plus
+8,712 explicit repolls. Another repeat fell to 69.607 Mbit/s; the simpler
+one-frontier variant recorded two hardware `BUFFER_FULL` events and 69.894
+Mbit/s. The hard-IRQ reduction had merely been exchanged for more task polls
+and less stable descriptor service because the bottom half usually drained
+faster than the next frame arrived. The combined-route gate and its policy
+state were removed.
+
+The retained design is consequently the vendor-equivalent STATUS/full-W1C
+hard ISR plus coalescing Embassy `Signal` and a complete frozen descriptor
+frontier per service call. Its natural work boundary is ownership and
+backpressure, not an artificial batch of 8 or 16 frames. A future
+interrupt-moderation experiment requires a documented hardware coalescing
+facility or a workload which actually accumulates useful multi-frame polling
+epochs; repeatedly toggling the CPU route is not the next optimization. This
+separation is consistent with the Linux NAPI lifecycle, but the measurements
+show that copying its scheduling shape without its workload conditions is not
+beneficial here; see the
+[Linux NAPI documentation](https://docs.kernel.org/networking/napi.html).
+
 ## Artifact identity
 
 - RX UART/report SHA-256:
@@ -221,23 +352,41 @@ regressions also passed:
 - Independent-task bidirectional UART/report SHA-256:
   `2a1be003a0360b5431f8a91ccfeadbee6e552c03c485f45001ad501e051e67b9` /
   `61bf59a9ba100221293ef62306ff92da8ce36d8ec24eeed70dac45b8bda4384b`.
+- Final wide-stage/hard-IRQ 70-Mbit/s RX UART/report SHA-256:
+  `3ca91c7f747d03240e92cf9ed77ead8de3fea8bb1fb61ec1f86f2679690dab83` /
+  `6cec86ec7733e567f19d87650e3ac0f9723d403c0b1f2bc814a314c4982bd1c2`.
+- First auxiliary-status-classified exact-delivery RX UART/report SHA-256:
+  `e958b521236c0fbae64a26745c1a2b0013f2a6803bcf48cb79b945329ad67bb9` /
+  `88289140cd603d6286f20c3dc04c75c841fe82b52b06bd0ff2e3dacd4dd294d8`.
+- Auxiliary-status/final RX regression UART/report SHA-256:
+  `a29777ebf8527955f9eee9beb5eb11dc04e369177c8786d3ff0fa037671e5942` /
+  `d0f66c8281b3741cea35c22bc63c73759746d1b210fb0d7730d0891c91ad1106`.
+- Descriptor-policy TX UART/report SHA-256:
+  `fceccf5f919d3434e8c19ac8da673bdf46ed6f7b1b7888d42c6fd19b9d56dffc` /
+  `06b02f87eab37bfd928125fa3bffacc88b87b79ef2b1c6c9662bf4ac443b58fd`.
+- Descriptor-policy bidirectional UART/report SHA-256:
+  `cba4981b87d864d498e7fc36ac8372b187d2371558215f773de771ad9104f303` /
+  `936778091d1f9c69fc9eb5ce8dab06c587f3d9fd825a4cfc30d59edf6e2cc016`.
 
 Generated UART logs and reports remain under `target/hil/esp32s31/qualification`;
 this record preserves their exact identity.
 
 ## Remaining boundary
 
-The next performance question is no longer the outer `select5` or Embassy
-queue depth. Independent tasks are qualified, and the final RX cell delivered
-every host datagram despite 143 transient staging-credit boundaries. The
-80-Mbit/s edge still coincides with the complete 32-descriptor frontier and the
-recovered 32-object large-RX profile. Increasing that geometry is not a safe
-generic tuning knob: it needs separate vendor-oracle, SRAM-placement and HIL
-qualification. Direct protocol decode into a reserved final RX slot remains a
-later experiment; the DMA-to-staging ownership copy must remain until an
-alternative is proven against the vendor recycle boundary. Before raising the
-throughput claim, repeat the final 70-Mbit/s cell across multiple cold boots
-and qualify the same scheduler under AP, AP+STA, sniffer and power-save modes.
+The next performance question is no longer the outer `select5`, Embassy queue
+depth or the obsolete 1,700-byte staging ceiling. Independent tasks and the
+wider negotiated staging path are qualified. The 80-Mbit/s edge still
+coincides with the complete 32-descriptor frontier and the recovered 32-object
+large-RX profile. Increasing that geometry is not a safe generic tuning knob:
+it needs separate vendor-oracle, SRAM-placement and HIL qualification. Direct
+protocol decode into a reserved final RX slot remains a later experiment; the
+DMA-to-staging ownership copy must remain until an alternative is proven
+against the vendor recycle boundary. Before raising the throughput claim,
+repeat the final 70-Mbit/s cell across multiple cold boots and qualify the same
+scheduler under AP, AP+STA, sniffer and power-save modes. The combined-line
+interrupt-to-poll experiment has been completed and rejected for this
+workload; the next CPU-side target is measured protocol-dispatch and copy cost,
+while TX remains a separate throughput constraint.
 
 ## HT40 / 150-Mbit/s preflight
 

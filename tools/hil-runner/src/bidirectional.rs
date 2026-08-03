@@ -241,6 +241,57 @@ pub(crate) struct RxQualification {
     pub(crate) he_mcs_histogram: [u64; 12],
     pub(crate) other_phy_frames: u64,
     pub(crate) pipeline: RxPipelineEvidence,
+    pub(crate) irq: MacIrqEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct MacIrqEvidence {
+    pub(crate) spurious_entries: u64,
+    pub(crate) rx_only_entries: u64,
+    pub(crate) rx_mixed_entries: u64,
+    pub(crate) tx_only_entries: u64,
+    pub(crate) tx_mixed_entries: u64,
+    pub(crate) other_only_entries: u64,
+    pub(crate) extra_nonzero_snapshots: u64,
+    pub(crate) saturated_entries: u64,
+    pub(crate) auxiliary_status_or: u64,
+    pub(crate) unknown_status_or: u64,
+}
+
+impl MacIrqEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.spurious_entries = self
+            .spurious_entries
+            .saturating_add(sample.spurious_entries);
+        self.rx_only_entries = self.rx_only_entries.saturating_add(sample.rx_only_entries);
+        self.rx_mixed_entries = self
+            .rx_mixed_entries
+            .saturating_add(sample.rx_mixed_entries);
+        self.tx_only_entries = self.tx_only_entries.saturating_add(sample.tx_only_entries);
+        self.tx_mixed_entries = self
+            .tx_mixed_entries
+            .saturating_add(sample.tx_mixed_entries);
+        self.other_only_entries = self
+            .other_only_entries
+            .saturating_add(sample.other_only_entries);
+        self.extra_nonzero_snapshots = self
+            .extra_nonzero_snapshots
+            .saturating_add(sample.extra_nonzero_snapshots);
+        self.saturated_entries = self
+            .saturated_entries
+            .saturating_add(sample.saturated_entries);
+        self.auxiliary_status_or |= sample.auxiliary_status_or;
+        self.unknown_status_or |= sample.unknown_status_or;
+    }
+
+    pub(crate) fn classified_entries(self) -> u64 {
+        self.spurious_entries
+            .saturating_add(self.rx_only_entries)
+            .saturating_add(self.rx_mixed_entries)
+            .saturating_add(self.tx_only_entries)
+            .saturating_add(self.tx_mixed_entries)
+            .saturating_add(self.other_only_entries)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -278,6 +329,7 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) network_publish_max_us: u64,
     pub(crate) rx_irq_posts: u64,
     pub(crate) rx_irq_epochs: u64,
+    pub(crate) mac_irq_entries: u64,
     pub(crate) rx_irq_coalesced_posts: u64,
     pub(crate) rx_irq_service_samples: u64,
     pub(crate) rx_irq_clock_skew_samples: u64,
@@ -360,6 +412,7 @@ impl RxPipelineEvidence {
             .max(sample.network_publish_max_us);
         self.rx_irq_posts = self.rx_irq_posts.saturating_add(sample.rx_irq_posts);
         self.rx_irq_epochs = self.rx_irq_epochs.saturating_add(sample.rx_irq_epochs);
+        self.mac_irq_entries = self.mac_irq_entries.saturating_add(sample.mac_irq_entries);
         self.rx_irq_coalesced_posts = self
             .rx_irq_coalesced_posts
             .saturating_add(sample.rx_irq_coalesced_posts);
@@ -399,6 +452,7 @@ struct DeviceReport {
     rx_service: Vec<RxPipelineEvidence>,
     rx_dispatch: Vec<RxPipelineEvidence>,
     rx_frontier: Vec<RxPipelineEvidence>,
+    mac_irq: Vec<MacIrqEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
@@ -778,6 +832,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     frontier_thirty_two_plus_services: field(line, "thirty_two_plus")?,
                     rx_irq_posts: field(line, "irq_posts")?,
                     rx_irq_epochs: field(line, "irq_epochs")?,
+                    mac_irq_entries: field(line, "irq_entries").unwrap_or(0),
                     rx_irq_coalesced_posts: field(line, "irq_coalesced")?,
                     rx_irq_service_samples: field(line, "irq_samples")?,
                     rx_irq_clock_skew_samples: field(line, "irq_skew")?,
@@ -788,6 +843,24 @@ fn parse_device_report(log: &str) -> DeviceReport {
             })();
             if let Some(sample) = sample {
                 report.rx_frontier.push(sample);
+            }
+        } else if line.starts_with("ORXI ") || line.contains(" ORXI ") {
+            let sample = (|| {
+                Some(MacIrqEvidence {
+                    spurious_entries: field(line, "spurious")?,
+                    rx_only_entries: field(line, "rx_only")?,
+                    rx_mixed_entries: field(line, "rx_mixed")?,
+                    tx_only_entries: field(line, "tx_only")?,
+                    tx_mixed_entries: field(line, "tx_mixed")?,
+                    other_only_entries: field(line, "other_only")?,
+                    extra_nonzero_snapshots: field(line, "extra")?,
+                    saturated_entries: field(line, "saturated")?,
+                    auxiliary_status_or: field(line, "aux_or")?,
+                    unknown_status_or: field(line, "unknown_or")?,
+                })
+            })();
+            if let Some(sample) = sample {
+                report.mac_irq.push(sample);
             }
         } else if line.starts_with("ORXM ") || line.contains(" ORXM ") {
             let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
@@ -1060,6 +1133,9 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
     {
         return Err("missing RX pipeline phase telemetry".into());
     }
+    if report.mac_irq.is_empty() {
+        return Err("missing MAC interrupt classification telemetry".into());
+    }
     let mut pipeline = RxPipelineEvidence::default();
     for sample in report
         .rx_service
@@ -1068,6 +1144,32 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         .chain(&report.rx_frontier)
     {
         pipeline.merge(*sample);
+    }
+    let mut irq = MacIrqEvidence::default();
+    for sample in &report.mac_irq {
+        irq.merge(*sample);
+    }
+    if pipeline.mac_irq_entries != 0 && irq.classified_entries() != pipeline.mac_irq_entries {
+        return Err(format!(
+            "incomplete MAC interrupt classification: classified={} hard_entries={}",
+            irq.classified_entries(),
+            pipeline.mac_irq_entries,
+        )
+        .into());
+    }
+    if irq.saturated_entries != 0 {
+        return Err(format!(
+            "MAC interrupt acknowledgement loop saturated {} times",
+            irq.saturated_entries,
+        )
+        .into());
+    }
+    if irq.unknown_status_or != 0 {
+        return Err(format!(
+            "MAC interrupt STATUS contains unqualified bits 0x{:08x}",
+            irq.unknown_status_or,
+        )
+        .into());
     }
     if pipeline.frontier_histogram_total() != pipeline.service_calls {
         return Err(format!(
@@ -1103,6 +1205,7 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         he_mcs_histogram,
         other_phy_frames,
         pipeline,
+        irq,
     })
 }
 
@@ -1180,6 +1283,7 @@ fn write_report(
 ) -> Result<()> {
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
+    let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
     let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
     let average_publish_us =
@@ -1215,7 +1319,8 @@ fn write_report(
              - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
-             - RX IRQ posts/wake epochs/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -1265,11 +1370,23 @@ fn write_report(
             pipeline.frontier_thirty_two_plus_services,
             pipeline.rx_irq_posts,
             pipeline.rx_irq_epochs,
+            pipeline.mac_irq_entries,
             pipeline.rx_irq_coalesced_posts,
             pipeline.rx_irq_service_samples,
             pipeline.rx_irq_clock_skew_samples,
             average_irq_service_us,
             pipeline.rx_irq_to_service_max_us,
+            irq.spurious_entries,
+            irq.rx_only_entries,
+            irq.rx_mixed_entries,
+            irq.tx_only_entries,
+            irq.tx_mixed_entries,
+            irq.other_only_entries,
+            irq.classified_entries(),
+            irq.extra_nonzero_snapshots,
+            irq.saturated_entries,
+            irq.auxiliary_status_or,
+            irq.unknown_status_or,
             pipeline.staged_bytes,
             pipeline.stage_empty_discards,
             pipeline.stage_too_long_discards,
@@ -1355,7 +1472,8 @@ mod tests {
              ORXP f=4 r=11 m=11\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
-             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
         let options = parse_options(&["192.168.178.141".into()]).unwrap();
@@ -1381,7 +1499,8 @@ mod tests {
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
-             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
@@ -1404,6 +1523,10 @@ mod tests {
         assert_eq!(rx.pipeline.network_publish_us, 60_000);
         assert_eq!(rx.pipeline.frontier_one_services, 5_000);
         assert_eq!(rx.pipeline.rx_irq_to_service_us, 25_000);
+        assert_eq!(rx.irq.rx_only_entries, 5_000);
+        assert_eq!(rx.irq.classified_entries(), 5_000);
+        assert_eq!(rx.irq.auxiliary_status_or, 0x0100_0020);
+        assert_eq!(rx.irq.unknown_status_or, 0);
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);

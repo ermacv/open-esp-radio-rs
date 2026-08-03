@@ -101,10 +101,23 @@ the retained detailed text report happen outside the measured interval. The
 host verifies the evidence-set CRC and requires the typed byte, datagram and
 throughput values to equal the independently parsed text oracle.
 
+## UDP TX session
+
+The TX-only image uses the same lifecycle. Its `Configure` command carries the
+host IPv4 endpoint, payload length, interval and optional offered-rate bound,
+so changing the HIL host or traffic shape does not rebuild the firmware. The
+target begins only after `Start`, snapshots socket and A-MPDU evidence after
+the interval, and allows a bounded post-measurement drain before publishing
+`Finished`.
+
+The host binds its sink before reset and compares target-enqueued bytes and
+datagrams with the packets actually received. This detects both internal send
+errors and network loss at the tail of a stream, where a receiver-only sequence
+gap check has no later sequence number from which to infer the missing tail.
+
 ## Migration boundary
 
-UDP TX and bidirectional images still advertise compatibility mode: they use
-typed network/service readiness but retain their existing compile-time traffic
-configuration, UDP probe and text completion. They are the next session
-migration targets. TCP RX/TX/bidirectional follows after the UDP lifecycle is
-uniform.
+The bidirectional image still advertises compatibility mode: it uses typed
+network/service readiness but retains its existing compile-time TX peer,
+readiness probe and text completion. It is the next session migration target.
+TCP RX/TX/bidirectional follows after the UDP lifecycle is uniform.

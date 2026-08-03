@@ -143,8 +143,8 @@ use open_esp_radio::{
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_protocol::{
-    Capabilities, Direction as HilDirection, Event as HilEvent, FeatureCapabilities,
-    MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
+    Capabilities, Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
+    FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
     Transport as HilTransport, TransportEvidence,
 };
 
@@ -283,6 +283,7 @@ const OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH: usize = if option_env!("OPEN_RADIO_TX_BE
 };
 const OPEN_RADIO_UDP_TX_BENCH_PORT: u16 = 9_002;
 const OPEN_RADIO_UDP_TX_BENCH_DURATION: Duration = Duration::from_secs(5);
+const OPEN_RADIO_UDP_TX_DRAIN: Duration = Duration::from_millis(250);
 const OPEN_RADIO_UDP_RX_IDLE: Duration = Duration::from_millis(750);
 const OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET: Duration = Duration::from_micros(500);
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
@@ -292,9 +293,9 @@ const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 
-/// Describes only behavior implemented by the current image. Ordinary RX uses
-/// runtime sessions and structured evidence; compile-time TX and bidirectional
-/// profiles remain on the compatibility lifecycle until they are migrated.
+/// Describes only behavior implemented by the current image. Ordinary RX and
+/// TX-only use runtime sessions and structured evidence; the bidirectional
+/// profile remains on the compatibility lifecycle until it is migrated.
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
@@ -304,8 +305,8 @@ pub const fn hil_capabilities() -> Capabilities {
             tx: OPEN_RADIO_THROUGHPUT_BENCH,
             bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH,
             network_provisioning: true,
-            runtime_configuration: OPEN_RADIO_RUNTIME_RX_SESSIONS,
-            structured_evidence: OPEN_RADIO_RUNTIME_RX_SESSIONS,
+            runtime_configuration: OPEN_RADIO_RUNTIME_SESSIONS,
+            structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
         },
         maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
@@ -323,6 +324,10 @@ const OPEN_RADIO_RAW_MAC_BENCH: bool = option_env!("OPEN_RADIO_RAW_MAC_BENCH").i
     || option_env!("OPEN_RADIO_HE_DELIMITER_HIL").is_some();
 const OPEN_RADIO_RUNTIME_RX_SESSIONS: bool =
     !OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_RAW_MAC_BENCH;
+const OPEN_RADIO_RUNTIME_TX_SESSIONS: bool =
+    OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_BIDIRECTIONAL_BENCH;
+const OPEN_RADIO_RUNTIME_SESSIONS: bool =
+    OPEN_RADIO_RUNTIME_RX_SESSIONS || OPEN_RADIO_RUNTIME_TX_SESSIONS;
 const OPEN_RADIO_AMSDU_BENCH: bool = option_env!("OPEN_RADIO_AMSDU_BENCH").is_some();
 // Exercise the blob-exact cache-ESF A-MSDU ownership edge on real
 // embassy-net frames. Unlike OPEN_RADIO_AMSDU_BENCH, this does not synthesize
@@ -3559,7 +3564,10 @@ async fn run_open_radio_udp_tx_benchmark(
             Timer::after_secs(60).await;
         }
     }
-    let server = Ipv4Address::from_octets(OPEN_RADIO_TX_BENCH_TARGET_IPV4);
+    // Complete the connected-data-path settle before advertising readiness.
+    // `Start` must mean the benchmark task can consume its session without a
+    // hidden post-acceptance delay.
+    Timer::after_secs(1).await;
     crate::console::publish_event(
         0,
         0,
@@ -3570,47 +3578,99 @@ async fn run_open_radio_udp_tx_benchmark(
             maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
         }),
     );
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
-         target={server}:{OPEN_RADIO_UDP_TX_BENCH_PORT} \
-         queue={OPEN_RADIO_UDP_TX_QUEUE_DEPTH} payload={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
-         tx_mode=ampdu \
-         offered_tx_kbps={OPEN_RADIO_TX_BENCH_RATE_KBPS:?} \
-         rate_code={:#04x} rate_kbps={}",
-        data_tx_rate.code(),
-        data_tx_rate.nominal_kbps(),
-    ));
-    Timer::after_secs(1).await;
-
+    if OPEN_RADIO_RUNTIME_TX_SESSIONS {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
+             source_port=4324 queue={OPEN_RADIO_UDP_TX_QUEUE_DEPTH} \
+             payload_capacity={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
+             tx_mode=ampdu runtime_session=1 \
+             rate_code={:#04x} rate_kbps={}",
+            data_tx_rate.code(),
+            data_tx_rate.nominal_kbps(),
+        ));
+    } else {
+        let server = Ipv4Address::from_octets(OPEN_RADIO_TX_BENCH_TARGET_IPV4);
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
+             target={server}:{OPEN_RADIO_UDP_TX_BENCH_PORT} \
+             queue={OPEN_RADIO_UDP_TX_QUEUE_DEPTH} payload={OPEN_RADIO_UDP_PAYLOAD_CAPACITY} \
+             tx_mode=ampdu \
+             offered_tx_kbps={OPEN_RADIO_TX_BENCH_RATE_KBPS:?} \
+             rate_code={:#04x} rate_kbps={}",
+            data_tx_rate.code(),
+            data_tx_rate.nominal_kbps(),
+        ));
+    }
     loop {
+        let session = if OPEN_RADIO_RUNTIME_TX_SESSIONS {
+            Some(crate::console::receive_session_start().await)
+        } else {
+            None
+        };
+        let (server, server_port, payload_bytes, duration, offered_rate_bps) =
+            if let Some(session) = session {
+                let peer = session
+                    .config
+                    .peer
+                    .expect("validated TX session carries a peer");
+                let duration_millis = match session.config.completion {
+                    HilCompletion::DurationMillis(duration) => duration,
+                    HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
+                        unreachable!("protocol owner accepts only duration-completed sessions")
+                    }
+                };
+                (
+                    Ipv4Address::from_octets(peer.address),
+                    peer.port,
+                    usize::from(session.config.payload_bytes),
+                    Duration::from_millis(u64::from(duration_millis)),
+                    session.config.offered_rate_bps,
+                )
+            } else {
+                (
+                    Ipv4Address::from_octets(OPEN_RADIO_TX_BENCH_TARGET_IPV4),
+                    OPEN_RADIO_UDP_TX_BENCH_PORT,
+                    OPEN_RADIO_UDP_PAYLOAD_CAPACITY,
+                    OPEN_RADIO_UDP_TX_BENCH_DURATION,
+                    OPEN_RADIO_TX_BENCH_RATE_KBPS.map(|rate| rate.saturating_mul(1_000)),
+                )
+            };
+        if let Some(session) = session {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
+                 session={} target={server}:{server_port} payload={payload_bytes} \
+                 duration_ms={} offered_bps={offered_rate_bps:?}",
+                session.session_id,
+                duration.as_millis(),
+            ));
+        }
         let started = Instant::now();
         let aggregate_start = (!OPEN_RADIO_BIDIRECTIONAL_BENCH)
             .then(|| OPEN_RADIO_TX_AGGREGATE_COUNTERS.snapshot());
         let mut next_send = started;
         let mut bytes = 0_u64;
-        let mut datagrams = 0_u32;
+        let mut datagrams = 0_u64;
         let mut send_errors = 0_u32;
-        while started.elapsed() < OPEN_RADIO_UDP_TX_BENCH_DURATION {
-            packet[..4].copy_from_slice(&(datagrams as i32).to_be_bytes());
+        while started.elapsed() < duration {
+            packet[..4].copy_from_slice(&(datagrams as u32).to_be_bytes());
             match socket
-                .send_to(packet, (server, OPEN_RADIO_UDP_TX_BENCH_PORT))
+                .send_to(&packet[..payload_bytes], (server, server_port))
                 .await
             {
                 Ok(()) => {
-                    bytes = bytes.saturating_add(packet.len() as u64);
+                    bytes = bytes.saturating_add(payload_bytes as u64);
                     datagrams = datagrams.saturating_add(1);
                 }
                 Err(_) => send_errors = send_errors.saturating_add(1),
             }
-            if let Some(rate_kbps) = OPEN_RADIO_TX_BENCH_RATE_KBPS {
-                // `kbit/s` and microseconds cancel directly after multiplying
-                // the payload bytes by eight thousand. Pace absolute
-                // deadlines so a temporarily blocking network queue does not
-                // produce a compensating burst after it becomes writable.
-                let interval_us = (packet.len() as u64)
-                    .saturating_mul(8_000)
-                    .saturating_add(rate_kbps - 1)
-                    / rate_kbps;
+            if let Some(rate_bps) = offered_rate_bps {
+                // Pace absolute microsecond deadlines so a temporarily
+                // blocking network queue does not produce a compensating
+                // burst after it becomes writable.
+                let interval_us = (payload_bytes as u64)
+                    .saturating_mul(8_000_000)
+                    .saturating_add(rate_bps - 1)
+                    / rate_bps;
                 next_send += Duration::from_micros(interval_us);
                 let now = Instant::now();
                 if now < next_send {
@@ -3626,6 +3686,12 @@ async fn run_open_radio_udp_tx_benchmark(
             .saturating_mul(1_000)
             .checked_div(elapsed_us)
             .unwrap_or(0);
+        // UDP enqueue completion precedes MAC acknowledgement. Keep draining
+        // outside the measured interval so the structured result cannot race
+        // the final network queue and A-MPDU exchange.
+        if session.is_some() {
+            Timer::after(OPEN_RADIO_UDP_TX_DRAIN).await;
+        }
         // Publish one compact bounded record synchronously per five-second
         // interval. The asynchronous logger repeatedly truncated this record
         // after `OTX b=` under sustained TX, whereas the same emergency path
@@ -3634,7 +3700,7 @@ async fn run_open_radio_udp_tx_benchmark(
         emergency_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
              e={send_errors} p={} w={} r={} g={} x={} l={} a={}",
-            OPEN_RADIO_TX_BENCH_RATE_KBPS.unwrap_or(0),
+            offered_rate_bps.unwrap_or(0) / 1_000,
             association_phy.bandwidth_mhz(),
             data_tx_rate.nominal_kbps(),
             match data_tx_rate {
@@ -3654,7 +3720,23 @@ async fn run_open_radio_udp_tx_benchmark(
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start);
         }
-        Timer::after_secs(2).await;
+        if let Some(session) = session {
+            crate::console::complete_session(
+                session.session_id,
+                TransportEvidence {
+                    rx_bytes: 0,
+                    tx_bytes: bytes,
+                    rx_units: 0,
+                    tx_units: datagrams,
+                    elapsed_micros: elapsed_us,
+                    transport_errors: send_errors,
+                },
+                send_errors == 0,
+            )
+            .await;
+        } else {
+            Timer::after_secs(2).await;
+        }
     }
 }
 

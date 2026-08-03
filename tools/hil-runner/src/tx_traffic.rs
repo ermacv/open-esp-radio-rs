@@ -7,6 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use open_esp_radio_hil_protocol::{Completion, Direction, Ipv4Endpoint, SessionConfig, Transport};
+
 use crate::{
     Result,
     bidirectional::{AmpduEvidence, qualify_tx_log},
@@ -16,6 +18,7 @@ use crate::{
 const DEFAULT_PORT: u16 = 9_002;
 const DEVICE_SOURCE_PORT: u16 = 4_324;
 const DEFAULT_DURATION: Duration = Duration::from_secs(16);
+const DEFAULT_PAYLOAD: usize = 1_472;
 const BURST_IDLE: Duration = Duration::from_millis(500);
 const MIN_BURST_DATAGRAMS: u64 = 1_000;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
@@ -26,6 +29,8 @@ struct Options {
     device: Ipv4Addr,
     port: u16,
     duration: Duration,
+    payload: usize,
+    offered_rate_bps: Option<u64>,
     serial: PathBuf,
     bandwidth_mhz: u16,
     rate_kbps: u64,
@@ -127,7 +132,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             return Err(error);
         }
     };
-    options.device = discovered_address;
+    options.device = discovered_address.address;
     let route_probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     route_probe.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
     let host_address = match route_probe.local_addr()? {
@@ -140,7 +145,45 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     // enter the measured radio TX accounting.
     socket.send_to(&[0], SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
 
-    let bursts = receive_bursts(&socket, options.device, options.duration)?;
+    let session = if discovered_address.runtime_session {
+        Some(capture.start_session(SessionConfig {
+            transport: Transport::Udp,
+            direction: Direction::Tx,
+            payload_bytes: u16::try_from(options.payload)?,
+            completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
+            peer: Some(Ipv4Endpoint {
+                address: host_address.octets(),
+                port: options.port,
+            }),
+            offered_rate_bps: options.offered_rate_bps,
+        })?)
+    } else {
+        None
+    };
+    let receive_duration = if session.is_some() {
+        options.duration.saturating_add(Duration::from_secs(2))
+    } else {
+        options.duration
+    };
+    let bursts = receive_bursts(&socket, options.device, receive_duration)?;
+    let structured = if let Some(session) = session {
+        let evidence = match capture.wait_for_session(session, Duration::from_secs(5)) {
+            Ok(evidence) => evidence,
+            Err(error) => {
+                let log = capture.finish();
+                fs::write(output.join("uart.log"), &log)?;
+                return Err(error);
+            }
+        };
+        if let Err(error) = capture.acknowledge_session(session) {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+        Some(evidence)
+    } else {
+        None
+    };
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
 
@@ -149,10 +192,11 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .copied()
         .filter(|burst| burst.started_at_zero && burst.datagrams >= MIN_BURST_DATAGRAMS)
         .collect();
-    if qualified.len() < 2 {
+    let minimum_bursts = if structured.is_some() { 1 } else { 2 };
+    if qualified.len() < minimum_bursts {
         return Err(format!(
-            "received only {} complete TX bursts; rebuild/flash with OPEN_RADIO_TX_BENCH_TARGET_IPV4={host_address}",
-            qualified.len(),
+            "received only {} complete TX bursts; required {minimum_bursts}",
+            qualified.len()
         )
         .into());
     }
@@ -168,8 +212,48 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .iter()
         .map(|burst| burst.throughput_kbps())
         .min()
-        .expect("at least two qualified bursts");
+        .expect("at least one qualified burst");
     let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.rate_kbps)?;
+    if let Some(evidence) = structured {
+        let received_bytes = qualified.iter().map(|burst| burst.bytes).sum::<u64>();
+        let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
+        let typed_throughput_kbps = evidence
+            .transport
+            .tx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(evidence.transport.elapsed_micros.max(1))
+            .unwrap_or(0);
+        if !evidence.finished.summary.passed {
+            return Err("target did not complete the typed TX session normally".into());
+        }
+        if evidence.transport.rx_bytes != 0 || evidence.transport.rx_units != 0 {
+            return Err("TX-only session reported unexpected received traffic".into());
+        }
+        if evidence.transport.transport_errors != 0 {
+            return Err(format!(
+                "typed TX session reported {} transport errors",
+                evidence.transport.transport_errors
+            )
+            .into());
+        }
+        if evidence.transport.tx_bytes != received_bytes
+            || evidence.transport.tx_units != received_datagrams
+        {
+            return Err(format!(
+                "typed/host TX delivery mismatch: target={}/{} host={received_bytes}/{received_datagrams}",
+                evidence.transport.tx_bytes, evidence.transport.tx_units
+            )
+            .into());
+        }
+        if typed_throughput_kbps != tx.throughput_floor_kbps {
+            return Err(format!(
+                "typed/text TX throughput mismatch: {typed_throughput_kbps}/{} kbit/s",
+                tx.throughput_floor_kbps
+            )
+            .into());
+        }
+    }
     write_report(
         &output,
         TxReport {
@@ -180,6 +264,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             device_floor_kbps: tx.throughput_floor_kbps,
             device_samples: tx.sample_count,
             ampdu: tx.ampdu,
+            structured,
         },
     )?;
     println!(
@@ -201,11 +286,13 @@ fn print_help() {
         "cargo hil traffic tx <device-ipv4> [options]\n\
          \n\
          --seconds <8..300> capture duration (default 16)\n\
+         --payload <64..1472> UDP payload bytes (default 1472)\n\
+         --rate <bps>       optional target offered-load bound\n\
          --port <port>      host UDP sink (default 9002)\n\
          --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
          --phy <he20|ht40> expected TX vector (default he20)\n\n\
-         Build and flash `udp-tx` with OPEN_RADIO_TX_BENCH_TARGET_IPV4 set to \
-         this host's LAN IPv4 before starting the capture."
+         Flash `cargo hil flash udp-tx`; host address and traffic parameters \
+         are provisioned at runtime."
     );
 }
 
@@ -218,6 +305,8 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         device,
         port: DEFAULT_PORT,
         duration: DEFAULT_DURATION,
+        payload: DEFAULT_PAYLOAD,
+        offered_rate_bps: None,
         serial: PathBuf::from("/dev/ttyACM0"),
         bandwidth_mhz: 20,
         rate_kbps: 114_700,
@@ -236,6 +325,13 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
                 options.duration = Duration::from_secs(seconds);
             }
             "--port" => options.port = value.parse::<u16>()?,
+            "--payload" => {
+                options.payload = value.parse::<usize>()?;
+                if !(64..=1_472).contains(&options.payload) {
+                    return Err("--payload must be in 64..=1472".into());
+                }
+            }
+            "--rate" => options.offered_rate_bps = Some(parse_rate(value)?),
             "--serial" => options.serial = PathBuf::from(value),
             "--phy" => match value.as_str() {
                 "he20" => {
@@ -256,6 +352,23 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         return Err("--port must be nonzero".into());
     }
     Ok(options)
+}
+
+fn parse_rate(value: &str) -> Result<u64> {
+    let (digits, multiplier) = match value.as_bytes().last().copied() {
+        Some(b'k' | b'K') => (&value[..value.len() - 1], 1_000_u64),
+        Some(b'm' | b'M') => (&value[..value.len() - 1], 1_000_000_u64),
+        Some(b'g' | b'G') => (&value[..value.len() - 1], 1_000_000_000_u64),
+        _ => (value, 1),
+    };
+    let rate = digits
+        .parse::<u64>()?
+        .checked_mul(multiplier)
+        .ok_or("rate overflow")?;
+    if !(100_000..=1_000_000_000).contains(&rate) {
+        return Err("--rate must be in 100K..=1G".into());
+    }
+    Ok(rate)
 }
 
 fn receive_bursts(
@@ -316,6 +429,7 @@ struct TxReport<'a> {
     device_floor_kbps: u64,
     device_samples: usize,
     ampdu: AmpduEvidence,
+    structured: Option<crate::traffic_capture::SessionEvidence>,
 }
 
 fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
@@ -326,6 +440,23 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
         .completed
         .saturating_add(report.ampdu.timeout)
         .saturating_add(report.ampdu.collision);
+    let structured_report = report
+        .structured
+        .map(|evidence| {
+            format!(
+                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n",
+                evidence.transport.tx_bytes,
+                evidence.transport.tx_units,
+                evidence.transport.elapsed_micros,
+                evidence.finished.evidence_crc32c,
+            )
+        })
+        .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+    let offered_rate = report
+        .options
+        .offered_rate_bps
+        .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
+        .unwrap_or_else(|| String::from("saturated"));
     fs::write(
         output.join("report.md"),
         format!(
@@ -333,6 +464,8 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Result: `PASS`\n\
              - Device/host: `{}` / `{}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
+             - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
+             {structured_report}\
              - Host receive floor: `{:.3} Mbit/s`\n\
              - Device socket floor: `{:.3} Mbit/s` across `{}` samples\n\
              - Host missing/reordered datagrams: `0` / `0`\n\n\
@@ -350,6 +483,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.options.device,
             report.host_address,
             report.bursts.len(),
+            report.options.payload,
             report.host_floor_kbps as f64 / 1_000.0,
             report.device_floor_kbps as f64 / 1_000.0,
             report.device_samples,
@@ -390,11 +524,17 @@ mod tests {
             "192.168.178.141".into(),
             "--seconds".into(),
             "8".into(),
+            "--payload".into(),
+            "1200".into(),
+            "--rate".into(),
+            "80M".into(),
             "--phy".into(),
             "ht40".into(),
         ])
         .unwrap();
         assert_eq!(options.duration, Duration::from_secs(8));
+        assert_eq!(options.payload, 1_200);
+        assert_eq!(options.offered_rate_bps, Some(80_000_000));
         assert_eq!(options.bandwidth_mhz, 40);
         assert_eq!(options.rate_kbps, 150_000);
     }

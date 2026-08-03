@@ -405,15 +405,20 @@ pub async fn protocol_task(capabilities: Capabilities) {
 }
 
 fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bool {
+    let direction_valid = match config.direction {
+        Direction::Rx => capabilities.features.rx && config.peer.is_none(),
+        Direction::Tx => capabilities.features.tx && config.peer.is_some_and(|peer| peer.port != 0),
+        Direction::Bidirectional => false,
+    };
     config.transport == Transport::Udp
-        && config.direction == Direction::Rx
         && capabilities.features.udp
-        && capabilities.features.rx
+        && direction_valid
         && config.payload_bytes >= 64
         && config.payload_bytes <= capabilities.maximum_payload_bytes
-        && config.peer.is_none()
-        && config.offered_rate_bps.is_none_or(|rate| rate > 0)
-        && matches!(config.completion, Completion::DurationMillis(duration) if duration > 0)
+        && config
+            .offered_rate_bps
+            .is_none_or(|rate| (100_000..=1_000_000_000).contains(&rate))
+        && matches!(config.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
 }
 
 async fn transition_state(state: &mut SessionState, current: SessionState, session_id: u64) {

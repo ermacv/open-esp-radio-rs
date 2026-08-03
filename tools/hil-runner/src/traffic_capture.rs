@@ -52,6 +52,12 @@ pub(crate) struct UdpRxReady {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct UdpTxReady {
+    pub(crate) address: Ipv4Addr,
+    pub(crate) runtime_session: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionHandle {
     session_id: u64,
     first_event: usize,
@@ -614,8 +620,16 @@ pub(crate) fn await_device_marker(
     marker: &str,
     address_hint: Ipv4Addr,
     timeout: Duration,
-) -> Result<Ipv4Addr> {
-    let _ = capture.prepare_protocol()?;
+) -> Result<UdpTxReady> {
+    let capabilities = capture.prepare_protocol()?;
+    if !capabilities.features.udp || !capabilities.features.tx {
+        return Err("firmware does not advertise UDP TX capability".into());
+    }
+    if capabilities.features.runtime_configuration && !capabilities.features.structured_evidence {
+        return Err("firmware advertises runtime sessions without structured evidence".into());
+    }
+    let runtime_session =
+        capabilities.features.runtime_configuration && capabilities.features.structured_evidence;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
@@ -628,11 +642,17 @@ pub(crate) fn await_device_marker(
                     .observed_protocol_ipv4()
                     .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
                 {
-                    return Ok(address);
+                    return Ok(UdpTxReady {
+                        address,
+                        runtime_session,
+                    });
                 }
                 thread::sleep(Duration::from_millis(10));
             }
-            return Ok(address_hint);
+            return Ok(UdpTxReady {
+                address: address_hint,
+                runtime_session,
+            });
         }
         thread::sleep(Duration::from_millis(20));
     }

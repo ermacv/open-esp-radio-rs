@@ -1023,11 +1023,17 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
         }
     }
 
-    /// Split into a receive-dispatch publisher and the unique scheduler-side
-    /// consumer. The mutable borrow prevents a second split while either
-    /// capability remains live.
+    /// Split one station epoch into a receive-dispatch publisher and its
+    /// scheduler-side consumer.
+    ///
+    /// Embassy channels support recreating their lightweight endpoints. The
+    /// station lifecycle owner must nevertheless keep epochs disjoint: it
+    /// stops the RX protocol task and drops the connected-control consumer
+    /// before calling `split` for a later association. Accepting `&self`
+    /// permits that sequential reuse for statically located resources without
+    /// manufacturing a second channel allocation.
     pub fn split(
-        &mut self,
+        &self,
     ) -> (
         ConnectedControlPublisher<'_, M, CAPACITY>,
         ConnectedControlReceiver<'_, M, CAPACITY>,
@@ -1041,6 +1047,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             ConnectedControlReceiver {
                 receiver: resources.channel.receiver(),
                 dropped: &resources.dropped,
+                dropped_at_start: resources.dropped.load(Ordering::Relaxed),
             },
         )
     }
@@ -1077,6 +1084,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
 pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: Receiver<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     dropped: &'resources AtomicU32,
+    dropped_at_start: u32,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACITY> {
@@ -1096,7 +1104,9 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub fn dropped(&self) -> u32 {
-        self.dropped.load(Ordering::Relaxed)
+        self.dropped
+            .load(Ordering::Relaxed)
+            .wrapping_sub(self.dropped_at_start)
     }
 }
 
@@ -1654,7 +1664,7 @@ mod tests {
 
     #[test]
     fn embassy_control_capabilities_preserve_fifo_and_report_overflow() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
         let (mut publisher, receiver) = resources.split();
         let first = BlockAckAction::Delba {
             tid: 1,
@@ -1683,5 +1693,51 @@ mod tests {
             Some(ConnectedRxControlEvent::BlockAck(first))
         );
         assert_eq!(receiver.try_receive(), None);
+    }
+
+    #[test]
+    fn embassy_control_resources_are_reused_by_sequential_epochs() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let action = BlockAckAction::Delba {
+            tid: 2,
+            initiator: true,
+            reason: 8,
+        };
+
+        {
+            let (mut publisher, receiver) = resources.split();
+            publisher.publish(ConnectedRxEvent::BlockAck {
+                action,
+                body: &[3, 2, 0, 0, 8, 0],
+            });
+            assert_eq!(
+                receiver.try_receive(),
+                Some(ConnectedRxControlEvent::BlockAck(action))
+            );
+            publisher.publish(ConnectedRxEvent::BlockAck {
+                action,
+                body: &[3, 2, 0, 0, 8, 0],
+            });
+            publisher.publish(ConnectedRxEvent::BlockAck {
+                action,
+                body: &[3, 2, 0, 0, 8, 0],
+            });
+            assert_eq!(receiver.dropped(), 1);
+            assert_eq!(
+                receiver.try_receive(),
+                Some(ConnectedRxControlEvent::BlockAck(action))
+            );
+        }
+
+        let (mut publisher, receiver) = resources.split();
+        assert_eq!(receiver.dropped(), 0);
+        publisher.publish(ConnectedRxEvent::BlockAck {
+            action,
+            body: &[3, 2, 0, 0, 8, 0],
+        });
+        assert_eq!(
+            receiver.try_receive(),
+            Some(ConnectedRxControlEvent::BlockAck(action))
+        );
     }
 }

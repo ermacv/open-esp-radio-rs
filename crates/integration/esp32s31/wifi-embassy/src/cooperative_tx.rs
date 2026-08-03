@@ -48,6 +48,16 @@ impl<'cell, 'registers> CooperativeTxHardware<'cell, 'registers> {
     pub const fn new(registers: &'cell RefCell<&'registers mut RadioRegisters>) -> Self {
         Self { registers }
     }
+
+    /// Shared cell used by executor tasks which perform bounded cooperative
+    /// register transactions.
+    ///
+    /// Returning the cell does not expose a second PAC owner: every access is
+    /// still dynamically serialized by the same `RefCell`, and lifecycle code
+    /// must stop those tasks before consuming this hardware facade.
+    pub const fn register_cell(&self) -> &'cell RefCell<&'registers mut RadioRegisters> {
+        self.registers
+    }
 }
 
 impl Mmio for CooperativeTxHardware<'_, '_> {

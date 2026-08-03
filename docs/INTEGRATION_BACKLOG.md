@@ -1,7 +1,7 @@
 # Integration backlog
 
 Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-03
-(6,899 lines).
+(7,034 lines).
 
 The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
 executor, concrete `embassy-net` scenarios, credentials, traffic generation
@@ -223,7 +223,19 @@ The first reconnect seam is now production-owned:
   register-backed hardware, halted RX and A-MPDU storage. `embassy-net` and
   its report task are created only for `Unstarted`; the returned `Running`
   state keeps that stack alive with link-down rather than calling
-  `StackResources::init` again.
+  `StackResources::init` again;
+- connected-epoch construction now distinguishes
+  `RadioHilConnectedEpochResources::Initial` from `Reconnected`. Only the
+  initial variant can promote raw `RadioRegisters` into the cooperative cell
+  and initialize A-MPDU/control storage. The reconnect variant accepts only
+  the hardware, halted RX, pinned A-MPDU arena and control mailbox returned by
+  `RadioHilDisconnectedEpoch`, so a second connected epoch cannot compile a
+  repeated `StaticCell::init` path;
+- `ConnectedControlResources` now supports sequential endpoint recreation on
+  the same static Embassy channel. Its host test closes one publisher/consumer
+  scope, opens a second and proves FIFO delivery again. The HIL does not open
+  the next scope until the RX protocol stop acknowledgement and connected
+  control shutdown have completed.
 
 This is necessary but not yet a reconnect implementation. The next slices,
 in order, are:
@@ -236,12 +248,14 @@ in order, are:
 2. make the HIL consume that service, then qualify disconnect/reassociation
    and one injected TX/RX failure before resuming feature expansion.
 
-The current HIL still retains the returned bundle in its WPA2 parent instead
-of entering a second scan/join epoch. Network stack/report lifetime and the
-per-epoch benchmark lifetime are now separated correctly, but scan, join and
-WPA2 still accept only the initial raw-register fixture. Therefore HIL cannot
-yet serve as evidence for reassociation even though every connected resource
-now reaches an explicit reusable or fail-closed teardown edge.
+The current HIL converts the returned bundle into the exact typed input of a
+later connected epoch, but still retains that input in its WPA2 parent instead
+of entering a second scan/join epoch. Network stack/report lifetime,
+per-epoch benchmark lifetime and connected static-resource lifetime are now
+separated correctly. The remaining incompatibility is earlier in the chain:
+scan, join and WPA2 still accept only the initial raw-register fixture and do
+not yet return their RX owner on every failure. Therefore HIL cannot yet serve
+as evidence for reassociation.
 
 ## Completion gate
 

@@ -1173,7 +1173,7 @@ mod tests {
 
     #[test]
     fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
         let (_publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1209,7 +1209,7 @@ mod tests {
 
     #[test]
     fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
         let (reorder_sender, reorder_receiver) = reorder_resources.split();
@@ -1296,7 +1296,7 @@ mod tests {
 
     #[test]
     fn failed_rx_addba_response_rolls_back_hardware_and_software() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
         let (reorder_sender, reorder_receiver) = reorder_resources.split();
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1423,7 +1423,7 @@ mod tests {
 
     #[test]
     fn beacon_loss_deadline_disables_block_ack_and_disconnects() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
         let (_publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1457,7 +1457,7 @@ mod tests {
 
     #[test]
     fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1563,7 +1563,7 @@ mod tests {
 
     #[test]
     fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1603,7 +1603,7 @@ mod tests {
 
     #[test]
     fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1662,7 +1662,7 @@ mod tests {
 
     #[test]
     fn queued_network_traffic_blocks_pm_one() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1699,7 +1699,7 @@ mod tests {
 
     #[test]
     fn failed_pm_one_returns_to_awake_without_a_permit() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1742,7 +1742,7 @@ mod tests {
 
     #[test]
     fn queued_network_traffic_restores_pm_zero_before_data() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
@@ -1812,7 +1812,7 @@ mod tests {
 
     #[test]
     fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
-        let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+        let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,

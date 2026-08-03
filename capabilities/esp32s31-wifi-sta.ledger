@@ -201,11 +201,13 @@ owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
 owner crates/esp32s31/hal/src/lib.rs PowerUpFailure
 owner crates/integration/esp32s31/wifi-embassy/src/runner.rs WifiRunner
 owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs Esp32s31StoppedRx
+owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs ConnectedControlResources
 owner crates/integration/esp32s31/wifi-embassy/src/connected_control.rs ConnectedControlShutdown
 test crates/esp32s31/phy/src/phy_channel.rs frequency_timeout_runs_full_radio_cleanup
 test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
 test crates/esp32s31/hal/src/lib.rs failed_power_transition_returns_the_unique_owned_radio
 test crates/integration/esp32s31/wifi-embassy/src/connected_control.rs shutdown_clears_rx_tx_block_ack_and_discards_late_control_events
+test crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs embassy_control_resources_are_reused_by_sequential_epochs
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 depends-on rx-tx-dma

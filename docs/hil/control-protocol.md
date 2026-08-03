@@ -68,10 +68,43 @@ association diagnostics; it is not treated as secret material.
 - One host worker owns reset, reads, writes and frame decoding. Requests are
   correlated by boot and request identity.
 
+## UDP RX session
+
+The ordinary RX image advertises runtime configuration and structured
+evidence. After `NetworkReady` and `ServiceReady`, the host resolves and warms
+the ingress path with one negative-sequence UDP control datagram. The target
+does not open a sample before `Start`; after `Start`, it discards that terminal
+datagram before taking the first payload. A one-second settle interval makes
+the former implicit readiness/BlockAck delay explicit and keeps cold-start
+loss outside steady-state qualification.
+
+The measured lifecycle is:
+
+```text
+Idle
+  <- Configure(UDP, RX, payload, duration, offered rate)
+  -> Accepted -> Configured
+  <- Arm
+  -> Accepted -> Armed
+  <- Start
+  -> Accepted -> Running
+  -> Draining
+  -> Evidence(Transport)
+  -> Finished(summary, evidence CRC32C)
+  -> Finished state
+  <- AcknowledgeResult
+  -> Accepted -> Idle
+```
+
+The target first snapshots the complete result in RAM. USB serialization and
+the retained detailed text report happen outside the measured interval. The
+host verifies the evidence-set CRC and requires the typed byte, datagram and
+throughput values to equal the independently parsed text oracle.
+
 ## Migration boundary
 
-UDP readiness currently uses typed capability negotiation, runtime network
-provisioning and typed `NetworkReady`, then retains the old UDP probe and text
-evidence as a compatibility oracle. The next migration replaces its implicit
-idle-delimited sample with `Configure`, `Arm`, `Start`, structured evidence and
-`Finished`. UDP TX and bidirectional follow before TCP is added.
+UDP TX and bidirectional images still advertise compatibility mode: they use
+typed network/service readiness but retain their existing compile-time traffic
+configuration, UDP probe and text completion. They are the next session
+migration targets. TCP RX/TX/bidirectional follows after the UDP lifecycle is
+uniform.

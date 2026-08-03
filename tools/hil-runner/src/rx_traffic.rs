@@ -8,6 +8,8 @@ use std::{
     time::Duration,
 };
 
+use open_esp_radio_hil_protocol::{Completion, Direction, SessionConfig, Transport};
+
 use crate::{
     Result,
     bidirectional::{
@@ -61,7 +63,20 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             return Err(error);
         }
     };
-    options.address = discovered_address;
+    options.address = discovered_address.address;
+    let session = if discovered_address.runtime_session {
+        let duration_millis = u32::try_from(options.duration.as_millis())?;
+        Some(capture.start_session(SessionConfig {
+            transport: Transport::Udp,
+            direction: Direction::Rx,
+            payload_bytes: u16::try_from(options.payload)?,
+            completion: Completion::DurationMillis(duration_millis),
+            peer: None,
+            offered_rate_bps: Some(options.rate_bps),
+        })?)
+    } else {
+        None
+    };
     let host = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,
@@ -69,13 +84,78 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         duration: options.duration,
         payload: options.payload,
     })?;
-    thread::sleep(Duration::from_secs(5));
+    let structured = if let Some(session) = session {
+        let evidence = match capture.wait_for_session(
+            session,
+            options.duration.saturating_add(Duration::from_secs(10)),
+        ) {
+            Ok(evidence) => evidence,
+            Err(error) => {
+                let log = capture.finish();
+                fs::write(output.join("uart.log"), &log)?;
+                return Err(error);
+            }
+        };
+        if let Err(error) = capture.acknowledge_session(session) {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+        Some(evidence)
+    } else {
+        thread::sleep(Duration::from_secs(5));
+        None
+    };
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
     let assessment = assess_rx_log(&log, options.expected_rx_format)?;
     let rx = assessment.rx;
     let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
     let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
+    let structured_failure = structured.and_then(|evidence| {
+        let structured_throughput_kbps = evidence
+            .transport
+            .rx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(evidence.transport.elapsed_micros.max(1))
+            .unwrap_or(0);
+        let expected_bytes = evidence
+            .transport
+            .rx_units
+            .saturating_mul(options.payload as u64);
+        if !evidence.finished.summary.passed {
+            Some(String::from(
+                "target did not complete the typed RX session normally",
+            ))
+        } else if evidence.transport.tx_bytes != 0 || evidence.transport.tx_units != 0 {
+            Some(String::from(
+                "RX-only session reported unexpected transmitted traffic",
+            ))
+        } else if evidence.transport.transport_errors != 0 {
+            Some(format!(
+                "typed RX session reported {} transport errors",
+                evidence.transport.transport_errors
+            ))
+        } else if evidence.transport.rx_units != rx.received_datagrams {
+            Some(format!(
+                "typed/text RX datagram mismatch: {}/{}",
+                evidence.transport.rx_units, rx.received_datagrams
+            ))
+        } else if evidence.transport.rx_bytes != expected_bytes {
+            Some(format!(
+                "typed RX byte count {} does not match {} full payload datagrams",
+                evidence.transport.rx_bytes, evidence.transport.rx_units
+            ))
+        } else if structured_throughput_kbps != rx.throughput_median_kbps {
+            Some(format!(
+                "typed/text RX throughput mismatch: {structured_throughput_kbps}/{} kbit/s",
+                rx.throughput_median_kbps
+            ))
+        } else {
+            None
+        }
+    });
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
@@ -93,12 +173,26 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     } else {
         None
     };
-    let failure = assessment.failure.or(acceptance_failure);
+    let failure = assessment
+        .failure
+        .or(structured_failure)
+        .or(acceptance_failure);
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
     let failure_report = failure
         .as_ref()
         .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
         .unwrap_or_default();
+    let structured_report = structured
+        .map(|evidence| {
+            format!(
+                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n",
+                evidence.transport.rx_bytes,
+                evidence.transport.rx_units,
+                evidence.transport.elapsed_micros,
+                evidence.finished.evidence_crc32c,
+            )
+        })
+        .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
@@ -122,6 +216,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Device: `{}`\n\
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
+             {structured_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\

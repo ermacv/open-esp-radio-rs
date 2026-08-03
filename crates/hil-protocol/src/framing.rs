@@ -4,6 +4,8 @@ use crc::{CRC_32_ISCSI, Crc};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
+use crate::EvidenceRecord;
+
 pub const MAX_POSTCARD_BYTES: usize = 480;
 const CHECKSUM_BYTES: usize = size_of::<u32>();
 const MAX_RAW_FRAME_BYTES: usize = MAX_POSTCARD_BYTES + CHECKSUM_BYTES;
@@ -11,6 +13,19 @@ const MAX_COBS_FRAME_BYTES: usize = cobs::max_encoding_length(MAX_RAW_FRAME_BYTE
 pub const MAX_WIRE_FRAME_BYTES: usize = 2 + MAX_COBS_FRAME_BYTES + 1;
 
 const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
+
+/// Computes the digest carried by [`crate::Finished`] for an ordered evidence
+/// set.
+///
+/// The digest covers the canonical postcard representation, including the
+/// slice length. Both the target and host use this helper so missing, reordered
+/// or mismatched evidence cannot satisfy a `Finished` event. Session identity
+/// is checked separately from the surrounding [`crate::Envelope`].
+pub fn evidence_crc32c(evidence: &[EvidenceRecord]) -> Result<u32, EncodeError> {
+    let mut encoded = [0_u8; MAX_POSTCARD_BYTES];
+    let payload = postcard::to_slice(evidence, &mut encoded).map_err(|_| EncodeError::Serialize)?;
+    Ok(CRC32C.checksum(payload))
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EncodeError {
@@ -346,5 +361,33 @@ mod tests {
         let mut observed = None;
         decoder.feed(frame, |result| observed = Some(result.unwrap()));
         assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn evidence_digest_is_order_and_value_sensitive() {
+        use crate::{EvidenceRecord, TransportEvidence};
+
+        let first = EvidenceRecord::Transport(TransportEvidence {
+            rx_bytes: 1_200,
+            tx_bytes: 0,
+            rx_units: 1,
+            tx_units: 0,
+            elapsed_micros: 100,
+            transport_errors: 0,
+        });
+        let second = EvidenceRecord::Transport(TransportEvidence {
+            rx_bytes: 2_400,
+            ..match first {
+                EvidenceRecord::Transport(evidence) => evidence,
+                EvidenceRecord::Link(_) => unreachable!(),
+            }
+        });
+
+        assert_eq!(evidence_crc32c(&[first]), evidence_crc32c(&[first]));
+        assert_ne!(evidence_crc32c(&[first]), evidence_crc32c(&[second]));
+        assert_ne!(
+            evidence_crc32c(&[first, second]),
+            evidence_crc32c(&[second, first])
+        );
     }
 }

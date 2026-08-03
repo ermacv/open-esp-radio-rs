@@ -10,7 +10,7 @@ mod message;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
-    MAX_WIRE_FRAME_BYTES,
+    MAX_WIRE_FRAME_BYTES, evidence_crc32c,
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,

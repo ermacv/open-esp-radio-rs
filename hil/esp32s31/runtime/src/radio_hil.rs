@@ -145,7 +145,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_protocol::{
     Capabilities, Direction as HilDirection, Event as HilEvent, FeatureCapabilities,
     MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
-    Transport as HilTransport,
+    Transport as HilTransport, TransportEvidence,
 };
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
@@ -292,10 +292,9 @@ const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 
-/// Describes only behavior implemented by the current image. Session-time
-/// configuration and structured benchmark evidence remain false until the
-/// compatibility migration no longer depends on compile-time scenarios and
-/// text reports.
+/// Describes only behavior implemented by the current image. Ordinary RX uses
+/// runtime sessions and structured evidence; compile-time TX and bidirectional
+/// profiles remain on the compatibility lifecycle until they are migrated.
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
@@ -305,8 +304,8 @@ pub const fn hil_capabilities() -> Capabilities {
             tx: OPEN_RADIO_THROUGHPUT_BENCH,
             bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH,
             network_provisioning: true,
-            runtime_configuration: false,
-            structured_evidence: false,
+            runtime_configuration: OPEN_RADIO_RUNTIME_RX_SESSIONS,
+            structured_evidence: OPEN_RADIO_RUNTIME_RX_SESSIONS,
         },
         maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
@@ -322,6 +321,8 @@ const OPEN_RADIO_RAW_MAC_BENCH: bool = option_env!("OPEN_RADIO_RAW_MAC_BENCH").i
     || option_env!("OPEN_RADIO_HE_DCM_HIL").is_some()
     || option_env!("OPEN_RADIO_HE_TB_HIL").is_some()
     || option_env!("OPEN_RADIO_HE_DELIMITER_HIL").is_some();
+const OPEN_RADIO_RUNTIME_RX_SESSIONS: bool =
+    !OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_RAW_MAC_BENCH;
 const OPEN_RADIO_AMSDU_BENCH: bool = option_env!("OPEN_RADIO_AMSDU_BENCH").is_some();
 // Exercise the blob-exact cache-ESF A-MSDU ownership edge on real
 // embassy-net frames. Unlike OPEN_RADIO_AMSDU_BENCH, this does not synthesize
@@ -3822,6 +3823,11 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
 
     let mut last_radio_handoff = Instant::now();
     loop {
+        let session = if OPEN_RADIO_RUNTIME_RX_SESSIONS {
+            Some(crate::console::receive_session_start().await)
+        } else {
+            None
+        };
         // Close the previous benchmark poll before taking interval baselines.
         // In particular, synchronous UART evidence from a readiness probe
         // must not be charged to the following sustained traffic interval.
@@ -3861,7 +3867,11 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let mut last_packet = started;
         let mut bytes = first_length as u64;
         let mut datagrams = 1_u64;
-        let receive_errors = 0_u32;
+        let expected_payload_bytes =
+            session.map(|session| usize::from(session.config.payload_bytes));
+        let mut receive_errors = u32::from(
+            expected_payload_bytes.is_some_and(|expected| first_length != expected),
+        );
         let mut terminal_seen = false;
         let mut sequence_evidence = OpenRadioUdpSequenceEvidence::default();
         sequence_evidence.observe(first_sequence);
@@ -3879,6 +3889,9 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
                         terminal_seen = true;
                         break;
                     }
+                    receive_errors = receive_errors.saturating_add(u32::from(
+                        expected_payload_bytes.is_some_and(|expected| length != expected),
+                    ));
                     let received_at = Instant::now();
                     sequence_evidence.observe(sequence);
                     sequence_evidence.observe_interarrival(
@@ -4036,6 +4049,21 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
              datagrams={datagrams} terminal={}",
             u8::from(terminal_seen),
         ));
+        if let Some(session) = session {
+            crate::console::complete_session(
+                session.session_id,
+                TransportEvidence {
+                    rx_bytes: bytes,
+                    tx_bytes: 0,
+                    rx_units: datagrams,
+                    tx_units: 0,
+                    elapsed_micros: elapsed_us,
+                    transport_errors: receive_errors,
+                },
+                terminal_seen && receive_errors == 0,
+            )
+            .await;
+        }
     }
 }
 

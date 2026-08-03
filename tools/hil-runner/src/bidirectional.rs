@@ -758,7 +758,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             return Err(error);
         }
     };
-    options.address = discovered_address;
+    options.address = discovered_address.address;
     let host = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,

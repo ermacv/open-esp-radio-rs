@@ -8,7 +8,7 @@ use core::{
     fmt::{Arguments, Write},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use embassy_futures::select::{Either3, select3};
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embedded_io_async::{Read as _, Write as _};
 use esp_hal::{
@@ -17,8 +17,9 @@ use esp_hal::{
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Envelope, Event, FrameDecoder, FrameEncoder, NetworkCredentials,
-    PROTOCOL_VERSION, RejectReason, SessionState, StateChange,
+    Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
+    FrameDecoder, FrameEncoder, NetworkCredentials, PROTOCOL_VERSION, RejectReason, ResultSummary,
+    SessionConfig, SessionState, StateChange, Transport, TransportEvidence, evidence_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -58,6 +59,23 @@ static EVENTS: Channel<CriticalSectionRawMutex, Envelope<Event>, EVENT_QUEUE_CAP
 #[unsafe(link_section = ".critical.data.logging")]
 static NETWORK_CREDENTIALS: Channel<CriticalSectionRawMutex, NetworkCredentials, 1> =
     Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Channel::new();
+
+#[derive(Clone, Copy)]
+pub struct ActiveSession {
+    pub session_id: u64,
+    pub config: SessionConfig,
+}
+
+#[derive(Clone, Copy)]
+struct SessionResult {
+    session_id: u64,
+    evidence: TransportEvidence,
+    passed: bool,
+}
 
 unsafe extern "C" {
     fn ets_printf(format: *const u8, ...) -> i32;
@@ -166,6 +184,25 @@ pub async fn receive_network_credentials() -> NetworkCredentials {
     NETWORK_CREDENTIALS.receive().await
 }
 
+/// Waits until the host has configured, armed, and started one benchmark.
+pub async fn receive_session_start() -> ActiveSession {
+    SESSION_STARTS.receive().await
+}
+
+/// Hands a completed in-memory measurement back to the protocol owner.
+///
+/// USB serialization happens in another task and therefore cannot extend the
+/// benchmark's measured interval.
+pub async fn complete_session(session_id: u64, evidence: TransportEvidence, passed: bool) {
+    SESSION_RESULTS
+        .send(SessionResult {
+            session_id,
+            evidence,
+            passed,
+        })
+        .await;
+}
+
 async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
     let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     EVENTS
@@ -195,57 +232,218 @@ pub async fn protocol_task(capabilities: Capabilities) {
     )
     .await;
     let mut network_provisioned = false;
+    let mut state = SessionState::WaitingForNetwork;
+    let mut configured = None::<ActiveSession>;
+    let mut last_result = None::<SessionResult>;
     loop {
-        let command = COMMANDS.receive().await;
-        match command.body {
-            Command::GetCapabilities => {
-                publish_event_reliably(
-                    command.session_id,
-                    command.request_id,
-                    Event::Hello(capabilities),
-                )
-                .await;
+        match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
+            Either::First(command) => {
+                let session_id = command.session_id;
+                let request_id = command.request_id;
+                match command.body {
+                    Command::GetCapabilities => {
+                        publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
+                            .await;
+                    }
+                    Command::ProvisionNetwork(credentials) => {
+                        let (response, accepted) = if network_provisioned {
+                            (Event::Rejected(RejectReason::InvalidState), false)
+                        } else if credentials.validate().is_err() {
+                            (Event::Rejected(RejectReason::InvalidConfiguration), false)
+                        } else if NETWORK_CREDENTIALS.try_send(credentials).is_err() {
+                            (Event::Rejected(RejectReason::Busy), false)
+                        } else {
+                            network_provisioned = true;
+                            (Event::Accepted, true)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                        if accepted {
+                            transition_state(&mut state, SessionState::Idle, 0).await;
+                        }
+                    }
+                    Command::Configure(config) => {
+                        let rejection = if !capabilities.features.runtime_configuration {
+                            Some(RejectReason::Unsupported)
+                        } else if !network_provisioned || state != SessionState::Idle {
+                            Some(RejectReason::InvalidState)
+                        } else if session_id == 0 {
+                            Some(RejectReason::SessionId)
+                        } else if !valid_session_config(config, capabilities) {
+                            Some(RejectReason::InvalidConfiguration)
+                        } else {
+                            None
+                        };
+                        if let Some(reason) = rejection {
+                            publish_event_reliably(session_id, request_id, Event::Rejected(reason))
+                                .await;
+                        } else {
+                            configured = Some(ActiveSession { session_id, config });
+                            last_result = None;
+                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            transition_state(&mut state, SessionState::Configured, session_id)
+                                .await;
+                        }
+                    }
+                    Command::Arm => {
+                        if state != SessionState::Configured
+                            || configured.is_none_or(|session| session.session_id != session_id)
+                        {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        } else {
+                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            transition_state(&mut state, SessionState::Armed, session_id).await;
+                        }
+                    }
+                    Command::Start => {
+                        let session = configured.filter(|configured| {
+                            state == SessionState::Armed && configured.session_id == session_id
+                        });
+                        if let Some(session) = session {
+                            if SESSION_STARTS.try_send(session).is_err() {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(RejectReason::Busy),
+                                )
+                                .await;
+                            } else {
+                                publish_event_reliably(session_id, request_id, Event::Accepted)
+                                    .await;
+                                transition_state(&mut state, SessionState::Running, session_id)
+                                    .await;
+                            }
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::Abort => {
+                        if matches!(state, SessionState::Configured | SessionState::Armed)
+                            && configured.is_some_and(|session| session.session_id == session_id)
+                        {
+                            configured = None;
+                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            transition_state(&mut state, SessionState::Idle, session_id).await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::GetLastResult => {
+                        if let Some(result) =
+                            last_result.filter(|result| result.session_id == session_id)
+                        {
+                            publish_result(result, request_id).await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::AcknowledgeResult => {
+                        if state == SessionState::Finished
+                            && last_result.is_some_and(|result| result.session_id == session_id)
+                        {
+                            configured = None;
+                            last_result = None;
+                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            transition_state(&mut state, SessionState::Idle, session_id).await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::Stop => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                }
             }
-            Command::ProvisionNetwork(credentials) => {
-                let (response, accepted) = if network_provisioned {
-                    (Event::Rejected(RejectReason::InvalidState), false)
-                } else if credentials.validate().is_err() {
-                    (Event::Rejected(RejectReason::InvalidConfiguration), false)
-                } else if NETWORK_CREDENTIALS.try_send(credentials).is_err() {
-                    (Event::Rejected(RejectReason::Busy), false)
+            Either::Second(result) => {
+                if state == SessionState::Running
+                    && configured.is_some_and(|session| session.session_id == result.session_id)
+                {
+                    transition_state(&mut state, SessionState::Draining, result.session_id).await;
+                    publish_result(result, 0).await;
+                    last_result = Some(result);
+                    transition_state(&mut state, SessionState::Finished, result.session_id).await;
                 } else {
-                    network_provisioned = true;
-                    (Event::Accepted, true)
-                };
-                publish_event_reliably(command.session_id, command.request_id, response).await;
-                if accepted {
                     publish_event_reliably(
+                        result.session_id,
                         0,
-                        0,
-                        Event::State(StateChange {
-                            previous: SessionState::WaitingForNetwork,
-                            current: SessionState::Idle,
-                        }),
+                        Event::Rejected(RejectReason::InvalidState),
                     )
                     .await;
                 }
             }
-            Command::Configure(_)
-            | Command::Arm
-            | Command::Start
-            | Command::Stop
-            | Command::Abort
-            | Command::GetLastResult
-            | Command::AcknowledgeResult => {
-                publish_event_reliably(
-                    command.session_id,
-                    command.request_id,
-                    Event::Rejected(RejectReason::Unsupported),
-                )
-                .await;
-            }
         }
     }
+}
+
+fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bool {
+    config.transport == Transport::Udp
+        && config.direction == Direction::Rx
+        && capabilities.features.udp
+        && capabilities.features.rx
+        && config.payload_bytes >= 64
+        && config.payload_bytes <= capabilities.maximum_payload_bytes
+        && config.peer.is_none()
+        && config.offered_rate_bps.is_none_or(|rate| rate > 0)
+        && matches!(config.completion, Completion::DurationMillis(duration) if duration > 0)
+}
+
+async fn transition_state(state: &mut SessionState, current: SessionState, session_id: u64) {
+    let previous = *state;
+    *state = current;
+    publish_event_reliably(
+        session_id,
+        0,
+        Event::State(StateChange { previous, current }),
+    )
+    .await;
+}
+
+async fn publish_result(result: SessionResult, request_id: u32) {
+    let evidence = EvidenceRecord::Transport(result.evidence);
+    let checksum = evidence_crc32c(core::slice::from_ref(&evidence))
+        .expect("one transport evidence record fits the protocol digest buffer");
+    publish_event_reliably(result.session_id, request_id, Event::Evidence(evidence)).await;
+    publish_event_reliably(
+        result.session_id,
+        request_id,
+        Event::Finished(Finished {
+            summary: ResultSummary {
+                passed: result.passed,
+                evidence_records: 1,
+            },
+            evidence_crc32c: checksum,
+        }),
+    )
+    .await;
 }
 
 /// Runs the runtime transport worker.

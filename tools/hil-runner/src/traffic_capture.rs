@@ -6,7 +6,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     thread,
@@ -14,8 +14,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Direction, Envelope, Event, FrameDecoder, FrameEncoder,
-    NetworkCredentials, Transport,
+    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
+    FrameEncoder, NetworkCredentials, SessionConfig, Transport, TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -25,6 +25,7 @@ const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete"
 const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const RX_SESSION_WARMUP_SETTLE: Duration = Duration::from_secs(1);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -40,7 +41,26 @@ pub(crate) struct SerialCapture {
     protocol: Arc<ProtocolEvents>,
     outbound: mpsc::Sender<Zeroizing<Vec<u8>>>,
     next_host_sequence: AtomicU32,
+    next_session_id: AtomicU64,
     worker: Option<thread::JoinHandle<()>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UdpRxReady {
+    pub(crate) address: Ipv4Addr,
+    pub(crate) runtime_session: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SessionHandle {
+    session_id: u64,
+    first_event: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SessionEvidence {
+    pub(crate) transport: TransportEvidence,
+    pub(crate) finished: Finished,
 }
 
 impl SerialCapture {
@@ -141,6 +161,7 @@ impl SerialCapture {
             protocol,
             outbound,
             next_host_sequence: AtomicU32::new(1),
+            next_session_id: AtomicU64::new(1),
             worker: Some(worker),
         }
     }
@@ -149,38 +170,18 @@ impl SerialCapture {
     /// image capabilities. The old text readiness path remains active only as
     /// a compatibility oracle while benchmark evidence is migrated.
     pub(crate) fn request_capabilities(&self, timeout: Duration) -> Result<Capabilities> {
-        let hello = self
+        let _hello = self
             .wait_for_protocol_after(0, timeout, |message| {
                 matches!(message.body, Event::Hello(_))
             })
             .ok_or("device did not publish a HIL protocol hello")?;
-        let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
-        let event_count = self.protocol_event_count();
-        let command = Envelope::new(
-            hello.boot_id,
-            request_id,
-            0,
-            request_id,
-            Command::GetCapabilities,
-        );
-        let mut encoder = FrameEncoder::new();
-        let frame = encoder
-            .encode(&command)
-            .map_err(|error| format!("cannot encode HIL capability request: {error}"))?
-            .to_vec();
-        self.outbound
-            .send(Zeroizing::new(frame))
-            .map_err(|_| "serial worker stopped before capability request")?;
-        let response = self
-            .wait_for_protocol_after(event_count, timeout, |message| {
-                message.boot_id == hello.boot_id
-                    && message.request_id == request_id
-                    && matches!(message.body, Event::Hello(_))
-            })
-            .ok_or("device did not answer the HIL capability request")?;
+        let response = self.send_command(0, Command::GetCapabilities, timeout)?;
         match response.body {
             Event::Hello(capabilities) => Ok(capabilities),
-            _ => unreachable!("protocol event predicate accepted only Hello"),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected HIL capability request: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid HIL capability response".into()),
         }
     }
 
@@ -203,31 +204,7 @@ impl SerialCapture {
         )?);
         let credentials = NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
             .map_err(|error| format!("invalid HIL network credentials: {error}"))?;
-        let boot_id = self
-            .latest_boot_id()
-            .ok_or("HIL protocol hello disappeared before network provisioning")?;
-        let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
-        let event_count = self.protocol_event_count();
-        let command = Envelope::new(
-            boot_id,
-            request_id,
-            0,
-            request_id,
-            Command::ProvisionNetwork(credentials),
-        );
-        let mut encoder = FrameEncoder::new();
-        let frame = encoder
-            .encode(&command)
-            .map_err(|error| format!("cannot encode HIL network provisioning: {error}"))?
-            .to_vec();
-        self.outbound
-            .send(Zeroizing::new(frame))
-            .map_err(|_| "serial worker stopped before network provisioning")?;
-        let response = self
-            .wait_for_protocol_after(event_count, timeout, |message| {
-                message.boot_id == boot_id && message.request_id == request_id
-            })
-            .ok_or("device did not acknowledge HIL network provisioning")?;
+        let response = self.send_command(0, Command::ProvisionNetwork(credentials), timeout)?;
         match response.body {
             Event::Accepted => Ok(()),
             Event::Rejected(reason) => {
@@ -235,6 +212,115 @@ impl SerialCapture {
             }
             _ => Err("device returned an invalid network provisioning response".into()),
         }
+    }
+
+    fn send_command(
+        &self,
+        session_id: u64,
+        body: Command,
+        timeout: Duration,
+    ) -> Result<Envelope<Event>> {
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("HIL protocol hello disappeared before command")?;
+        let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
+        let event_count = self.protocol_event_count();
+        let command = Envelope::new(boot_id, request_id, session_id, request_id, body);
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder
+            .encode(&command)
+            .map_err(|error| format!("cannot encode HIL command: {error}"))?
+            .to_vec();
+        self.outbound
+            .send(Zeroizing::new(frame))
+            .map_err(|_| "serial worker stopped before HIL command")?;
+        self.wait_for_protocol_after(event_count, timeout, |message| {
+            message.boot_id == boot_id && message.request_id == request_id
+        })
+        .ok_or_else(|| "device did not answer HIL command".into())
+    }
+
+    fn expect_accepted(&self, session_id: u64, command: Command, operation: &str) -> Result<()> {
+        match self
+            .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)?
+            .body
+        {
+            Event::Accepted => Ok(()),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected session {operation}: {reason:?}").into())
+            }
+            _ => Err(format!("device returned an invalid session {operation} response").into()),
+        }
+    }
+
+    pub(crate) fn start_session(&self, config: SessionConfig) -> Result<SessionHandle> {
+        let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        let first_event = self.protocol_event_count();
+        self.expect_accepted(session_id, Command::Configure(config), "configuration")?;
+        self.expect_accepted(session_id, Command::Arm, "arm")?;
+        self.expect_accepted(session_id, Command::Start, "start")?;
+        Ok(SessionHandle {
+            session_id,
+            first_event,
+        })
+    }
+
+    pub(crate) fn wait_for_session(
+        &self,
+        session: SessionHandle,
+        timeout: Duration,
+    ) -> Result<SessionEvidence> {
+        let deadline = Instant::now() + timeout;
+        let evidence = self
+            .wait_for_protocol_after(session.first_event, timeout, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::Transport(_)))
+            })
+            .ok_or("device did not publish structured session evidence")?;
+        let transport = match evidence.body {
+            Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
+            _ => unreachable!("session evidence predicate accepted only transport evidence"),
+        };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let finished = self
+            .wait_for_protocol_after(session.first_event, remaining, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Finished(_))
+            })
+            .ok_or("device did not finish the structured HIL session")?;
+        let finished = match finished.body {
+            Event::Finished(finished) => finished,
+            _ => unreachable!("session completion predicate accepted only Finished"),
+        };
+        if finished.summary.evidence_records != 1 {
+            return Err(format!(
+                "device reported {} evidence records, host received one",
+                finished.summary.evidence_records
+            )
+            .into());
+        }
+        let record = EvidenceRecord::Transport(transport);
+        let checksum = evidence_crc32c(core::slice::from_ref(&record))
+            .map_err(|error| format!("cannot checksum structured HIL evidence: {error}"))?;
+        if checksum != finished.evidence_crc32c {
+            return Err(format!(
+                "structured HIL evidence checksum mismatch: host={checksum:#010x} device={:#010x}",
+                finished.evidence_crc32c
+            )
+            .into());
+        }
+        Ok(SessionEvidence {
+            transport,
+            finished,
+        })
+    }
+
+    pub(crate) fn acknowledge_session(&self, session: SessionHandle) -> Result<()> {
+        self.expect_accepted(
+            session.session_id,
+            Command::AcknowledgeResult,
+            "acknowledgement",
+        )
     }
 
     fn latest_boot_id(&self) -> Option<u64> {
@@ -432,24 +518,27 @@ fn network_environment(primary: &str, compatibility: &str) -> Result<String> {
         })
 }
 
-/// Prove that the target owns its IPv4 address, UART and complete UDP RX path.
+/// Wait until the target owns its IPv4 address and UDP RX service.
 ///
-/// One positive datagram followed by the target's idle timeout creates one
-/// deliberately unqualified sample. The probe is sent only after the UDP
-/// socket and DHCP configuration are visible. It deliberately has no negative
-/// terminal datagram: a delayed control packet must never split the beginning
-/// of the measured stream. Waiting for a *new* interval-complete marker also
-/// prevents a previous probe's UART record from satisfying a retry.
+/// Runtime-session images use a negative warm-up datagram that cannot open a
+/// sample; `Arm`/`Start` provide the measured synchronization. Compatibility
+/// images still use one positive datagram and the target idle timeout to prove
+/// the complete UDP RX path before a measured stream begins.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
     address_hint: Ipv4Addr,
     port: u16,
     timeout: Duration,
-) -> Result<Ipv4Addr> {
+) -> Result<UdpRxReady> {
     let capabilities = capture.prepare_protocol()?;
     if !capabilities.features.udp || !capabilities.features.rx {
         return Err("firmware does not advertise UDP RX capability".into());
     }
+    if capabilities.features.runtime_configuration && !capabilities.features.structured_evidence {
+        return Err("firmware advertises runtime sessions without structured evidence".into());
+    }
+    let runtime_session =
+        capabilities.features.runtime_configuration && capabilities.features.structured_evidence;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
     socket.connect(SocketAddrV4::new(address, port))?;
@@ -480,6 +569,20 @@ pub(crate) fn await_udp_rx_ready(
             continue;
         }
 
+        if runtime_session {
+            // Resolve the host neighbor and exercise the complete Wi-Fi/IP/UDP
+            // ingress before the measured interval. A negative sequence is a
+            // terminal control datagram: the target drains it after `Start`
+            // without opening or accounting an RX sample.
+            packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
+            socket.send(&packet)?;
+            thread::sleep(RX_SESSION_WARMUP_SETTLE);
+            return Ok(UdpRxReady {
+                address,
+                runtime_session: true,
+            });
+        }
+
         let completed_intervals = capture.marker_count(RX_BENCH_INTERVAL_COMPLETE_MARKER);
         packet[..4].copy_from_slice(&0_i32.to_be_bytes());
         let _ = socket.send(&packet);
@@ -492,7 +595,10 @@ pub(crate) fn await_udp_rx_ready(
             // one small scheduling interval for the benchmark task to yield
             // and close any network-ready wait that overlapped the probe.
             thread::sleep(Duration::from_millis(10));
-            return Ok(address);
+            return Ok(UdpRxReady {
+                address,
+                runtime_session: false,
+            });
         }
     }
 

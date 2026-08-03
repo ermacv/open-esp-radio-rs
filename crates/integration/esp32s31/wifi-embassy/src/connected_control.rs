@@ -183,6 +183,15 @@ pub struct ConnectedControlTxFailure {
     pub outcome: SingleMpduTxOutcome,
 }
 
+/// Finite ownership released when one connected control epoch stops.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedControlShutdown {
+    pub rx_block_ack_agreements: u8,
+    pub tx_block_ack_sessions: u8,
+    pub discarded_events: u8,
+    pub in_flight: Option<ConnectedControlTxKind>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlError {
     RxSession(StaRxBlockAckSessionsError),
@@ -385,6 +394,88 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub fn dropped_events(&self) -> u32 {
         self.receiver.dropped()
+    }
+
+    /// Remove every association-scoped control and hardware policy.
+    ///
+    /// The caller must first stop ISR/RX publication and wait for the staged
+    /// protocol consumer to acknowledge its stop edge. This makes the event
+    /// drain finite and prevents a late ADDBA command from entering the next
+    /// association. The shared TX owner may still report an active hardware
+    /// transaction separately; this method only revokes its BlockAck policy.
+    pub fn shutdown<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<ConnectedControlShutdown, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        let in_flight_kind = self.in_flight.as_ref().map(ControlInFlight::kind);
+        if let Some(in_flight) = self.in_flight.take() {
+            match in_flight {
+                ControlInFlight::RxAddba(activation) => {
+                    if let Err(error) =
+                        hardware.clear_rx_block_ack(activation.hardware().hardware_index)
+                    {
+                        self.in_flight = Some(ControlInFlight::RxAddba(activation));
+                        return Err(error.into());
+                    }
+                    self.rx_block_ack.cancel(activation)?;
+                }
+                ControlInFlight::TxAddba { tid } => {
+                    self.tx_block_ack.stop(tid);
+                    tx.set_tx_block_ack_operational(tid, false);
+                }
+                ControlInFlight::PowerManagement(_) => {}
+            }
+        }
+
+        let mut rx_block_ack_agreements = 0_u8;
+        for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
+            hardware.clear_rx_block_ack(agreement.hardware_index)?;
+            let stopped = self.rx_block_ack.stop(agreement.tid);
+            debug_assert_eq!(stopped, Some(agreement));
+            rx_block_ack_agreements = rx_block_ack_agreements.saturating_add(1);
+        }
+        // No activation remains outside this owner after the transition
+        // above. Reconstructing the fixed state discards unexecuted offers as
+        // well as their association-specific dialog tokens.
+        let maximum_window = self.rx_block_ack.maximum_window();
+        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)
+            .expect("an existing RX BlockAck maximum remains valid");
+
+        let mut tx_block_ack_sessions = 0_u8;
+        for tid in STA_TX_BLOCK_ACK_TIDS {
+            if self.tx_block_ack.operational(tid).is_some()
+                || self.tx_block_ack.alarm(tid).is_some()
+            {
+                tx_block_ack_sessions = tx_block_ack_sessions.saturating_add(1);
+            }
+            self.tx_block_ack.stop(tid);
+            tx.set_tx_block_ack_operational(tid, false);
+            if self.he_enabled {
+                hardware.set_he_tid_enabled(tid, false)?;
+            }
+        }
+        self.initial_tx_block_ack.fill(false);
+
+        let mut discarded_events = 0_u8;
+        while self.receiver.try_receive().is_some() {
+            discarded_events = discarded_events.saturating_add(1);
+        }
+        self.beacon_monitor = None;
+        self.beacon_lost = false;
+        self.power_save = None;
+        self.pending_doze_permit = None;
+
+        Ok(ConnectedControlShutdown {
+            rx_block_ack_agreements,
+            tx_block_ack_sessions,
+            discarded_events,
+            in_flight: in_flight_kind,
+        })
     }
 
     fn has_immediate_work(&self) -> bool {
@@ -1361,6 +1452,112 @@ mod tests {
         assert_eq!(
             hardware.he_tid[..3],
             [Some((0, false)), Some((7, false)), Some((5, false))]
+        );
+    }
+
+    #[test]
+    fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
+        let mut resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+        let (mut publisher, receiver) = resources.split();
+        let mut control = Esp32s31ConnectedControl::new(
+            receiver,
+            BSSID,
+            true,
+            StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+        );
+        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+
+        publisher.publish(ConnectedRxEvent::BlockAck {
+            action: BlockAckAction::AddbaRequest {
+                dialog_token: 9,
+                tid: 3,
+                immediate: true,
+                amsdu: false,
+                window: 16,
+                timeout_tu: 0,
+                starting_sequence: 0x123,
+            },
+            body: &[0; 9],
+        });
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::TxPending)
+        );
+        finish_tx(&mut hardware, &mut tx, 0);
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+
+        control.queue_initial_tx_block_ack();
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::TxPending)
+        );
+        finish_tx(&mut hardware, &mut tx, 0);
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+        publisher.publish(ConnectedRxEvent::BlockAck {
+            action: BlockAckAction::AddbaResponse {
+                dialog_token: 1,
+                status: 0,
+                tid: 0,
+                immediate: true,
+                amsdu: true,
+                window: 16,
+                timeout_tu: 0,
+            },
+            body: &[0; 9],
+        });
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+
+        assert_eq!(
+            control.shutdown(&mut hardware, &mut tx),
+            Ok(ConnectedControlShutdown {
+                rx_block_ack_agreements: 1,
+                tx_block_ack_sessions: 1,
+                discarded_events: 1,
+                in_flight: None,
+            })
+        );
+        assert_eq!(hardware.cleared[0], Some(0));
+        assert_eq!(
+            hardware.he_tid,
+            [
+                Some((0, true)),
+                Some((0, false)),
+                Some((7, false)),
+                Some((5, false)),
+            ]
+        );
+        assert!(
+            control
+                .rx_block_ack()
+                .snapshots()
+                .into_iter()
+                .all(|agreement| agreement.is_none())
+        );
+        assert!(
+            STA_TX_BLOCK_ACK_TIDS.into_iter().all(|tid| control
+                .tx_block_ack()
+                .operational(tid)
+                .is_none()
+                && control.tx_block_ack().alarm(tid).is_none())
+        );
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::Idle)
         );
     }
 

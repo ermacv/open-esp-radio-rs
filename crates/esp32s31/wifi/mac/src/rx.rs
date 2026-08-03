@@ -1017,6 +1017,60 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     pending_tail: Option<usize>,
 }
 
+/// Descriptor storage authority after the hardware walker is confirmed off.
+///
+/// Live frontier bookkeeping is deliberately discarded at this lifecycle
+/// edge. A later association must rebuild and republish the ring through
+/// [`prepare`](Self::prepare), never resume descriptors from the previous
+/// peer epoch.
+pub struct RxRingHalted<'a, const COUNT: usize> {
+    descriptors: &'a [Descriptor; COUNT],
+    descriptor_base: u32,
+    buffer_addresses: &'a [u32; COUNT],
+}
+
+impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
+    pub const fn descriptor_base(&self) -> u32 {
+        self.descriptor_base
+    }
+
+    pub const fn descriptors(&self) -> &'a [Descriptor; COUNT] {
+        self.descriptors
+    }
+
+    pub const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
+        self.buffer_addresses
+    }
+
+    /// Rebuild the stopped ring for a new ownership epoch.
+    ///
+    /// Failure returns the halted authority even if hardware observations or
+    /// descriptor preparation rejected the attempt. The caller can then
+    /// retry after a higher-level reset without stealing the static storage.
+    pub fn prepare<M, F>(
+        self,
+        mmio: &mut M,
+        buffer_size: u32,
+        prepare_buffer: F,
+    ) -> Result<RxRingStopped<'a, COUNT>, (Self, RxRingError)>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        match RxRingStopped::prepare(
+            mmio,
+            self.descriptors,
+            self.descriptor_base,
+            self.buffer_addresses,
+            buffer_size,
+            prepare_buffer,
+        ) {
+            Ok(stopped) => Ok(stopped),
+            Err(error) => Err((self, error)),
+        }
+    }
+}
+
 impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// Stops the walker, prepares all buffers and publishes a rotated cold
     /// list beginning after the descriptor retained by the previous owner.
@@ -1101,7 +1155,26 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     }
 }
 
-impl<const COUNT: usize> RxRingLive<'_, COUNT> {
+impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
+    /// Stop the DMA walker and consume the live frontier authority.
+    ///
+    /// A failed hardware confirmation returns the complete live owner. This
+    /// prevents lifecycle code from rebuilding descriptors while DMA may
+    /// still own them.
+    pub fn try_stop<M: RxDma>(
+        self,
+        mmio: &mut M,
+    ) -> Result<RxRingHalted<'a, COUNT>, (Self, RxRingError)> {
+        if let Err(error) = disable_receive(mmio) {
+            return Err((self, error));
+        }
+        Ok(RxRingHalted {
+            descriptors: self.descriptors,
+            descriptor_base: self.descriptor_base,
+            buffer_addresses: self.buffer_addresses,
+        })
+    }
+
     /// Snapshot the contiguous, newly completed prefix at the current recycle
     /// frontier without transferring ownership or rearming any descriptor.
     ///

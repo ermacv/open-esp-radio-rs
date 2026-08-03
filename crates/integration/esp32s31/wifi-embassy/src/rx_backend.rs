@@ -19,7 +19,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
     descriptor::Descriptor,
     rx::{
-        RX_BUFFER_SENTINEL, RxDma, RxReloadObservation, RxRingError, RxRingLive,
+        RX_BUFFER_SENTINEL, RxDma, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive,
         prepare_recycled_buffer,
     },
     rx_pool::{
@@ -215,6 +215,92 @@ pub struct Esp32s31ConnectedRx<
     pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
 
+/// Connected RX resources after the DMA walker is confirmed stopped.
+///
+/// This owner deliberately retains the queue sender, staging pool and reload
+/// delay together with the halted descriptor storage. A later station epoch
+/// can therefore reconstruct the same production RX service without stealing
+/// static resources or retaining any frontier from the previous peer.
+pub struct Esp32s31StoppedRx<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
+    const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+> {
+    ring: RxRingHalted<'storage, COUNT>,
+    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+    frames:
+        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    delay: D,
+    pipeline_counters: Option<&'pool RxPipelineCounters>,
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+>
+    Esp32s31StoppedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >
+{
+    pub const fn ring(&self) -> &RxRingHalted<'storage, COUNT> {
+        &self.ring
+    }
+
+    pub const fn buffers(
+        &self,
+    ) -> &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT] {
+        self.buffers
+    }
+
+    pub const fn pool(&self) -> &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY> {
+        self.pool
+    }
+
+    pub const fn delay(&self) -> &D {
+        &self.delay
+    }
+
+    pub fn delay_mut(&mut self) -> &mut D {
+        &mut self.delay
+    }
+
+    pub const fn pipeline_counters(&self) -> Option<&'pool RxPipelineCounters> {
+        self.pipeline_counters
+    }
+
+    pub fn queued_frames(&self) -> usize {
+        self.frames.len()
+    }
+}
+
 impl<
     'storage,
     'pool,
@@ -275,6 +361,61 @@ impl<
 
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
+    }
+
+    /// Confirm that DMA released the ring and return a stopped RX owner.
+    ///
+    /// On failure the complete live owner is returned together with the
+    /// hardware error; no staging, queue or delay capability is lost.
+    #[allow(clippy::result_large_err)]
+    pub fn try_stop<H: RxDma>(
+        self,
+        hardware: &mut H,
+    ) -> Result<
+        Esp32s31StoppedRx<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+        (Self, RxRingError),
+    > {
+        let Self {
+            ring,
+            buffers,
+            pool,
+            frames,
+            delay,
+            pipeline_counters,
+        } = self;
+        match ring.try_stop(hardware) {
+            Ok(ring) => Ok(Esp32s31StoppedRx {
+                ring,
+                buffers,
+                pool,
+                frames,
+                delay,
+                pipeline_counters,
+            }),
+            Err((ring, error)) => Err((
+                Self {
+                    ring,
+                    buffers,
+                    pool,
+                    frames,
+                    delay,
+                    pipeline_counters,
+                },
+                error,
+            )),
+        }
     }
 }
 
@@ -942,6 +1083,45 @@ mod tests {
         embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
+    }
+
+    #[test]
+    fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
+        const COUNT: usize = 2;
+        const STAGED_DEPTH: usize = 1;
+        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let addresses = [0x2f00_2000, 0x2f00_3200];
+        let mut hardware = MockRxDma::default();
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+        let pool = RxStagePool::<STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE>::new();
+        let queue = Esp32s31StagedRxQueue::<
+            NoopRawMutex,
+            STAGED_DEPTH,
+            ESP32S31_RX_BUFFER_SIZE,
+            STAGED_DEPTH,
+        >::new();
+        let (sender, _receiver) = queue.split();
+        let service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        assert!(hardware.walker);
+
+        let stopped = match service.try_stop(&mut hardware) {
+            Ok(stopped) => stopped,
+            Err(_) => panic!("mock walker must confirm the stop edge"),
+        };
+
+        assert!(!hardware.walker);
+        assert_eq!(stopped.ring().descriptor_base(), BASE);
+        assert_eq!(stopped.ring().buffer_addresses(), &addresses);
+        assert_eq!(stopped.queued_frames(), 0);
     }
 
     #[test]

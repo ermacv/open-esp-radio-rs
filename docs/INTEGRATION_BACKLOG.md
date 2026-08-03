@@ -1,7 +1,7 @@
 # Integration backlog
 
-Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-02
-(4,491 lines).
+Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-03
+(6,727 lines).
 
 The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
 executor, concrete `embassy-net` scenarios, credentials, traffic generation
@@ -169,6 +169,68 @@ the closure identity, while mutations of the root, a local callee, or the raw
 symbol/relocation identity change it. Keep accepting baseline refreshes only
 after comparing every effect row and confirming zero mismatch, incomplete and
 orphan probes; verifier-source changes intentionally remain evidence changes.
+
+## 6. Current priority: close the production STA lifecycle
+
+Do not add AP, sniffer, another PHY mode or another HIL traffic scenario before
+the connected station can return its resources to an outer owner. Throughput
+qualification has already proved enough of the connected data path; the
+remaining architectural blocker is lifecycle ownership, not another register
+leaf.
+
+The first reconnect seam is now production-owned:
+
+- `WifiRunner::run` returns the typed `WifiRunnerExit::Disconnected` after it
+  publishes link-down instead of hiding link loss as `Ok(())`;
+- `WifiRunner::into_parts` and `Esp32s31WifiBackend::into_parts` return the
+  network, hardware, RX, TX and control owners to their caller;
+- an idle connected ordinary or aggregate transmitter can return its pinned
+  descriptor resources, A-MPDU storage, pairwise-key token and sequence state;
+  an active transaction rejects that transition without losing ownership;
+- `Esp32s31ConnectedRxProtocol::run_until` prioritizes a caller-supplied stop
+  edge, discards queued input instead of blocking on the network sink, and
+  returns counts after every hot/cold reorder lease and command is released.
+  The HIL now signals that edge when the production radio runner exits and
+  waits for an explicit protocol-stop acknowledgement before reusing queues;
+- `RxRingLive::try_stop` confirms the walker-disable edge before producing an
+  `RxRingHalted`, and `Esp32s31ConnectedRx::try_stop` preserves the complete
+  static RX resource bundle on both success and failure. The HIL consumes this
+  transition after its radio runner exits;
+- `Esp32s31ConnectedTx::try_into_teardown_parts` returns descriptor resources,
+  A-MPDU storage, PTK token and sequence state as one driver invariant. The
+  HIL now keeps `WifiRunner` in its parent STA future, clears PTK/GTK through
+  the cooperative hardware owner and reconstructs its pre-connected control
+  TX owner instead of stranding the connected runner in task storage.
+- the connected interrupt transaction is reversible: the platform first
+  disables both CPU routes on their binding core, PAC then masks and clears
+  the MAC/WDEVPWR banks and returns `MacInterruptSetup`, and the Embassy IRQ
+  adapter drains RX, staging-capacity and TX wakes before another epoch can
+  activate the same stable ISR storage. The HIL consumes this transition
+  before stopping RX DMA.
+- `Esp32s31ConnectedControl::shutdown` clears an in-flight or committed RX
+  BlockAck bank, all TX BlockAck sessions and every enabled HE TID, discards
+  late association-scoped events and returns exact cleanup counts. The HIL
+  calls it only after the staged protocol stop acknowledgement, so no later
+  ADDBA publication can repopulate a closed control epoch.
+
+This is necessary but not yet a reconnect implementation. The next slices,
+in order, are:
+
+1. compose the existing protocol/RX/TX/control/key/interrupt edges above
+   scan/join/WPA2 as one
+   allocation-free STA service
+   with explicit `Disconnected`, `Reconnecting` and terminal hardware-failure
+   outcomes;
+2. make the HIL consume that service, then qualify disconnect/reassociation
+   and one injected TX/RX failure before resuming feature expansion.
+
+The current HIL still retains the stopped parent future instead of entering a
+second scan/join epoch. Its `embassy-net` stack and report/benchmark tasks are
+constructed inside the one-shot connected transition even though the stack
+should remain alive with link-down across radio reassociation. Therefore it
+cannot yet serve as evidence for reconnect even though the radio, staged
+protocol, interrupts, RX DMA, BlockAck/TID policy, keys and TX descriptor now
+all reach explicit teardown edges.
 
 ## Completion gate
 

@@ -15,7 +15,9 @@ use embassy_net::{
     udp::{PacketMetadata, UdpSocket},
 };
 use embassy_net_driver::{Driver, LinkState, RxToken as _, TxToken as _};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
+};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
@@ -96,7 +98,7 @@ use open_esp_radio::{
             embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
             embassy_rx::RxReloadDelay,
             link_monitor::StaBeaconLossConfig,
-            runner::WifiRunner,
+            runner::{WifiRunner, WifiRunnerExit},
             rx_backend::{
                 ConnectedControlPublisher, ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE,
                 EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
@@ -111,7 +113,10 @@ use open_esp_radio::{
                 EmbassyStaJoinTimer, StaJoinBackend, StaJoinRunner, StaJoinRxDirective,
                 StaJoinRxObserver,
             },
-            staged_rx::{Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue},
+            staged_rx::{
+                ConnectedRxProtocolShutdown, Esp32s31ConnectedRxProtocol,
+                Esp32s31StagedRxQueue,
+            },
             wpa2::{
                 EmbassyWpa2HandshakeTimer, Wpa2HandshakeBackend, Wpa2HandshakeConfig,
                 Wpa2HandshakeRunner, Wpa2KeyInstallBackend, Wpa2KeyInstallRunner,
@@ -949,58 +954,6 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
 >;
-type ConnectedRxOwner = Esp32s31ConnectedRx<
-    'static,
-    'static,
-    'static,
-    OpenRadioRxReloadDelay,
-    CriticalSectionRawMutex,
-    RX_STAGE_SLOT_COUNT,
-    RX_DESCRIPTOR_COUNT,
-    RX_STAGE_CAPACITY,
-    RX_STAGE_SLOT_COUNT,
-    RX_BUFFER_SIZE,
-    RX_BUFFER_STORAGE_SIZE,
->;
-type ConnectedTxOwner = Esp32s31ConnectedTx<
-    'static,
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    PhyTxTargetPowerProfile,
-    fn() -> u32,
-    EmbassyWifiTxTimer,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_TX_QUEUE_DEPTH,
-    TX_AMPDU_FRAME_COUNT,
-    TX_AMPDU_BUFFER_SIZE,
-    TX_BUFFER_SIZE,
->;
-type ConnectedControlOwner = Esp32s31ConnectedControl<
-    'static,
-    CriticalSectionRawMutex,
-    CONNECTED_CONTROL_QUEUE_DEPTH,
->;
-type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
-type ConnectedBackend = Esp32s31WifiBackend<
-    ConnectedHardware,
-    ConnectedRxOwner,
-    ConnectedTxOwner,
-    ConnectedControlOwner,
->;
-type ConnectedWifiRunner = WifiRunner<
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    ConnectedBackend,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_RX_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
->;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1602,11 +1555,28 @@ static OPEN_RADIO_IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
+// One connected-epoch cancellation edge shared only by the production radio
+// and staged-protocol tasks. This is HIL executor composition, not driver
+// state; the reusable protocol owner accepts any caller-supplied stop future.
+#[unsafe(link_section = ".critical.bss.open_radio_irq")]
+static OPEN_RADIO_CONNECTED_PROTOCOL_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+#[unsafe(link_section = ".critical.bss.open_radio_irq")]
+static OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED: Signal<
+    CriticalSectionRawMutex,
+    ConnectedRxProtocolShutdown,
+> = Signal::new();
 static OPEN_RADIO_MAC_INTERRUPT_REGISTERS: StaticCell<MacInterruptRegisters> = StaticCell::new();
+// Storage addresses remain stable across connected epochs. ACTIVE_PTR is
+// cleared before task-side code moves the values out; STORAGE_PTR retains the
+// exact location that must be reinitialized before the next ISR route opens.
+static OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR: AtomicPtr<MacInterruptRegisters> =
+    AtomicPtr::new(core::ptr::null_mut());
 static OPEN_RADIO_MAC_INTERRUPT_PTR: AtomicPtr<MacInterruptRegisters> =
     AtomicPtr::new(core::ptr::null_mut());
 static OPEN_RADIO_POWER_INTERRUPT_REGISTERS: StaticCell<MacPowerInterruptRegisters> =
     StaticCell::new();
+static OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegisters> =
+    AtomicPtr::new(core::ptr::null_mut());
 static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
     AtomicPtr::new(core::ptr::null_mut());
 
@@ -2051,10 +2021,10 @@ fn open_radio_mac_interrupt() {
     if registers.is_null() {
         return;
     }
-    // SAFETY: `run` publishes the one-shot split capability before binding
-    // this handler. The S31 masks the active interrupt while its handler runs,
-    // and no task-side code receives this finite capability, so calls cannot
-    // overlap and this is its sole mutable reference.
+    // SAFETY: the parent STA owner publishes this epoch's split capability
+    // before binding this handler. The S31 masks the active interrupt while
+    // its handler runs, and task-side code moves the capability only after
+    // disabling the CPU route, so calls cannot overlap.
     let interrupt = unsafe { &mut *registers };
     let mut first_status = 0;
     let mut observed_status = 0;
@@ -2097,6 +2067,78 @@ impl IrqSink for OpenRadioMacIrqSink {
     fn record_unhandled(&self, bits: u32) {
         IrqSink::record_unhandled(&OPEN_RADIO_IRQ_RUNTIME, bits);
     }
+}
+
+/// Publish one task-owned interrupt setup into the stable ISR storage.
+///
+/// The first epoch initializes the `StaticCell`s. Later epochs reuse their
+/// addresses after [`deactivate_open_radio_interrupts`] has moved the previous
+/// values out and cleared the active pointers. No ISR route is opened until
+/// both banks are fully initialized and published.
+fn activate_open_radio_interrupts(
+    platform: &EspHalRadioPeripheral,
+    setup: MacInterruptSetup,
+    event_mask: u32,
+) {
+    let (mac, power) = setup.activate(event_mask);
+    let mac_storage = OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
+    let power_storage = OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
+    let (mac_storage, power_storage) = if mac_storage.is_null() && power_storage.is_null() {
+        let mac_storage = OPEN_RADIO_MAC_INTERRUPT_REGISTERS.init(mac) as *mut _;
+        let power_storage = OPEN_RADIO_POWER_INTERRUPT_REGISTERS.init(power) as *mut _;
+        OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.store(mac_storage, Ordering::Release);
+        OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.store(power_storage, Ordering::Release);
+        (mac_storage, power_storage)
+    } else {
+        assert!(!mac_storage.is_null() && !power_storage.is_null());
+        assert!(OPEN_RADIO_MAC_INTERRUPT_PTR.load(Ordering::Acquire).is_null());
+        assert!(
+            OPEN_RADIO_POWER_INTERRUPT_PTR
+                .load(Ordering::Acquire)
+                .is_null()
+        );
+        // SAFETY: the active pointers are null and the CPU routes remain
+        // disabled after the preceding deactivation. That transition moved
+        // both old values out of these exact cells, so each location is
+        // uninitialized and uniquely owned until publication below.
+        unsafe {
+            mac_storage.write(mac);
+            power_storage.write(power);
+        }
+        (mac_storage, power_storage)
+    };
+    OPEN_RADIO_MAC_INTERRUPT_PTR.store(mac_storage, Ordering::Release);
+    OPEN_RADIO_POWER_INTERRUPT_PTR.store(power_storage, Ordering::Release);
+    platform.bind_interrupts(open_radio_mac_interrupt, open_radio_power_interrupt);
+}
+
+/// Close the active CPU/peripheral interrupt epoch and recover setup ownership.
+fn deactivate_open_radio_interrupts(
+    platform: &EspHalRadioPeripheral,
+) -> MacInterruptSetup {
+    // The handlers are bound on the parent STA task's core. Disabling both CPU
+    // routes there proves that neither handler can begin while the task moves
+    // the PAC values out of their stable storage. A handler already executing
+    // on this same core must have returned before this task can run.
+    platform.disable_interrupts();
+    let mac = OPEN_RADIO_MAC_INTERRUPT_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
+    let power = OPEN_RADIO_POWER_INTERRUPT_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
+    assert!(!mac.is_null() && !power.is_null());
+    assert_eq!(
+        mac,
+        OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
+    );
+    assert_eq!(
+        power,
+        OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
+    );
+    // SAFETY: the CPU routes are disabled on their binding core, both active
+    // pointers are null, and these stable locations contain the unique values
+    // installed by `activate_open_radio_interrupts`. Reading moves each value
+    // out exactly once; the next activation writes them back before routing.
+    let mac = unsafe { mac.read() };
+    let power = unsafe { power.read() };
+    mac.deactivate(power)
 }
 
 #[esp_hal::handler]
@@ -4629,35 +4671,22 @@ async fn connected_network_stack_task(mut runner: ConnectedNetworkStackRunner) {
     observe_open_radio_task_polls(runner.run(), &OPEN_RADIO_TASK_POLLS.network).await
 }
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 2)]
 async fn connected_rx_protocol_task(mut protocol: ConnectedRxProtocol) {
-    observe_open_radio_task_polls(protocol.run(), &OPEN_RADIO_TASK_POLLS.protocol).await
-}
-
-#[embassy_executor::task]
-async fn connected_radio_task(mut runner: ConnectedWifiRunner) {
-    match observe_open_radio_task_polls(runner.run(), &OPEN_RADIO_TASK_POLLS.radio).await {
-        Ok(()) => {
-            let control = runner.backend().control();
-            let beacon_monitor = control.beacon_monitor();
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner \
-                 error=disconnected beacon_lost={} beacons_observed={} \
-                 beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?}",
-                u8::from(control.beacon_lost()),
-                beacon_monitor.map_or(0, |monitor| monitor.observed()),
-                beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
-                control.last_event(),
-                control.last_tx_failure(),
-            ));
-        }
-        Err(error) => emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
-        )),
-    }
-    loop {
-        Timer::after_secs(60).await;
-    }
+    let shutdown = observe_open_radio_task_polls(
+        protocol.run_until(OPEN_RADIO_CONNECTED_PROTOCOL_STOP.wait()),
+        &OPEN_RADIO_TASK_POLLS.protocol,
+    )
+    .await;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stop \
+         queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
+        shutdown.queued_frames,
+        shutdown.retained_frames,
+        shutdown.reorder_commands,
+        shutdown.active_reorders,
+    ));
+    OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.signal(shutdown);
 }
 
 #[embassy_executor::task]
@@ -4683,7 +4712,7 @@ async fn run_connected_network(
     fixture: RadioHilConnectedFixture<'_>,
     session: StaConnectedSession<'_>,
     pairwise_slot: StaPairwiseCcmpSlot,
-    _group_slot: StaGroupCcmpSlot,
+    group_slot: StaGroupCcmpSlot,
 ) -> ! {
     let RadioHilConnectedFixture {
         spawner,
@@ -4721,18 +4750,10 @@ async fn run_connected_network(
     // connected path enables the ISR-owned RX/TX Signal sink.
     // After `activate`, ordinary `RadioRegisters` cannot touch those
     // registers.
-    let (interrupt_registers, power_interrupt_registers) = interrupt_setup
+    let interrupt_epoch = interrupt_setup
         .take()
-        .expect("MAC interrupt setup activates only once")
-        .activate(MAC_COLD_RX_INTERRUPT_MASK);
-    let interrupt_registers =
-        OPEN_RADIO_MAC_INTERRUPT_REGISTERS.init(interrupt_registers) as *mut MacInterruptRegisters;
-    let power_interrupt_registers = OPEN_RADIO_POWER_INTERRUPT_REGISTERS
-        .init(power_interrupt_registers)
-        as *mut MacPowerInterruptRegisters;
-    OPEN_RADIO_MAC_INTERRUPT_PTR.store(interrupt_registers, Ordering::Release);
-    OPEN_RADIO_POWER_INTERRUPT_PTR.store(power_interrupt_registers, Ordering::Release);
-    platform.bind_interrupts(open_radio_mac_interrupt, open_radio_power_interrupt);
+        .expect("MAC interrupt setup has no concurrent active epoch");
+    activate_open_radio_interrupts(platform, interrupt_epoch, MAC_COLD_RX_INTERRUPT_MASK);
 
     network_runner.set_link_state(LinkState::Up);
     let stack_resources = OPEN_RADIO_STACK_RESOURCES.init(StackResources::new());
@@ -4924,7 +4945,7 @@ async fn run_connected_network(
         OPEN_RADIO_REGISTER_CELL.init(RefCell::new(mmio));
     let hardware = CooperativeTxHardware::new(registers);
     let backend = Esp32s31WifiBackend::with_control(hardware, rx, tx, control);
-    let radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
+    let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
 
     let stack_task = connected_network_stack_task(stack_runner)
         .unwrap_or_else(|_| panic!("connected network task allocation failed"));
@@ -4938,9 +4959,6 @@ async fn run_connected_network(
     // to Core 1 removes one long cooperative poll interval without inventing
     // a fixed per-wake frame ceiling.
     protocol_spawner.spawn(protocol_task);
-    let radio_task = connected_radio_task(radio_runner)
-        .unwrap_or_else(|_| panic!("connected radio task allocation failed"));
-    spawner.spawn(radio_task);
     let report_task = connected_network_report_task(stack)
         .unwrap_or_else(|_| panic!("connected network report task allocation failed"));
     spawner.spawn(report_task);
@@ -4954,15 +4972,149 @@ async fn run_connected_network(
     spawner.spawn(benchmark_task);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-task-topology \
-         network=core0 rx_protocol=core1 radio=core0 \
+         network=core0 rx_protocol=core1 radio=sta-parent-core0 \
          report=core0 benchmark=core0"
     ));
 
-    // Retain the platform token and one-shot interrupt-setup lifetime in the
-    // parent task. Connected owners themselves live in their executor task
-    // storage and never borrow this stack frame.
-    loop {
-        Timer::after_secs(60).await;
+    // The radio loop intentionally remains in this parent STA future. Other
+    // long-running owners still have independent executor tasks/wakers, while
+    // disconnect returns RX/TX/control ownership into the same scope that
+    // retains the GTK and platform token. A spawned task could only report
+    // the edge and would strand those values in its private task storage.
+    match observe_open_radio_task_polls(radio_runner.run(), &OPEN_RADIO_TASK_POLLS.radio).await {
+        Ok(WifiRunnerExit::Disconnected) => {
+            let control = radio_runner.backend().control();
+            let beacon_monitor = control.beacon_monitor();
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner \
+                 error=disconnected beacon_lost={} beacons_observed={} \
+                 beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?}",
+                u8::from(control.beacon_lost()),
+                beacon_monitor.map_or(0, |monitor| monitor.observed()),
+                beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
+                control.last_event(),
+                control.last_tx_failure(),
+            ));
+        }
+        Err(error) => emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
+        )),
+    }
+    // Close hardware publication before stopping the protocol consumer. The
+    // radio runner no longer schedules RX/control; masking both CPU and
+    // peripheral routes now makes the command/frame drain finite and prevents
+    // a stale wake from leaking into the next connected epoch.
+    *interrupt_setup = Some(deactivate_open_radio_interrupts(platform));
+    let irq_drain = OPEN_RADIO_IRQ_RUNTIME.drain_pending();
+    let power_irq_drain = OPEN_RADIO_POWER_IRQ_RUNTIME.try_take().unwrap_or(0);
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-interrupt-stop \
+         rx_wake={} rx_capacity_wake={} tx_events={:#010x} power_events={:#010x}",
+        u8::from(irq_drain.rx),
+        u8::from(irq_drain.rx_capacity),
+        irq_drain.tx_events,
+        power_irq_drain,
+    ));
+    OPEN_RADIO_CONNECTED_PROTOCOL_STOP.signal(());
+    let protocol_shutdown = OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.wait().await;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stopped \
+         queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
+        protocol_shutdown.queued_frames,
+        protocol_shutdown.retained_frames,
+        protocol_shutdown.reorder_commands,
+        protocol_shutdown.active_reorders,
+    ));
+    let (network, backend) = radio_runner.into_parts();
+    let (mut hardware, rx, mut tx, mut control) = backend.into_parts();
+    match control.shutdown(&mut hardware, &mut tx) {
+        Ok(shutdown) => emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=production-control-stop \
+             rx_ba={} tx_ba={} discarded_events={} in_flight={:?}",
+            shutdown.rx_block_ack_agreements,
+            shutdown.tx_block_ack_sessions,
+            shutdown.discarded_events,
+            shutdown.in_flight,
+        )),
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-control-stop error={error:?}"
+            ));
+            let _owners = (network, hardware, rx, tx, control, group_slot);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    }
+    match rx.try_stop(&mut hardware) {
+        Ok(stopped_rx) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-dma-stop \
+                 descriptor_base={:#010x} queued_frames={}",
+                stopped_rx.ring().descriptor_base(),
+                stopped_rx.queued_frames(),
+            ));
+            match tx.try_into_teardown_parts() {
+                Ok((resources, handoff, ampdu)) => {
+                    let ConnectedTxHandoff {
+                        key,
+                        sequences: connected_sequences,
+                        config: _,
+                    } = handoff;
+                    let pairwise_hardware_index = key.hardware_index();
+                    let group_hardware_index = group_slot.hardware_index();
+                    group_slot.clear(&mut hardware);
+                    key.clear(&mut hardware);
+                    let key_bitmap = hardware.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP);
+                    let keys_cleared = key_bitmap
+                        & ((1 << pairwise_hardware_index) | (1 << group_hardware_index))
+                        == 0;
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result={} stage=production-connected-key-clear \
+                         pairwise_slot={} group_slot={} valid_bitmap={key_bitmap:#010x}",
+                        if keys_cleared { "PASS" } else { "FAIL" },
+                        pairwise_hardware_index,
+                        group_hardware_index,
+                    ));
+                    *sequences = connected_sequences;
+                    tx_storage.control = Some(Esp32s31ControlTx::new(
+                        resources,
+                        ControlTxConfig {
+                            unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
+                            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
+                            poll_interval_us: 1,
+                        },
+                    ));
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=PASS \
+                         stage=production-connected-tx-return"
+                    ));
+                    let _owners = (network, hardware, stopped_rx, ampdu, control);
+                    loop {
+                        Timer::after_secs(60).await;
+                    }
+                }
+                Err(tx) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-connected-tx-return error=aggregate-active"
+                    ));
+                    let _owners = (network, hardware, stopped_rx, tx, control, group_slot);
+                    loop {
+                        Timer::after_secs(60).await;
+                    }
+                }
+            }
+        }
+        Err((live_rx, error)) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-dma-stop error={error:?}"
+            ));
+            let _owners = (network, hardware, live_rx, tx, control, group_slot);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
     }
 }
 
@@ -6209,7 +6361,7 @@ async fn run_promiscuous_rx_hil(
         tx_completions >= STA_SCAN_CHANNEL_COUNT as u32 && probe_responses != 0 && tx_failures == 0;
     let target = best_matching_ssid(scan_table.records(), network_credentials.ssid()).copied();
     // No cold MAC operation is permitted beyond this point. Consume the cold
-    // owner before authentication and retain the one-shot interrupt setup
+    // owner before authentication and retain the inactive interrupt setup
     // token until WPA2 has opened the controlled port.
     let (running_mmio, interrupt_setup) = cold_mmio.into_running();
     let mmio: &'static mut RadioRegisters = OPEN_RADIO_RUNNING_REGISTERS.init(running_mmio);

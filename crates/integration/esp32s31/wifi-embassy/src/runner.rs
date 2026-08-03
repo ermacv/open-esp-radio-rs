@@ -50,6 +50,19 @@ pub enum WifiControlProgress {
     Disconnected,
 }
 
+/// Terminal, non-error outcome of the connected radio event loop.
+///
+/// Keeping this distinct from `()` prevents an outer station owner from
+/// confusing a proved link loss with a runner that completed without a
+/// lifecycle transition. The caller may use this edge to tear down the
+/// network stack, release the connected epoch and start reassociation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiRunnerExit {
+    /// Connected policy proved that the peer is no longer reachable and the
+    /// runner published link-down before returning.
+    Disconnected,
+}
+
 /// Coherent runner-owned scheduling facts supplied to one control step.
 ///
 /// This value is sampled before control arbitration, while no TX transaction
@@ -283,6 +296,30 @@ where
         &mut self.backend
     }
 
+    /// Return the network and hardware owners after the runner exits.
+    ///
+    /// A station lifecycle must be able to reclaim these values after
+    /// [`WifiRunnerExit::Disconnected`] in order to stop DMA, clear keys and
+    /// construct a later association epoch. Keeping them recoverable also
+    /// makes it impossible for `run` to hide teardown behind task-local
+    /// globals.
+    pub fn into_parts(
+        self,
+    ) -> (
+        SplitPinnedRadioRunner<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+        B,
+    ) {
+        (self.network, self.backend)
+    }
+
     /// Run the production radio event loop.
     ///
     /// RX is the first future in both selects. Embassy's ordered `select`
@@ -290,7 +327,7 @@ where
     /// and TX become ready together. A pinned network lease stays live until
     /// `service_tx` proves that hardware ownership has ended; dropping the
     /// lease then returns that slot to `embassy-net`.
-    pub async fn run(&mut self) -> Result<(), B::Error> {
+    pub async fn run(&mut self) -> Result<WifiRunnerExit, B::Error> {
         loop {
             // No TX owner is live at this boundary. Drain stale transaction
             // wakes before a control or network publication can create a new
@@ -308,7 +345,7 @@ where
                 WifiControlProgress::Disconnected => {
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(());
+                    return Ok(WifiRunnerExit::Disconnected);
                 }
                 WifiControlProgress::Idle => {}
             }
@@ -353,7 +390,7 @@ where
                                 drop(frame);
                                 self.network
                                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                                return Ok(());
+                                return Ok(WifiRunnerExit::Disconnected);
                             }
                             WifiControlProgress::Idle => break,
                         }
@@ -753,11 +790,16 @@ mod tests {
         };
         let mut runner = WifiRunner::new(irq, network, backend);
 
-        assert_eq!(embassy_futures::block_on(runner.run()), Ok(()));
+        assert_eq!(
+            embassy_futures::block_on(runner.run()),
+            Ok(WifiRunnerExit::Disconnected)
+        );
         let mut context = Context::from_waker(core::task::Waker::noop());
         assert!(matches!(
             device.link_state(&mut context),
             open_esp_radio_embassy_net::LinkState::Down
         ));
+        let (_network, backend) = runner.into_parts();
+        assert!(backend.disconnect);
     }
 }

@@ -30,6 +30,20 @@ use crate::{
 
 const RX_BLOCK_ACK_TID_COUNT: usize = 8;
 
+/// Ownership released when a connected staged-RX epoch is stopped.
+///
+/// The counts are diagnostic evidence for an outer station lifecycle. A
+/// nonzero value is legal: disconnect may race with already staged input, but
+/// every counted frame or command has been discarded before this value is
+/// returned.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedRxProtocolShutdown {
+    pub queued_frames: usize,
+    pub retained_frames: usize,
+    pub reorder_commands: usize,
+    pub active_reorders: usize,
+}
+
 /// Async admission edge required by the staged protocol consumer.
 ///
 /// The synchronous [`ConnectedRxSink`] callback remains useful for finite
@@ -298,6 +312,42 @@ where
 
     pub fn queue_len(&self) -> usize {
         self.frames.len()
+    }
+
+    /// Discard all ownership retained by the completed connected epoch.
+    ///
+    /// The connected control producer must already be stopped, otherwise it
+    /// could publish a new reorder command after the mailbox is drained. This
+    /// operation performs no PAC access and no sink publication: reconnect
+    /// teardown must not block on a full network queue merely to return RX
+    /// staging and cold-reorder leases.
+    pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
+        let mut shutdown = ConnectedRxProtocolShutdown::default();
+        while let Ok(frame) = self.frames.try_receive() {
+            drop(frame);
+            shutdown.queued_frames = shutdown.queued_frames.saturating_add(1);
+        }
+        if let Some(commands) = &self.reorder_commands {
+            while try_receive_rx_reorder_command(commands).is_some() {
+                shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
+            }
+        }
+        for reorder in &mut self.reorders {
+            if reorder.take().is_some() {
+                shutdown.active_reorders = shutdown.active_reorders.saturating_add(1);
+            }
+        }
+        self.reorder_first_starts.fill(None);
+        self.gap_deadlines.fill(None);
+        for retained in &mut self.retained {
+            if retained.take().is_some() {
+                shutdown.retained_frames = shutdown.retained_frames.saturating_add(1);
+            }
+        }
+        if shutdown.queued_frames != 0 || shutdown.retained_frames != 0 {
+            self.irq.notify_rx_capacity();
+        }
+        shutdown
     }
 
     /// Wait for and dispatch one independently owned staged frame.
@@ -817,6 +867,25 @@ where
             self.dispatch_next().await;
         }
     }
+
+    /// Run until an outer connected-epoch owner requests teardown.
+    ///
+    /// The stop future is polled first, so a simultaneous frame/stop edge does
+    /// not publish new network input after disconnect. Cancelling the current
+    /// `dispatch_next` future drops its local staging lease; the explicit
+    /// shutdown then drains queued and retained ownership before returning.
+    pub async fn run_until<F: Future<Output = ()>>(
+        &mut self,
+        stop: F,
+    ) -> ConnectedRxProtocolShutdown {
+        let mut stop = core::pin::pin!(stop);
+        loop {
+            match select(stop.as_mut(), self.dispatch_next()).await {
+                Either::First(()) => return self.shutdown_discard(),
+                Either::Second(_) => {}
+            }
+        }
+    }
 }
 
 async fn dispatch_non_amsdu_segment<S: ConnectedRxProtocolSink>(
@@ -859,7 +928,22 @@ async fn dispatch_non_amsdu_segment<S: ConnectedRxProtocolSink>(
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_embassy_net::NoopRawMutex;
+    use open_esp_radio_esp32s31_wifi_mac::{connected_rx::ConnectedRxConfig, rx::RxIngressConfig};
+
     use super::*;
+
+    struct Sink;
+
+    impl ConnectedRxSink for Sink {
+        fn publish(&mut self, _event: ConnectedRxEvent<'_>) {}
+    }
+
+    impl ConnectedRxProtocolSink for Sink {
+        fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
+            ready(())
+        }
+    }
 
     #[test]
     fn deferred_ethernet_frames_pack_complete_ordered_records() {
@@ -905,5 +989,38 @@ mod tests {
             &(second.length() as u16).to_be_bytes()
         );
         assert_eq!(deferred.used, first_end + 2 + second.length());
+    }
+
+    #[test]
+    fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
+        let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
+        let (_sender, receiver) = queue.split();
+        let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
+            station_address: [2, 3, 4, 5, 6, 7],
+            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            association_id: 1,
+            ingress: RxIngressConfig {
+                ring_entry_limit: 1,
+                csi_config: 0,
+                flags: 0,
+            },
+        });
+        let mut mpdu = [0_u8; 64];
+        let mut ethernet = [0_u8; 64];
+        let mut protocol = Esp32s31ConnectedRxProtocol::new(
+            receiver,
+            &irq,
+            dispatcher,
+            Sink,
+            &mut mpdu,
+            &mut ethernet,
+        );
+
+        assert_eq!(
+            embassy_futures::block_on(protocol.run_until(ready(()))),
+            ConnectedRxProtocolShutdown::default()
+        );
+        assert_eq!(protocol.queue_len(), 0);
     }
 }

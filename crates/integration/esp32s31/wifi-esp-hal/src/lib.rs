@@ -14,6 +14,7 @@ use esp_hal::{
         MODEM_SYSCON, PMU, WIFI,
     },
     rng::Rng,
+    system::Cpu,
 };
 use open_esp_radio_esp32s31_hal::{
     PowerClockControl, PowerClockImages,
@@ -86,6 +87,18 @@ impl EspHalRadioPeripheral {
     pub fn bind_interrupts(&self, mac: InterruptHandler, power: InterruptHandler) {
         interrupt::bind_handler(Interrupt::WIFI_MAC, mac);
         interrupt::bind_handler(Interrupt::WIFI_PWR, power);
+    }
+
+    /// Disable both Wi-Fi CPU interrupt routes on their binding core.
+    ///
+    /// This closes only the platform routing edge. The caller must then mask
+    /// and acknowledge the peripheral banks before moving their PAC owners
+    /// back into task-side setup. Binding and teardown are intentionally kept
+    /// on the same core by the station lifecycle owner.
+    pub fn disable_interrupts(&self) {
+        let cpu = Cpu::current();
+        interrupt::disable(cpu, Interrupt::WIFI_MAC);
+        interrupt::disable(cpu, Interrupt::WIFI_PWR);
     }
 }
 

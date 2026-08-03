@@ -173,6 +173,15 @@ impl<H, R, X, C> Esp32s31WifiBackend<H, R, X, C> {
     pub fn control_mut(&mut self) -> &mut C {
         &mut self.control
     }
+
+    /// Recover every connected-epoch owner for explicit station teardown.
+    ///
+    /// This is intentionally a consuming operation: hardware, RX, TX and
+    /// control may only be separated after the outer runner has stopped
+    /// scheduling them.
+    pub fn into_parts(self) -> (H, R, X, C) {
+        (self.hardware, self.rx, self.tx, self.control)
+    }
 }
 
 impl<

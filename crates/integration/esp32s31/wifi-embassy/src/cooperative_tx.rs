@@ -11,9 +11,11 @@ use open_esp_radio_esp32s31_hal::RadioRegisters;
 use open_esp_radio_esp32s31_pac::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtAmpduCompletionRegisters, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
+    MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
+    MacTxCompletionRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::CcmpKeyHardware,
     registers::Mmio,
     rx::RxDma,
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
@@ -59,6 +61,16 @@ impl Mmio for CooperativeTxHardware<'_, '_> {
 
     fn fence(&mut self) {
         Mmio::fence(&mut **self.registers.borrow_mut());
+    }
+}
+
+impl CcmpKeyHardware for CooperativeTxHardware<'_, '_> {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+        CcmpKeyHardware::install_sta_ccmp_entry(&mut **self.registers.borrow_mut(), index, words)
+    }
+
+    fn clear_ccmp_entry(&mut self, index: u8) {
+        CcmpKeyHardware::clear_ccmp_entry(&mut **self.registers.borrow_mut(), index);
     }
 }
 

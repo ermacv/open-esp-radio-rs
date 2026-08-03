@@ -34,6 +34,14 @@ pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     rx_post_count: AtomicU32,
 }
 
+/// Coalesced executor work discarded after an interrupt epoch is quiesced.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EmbassyMacIrqDrain {
+    pub rx: bool,
+    pub rx_capacity: bool,
+    pub tx_events: u32,
+}
+
 impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     pub const fn new() -> Self {
         Self {
@@ -105,6 +113,24 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     pub fn try_take_tx(&self) -> Option<u32> {
         self.tx.try_take()?;
         Some(self.tx_pending.swap(0, Ordering::Acquire))
+    }
+
+    /// Remove every coalesced executor wake after hardware publication stops.
+    ///
+    /// Descriptor and transaction owners remain the durable source of truth;
+    /// this only prevents one epoch's already-acknowledged wake from being
+    /// interpreted as work in a later connected epoch. The caller must first
+    /// mask the peripheral and CPU interrupt routes.
+    pub fn drain_pending(&self) -> EmbassyMacIrqDrain {
+        let rx = self.rx.try_take().is_some();
+        let rx_capacity = self.rx_capacity.try_take().is_some();
+        let _tx_wake = self.tx.try_take();
+        let tx_events = self.tx_pending.swap(0, Ordering::Acquire);
+        EmbassyMacIrqDrain {
+            rx,
+            rx_capacity,
+            tx_events,
+        }
     }
 
     /// Number of RX-success work publications, with wrapping semantics.
@@ -230,6 +256,26 @@ mod tests {
 
         assert!(!runtime.rx_signaled());
         assert_eq!(runtime.rx_post_count(), 0);
+    }
+
+    #[test]
+    fn quiesced_epoch_drain_removes_every_coalesced_wake() {
+        let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+        runtime.publish(MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT);
+        runtime.notify_rx_capacity();
+
+        assert_eq!(
+            runtime.drain_pending(),
+            super::EmbassyMacIrqDrain {
+                rx: true,
+                rx_capacity: true,
+                tx_events: MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT,
+            }
+        );
+        assert_eq!(runtime.drain_pending(), Default::default());
+        assert!(!runtime.rx_signaled());
+        assert_eq!(runtime.try_take_tx(), None);
     }
 
     #[test]

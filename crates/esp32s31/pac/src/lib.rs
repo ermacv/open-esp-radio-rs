@@ -316,7 +316,8 @@ impl RadioRegisters {
 /// PHY setup, cold MAC initialization and polling-only scan/authentication use
 /// this owner. Consuming [`into_running`](Self::into_running) permanently
 /// removes MAC and WDEVPWR interrupt operations from the ordinary task owner
-/// and returns a one-shot setup token for the later dual-ISR handoff.
+/// and returns the initial setup token for a later dual-ISR handoff. A closed
+/// ISR epoch can return the same peripheral ownership to another setup token.
 pub struct ColdRadioRegisters {
     registers: RadioRegisters,
 }

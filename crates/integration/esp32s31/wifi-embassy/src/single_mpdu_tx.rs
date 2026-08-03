@@ -173,6 +173,48 @@ where
         self.ordinary.take_last_outcome()
     }
 
+    /// Split an idle connected transmitter back into reusable descriptor
+    /// resources and its association-owned key/sequence handoff.
+    ///
+    /// This is the inverse ownership edge of
+    /// [`crate::control_tx::Esp32s31ControlTx::try_into_connected`]. It does
+    /// not clear the hardware key: an outer station teardown must consume the
+    /// returned token through `StaPairwiseCcmpSlot::clear` using the unique
+    /// hardware owner.
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_parts(
+        self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+            ConnectedTxHandoff,
+        ),
+        Self,
+    > {
+        let Self {
+            ordinary,
+            key,
+            sequences,
+            config,
+        } = self;
+        match ordinary.try_into_resources() {
+            Ok(resources) => Ok((
+                resources,
+                ConnectedTxHandoff {
+                    key,
+                    sequences,
+                    config,
+                },
+            )),
+            Err(ordinary) => Err(Self {
+                ordinary,
+                key,
+                sequences,
+                config,
+            }),
+        }
+    }
+
     pub fn peek_qos_sequence(&self, tid: u8) -> Option<u16> {
         self.sequences.peek_qos(tid)
     }
@@ -467,6 +509,7 @@ mod tests {
         timeout: bool,
         collision: bool,
         legacy: Option<(u8, MacLegacyTxProgram)>,
+        cleared_key: Option<u8>,
     }
 
     impl CcmpKeyHardware for Hardware {
@@ -474,7 +517,9 @@ mod tests {
             MacKeyInstallOutcome::Installed
         }
 
-        fn clear_ccmp_entry(&mut self, _index: u8) {}
+        fn clear_ccmp_entry(&mut self, index: u8) {
+            self.cleared_key = Some(index);
+        }
     }
 
     impl TxHardware for Hardware {
@@ -649,6 +694,56 @@ mod tests {
             Some(SingleMpduTxOutcome::Success(TxCompletion { status: 0, .. }))
         ));
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+    }
+
+    #[test]
+    fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut hardware = Hardware::default();
+        let tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let key_index = tx.key.hardware_index();
+
+        let (resources, handoff) = match tx.try_into_parts() {
+            Ok(parts) => parts,
+            Err(_) => panic!("idle connected TX must decompose"),
+        };
+
+        assert_eq!(resources.slot.state(), TxSlotState::Free);
+        assert_eq!(handoff.key.hardware_index(), key_index);
+        assert_eq!(handoff.sequences.peek_non_qos(), 7);
+        handoff.key.clear(&mut hardware);
+        assert_eq!(hardware.cleared_key, Some(key_index));
+    }
+
+    #[test]
+    fn active_connected_owner_rejects_teardown_without_losing_transaction() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        assert_eq!(
+            tx.start(&mut hardware, &ethernet()),
+            Ok(WifiTxProgress::Pending)
+        );
+
+        let mut tx = match tx.try_into_parts() {
+            Err(tx) => tx,
+            Ok(_) => panic!("hardware-owned TX must reject decomposition"),
+        };
+        assert!(tx.active());
+        hardware.completion = Some(completion(0));
+        assert_eq!(
+            embassy_futures::block_on(tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                },
+            )),
+            Ok(WifiTxProgress::Complete)
+        );
+        assert!(tx.try_into_parts().is_ok());
     }
 
     #[test]

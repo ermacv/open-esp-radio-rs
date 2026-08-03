@@ -8,7 +8,7 @@
 
 use core::{
     future::Future,
-    mem,
+    mem::{self, ManuallyDrop},
     pin::Pin,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -35,7 +35,8 @@ use crate::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     single_mpdu_tx::{
-        ActionTxConfig, Esp32s31SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
+        ActionTxConfig, ConnectedTxHandoff, Esp32s31SingleMpduTx, SingleMpduTxError,
+        SingleMpduTxOutcome, WifiTxResources,
     },
 };
 
@@ -644,6 +645,75 @@ where
 
     pub fn active(&self) -> bool {
         !matches!(self.active, ConnectedTxActive::Idle)
+    }
+
+    /// Recover the ordinary connected owner and descriptor-only aggregate
+    /// storage after every referenced network lease has been released.
+    ///
+    /// An active or partially detached aggregate is returned intact. Losing
+    /// that value would leak pinned `embassy-net` leases or make DMA lifetime
+    /// unknowable to an outer reconnect owner.
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_parts(
+        self,
+    ) -> Result<
+        (
+            Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+        ),
+        Self,
+    > {
+        if self.active()
+            || self.ordinary.active()
+            || self.held_frames != 0
+            || self.cookie.is_some()
+            || self.frames.iter().any(Option::is_some)
+        {
+            return Err(self);
+        }
+        let owner = ManuallyDrop::new(self);
+        // SAFETY: the checks above prove the Drop implementation has no
+        // pinned network lease or aggregate transaction to release. Reading
+        // these two fields transfers their ownership exactly once; the
+        // remaining fields contain only Copy policy/diagnostic state or an
+        // all-None frame array, so intentionally suppressing their drop does
+        // not leak an owned resource.
+        unsafe {
+            Ok((
+                core::ptr::read(&owner.ordinary),
+                core::ptr::read(&owner.ampdu),
+            ))
+        }
+    }
+
+    /// Return every idle connected-TX resource needed by station teardown.
+    ///
+    /// This composes aggregate and ordinary ownership into one fail-closed
+    /// transition. The caller does not need to know that the pairwise key and
+    /// sequence spaces are nested inside the ordinary fallback owner.
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_teardown_parts(
+        self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+            ConnectedTxHandoff,
+            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+        ),
+        Self,
+    > {
+        let (ordinary, ampdu) = match self.try_into_parts() {
+            Ok(parts) => parts,
+            Err(owner) => return Err(owner),
+        };
+        // `try_into_parts` checks both aggregate and ordinary active state
+        // before transferring either field. No executor or hardware actor can
+        // mutate the uniquely owned ordinary value between these two calls.
+        let (resources, handoff) = match ordinary.try_into_parts() {
+            Ok(parts) => parts,
+            Err(_) => unreachable!("aggregate idle invariant admitted an active ordinary TX"),
+        };
+        Ok((resources, handoff, ampdu))
     }
 
     pub async fn wait_deadline(&mut self) {
@@ -1588,6 +1658,48 @@ mod tests {
         assert_eq!(delta.stopped_at_frame_limit, 1);
         assert_eq!(delta.stopped_at_capacity_limit, 0);
         assert_eq!(delta.stopped_on_empty_queue, 1);
+    }
+
+    #[test]
+    fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
+        let mut hardware = Hardware::default();
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
+        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
+        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let tx = Esp32s31ConnectedTx::<
+            NoopRawMutex,
+            _,
+            _,
+            _,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+            TEST_SLOTS,
+            0,
+            TEST_BUFFER_SIZE,
+        >::new(
+            ordinary,
+            ampdu,
+            AggregateTxConfig {
+                rate: TxPhyRate::Ht(TEST_RATE),
+                frame_limit: TEST_SLOTS as u8,
+                attempt_limit: 2,
+                completion_timeout_us: 250_000,
+                he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            },
+        )
+        .unwrap();
+
+        let (resources, handoff, ampdu) = match tx.try_into_teardown_parts() {
+            Ok(parts) => parts,
+            Err(_) => panic!("idle aggregate must decompose"),
+        };
+        assert_eq!(ampdu.state(), TxSlotState::Free);
+        assert_eq!(resources.slot.state(), TxSlotState::Free);
+        handoff.key.clear(&mut hardware);
     }
 
     #[test]

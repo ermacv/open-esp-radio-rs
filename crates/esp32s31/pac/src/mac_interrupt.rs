@@ -2,7 +2,7 @@
 
 use super::{device_fence, generated, svd};
 
-/// One-shot task-side setup for the MAC interrupt handoff.
+/// Task-side setup token for one MAC interrupt handoff epoch.
 ///
 /// This token exists after the cold owner has been consumed but before the
 /// interrupt is routed to a CPU. Activating it publishes the final mask,
@@ -96,9 +96,9 @@ impl MacPowerInterruptRegisters {
 
 /// Disjoint generated register capability intended for the hard MAC ISR.
 ///
-/// It is issued once by [`MacInterruptSetup::activate`]; construction is
+/// It is issued by [`MacInterruptSetup::activate`]; construction is
 /// crate-private so application code cannot manufacture another ISR owner or
-/// retain task-side interrupt enable/clear access after activation.
+/// retain task-side interrupt enable/clear access during an active epoch.
 pub struct MacInterruptRegisters {
     peripheral: svd::WifiMacInterrupt,
 }
@@ -128,6 +128,41 @@ impl MacInterruptRegisters {
             events,
         );
         device_fence();
+    }
+
+    /// Mask and acknowledge both interrupt banks, returning task-side setup.
+    ///
+    /// The caller must first disable both CPU interrupt routes and prove that
+    /// neither hard handler retains a reference to `self` or `power`. Owning
+    /// both values then closes the finite ISR epoch and makes a later
+    /// [`MacInterruptSetup::activate`] transaction possible without stealing
+    /// either PAC peripheral a second time.
+    pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
+        // SAFETY: ENABLE and CLEAR are complete full-width event bitmaps. The
+        // unique values consumed here prove that no safe task/ISR accessor can
+        // overlap this transition; platform routing is the caller's separate
+        // responsibility as documented above.
+        unsafe {
+            self.peripheral
+                .enable()
+                .write_with_zero(|w| w.event_mask().bits(0));
+            power
+                .peripheral
+                .enable()
+                .write_with_zero(|w| w.event_mask().bits(0));
+            self.peripheral
+                .clear()
+                .write_with_zero(|w| w.events().bits(u32::MAX));
+            power
+                .peripheral
+                .clear()
+                .write_with_zero(|w| w.events().bits(u32::MAX));
+        }
+        device_fence();
+        MacInterruptSetup {
+            peripheral: self.peripheral,
+            power_peripheral: power.peripheral,
+        }
     }
 
     #[cfg(feature = "validation-probes")]

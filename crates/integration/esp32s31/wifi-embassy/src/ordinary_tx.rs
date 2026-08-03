@@ -219,6 +219,36 @@ where
         &self.power
     }
 
+    /// Recover the phase-independent TX resources while DMA is idle.
+    ///
+    /// Returning `self` on failure preserves a live descriptor transaction;
+    /// callers must drive it to a terminal outcome or reset the radio before
+    /// attempting a station lifecycle transition again.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn try_into_resources(
+        self,
+    ) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
+        if self.active() {
+            return Err(self);
+        }
+        let Self {
+            slot,
+            policy,
+            power,
+            entropy,
+            timer,
+            active: _,
+            last_outcome: _,
+        } = self;
+        Ok(WifiTxResources {
+            slot,
+            policy,
+            power,
+            entropy,
+            timer,
+        })
+    }
+
     pub(crate) fn contention_publication(
         &mut self,
         queue: LegacyTxQueue,

@@ -114,7 +114,7 @@ use open_esp_radio::{
                 StaJoinRxObserver,
             },
             staged_rx::{
-                ConnectedRxProtocolShutdown, Esp32s31ConnectedRxProtocol,
+                ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol,
                 Esp32s31StagedRxQueue,
             },
             wpa2::{
@@ -1023,6 +1023,27 @@ struct RadioHilDisconnectedEpoch {
     control_resources: &'static ControlResources,
 }
 
+/// Board and station state returned after all connected tasks have stopped.
+///
+/// The unique fixture borrows are returned together with PMK/sequence state;
+/// an outer lifecycle can therefore start another finite join attempt instead
+/// of parking the hardware merely because the connected runner consumed its
+/// input values.
+struct RadioHilConnectedEpochReturn<'fixture, 'security> {
+    fixture: RadioHilConnectedTaskFixture<'fixture>,
+    disconnected: RadioHilDisconnectedEpoch,
+    security: StaAssociationSecurity<'security>,
+}
+
+/// Complete input frontier for the next Association/WPA2 epoch.
+struct RadioHilReconnectReady<'fixture, 'security> {
+    fixture: RadioHilConnectedTaskFixture<'fixture>,
+    target: StaJoinTarget,
+    network: RadioHilStaNetwork,
+    epoch: RadioHilConnectedEpochResources,
+    security: StaAssociationSecurity<'security>,
+}
+
 impl RadioHilDisconnectedEpoch {
     fn into_reconnected_resources(
         self,
@@ -1202,8 +1223,8 @@ struct RadioHilConnectedFixture<'a> {
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'static mut [u8; RX_STAGE_CAPACITY],
-    ethernet: &'static mut [u8; RX_STAGE_CAPACITY],
+    frame: &'static mut [u8],
+    ethernet: &'static mut [u8],
 }
 
 /// Connected-task resources which remain board-owned across association
@@ -1219,8 +1240,8 @@ struct RadioHilConnectedTaskFixture<'a> {
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'static mut [u8; RX_STAGE_CAPACITY],
-    ethernet: &'static mut [u8; RX_STAGE_CAPACITY],
+    frame: &'static mut [u8],
+    ethernet: &'static mut [u8],
 }
 
 impl<'a> RadioHilConnectedFixture<'a> {
@@ -1802,7 +1823,7 @@ static OPEN_RADIO_CONNECTED_PROTOCOL_STOP: Signal<CriticalSectionRawMutex, ()> =
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED: Signal<
     CriticalSectionRawMutex,
-    ConnectedRxProtocolShutdown,
+    ConnectedRxProtocolStopped<'static>,
 > = Signal::new();
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_CONNECTED_BENCHMARK_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -1955,7 +1976,7 @@ struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H> {
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
+    frame: &'scratch mut [u8],
     station_address: [u8; 6],
     access_point: ScanRecord,
     rx: RadioHilJoinRx<'storage>,
@@ -2107,7 +2128,7 @@ struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch, H> {
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
+    frame: &'scratch mut [u8],
     station_address: [u8; 6],
     bssid: [u8; 6],
     rx: RadioHilJoinRx<'storage>,
@@ -3303,8 +3324,8 @@ async fn transmit_protected_ethernet_frame<M: Mmio + TxHardware>(
 async fn await_protected_arp_response<M: Mmio + RxDma>(
     mmio: &mut M,
     rx_storage: &RxStorage,
-    frame: &mut [u8; RX_STAGE_CAPACITY],
-    ethernet: &mut [u8; RX_STAGE_CAPACITY],
+    frame: &mut [u8],
+    ethernet: &mut [u8],
     network_device: &mut NetworkDevice,
     network_runner: &NetworkRunner,
     station_address: [u8; 6],
@@ -5002,12 +5023,13 @@ async fn connected_network_stack_task(mut runner: ConnectedNetworkStackRunner) {
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn connected_rx_protocol_task(mut protocol: ConnectedRxProtocol) {
-    let shutdown = observe_open_radio_task_polls(
-        protocol.run_until(OPEN_RADIO_CONNECTED_PROTOCOL_STOP.wait()),
+async fn connected_rx_protocol_task(protocol: ConnectedRxProtocol) {
+    let stopped = observe_open_radio_task_polls(
+        protocol.run_until_stopped(OPEN_RADIO_CONNECTED_PROTOCOL_STOP.wait()),
         &OPEN_RADIO_TASK_POLLS.protocol,
     )
     .await;
+    let shutdown = stopped.shutdown();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stop \
          queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
@@ -5016,7 +5038,7 @@ async fn connected_rx_protocol_task(mut protocol: ConnectedRxProtocol) {
         shutdown.reorder_commands,
         shutdown.active_reorders,
     ));
-    OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.signal(shutdown);
+    OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.signal(stopped);
 }
 
 #[embassy_executor::task]
@@ -5042,13 +5064,13 @@ async fn connected_benchmark_task(
     OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED.signal(());
 }
 
-async fn run_connected_network(
-    fixture: RadioHilConnectedTaskFixture<'_>,
+async fn run_connected_network<'fixture, 'rate, 'security>(
+    fixture: RadioHilConnectedTaskFixture<'fixture>,
     epoch_resources: RadioHilConnectedEpochResources,
-    session: StaConnectedSession<'_, '_>,
+    session: StaConnectedSession<'rate, 'security>,
     pairwise_slot: StaPairwiseCcmpSlot,
     group_slot: StaGroupCcmpSlot,
-) -> RadioHilDisconnectedEpoch {
+) -> RadioHilConnectedEpochReturn<'fixture, 'security> {
     let RadioHilConnectedTaskFixture {
         spawner,
         protocol_spawner,
@@ -5065,8 +5087,8 @@ async fn run_connected_network(
         link,
         network,
         rate_control,
-        pmk: _,
-        supplicant_nonce: _,
+        pmk,
+        supplicant_nonce,
         sequences,
     } = session;
     let StaConnectedLink {
@@ -5447,7 +5469,8 @@ async fn run_connected_network(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-benchmark-stopped"
     ));
-    let protocol_shutdown = OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.wait().await;
+    let stopped_protocol = OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.wait().await;
+    let protocol_shutdown = stopped_protocol.shutdown();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stopped \
          queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
@@ -5456,6 +5479,7 @@ async fn run_connected_network(
         protocol_shutdown.reorder_commands,
         protocol_shutdown.active_reorders,
     ));
+    let (frame, ethernet) = stopped_protocol.into_scratch();
     let (network, backend) = radio_runner.into_parts();
     let (mut hardware, rx, mut tx, mut control) = backend.into_parts();
     match control.shutdown(&mut hardware, &mut tx) {
@@ -5521,15 +5545,34 @@ async fn run_connected_network(
                          stage=production-connected-tx-return"
                     ));
                     drop(control);
-                    return RadioHilDisconnectedEpoch {
-                        network: RadioHilRunningNetwork {
-                            stack,
-                            runner: network,
+                    return RadioHilConnectedEpochReturn {
+                        fixture: RadioHilConnectedTaskFixture {
+                            spawner,
+                            protocol_spawner,
+                            platform,
+                            interrupt_setup,
+                            rx_storage,
+                            tx_storage,
+                            descriptor_base,
+                            buffer_addresses,
+                            frame,
+                            ethernet,
                         },
-                        hardware,
-                        rx: stopped_rx,
-                        ampdu,
-                        control_resources,
+                        disconnected: RadioHilDisconnectedEpoch {
+                            network: RadioHilRunningNetwork {
+                                stack,
+                                runner: network,
+                            },
+                            hardware,
+                            rx: stopped_rx,
+                            ampdu,
+                            control_resources,
+                        },
+                        security: StaAssociationSecurity {
+                            pmk,
+                            supplicant_nonce,
+                            sequences,
+                        },
                     };
                 }
                 Err(tx) => {
@@ -6350,7 +6393,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             ethernet,
         }
         .into_task_fixture();
-        let disconnected = run_connected_network(
+        let returned = run_connected_network(
             connected_fixture,
             RadioHilConnectedEpochResources::Initial {
                 registers,
@@ -6368,7 +6411,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             group_slot,
         )
         .await;
-        let disconnected = qualify_disconnected_rx_restart(disconnected).await;
+        let disconnected = qualify_disconnected_rx_restart(returned.disconnected).await;
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
              descriptor_base={:#010x} queued_frames={}",
@@ -6376,10 +6419,24 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             disconnected.rx.queued_frames(),
         ));
         let (network, reconnect_resources) = disconnected.into_reconnected_resources();
-        let _owners = (
-            RadioHilStaNetwork::Running(network),
-            reconnect_resources,
-        );
+        let ready = RadioHilReconnectReady {
+            fixture: returned.fixture,
+            target,
+            network: RadioHilStaNetwork::Running(network),
+            epoch: reconnect_resources,
+            security: returned.security,
+        };
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready"
+        ));
+        let RadioHilReconnectReady {
+            fixture,
+            target,
+            network,
+            epoch,
+            security,
+        } = ready;
+        let _owners = (fixture, target, network, epoch, security);
         loop {
             Timer::after_secs(60).await;
         }

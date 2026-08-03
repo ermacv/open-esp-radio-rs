@@ -44,6 +44,23 @@ pub struct ConnectedRxProtocolShutdown {
     pub active_reorders: usize,
 }
 
+/// Scratch ownership returned only after a staged RX protocol epoch stops.
+pub struct ConnectedRxProtocolStopped<'scratch> {
+    shutdown: ConnectedRxProtocolShutdown,
+    mpdu: &'scratch mut [u8],
+    ethernet: &'scratch mut [u8],
+}
+
+impl<'scratch> ConnectedRxProtocolStopped<'scratch> {
+    pub const fn shutdown(&self) -> ConnectedRxProtocolShutdown {
+        self.shutdown
+    }
+
+    pub fn into_scratch(self) -> (&'scratch mut [u8], &'scratch mut [u8]) {
+        (self.mpdu, self.ethernet)
+    }
+}
+
 /// Async admission edge required by the staged protocol consumer.
 ///
 /// The synchronous [`ConnectedRxSink`] callback remains useful for finite
@@ -348,6 +365,10 @@ where
             self.irq.notify_rx_capacity();
         }
         shutdown
+    }
+
+    fn into_scratch(self) -> (&'scratch mut [u8], &'scratch mut [u8]) {
+        (self.mpdu, self.ethernet)
     }
 
     /// Wait for and dispatch one independently owned staged frame.
@@ -886,6 +907,20 @@ where
             }
         }
     }
+
+    /// Consume one protocol epoch and return its scratch only after shutdown.
+    pub async fn run_until_stopped<F: Future<Output = ()>>(
+        mut self,
+        stop: F,
+    ) -> ConnectedRxProtocolStopped<'scratch> {
+        let shutdown = self.run_until(stop).await;
+        let (mpdu, ethernet) = self.into_scratch();
+        ConnectedRxProtocolStopped {
+            shutdown,
+            mpdu,
+            ethernet,
+        }
+    }
 }
 
 async fn dispatch_non_amsdu_segment<S: ConnectedRxProtocolSink>(
@@ -1008,7 +1043,9 @@ mod tests {
         });
         let mut mpdu = [0_u8; 64];
         let mut ethernet = [0_u8; 64];
-        let mut protocol = Esp32s31ConnectedRxProtocol::new(
+        let mpdu_ptr = mpdu.as_mut_ptr();
+        let ethernet_ptr = ethernet.as_mut_ptr();
+        let protocol = Esp32s31ConnectedRxProtocol::new(
             receiver,
             &irq,
             dispatcher,
@@ -1017,10 +1054,12 @@ mod tests {
             &mut ethernet,
         );
 
-        assert_eq!(
-            embassy_futures::block_on(protocol.run_until(ready(()))),
-            ConnectedRxProtocolShutdown::default()
-        );
-        assert_eq!(protocol.queue_len(), 0);
+        let stopped = embassy_futures::block_on(protocol.run_until_stopped(ready(())));
+        assert_eq!(stopped.shutdown(), ConnectedRxProtocolShutdown::default());
+        let (returned_mpdu, returned_ethernet) = stopped.into_scratch();
+        assert_eq!(returned_mpdu.as_mut_ptr(), mpdu_ptr);
+        assert_eq!(returned_mpdu.len(), 64);
+        assert_eq!(returned_ethernet.as_mut_ptr(), ethernet_ptr);
+        assert_eq!(returned_ethernet.len(), 64);
     }
 }

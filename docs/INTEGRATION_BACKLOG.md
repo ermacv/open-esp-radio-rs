@@ -264,7 +264,13 @@ The first reconnect seam is now production-owned:
   carries the same `RadioHilJoinRx` type state used by Association while
   retaining its staging pool, queue sender, reload delay and telemetry owner;
   the next connected epoch consumes both halves instead of rebuilding those
-  resources from globals.
+  resources from globals;
+- connected protocol shutdown now returns a typed stopped owner rather than
+  only diagnostic counters. The spawned protocol task releases its receiver,
+  sink and reorder bindings and returns the exact MPDU/Ethernet scratch
+  buffers before the connected runner publishes `RadioHilReconnectReady`;
+  that owner also retains the board fixture, target, persistent network,
+  cooperative hardware epoch, PMK/nonce and updated sequence counters.
 
 This is necessary but not yet a reconnect implementation. The next slices,
 in order, are:
@@ -283,13 +289,13 @@ of entering a second scan/join epoch. Network stack/report lifetime,
 per-epoch benchmark lifetime and connected static-resource lifetime are now
 separated correctly. The remaining incompatibility is earlier in the chain:
 the successful initial join/WPA2 chain preserves RX ownership, its finite
-backends accept both cold and cooperative hardware, and every returning error
-has a complete retry owner. Board orchestration still bundles the initial
-raw-register fixture and deliberately terminates the returned retry owner,
-however. It must next accept either the cold register owner or the cooperative
-owner returned by the previous connected epoch and drive a bounded second
-Association/WPA2 attempt. Therefore HIL cannot yet serve as evidence for
-reassociation.
+backends accept both cold and cooperative hardware, every returning error has
+a complete retry owner, and connected teardown now assembles one complete
+`RadioHilReconnectReady` frontier. Board Association orchestration still
+accepts only its initial raw-register fixture, however. It must next consume
+that frontier through a cold/cooperative hardware abstraction and drive a
+bounded second Association/WPA2 attempt. Therefore HIL cannot yet serve as
+evidence for reassociation.
 
 ## Completion gate
 

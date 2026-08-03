@@ -24,6 +24,10 @@ open-radio-hil = [
     "dep:open-esp-radio",
     "dep:open-esp-radio-esp32s31-wifi-esp-hal",
 ]
+# Diagnostic overlay for measuring continuous Embassy Future::poll
+# residence. Keep it out of ordinary throughput qualification because the
+# per-poll timer reads and atomics are intentionally observable overhead.
+task-poll-telemetry = []
 
 [dependencies]
 embassy-executor.workspace = true

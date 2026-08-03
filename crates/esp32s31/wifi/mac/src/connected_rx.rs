@@ -35,6 +35,8 @@ const DATA_TYPE: u16 = 0x0008;
 const PROTECTED: u16 = 0x4000;
 const RETRY: u16 = 0x0800;
 const QOS_SUBTYPE: u16 = 0x0080;
+const TO_FROM_DS: u16 = 0x0300;
+const QOS_AMSDU_PRESENT: u8 = 0x80;
 
 /// Immutable identity and descriptor-ingress policy for one connected STA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -195,6 +197,29 @@ impl ConnectedRxDispatcher {
         public_frame_control(segment.buffer).is_some_and(|frame_control| {
             frame_control & (DATA_TYPE_MASK | PROTECTED) == DATA_TYPE | PROTECTED
         })
+    }
+
+    /// Return whether a protected QoS data unit advertises A-MSDU payload.
+    ///
+    /// This immutable public-header check lets an async adapter select its
+    /// deferred multi-frame publication path without parsing/decrypting the
+    /// MPDU twice or mutating duplicate history. Malformed input may select
+    /// the conservative path and then be rejected by [`Self::dispatch`].
+    pub fn may_publish_amsdu(&self, segment: RxSegment<'_>) -> bool {
+        let raw = segment.buffer;
+        let Some(frame_control) = public_frame_control(raw) else {
+            return false;
+        };
+        if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE)
+            != DATA_TYPE | PROTECTED | QOS_SUBTYPE
+        {
+            return false;
+        }
+        // Four-address QoS moves the control field by one address slot.
+        let qos_control_offset =
+            PUBLIC_HEADER_SIZE + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
+        raw.get(qos_control_offset)
+            .is_some_and(|control| control & QOS_AMSDU_PRESENT != 0)
     }
 
     /// Consume one staged S31 frame and publish its connected-station effects.
@@ -517,6 +542,7 @@ mod tests {
         let mut sink = RecordingSink::default();
         let mut mpdu = [0_u8; 128];
         let mut ethernet = [0_u8; 128];
+        assert!(!dispatcher.may_publish_amsdu(segment(&storage, SIGNAL)));
         assert_eq!(
             dispatcher.dispatch(
                 segment(&storage, SIGNAL),
@@ -585,6 +611,7 @@ mod tests {
         let mut sink = RecordingSink::default();
         let mut mpdu = [0_u8; 128];
         let mut ethernet = [0_u8; 128];
+        assert!(!dispatcher.may_publish_amsdu(segment(&storage, SIGNAL)));
         assert_eq!(
             dispatcher.dispatch(
                 segment(&storage, SIGNAL),
@@ -613,6 +640,56 @@ mod tests {
             ),
             ConnectedRxDispatch::Duplicate
         );
+    }
+
+    #[test]
+    fn preflight_detects_amsdu_without_mutating_dispatch_state() {
+        const HEADER: usize = 26;
+        const FIRST_SUBFRAME: usize = 24;
+        const SECOND_SUBFRAME: usize = 25;
+        const MPDU: usize = HEADER + 8 + FIRST_SUBFRAME + SECOND_SUBFRAME + 8;
+        const SIGNAL: usize = MPDU + 4;
+        let mut storage = [0_u8; 192];
+        set_tail(&mut storage, SIGNAL);
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + MPDU];
+        frame[0] = 0x88;
+        frame[1] = 0x42;
+        frame[4..10].copy_from_slice(&STATION);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&SOURCE);
+        frame[22..24].copy_from_slice(&0x1230_u16.to_le_bytes());
+        frame[24] = 0x80;
+        frame[HEADER..HEADER + 8].copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        let mut offset = HEADER + 8;
+        frame[offset..offset + 6].copy_from_slice(&STATION);
+        frame[offset + 6..offset + 12].copy_from_slice(&SOURCE);
+        frame[offset + 12..offset + 14].copy_from_slice(&10_u16.to_be_bytes());
+        frame[offset + 14..offset + 22].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+        frame[offset + 22..offset + 24].copy_from_slice(&[1, 2]);
+        offset += FIRST_SUBFRAME;
+        frame[offset..offset + 6].copy_from_slice(&[0xff; 6]);
+        frame[offset + 6..offset + 12].copy_from_slice(&SOURCE);
+        frame[offset + 12..offset + 14].copy_from_slice(&11_u16.to_be_bytes());
+        frame[offset + 14..offset + 22].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
+        frame[offset + 22..offset + 25].copy_from_slice(&[3, 4, 5]);
+
+        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        let segment = segment(&storage, SIGNAL);
+        assert!(dispatcher.may_publish_amsdu(segment));
+        // Preflight is repeatable and does not claim duplicate history.
+        assert!(dispatcher.may_publish_amsdu(segment));
+
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+        assert_eq!(
+            dispatcher.dispatch(segment, &mut mpdu, &mut ethernet, &mut sink),
+            ConnectedRxDispatch::Data {
+                ethernet_frames: 2,
+                amsdu: true,
+            }
+        );
+        assert_eq!(sink.ethernet.len(), 2);
     }
 
     #[test]

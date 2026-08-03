@@ -281,6 +281,7 @@ const OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET: Duration = Duration::from_micros
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
 const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
     option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
+const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 // Every HE matrix owns a synthetic A-MPDU traffic source. Requiring a second
 // independent build flag previously allowed the matrix selector and its log
@@ -1069,10 +1070,154 @@ static OPEN_RADIO_BIDIRECTIONAL_TX_METADATA: StaticCell<
 static OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER: StaticCell<
     [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
 > = StaticCell::new();
-static OPEN_RADIO_BIDIRECTIONAL_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]> =
-    StaticCell::new();
 static OPEN_RADIO_LOCAL_IPV4: AtomicU32 = AtomicU32::new(0);
 static OPEN_RADIO_LAN_PROBE_RESPONSE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, Default)]
+struct OpenRadioTaskPollSnapshot {
+    polls: u32,
+    poll_micros: u32,
+    lifetime_max_micros: u32,
+    over_100_micros: u32,
+    over_500_micros: u32,
+    over_1_000_micros: u32,
+    over_5_000_micros: u32,
+}
+
+impl OpenRadioTaskPollSnapshot {
+    fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            polls: self.polls.wrapping_sub(earlier.polls),
+            poll_micros: self.poll_micros.wrapping_sub(earlier.poll_micros),
+            // A maximum is a lifetime observation, not an additive interval
+            // counter. Its name in the UART record makes that distinction
+            // explicit.
+            lifetime_max_micros: self.lifetime_max_micros,
+            over_100_micros: self.over_100_micros.wrapping_sub(earlier.over_100_micros),
+            over_500_micros: self.over_500_micros.wrapping_sub(earlier.over_500_micros),
+            over_1_000_micros: self
+                .over_1_000_micros
+                .wrapping_sub(earlier.over_1_000_micros),
+            over_5_000_micros: self
+                .over_5_000_micros
+                .wrapping_sub(earlier.over_5_000_micros),
+        }
+    }
+}
+
+struct OpenRadioTaskPollCounters {
+    polls: AtomicU32,
+    poll_micros: AtomicU32,
+    lifetime_max_micros: AtomicU32,
+    over_100_micros: AtomicU32,
+    over_500_micros: AtomicU32,
+    over_1_000_micros: AtomicU32,
+    over_5_000_micros: AtomicU32,
+}
+
+impl OpenRadioTaskPollCounters {
+    const fn new() -> Self {
+        Self {
+            polls: AtomicU32::new(0),
+            poll_micros: AtomicU32::new(0),
+            lifetime_max_micros: AtomicU32::new(0),
+            over_100_micros: AtomicU32::new(0),
+            over_500_micros: AtomicU32::new(0),
+            over_1_000_micros: AtomicU32::new(0),
+            over_5_000_micros: AtomicU32::new(0),
+        }
+    }
+
+    #[inline]
+    fn record(&self, elapsed_micros: u64) {
+        let elapsed_micros = elapsed_micros.min(u32::MAX.into()) as u32;
+        self.polls.fetch_add(1, Ordering::Relaxed);
+        self.poll_micros
+            .fetch_add(elapsed_micros, Ordering::Relaxed);
+        update_atomic_max(&self.lifetime_max_micros, elapsed_micros);
+        if elapsed_micros > 100 {
+            self.over_100_micros.fetch_add(1, Ordering::Relaxed);
+        }
+        if elapsed_micros > 500 {
+            self.over_500_micros.fetch_add(1, Ordering::Relaxed);
+        }
+        if elapsed_micros > 1_000 {
+            self.over_1_000_micros.fetch_add(1, Ordering::Relaxed);
+        }
+        if elapsed_micros > 5_000 {
+            self.over_5_000_micros.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self) -> OpenRadioTaskPollSnapshot {
+        OpenRadioTaskPollSnapshot {
+            polls: self.polls.load(Ordering::Relaxed),
+            poll_micros: self.poll_micros.load(Ordering::Relaxed),
+            lifetime_max_micros: self.lifetime_max_micros.load(Ordering::Relaxed),
+            over_100_micros: self.over_100_micros.load(Ordering::Relaxed),
+            over_500_micros: self.over_500_micros.load(Ordering::Relaxed),
+            over_1_000_micros: self.over_1_000_micros.load(Ordering::Relaxed),
+            over_5_000_micros: self.over_5_000_micros.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[inline]
+fn update_atomic_max(maximum: &AtomicU32, value: u32) {
+    let mut observed = maximum.load(Ordering::Relaxed);
+    while value > observed {
+        match maximum.compare_exchange_weak(
+            observed,
+            value,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(current) => observed = current,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct OpenRadioTaskPollSetSnapshot {
+    network: OpenRadioTaskPollSnapshot,
+    protocol: OpenRadioTaskPollSnapshot,
+    radio: OpenRadioTaskPollSnapshot,
+    benchmark: OpenRadioTaskPollSnapshot,
+}
+
+struct OpenRadioTaskPollSet {
+    network: OpenRadioTaskPollCounters,
+    protocol: OpenRadioTaskPollCounters,
+    radio: OpenRadioTaskPollCounters,
+    benchmark: OpenRadioTaskPollCounters,
+}
+
+impl OpenRadioTaskPollSet {
+    const fn new() -> Self {
+        Self {
+            network: OpenRadioTaskPollCounters::new(),
+            protocol: OpenRadioTaskPollCounters::new(),
+            radio: OpenRadioTaskPollCounters::new(),
+            benchmark: OpenRadioTaskPollCounters::new(),
+        }
+    }
+
+    fn snapshot(&self) -> OpenRadioTaskPollSetSnapshot {
+        OpenRadioTaskPollSetSnapshot {
+            network: self.network.snapshot(),
+            protocol: self.protocol.snapshot(),
+            radio: self.radio.snapshot(),
+            benchmark: self.benchmark.snapshot(),
+        }
+    }
+}
+
+// Poll telemetry is HIL-only and deliberately sits in internal SRAM. Reading
+// these counters once per completed traffic interval must not add PSRAM
+// traffic to the executor hot path being diagnosed.
+#[unsafe(link_section = ".critical.bss.open_radio_task_poll_telemetry")]
+static OPEN_RADIO_TASK_POLLS: OpenRadioTaskPollSet = OpenRadioTaskPollSet::new();
 
 const OPEN_RADIO_MAC_TX_IRQ_MASK: u32 =
     MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
@@ -3244,7 +3389,6 @@ async fn run_open_radio_udp_rx_benchmark(
         OPEN_RADIO_UDP_TX_METADATA.init([PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]);
     let tx_buffer = OPEN_RADIO_UDP_TX_BUFFER
         .init([0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
-    let packet = OPEN_RADIO_UDP_PACKET.init([0; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
     run_open_radio_udp_rx_benchmark_with_buffers(
         stack,
         association_phy,
@@ -3254,7 +3398,6 @@ async fn run_open_radio_udp_rx_benchmark(
         rx_buffer,
         tx_metadata,
         tx_buffer,
-        packet,
         OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH,
     )
     .await
@@ -3274,7 +3417,6 @@ async fn run_open_radio_bidirectional_rx_benchmark(
         .init([PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH]);
     let tx_buffer = OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER
         .init([0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
-    let packet = OPEN_RADIO_BIDIRECTIONAL_PACKET.init([0; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
     run_open_radio_udp_rx_benchmark_with_buffers(
         stack,
         association_phy,
@@ -3284,7 +3426,6 @@ async fn run_open_radio_bidirectional_rx_benchmark(
         rx_buffer,
         tx_metadata,
         tx_buffer,
-        packet,
         OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH,
     )
     .await
@@ -3299,7 +3440,6 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
     rx_buffer: &'static mut [u8],
     tx_metadata: &'static mut [PacketMetadata],
     tx_buffer: &'static mut [u8],
-    packet: &'static mut [u8],
     rx_queue_depth: usize,
 ) -> ! {
     let mut socket = UdpSocket::new(stack, rx_metadata, rx_buffer, tx_metadata, tx_buffer);
@@ -3325,11 +3465,16 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
 
     let mut last_radio_handoff = Instant::now();
     loop {
+        // Close the previous benchmark poll before taking interval baselines.
+        // In particular, synchronous UART evidence from a readiness probe
+        // must not be charged to the following sustained traffic interval.
+        yield_now().await;
         OPEN_RADIO_RX_LAST_UDP_FORMAT.store(u32::MAX, Ordering::Relaxed);
         OPEN_RADIO_RX_LAST_UDP_PHY.store(u32::MAX, Ordering::Relaxed);
         let hardware_start = registers.borrow().rx_statistics_snapshot().primary;
         let phy_start = OPEN_RADIO_RX_PHY_COUNTERS.snapshot();
         let pipeline_start = OPEN_RADIO_RX_PIPELINE_COUNTERS.snapshot();
+        let task_poll_start = OPEN_RADIO_TASK_POLLS.snapshot();
         let enqueue_start = OPEN_RADIO_RX_ENQUEUE_COUNTERS.snapshot();
         let reload_delay_start = OPEN_RADIO_RX_RELOAD_DELAYS.load(Ordering::Relaxed);
         let irq_start = OPEN_RADIO_IRQ_RUNTIME.rx_post_count();
@@ -3338,12 +3483,16 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_auxiliary_status_or();
         let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_unknown_status_or();
         let first_length = loop {
-            let received = socket.recv_from(packet).await;
+            // The benchmark only needs the datagram length and four-byte
+            // sequence. Consuming in the UDP ring avoids copying every full
+            // payload into a second PSRAM buffer merely to inspect those
+            // fields.
+            let received = socket
+                .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
+                .await;
             yield_to_pending_radio_rx(&mut last_radio_handoff).await;
-            let Ok((length, _)) = received else {
-                continue;
-            };
-            if iperf2_udp_sequence(&packet[..length]).is_some_and(|sequence| sequence < 0) {
+            let (length, sequence) = received;
+            if sequence.is_some_and(|sequence| sequence < 0) {
                 continue;
             }
             break length;
@@ -3354,15 +3503,19 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let mut last_packet = started;
         let mut bytes = first_length as u64;
         let mut datagrams = 1_u64;
-        let mut receive_errors = 0_u32;
+        let receive_errors = 0_u32;
         let mut terminal_seen = false;
 
         loop {
-            let received = with_timeout(OPEN_RADIO_UDP_RX_IDLE, socket.recv_from(packet)).await;
+            let received = with_timeout(
+                OPEN_RADIO_UDP_RX_IDLE,
+                socket.recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet))),
+            )
+            .await;
             yield_to_pending_radio_rx(&mut last_radio_handoff).await;
             match received {
-                Ok(Ok((length, _))) => {
-                    if iperf2_udp_sequence(&packet[..length]).is_some_and(|sequence| sequence < 0) {
+                Ok((length, sequence)) => {
+                    if sequence.is_some_and(|sequence| sequence < 0) {
                         terminal_seen = true;
                         break;
                     }
@@ -3370,7 +3523,6 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
                     datagrams = datagrams.saturating_add(1);
                     last_packet = Instant::now();
                 }
-                Ok(Err(_)) => receive_errors = receive_errors.saturating_add(1),
                 Err(_) => break,
             }
         }
@@ -3468,6 +3620,7 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             irq_auxiliary_status_or,
             irq_unknown_status_or,
         );
+        log_open_radio_task_poll_interval(task_poll_start);
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start);
         }
@@ -3571,6 +3724,65 @@ fn log_open_radio_rx_pipeline_interval(
     ));
 }
 
+fn log_open_radio_task_poll_interval(earlier: OpenRadioTaskPollSetSnapshot) {
+    if !OPEN_RADIO_TASK_POLL_TELEMETRY {
+        return;
+    }
+    let current = OPEN_RADIO_TASK_POLLS.snapshot();
+    log_open_radio_task_poll(
+        "network",
+        current.network.wrapping_delta_since(earlier.network),
+    );
+    log_open_radio_task_poll(
+        "protocol",
+        current.protocol.wrapping_delta_since(earlier.protocol),
+    );
+    log_open_radio_task_poll(
+        "radio",
+        current.radio.wrapping_delta_since(earlier.radio),
+    );
+    log_open_radio_task_poll(
+        "benchmark",
+        current.benchmark.wrapping_delta_since(earlier.benchmark),
+    );
+}
+
+fn log_open_radio_task_poll(task: &str, poll: OpenRadioTaskPollSnapshot) {
+    emergency_log(format_args!(
+        "ORTP task={task} polls={} poll_us={} poll_boot_max_us={} \
+         over_100us={} over_500us={} over_1000us={} over_5000us={}",
+        poll.polls,
+        poll.poll_micros,
+        poll.lifetime_max_micros,
+        poll.over_100_micros,
+        poll.over_500_micros,
+        poll.over_1_000_micros,
+        poll.over_5_000_micros,
+    ));
+}
+
+/// Observe continuous executor residence without changing the wrapped
+/// future's wake or pending semantics. Wall time includes interrupt
+/// preemption, which is intentional: a long task poll that blocks sibling
+/// Embassy work is harmful regardless of whether its body or an ISR consumed
+/// the interval.
+async fn observe_open_radio_task_polls<F: Future>(
+    future: F,
+    counters: &'static OpenRadioTaskPollCounters,
+) -> F::Output {
+    if !OPEN_RADIO_TASK_POLL_TELEMETRY {
+        return future.await;
+    }
+    let mut future = core::pin::pin!(future);
+    core::future::poll_fn(|context| {
+        let started = Instant::now();
+        let result = future.as_mut().poll(context);
+        counters.record(started.elapsed().as_micros());
+        result
+    })
+    .await
+}
+
 // These concrete wrappers belong to the HIL composition root. The reusable
 // driver crates expose owned runners but do not choose an executor, task
 // storage or benchmark policy. Keeping each long-running future in its own
@@ -3578,17 +3790,17 @@ fn log_open_radio_rx_pipeline_interval(
 // order that previously coupled stack, protocol and PAC progress.
 #[embassy_executor::task]
 async fn connected_network_stack_task(mut runner: ConnectedNetworkStackRunner) {
-    runner.run().await
+    observe_open_radio_task_polls(runner.run(), &OPEN_RADIO_TASK_POLLS.network).await
 }
 
 #[embassy_executor::task]
 async fn connected_rx_protocol_task(mut protocol: ConnectedRxProtocol) {
-    protocol.run().await
+    observe_open_radio_task_polls(protocol.run(), &OPEN_RADIO_TASK_POLLS.protocol).await
 }
 
 #[embassy_executor::task]
 async fn connected_radio_task(mut runner: ConnectedWifiRunner) {
-    match runner.run().await {
+    match observe_open_radio_task_polls(runner.run(), &OPEN_RADIO_TASK_POLLS.radio).await {
         Ok(()) => emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error=stopped"
         )),
@@ -3613,7 +3825,11 @@ async fn connected_benchmark_task(
     data_tx_rate: TxPhyRate,
     registers: &'static RefCell<&'static mut RadioRegisters>,
 ) {
-    run_open_radio_udp_benchmark(stack, association_phy, data_tx_rate, registers).await
+    observe_open_radio_task_polls(
+        run_open_radio_udp_benchmark(stack, association_phy, data_tx_rate, registers),
+        &OPEN_RADIO_TASK_POLLS.benchmark,
+    )
+    .await
 }
 
 async fn run_connected_network(

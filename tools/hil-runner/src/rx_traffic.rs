@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     Result,
-    bidirectional::qualify_rx_log,
+    bidirectional::{qualify_rx_log, task_poll_markdown},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
@@ -85,24 +85,29 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     fs::write(output.join("uart.log"), &log)?;
     let rx = qualify_rx_log(&log, options.expected_rx_format)?;
     let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
-    if host.throughput_bps() < minimum_bps {
-        return Err("host failed to offer at least 90% of the requested RX rate".into());
-    }
-    if rx.throughput_median_kbps < minimum_bps / 1_000 {
-        return Err(format!(
+    let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
+    let failure = if host.throughput_bps() < minimum_bps {
+        Some(String::from(
+            "host failed to offer at least 90% of the requested RX rate",
+        ))
+    } else if rx.throughput_median_kbps < minimum_bps / 1_000 {
+        Some(format!(
             "device RX {} kbit/s is below the acceptance floor",
             rx.throughput_median_kbps,
-        )
-        .into());
-    }
-    let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
-    if rx.received_datagrams < minimum_delivery {
-        return Err(format!(
+        ))
+    } else if rx.received_datagrams < minimum_delivery {
+        Some(format!(
             "device received only {}/{} host UDP datagrams; required at least {minimum_delivery}",
             rx.received_datagrams, host.datagrams,
-        )
-        .into());
-    }
+        ))
+    } else {
+        None
+    };
+    let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let failure_report = failure
+        .as_ref()
+        .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
@@ -113,11 +118,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         pipeline.network_ready_wait_us as f64 / pipeline.network_ready_waits.max(1) as f64;
     let average_irq_service_us =
         pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
+    let task_poll_report = task_poll_markdown(rx.task_polls);
     fs::write(
         output.join("report.md"),
         format!(
             "# Open-radio {} RX-only HIL\n\n\
-             - Result: `PASS`\n\
+             - Result: `{result}`\n\
+             {failure_report}\
              - Device: `{}`\n\
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
@@ -135,6 +142,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
+             {task_poll_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.to_uppercase(),
             options.address,
@@ -204,6 +212,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             pipeline.network_ready_wait_max_us,
         ),
     )?;
+    if let Some(failure) = failure {
+        return Err(failure.into());
+    }
     println!(
         "OPENRADIOHOST result=PASS mode={}-rx offered_kbps={} host_kbps={} \
          rx_median_kbps={} enqueued={} dropped=0 report={}",

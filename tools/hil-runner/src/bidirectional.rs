@@ -6,6 +6,7 @@
 //! successful host `send` alone is not evidence that the radio received it.
 
 use std::{
+    fmt::Write as _,
     fs,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::{Path, PathBuf},
@@ -242,6 +243,49 @@ pub(crate) struct RxQualification {
     pub(crate) other_phy_frames: u64,
     pub(crate) pipeline: RxPipelineEvidence,
     pub(crate) irq: MacIrqEvidence,
+    pub(crate) task_polls: TaskPollSet,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct TaskPollEvidence {
+    pub(crate) intervals: u64,
+    pub(crate) polls: u64,
+    pub(crate) poll_us: u64,
+    pub(crate) poll_boot_max_us: u64,
+    pub(crate) over_100us: u64,
+    pub(crate) over_500us: u64,
+    pub(crate) over_1000us: u64,
+    pub(crate) over_5000us: u64,
+}
+
+impl TaskPollEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.intervals = self.intervals.saturating_add(sample.intervals);
+        self.polls = self.polls.saturating_add(sample.polls);
+        self.poll_us = self.poll_us.saturating_add(sample.poll_us);
+        self.poll_boot_max_us = self.poll_boot_max_us.max(sample.poll_boot_max_us);
+        self.over_100us = self.over_100us.saturating_add(sample.over_100us);
+        self.over_500us = self.over_500us.saturating_add(sample.over_500us);
+        self.over_1000us = self.over_1000us.saturating_add(sample.over_1000us);
+        self.over_5000us = self.over_5000us.saturating_add(sample.over_5000us);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct TaskPollSet {
+    pub(crate) network: TaskPollEvidence,
+    pub(crate) protocol: TaskPollEvidence,
+    pub(crate) radio: TaskPollEvidence,
+    pub(crate) benchmark: TaskPollEvidence,
+}
+
+impl TaskPollSet {
+    fn is_complete(self) -> bool {
+        self.network.intervals != 0
+            && self.protocol.intervals != 0
+            && self.radio.intervals != 0
+            && self.benchmark.intervals != 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -475,6 +519,7 @@ struct DeviceReport {
     rx_dispatch: Vec<RxPipelineEvidence>,
     rx_frontier: Vec<RxPipelineEvidence>,
     mac_irq: Vec<MacIrqEvidence>,
+    task_polls: TaskPollSet,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
@@ -689,6 +734,11 @@ fn send_paced_udp(options: &Options) -> Result<HostTransmission> {
 
 fn parse_device_report(log: &str) -> DeviceReport {
     let mut report = DeviceReport::default();
+    // Every production RX sample is followed by its path, pipeline, IRQ, PHY
+    // and task-poll records. Readiness uses the same firmware endpoint and
+    // therefore emits short probe samples too; their health counters must not
+    // be merged into the sustained interval selected for qualification.
+    let mut include_rx_interval_evidence = false;
     for line in log.lines() {
         if line.contains("OAMP aggregates=") {
             if let (
@@ -800,7 +850,29 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 });
             }
         }
-        if line.starts_with("ORXS ") || line.contains(" ORXS ") {
+        if line.starts_with("ORTP ") || line.contains(" ORTP ") {
+            let sample = (|| {
+                Some(TaskPollEvidence {
+                    intervals: 1,
+                    polls: field(line, "polls")?,
+                    poll_us: field(line, "poll_us")?,
+                    poll_boot_max_us: field(line, "poll_boot_max_us")?,
+                    over_100us: field(line, "over_100us")?,
+                    over_500us: field(line, "over_500us")?,
+                    over_1000us: field(line, "over_1000us")?,
+                    over_5000us: field(line, "over_5000us")?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                match text_field(line, "task") {
+                    Some("network") => report.task_polls.network.merge(sample),
+                    Some("protocol") => report.task_polls.protocol.merge(sample),
+                    Some("radio") => report.task_polls.radio.merge(sample),
+                    Some("benchmark") => report.task_polls.benchmark.merge(sample),
+                    Some(_) | None => {}
+                }
+            }
+        } else if line.starts_with("ORXS ") || line.contains(" ORXS ") {
             let sample = (|| {
                 Some(RxPipelineEvidence {
                     service_calls: field(line, "calls")?,
@@ -822,7 +894,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     ..RxPipelineEvidence::default()
                 })
             })();
-            if let Some(sample) = sample {
+            if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_service.push(sample);
             }
         } else if line.starts_with("ORXD ") || line.contains(" ORXD ") {
@@ -842,7 +914,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     ..RxPipelineEvidence::default()
                 })
             })();
-            if let Some(sample) = sample {
+            if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_dispatch.push(sample);
             }
         } else if line.starts_with("ORXF ") || line.contains(" ORXF ") {
@@ -866,7 +938,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     ..RxPipelineEvidence::default()
                 })
             })();
-            if let Some(sample) = sample {
+            if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_frontier.push(sample);
             }
         } else if line.starts_with("ORXI ") || line.contains(" ORXI ") {
@@ -884,12 +956,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     unknown_status_or: field(line, "unknown_or")?,
                 })
             })();
-            if let Some(sample) = sample {
+            if include_rx_interval_evidence && let Some(sample) = sample {
                 report.mac_irq.push(sample);
             }
         } else if line.starts_with("ORXM ") || line.contains(" ORXM ") {
             let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
-            if histogram.iter().all(Option::is_some)
+            if include_rx_interval_evidence
+                && histogram.iter().all(Option::is_some)
                 && let Some(other) = field(line, "other")
             {
                 report
@@ -897,14 +970,17 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     .push((histogram.map(Option::unwrap), other));
             }
         } else if line.starts_with("ORX ") || line.contains(" ORX ") {
+            include_rx_interval_evidence = false;
             if let (Some(datagrams), Some(elapsed_us), Some(throughput_kbps)) =
                 (field(line, "d"), field(line, "u"), field(line, "k"))
             {
-                report.rx.push(ThroughputSample {
+                let sample = ThroughputSample {
                     datagrams,
                     elapsed_us,
                     throughput_kbps,
-                });
+                };
+                include_rx_interval_evidence = is_qualified_rx_sample(sample);
+                report.rx.push(sample);
             }
         } else if line.starts_with("OTX ") || line.contains(" OTX ") {
             if let (Some(throughput_kbps), Some(bandwidth_mhz), Some(rate_kbps)) =
@@ -920,49 +996,58 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 }
             }
         } else if line.starts_with("ORXP ") || line.contains(" ORXP ") {
-            if let Some(format) = field(line, "f") {
+            if include_rx_interval_evidence && let Some(format) = field(line, "f") {
                 report.rx_formats.push(format as u8);
             }
         } else if line.contains("result=BENCH") && line.contains("stage=udp-rx-direct") {
+            include_rx_interval_evidence = false;
             if let (Some(datagrams), Some(elapsed_us), Some(throughput_kbps)) = (
                 field(line, "datagrams"),
                 field(line, "elapsed_us"),
                 field(line, "throughput_kbps"),
             ) {
-                report.rx.push(ThroughputSample {
+                let sample = ThroughputSample {
                     datagrams,
                     elapsed_us,
                     throughput_kbps,
-                });
+                };
+                include_rx_interval_evidence = is_qualified_rx_sample(sample);
+                report.rx.push(sample);
             }
         } else if line.contains("result=BENCH") && has_token(line, "stage=udp-rx") {
+            include_rx_interval_evidence = false;
             if let (Some(datagrams), Some(elapsed_us), Some(throughput_kbps)) = (
                 field(line, "datagrams"),
                 field(line, "elapsed_us"),
                 field(line, "throughput_kbps"),
             ) {
-                report.rx.push(ThroughputSample {
+                let sample = ThroughputSample {
                     datagrams,
                     elapsed_us,
                     throughput_kbps,
-                });
+                };
+                include_rx_interval_evidence = is_qualified_rx_sample(sample);
+                report.rx.push(sample);
             }
             if let Some(address) = field(line, "code_address") {
                 report.code_addresses.push(address);
             }
         } else if line.contains("result=BENCH") && has_token(line, "stage=udp-rx-path") {
-            if let (Some(buffer_full), Some(fifo_overflow)) =
-                (field(line, "buffer_full"), field(line, "fifo_overflow"))
+            if include_rx_interval_evidence
+                && let (Some(buffer_full), Some(fifo_overflow)) =
+                    (field(line, "buffer_full"), field(line, "fifo_overflow"))
             {
                 report.dma_health.push((buffer_full, fifo_overflow));
             }
-            if let (Some(enqueued), Some(dropped)) =
-                (field(line, "enqueued"), field(line, "queue_dropped"))
+            if include_rx_interval_evidence
+                && let (Some(enqueued), Some(dropped)) =
+                    (field(line, "enqueued"), field(line, "queue_dropped"))
             {
                 report.software_health.push((enqueued, dropped));
             }
-            if let Some(format) =
-                field(line, "rx_format").filter(|format| *format <= u8::MAX.into())
+            if include_rx_interval_evidence
+                && let Some(format) =
+                    field(line, "rx_format").filter(|format| *format <= u8::MAX.into())
             {
                 report.rx_formats.push(format as u8);
             }
@@ -979,7 +1064,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 });
             }
         } else if line.contains("stage=udp-rx-phy") {
-            if let Some(format) = field(line, "rx_format") {
+            if include_rx_interval_evidence && let Some(format) = field(line, "rx_format") {
                 report.rx_formats.push(format as u8);
             }
         } else if line.contains("stage=rx-runtime-delta") {
@@ -996,6 +1081,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
         if line.contains("result=FAIL")
             && (line.contains("raw-mac")
                 || line.contains("embassy-net-radio")
+                || line.contains("rx-output-reservation")
                 || line.contains("mic-failure"))
         {
             report.failures.push(line.to_owned());
@@ -1011,8 +1097,21 @@ fn field(line: &str, key: &str) -> Option<u64> {
     })
 }
 
+fn text_field<'line>(line: &'line str, key: &str) -> Option<&'line str> {
+    line.split_whitespace().find_map(|token| {
+        let (candidate, value) = token.split_once('=')?;
+        (candidate == key).then(|| value.trim_end_matches(','))
+    })
+}
+
 fn has_token(line: &str, expected: &str) -> bool {
     line.split_whitespace().any(|token| token == expected)
+}
+
+fn is_qualified_rx_sample(sample: ThroughputSample) -> bool {
+    sample.elapsed_us >= MIN_QUALIFIED_SAMPLE.as_micros() as u64
+        && sample.throughput_kbps > 0
+        && sample.datagrams >= 16
 }
 
 fn qualified_rx_samples(report: &DeviceReport) -> Vec<ThroughputSample> {
@@ -1020,11 +1119,7 @@ fn qualified_rx_samples(report: &DeviceReport) -> Vec<ThroughputSample> {
         .rx
         .iter()
         .copied()
-        .filter(|sample| {
-            sample.elapsed_us >= MIN_QUALIFIED_SAMPLE.as_micros() as u64
-                && sample.throughput_kbps > 0
-                && sample.datagrams >= 16
-        })
+        .filter(|sample| is_qualified_rx_sample(*sample))
         .collect()
 }
 
@@ -1231,6 +1326,7 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         other_phy_frames,
         pipeline,
         irq,
+        task_polls: report.task_polls,
     })
 }
 
@@ -1298,6 +1394,45 @@ fn median(mut values: Vec<u64>) -> Option<u64> {
     }
 }
 
+pub(crate) fn task_poll_markdown(task_polls: TaskPollSet) -> String {
+    if !task_polls.is_complete() {
+        return String::from(
+            "## Embassy task poll residence\n\n\
+             Not collected in the ordinary throughput image. Use the explicit \
+             `radio-poll-profile` HIL scenario for diagnostic instrumentation.\n\n",
+        );
+    }
+    let mut output = String::from(
+        "## Embassy task poll residence\n\n\
+         Wall time includes interrupt preemption. Counters are diagnostic HIL instrumentation, \
+         not a production scheduling policy.\n\n",
+    );
+    for (name, evidence) in [
+        ("network", task_polls.network),
+        ("protocol", task_polls.protocol),
+        ("radio", task_polls.radio),
+        ("benchmark", task_polls.benchmark),
+    ] {
+        let average_us = evidence.poll_us as f64 / evidence.polls.max(1) as f64;
+        writeln!(
+            output,
+            "- `{name}`: {} polls / {} us total / {average_us:.2} us average / {} us boot \
+             maximum; >100/500/1000/5000 us: {}/{}/{}/{} ({} interval records)",
+            evidence.polls,
+            evidence.poll_us,
+            evidence.poll_boot_max_us,
+            evidence.over_100us,
+            evidence.over_500us,
+            evidence.over_1000us,
+            evidence.over_5000us,
+            evidence.intervals,
+        )
+        .expect("writing task-poll evidence to String cannot fail");
+    }
+    output.push('\n');
+    output
+}
+
 fn write_report(
     output: &Path,
     options: &Options,
@@ -1326,6 +1461,7 @@ fn write_report(
         .saturating_add(ampdu.timeout)
         .saturating_add(ampdu.collision);
     let average_exchange_us = ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64;
+    let task_poll_report = task_poll_markdown(rx.task_polls);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1351,6 +1487,7 @@ fn write_report(
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
+             {task_poll_report}\
              ## A-MPDU evidence\n\n\
              - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
              - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
@@ -1490,6 +1627,27 @@ mod tests {
     }
 
     #[test]
+    fn excludes_readiness_probe_health_from_sustained_rx_evidence() {
+        let report = parse_device_report(
+            "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=64 datagrams=1 elapsed_us=1 throughput_kbps=512000 code_address=1342257664\n\
+             OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=54 queue_dropped=1 rx_format=4\n\
+             ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
+             ORTP task=network polls=2 poll_us=1626 poll_boot_max_us=1582 over_100us=1 over_500us=1 over_1000us=1 over_5000us=0\n\
+             OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 code_address=1342257664\n\
+             OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
+        );
+
+        assert_eq!(report.software_health, [(5_000, 0)]);
+        assert_eq!(report.dma_health, [(0, 0)]);
+        assert_eq!(report.rx_service.len(), 1);
+        assert_eq!(report.rx_service[0].service_calls, 5_000);
+        assert_eq!(report.task_polls.network.intervals, 1);
+        assert_eq!(report.task_polls.network.polls, 5_100);
+    }
+
+    #[test]
     fn qualifies_complete_he20_evidence() {
         let report = parse_device_report(
             "OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
@@ -1502,6 +1660,10 @@ mod tests {
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
+             ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=benchmark polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
         let options = parse_options(&["192.168.178.141".into()]).unwrap();
@@ -1529,6 +1691,10 @@ mod tests {
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
+             ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=benchmark polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
@@ -1555,6 +1721,9 @@ mod tests {
         assert_eq!(rx.irq.classified_entries(), 5_000);
         assert_eq!(rx.irq.auxiliary_status_or, 0x0100_0020);
         assert_eq!(rx.irq.unknown_status_or, 0);
+        assert_eq!(rx.task_polls.network.polls, 5_100);
+        assert_eq!(rx.task_polls.radio.poll_us, 390_000);
+        assert_eq!(rx.task_polls.radio.over_100us, 20);
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);

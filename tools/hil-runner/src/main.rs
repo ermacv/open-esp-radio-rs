@@ -11,6 +11,7 @@ use std::{
 };
 
 mod bidirectional;
+mod paced_udp;
 mod rx_traffic;
 mod traffic_capture;
 mod trigger;

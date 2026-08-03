@@ -3164,6 +3164,72 @@ fn iperf2_udp_sequence(packet: &[u8]) -> Option<i32> {
     Some(i32::from_be_bytes(encoded))
 }
 
+#[derive(Default)]
+struct OpenRadioUdpSequenceEvidence {
+    first: Option<u32>,
+    highest: u32,
+    expected: u32,
+    gap_events: u32,
+    forward_missing: u32,
+    maximum_gap: u32,
+    maximum_gap_at: Option<u32>,
+    first_gap_at: Option<u32>,
+    last_gap_at: Option<u32>,
+    backward: u32,
+    adjacent_duplicates: u32,
+    unsequenced: u32,
+    maximum_interarrival_micros: u32,
+    maximum_interarrival_at: Option<u32>,
+}
+
+impl OpenRadioUdpSequenceEvidence {
+    fn observe(&mut self, sequence: Option<i32>) {
+        let Some(sequence) = sequence.filter(|sequence| *sequence >= 0).map(|value| value as u32)
+        else {
+            self.unsequenced = self.unsequenced.saturating_add(1);
+            return;
+        };
+        let Some(_) = self.first else {
+            self.first = Some(sequence);
+            self.highest = sequence;
+            self.expected = sequence.saturating_add(1);
+            return;
+        };
+        if sequence == self.expected {
+            self.highest = sequence;
+            self.expected = sequence.saturating_add(1);
+        } else if sequence > self.expected {
+            let gap = sequence - self.expected;
+            self.gap_events = self.gap_events.saturating_add(1);
+            self.forward_missing = self.forward_missing.saturating_add(gap);
+            if gap > self.maximum_gap {
+                self.maximum_gap = gap;
+                self.maximum_gap_at = Some(sequence);
+            }
+            self.first_gap_at.get_or_insert(sequence);
+            self.last_gap_at = Some(sequence);
+            self.highest = sequence;
+            self.expected = sequence.saturating_add(1);
+        } else if sequence.saturating_add(1) == self.expected {
+            self.adjacent_duplicates = self.adjacent_duplicates.saturating_add(1);
+        } else {
+            self.backward = self.backward.saturating_add(1);
+        }
+    }
+
+    fn observe_interarrival(&mut self, sequence: Option<i32>, elapsed_micros: u64) {
+        let Some(sequence) = sequence.filter(|sequence| *sequence >= 0).map(|value| value as u32)
+        else {
+            return;
+        };
+        let elapsed_micros = elapsed_micros.min(u64::from(u32::MAX)) as u32;
+        if elapsed_micros > self.maximum_interarrival_micros {
+            self.maximum_interarrival_micros = elapsed_micros;
+            self.maximum_interarrival_at = Some(sequence);
+        }
+    }
+}
+
 async fn run_open_radio_udp_benchmark(
     stack: Stack<'static>,
     association_phy: StaAssociationPhy,
@@ -3482,7 +3548,7 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let irq_classification_start = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.snapshot();
         let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_auxiliary_status_or();
         let _ = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.take_unknown_status_or();
-        let first_length = loop {
+        let (first_length, first_sequence) = loop {
             // The benchmark only needs the datagram length and four-byte
             // sequence. Consuming in the UDP ring avoids copying every full
             // payload into a second PSRAM buffer merely to inspect those
@@ -3495,7 +3561,7 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             if sequence.is_some_and(|sequence| sequence < 0) {
                 continue;
             }
-            break length;
+            break (length, sequence);
         };
         let aggregate_start = OPEN_RADIO_BIDIRECTIONAL_BENCH
             .then(|| OPEN_RADIO_TX_AGGREGATE_COUNTERS.snapshot());
@@ -3505,6 +3571,8 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let mut datagrams = 1_u64;
         let receive_errors = 0_u32;
         let mut terminal_seen = false;
+        let mut sequence_evidence = OpenRadioUdpSequenceEvidence::default();
+        sequence_evidence.observe(first_sequence);
 
         loop {
             let received = with_timeout(
@@ -3519,9 +3587,15 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
                         terminal_seen = true;
                         break;
                     }
+                    let received_at = Instant::now();
+                    sequence_evidence.observe(sequence);
+                    sequence_evidence.observe_interarrival(
+                        sequence,
+                        received_at.duration_since(last_packet).as_micros(),
+                    );
                     bytes = bytes.saturating_add(length as u64);
                     datagrams = datagrams.saturating_add(1);
-                    last_packet = Instant::now();
+                    last_packet = received_at;
                 }
                 Err(_) => break,
             }
@@ -3597,6 +3671,28 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             hardware_delta.fifo_overflow,
         ));
         emergency_log(format_args!(
+            "ORXQ first={} highest={} next={} gap_events={} forward_missing={} \
+             maximum_gap={} maximum_gap_at={} first_gap_at={} last_gap_at={} backward={} \
+             adjacent_duplicates={} unsequenced={} maximum_interarrival_us={} \
+             maximum_interarrival_at={}",
+            sequence_evidence.first.unwrap_or(u32::MAX),
+            sequence_evidence.first.map(|_| sequence_evidence.highest).unwrap_or(u32::MAX),
+            sequence_evidence.first.map(|_| sequence_evidence.expected).unwrap_or(u32::MAX),
+            sequence_evidence.gap_events,
+            sequence_evidence.forward_missing,
+            sequence_evidence.maximum_gap,
+            sequence_evidence.maximum_gap_at.unwrap_or(u32::MAX),
+            sequence_evidence.first_gap_at.unwrap_or(u32::MAX),
+            sequence_evidence.last_gap_at.unwrap_or(u32::MAX),
+            sequence_evidence.backward,
+            sequence_evidence.adjacent_duplicates,
+            sequence_evidence.unsequenced,
+            sequence_evidence.maximum_interarrival_micros,
+            sequence_evidence
+                .maximum_interarrival_at
+                .unwrap_or(u32::MAX),
+        ));
+        emergency_log(format_args!(
             "ORXM m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} m8={} \
              m9={} m10={} m11={} other={rx_other_phy}",
             rx_mcs_histogram[0],
@@ -3624,6 +3720,11 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start);
         }
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-rx-interval-complete \
+             datagrams={datagrams} terminal={}",
+            u8::from(terminal_seen),
+        ));
     }
 }
 

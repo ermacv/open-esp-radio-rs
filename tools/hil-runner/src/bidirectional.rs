@@ -8,14 +8,15 @@
 use std::{
     fmt::Write as _,
     fs,
-    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use crate::{
     Result,
+    paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
@@ -244,6 +245,67 @@ pub(crate) struct RxQualification {
     pub(crate) pipeline: RxPipelineEvidence,
     pub(crate) irq: MacIrqEvidence,
     pub(crate) task_polls: TaskPollSet,
+    pub(crate) sequence: UdpSequenceEvidence,
+    pub(crate) buffer_full: u64,
+    pub(crate) fifo_overflow: u64,
+}
+
+pub(crate) struct RxAssessment {
+    pub(crate) rx: RxQualification,
+    pub(crate) failure: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct UdpSequenceEvidence {
+    pub(crate) intervals: u64,
+    pub(crate) first: Option<u64>,
+    pub(crate) highest: Option<u64>,
+    pub(crate) next: Option<u64>,
+    pub(crate) gap_events: u64,
+    pub(crate) forward_missing: u64,
+    pub(crate) maximum_gap: u64,
+    pub(crate) maximum_gap_at: Option<u64>,
+    pub(crate) first_gap_at: Option<u64>,
+    pub(crate) last_gap_at: Option<u64>,
+    pub(crate) backward: u64,
+    pub(crate) adjacent_duplicates: u64,
+    pub(crate) unsequenced: u64,
+    pub(crate) maximum_interarrival_us: u64,
+    pub(crate) maximum_interarrival_at: Option<u64>,
+}
+
+impl UdpSequenceEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.intervals = self.intervals.saturating_add(sample.intervals);
+        if self.first.is_none() {
+            self.first = sample.first;
+        }
+        self.highest = self.highest.max(sample.highest);
+        self.next = self.next.max(sample.next);
+        self.gap_events = self.gap_events.saturating_add(sample.gap_events);
+        self.forward_missing = self.forward_missing.saturating_add(sample.forward_missing);
+        if sample.maximum_gap > self.maximum_gap {
+            self.maximum_gap = sample.maximum_gap;
+            self.maximum_gap_at = sample.maximum_gap_at;
+        }
+        if self.first_gap_at.is_none() {
+            self.first_gap_at = sample.first_gap_at;
+        }
+        if sample.last_gap_at.is_some() {
+            self.last_gap_at = sample.last_gap_at;
+        }
+        self.backward = self.backward.saturating_add(sample.backward);
+        self.adjacent_duplicates = self
+            .adjacent_duplicates
+            .saturating_add(sample.adjacent_duplicates);
+        self.unsequenced = self.unsequenced.saturating_add(sample.unsequenced);
+        if sample.maximum_interarrival_us >= self.maximum_interarrival_us
+            && sample.maximum_interarrival_at.is_some()
+        {
+            self.maximum_interarrival_us = sample.maximum_interarrival_us;
+            self.maximum_interarrival_at = sample.maximum_interarrival_at;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -520,32 +582,12 @@ struct DeviceReport {
     rx_frontier: Vec<RxPipelineEvidence>,
     mac_irq: Vec<MacIrqEvidence>,
     task_polls: TaskPollSet,
+    rx_sequences: Vec<UdpSequenceEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
     code_addresses: Vec<u64>,
     failures: Vec<String>,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct HostTransmission {
-    bytes: u64,
-    datagrams: u64,
-    elapsed: Duration,
-}
-
-impl HostTransmission {
-    fn throughput_bps(self) -> u64 {
-        self.bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000_000)
-            .checked_div(
-                u64::try_from(self.elapsed.as_micros())
-                    .unwrap_or(u64::MAX)
-                    .max(1),
-            )
-            .unwrap_or(0)
-    }
 }
 
 pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
@@ -574,7 +616,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         }
     };
     options.address = discovered_address;
-    let host = send_paced_udp(&options)?;
+    let host = send_paced_udp(PacedUdpConfig {
+        address: options.address,
+        port: options.port,
+        rate_bps: options.rate_bps,
+        duration: options.duration,
+        payload: options.payload,
+    })?;
     // The direct RX sample closes on the terminal datagram. Leave time for
     // the ten-second DMA-health interval and the bounded USB logger backlog.
     thread::sleep(Duration::from_secs(5));
@@ -690,46 +738,6 @@ fn parse_rate(value: &str) -> Result<u64> {
         return Err("--rate must be in 100K..=500M".into());
     }
     Ok(rate)
-}
-
-fn send_paced_udp(options: &Options) -> Result<HostTransmission> {
-    let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
-    socket.connect(SocketAddrV4::new(options.address, options.port))?;
-    socket.set_write_timeout(Some(Duration::from_secs(2)))?;
-    let mut packet = vec![0x5a; options.payload];
-    let interval = Duration::from_nanos(
-        u64::try_from((options.payload as u128 * 8 * 1_000_000_000) / options.rate_bps as u128)?
-            .max(1),
-    );
-    let started = Instant::now();
-    let deadline = started + options.duration;
-    let mut next = started;
-    let mut bytes = 0_u64;
-    let mut datagrams = 0_u64;
-    while Instant::now() < deadline {
-        let now = Instant::now();
-        if now < next {
-            thread::sleep(next.duration_since(now));
-        } else if now.duration_since(next) > Duration::from_millis(20) {
-            next = now;
-        }
-        packet[..4].copy_from_slice(&i32::try_from(datagrams & i32::MAX as u64)?.to_be_bytes());
-        let length = socket.send(&packet)?;
-        if length != packet.len() {
-            return Err(format!("short UDP send: {length}/{}", packet.len()).into());
-        }
-        bytes = bytes.saturating_add(length as u64);
-        datagrams = datagrams.saturating_add(1);
-        next += interval;
-    }
-    let elapsed = started.elapsed();
-    packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
-    let _ = socket.send(&packet);
-    Ok(HostTransmission {
-        bytes,
-        datagrams,
-        elapsed,
-    })
 }
 
 fn parse_device_report(log: &str) -> DeviceReport {
@@ -850,7 +858,33 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 });
             }
         }
-        if line.starts_with("ORTP ") || line.contains(" ORTP ") {
+        if line.starts_with("ORXQ ") || line.contains(" ORXQ ") {
+            let sample = (|| {
+                Some(UdpSequenceEvidence {
+                    intervals: 1,
+                    first: optional_sequence_field(line, "first")?,
+                    highest: optional_sequence_field(line, "highest")?,
+                    next: optional_sequence_field(line, "next")?,
+                    gap_events: field(line, "gap_events")?,
+                    forward_missing: field(line, "forward_missing")?,
+                    maximum_gap: field(line, "maximum_gap")?,
+                    maximum_gap_at: optional_sequence_field(line, "maximum_gap_at")?,
+                    first_gap_at: optional_sequence_field(line, "first_gap_at")?,
+                    last_gap_at: optional_sequence_field(line, "last_gap_at")?,
+                    backward: field(line, "backward")?,
+                    adjacent_duplicates: field(line, "adjacent_duplicates")?,
+                    unsequenced: field(line, "unsequenced")?,
+                    maximum_interarrival_us: field(line, "maximum_interarrival_us")?,
+                    maximum_interarrival_at: optional_sequence_field(
+                        line,
+                        "maximum_interarrival_at",
+                    )?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_sequences.push(sample);
+            }
+        } else if line.starts_with("ORTP ") || line.contains(" ORTP ") {
             let sample = (|| {
                 Some(TaskPollEvidence {
                     intervals: 1,
@@ -1097,6 +1131,11 @@ fn field(line: &str, key: &str) -> Option<u64> {
     })
 }
 
+fn optional_sequence_field(line: &str, key: &str) -> Option<Option<u64>> {
+    let value = field(line, key)?;
+    Some((value != u64::from(u32::MAX)).then_some(value))
+}
+
 fn text_field<'line>(line: &'line str, key: &str) -> Option<&'line str> {
     line.split_whitespace().find_map(|token| {
         let (candidate, value) = token.split_once('=')?;
@@ -1208,29 +1247,13 @@ fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
     Ok(ampdu)
 }
 
-fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQualification> {
+fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQualification> {
     qualify_runtime_marker(report)?;
     if report.dma_health.is_empty() {
         return Err("missing RX DMA-health interval".into());
     }
-    if let Some((full, overflow)) = report
-        .dma_health
-        .iter()
-        .find(|(full, overflow)| *full != 0 || *overflow != 0)
-    {
-        return Err(
-            format!("RX DMA starvation: buffer_full={full} fifo_overflow={overflow}").into(),
-        );
-    }
     if report.software_health.is_empty() {
         return Err("missing RX software-queue health interval".into());
-    }
-    if let Some((_, dropped)) = report
-        .software_health
-        .iter()
-        .find(|(_, dropped)| *dropped != 0)
-    {
-        return Err(format!("RX software queue dropped {dropped} frames").into());
     }
     let rx = qualified_rx_samples(report);
     if rx.is_empty() {
@@ -1244,14 +1267,19 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
     {
         return Err(format!("RX did not remain in baseband format {expected_format}").into());
     }
-    if let Some(failure) = report.failures.first() {
-        return Err(format!("device reported a data-path failure: {failure}").into());
-    }
     if report.rx_service.is_empty()
         || report.rx_dispatch.is_empty()
         || report.rx_frontier.is_empty()
     {
         return Err("missing RX pipeline phase telemetry".into());
+    }
+    if report.rx_sequences.len() != rx.len() {
+        return Err(format!(
+            "incomplete UDP sequence evidence: records={} qualified_samples={}",
+            report.rx_sequences.len(),
+            rx.len(),
+        )
+        .into());
     }
     if report.mac_irq.is_empty() {
         return Err("missing MAC interrupt classification telemetry".into());
@@ -1277,20 +1305,6 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         )
         .into());
     }
-    if irq.saturated_entries != 0 {
-        return Err(format!(
-            "MAC interrupt acknowledgement loop saturated {} times",
-            irq.saturated_entries,
-        )
-        .into());
-    }
-    if irq.unknown_status_or != 0 {
-        return Err(format!(
-            "MAC interrupt STATUS contains unqualified bits 0x{:08x}",
-            irq.unknown_status_or,
-        )
-        .into());
-    }
     if pipeline.frontier_histogram_total() != pipeline.service_calls {
         return Err(format!(
             "incomplete RX frontier histogram: buckets={} services={}",
@@ -1306,6 +1320,10 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
             *total = total.saturating_add(*sample);
         }
         other_phy_frames = other_phy_frames.saturating_add(*other);
+    }
+    let mut sequence = UdpSequenceEvidence::default();
+    for sample in &report.rx_sequences {
+        sequence.merge(*sample);
     }
     Ok(RxQualification {
         throughput_median_kbps: median(rx.iter().map(|sample| sample.throughput_kbps).collect())
@@ -1327,11 +1345,62 @@ fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         pipeline,
         irq,
         task_polls: report.task_polls,
+        sequence,
+        buffer_full: report.dma_health.iter().map(|(full, _)| *full).sum(),
+        fifo_overflow: report
+            .dma_health
+            .iter()
+            .map(|(_, overflow)| *overflow)
+            .sum(),
     })
 }
 
-pub(crate) fn qualify_rx_log(log: &str, expected_format: u8) -> Result<RxQualification> {
-    qualify_rx_report(&parse_device_report(log), expected_format)
+fn rx_policy_failure(report: &DeviceReport, rx: &RxQualification) -> Option<String> {
+    if rx.buffer_full != 0 || rx.fifo_overflow != 0 {
+        return Some(format!(
+            "RX DMA starvation: buffer_full={} fifo_overflow={}",
+            rx.buffer_full, rx.fifo_overflow,
+        ));
+    }
+    if rx.dropped != 0 {
+        return Some(format!("RX software queue dropped {} frames", rx.dropped));
+    }
+    if let Some(failure) = report.failures.first() {
+        return Some(format!("device reported a data-path failure: {failure}"));
+    }
+    if rx.irq.saturated_entries != 0 {
+        return Some(format!(
+            "MAC interrupt acknowledgement loop saturated {} times",
+            rx.irq.saturated_entries,
+        ));
+    }
+    if rx.irq.unknown_status_or != 0 {
+        return Some(format!(
+            "MAC interrupt STATUS contains unqualified bits 0x{:08x}",
+            rx.irq.unknown_status_or,
+        ));
+    }
+    None
+}
+
+fn assess_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxAssessment> {
+    let rx = observe_rx_report(report, expected_format)?;
+    Ok(RxAssessment {
+        failure: rx_policy_failure(report, &rx),
+        rx,
+    })
+}
+
+fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQualification> {
+    let assessment = assess_rx_report(report, expected_format)?;
+    if let Some(failure) = assessment.failure {
+        return Err(failure.into());
+    }
+    Ok(assessment.rx)
+}
+
+pub(crate) fn assess_rx_log(log: &str, expected_format: u8) -> Result<RxAssessment> {
+    assess_rx_report(&parse_device_report(log), expected_format)
 }
 
 pub(crate) fn qualify_tx_log(
@@ -1433,6 +1502,43 @@ pub(crate) fn task_poll_markdown(task_polls: TaskPollSet) -> String {
     output
 }
 
+pub(crate) fn udp_sequence_markdown(sequence: UdpSequenceEvidence, host_datagrams: u64) -> String {
+    let value = |value: Option<u64>| {
+        value
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| String::from("not-observed"))
+    };
+    let tail_missing = sequence
+        .highest
+        .map(|highest| host_datagrams.saturating_sub(highest.saturating_add(1)))
+        .unwrap_or(host_datagrams);
+    let unrecovered_forward = sequence.forward_missing.saturating_sub(sequence.backward);
+    format!(
+        "## UDP sequence evidence\n\n\
+         - Interval records: `{}`; first/highest/next sequence: `{}` / `{}` / `{}`; host tail after highest: `{tail_missing}`\n\
+         - Forward gap events/missing observations/unrecovered after backward arrivals: `{}` / `{}` / `{unrecovered_forward}`\n\
+         - Maximum gap/sequence after it: `{}` / `{}`; first/last sequence after a gap: `{}` / `{}`\n\
+         - Backward observations/adjacent duplicates/unsequenced datagrams: `{}` / `{}` / `{}`\n\
+         - Maximum application interarrival/sequence: `{} us` / `{}`\n\
+         - Forward-missing observations are not reduced by later backward arrivals; the two counters remain separate so reordering is not mislabeled as loss.\n\n",
+        sequence.intervals,
+        value(sequence.first),
+        value(sequence.highest),
+        value(sequence.next),
+        sequence.gap_events,
+        sequence.forward_missing,
+        sequence.maximum_gap,
+        value(sequence.maximum_gap_at),
+        value(sequence.first_gap_at),
+        value(sequence.last_gap_at),
+        sequence.backward,
+        sequence.adjacent_duplicates,
+        sequence.unsequenced,
+        sequence.maximum_interarrival_us,
+        value(sequence.maximum_interarrival_at),
+    )
+}
+
 fn write_report(
     output: &Path,
     options: &Options,
@@ -1462,6 +1568,7 @@ fn write_report(
         .saturating_add(ampdu.collision);
     let average_exchange_us = ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
+    let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1471,10 +1578,12 @@ fn write_report(
              - Requested downlink: `{:.3} Mbit/s`\n\
              - Actual host offer: `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
+             - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
             - Direct RX median: `{:.3} Mbit/s`\n\
              - Received host UDP datagrams: `{}` / `{}`\n\
             - Concurrent open-radio TX floor: `{:.3} Mbit/s`\n\
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
+             {udp_sequence_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
@@ -1509,6 +1618,9 @@ fn write_report(
             host.throughput_bps() as f64 / 1_000_000.0,
             host.bytes,
             host.datagrams,
+            host.maximum_lateness_us(),
+            host.maximum_catch_up_datagrams,
+            host.deadline_resets,
             rx_median as f64 / 1_000.0,
             rx.received_datagrams,
             host.datagrams,
@@ -1631,10 +1743,12 @@ mod tests {
         let report = parse_device_report(
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=64 datagrams=1 elapsed_us=1 throughput_kbps=512000 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=54 queue_dropped=1 rx_format=4\n\
+             ORXQ first=0 highest=0 next=1 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=0 maximum_interarrival_at=4294967295\n\
              ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
              ORTP task=network polls=2 poll_us=1626 poll_boot_max_us=1582 over_100us=1 over_500us=1 over_1000us=1 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n\
+             ORXQ first=0 highest=4999 next=5000 gap_events=2 forward_missing=3 maximum_gap=2 maximum_gap_at=100 first_gap_at=100 last_gap_at=3000 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=250 maximum_interarrival_at=100\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
         );
@@ -1645,6 +1759,8 @@ mod tests {
         assert_eq!(report.rx_service[0].service_calls, 5_000);
         assert_eq!(report.task_polls.network.intervals, 1);
         assert_eq!(report.task_polls.network.polls, 5_100);
+        assert_eq!(report.rx_sequences.len(), 1);
+        assert_eq!(report.rx_sequences[0].forward_missing, 3);
     }
 
     #[test]
@@ -1656,6 +1772,7 @@ mod tests {
              OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240\n\
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
+             ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
@@ -1671,6 +1788,9 @@ mod tests {
             bytes: 6_250_000,
             datagrams: 5_000,
             elapsed: Duration::from_secs(5),
+            maximum_lateness: Duration::from_micros(20),
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
         };
         qualify(&options, host, &report).unwrap();
         let ampdu = AmpduEvidence::from_report(&report);
@@ -1683,9 +1803,10 @@ mod tests {
 
     #[test]
     fn parses_current_production_rx_benchmark_evidence() {
-        let report = parse_device_report(
+        let mut report = parse_device_report(
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 receive_errors=0 terminal=1\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path mpdu=5000 data_success=5000 fcs_error=0 buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_irqs=5000 reload_delays=0 rx_format=4\n\
+             ORXQ first=0 highest=4999 next=5000 gap_events=2 forward_missing=4 maximum_gap=3 maximum_gap_at=100 first_gap_at=100 last_gap_at=4000 backward=1 adjacent_duplicates=2 unsequenced=0 maximum_interarrival_us=300 maximum_interarrival_at=4000\n\
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
@@ -1724,8 +1845,25 @@ mod tests {
         assert_eq!(rx.task_polls.network.polls, 5_100);
         assert_eq!(rx.task_polls.radio.poll_us, 390_000);
         assert_eq!(rx.task_polls.radio.over_100us, 20);
+        assert_eq!(rx.sequence.first, Some(0));
+        assert_eq!(rx.sequence.highest, Some(4_999));
+        assert_eq!(rx.sequence.forward_missing, 4);
+        assert_eq!(rx.sequence.maximum_gap_at, Some(100));
+        assert_eq!(rx.sequence.backward, 1);
+        assert_eq!(rx.sequence.adjacent_duplicates, 2);
+        assert_eq!(rx.sequence.maximum_interarrival_us, 300);
+        assert_eq!(rx.sequence.maximum_interarrival_at, Some(4_000));
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);
+
+        report.dma_health[0] = (2, 0);
+        let assessment = assess_rx_report(&report, 4).unwrap();
+        assert_eq!(assessment.rx.buffer_full, 2);
+        assert_eq!(assessment.rx.sequence.forward_missing, 4);
+        assert_eq!(
+            assessment.failure.as_deref(),
+            Some("RX DMA starvation: buffer_full=2 fifo_overflow=0")
+        );
     }
 }

@@ -2,15 +2,16 @@
 
 use std::{
     fs,
-    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use crate::{
     Result,
-    bidirectional::{qualify_rx_log, task_poll_markdown},
+    bidirectional::{assess_rx_log, task_poll_markdown, udp_sequence_markdown},
+    paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
@@ -30,27 +31,6 @@ struct Options {
     serial: PathBuf,
     expected_rx_format: u8,
     phy: &'static str,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct HostTransmission {
-    bytes: u64,
-    datagrams: u64,
-    elapsed: Duration,
-}
-
-impl HostTransmission {
-    fn throughput_bps(self) -> u64 {
-        self.bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000_000)
-            .checked_div(
-                u64::try_from(self.elapsed.as_micros())
-                    .unwrap_or(u64::MAX)
-                    .max(1),
-            )
-            .unwrap_or(0)
-    }
 }
 
 pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
@@ -79,14 +59,21 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         }
     };
     options.address = discovered_address;
-    let host = send_paced_udp(&options)?;
+    let host = send_paced_udp(PacedUdpConfig {
+        address: options.address,
+        port: options.port,
+        rate_bps: options.rate_bps,
+        duration: options.duration,
+        payload: options.payload,
+    })?;
     thread::sleep(Duration::from_secs(5));
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
-    let rx = qualify_rx_log(&log, options.expected_rx_format)?;
+    let assessment = assess_rx_log(&log, options.expected_rx_format)?;
+    let rx = assessment.rx;
     let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
     let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
-    let failure = if host.throughput_bps() < minimum_bps {
+    let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
         ))
@@ -103,6 +90,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     } else {
         None
     };
+    let failure = assessment.failure.or(acceptance_failure);
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
     let failure_report = failure
         .as_ref()
@@ -119,6 +107,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let average_irq_service_us =
         pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
+    let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     fs::write(
         output.join("report.md"),
         format!(
@@ -128,10 +117,12 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Device: `{}`\n\
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
+             - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
-             - Hardware BUFFER_FULL/FIFO_OVERFLOW: `0` / `0`\n\n\
+             - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\n\
+             {udp_sequence_report}\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
@@ -150,6 +141,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             host.throughput_bps() as f64 / 1_000_000.0,
             host.bytes,
             host.datagrams,
+            host.maximum_lateness_us(),
+            host.maximum_catch_up_datagrams,
+            host.deadline_resets,
             rx.throughput_median_kbps as f64 / 1_000.0,
             rx.sample_count,
             rx.received_datagrams,
@@ -157,6 +151,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             rx.dropped,
             rx.he_mcs_histogram,
             rx.other_phy_frames,
+            rx.buffer_full,
+            rx.fifo_overflow,
             pipeline.service_calls,
             pipeline.frontier_frames,
             pipeline.admitted_frames,
@@ -315,46 +311,6 @@ fn parse_rate(value: &str) -> Result<u64> {
         return Err("--rate must be in 100K..=500M".into());
     }
     Ok(rate)
-}
-
-fn send_paced_udp(options: &Options) -> Result<HostTransmission> {
-    let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
-    socket.connect(SocketAddrV4::new(options.address, options.port))?;
-    socket.set_write_timeout(Some(Duration::from_secs(2)))?;
-    let mut packet = vec![0x5a; options.payload];
-    let interval = Duration::from_nanos(
-        u64::try_from((options.payload as u128 * 8 * 1_000_000_000) / options.rate_bps as u128)?
-            .max(1),
-    );
-    let started = Instant::now();
-    let deadline = started + options.duration;
-    let mut next = started;
-    let mut bytes = 0_u64;
-    let mut datagrams = 0_u64;
-    while Instant::now() < deadline {
-        let now = Instant::now();
-        if now < next {
-            thread::sleep(next.duration_since(now));
-        } else if now.duration_since(next) > Duration::from_millis(20) {
-            next = now;
-        }
-        packet[..4].copy_from_slice(&i32::try_from(datagrams & i32::MAX as u64)?.to_be_bytes());
-        let length = socket.send(&packet)?;
-        if length != packet.len() {
-            return Err(format!("short UDP send: {length}/{}", packet.len()).into());
-        }
-        bytes = bytes.saturating_add(length as u64);
-        datagrams = datagrams.saturating_add(1);
-        next += interval;
-    }
-    let elapsed = started.elapsed();
-    packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
-    let _ = socket.send(&packet);
-    Ok(HostTransmission {
-        bytes,
-        datagrams,
-        elapsed,
-    })
 }
 
 #[cfg(test)]

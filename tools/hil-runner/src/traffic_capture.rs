@@ -14,10 +14,10 @@ use std::{
 
 use crate::Result;
 
-const RX_BENCH_SAMPLE_MARKER: &str = "result=BENCH stage=udp-rx ";
+const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete";
 const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
 const RX_PROBE_PAYLOAD: usize = 64;
-const RX_PROBE_INTERVAL: Duration = Duration::from_millis(750);
+const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 
 /// Concurrent UART transcript retained across traffic setup and measurement.
@@ -81,10 +81,26 @@ impl SerialCapture {
             .any(|candidate| candidate == marker.as_bytes())
     }
 
-    pub(crate) fn wait_for(&self, marker: &str, timeout: Duration) -> bool {
+    fn marker_count(&self, marker: &str) -> usize {
+        let bytes = self
+            .bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        bytes
+            .windows(marker.len())
+            .filter(|candidate| *candidate == marker.as_bytes())
+            .count()
+    }
+
+    fn wait_for_marker_after(
+        &self,
+        marker: &str,
+        previous_count: usize,
+        timeout: Duration,
+    ) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if self.contains(marker) {
+            if self.marker_count(marker) > previous_count {
                 return true;
             }
             let now = Instant::now();
@@ -135,10 +151,12 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
 
 /// Prove that the target owns its IPv4 address, UART and complete UDP RX path.
 ///
-/// A positive datagram followed by the benchmark's negative terminal marker
-/// creates one deliberately unqualified sample. Repeating this small probe is
-/// safe while the target boots and, unlike a fixed post-flash sleep, prevents
-/// the host ARP queue from releasing the measured high-rate stream as a burst.
+/// One positive datagram followed by the target's idle timeout creates one
+/// deliberately unqualified sample. The probe is sent only after the UDP
+/// socket and DHCP configuration are visible. It deliberately has no negative
+/// terminal datagram: a delayed control packet must never split the beginning
+/// of the measured stream. Waiting for a *new* interval-complete marker also
+/// prevents a previous probe's UART record from satisfying a retry.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
     address_hint: Ipv4Addr,
@@ -162,15 +180,25 @@ pub(crate) fn await_udp_rx_ready(
             address = discovered;
             socket.connect(SocketAddrV4::new(address, port))?;
         }
+        if !capture.contains("stage=udp-rx-ready")
+            || observed_dhcp_ipv4(&capture.transcript()).is_none()
+        {
+            thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+
+        let completed_intervals = capture.marker_count(RX_BENCH_INTERVAL_COMPLETE_MARKER);
         packet[..4].copy_from_slice(&0_i32.to_be_bytes());
         let _ = socket.send(&packet);
-        thread::sleep(Duration::from_millis(10));
-        packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
-        let _ = socket.send(&packet);
-        if capture.wait_for(RX_BENCH_SAMPLE_MARKER, RX_PROBE_INTERVAL) {
-            // Let the terminal sample and its compact telemetry finish before
-            // the measured sender starts competing for UART-independent CPU.
-            thread::sleep(Duration::from_millis(100));
+        if capture.wait_for_marker_after(
+            RX_BENCH_INTERVAL_COMPLETE_MARKER,
+            completed_intervals,
+            RX_PROBE_RESPONSE_TIMEOUT,
+        ) {
+            // The marker follows the last compact telemetry record. Leave
+            // one small scheduling interval for the benchmark task to yield
+            // and close any network-ready wait that overlapped the probe.
+            thread::sleep(Duration::from_millis(10));
             return Ok(address);
         }
     }

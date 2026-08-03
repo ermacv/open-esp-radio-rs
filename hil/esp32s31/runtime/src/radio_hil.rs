@@ -14,7 +14,7 @@ use embassy_net::{
     udp::{PacketMetadata, UdpSocket},
 };
 use embassy_net_driver::{Driver, LinkState, RxToken as _, TxToken as _};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
@@ -293,9 +293,8 @@ const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 
-/// Describes only behavior implemented by the current image. Ordinary RX and
-/// TX-only use runtime sessions and structured evidence; the bidirectional
-/// profile remains on the compatibility lifecycle until it is migrated.
+/// Describes only behavior implemented by the current image. All UDP
+/// throughput profiles use runtime sessions and structured evidence.
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
@@ -326,8 +325,11 @@ const OPEN_RADIO_RUNTIME_RX_SESSIONS: bool =
     !OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_RAW_MAC_BENCH;
 const OPEN_RADIO_RUNTIME_TX_SESSIONS: bool =
     OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_BIDIRECTIONAL_BENCH;
+const OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS: bool = OPEN_RADIO_BIDIRECTIONAL_BENCH;
 const OPEN_RADIO_RUNTIME_SESSIONS: bool =
-    OPEN_RADIO_RUNTIME_RX_SESSIONS || OPEN_RADIO_RUNTIME_TX_SESSIONS;
+    OPEN_RADIO_RUNTIME_RX_SESSIONS
+        || OPEN_RADIO_RUNTIME_TX_SESSIONS
+        || OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS;
 const OPEN_RADIO_AMSDU_BENCH: bool = option_env!("OPEN_RADIO_AMSDU_BENCH").is_some();
 // Exercise the blob-exact cache-ESF A-MSDU ownership edge on real
 // embassy-net frames. Unlike OPEN_RADIO_AMSDU_BENCH, this does not synthesize
@@ -1103,8 +1105,40 @@ static OPEN_RADIO_BIDIRECTIONAL_TX_METADATA: StaticCell<
 static OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER: StaticCell<
     [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
 > = StaticCell::new();
+#[unsafe(link_section = ".critical.data.open_radio_bidirectional_session")]
+static OPEN_RADIO_BIDIRECTIONAL_RX_SESSIONS: Channel<
+    CriticalSectionRawMutex,
+    crate::console::ActiveSession,
+    1,
+> = Channel::new();
+#[unsafe(link_section = ".critical.data.open_radio_bidirectional_session")]
+static OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS: Channel<
+    CriticalSectionRawMutex,
+    crate::console::ActiveSession,
+    1,
+> = Channel::new();
+#[unsafe(link_section = ".critical.data.open_radio_bidirectional_session")]
+static OPEN_RADIO_BIDIRECTIONAL_RESULTS: Channel<
+    CriticalSectionRawMutex,
+    OpenRadioBidirectionalResult,
+    2,
+> = Channel::new();
 static OPEN_RADIO_LOCAL_IPV4: AtomicU32 = AtomicU32::new(0);
 static OPEN_RADIO_LAN_PROBE_RESPONSE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum OpenRadioBidirectionalDirection {
+    Rx,
+    Tx,
+}
+
+#[derive(Clone, Copy)]
+struct OpenRadioBidirectionalResult {
+    session_id: u64,
+    direction: OpenRadioBidirectionalDirection,
+    evidence: TransportEvidence,
+    passed: bool,
+}
 
 #[derive(Clone, Copy, Default)]
 struct OpenRadioTaskPollSnapshot {
@@ -3519,12 +3553,15 @@ async fn run_open_radio_udp_benchmark(
         }
     } else if OPEN_RADIO_BIDIRECTIONAL_BENCH {
         match select(
-            run_open_radio_udp_tx_benchmark(stack, association_phy, data_tx_rate),
-            run_open_radio_bidirectional_rx_benchmark(
-                stack,
-                association_phy,
-                data_tx_rate,
-                registers,
+            run_open_radio_bidirectional_session_coordinator(),
+            select(
+                run_open_radio_udp_tx_benchmark(stack, association_phy, data_tx_rate),
+                run_open_radio_bidirectional_rx_benchmark(
+                    stack,
+                    association_phy,
+                    data_tx_rate,
+                    registers,
+                ),
             ),
         )
         .await {}
@@ -3533,6 +3570,57 @@ async fn run_open_radio_udp_benchmark(
     } else {
         run_open_radio_udp_rx_benchmark(stack, association_phy, data_tx_rate, registers).await
     }
+}
+
+async fn run_open_radio_bidirectional_session_coordinator() -> ! {
+    loop {
+        let session = crate::console::receive_session_start().await;
+        OPEN_RADIO_BIDIRECTIONAL_RX_SESSIONS.send(session).await;
+        OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS.send(session).await;
+
+        let first = OPEN_RADIO_BIDIRECTIONAL_RESULTS.receive().await;
+        let second = OPEN_RADIO_BIDIRECTIONAL_RESULTS.receive().await;
+        let valid_pair = first.session_id == session.session_id
+            && second.session_id == session.session_id
+            && first.direction != second.direction;
+        let evidence = TransportEvidence {
+            rx_bytes: first.evidence.rx_bytes.saturating_add(second.evidence.rx_bytes),
+            tx_bytes: first.evidence.tx_bytes.saturating_add(second.evidence.tx_bytes),
+            rx_units: first.evidence.rx_units.saturating_add(second.evidence.rx_units),
+            tx_units: first.evidence.tx_units.saturating_add(second.evidence.tx_units),
+            elapsed_micros: first
+                .evidence
+                .elapsed_micros
+                .max(second.evidence.elapsed_micros),
+            transport_errors: first
+                .evidence
+                .transport_errors
+                .saturating_add(second.evidence.transport_errors)
+                .saturating_add(u32::from(!valid_pair)),
+        };
+        crate::console::complete_session(
+            session.session_id,
+            evidence,
+            valid_pair && first.passed && second.passed,
+        )
+        .await;
+    }
+}
+
+async fn complete_open_radio_bidirectional_direction(
+    session_id: u64,
+    direction: OpenRadioBidirectionalDirection,
+    evidence: TransportEvidence,
+    passed: bool,
+) {
+    OPEN_RADIO_BIDIRECTIONAL_RESULTS
+        .send(OpenRadioBidirectionalResult {
+            session_id,
+            direction,
+            evidence,
+            passed,
+        })
+        .await;
 }
 
 /// Device-to-host UDP load through Embassy and the open TX scheduler.
@@ -3578,7 +3666,7 @@ async fn run_open_radio_udp_tx_benchmark(
             maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
         }),
     );
-    if OPEN_RADIO_RUNTIME_TX_SESSIONS {
+    if OPEN_RADIO_RUNTIME_TX_SESSIONS || OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
              source_port=4324 queue={OPEN_RADIO_UDP_TX_QUEUE_DEPTH} \
@@ -3604,6 +3692,8 @@ async fn run_open_radio_udp_tx_benchmark(
     loop {
         let session = if OPEN_RADIO_RUNTIME_TX_SESSIONS {
             Some(crate::console::receive_session_start().await)
+        } else if OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS {
+            Some(OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS.receive().await)
         } else {
             None
         };
@@ -3613,6 +3703,10 @@ async fn run_open_radio_udp_tx_benchmark(
                     .config
                     .peer
                     .expect("validated TX session carries a peer");
+                let flow = session
+                    .config
+                    .target_tx
+                    .expect("validated TX session carries a target TX flow");
                 let duration_millis = match session.config.completion {
                     HilCompletion::DurationMillis(duration) => duration,
                     HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
@@ -3622,9 +3716,9 @@ async fn run_open_radio_udp_tx_benchmark(
                 (
                     Ipv4Address::from_octets(peer.address),
                     peer.port,
-                    usize::from(session.config.payload_bytes),
+                    usize::from(flow.payload_bytes),
                     Duration::from_millis(u64::from(duration_millis)),
-                    session.config.offered_rate_bps,
+                    flow.offered_rate_bps,
                 )
             } else {
                 (
@@ -3721,19 +3815,30 @@ async fn run_open_radio_udp_tx_benchmark(
             log_open_radio_ampdu_interval(aggregate_start);
         }
         if let Some(session) = session {
-            crate::console::complete_session(
-                session.session_id,
-                TransportEvidence {
-                    rx_bytes: 0,
-                    tx_bytes: bytes,
-                    rx_units: 0,
-                    tx_units: datagrams,
-                    elapsed_micros: elapsed_us,
-                    transport_errors: send_errors,
-                },
-                send_errors == 0,
-            )
-            .await;
+            let evidence = TransportEvidence {
+                rx_bytes: 0,
+                tx_bytes: bytes,
+                rx_units: 0,
+                tx_units: datagrams,
+                elapsed_micros: elapsed_us,
+                transport_errors: send_errors,
+            };
+            if OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS {
+                complete_open_radio_bidirectional_direction(
+                    session.session_id,
+                    OpenRadioBidirectionalDirection::Tx,
+                    evidence,
+                    send_errors == 0,
+                )
+                .await;
+            } else {
+                crate::console::complete_session(
+                    session.session_id,
+                    evidence,
+                    send_errors == 0,
+                )
+                .await;
+            }
         } else {
             Timer::after_secs(2).await;
         }
@@ -3907,6 +4012,8 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
     loop {
         let session = if OPEN_RADIO_RUNTIME_RX_SESSIONS {
             Some(crate::console::receive_session_start().await)
+        } else if OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS {
+            Some(OPEN_RADIO_BIDIRECTIONAL_RX_SESSIONS.receive().await)
         } else {
             None
         };
@@ -3949,8 +4056,15 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
         let mut last_packet = started;
         let mut bytes = first_length as u64;
         let mut datagrams = 1_u64;
-        let expected_payload_bytes =
-            session.map(|session| usize::from(session.config.payload_bytes));
+        let expected_payload_bytes = session.map(|session| {
+            usize::from(
+                session
+                    .config
+                    .target_rx
+                    .expect("validated RX session carries a target RX flow")
+                    .payload_bytes,
+            )
+        });
         let mut receive_errors = u32::from(
             expected_payload_bytes.is_some_and(|expected| first_length != expected),
         );
@@ -4132,19 +4246,30 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             u8::from(terminal_seen),
         ));
         if let Some(session) = session {
-            crate::console::complete_session(
-                session.session_id,
-                TransportEvidence {
-                    rx_bytes: bytes,
-                    tx_bytes: 0,
-                    rx_units: datagrams,
-                    tx_units: 0,
-                    elapsed_micros: elapsed_us,
-                    transport_errors: receive_errors,
-                },
-                terminal_seen && receive_errors == 0,
-            )
-            .await;
+            let evidence = TransportEvidence {
+                rx_bytes: bytes,
+                tx_bytes: 0,
+                rx_units: datagrams,
+                tx_units: 0,
+                elapsed_micros: elapsed_us,
+                transport_errors: receive_errors,
+            };
+            if OPEN_RADIO_RUNTIME_BIDIRECTIONAL_SESSIONS {
+                complete_open_radio_bidirectional_direction(
+                    session.session_id,
+                    OpenRadioBidirectionalDirection::Rx,
+                    evidence,
+                    terminal_seen && receive_errors == 0,
+                )
+                .await;
+            } else {
+                crate::console::complete_session(
+                    session.session_id,
+                    evidence,
+                    terminal_seen && receive_errors == 0,
+                )
+                .await;
+            }
         }
     }
 }

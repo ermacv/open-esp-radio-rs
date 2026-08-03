@@ -1,13 +1,16 @@
 //! Host receiver and report writer for the production UDP TX qualification.
 
 use std::{
+    collections::HashSet,
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
-use open_esp_radio_hil_protocol::{Completion, Direction, Ipv4Endpoint, SessionConfig, Transport};
+use open_esp_radio_hil_protocol::{
+    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, Transport,
+};
 
 use crate::{
     Result,
@@ -37,17 +40,18 @@ struct Options {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct Burst {
-    bytes: u64,
-    datagrams: u64,
-    missing: u64,
-    reordered: u64,
-    elapsed_us: u64,
-    started_at_zero: bool,
+pub(crate) struct Burst {
+    pub(crate) bytes: u64,
+    pub(crate) datagrams: u64,
+    pub(crate) missing: u64,
+    pub(crate) reordered: u64,
+    pub(crate) duplicates: u64,
+    pub(crate) elapsed_us: u64,
+    pub(crate) started_at_zero: bool,
 }
 
 impl Burst {
-    fn throughput_kbps(self) -> u64 {
+    pub(crate) fn throughput_kbps(self) -> u64 {
         self.bytes
             .saturating_mul(8)
             .saturating_mul(1_000)
@@ -60,11 +64,15 @@ struct ActiveBurst {
     evidence: Burst,
     started: Instant,
     last: Instant,
-    next_sequence: u32,
+    lowest_sequence: u32,
+    highest_sequence: u32,
+    seen_sequences: HashSet<u32>,
 }
 
 impl ActiveBurst {
     fn new(sequence: u32, length: usize, now: Instant) -> Self {
+        let mut seen_sequences = HashSet::new();
+        seen_sequences.insert(sequence);
         Self {
             evidence: Burst {
                 bytes: length as u64,
@@ -74,26 +82,28 @@ impl ActiveBurst {
             },
             started: now,
             last: now,
-            next_sequence: sequence.wrapping_add(1),
+            lowest_sequence: sequence,
+            highest_sequence: sequence,
+            seen_sequences,
         }
     }
 
     fn push(&mut self, sequence: u32, length: usize, now: Instant) {
-        if sequence >= self.next_sequence {
-            self.evidence.missing = self
-                .evidence
-                .missing
-                .saturating_add(u64::from(sequence - self.next_sequence));
-        } else {
+        if !self.seen_sequences.insert(sequence) {
+            self.evidence.duplicates = self.evidence.duplicates.saturating_add(1);
+        } else if sequence < self.highest_sequence {
             self.evidence.reordered = self.evidence.reordered.saturating_add(1);
         }
-        self.next_sequence = sequence.wrapping_add(1);
+        self.lowest_sequence = self.lowest_sequence.min(sequence);
+        self.highest_sequence = self.highest_sequence.max(sequence);
         self.evidence.bytes = self.evidence.bytes.saturating_add(length as u64);
         self.evidence.datagrams = self.evidence.datagrams.saturating_add(1);
         self.last = now;
     }
 
     fn finish(mut self) -> Burst {
+        let sequence_span = u64::from(self.highest_sequence - self.lowest_sequence) + 1;
+        self.evidence.missing = sequence_span.saturating_sub(self.seen_sequences.len() as u64);
         self.evidence.elapsed_us = self
             .last
             .duration_since(self.started)
@@ -149,13 +159,16 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         Some(capture.start_session(SessionConfig {
             transport: Transport::Udp,
             direction: Direction::Tx,
-            payload_bytes: u16::try_from(options.payload)?,
             completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
             peer: Some(Ipv4Endpoint {
                 address: host_address.octets(),
                 port: options.port,
             }),
-            offered_rate_bps: options.offered_rate_bps,
+            target_rx: None,
+            target_tx: Some(FlowConfig {
+                payload_bytes: u16::try_from(options.payload)?,
+                offered_rate_bps: options.offered_rate_bps,
+            }),
         })?)
     } else {
         None
@@ -202,9 +215,11 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     }
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
-    if missing != 0 || reordered != 0 {
+    let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
+    if missing != 0 || reordered != 0 || duplicates != 0 {
         return Err(format!(
-            "host observed TX loss/reordering: missing={missing} reordered={reordered}"
+            "host observed TX sequence defects: missing={missing} reordered={reordered} \
+             duplicates={duplicates}"
         )
         .into());
     }
@@ -269,7 +284,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     )?;
     println!(
         "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
-         device_floor_kbps={} bursts={} missing=0 reordered=0 \
+         device_floor_kbps={} bursts={} missing=0 reordered=0 duplicates=0 \
          ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",
         tx.throughput_floor_kbps,
         qualified.len(),
@@ -371,11 +386,11 @@ fn parse_rate(value: &str) -> Result<u64> {
     Ok(rate)
 }
 
-fn receive_bursts(
+pub(crate) fn receive_bursts(
     socket: &UdpSocket,
     expected_device: Ipv4Addr,
     duration: Duration,
-) -> Result<Vec<Burst>> {
+) -> std::io::Result<Vec<Burst>> {
     let deadline = Instant::now() + duration;
     let mut packet = [0_u8; 2_048];
     let mut active: Option<ActiveBurst> = None;
@@ -412,7 +427,7 @@ fn receive_bursts(
                     bursts.push(active.take().expect("checked active burst").finish());
                 }
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         }
     }
     if let Some(active) = active {
@@ -468,7 +483,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              {structured_report}\
              - Host receive floor: `{:.3} Mbit/s`\n\
              - Device socket floor: `{:.3} Mbit/s` across `{}` samples\n\
-             - Host missing/reordered datagrams: `0` / `0`\n\n\
+             - Host missing/reordered/duplicate datagrams: `0` / `0` / `0`\n\n\
              ## A-MPDU evidence\n\n\
              - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
              - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
@@ -537,5 +552,30 @@ mod tests {
         assert_eq!(options.offered_rate_bps, Some(80_000_000));
         assert_eq!(options.bandwidth_mhz, 40);
         assert_eq!(options.rate_kbps, 150_000);
+    }
+
+    #[test]
+    fn burst_distinguishes_reordering_from_unrecovered_loss() {
+        let now = Instant::now();
+        let mut burst = ActiveBurst::new(0, 100, now);
+        burst.push(1, 100, now);
+        burst.push(3, 100, now);
+        burst.push(2, 100, now);
+        let evidence = burst.finish();
+        assert_eq!(evidence.missing, 0);
+        assert_eq!(evidence.reordered, 1);
+        assert_eq!(evidence.duplicates, 0);
+    }
+
+    #[test]
+    fn burst_reports_unrecovered_loss_and_duplicates_separately() {
+        let now = Instant::now();
+        let mut burst = ActiveBurst::new(0, 100, now);
+        burst.push(2, 100, now);
+        burst.push(2, 100, now);
+        let evidence = burst.finish();
+        assert_eq!(evidence.missing, 1);
+        assert_eq!(evidence.reordered, 0);
+        assert_eq!(evidence.duplicates, 1);
     }
 }

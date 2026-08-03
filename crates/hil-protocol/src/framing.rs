@@ -251,7 +251,10 @@ impl Drop for FrameDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Command, Envelope};
+    use crate::{
+        Command, Completion, Direction, Envelope, FlowConfig, Ipv4Endpoint, SessionConfig,
+        Transport,
+    };
 
     fn command(sequence: u32) -> Envelope<Command> {
         Envelope::new(
@@ -355,6 +358,39 @@ mod tests {
         assert!(!debug.contains("private-password"));
 
         let expected = Envelope::new(7, 1, 0, 1, Command::ProvisionNetwork(credentials));
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn asymmetric_bidirectional_session_round_trips() {
+        let expected = Envelope::new(
+            7,
+            2,
+            11,
+            3,
+            Command::Configure(SessionConfig {
+                transport: Transport::Udp,
+                direction: Direction::Bidirectional,
+                completion: Completion::DurationMillis(12_000),
+                peer: Some(Ipv4Endpoint {
+                    address: [192, 0, 2, 10],
+                    port: 9_002,
+                }),
+                target_rx: Some(FlowConfig {
+                    payload_bytes: 1_200,
+                    offered_rate_bps: Some(10_000_000),
+                }),
+                target_tx: Some(FlowConfig {
+                    payload_bytes: 1_472,
+                    offered_rate_bps: None,
+                }),
+            }),
+        );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();
         let mut decoder = FrameDecoder::new();

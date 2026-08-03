@@ -20,6 +20,11 @@ Every envelope carries `protocol_version`, `boot_id`, `message_sequence`,
 machine-readable lifecycle dependency once its corresponding event has been
 migrated.
 
+Protocol version 2 represents the target RX and target TX traffic shapes as
+separate optional flows. Each flow has its own payload length and offered-rate
+bound. This keeps one-way sessions unambiguous and permits asymmetric
+bidirectional tests without adding transport-specific fields to the envelope.
+
 The protocol contains no expected firmware hashes, ELF paths, vendor ABI
 versions or target-specific register layouts. The firmware publishes actual
 capabilities; the calling qualification manifest decides whether that image is
@@ -99,7 +104,9 @@ Idle
 The target first snapshots the complete result in RAM. USB serialization and
 the retained detailed text report happen outside the measured interval. The
 host verifies the evidence-set CRC and requires the typed byte, datagram and
-throughput values to equal the independently parsed text oracle.
+throughput values to equal the independently parsed text oracle. It also
+requires the target count and UDP sequence evidence to account for every host
+datagram exactly; the throughput floor cannot hide loss or reordering.
 
 ## UDP TX session
 
@@ -115,9 +122,28 @@ datagrams with the packets actually received. This detects both internal send
 errors and network loss at the tail of a stream, where a receiver-only sequence
 gap check has no later sequence number from which to infer the missing tail.
 
+## UDP bidirectional session
+
+The bidirectional image also uses the same lifecycle. One `Configure` command
+carries both flow descriptions and the host endpoint for target TX. After
+`Start`, a target coordinator fans the accepted immutable session out to the
+RX and TX workers. It remains the sole session owner, waits for both workers,
+and publishes one combined `TransportEvidence` followed by one `Finished`
+event.
+
+The host binds the target-TX sink before reset, then receives target traffic in
+parallel with its paced target-RX producer. Qualification requires the typed
+RX counters to equal the target text report and the typed TX counters to equal
+the independently observed host sink counters. Both directions must report no
+transport errors, loss or reordering before the result is acknowledged.
+Duplicate target-TX datagrams are rejected independently rather than being
+folded into either loss or reordering.
+
 ## Migration boundary
 
-The bidirectional image still advertises compatibility mode: it uses typed
-network/service readiness but retains its existing compile-time TX peer,
-readiness probe and text completion. It is the next session migration target.
-TCP RX/TX/bidirectional follows after the UDP lifecycle is uniform.
+UDP RX, TX and bidirectional qualification now share runtime network
+provisioning, configuration, lifecycle and structured evidence. TCP
+RX/TX/bidirectional is the next protocol migration. The session state machine
+and asymmetric flow model are transport-neutral; TCP still needs its own
+connection setup, completion semantics and stream evidence rather than UDP
+datagram/sequence assumptions.

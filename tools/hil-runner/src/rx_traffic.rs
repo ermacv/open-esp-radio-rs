@@ -8,13 +8,13 @@ use std::{
     time::Duration,
 };
 
-use open_esp_radio_hil_protocol::{Completion, Direction, SessionConfig, Transport};
+use open_esp_radio_hil_protocol::{Completion, Direction, FlowConfig, SessionConfig, Transport};
 
 use crate::{
     Result,
     bidirectional::{
         assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
-        udp_sequence_markdown,
+        udp_sequence_markdown, validate_exact_rx_delivery,
     },
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
@@ -69,10 +69,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         Some(capture.start_session(SessionConfig {
             transport: Transport::Udp,
             direction: Direction::Rx,
-            payload_bytes: u16::try_from(options.payload)?,
             completion: Completion::DurationMillis(duration_millis),
             peer: None,
-            offered_rate_bps: Some(options.rate_bps),
+            target_rx: Some(FlowConfig {
+                payload_bytes: u16::try_from(options.payload)?,
+                offered_rate_bps: Some(options.rate_bps),
+            }),
+            target_tx: None,
         })?)
     } else {
         None
@@ -111,7 +114,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let assessment = assess_rx_log(&log, options.expected_rx_format)?;
     let rx = assessment.rx;
     let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
-    let minimum_delivery = host.datagrams.saturating_mul(99) / 100;
     let structured_failure = structured.and_then(|evidence| {
         let structured_throughput_kbps = evidence
             .transport
@@ -147,6 +149,16 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
                 "typed RX byte count {} does not match {} full payload datagrams",
                 evidence.transport.rx_bytes, evidence.transport.rx_units
             ))
+        } else if evidence.transport.rx_units != host.datagrams
+            || evidence.transport.rx_bytes != host.bytes
+        {
+            Some(format!(
+                "host/target RX delivery mismatch: host={}/{} target={}/{}",
+                host.bytes,
+                host.datagrams,
+                evidence.transport.rx_bytes,
+                evidence.transport.rx_units
+            ))
         } else if structured_throughput_kbps != rx.throughput_median_kbps {
             Some(format!(
                 "typed/text RX throughput mismatch: {structured_throughput_kbps}/{} kbit/s",
@@ -156,6 +168,10 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             None
         }
     });
+    let delivery_failure =
+        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence)
+            .err()
+            .map(|error| error.to_string());
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
@@ -165,13 +181,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             "device RX {} kbit/s is below the acceptance floor",
             rx.throughput_median_kbps,
         ))
-    } else if rx.received_datagrams < minimum_delivery {
-        Some(format!(
-            "device received only {}/{} host UDP datagrams; required at least {minimum_delivery}",
-            rx.received_datagrams, host.datagrams,
-        ))
     } else {
-        None
+        delivery_failure
     };
     let failure = assessment
         .failure

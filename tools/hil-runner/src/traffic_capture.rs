@@ -564,8 +564,13 @@ pub(crate) fn await_udp_rx_ready(
             address = discovered;
             socket.connect(SocketAddrV4::new(address, port))?;
         }
-        if !(capture.observed_udp_service(Direction::Rx, port)
-            || capture.contains("stage=udp-rx-ready"))
+        let rx_service_ready = capture.observed_udp_service(Direction::Rx, port)
+            || capture.contains("stage=udp-rx-ready");
+        let tx_service_ready = !capabilities.features.bidirectional
+            || capture.observed_udp_service(Direction::Tx, 4_324)
+            || capture.contains("stage=udp-tx-ready");
+        if !rx_service_ready
+            || !tx_service_ready
             || capture
                 .observed_protocol_ipv4()
                 .or_else(|| observed_dhcp_ipv4(&capture.transcript()))

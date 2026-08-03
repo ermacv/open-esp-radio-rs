@@ -14,7 +14,7 @@ pub use framing::{
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, Ipv4Endpoint, LinkHealth, NetworkCredentials,
+    FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkCredentials,
     NetworkCredentialsError, NetworkInfo, PROTOCOL_VERSION, RejectReason, ResultSummary,
     ServiceInfo, SessionConfig, SessionState, StateChange, Transport, TransportEvidence,
     WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
 pub const WPA2_PASSPHRASE_MAX_LEN: usize = 63;
@@ -64,13 +64,19 @@ pub struct Ipv4Endpoint {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FlowConfig {
+    pub payload_bytes: u16,
+    pub offered_rate_bps: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionConfig {
     pub transport: Transport,
     pub direction: Direction,
-    pub payload_bytes: u16,
     pub completion: Completion,
     pub peer: Option<Ipv4Endpoint>,
-    pub offered_rate_bps: Option<u64>,
+    pub target_rx: Option<FlowConfig>,
+    pub target_tx: Option<FlowConfig>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

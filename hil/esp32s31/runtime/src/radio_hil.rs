@@ -3902,9 +3902,20 @@ async fn connected_rx_protocol_task(mut protocol: ConnectedRxProtocol) {
 #[embassy_executor::task]
 async fn connected_radio_task(mut runner: ConnectedWifiRunner) {
     match observe_open_radio_task_polls(runner.run(), &OPEN_RADIO_TASK_POLLS.radio).await {
-        Ok(()) => emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error=stopped"
-        )),
+        Ok(()) => {
+            let control = runner.backend().control();
+            let beacon_monitor = control.beacon_monitor();
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner \
+                 error=disconnected beacon_lost={} beacons_observed={} \
+                 beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?}",
+                u8::from(control.beacon_lost()),
+                beacon_monitor.map_or(0, |monitor| monitor.observed()),
+                beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
+                control.last_event(),
+                control.last_tx_failure(),
+            ));
+        }
         Err(error) => emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
         )),

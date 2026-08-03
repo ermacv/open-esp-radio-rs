@@ -49,8 +49,11 @@ impl<S: ConnectedRxSink> ConnectedRxProtocolSink for AlwaysReadyConnectedRxSink<
 /// The default retains the ordinary vendor large-RX profile. A platform that
 /// negotiates the 3,839-byte A-MSDU class must select a correspondingly larger
 /// capacity instead of silently discarding a valid multi-MSDU receive unit.
-pub type Esp32s31StagedRxFrame<'pool, const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY> =
-    NetworkRxFrame<'pool, VENDOR_LARGE_RX_SLOT_COUNT, CAPACITY>;
+pub type Esp32s31StagedRxFrame<
+    'pool,
+    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+> = NetworkRxFrame<'pool, SLOTS, CAPACITY>;
 
 /// Static bounded storage for the radio-to-protocol ownership handoff.
 ///
@@ -61,17 +64,18 @@ pub struct Esp32s31StagedRxQueue<
     M: RawMutex,
     const DEPTH: usize,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: Channel<M, Esp32s31StagedRxFrame<'pool, CAPACITY>, DEPTH>,
+    frames: Channel<M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
 }
 
-impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize>
-    Esp32s31StagedRxQueue<'pool, M, DEPTH, CAPACITY>
+impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
+    Esp32s31StagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
 {
     pub const fn new() -> Self {
         assert!(DEPTH != 0, "staged RX queue must not be empty");
         assert!(
-            DEPTH <= VENDOR_LARGE_RX_SLOT_COUNT,
+            DEPTH <= SLOTS,
             "staged RX queue cannot outgrow its ownership pool"
         );
         Self {
@@ -82,15 +86,15 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize>
     pub fn split(
         &self,
     ) -> (
-        Sender<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY>, DEPTH>,
-        Receiver<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY>, DEPTH>,
+        Sender<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        Receiver<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
     ) {
         (self.frames.sender(), self.frames.receiver())
     }
 }
 
-impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize> Default
-    for Esp32s31StagedRxQueue<'pool, M, DEPTH, CAPACITY>
+impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize> Default
+    for Esp32s31StagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
 {
     fn default() -> Self {
         Self::new()
@@ -111,8 +115,9 @@ pub struct Esp32s31ConnectedRxProtocol<
     S,
     const DEPTH: usize,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY>, DEPTH>,
+    frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
     irq: &'irq EmbassyMacIrqRuntime<M>,
     dispatcher: ConnectedRxDispatcher,
     sink: S,
@@ -121,13 +126,22 @@ pub struct Esp32s31ConnectedRxProtocol<
     pipeline_counters: Option<&'queue RxPipelineCounters>,
 }
 
-impl<'queue, 'pool, 'scratch, 'irq, M: RawMutex, S, const DEPTH: usize, const CAPACITY: usize>
-    Esp32s31ConnectedRxProtocol<'queue, 'pool, 'scratch, 'irq, M, S, DEPTH, CAPACITY>
+impl<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+> Esp32s31ConnectedRxProtocol<'queue, 'pool, 'scratch, 'irq, M, S, DEPTH, CAPACITY, SLOTS>
 where
     S: ConnectedRxProtocolSink,
 {
     pub fn new(
-        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY>, DEPTH>,
+        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
         dispatcher: ConnectedRxDispatcher,
         sink: S,

@@ -170,11 +170,13 @@ pub struct Esp32s31ConnectedRx<
     const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
     const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
     ring: RxRingLive<'storage, COUNT>,
     buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
-    pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, STAGE_CAPACITY>,
-    frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY>, QUEUE_DEPTH>,
+    pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+    frames:
+        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
     delay: D,
     pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
@@ -188,14 +190,31 @@ impl<
     const QUEUE_DEPTH: usize,
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
-> Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT, STAGE_CAPACITY>
+    const STAGE_SLOTS: usize,
+>
+    Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+    >
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
         buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
-        pool: &'pool RxStagePool<VENDOR_LARGE_RX_SLOT_COUNT, STAGE_CAPACITY>,
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
-        frames: Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY>, QUEUE_DEPTH>,
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
     ) -> Self {
         Self {
             ring,
@@ -231,8 +250,19 @@ impl<
     const QUEUE_DEPTH: usize,
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
 > Esp32s31ConnectedRxService<H>
-    for Esp32s31ConnectedRx<'storage, 'pool, 'queue, D, M, QUEUE_DEPTH, COUNT, STAGE_CAPACITY>
+    for Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+    >
 where
     H: RxDma,
     D: RxReloadDelay,

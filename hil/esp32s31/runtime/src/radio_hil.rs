@@ -67,7 +67,7 @@ use open_esp_radio::{
                 disable_receive, enable_receive, extract_ccmp_data, extract_data,
                 extract_management, first_segment_layout, publish_cold_ring,
             },
-            rx_pool::{RxStagePool, VENDOR_LARGE_RX_SLOT_COUNT},
+            rx_pool::RxStagePool,
             scan::{ScanObservation, ScanRecord, ScanTable},
             tx::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
@@ -188,6 +188,16 @@ const RX_BUFFER_SIZE: usize = 4_608;
 // A-MSDU units even though both the DMA owner and connected dispatcher already
 // support the negotiated 3,839-byte class.
 const RX_STAGE_CAPACITY: usize = RX_BUFFER_SIZE;
+// The vendor-equivalent default remains 32. Sustained HE20 HIL, however,
+// observed both pool and queue credits at zero while the 32-descriptor DMA
+// ring was complete. Retain half of one additional aggregate here so protocol
+// publication can overlap the next hardware burst without enlarging the DMA
+// ring or imposing a per-poll frame budget. Forty-eight slots crossed the
+// linker's protected 64-KiB CPU0-stack frontier. Both 47 (about 66 KiB left)
+// and 44 (about 80 KiB left) passed linking but failed the on-device readiness
+// path. Forty slots retain roughly 98 KiB and are the largest runtime-stable
+// geometry qualified so far.
+const RX_STAGE_SLOT_COUNT: usize = 40;
 const NETWORK_FRAME_CAPACITY: usize = 1_600;
 const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
 // Raw A-MSDU/A-MPDU HIL generates TX below the network stack, and its direct
@@ -796,14 +806,15 @@ static ETHERNET_FRAME: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
 static OPEN_RADIO_RX_STAGE_POOL: RxStagePool<
-    VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
 > = RxStagePool::new();
 type StagedRxQueue = Esp32s31StagedRxQueue<
     'static,
     CriticalSectionRawMutex,
-    VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
 >;
 static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
 type NetworkResources = OpenRadioNetworkResources<
@@ -864,8 +875,9 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     'static,
     CriticalSectionRawMutex,
     ConnectedNetworkRxSink,
-    VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
 >;
 type ConnectedRxOwner = Esp32s31ConnectedRx<
     'static,
@@ -873,9 +885,10 @@ type ConnectedRxOwner = Esp32s31ConnectedRx<
     'static,
     OpenRadioRxReloadDelay,
     CriticalSectionRawMutex,
-    VENDOR_LARGE_RX_SLOT_COUNT,
+    RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
     RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
 >;
 type ConnectedTxOwner = Esp32s31ConnectedTx<
     'static,
@@ -3687,6 +3700,7 @@ async fn run_connected_network(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-start \
          frame_capacity={NETWORK_FRAME_CAPACITY} queue_depth={NETWORK_QUEUE_DEPTH} \
+         rx_stage_slots={RX_STAGE_SLOT_COUNT} rx_stage_capacity={RX_STAGE_CAPACITY} \
          bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={} \
          ampdu_rate_code={:#04x} ampdu_rate_kbps={} peer_ampdu_limit={} rate_ampdu_limit={}",
         association_phy.bandwidth_mhz(),

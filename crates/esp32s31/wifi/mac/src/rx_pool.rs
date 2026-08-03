@@ -29,6 +29,7 @@ use crate::{
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
 pub const VENDOR_LARGE_RX_PAYLOAD_CAPACITY: usize = 1_700;
+const RX_STAGE_BITMAP_WORDS: usize = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxStageError {
@@ -71,19 +72,21 @@ unsafe impl<const CAPACITY: usize> Sync for RxStageSlot<CAPACITY> {}
 /// Fixed staging storage with explicit vendor-equivalent ownership states.
 ///
 /// Place `RxStagePool<32, 1700>` in internal SRAM. It is ordinary CPU-owned
-/// memory and must never be published to the Wi-Fi DMA walker.
+/// memory and must never be published to the Wi-Fi DMA walker. Two native
+/// atomic bitmap words permit a platform profile to add burst elasticity
+/// beyond the 32-slot vendor default without requiring 64-bit atomics on RV32.
 pub struct RxStagePool<const SLOTS: usize, const CAPACITY: usize> {
     slots: [RxStageSlot<CAPACITY>; SLOTS],
-    claimed: AtomicUsize,
-    network: AtomicUsize,
+    claimed: [AtomicUsize; RX_STAGE_BITMAP_WORDS],
+    network: [AtomicUsize; RX_STAGE_BITMAP_WORDS],
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     pub const fn new() -> Self {
         Self {
             slots: [const { RxStageSlot::new() }; SLOTS],
-            claimed: AtomicUsize::new(0),
-            network: AtomicUsize::new(0),
+            claimed: [const { AtomicUsize::new(0) }; RX_STAGE_BITMAP_WORDS],
+            network: [const { AtomicUsize::new(0) }; RX_STAGE_BITMAP_WORDS],
         }
     }
 
@@ -92,7 +95,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         completed: RxCompletedDescriptor,
         source: &[u8],
     ) -> Result<RadioRxFrame<'pool, SLOTS, CAPACITY>, RxStageError> {
-        if SLOTS == 0 || SLOTS > usize::BITS as usize || CAPACITY == 0 {
+        if SLOTS == 0 || SLOTS > RX_STAGE_BITMAP_WORDS * usize::BITS as usize || CAPACITY == 0 {
             return Err(RxStageError::InvalidPool);
         }
         let length = usize::try_from(descriptor_length(completed.word0()))
@@ -178,7 +181,10 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     }
 
     pub fn claimed_slots(&self) -> u32 {
-        self.claimed.load(Ordering::Acquire).count_ones()
+        self.claimed
+            .iter()
+            .map(|word| word.load(Ordering::Acquire).count_ones())
+            .sum()
     }
 
     /// Number of slots that can still accept an independent DMA copy.
@@ -191,50 +197,58 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     }
 
     pub fn network_slots(&self) -> u32 {
-        self.network.load(Ordering::Acquire).count_ones()
+        self.network
+            .iter()
+            .map(|word| word.load(Ordering::Acquire).count_ones())
+            .sum()
     }
 
     fn try_claim_radio(&self, slot: usize) -> bool {
-        let bit = 1_usize << slot;
-        if self.claimed.fetch_or(bit, Ordering::AcqRel) & bit != 0 {
+        let (word, bit) = bitmap_word_and_bit(slot);
+        if self.claimed[word].fetch_or(bit, Ordering::AcqRel) & bit != 0 {
             return false;
         }
-        if self.network.load(Ordering::Acquire) & bit == 0 {
+        if self.network[word].load(Ordering::Acquire) & bit == 0 {
             return true;
         }
-        self.claimed.fetch_and(!bit, Ordering::AcqRel);
+        self.claimed[word].fetch_and(!bit, Ordering::AcqRel);
         false
     }
 
     fn try_publish_network(&self, slot: usize) -> bool {
-        let bit = 1_usize << slot;
-        if self.claimed.load(Ordering::Acquire) & bit == 0
-            || self.network.fetch_or(bit, Ordering::AcqRel) & bit != 0
+        let (word, bit) = bitmap_word_and_bit(slot);
+        if self.claimed[word].load(Ordering::Acquire) & bit == 0
+            || self.network[word].fetch_or(bit, Ordering::AcqRel) & bit != 0
         {
             return false;
         }
-        if self.claimed.load(Ordering::Acquire) & bit != 0 {
+        if self.claimed[word].load(Ordering::Acquire) & bit != 0 {
             return true;
         }
-        self.network.fetch_and(!bit, Ordering::AcqRel);
+        self.network[word].fetch_and(!bit, Ordering::AcqRel);
         false
     }
 
     fn release_radio(&self, slot: usize) -> bool {
-        let bit = 1_usize << slot;
-        self.network.load(Ordering::Acquire) & bit == 0
-            && self.claimed.fetch_and(!bit, Ordering::AcqRel) & bit != 0
+        let (word, bit) = bitmap_word_and_bit(slot);
+        self.network[word].load(Ordering::Acquire) & bit == 0
+            && self.claimed[word].fetch_and(!bit, Ordering::AcqRel) & bit != 0
     }
 
     fn release_network(&self, slot: usize) -> bool {
-        let bit = 1_usize << slot;
-        if self.network.load(Ordering::Acquire) & bit == 0
-            || self.claimed.fetch_and(!bit, Ordering::AcqRel) & bit == 0
+        let (word, bit) = bitmap_word_and_bit(slot);
+        if self.network[word].load(Ordering::Acquire) & bit == 0
+            || self.claimed[word].fetch_and(!bit, Ordering::AcqRel) & bit == 0
         {
             return false;
         }
-        self.network.fetch_and(!bit, Ordering::AcqRel) & bit != 0
+        self.network[word].fetch_and(!bit, Ordering::AcqRel) & bit != 0
     }
+}
+
+fn bitmap_word_and_bit(slot: usize) -> (usize, usize) {
+    let bits = usize::BITS as usize;
+    (slot / bits, 1_usize << (slot % bits))
 }
 
 /// Unique staged-frame owner while the RX append doorbell is pending.
@@ -466,6 +480,31 @@ mod tests {
         drop(network);
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
+    }
+
+    #[test]
+    fn ownership_bitmap_crosses_one_machine_word() {
+        const CROSS_WORD_SLOTS: usize = usize::BITS as usize + 1;
+        let pool = RxStagePool::<CROSS_WORD_SLOTS, 4>::new();
+        let mut frames = std::vec::Vec::new();
+
+        for _ in 0..CROSS_WORD_SLOTS {
+            let radio = pool.try_stage(completed(4), &[1, 2, 3, 4]).unwrap();
+            frames.push(radio.publish().ok().unwrap());
+        }
+
+        assert_eq!(pool.claimed_slots(), CROSS_WORD_SLOTS as u32);
+        assert_eq!(pool.network_slots(), CROSS_WORD_SLOTS as u32);
+        assert_eq!(pool.available_slots(), 0);
+        assert!(matches!(
+            pool.try_stage(completed(4), &[1, 2, 3, 4]),
+            Err(RxStageError::Exhausted)
+        ));
+
+        drop(frames);
+        assert_eq!(pool.claimed_slots(), 0);
+        assert_eq!(pool.network_slots(), 0);
+        assert_eq!(pool.available_slots(), CROSS_WORD_SLOTS);
     }
 
     #[test]

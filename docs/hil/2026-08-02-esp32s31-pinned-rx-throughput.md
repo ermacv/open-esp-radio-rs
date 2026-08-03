@@ -293,6 +293,47 @@ or unknown IRQ. Dispatch averaged 19.11 us/frame with a 39-us boot maximum;
 and one remaining pool/queue credit. This shows burst phase overlap rather
 than a permanent zero-credit deadlock.
 
+## Staging-pool elasticity follow-up
+
+The credit-depth telemetry then exposed a real burst boundary rather than a
+per-frame CPU limit. A reset-separated 70-Mbit/s, 10-s run with the ordinary
+32-slot staging profile reached zero pool and queue credits and recorded three
+hardware `BUFFER_FULL` observations. The staging owner was also unnecessarily
+limited to one native bitmap word, which made every RV32 platform profile
+incapable of expressing more than 32 independent slots even when its memory
+layout allowed it.
+
+`RxStagePool` now uses two native atomic bitmap words and the Embassy staging
+types carry the slot count as an explicit platform parameter. The reusable
+default remains the vendor-equivalent 32-by-1,700 profile; only this HIL
+composition selects 40 jumbo slots. This is an ownership-capacity choice, not
+a frame-processing budget: one service still freezes and drains one finite DMA
+completion frontier.
+
+The SRAM/stack boundary was tested rather than inferred from linking alone:
+
+- 48 jumbo slots failed the placement audit by 2,176 bytes;
+- 47 and 44 slots linked but failed the on-device readiness path with only
+  roughly 66 and 80 KiB of runtime-stack space left;
+- 40 slots leave roughly 98 KiB and completed boot, association, readiness and
+  sustained traffic.
+
+With the retained 40-slot profile, a cold 30-s HE20 run delivered all 218,752
+UDP datagrams at a 70.001-Mbit/s host offer and 69.996-Mbit/s device median,
+with zero `BUFFER_FULL`, FIFO overflow or software drop. Four services were
+briefly pool-limited, but the minimum pool/queue credits remained 1/2 and the
+maximum deferred suffix was four frames. The qualified runtime CRC-32 is
+`368fe8b1`.
+
+Eighty Mbit/s is not yet qualified. A 10-s run delivered all 83,334 datagrams
+with no drop, but the 30-s 40-slot run still recorded four `BUFFER_FULL`
+observations. A fixed 100-us application yield removed radio backpressure but
+lost 15,668 UDP-socket datagrams; a low-credit feedback yield later lost the
+link. Both scheduling experiments were reverted. The remaining work is to
+separate RX and TX queue-depth resources and diagnose the occasional
+multi-millisecond `embassy-net` readiness wait, not to add another arbitrary
+frame batch.
+
 ## Interrupt-to-poll experiment
 
 The recovered vendor `wDev_ProcessFiq` is not NAPI-like: it reads one masked
@@ -398,6 +439,9 @@ beneficial here; see the
 - Hot-observer/credit-depth 70-Mbit/s RX UART/report SHA-256:
   `db20d355c9e7c1517f043fbfffc700c1ca366e8bcfb3c5ee3aace5a0634b2af1` /
   `3ef83ffe58918db5008777c76173cb936e7f77a60714d74affe751157b727f2c`.
+- Forty-slot 70-Mbit/s RX UART/report SHA-256:
+  `5a60dbc68d8476019ee7048742a4a04bfa8fe369b004ee882bcca2ff18e93af7` /
+  `6bf979511296301ac9a451de2a7b1ea0838ca46eb362f9badf2a9905e53631ea`.
 
 Generated UART logs and reports remain under `target/hil/esp32s31/qualification`;
 this record preserves their exact identity.

@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     descriptor::Descriptor,
     rx::{
         RX_BUFFER_SENTINEL, RxDma, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive,
-        prepare_recycled_buffer,
+        RxRingStopped, prepare_recycled_buffer,
     },
     rx_pool::{
         RxStageError, RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
@@ -243,6 +243,33 @@ pub struct Esp32s31StoppedRx<
     pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
 
+/// Connected RX resources after descriptor rebuild but before walker enable.
+///
+/// Keeping this state distinct preserves the platform settle edge and returns
+/// the complete owner if walker activation fails. A reconnecting station can
+/// retry or reset without stealing descriptor, buffer, queue or pool storage.
+pub struct Esp32s31PreparedRx<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
+    const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+> {
+    ring: RxRingStopped<'storage, COUNT>,
+    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+    frames:
+        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    delay: D,
+    pipeline_counters: Option<&'pool RxPipelineCounters>,
+}
+
 impl<
     'storage,
     'pool,
@@ -298,6 +325,165 @@ impl<
 
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
+    }
+
+    /// Rebuild descriptor and buffer state for a fresh association epoch.
+    ///
+    /// Hardware is already confirmed stopped by this type. On every failure
+    /// the complete halted owner is reconstructed, including its queue sender
+    /// and delay implementation.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare<H: RxDma>(
+        self,
+        hardware: &mut H,
+    ) -> Result<
+        Esp32s31PreparedRx<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+        (Self, RxRingError),
+    > {
+        if DMA_BUFFER_SIZE > u32::MAX as usize {
+            return Err((self, RxRingError::Size));
+        }
+        let Self {
+            ring,
+            buffers,
+            pool,
+            frames,
+            delay,
+            pipeline_counters,
+        } = self;
+        match ring.prepare(hardware, DMA_BUFFER_SIZE as u32, |index| {
+            // SAFETY: `RxRingHalted` proved the walker is off and the prepare
+            // transaction owns each matching descriptor before this closure
+            // restores its buffer-side DMA guards.
+            unsafe { buffers[index].prepare_for_recycle() }
+        }) {
+            Ok(ring) => Ok(Esp32s31PreparedRx {
+                ring,
+                buffers,
+                pool,
+                frames,
+                delay,
+                pipeline_counters,
+            }),
+            Err((ring, error)) => Err((
+                Self {
+                    ring,
+                    buffers,
+                    pool,
+                    frames,
+                    delay,
+                    pipeline_counters,
+                },
+                error,
+            )),
+        }
+    }
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+>
+    Esp32s31PreparedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >
+{
+    pub const fn ring(&self) -> &RxRingStopped<'storage, COUNT> {
+        &self.ring
+    }
+
+    pub fn queued_frames(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Observe the required settle delay and open a fresh live RX epoch.
+    ///
+    /// A rejected walker-enable readback returns this prepared owner intact,
+    /// so a higher-level reset/retry policy never loses static resources.
+    #[allow(clippy::result_large_err)]
+    pub async fn start<H: RxDma>(
+        self,
+        hardware: &mut H,
+    ) -> Result<
+        Esp32s31ConnectedRx<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+        (Self, RxRingError),
+    >
+    where
+        D: RxReloadDelay,
+    {
+        let Self {
+            ring,
+            buffers,
+            pool,
+            frames,
+            mut delay,
+            pipeline_counters,
+        } = self;
+        delay.after_micros(5).await;
+        match ring.try_start(hardware) {
+            Ok(ring) => Ok(Esp32s31ConnectedRx {
+                ring,
+                buffers,
+                pool,
+                frames,
+                delay,
+                pipeline_counters,
+            }),
+            Err((ring, error)) => Err((
+                Self {
+                    ring,
+                    buffers,
+                    pool,
+                    frames,
+                    delay,
+                    pipeline_counters,
+                },
+                error,
+            )),
+        }
     }
 }
 
@@ -944,6 +1130,7 @@ mod tests {
     struct MockRxDma {
         walker: bool,
         descriptor_base: u32,
+        fail_enable: bool,
     }
 
     impl RxDma for MockRxDma {
@@ -968,6 +1155,9 @@ mod tests {
         }
         fn request_reload(&mut self) {}
         fn try_enable_walker(&mut self) -> bool {
+            if self.fail_enable {
+                return false;
+            }
             self.walker = true;
             true
         }
@@ -1122,6 +1312,32 @@ mod tests {
         assert_eq!(stopped.ring().descriptor_base(), BASE);
         assert_eq!(stopped.ring().buffer_addresses(), &addresses);
         assert_eq!(stopped.queued_frames(), 0);
+
+        let prepared = match stopped.prepare(&mut hardware) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("halted owner must rebuild the next descriptor epoch"),
+        };
+        assert!(!hardware.walker);
+        assert_eq!(prepared.ring().initial_start(), 0);
+        hardware.fail_enable = true;
+        let prepared = match embassy_futures::block_on(prepared.start(&mut hardware)) {
+            Ok(_) => panic!("rejected walker enable must not create a live owner"),
+            Err((prepared, error)) => {
+                assert_eq!(error, RxRingError::Busy);
+                prepared
+            }
+        };
+        assert!(!hardware.walker);
+        assert_eq!(prepared.ring().initial_start(), 0);
+        assert_eq!(prepared.queued_frames(), 0);
+        hardware.fail_enable = false;
+        let restarted = match embassy_futures::block_on(prepared.start(&mut hardware)) {
+            Ok(restarted) => restarted,
+            Err(_) => panic!("prepared owner must reopen the mock walker"),
+        };
+        assert!(hardware.walker);
+        assert_eq!(restarted.ring().descriptor_base(), BASE);
+        assert_eq!(restarted.queued_frames(), 0);
     }
 
     #[test]

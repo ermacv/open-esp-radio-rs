@@ -1141,8 +1141,13 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     ///
     /// The caller owns any platform-specific settle delay between
     /// [`prepare`](Self::prepare) and this edge.
-    pub fn start<M: RxDma>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
-        enable_receive(mmio)?;
+    pub fn try_start<M: RxDma>(
+        self,
+        mmio: &mut M,
+    ) -> Result<RxRingLive<'a, COUNT>, (Self, RxRingError)> {
+        if let Err(error) = enable_receive(mmio) {
+            return Err((self, error));
+        }
         Ok(RxRingLive {
             descriptors: self.descriptors,
             descriptor_base: self.descriptor_base,
@@ -1153,9 +1158,19 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             pending_tail: None,
         })
     }
+
+    /// Compatibility form for callers that terminate the complete radio
+    /// owner when walker activation fails.
+    pub fn start<M: RxDma>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
+        self.try_start(mmio).map_err(|(_, error)| error)
+    }
 }
 
 impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
+    pub const fn descriptor_base(&self) -> u32 {
+        self.descriptor_base
+    }
+
     /// Stop the DMA walker and consume the live frontier authority.
     ///
     /// A failed hardware confirmation returns the complete live owner. This

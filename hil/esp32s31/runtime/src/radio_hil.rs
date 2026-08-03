@@ -102,7 +102,7 @@ use open_esp_radio::{
             rx_backend::{
                 ConnectedControlPublisher, ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE,
                 EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
-                RxEnqueueCounters,
+                Esp32s31StoppedRx, RxEnqueueCounters,
             },
             rx_reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
@@ -955,6 +955,35 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_SLOT_COUNT,
 >;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
+type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
+type ConnectedStoppedRx = Esp32s31StoppedRx<
+    'static,
+    'static,
+    'static,
+    OpenRadioRxReloadDelay,
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+    RX_DESCRIPTOR_COUNT,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
+
+/// Resources returned after one connected HIL epoch is completely quiesced.
+///
+/// `embassy-net` itself remains alive with link-down; this owner carries only
+/// the driver side needed by a later association. The register cell and
+/// descriptor arenas retain stable addresses while their finite PAC/DMA
+/// capabilities are no longer borrowed by spawned tasks.
+struct RadioHilDisconnectedEpoch {
+    network: RadioHilRunningNetwork,
+    hardware: ConnectedHardware,
+    rx: ConnectedStoppedRx,
+    ampdu: Pin<
+        &'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
+    >,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StaConnectedLink {
@@ -971,10 +1000,23 @@ struct StaConnectedLink {
 
 struct StaConnectedSession<'a> {
     link: StaConnectedLink,
-    network_device: NetworkDevice,
-    network_runner: NetworkRunner,
+    network: RadioHilStaNetwork,
     rate_control: &'a mut StaRateControlAssociation,
     sequences: &'a mut StaTxSequenceCounters,
+}
+
+/// One-time versus persistent `embassy-net` ownership for STA epochs.
+enum RadioHilStaNetwork {
+    Unstarted {
+        device: NetworkDevice,
+        runner: NetworkRunner,
+    },
+    Running(RadioHilRunningNetwork),
+}
+
+struct RadioHilRunningNetwork {
+    stack: Stack<'static>,
+    runner: NetworkRunner,
 }
 
 #[derive(Clone, Copy)]
@@ -1565,6 +1607,10 @@ static OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED: Signal<
     CriticalSectionRawMutex,
     ConnectedRxProtocolShutdown,
 > = Signal::new();
+#[unsafe(link_section = ".critical.bss.open_radio_irq")]
+static OPEN_RADIO_CONNECTED_BENCHMARK_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+#[unsafe(link_section = ".critical.bss.open_radio_irq")]
+static OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static OPEN_RADIO_MAC_INTERRUPT_REGISTERS: StaticCell<MacInterruptRegisters> = StaticCell::new();
 // Storage addresses remain stable across connected epochs. ACTIVE_PTR is
 // cleared before task-side code moves the values out; STORAGE_PTR retains the
@@ -4694,18 +4740,22 @@ async fn connected_network_report_task(stack: Stack<'static>) {
     report_network_configuration(stack).await
 }
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 2)]
 async fn connected_benchmark_task(
     stack: Stack<'static>,
     association_phy: StaAssociationPhy,
     data_tx_rate: TxPhyRate,
     registers: &'static RefCell<&'static mut RadioRegisters>,
 ) {
-    observe_open_radio_task_polls(
-        run_open_radio_udp_benchmark(stack, association_phy, data_tx_rate, registers),
-        &OPEN_RADIO_TASK_POLLS.benchmark,
+    let _ = select(
+        OPEN_RADIO_CONNECTED_BENCHMARK_STOP.wait(),
+        observe_open_radio_task_polls(
+            run_open_radio_udp_benchmark(stack, association_phy, data_tx_rate, registers),
+            &OPEN_RADIO_TASK_POLLS.benchmark,
+        ),
     )
-    .await
+    .await;
+    OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED.signal(());
 }
 
 async fn run_connected_network(
@@ -4713,7 +4763,7 @@ async fn run_connected_network(
     session: StaConnectedSession<'_>,
     pairwise_slot: StaPairwiseCcmpSlot,
     group_slot: StaGroupCcmpSlot,
-) -> ! {
+) -> RadioHilDisconnectedEpoch {
     let RadioHilConnectedFixture {
         spawner,
         protocol_spawner,
@@ -4729,8 +4779,7 @@ async fn run_connected_network(
     } = fixture;
     let StaConnectedSession {
         link,
-        network_device,
-        network_runner,
+        network,
         rate_control,
         sequences,
     } = session;
@@ -4755,28 +4804,34 @@ async fn run_connected_network(
         .expect("MAC interrupt setup has no concurrent active epoch");
     activate_open_radio_interrupts(platform, interrupt_epoch, MAC_COLD_RX_INTERRUPT_MASK);
 
-    network_runner.set_link_state(LinkState::Up);
-    let stack_resources = OPEN_RADIO_STACK_RESOURCES.init(StackResources::new());
-    let mut seed = [0_u8; 8];
-    seed[..6].copy_from_slice(&station_address);
-    seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
-    // Keep the controlled local throughput setup independent of DHCP while
-    // preserving DHCP as an end-to-end test against the ordinary router.
-    let network_config = if PERF_AP_PROFILE {
-        NetworkConfig::ipv4_static(StaticConfigV4 {
-            address: Ipv4Cidr::new(Ipv4Address::from_octets(STA_HIL_IPV4), 24),
-            gateway: Some(Ipv4Address::from_octets(STA_ARP_TARGET_IPV4)),
-            dns_servers: Default::default(),
-        })
-    } else {
-        NetworkConfig::dhcpv4(Default::default())
+    let (stack, network_runner, stack_runner) = match network {
+        RadioHilStaNetwork::Unstarted { device, runner } => {
+            let stack_resources = OPEN_RADIO_STACK_RESOURCES.init(StackResources::new());
+            let mut seed = [0_u8; 8];
+            seed[..6].copy_from_slice(&station_address);
+            seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
+            // Keep the controlled local throughput setup independent of DHCP
+            // while preserving DHCP as an end-to-end router test.
+            let network_config = if PERF_AP_PROFILE {
+                NetworkConfig::ipv4_static(StaticConfigV4 {
+                    address: Ipv4Cidr::new(Ipv4Address::from_octets(STA_HIL_IPV4), 24),
+                    gateway: Some(Ipv4Address::from_octets(STA_ARP_TARGET_IPV4)),
+                    dns_servers: Default::default(),
+                })
+            } else {
+                NetworkConfig::dhcpv4(Default::default())
+            };
+            let (stack, stack_runner) = embassy_net::new(
+                device,
+                network_config,
+                stack_resources,
+                u64::from_le_bytes(seed),
+            );
+            (stack, runner, Some(stack_runner))
+        }
+        RadioHilStaNetwork::Running(network) => (network.stack, network.runner, None),
     };
-    let (stack, stack_runner) = embassy_net::new(
-        network_device,
-        network_config,
-        stack_resources,
-        u64::from_le_bytes(seed),
-    );
+    network_runner.set_link_state(LinkState::Up);
     let data_tx_rate = selected_data_tx_rate(association_phy, peer_qos);
     let benchmark_tx_rate = rate_control.ampdu_tx_rate(configured_sta_tx_rate_policy(
         association_phy,
@@ -4947,9 +5002,15 @@ async fn run_connected_network(
     let backend = Esp32s31WifiBackend::with_control(hardware, rx, tx, control);
     let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
 
-    let stack_task = connected_network_stack_task(stack_runner)
-        .unwrap_or_else(|_| panic!("connected network task allocation failed"));
-    spawner.spawn(stack_task);
+    let network_started = stack_runner.is_some();
+    if let Some(stack_runner) = stack_runner {
+        let stack_task = connected_network_stack_task(stack_runner)
+            .unwrap_or_else(|_| panic!("connected network task allocation failed"));
+        spawner.spawn(stack_task);
+        let report_task = connected_network_report_task(stack)
+            .unwrap_or_else(|_| panic!("connected network report task allocation failed"));
+        spawner.spawn(report_task);
+    }
     let protocol_task = connected_rx_protocol_task(rx_protocol)
         .unwrap_or_else(|_| panic!("connected RX protocol task allocation failed"));
     // embassy-net intentionally stores its Stack/Runner state behind a
@@ -4959,9 +5020,6 @@ async fn run_connected_network(
     // to Core 1 removes one long cooperative poll interval without inventing
     // a fixed per-wake frame ceiling.
     protocol_spawner.spawn(protocol_task);
-    let report_task = connected_network_report_task(stack)
-        .unwrap_or_else(|_| panic!("connected network report task allocation failed"));
-    spawner.spawn(report_task);
     let benchmark_task = connected_benchmark_task(
         stack,
         association_phy,
@@ -4973,7 +5031,8 @@ async fn run_connected_network(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-task-topology \
          network=core0 rx_protocol=core1 radio=sta-parent-core0 \
-         report=core0 benchmark=core0"
+         report=core0 benchmark=core0 network_started={}"
+        , u8::from(network_started)
     ));
 
     // The radio loop intentionally remains in this parent STA future. Other
@@ -5015,7 +5074,15 @@ async fn run_connected_network(
         irq_drain.tx_events,
         power_irq_drain,
     ));
+    // No spawned task may retain a PAC borrow when this epoch returns. The
+    // benchmark is the only task besides the radio runner that receives the
+    // register cell; stop it before waiting for protocol ownership release.
+    OPEN_RADIO_CONNECTED_BENCHMARK_STOP.signal(());
     OPEN_RADIO_CONNECTED_PROTOCOL_STOP.signal(());
+    OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED.wait().await;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-benchmark-stopped"
+    ));
     let protocol_shutdown = OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED.wait().await;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stopped \
@@ -5089,10 +5156,16 @@ async fn run_connected_network(
                         "OPEN_RADIO_PHY_HIL result=PASS \
                          stage=production-connected-tx-return"
                     ));
-                    let _owners = (network, hardware, stopped_rx, ampdu, control);
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
+                    drop(control);
+                    return RadioHilDisconnectedEpoch {
+                        network: RadioHilRunningNetwork {
+                            stack,
+                            runner: network,
+                        },
+                        hardware,
+                        rx: stopped_rx,
+                        ampdu,
+                    };
                 }
                 Err(tx) => {
                     emergency_log(format_args!(
@@ -5115,6 +5188,70 @@ async fn run_connected_network(
                 Timer::after_secs(60).await;
             }
         }
+    }
+}
+
+/// Prove that one disconnected owner can create and close a second RX epoch
+/// without reinitializing any static storage.
+async fn qualify_disconnected_rx_restart(
+    epoch: RadioHilDisconnectedEpoch,
+) -> RadioHilDisconnectedEpoch {
+    let RadioHilDisconnectedEpoch {
+        network,
+        mut hardware,
+        rx,
+        ampdu,
+    } = epoch;
+    let prepared = match rx.prepare(&mut hardware) {
+        Ok(prepared) => prepared,
+        Err((rx, error)) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-prepare \
+                 error={error:?}"
+            ));
+            let _owners = (network, hardware, rx, ampdu);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+    let live = match prepared.start(&mut hardware).await {
+        Ok(live) => live,
+        Err((prepared, error)) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-enable \
+                 error={error:?}"
+            ));
+            let _owners = (network, hardware, prepared, ampdu);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+    let rx = match live.try_stop(&mut hardware) {
+        Ok(rx) => rx,
+        Err((live, error)) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-stop \
+                 error={error:?}"
+            ));
+            let _owners = (network, hardware, live, ampdu);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-restart \
+         descriptor_base={:#010x} queued_frames={}",
+        rx.ring().descriptor_base(),
+        rx.queued_frames(),
+    ));
+    RadioHilDisconnectedEpoch {
+        network,
+        hardware,
+        rx,
+        ampdu,
     }
 }
 
@@ -5480,8 +5617,10 @@ async fn associate_target(
         };
         let session = StaConnectedSession {
             link,
-            network_device,
-            network_runner,
+            network: RadioHilStaNetwork::Unstarted {
+                device: network_device,
+                runner: network_runner,
+            },
             rate_control,
             sequences,
         };
@@ -5574,8 +5713,7 @@ async fn complete_wpa2_key_install_and_connect(
     } = fixture;
     let StaConnectedSession {
         link,
-        mut network_device,
-        network_runner,
+        mut network,
         rate_control,
         sequences,
     } = session;
@@ -5686,9 +5824,26 @@ async fn complete_wpa2_key_install_and_connect(
         // completed the four-way handshake but four immediate ARP
         // MAC retries all returned status 5.
         Timer::after_millis(WPA2_CONTROLLED_PORT_SETTLE_MS).await;
-        network_runner.set_link_state(LinkState::Up);
-        let mut passed = false;
-        for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
+        match &mut network {
+            RadioHilStaNetwork::Running(_) => {
+                // On reassociation the persistent stack already owns the
+                // network device. Its ordinary connected traffic is the
+                // protected-data assertion; manufacturing a second direct
+                // device alias solely for this HIL probe would violate that
+                // ownership boundary.
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=PASS \
+                     stage=wpa2-protected-arp-deferred reason=persistent-stack"
+                ));
+                true
+            }
+            RadioHilStaNetwork::Unstarted {
+                device: network_device,
+                runner: network_runner,
+            } => {
+                network_runner.set_link_state(LinkState::Up);
+                let mut passed = false;
+                for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
             let protected_rx_ring =
                 match start_live_rx_ring(mmio, rx_storage, descriptor_base, buffer_addresses).await
                 {
@@ -5702,8 +5857,7 @@ async fn complete_wpa2_key_install_and_connect(
                         break;
                     }
                 };
-            let Some(queued_arp) =
-                queue_arp_probe(&mut network_device, &network_runner, station_address)
+            let Some(queued_arp) = queue_arp_probe(network_device, network_runner, station_address)
             else {
                 let _ = disable_receive(mmio);
                 emergency_log(format_args!(
@@ -5743,8 +5897,8 @@ async fn complete_wpa2_key_install_and_connect(
                             rx_storage,
                             frame,
                             ethernet,
-                            &mut network_device,
-                            &network_runner,
+                            network_device,
+                            network_runner,
                             station_address,
                             bssid,
                             protected_rx_ring,
@@ -5779,12 +5933,14 @@ async fn complete_wpa2_key_install_and_connect(
                 Timer::after_millis(WPA2_PROTECTED_ARP_RETRY_DELAY_MS).await;
             }
         }
-        passed
+                passed
+            }
+        }
     } else {
         false
     };
     if message4_valid && message4_sent && protected_arp_pass {
-        run_connected_network(
+        let disconnected = run_connected_network(
             RadioHilConnectedFixture {
                 spawner,
                 protocol_spawner,
@@ -5800,8 +5956,7 @@ async fn complete_wpa2_key_install_and_connect(
             },
             StaConnectedSession {
                 link,
-                network_device,
-                network_runner,
+                network,
                 rate_control,
                 sequences,
             },
@@ -5809,6 +5964,23 @@ async fn complete_wpa2_key_install_and_connect(
             group_slot,
         )
         .await;
+        let disconnected = qualify_disconnected_rx_restart(disconnected).await;
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
+             descriptor_base={:#010x} queued_frames={}",
+            disconnected.rx.ring().descriptor_base(),
+            disconnected.rx.queued_frames(),
+        ));
+        let RadioHilDisconnectedEpoch {
+            network,
+            hardware,
+            rx,
+            ampdu,
+        } = disconnected;
+        let _owners = (RadioHilStaNetwork::Running(network), hardware, rx, ampdu);
+        loop {
+            Timer::after_secs(60).await;
+        }
     }
     let group_hardware_index = group_slot.hardware_index();
     group_slot.clear(mmio);

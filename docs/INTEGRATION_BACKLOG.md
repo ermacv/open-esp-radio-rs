@@ -1,7 +1,7 @@
 # Integration backlog
 
 Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-03
-(6,727 lines).
+(6,899 lines).
 
 The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
 executor, concrete `embassy-net` scenarios, credentials, traffic generation
@@ -212,6 +212,18 @@ The first reconnect seam is now production-owned:
   late association-scoped events and returns exact cleanup counts. The HIL
   calls it only after the staged protocol stop acknowledgement, so no later
   ADDBA publication can repopulate a closed control epoch.
+- halted RX now owns a second type-state transition through
+  `Esp32s31PreparedRx` back to `Esp32s31ConnectedRx`. Descriptor rebuild and
+  walker enable return the complete halted/prepared owner on failure. Host
+  coverage exercises a rejected enable followed by a successful retry, and
+  HIL creates and confirms a second RX DMA epoch using the same static arena;
+- the HIL benchmark now has a stop acknowledgement and cannot retain the PAC
+  register cell after disconnect. `run_connected_network` returns a coherent
+  `RadioHilDisconnectedEpoch` containing the persistent network runner,
+  register-backed hardware, halted RX and A-MPDU storage. `embassy-net` and
+  its report task are created only for `Unstarted`; the returned `Running`
+  state keeps that stack alive with link-down rather than calling
+  `StackResources::init` again.
 
 This is necessary but not yet a reconnect implementation. The next slices,
 in order, are:
@@ -224,13 +236,12 @@ in order, are:
 2. make the HIL consume that service, then qualify disconnect/reassociation
    and one injected TX/RX failure before resuming feature expansion.
 
-The current HIL still retains the stopped parent future instead of entering a
-second scan/join epoch. Its `embassy-net` stack and report/benchmark tasks are
-constructed inside the one-shot connected transition even though the stack
-should remain alive with link-down across radio reassociation. Therefore it
-cannot yet serve as evidence for reconnect even though the radio, staged
-protocol, interrupts, RX DMA, BlockAck/TID policy, keys and TX descriptor now
-all reach explicit teardown edges.
+The current HIL still retains the returned bundle in its WPA2 parent instead
+of entering a second scan/join epoch. Network stack/report lifetime and the
+per-epoch benchmark lifetime are now separated correctly, but scan, join and
+WPA2 still accept only the initial raw-register fixture. Therefore HIL cannot
+yet serve as evidence for reassociation even though every connected resource
+now reaches an explicit reusable or fail-closed teardown edge.
 
 ## Completion gate
 

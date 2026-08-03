@@ -80,9 +80,11 @@ owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
 owner crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs await_staged_rx_reload
 owner crates/integration/esp32s31/wifi-embassy/src/runner.rs WifiRunner
 owner crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs Esp32s31ConnectedTx
+owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs Esp32s31PreparedRx
 test crates/esp32s31/wifi/mac/tests/mac.rs staged_rx_frame_remains_private_until_reload_settles
 test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
 test crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs idle_aggregate_returns_ordinary_and_storage_for_station_teardown
+test crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs connected_rx_stop_confirms_walker_off_and_preserves_static_resources
 vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
@@ -208,6 +210,6 @@ vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeo
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 depends-on rx-tx-dma
 depends-on power-management
-gap implementation outer-sta-service-restart-composition-missing
+gap implementation outer-sta-scan-join-wpa2-loop-missing
 gap vendor failure-cleanup-contracts-incomplete
 gap hil injected-fault-matrix-missing

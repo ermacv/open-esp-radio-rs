@@ -394,11 +394,18 @@ resolved function, the limit is 64 complete paths and 12 symbolic branch
 decisions per path. Every
 path must terminate, preserve a renderable condition and contain only modeled
 effects. A loop whose branch operands become concrete during tracing is fully
-unrolled, with a hard limit of 256 visits to any instruction; the resulting
+unrolled, with a hard limit of 1,024 visits to any instruction; the resulting
 ordered effects are accepted only if the loop actually terminates within that
 bound. Symbolic loops, excessive iteration, path explosion, unsupported
 instructions, unresolved write values and unmapped MMIO registers remain
-fail-closed. A backward branch
+fail-closed. After complete unrolling, two proof-driven CPU-RAM forms may be
+rendered back into compact Rust loops: repeated 32-bit word reads followed by
+little-endian byte writes, and calls to a pure four-byte little-endian loader
+followed by 32-bit word writes. These forms retain the vendor access widths and
+ordering; they are not replaced with `memcpy`. Any MMIO event, pattern
+mismatch, non-contiguous range, or read/call token used after the candidate
+loop disables compaction and leaves the ordered events explicit.
+A backward branch
 is automatically reduced to `PollMmio` only when its complete loop body has
 exactly one SVD-mapped MMIO read, pure scalar operations, no calls, stores,
 fences, RAM accesses or stack mutation, and an exit predicate reducible to

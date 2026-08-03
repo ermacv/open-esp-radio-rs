@@ -465,6 +465,141 @@ pub(super) fn render_events(
                 value: None,
                 ..
             } => return Err("internal IR error: memory write has no symbolic value".to_owned()),
+            ResolvedReferenceEvent::WordToBytesMemoryLoop {
+                source,
+                source_region,
+                destination,
+                destination_region,
+                length,
+            } => {
+                if *length == 0 || length % 4 != 0 {
+                    return Err(format!(
+                        "internal IR error: word-to-bytes loop length {length} is not a positive multiple of four"
+                    ));
+                }
+                let token = state.memory_access_count;
+                state.memory_access_count += 1;
+                let source = render_state_value(source, state)?;
+                let destination = render_state_value(destination, state)?;
+                writeln!(
+                    output,
+                    "{indent}// Proven {length}-byte CPU-RAM word-to-bytes loop: {} -> {}.",
+                    comment_text(source_region),
+                    comment_text(destination_region),
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let memory_transfer_source{token} = {source};"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let memory_transfer_destination{token} = {destination};"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}for memory_transfer_word_offset{token} in (0..{length}_u32).step_by(4) {{"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}    for memory_transfer_byte_offset{token} in 0..4_u32 {{"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        let memory_transfer_word{token} = memory.read(32, memory_transfer_source{token}.wrapping_add(memory_transfer_word_offset{token}));"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        let memory_transfer_byte{token} = memory_transfer_word{token}.wrapping_shr(memory_transfer_byte_offset{token}.wrapping_mul(8));"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}        memory.write(8, memory_transfer_destination{token}.wrapping_add(memory_transfer_word_offset{token}).wrapping_add(memory_transfer_byte_offset{token}), memory_transfer_byte{token});"
+                )
+                .unwrap();
+                writeln!(output, "{indent}    }}").unwrap();
+                writeln!(output, "{indent}}}").unwrap();
+                // The proven source pattern performed one 32-bit read per
+                // destination byte. Preserve the outer token namespace even
+                // though the compact semantic transfer no longer materializes
+                // those dead intermediate values.
+                state.memory_read_count = state.memory_read_count.wrapping_add(*length as usize);
+            }
+            ResolvedReferenceEvent::BytesToWordMemoryLoop {
+                first_call_token,
+                source,
+                source_region,
+                destination,
+                destination_region,
+                length,
+            } => {
+                if *length == 0 || length % 4 != 0 {
+                    return Err(format!(
+                        "internal IR error: bytes-to-word loop length {length} is not a positive multiple of four"
+                    ));
+                }
+                if usize::try_from(*first_call_token).ok() != Some(state.call_results.len()) {
+                    return Err(format!(
+                        "compacted call token {first_call_token} is not ordered in generated behavior"
+                    ));
+                }
+                let token = state.memory_access_count;
+                state.memory_access_count += 1;
+                let source = render_state_value(source, state)?;
+                let destination = render_state_value(destination, state)?;
+                writeln!(
+                    output,
+                    "{indent}// Proven {length}-byte CPU-RAM bytes-to-word loop: {} -> {}.",
+                    comment_text(source_region),
+                    comment_text(destination_region),
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let memory_transfer_source{token} = {source};"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}let memory_transfer_destination{token} = {destination};"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}for memory_transfer_word_offset{token} in (0..{length}_u32).step_by(4) {{"
+                )
+                .unwrap();
+                for byte in [1_u32, 0, 2, 3] {
+                    writeln!(
+                        output,
+                        "{indent}    let memory_transfer_byte{byte}_{token} = memory.read(8, memory_transfer_source{token}.wrapping_add(memory_transfer_word_offset{token}).wrapping_add({byte}));"
+                    )
+                    .unwrap();
+                }
+                writeln!(
+                    output,
+                    "{indent}    let memory_transfer_word{token} = (memory_transfer_byte0_{token} & 0xff) | ((memory_transfer_byte1_{token} & 0xff) << 8) | ((memory_transfer_byte2_{token} & 0xff) << 16) | ((memory_transfer_byte3_{token} & 0xff) << 24);"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "{indent}    memory.write(32, memory_transfer_destination{token}.wrapping_add(memory_transfer_word_offset{token}), memory_transfer_word{token});"
+                )
+                .unwrap();
+                writeln!(output, "{indent}}}").unwrap();
+                let call_count = usize::try_from(*length / 4)
+                    .map_err(|_| "bytes-to-word call count does not fit usize".to_owned())?;
+                state.call_results.extend(core::iter::repeat_n(
+                    CallResultAvailability::Primary,
+                    call_count,
+                ));
+            }
             ResolvedReferenceEvent::ExternalCall {
                 token,
                 table,
@@ -568,10 +703,14 @@ pub(super) fn render_events(
                         "composed call token {token} is not ordered in generated behavior"
                     ));
                 }
-                let mut child_state = RenderState::default();
+                let child_prefix = format!("{}call{token}_", state.composed_argument_prefix);
+                let mut child_state = RenderState {
+                    composed_argument_prefix: child_prefix.clone(),
+                    ..RenderState::default()
+                };
                 for index in crate::resolved_reference_flow_input_indices(flow) {
                     let argument = render_state_value(&arguments[usize::from(index)], state)?;
-                    let name = format!("call{token}_arg{index}");
+                    let name = format!("{child_prefix}arg{index}");
                     writeln!(output, "{indent}let {name} = {argument};").unwrap();
                     // Specialization can turn the last use of a callee input
                     // into a constant while the conservative input inventory
@@ -629,9 +768,13 @@ pub(super) fn render_events(
                 }
                 let scratch_index = usize::from(*scratch_argument);
                 let scratch_base = 0xfffe_0000_u32.wrapping_add(token.wrapping_mul(0x100));
-                let mut child_state = RenderState::default();
+                let child_prefix = format!("{}call{token}_", state.composed_argument_prefix);
+                let mut child_state = RenderState {
+                    composed_argument_prefix: child_prefix.clone(),
+                    ..RenderState::default()
+                };
                 for index in crate::resolved_reference_flow_input_indices(flow) {
-                    let name = format!("call{token}_arg{index}");
+                    let name = format!("{child_prefix}arg{index}");
                     if usize::from(index) == scratch_index {
                         child_state.arguments[usize::from(index)] = name;
                         continue;
@@ -656,12 +799,12 @@ pub(super) fn render_events(
                 let child_indent = format!("{indent}    ");
                 writeln!(
                     output,
-                    "{child_indent}let call{token}_arg{scratch_argument} = {scratch_base:#010x}_u32;"
+                    "{child_indent}let {child_prefix}arg{scratch_argument} = {scratch_base:#010x}_u32;"
                 )
                 .unwrap();
                 writeln!(
                     output,
-                    "{child_indent}let mut scratch_memory{token} = ReferenceScratchMemory::new(memory, call{token}_arg{scratch_argument}, {scratch_size});"
+                    "{child_indent}let mut scratch_memory{token} = ReferenceScratchMemory::new(memory, {child_prefix}arg{scratch_argument}, {scratch_size});"
                 )
                 .unwrap();
                 writeln!(

@@ -327,6 +327,8 @@ fn plan_action(
         | ResolvedReferenceEvent::PollFlow { .. }
         | ResolvedReferenceEvent::SymmetricCalibrationSearch { .. }
         | ResolvedReferenceEvent::Memory { .. }
+        | ResolvedReferenceEvent::WordToBytesMemoryLoop { .. }
+        | ResolvedReferenceEvent::BytesToWordMemoryLoop { .. }
         | ResolvedReferenceEvent::ExternalCall { .. }
         | ResolvedReferenceEvent::DiagnosticCall { .. }
         | ResolvedReferenceEvent::ComposedCall { .. }

@@ -128,6 +128,10 @@ impl PhyCalibrationRecord {
         &self.bytes
     }
 
+    pub const fn into_bytes(self) -> [u8; PHY_CALIBRATION_PREFIX_LEN] {
+        self.bytes
+    }
+
     pub fn refresh_header_and_checksum(&mut self, version: u32, mac_sys0: u32, mac_sys1: u32) {
         let result =
             calibration_record_check_or_write(&mut self.bytes, false, version, mac_sys0, mac_sys1);
@@ -147,6 +151,36 @@ impl PhyCalibrationRecord {
 impl Default for PhyCalibrationRecord {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Immutable snapshot of the two temperature-initialization decisions made
+/// by `register_chipv7_phy` before it enters RF/BB initialization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyRegisterTemperatureControl {
+    update_offset_130: bool,
+    update_reference_copies: bool,
+}
+
+impl PhyRegisterTemperatureControl {
+    pub const FULL: Self = Self {
+        update_offset_130: true,
+        update_reference_copies: true,
+    };
+
+    pub const fn from_flag_word(flags: u32) -> Self {
+        Self {
+            update_offset_130: flags & (1 << 5) == 0,
+            update_reference_copies: flags & (1 << 20) == 0,
+        }
+    }
+
+    pub const fn updates_offset_130(self) -> bool {
+        self.update_offset_130
+    }
+
+    pub const fn updates_reference_copies(self) -> bool {
+        self.update_reference_copies
     }
 }
 
@@ -1120,22 +1154,73 @@ impl PhyColdState {
         self.parameter[0x0a4..0x0a8].fill(0);
     }
 
-    /// Commit the complete `phy_get_temp_init(1, 1)` state transform used by
-    /// the full-calibration profile after RF and baseband initialization.
+    /// Restore a caller-owned calibration record and apply the exact retained
+    /// calibration mask used by the pinned `register_chipv7_phy` partial path.
+    ///
+    /// The parent validates the record before calling this method.  The mask
+    /// `0xfffe_fddf` is the `lui 0xffff0; addi -0x221; and` sequence at
+    /// `register_chipv7_phy+0x18a`: it deliberately invalidates only the
+    /// calibration phases that must be repeated after a cold hardware reset.
+    pub fn begin_partial_wifi_calibration(&mut self, calibration: &PhyCalibrationRecord) {
+        self.recover_from(calibration);
+        let mut flags = [0_u8; 4];
+        flags.copy_from_slice(&self.parameter[0x0a4..0x0a8]);
+        let flags = u32::from_le_bytes(flags) & 0xfffe_fddf;
+        self.parameter[0x0a4..0x0a8].copy_from_slice(&flags.to_le_bytes());
+    }
+
+    /// Capture the two `phy_get_temp_init` arguments from the calibration flag
+    /// word before RF/BB initialization mutates that word.
+    ///
+    /// Pinned `register_chipv7_phy+0xd8..+0x106` snapshots `phy_param+0xa4`,
+    /// then passes inverted bits 5 and 20. Keeping this as a typed value avoids
+    /// both a raw parameter pointer and the tempting-but-wrong choice to read
+    /// the flags after the calibration children have completed.
+    pub fn register_temperature_control(&self) -> PhyRegisterTemperatureControl {
+        let mut flags = [0_u8; 4];
+        flags.copy_from_slice(&self.parameter[0x0a4..0x0a8]);
+        PhyRegisterTemperatureControl::from_flag_word(u32::from_le_bytes(flags))
+    }
+
+    /// Commit the complete state transform surrounding `phy_get_temp_init`.
+    pub fn apply_register_temperature_outcome(
+        &mut self,
+        control: PhyRegisterTemperatureControl,
+        outcome: crate::phy_temperature::PhyTemperatureOutcome,
+    ) {
+        self.apply_temperature_outcome(outcome);
+        self.apply_register_temperature_references(control);
+    }
+
+    /// Apply the parent-owned stores after `phy_tsens_temp_read` has updated
+    /// the current temperature at `phy_param+0x000`.
+    pub fn apply_register_temperature_references(
+        &mut self,
+        control: PhyRegisterTemperatureControl,
+    ) {
+        let temperature = [self.parameter[0], self.parameter[1]];
+        if control.update_reference_copies {
+            for offset in [0x048, 0x12e, 0x1f8, 0x1fa] {
+                self.parameter[offset] = temperature[0];
+                self.parameter[offset + 1] = temperature[1];
+            }
+        }
+        // `phy_get_temp_init` performs this copy for every argument pair.
+        self.parameter[0x004] = self.parameter[0x12e];
+        self.parameter[0x005] = self.parameter[0x12f];
+        if control.update_offset_130 {
+            self.parameter[0x130] = temperature[0];
+            self.parameter[0x131] = temperature[1];
+        }
+    }
+
+    /// Compatibility helper for callers that deliberately select the full
+    /// `(1, 1)` initialization mode.
     pub fn apply_full_calibration_temperature(
         &mut self,
         outcome: crate::phy_temperature::PhyTemperatureOutcome,
     ) {
-        self.apply_temperature_outcome(outcome);
-        let temperature = outcome.temperature.to_le_bytes();
-        for offset in [0x048, 0x12e, 0x1f8, 0x1fa] {
-            self.parameter[offset] = temperature[0];
-            self.parameter[offset + 1] = temperature[1];
-        }
-        self.parameter[0x004] = self.parameter[0x12e];
-        self.parameter[0x005] = self.parameter[0x12f];
-        self.parameter[0x130] = temperature[0];
-        self.parameter[0x131] = temperature[1];
+        self.apply_register_temperature_outcome(PhyRegisterTemperatureControl::FULL, outcome);
     }
 
     /// Mark the completed `register_chipv7_phy` cold image.
@@ -3681,8 +3766,8 @@ mod tests {
         PhyColdI2cTransaction, PhyColdLoweringError, PhyColdMmioBinding, PhyColdObservationBinding,
         PhyColdObservationRequest, PhyColdObservationResult, PhyColdPbusAction, PhyColdPbusBinding,
         PhyColdPbusHardwareResult, PhyColdPbusObservation, PhyColdState, PhyColdTimerBinding,
-        PhyDot11pConfiguration, PhyTemperatureTrackingDebug, initial_parameter_image,
-        phy_sdm_deadline_expired,
+        PhyDot11pConfiguration, PhyRegisterTemperatureControl, PhyTemperatureTrackingDebug,
+        initial_parameter_image, phy_sdm_deadline_expired,
     };
     use crate::phy_dc_iq::{
         PhyDcIqAccumulatorSnapshot, PhyDcIqAction, PhyDcIqCompletion, PhyDcIqDelayPhase,
@@ -3882,6 +3967,30 @@ mod tests {
                 assert_eq!(state.parameter_image()[index], before[index]);
             }
         }
+    }
+
+    #[test]
+    fn register_temperature_control_preserves_restored_reference_copies() {
+        let mut image = initial_parameter_image();
+        image[0] = 0x34;
+        image[1] = 0x12;
+        image[0x12e] = 0x78;
+        image[0x12f] = 0x56;
+        image[0x048] = 0x11;
+        image[0x049] = 0x22;
+        image[0x130] = 0x33;
+        image[0x131] = 0x44;
+        let mut state = PhyColdState::from_parameter_image(image);
+        let control = PhyRegisterTemperatureControl::from_flag_word(1 << 20);
+
+        assert!(control.updates_offset_130());
+        assert!(!control.updates_reference_copies());
+        state.apply_register_temperature_references(control);
+
+        assert_eq!(&state.parameter_image()[0x004..0x006], &[0x78, 0x56]);
+        assert_eq!(&state.parameter_image()[0x048..0x04a], &[0x11, 0x22]);
+        assert_eq!(&state.parameter_image()[0x12e..0x130], &[0x78, 0x56]);
+        assert_eq!(&state.parameter_image()[0x130..0x132], &[0x34, 0x12]);
     }
 
     #[test]

@@ -1,11 +1,18 @@
 //! Fully resolved reference IR accepted by Rust code generation.
 
+mod compaction;
+
 use std::collections::BTreeSet;
+
+use compaction::{
+    compact_bytes_to_word_memory_loops, compact_cpu_memory_transfers, terminator_uses_call_tokens,
+    terminator_uses_memory_tokens, value_uses_call_tokens, value_uses_memory_tokens,
+};
 
 use super::{
     BranchCondition, DraftReferenceEvent, DraftReferenceFlow, DraftReferenceTerminator,
-    FunctionAnalysis, IndexedMmioGuard, IndexedMmioRegister, MemoryAccess, ObservableEvent,
-    SymbolicValue, collect_value_inputs,
+    ExpressionOperation, FunctionAnalysis, IndexedMmioGuard, IndexedMmioRegister, MemoryAccess,
+    ObservableEvent, SymbolicValue, collect_value_inputs,
 };
 use open_radio_vendor_validator_core::{ExternalFunctionRef, ExternalTableRef};
 
@@ -61,6 +68,29 @@ pub enum ResolvedReferenceEvent {
         address: SymbolicValue,
         region: String,
         value: Option<SymbolicValue>,
+    },
+    /// Proven counted loop that reloads one 32-bit CPU-RAM word before
+    /// writing each of its four little-endian bytes.
+    ///
+    /// This deliberately records the vendor access shape, rather than lowering
+    /// it to `memcpy`: repeated reads are observable when ranges alias. The
+    /// event is recovered only from complete unrolled non-MMIO memory events.
+    WordToBytesMemoryLoop {
+        source: SymbolicValue,
+        source_region: String,
+        destination: SymbolicValue,
+        destination_region: String,
+        length: u32,
+    },
+    /// Proven counted loop that calls a pure four-byte little-endian loader
+    /// and writes each resulting 32-bit word to CPU RAM.
+    BytesToWordMemoryLoop {
+        first_call_token: u32,
+        source: SymbolicValue,
+        source_region: String,
+        destination: SymbolicValue,
+        destination_region: String,
+        length: u32,
     },
     ExternalCall {
         token: u32,
@@ -184,6 +214,19 @@ fn collect_resolved_flow_inputs(flow: &ResolvedReferenceFlow, output: &mut BTree
                 if let Some(value) = value {
                     collect_value_inputs(value, output);
                 }
+            }
+            ResolvedReferenceEvent::WordToBytesMemoryLoop {
+                source,
+                destination,
+                ..
+            }
+            | ResolvedReferenceEvent::BytesToWordMemoryLoop {
+                source,
+                destination,
+                ..
+            } => {
+                collect_value_inputs(source, output);
+                collect_value_inputs(destination, output);
             }
             ResolvedReferenceEvent::DelayMicros { micros } => collect_value_inputs(micros, output),
             ResolvedReferenceEvent::ExternalCall {
@@ -487,6 +530,12 @@ impl ResolvedReferenceFlow {
                 not_taken: Box::new(Self::from_draft(not_taken)?),
             },
         };
+        let events = compact_cpu_memory_transfers(events, |start, end| {
+            terminator_uses_memory_tokens(&terminator, start, end)
+        });
+        let events = compact_bytes_to_word_memory_loops(events, |start, end| {
+            terminator_uses_call_tokens(&terminator, start, end)
+        });
         Ok(Self { events, terminator })
     }
 }
@@ -507,17 +556,31 @@ impl TryFrom<&FunctionAnalysis> for ResolvedReferenceProgram {
             ResolvedReferenceBody::Flow(ResolvedReferenceFlow::from_draft(flow)?)
         } else {
             ResolvedReferenceBody::Linear {
-                events: trace
-                    .reference_events
-                    .iter()
-                    .map(ResolvedReferenceEvent::from_draft)
-                    .collect::<Result<Vec<_>, _>>()?,
+                events: {
+                    let events = compact_cpu_memory_transfers(
+                        trace
+                            .reference_events
+                            .iter()
+                            .map(ResolvedReferenceEvent::from_draft)
+                            .collect::<Result<Vec<_>, _>>()?,
+                        |start, end| value_uses_memory_tokens(&trace.return_value, start, end),
+                    );
+                    compact_bytes_to_word_memory_loops(events, |start, end| {
+                        value_uses_call_tokens(&trace.return_value, start, end)
+                    })
+                },
                 return_value: trace.return_value.clone(),
             }
         };
         Ok(Self {
             symbol: trace.symbol.clone(),
-            dependencies: trace.reference_dependencies.clone(),
+            dependencies: trace
+                .reference_dependencies
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             body,
             exit_return_modeled: trace.reference_exit_return_modeled(),
         })

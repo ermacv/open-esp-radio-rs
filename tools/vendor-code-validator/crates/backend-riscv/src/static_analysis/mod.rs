@@ -27,7 +27,13 @@ use stack::structural_call_arguments;
 const REFERENCE_ONLY_POLL_BLOCKER: &str = "reference-modeled MMIO polling loop";
 const REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER: &str = "reference-modeled standard memory intrinsic";
 const MAX_INLINE_MEMORY_INTRINSIC_BYTES: u32 = 256;
-const MAX_STRUCTURAL_INSTRUCTION_VISITS: u16 = 256;
+// Constant-propagated counted loops are fully unrolled so every memory effect
+// remains visible to reference generation. A reviewed calibration-record
+// transfer has a proven 508-byte inner loop, so the former 256-visit ceiling
+// rejected it even though both the pointer and terminal address were concrete.
+// This remains a hard fail-closed bound: an unresolved or non-terminating loop
+// still exhausts the budget instead of becoming a reference program.
+const MAX_STRUCTURAL_INSTRUCTION_VISITS: u16 = 1_024;
 
 #[derive(Debug)]
 pub struct RiscvSummaryHooks {
@@ -187,6 +193,13 @@ pub fn trace_binary_symbol_with_branches(
         .collect::<BTreeMap<_, _>>();
     let mut instruction_index = 0usize;
     let mut instruction_visits = BTreeMap::<u32, u16>::new();
+    // Reference-flow exploration forces one outcome per unresolved branch
+    // site. A loop-invariant branch inside a concrete counted loop therefore
+    // has one semantic decision even though the instruction executes many
+    // times. Keep only its first event; otherwise flow construction would
+    // incorrectly require both outcomes again inside the already selected
+    // arm.
+    let mut emitted_forced_branch_decisions = BTreeSet::<u32>::new();
     let mut checkpoints = BTreeMap::<u32, StructuralCheckpoint>::new();
     while let Some(decoded) = instructions.get(instruction_index).copied() {
         let pc = decoded.address;
@@ -1144,7 +1157,10 @@ pub fn trace_binary_symbol_with_branches(
                         unresolved_branch = Some(condition);
                         break;
                     };
-                    reference_events.push(DraftReferenceEvent::BranchDecision { condition, taken });
+                    if emitted_forced_branch_decisions.insert(pc as u32) {
+                        reference_events
+                            .push(DraftReferenceEvent::BranchDecision { condition, taken });
+                    }
                     taken
                 };
                 let target = if taken {

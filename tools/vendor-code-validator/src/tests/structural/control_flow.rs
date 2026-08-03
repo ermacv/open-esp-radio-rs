@@ -89,6 +89,39 @@ fn constant_counted_loop_is_bounded_and_fully_unrolled() {
 }
 
 #[test]
+fn calibration_sized_constant_loop_is_bounded_and_fully_unrolled() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "calibration_sized_constant_loop".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0xc0, 0x12, // li a2, 300
+            0x93, 0x85, 0x15, 0x00, // addi a1, a1, 1
+            0xe3, 0x9e, 0xc5, 0xfe, // bne a1, a2, -4
+            0x13, 0x85, 0x05, 0x00, // mv a0, a1
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert_eq!(trace.return_value, SymbolicValue::Constant(300));
+}
+
+#[test]
 fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -292,6 +325,59 @@ fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
             .source
             .contains("ReferenceOutcome { exit_a0: Some(0x00000001_u32) }")
     );
+}
+
+#[test]
+fn loop_invariant_symbolic_branch_is_one_structured_decision() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "loop_invariant_symbolic_branch".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x30, 0x00, // li a2, 3
+            0x63, 0x04, 0x05, 0x00, // beq a0, zero, 0x1010
+            0x93, 0x86, 0x16, 0x00, // addi a3, a3, 1
+            0x93, 0x85, 0x15, 0x00, // addi a1, a1, 1
+            0xe3, 0x9a, 0xc5, 0xfe, // bne a1, a2, 0x1008
+            0x13, 0x85, 0x05, 0x00, // mv a0, a1
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let mut visiting = BTreeSet::from([0x1000]);
+
+    let trace = resolve_reference_trace(
+        &symbol,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    let DraftReferenceTerminator::Branch {
+        condition,
+        taken,
+        not_taken,
+    } = &trace.reference_flow.as_ref().unwrap().terminator
+    else {
+        panic!("expected one loop-invariant structured branch");
+    };
+    assert_eq!(condition.site, 0x1008);
+    assert!(matches!(
+        taken.terminator,
+        DraftReferenceTerminator::Return(SymbolicValue::Constant(3))
+    ));
+    assert!(matches!(
+        not_taken.terminator,
+        DraftReferenceTerminator::Return(SymbolicValue::Constant(3))
+    ));
 }
 
 #[test]

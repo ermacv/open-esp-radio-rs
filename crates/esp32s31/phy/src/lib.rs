@@ -46,9 +46,9 @@ mod size_limits;
 
 pub use executor::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};
 pub use phy_register::{
-    PhyRegisterAction, PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterFailure,
-    PhyRegisterLocalStep, PhyRegisterOutcome, PhyRegisterTransition,
-    default_phy_register_init_profile,
+    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
+    PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
+    PhyRegisterTransition, default_phy_register_init_profile,
 };
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
 /// Shared one-microsecond sampling bound used by every target executor and by

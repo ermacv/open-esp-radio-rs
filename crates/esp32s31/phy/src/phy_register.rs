@@ -1,10 +1,10 @@
 //! Rust-owned composition of ESP32-S31 `register_chipv7_phy`.
 //!
-//! The pinned archive parent is 486 bytes. The primary profile deliberately
-//! performs full calibration on every cold start: NVS, calibration-record
-//! validation, recovery, backup and formatting are outside the radio porting
-//! set. All retained radio work is represented by owned state plus one
-//! externally completed MMIO, PHY-I2C, timer or observation edge.
+//! The pinned archive parent is 486 bytes. Persistence remains outside the
+//! radio driver: callers may provide and retrieve a fixed calibration record,
+//! while this transition owns validation, recovery and fallback to full
+//! calibration. All retained radio work is represented by owned state plus
+//! one externally completed MMIO, PHY-I2C, timer or observation edge.
 
 pub const PHY_REGISTER_INIT_PROFILE_LEN: usize = 0x80;
 pub const PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT: u16 = 1_000;
@@ -118,8 +118,38 @@ pub enum PhyRegisterFailure {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationIdentity {
+    pub rf_cal_version: u32,
+    pub mac_sys0: u32,
+    pub mac_sys1: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyCalibrationPath {
+    /// Compatibility constructor: no caller-owned record was requested.
+    FullUncached,
+    /// No retained record was supplied; a fresh record is produced.
+    FullForRecord,
+    /// The supplied record failed validation; full calibration replaces it.
+    FullAfterRejectedRecord,
+    /// The supplied record was valid and its retained state was restored.
+    PartialRestored,
+}
+
+impl PhyCalibrationPath {
+    pub const fn full_calibration_performed(self) -> bool {
+        !matches!(self, Self::PartialRestored)
+    }
+
+    pub const fn record_available(self) -> bool {
+        !matches!(self, Self::FullUncached)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRegisterOutcome {
     pub full_calibration_performed: bool,
+    pub calibration_path: PhyCalibrationPath,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,6 +190,7 @@ enum PreludeStep {
 enum TailStep {
     CalibrationClockOff,
     Temperature,
+    BackupCalibration,
     BbpllOff,
     FinalI2cRead,
     MarkRegistered,
@@ -191,6 +222,12 @@ pub struct PhyRegisterTransition {
     state: Option<crate::phy_cold::PhyColdState>,
     profile: Option<[u8; PHY_REGISTER_INIT_PROFILE_LEN]>,
     channel_or_frequency: u16,
+    calibration_identity: Option<PhyCalibrationIdentity>,
+    calibration_record: Option<crate::phy_cold::PhyCalibrationRecord>,
+    calibration_candidate: bool,
+    calibration_record_ready: bool,
+    calibration_path: PhyCalibrationPath,
+    temperature_control: Option<crate::phy_cold::PhyRegisterTemperatureControl>,
     phase: Option<Phase>,
 }
 
@@ -207,6 +244,45 @@ impl PhyRegisterTransition {
             state: Some(crate::phy_cold::PhyColdState::new()),
             profile: Some(profile),
             channel_or_frequency,
+            calibration_identity: None,
+            calibration_record: None,
+            calibration_candidate: false,
+            calibration_record_ready: false,
+            calibration_path: PhyCalibrationPath::FullUncached,
+            temperature_control: None,
+            phase: Some(Phase::Prelude(PreludeStep::Prepare)),
+        }
+    }
+
+    /// Construct a cold transition with caller-owned calibration persistence.
+    ///
+    /// `identity` is obtained by the platform layer (RF-calibration ABI
+    /// version plus the two eFuse identity words). `record` may come from any
+    /// caller-selected backend. This type never reads eFuse, NVS or flash.
+    pub const fn new_on_channel_with_calibration(
+        profile: [u8; PHY_REGISTER_INIT_PROFILE_LEN],
+        channel_or_frequency: u16,
+        identity: PhyCalibrationIdentity,
+        record: Option<crate::phy_cold::PhyCalibrationRecord>,
+    ) -> Self {
+        let calibration_candidate = record.is_some();
+        Self {
+            state: Some(crate::phy_cold::PhyColdState::new()),
+            profile: Some(profile),
+            channel_or_frequency,
+            calibration_identity: Some(identity),
+            calibration_record: match record {
+                Some(record) => Some(record),
+                None => Some(crate::phy_cold::PhyCalibrationRecord::new()),
+            },
+            calibration_candidate,
+            calibration_record_ready: false,
+            calibration_path: if calibration_candidate {
+                PhyCalibrationPath::PartialRestored
+            } else {
+                PhyCalibrationPath::FullForRecord
+            },
+            temperature_control: None,
             phase: Some(Phase::Prelude(PreludeStep::Prepare)),
         }
     }
@@ -217,6 +293,48 @@ impl PhyRegisterTransition {
 
     pub const fn with_default_profile_on_channel(channel_or_frequency: u16) -> Self {
         Self::new_on_channel(default_phy_register_init_profile(), channel_or_frequency)
+    }
+
+    pub const fn with_default_profile_and_calibration(
+        identity: PhyCalibrationIdentity,
+        record: Option<crate::phy_cold::PhyCalibrationRecord>,
+    ) -> Self {
+        Self::new_on_channel_with_calibration(
+            default_phy_register_init_profile(),
+            11,
+            identity,
+            record,
+        )
+    }
+
+    pub const fn with_default_profile_on_channel_and_calibration(
+        channel_or_frequency: u16,
+        identity: PhyCalibrationIdentity,
+        record: Option<crate::phy_cold::PhyCalibrationRecord>,
+    ) -> Self {
+        Self::new_on_channel_with_calibration(
+            default_phy_register_init_profile(),
+            channel_or_frequency,
+            identity,
+            record,
+        )
+    }
+
+    /// Return a validated restored record or a freshly completed full record.
+    /// Failed/in-progress transitions never expose a record as persistable.
+    pub fn calibration_record(&self) -> Option<&crate::phy_cold::PhyCalibrationRecord> {
+        self.calibration_record_ready
+            .then_some(())
+            .and(self.calibration_record.as_ref())
+    }
+
+    pub fn take_calibration_record(&mut self) -> Option<crate::phy_cold::PhyCalibrationRecord> {
+        if self.calibration_record_ready {
+            self.calibration_record_ready = false;
+            self.calibration_record.take()
+        } else {
+            None
+        }
     }
 
     pub fn state(&self) -> Option<&crate::phy_cold::PhyColdState> {
@@ -287,7 +405,7 @@ impl PhyRegisterTransition {
                 },
                 micros: 1,
             }),
-            TailStep::Temperature | TailStep::MarkRegistered => None,
+            TailStep::Temperature | TailStep::BackupCalibration | TailStep::MarkRegistered => None,
         }
     }
 
@@ -302,10 +420,40 @@ impl PhyRegisterTransition {
                     .profile
                     .take()
                     .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
-                self.state
+                let state = self
+                    .state
                     .as_mut()
-                    .ok_or(PhyRegisterTransitionError::MissingStateOwner)?
-                    .begin_full_wifi_calibration(&profile);
+                    .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
+                let restored = if self.calibration_candidate {
+                    let identity = self
+                        .calibration_identity
+                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
+                    let record = self
+                        .calibration_record
+                        .as_mut()
+                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
+                    if record.checksum_matches(
+                        identity.rf_cal_version,
+                        identity.mac_sys0,
+                        identity.mac_sys1,
+                    ) {
+                        state.begin_partial_wifi_calibration(record);
+                        self.calibration_record_ready = true;
+                        self.calibration_path = PhyCalibrationPath::PartialRestored;
+                        true
+                    } else {
+                        self.calibration_path = PhyCalibrationPath::FullAfterRejectedRecord;
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !restored {
+                    state.begin_full_wifi_calibration(&profile);
+                }
+                // Pinned parent saves this flag word before either child can
+                // mutate it and uses the snapshot after both return.
+                self.temperature_control = Some(state.register_temperature_control());
                 self.phase = Some(Phase::Prelude(PreludeStep::ConfigureXtal));
                 Ok(PhyRegisterLocalStep::StateAdvanced)
             }
@@ -436,11 +584,20 @@ impl PhyRegisterTransition {
             },
             Phase::Temperature(transition) => match transition.action() {
                 crate::phy_temperature::PhyTemperatureAction::Complete(outcome) => {
+                    let control = self
+                        .temperature_control
+                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
                     self.state
                         .as_mut()
                         .ok_or(PhyRegisterTransitionError::MissingStateOwner)?
-                        .apply_full_calibration_temperature(outcome);
-                    self.phase = Some(Phase::Tail(TailStep::BbpllOff));
+                        .apply_register_temperature_outcome(control, outcome);
+                    self.phase = Some(Phase::Tail(
+                        if self.calibration_path.full_calibration_performed() {
+                            TailStep::BackupCalibration
+                        } else {
+                            TailStep::BbpllOff
+                        },
+                    ));
                     Ok(PhyRegisterLocalStep::StateAdvanced)
                 }
                 crate::phy_temperature::PhyTemperatureAction::Failed(failure) => {
@@ -460,6 +617,27 @@ impl PhyRegisterTransition {
                 ));
                 Ok(PhyRegisterLocalStep::StateAdvanced)
             }
+            Phase::Tail(TailStep::BackupCalibration) => {
+                if let Some(identity) = self.calibration_identity {
+                    let state = self
+                        .state
+                        .as_ref()
+                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
+                    let record = self
+                        .calibration_record
+                        .as_mut()
+                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
+                    state.backup_into(record);
+                    record.refresh_header_and_checksum(
+                        identity.rf_cal_version,
+                        identity.mac_sys0,
+                        identity.mac_sys1,
+                    );
+                    self.calibration_record_ready = true;
+                }
+                self.phase = Some(Phase::Tail(TailStep::BbpllOff));
+                Ok(PhyRegisterLocalStep::StateAdvanced)
+            }
             Phase::Tail(TailStep::MarkRegistered) => {
                 self.state
                     .as_mut()
@@ -475,7 +653,11 @@ impl PhyRegisterTransition {
                 Ok(PhyRegisterLocalStep::External(action))
             }
             Phase::Cleanup {
-                step: TailStep::Temperature | TailStep::FinalI2cRead | TailStep::MarkRegistered,
+                step:
+                    TailStep::Temperature
+                    | TailStep::BackupCalibration
+                    | TailStep::FinalI2cRead
+                    | TailStep::MarkRegistered,
                 failure,
             } => {
                 self.phase = Some(Phase::Cleanup {
@@ -742,7 +924,8 @@ impl PhyRegisterTransition {
                 }) =>
             {
                 Phase::Complete(PhyRegisterOutcome {
-                    full_calibration_performed: true,
+                    full_calibration_performed: self.calibration_path.full_calibration_performed(),
+                    calibration_path: self.calibration_path,
                 })
             }
             (
@@ -1164,11 +1347,12 @@ impl PhyRegisterExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::{
-        PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT, PhyRegisterAction, PhyRegisterBindingError,
-        PhyRegisterCompletion, PhyRegisterDelayPhase, PhyRegisterFailure,
-        PhyRegisterFinalI2cBinding, PhyRegisterLocalStep, PhyRegisterMmioAction,
-        PhyRegisterMmioCompletion, PhyRegisterOutcome, PhyRegisterResetSampleBinding,
-        PhyRegisterTimerBinding, PhyRegisterTransition, default_phy_register_init_profile,
+        PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT, PhyCalibrationIdentity, PhyCalibrationPath,
+        PhyRegisterAction, PhyRegisterBindingError, PhyRegisterCompletion, PhyRegisterDelayPhase,
+        PhyRegisterFailure, PhyRegisterFinalI2cBinding, PhyRegisterLocalStep,
+        PhyRegisterMmioAction, PhyRegisterMmioCompletion, PhyRegisterOutcome,
+        PhyRegisterResetSampleBinding, PhyRegisterTimerBinding, PhyRegisterTransition,
+        default_phy_register_init_profile,
     };
 
     fn complete_mmio(transition: &mut PhyRegisterTransition, action: PhyRegisterMmioAction) {
@@ -1443,6 +1627,7 @@ mod tests {
             transition.step_local().unwrap(),
             PhyRegisterLocalStep::Complete(PhyRegisterOutcome {
                 full_calibration_performed: true,
+                calibration_path: PhyCalibrationPath::FullUncached,
             })
         );
         let state = match transition.into_state() {
@@ -1450,5 +1635,100 @@ mod tests {
             Err(_) => panic!("a completed cold initializer must release its state owner"),
         };
         assert!(state.phy_registered());
+    }
+
+    const CALIBRATION_IDENTITY: PhyCalibrationIdentity = PhyCalibrationIdentity {
+        rf_cal_version: 0x1234_5678,
+        mac_sys0: 0xa1b2_c3d4,
+        mac_sys1: 0xe5f6_0718,
+    };
+
+    fn retained_record(flags: u32) -> crate::phy_cold::PhyCalibrationRecord {
+        let mut image = [0_u8; crate::phy_cold::PHY_COLD_PARAMETER_LEN];
+        image[0x0a4..0x0a8].copy_from_slice(&flags.to_le_bytes());
+        image[0x120] = 0xa5;
+        let state = crate::phy_cold::PhyColdState::from_parameter_image(image);
+        let mut record = crate::phy_cold::PhyCalibrationRecord::new();
+        state.backup_into(&mut record);
+        record.refresh_header_and_checksum(
+            CALIBRATION_IDENTITY.rf_cal_version,
+            CALIBRATION_IDENTITY.mac_sys0,
+            CALIBRATION_IDENTITY.mac_sys1,
+        );
+        record
+    }
+
+    #[test]
+    fn valid_caller_record_selects_partial_calibration_and_exact_vendor_mask() {
+        let record = retained_record(u32::MAX);
+        let mut transition = PhyRegisterTransition::with_default_profile_and_calibration(
+            CALIBRATION_IDENTITY,
+            Some(record),
+        );
+        transition.phase = Some(super::Phase::Prelude(super::PreludeStep::ApplyProfile));
+
+        assert_eq!(
+            transition.step_local().unwrap(),
+            PhyRegisterLocalStep::StateAdvanced
+        );
+        assert_eq!(
+            transition.calibration_path,
+            PhyCalibrationPath::PartialRestored
+        );
+        assert!(transition.calibration_record().is_some());
+        assert_eq!(
+            &transition.state().unwrap().parameter_image()[0x0a4..0x0a8],
+            &0xfffe_fddf_u32.to_le_bytes()
+        );
+        let temperature = transition.temperature_control.unwrap();
+        assert!(temperature.updates_offset_130());
+        assert!(!temperature.updates_reference_copies());
+        assert_eq!(transition.state().unwrap().parameter_image()[0x120], 0xa5);
+    }
+
+    #[test]
+    fn rejected_caller_record_falls_back_to_full_calibration() {
+        let mut bytes = retained_record(u32::MAX).into_bytes();
+        bytes[crate::phy_param::PHY_CALIBRATION_PAYLOAD_OFFSET + 0x120] ^= 1;
+        let mut transition = PhyRegisterTransition::with_default_profile_and_calibration(
+            CALIBRATION_IDENTITY,
+            Some(crate::phy_cold::PhyCalibrationRecord::from_bytes(bytes)),
+        );
+        transition.phase = Some(super::Phase::Prelude(super::PreludeStep::ApplyProfile));
+
+        assert_eq!(
+            transition.step_local().unwrap(),
+            PhyRegisterLocalStep::StateAdvanced
+        );
+        assert_eq!(
+            transition.calibration_path,
+            PhyCalibrationPath::FullAfterRejectedRecord
+        );
+        assert!(transition.calibration_record().is_none());
+        assert_eq!(
+            &transition.state().unwrap().parameter_image()[0x0a4..0x0a8],
+            &[0; 4]
+        );
+        let temperature = transition.temperature_control.unwrap();
+        assert!(temperature.updates_offset_130());
+        assert!(temperature.updates_reference_copies());
+    }
+
+    #[test]
+    fn completed_full_path_exposes_a_caller_persistable_record() {
+        let mut transition =
+            PhyRegisterTransition::with_default_profile_and_calibration(CALIBRATION_IDENTITY, None);
+        transition.phase = Some(super::Phase::Tail(super::TailStep::BackupCalibration));
+
+        assert_eq!(
+            transition.step_local().unwrap(),
+            PhyRegisterLocalStep::StateAdvanced
+        );
+        let mut record = transition.take_calibration_record().unwrap();
+        assert!(record.checksum_matches(
+            CALIBRATION_IDENTITY.rf_cal_version,
+            CALIBRATION_IDENTITY.mac_sys0,
+            CALIBRATION_IDENTITY.mac_sys1,
+        ));
     }
 }

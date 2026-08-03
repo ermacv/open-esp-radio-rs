@@ -59,6 +59,11 @@ pub(in crate::codegen) struct RenderState {
     pub(in crate::codegen) external_results: Vec<ExternalFunctionRef>,
     pub(in crate::codegen) validated_external_tables: BTreeSet<ExternalTableRef>,
     pub(in crate::codegen) arguments: [String; RV32_MODELED_ARGUMENT_COUNT],
+    /// Lexical prefix for argument bindings of nested composed calls.
+    /// Call-result and read names live inside explicit Rust blocks, but
+    /// argument bindings precede those blocks and otherwise shadow a parent's
+    /// identically numbered binding for the remainder of the parent flow.
+    pub(in crate::codegen) composed_argument_prefix: String,
 }
 
 impl Default for RenderState {
@@ -73,6 +78,7 @@ impl Default for RenderState {
             external_results: Vec::new(),
             validated_external_tables: BTreeSet::new(),
             arguments: core::array::from_fn(|index| format!("args[{index}]")),
+            composed_argument_prefix: String::new(),
         }
     }
 }

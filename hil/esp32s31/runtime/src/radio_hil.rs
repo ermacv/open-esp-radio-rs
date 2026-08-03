@@ -114,9 +114,10 @@ use open_esp_radio::{
             },
         },
         network::embassy_net::{
-            PinnedDevice as OpenRadioNetworkDevice, PinnedRadioRunner as OpenRadioNetworkRunner,
-            PinnedResources as OpenRadioNetworkResources, PinnedTxFrame as OpenRadioNetworkTxFrame,
-            PinnedTxPool as OpenRadioNetworkTxPool,
+            PinnedTxFrame as OpenRadioNetworkTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
+            SplitPinnedDevice as OpenRadioNetworkDevice,
+            SplitPinnedRadioRunner as OpenRadioNetworkRunner,
+            SplitPinnedResources as OpenRadioNetworkResources,
         },
     },
     wifi::ieee80211::{
@@ -196,26 +197,45 @@ const RX_STAGE_CAPACITY: usize = RX_BUFFER_SIZE;
 // linker's protected 64-KiB CPU0-stack frontier. Both 47 (about 66 KiB left)
 // and 44 (about 80 KiB left) passed linking but failed the on-device readiness
 // path. Forty slots retain roughly 98 KiB and are the largest runtime-stable
-// geometry qualified so far.
-const RX_STAGE_SLOT_COUNT: usize = 40;
+// geometry qualified so far. The TX-only image does not carry downlink load;
+// retain the vendor 32-slot RX ownership there so its 64-entry TX DMA pool
+// remains placeable. Bidirectional and RX-shaped images retain 40.
+const RX_STAGE_SLOT_COUNT: usize =
+    if OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_BIDIRECTIONAL_BENCH {
+        32
+    } else {
+        40
+    };
 const NETWORK_FRAME_CAPACITY: usize = 1_600;
 const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
 // Raw A-MSDU/A-MPDU HIL generates TX below the network stack, and its direct
 // UDP RX meter consumes the benchmark stream before the Embassy handoff.
-// Deep Ethernet queues therefore only reduce the CPU stack available to this
-// diagnostic image. A non-A-MSDU throughput image uses 1.6-KiB vendor-sized
-// slots, so 64 entries still consume less DMA SRAM than the 32-entry jumbo
-// A-MSDU profile. That admits one hardware-owned 32-MPDU aggregate and one
-// producer-owned burst concurrently instead of serializing the producer
-// behind every BlockAck.
+// Deep Ethernet queues therefore only waste memory in those diagnostic
+// images. Production-shaped RX retains one complete 32-frame hardware burst
+// plus eight overlap owners in ordinary/PSRAM storage, matching the qualified
+// 40-slot staging profile. A 64-entry experiment removed network-ready waits
+// but increased PSRAM/cache cost and did not improve the 80-Mbit/s boundary.
+// TX depth is selected independently because its backing pool is DMA-visible
+// internal SRAM: ordinary and RX-only images keep 32 TX leases, while the
+// dedicated TX throughput image retains 64.
 //
 // SOURCE: ESP32-S31 ESP-IDF Wi-Fi buffer documentation identifies 1.6 KiB as
 // the fixed TX-buffer size and says TX throughput scales with the Wi-Fi/LwIP
 // buffer counts; complete `_oracles/libnet80211.a[ieee80211_output.o]::
 // ieee80211_encap_amsdu` only consumes already queued `s_tx_cacheq` entries.
-const NETWORK_QUEUE_DEPTH: usize = if OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_RAW_MAC_BENCH {
+const NETWORK_RX_QUEUE_DEPTH: usize = if OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_RAW_MAC_BENCH {
     4
-} else if OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_NETWORK_AMSDU_BENCH {
+} else if OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_BIDIRECTIONAL_BENCH {
+    32
+} else {
+    40
+};
+const NETWORK_TX_QUEUE_DEPTH: usize = if OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_RAW_MAC_BENCH {
+    4
+} else if OPEN_RADIO_THROUGHPUT_BENCH
+    && !OPEN_RADIO_BIDIRECTIONAL_BENCH
+    && !OPEN_RADIO_NETWORK_AMSDU_BENCH
+{
     64
 } else {
     32
@@ -822,7 +842,8 @@ type NetworkResources = OpenRadioNetworkResources<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_RX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkDevice = OpenRadioNetworkDevice<
     'static,
@@ -830,7 +851,8 @@ type NetworkDevice = OpenRadioNetworkDevice<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_RX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkRunner = OpenRadioNetworkRunner<
     'static,
@@ -838,7 +860,8 @@ type NetworkRunner = OpenRadioNetworkRunner<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_RX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkTxFrame = OpenRadioNetworkTxFrame<
     'static,
@@ -846,13 +869,13 @@ type NetworkTxFrame = OpenRadioNetworkTxFrame<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkTxPool = OpenRadioNetworkTxPool<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONNECTED_CONTROL_QUEUE_DEPTH>;
@@ -866,7 +889,7 @@ type ConnectedNetworkRxSink = EmbassyNetConnectedRxSink<
     CriticalSectionRawMutex,
     HilConnectedRxObserver<ControlPublisher>,
     NETWORK_FRAME_CAPACITY,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_RX_QUEUE_DEPTH,
 >;
 type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     'static,
@@ -901,7 +924,7 @@ type ConnectedTxOwner = Esp32s31ConnectedTx<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
     TX_BUFFER_SIZE,
@@ -926,7 +949,8 @@ type ConnectedWifiRunner = WifiRunner<
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_QUEUE_DEPTH,
+    NETWORK_RX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
 >;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
 
@@ -3699,7 +3723,8 @@ async fn run_connected_network(
     );
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-start \
-         frame_capacity={NETWORK_FRAME_CAPACITY} queue_depth={NETWORK_QUEUE_DEPTH} \
+         frame_capacity={NETWORK_FRAME_CAPACITY} \
+         rx_queue_depth={NETWORK_RX_QUEUE_DEPTH} tx_queue_depth={NETWORK_TX_QUEUE_DEPTH} \
          rx_stage_slots={RX_STAGE_SLOT_COUNT} rx_stage_capacity={RX_STAGE_CAPACITY} \
          bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={} \
          ampdu_rate_code={:#04x} ampdu_rate_kbps={} peer_ampdu_limit={} rate_ampdu_limit={}",

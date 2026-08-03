@@ -329,10 +329,68 @@ Eighty Mbit/s is not yet qualified. A 10-s run delivered all 83,334 datagrams
 with no drop, but the 30-s 40-slot run still recorded four `BUFFER_FULL`
 observations. A fixed 100-us application yield removed radio backpressure but
 lost 15,668 UDP-socket datagrams; a low-credit feedback yield later lost the
-link. Both scheduling experiments were reverted. The remaining work is to
-separate RX and TX queue-depth resources and diagnose the occasional
-multi-millisecond `embassy-net` readiness wait, not to add another arbitrary
-frame batch.
+link. Both scheduling experiments were reverted. The RX/TX queue-depth split
+and follow-up below rule out the network-ready wait as the primary cause. The
+remaining work is to reduce protocol/network processing cost and measure
+executor residence, not to add another arbitrary frame batch.
+
+## Independent network RX/TX depths
+
+The pinned network resource originally used one const depth for four distinct
+ownership sets: the ordinary/PSRAM RX slots and free/ready channels, plus the
+internal-DMA-SRAM TX free/ready channels and `PinnedTxPool`. That made an RX
+elasticity experiment allocate the same number of expensive TX DMA slots even
+though the radio aggregate owner did not need them.
+
+The core network boundary now exposes `SplitPinnedResources`,
+`SplitPinnedDevice` and `SplitPinnedRadioRunner` with independent RX and TX
+depths. The original single-depth names remain source-compatible aliases.
+TX aggregation receives a narrow `PinnedTxConsumer`, so its type no longer
+carries unrelated RX geometry. A host ownership test uses RX depth three and
+TX depth one and proves that exhausting either direction does not consume the
+other direction's owners.
+
+Hardware results reject the hypothesis that the occasional network-ready tail
+was the 80-Mbit/s blocker:
+
+- RX/TX 64/32 removed the network-ready tail (10-us maximum), but a cold
+  30-second 80-Mbit/s run observed 30 `BUFFER_FULL` events and delivered
+  247,314 UDP datagrams. The larger PSRAM working set also increased protocol
+  and publication cost.
+- An immediate protocol-to-radio yield after every returned staging credit
+  removed hardware starvation but created one-slot executor ping-pong. Device
+  RX fell to 63.205 Mbit/s and the interval ended without its terminal packet.
+- Waiting for the exact deferred frozen-frontier credit count before yielding
+  was also rejected: the radio waited too long for ownership and observed 39
+  `BUFFER_FULL` events.
+- RX/TX 40/32 restored the original scheduler and reduced the extra PSRAM
+  working set. The 30-second 80-Mbit/s attempt reached 78.486 Mbit/s but still
+  observed six `BUFFER_FULL` events and delivered 247,880 datagrams. It is not
+  a qualification pass.
+
+The retained 40/32 image passed two reset-separated 70-Mbit/s regressions of
+the exact final binary with zero hardware starvation, software drop or FIFO
+overflow. The device reported 69.994 and 70.000 Mbit/s and the UDP application
+received 218,732 and 218,749 of 218,752 host datagrams. Both pass the harness's
+99% delivery gate, but neither is claimed as an exact-delivery run. The final
+repeat's network-ready wait averaged 2.35 us and reached only 11 us, while 13
+brief backpressured services were limited simultaneously by the 40-slot
+staging and network ownership sets. This is direct evidence that the remaining
+boundary is sustained consumer/producer scheduling and application delivery
+cost, not a hidden 32-entry network-only ceiling. The final runtime CRC-32 is
+`fe3a09f5`; UART/report SHA-256 values are
+`7e07e066a250a55e2de919734462137d4be8410b8351ac99e1e46552e1b2bfac` and
+`47d72940485e70812ea9847778b413aeacaff341534892b4d5cfdae1600f29ef`.
+
+The split also makes scenario placement explicit. A first TX-only build with
+40 jumbo staging slots and 64 TX DMA leases overflowed internal SRAM by 18,560
+bytes. The retained composition uses 32 vendor-profile RX staging/network
+owners plus 64 TX DMA leases for TX-only, and 40 RX plus 32 TX owners for
+bidirectional operation. Both final images pass the placement and autonomous
+source-graph audits; their runtime CRC-32 values are `f6c4ec04` (TX-only) and
+`036e91a7` (bidirectional). This is a per-workload ownership geometry, not a
+hidden driver default: reusable aliases still default to equal depths unless a
+composition explicitly selects the split types.
 
 ## Interrupt-to-poll experiment
 

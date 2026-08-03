@@ -253,21 +253,31 @@ unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: u
 /// SOURCE: complete `_oracles/libnet80211.a[ieee80211_output.o]::
 /// ieee80211_alloc_tx_buf` cache-TX/type-nine path and complete
 /// `_oracles/libpp.a[esf_buf.o]::{esf_buf_setup,esf_buf_alloc}`.
-pub struct PinnedResources<
+pub struct SplitPinnedResources<
     M: RawMutex,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 > {
-    free_rx: Channel<M, u8, QUEUE_DEPTH>,
-    ready_rx: Channel<M, u8, QUEUE_DEPTH>,
-    rx_slots: [PinnedRxSlot<FRAME_CAPACITY>; QUEUE_DEPTH],
-    free_tx: Channel<M, u8, QUEUE_DEPTH>,
-    ready_tx: Channel<M, u8, QUEUE_DEPTH>,
+    free_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
+    ready_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
+    rx_slots: [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
+    ready_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     link: SharedLinkState<M>,
     split: AtomicBool,
 }
+
+/// Compatibility form with equal receive and transmit queue depths.
+pub type PinnedResources<
+    M,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> = SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
 
 /// Permanently located storage for the TX allocations exposed to radio DMA.
 ///
@@ -341,14 +351,15 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     pub const fn new() -> Self {
         Self {
             free_rx: Channel::new(),
             ready_rx: Channel::new(),
-            rx_slots: [const { PinnedRxSlot::new() }; QUEUE_DEPTH],
+            rx_slots: [const { PinnedRxSlot::new() }; RX_QUEUE_DEPTH],
             free_tx: Channel::new(),
             ready_tx: Channel::new(),
             link: SharedLinkState::new(),
@@ -369,7 +380,7 @@ impl<
             ptr::addr_of_mut!((*storage).ready_rx).write(Channel::new());
             let rx_slots =
                 ptr::addr_of_mut!((*storage).rx_slots).cast::<PinnedRxSlot<FRAME_CAPACITY>>();
-            for index in 0..QUEUE_DEPTH {
+            for index in 0..RX_QUEUE_DEPTH {
                 rx_slots.add(index).write(PinnedRxSlot::new());
             }
             ptr::addr_of_mut!((*storage).free_tx).write(Channel::new());
@@ -382,26 +393,49 @@ impl<
 
     pub fn split<'resources>(
         &'resources mut self,
-        pool: Pin<&'resources mut PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>,
+        pool: Pin<&'resources mut PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>,
         station_address: [u8; 6],
     ) -> (
-        PinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        SplitPinnedDevice<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+        SplitPinnedRadioRunner<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
     ) {
-        assert!(QUEUE_DEPTH > 0, "pinned RX/TX pools must not be empty");
+        assert!(RX_QUEUE_DEPTH > 0, "pinned RX pool must not be empty");
+        assert!(TX_QUEUE_DEPTH > 0, "pinned TX pool must not be empty");
         assert!(
-            QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
-            "pinned RX/TX pool index must fit in u8"
+            RX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
+            "pinned RX pool index must fit in u8"
+        );
+        assert!(
+            TX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
+            "pinned TX pool index must fit in u8"
         );
 
         assert!(
             !self.split.swap(true, Ordering::AcqRel),
             "pinned resources may only be split once"
         );
-        for index in 0..QUEUE_DEPTH {
+        for index in 0..RX_QUEUE_DEPTH {
             self.free_rx
                 .try_send(index as u8)
                 .expect("an empty free RX queue accepts every pool index");
+        }
+        for index in 0..TX_QUEUE_DEPTH {
             self.free_tx
                 .try_send(index as u8)
                 .expect("an empty free queue accepts every pool index");
@@ -412,7 +446,7 @@ impl<
         let resources: &Self = self;
 
         (
-            PinnedDevice {
+            SplitPinnedDevice {
                 ready_rx: resources.ready_rx.receiver(),
                 free_rx: resources.free_rx.sender(),
                 rx_slots: &resources.rx_slots,
@@ -425,7 +459,7 @@ impl<
                 reserved_tx: None,
                 tx_reservation: (),
             },
-            PinnedRadioRunner {
+            SplitPinnedRadioRunner {
                 free_rx: resources.free_rx.receiver(),
                 free_rx_return: resources.free_rx.sender(),
                 ready_rx: resources.ready_rx.sender(),
@@ -444,34 +478,47 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> Default for PinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> Default
+    for SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub struct PinnedDevice<
+pub struct SplitPinnedDevice<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 > {
-    ready_rx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    free_rx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; QUEUE_DEPTH],
-    free_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    free_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
+    ready_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
+    free_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
+    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
+    free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; TX_QUEUE_DEPTH],
     link: &'resources SharedLinkState<M>,
     station_address: [u8; 6],
     reserved_tx: Option<u8>,
     tx_reservation: (),
 }
+
+/// Compatibility form with equal receive and transmit queue depths.
+pub type PinnedDevice<
+    'resources,
+    M,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> = SplitPinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
 
 impl<
     'resources,
@@ -479,8 +526,18 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+>
+    SplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
 {
     fn poll_reserve_tx(&mut self, cx: &mut Context<'_>) -> bool {
         if self.reserved_tx.is_none()
@@ -493,8 +550,15 @@ impl<
 
     fn take_tx_token<'device>(
         &'device mut self,
-    ) -> PinnedTransmitToken<'device, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-    {
+    ) -> PinnedTransmitToken<
+        'device,
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    > {
         let index = self
             .reserved_tx
             .take()
@@ -562,8 +626,10 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> Drop for PinnedDevice<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> Drop
+    for SplitPinnedDevice<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn drop(&mut self) {
         if let Some(index) = self.reserved_tx.take()
@@ -648,16 +714,33 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> Driver for PinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> Driver
+    for SplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
 {
     type RxToken<'device>
-        = PinnedReceiveToken<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
+        = PinnedReceiveToken<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
     where
         Self: 'device;
     type TxToken<'device>
-        =
-        PinnedTransmitToken<'device, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+        = PinnedTransmitToken<
+        'device,
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >
     where
         Self: 'device;
 
@@ -691,7 +774,7 @@ impl<
     fn capabilities(&self) -> Capabilities {
         let mut capabilities = Capabilities::default();
         capabilities.max_transmission_unit = FRAME_CAPACITY;
-        capabilities.max_burst_size = Some(QUEUE_DEPTH);
+        capabilities.max_burst_size = Some(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH));
         capabilities
     }
 
@@ -704,7 +787,7 @@ impl<
 /// frames to `embassy-net`.
 ///
 /// This view deliberately contains no TX capability. It can therefore be
-/// moved into an RX protocol sink while [`PinnedRadioRunner`] remains the
+/// moved into an RX protocol sink while [`SplitPinnedRadioRunner`] remains the
 /// unique owner of TX leases.
 pub struct PinnedRxPublisher<
     'resources,
@@ -828,23 +911,42 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
     }
 }
 
-pub struct PinnedRadioRunner<
+pub struct SplitPinnedRadioRunner<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 > {
-    free_rx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    free_rx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_rx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; QUEUE_DEPTH],
-    free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
+    free_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
+    free_rx_return: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
+    ready_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
+    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
+    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; TX_QUEUE_DEPTH],
     link: &'resources SharedLinkState<M>,
 }
+
+/// Compatibility form with equal receive and transmit queue depths.
+pub type PinnedRadioRunner<
+    'resources,
+    M,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> = SplitPinnedRadioRunner<
+    'resources,
+    M,
+    FRAME_CAPACITY,
+    HEADROOM,
+    TRAILER,
+    QUEUE_DEPTH,
+    QUEUE_DEPTH,
+>;
 
 impl<
     'resources,
@@ -852,13 +954,23 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+>
+    SplitPinnedRadioRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
 {
     /// Derive the receive-only capability before moving this runner into the
     /// production Wi-Fi event loop. The returned handle cannot observe or
     /// claim any network-owned TX slot.
-    pub fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+    pub fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
         PinnedRxPublisher {
             free_rx: self.free_rx,
             free_rx_return: self.free_rx_return,
@@ -882,7 +994,69 @@ impl<
         publisher.send(frame).await
     }
 
+    /// Derive the TX-only capability used by a radio encoder or aggregate
+    /// builder. Its type does not carry the unrelated receive queue depth.
+    pub fn tx_consumer(
+        &self,
+    ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
+        PinnedTxConsumer {
+            free_tx: self.free_tx,
+            ready_tx: self.ready_tx,
+            slots: self.slots,
+        }
+    }
+
     pub fn try_receive_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        self.tx_consumer().try_receive()
+    }
+
+    pub async fn receive_tx(
+        &self,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
+        self.tx_consumer().receive().await
+    }
+
+    pub fn rx_queue_len(&self) -> usize {
+        self.ready_rx.len()
+    }
+
+    pub fn tx_queue_len(&self) -> usize {
+        self.ready_tx.len()
+    }
+}
+
+/// Narrow radio-side capability for claiming ready network TX leases.
+///
+/// This value is cheap to copy from a [`SplitPinnedRadioRunner`] and is
+/// independent of RX storage geometry. Aggregate construction may retain a
+/// reference to it while claiming additional frames without gaining access to
+/// link state or receive publication.
+pub struct PinnedTxConsumer<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    ready_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
+    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    pub fn try_receive(
         &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
         match self.ready_tx.try_receive() {
@@ -898,7 +1072,7 @@ impl<
         }
     }
 
-    pub async fn receive_tx(
+    pub async fn receive(
         &self,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         let index = self.ready_tx.receive().await;
@@ -910,11 +1084,7 @@ impl<
         }
     }
 
-    pub fn rx_queue_len(&self) -> usize {
-        self.ready_rx.len()
-    }
-
-    pub fn tx_queue_len(&self) -> usize {
+    pub fn queue_len(&self) -> usize {
         self.ready_tx.len()
     }
 }

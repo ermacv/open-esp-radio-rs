@@ -5,7 +5,7 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 
 use crate::{
@@ -86,7 +86,7 @@ pub trait Esp32s31NetworkTxService<
         &'a mut self,
         hardware: &'a mut H,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedRadioRunner<
+        network: &'a PinnedTxConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -232,7 +232,7 @@ where
     fn start_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedRadioRunner<
+        network: &'a PinnedTxConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -294,7 +294,7 @@ where
         &'a mut self,
         hardware: &'a mut H,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedRadioRunner<
+        _network: &'a PinnedTxConsumer<
             'resources,
             M,
             FRAME_CAPACITY,

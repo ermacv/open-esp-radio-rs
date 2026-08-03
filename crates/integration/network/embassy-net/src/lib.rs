@@ -41,7 +41,8 @@ mod pinned;
 
 pub use pinned::{
     PinnedDevice, PinnedRadioRunner, PinnedReceiveToken, PinnedResources, PinnedRxPublisher,
-    PinnedTransmitToken, PinnedTxFrame, PinnedTxPool,
+    PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, SplitPinnedDevice,
+    SplitPinnedRadioRunner, SplitPinnedResources,
 };
 
 /// Ethernet header length, excluding an FCS.

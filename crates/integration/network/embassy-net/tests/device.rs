@@ -8,7 +8,8 @@ use core::{
 use embassy_net_driver::{Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_embassy_net::{
-    ETHERNET_HEADER_LEN, FrameLengthError, PinnedResources, PinnedTxPool, Resources, RxEnqueueError,
+    ETHERNET_HEADER_LEN, FrameLengthError, PinnedResources, PinnedTxPool, Resources,
+    RxEnqueueError, SplitPinnedResources,
 };
 
 const FRAME_CAPACITY: usize = 64;
@@ -199,4 +200,40 @@ fn dropped_pinned_tx_token_returns_its_reserved_slot() {
     let token = device.transmit(&mut context()).unwrap();
     drop(token);
     assert!(device.transmit(&mut context()).is_some());
+}
+
+#[test]
+fn pinned_rx_and_tx_depths_are_independent() {
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+    assert_eq!(device.capabilities().max_burst_size, Some(1));
+
+    for marker in 0..3 {
+        let mut frame = [0; ETHERNET_HEADER_LEN];
+        frame[0] = marker;
+        publisher.try_send(&frame).unwrap();
+    }
+    assert_eq!(publisher.queue_len(), 3);
+    assert_eq!(publisher.free_capacity(), 0);
+
+    device
+        .transmit(&mut context())
+        .unwrap()
+        .consume(ETHERNET_HEADER_LEN, |frame| frame[0] = 0xa5);
+    assert!(device.transmit(&mut context()).is_none());
+    let consumer = radio.tx_consumer();
+    assert_eq!(consumer.queue_len(), 1);
+    assert_eq!(consumer.try_receive().unwrap().ethernet()[0], 0xa5);
+
+    for marker in 0..3 {
+        let (received, reply) = device.receive(&mut context()).unwrap();
+        received.consume(|frame| assert_eq!(frame[0], marker));
+        drop(reply);
+    }
+    assert_eq!(publisher.free_capacity(), 3);
 }

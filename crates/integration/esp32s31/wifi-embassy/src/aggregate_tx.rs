@@ -13,7 +13,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::{
     irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
     tx::{
@@ -653,7 +653,7 @@ where
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         if self.active() {
             return Err(AggregateTxError::Busy);
@@ -674,7 +674,7 @@ where
                 NetworkSingleMpduReason::BlockAckUnavailable,
             );
         }
-        if ht_requires_pair && network.tx_queue_len() == 0 {
+        if ht_requires_pair && network.queue_len() == 0 {
             return self.start_network_ordinary(
                 hardware,
                 first,
@@ -774,7 +774,7 @@ where
     fn prepare_aggregate(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<(), AggregateTxError> {
         let first_sequence = self
             .ordinary
@@ -800,7 +800,7 @@ where
     fn prepare_reserved(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         first_sequence: u16,
         cookie: TxCookie,
     ) -> Result<(), AggregateTxError> {
@@ -813,7 +813,7 @@ where
             if !self.can_push(FRAME_CAPACITY)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive_tx() else {
+            let Some(frame) = network.try_receive() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             self.push_frame(frame)?;
@@ -1608,7 +1608,7 @@ mod tests {
         tx.set_block_ack_operational(0, true);
 
         assert_eq!(
-            tx.start_network(&mut hardware, first, &network),
+            tx.start_network(&mut hardware, first, &network.tx_consumer()),
             Ok(WifiTxProgress::Pending),
         );
         assert_eq!(hardware.legacy_publications, 1);
@@ -1670,7 +1670,7 @@ mod tests {
         tx.set_block_ack_operational(0, true);
 
         assert_eq!(
-            tx.start_network(&mut hardware, first, &network),
+            tx.start_network(&mut hardware, first, &network.tx_consumer()),
             Ok(WifiTxProgress::Pending),
         );
         assert_eq!(hardware.he_publications, 1);
@@ -1706,7 +1706,7 @@ mod tests {
         tx.set_block_ack_operational(0, true);
 
         assert_eq!(
-            tx.start_network(&mut hardware, first, &network),
+            tx.start_network(&mut hardware, first, &network.tx_consumer()),
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(hardware.ht_publications, 1);
@@ -1770,7 +1770,7 @@ mod tests {
         .unwrap();
         tx.set_block_ack_operational(0, true);
         assert_eq!(
-            tx.start_network(&mut hardware, first, &network),
+            tx.start_network(&mut hardware, first, &network.tx_consumer()),
             Ok(WifiTxProgress::Pending)
         );
 
@@ -1842,7 +1842,7 @@ mod tests {
         .unwrap();
         tx.set_block_ack_operational(0, true);
         assert_eq!(
-            tx.start_network(&mut hardware, first, &network),
+            tx.start_network(&mut hardware, first, &network.tx_consumer()),
             Ok(WifiTxProgress::Pending)
         );
 
@@ -2027,7 +2027,7 @@ where
         &'a mut self,
         hardware: &'a mut H,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedRadioRunner<
+        network: &'a PinnedTxConsumer<
             'resources,
             M,
             FRAME_CAPACITY,

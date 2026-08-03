@@ -11,7 +11,9 @@ use embassy_futures::{
     select::{Either3, select3},
     yield_now,
 };
-use open_esp_radio_embassy_net::{PinnedRadioRunner, PinnedTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{
+    PinnedTxConsumer, PinnedTxFrame, RawMutex, SplitPinnedRadioRunner,
+};
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
 
@@ -91,7 +93,7 @@ pub trait WifiRunnerBackend<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 >
 {
     type Error;
@@ -134,14 +136,14 @@ pub trait WifiRunnerBackend<
     /// from `network`, and return all of them only after BlockAck/detach.
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedRadioRunner<
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
             HEADROOM,
             TRAILER,
-            QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
 
@@ -168,10 +170,19 @@ pub struct WifiRunner<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 > {
     irq: &'irq EmbassyMacIrqRuntime<M>,
-    network: PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    network: SplitPinnedRadioRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >,
     backend: B,
     rx_backpressured: bool,
 }
@@ -184,10 +195,22 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> WifiRunner<'resources, 'irq, M, B, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+>
+    WifiRunner<
+        'resources,
+        'irq,
+        M,
+        B,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
 where
-    B: WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    B: WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     async fn service_rx(&mut self) -> Result<(), B::Error> {
         self.rx_backpressured = self.backend.service_rx().await? == WifiRxProgress::Backpressured;
@@ -233,7 +256,15 @@ where
 
     pub const fn new(
         irq: &'irq EmbassyMacIrqRuntime<M>,
-        network: PinnedRadioRunner<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: SplitPinnedRadioRunner<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
         backend: B,
     ) -> Self {
         Self {
@@ -327,7 +358,8 @@ where
                             WifiControlProgress::Idle => break,
                         }
                     }
-                    let progress = self.backend.start_tx(frame, &self.network).await?;
+                    let network_tx = self.network.tx_consumer();
+                    let progress = self.backend.start_tx(frame, &network_tx).await?;
                     if progress == WifiTxProgress::Pending {
                         self.drive_active_tx().await?;
                     }
@@ -444,7 +476,7 @@ mod tests {
                 TRAILER,
                 QUEUE_DEPTH,
             >,
-            _network: &'a PinnedRadioRunner<
+            _network: &'a PinnedTxConsumer<
                 'static,
                 NoopRawMutex,
                 FRAME_CAPACITY,

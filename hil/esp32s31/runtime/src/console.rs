@@ -8,17 +8,25 @@ use core::{
     fmt::{Arguments, Write},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
+use embassy_futures::select::{Either3, select3};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use embedded_io_async::Write as _;
+use embedded_io_async::{Read as _, Write as _};
 use esp_hal::{
     Async,
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
+use open_esp_radio_hil_protocol::{
+    Capabilities, Command, Envelope, Event, FrameDecoder, FrameEncoder, NetworkCredentials,
+    PROTOCOL_VERSION, RejectReason, SessionState, StateChange,
+};
 
 const MESSAGE_CAPACITY: usize = 384;
 const QUEUE_CAPACITY: usize = 8;
 const DRAIN_BATCH: usize = 4;
+const COMMAND_QUEUE_CAPACITY: usize = 4;
+const EVENT_QUEUE_CAPACITY: usize = 8;
+const USB_RX_CHUNK_BYTES: usize = 128;
 
 #[unsafe(link_section = ".critical.data.logging")]
 static WRITER_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -29,7 +37,26 @@ static DROPPED_RECORDS: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static TRUNCATED_RECORDS: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
+static BOOT_ID_LOW: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static BOOT_ID_HIGH: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static EVENT_SEQUENCE: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_DROPPED: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
 static RECORDS: Channel<CriticalSectionRawMutex, TextBuffer<MESSAGE_CAPACITY>, QUEUE_CAPACITY> =
+    Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static COMMANDS: Channel<CriticalSectionRawMutex, Envelope<Command>, COMMAND_QUEUE_CAPACITY> =
+    Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static EVENTS: Channel<CriticalSectionRawMutex, Envelope<Event>, EVENT_QUEUE_CAPACITY> =
+    Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static NETWORK_CREDENTIALS: Channel<CriticalSectionRawMutex, NetworkCredentials, 1> =
     Channel::new();
 
 unsafe extern "C" {
@@ -113,6 +140,114 @@ pub fn truncated_records() -> u32 {
     TRUNCATED_RECORDS.load(Ordering::Relaxed)
 }
 
+/// Installs the identity of the current boot before protocol tasks start.
+pub fn init_protocol(boot_id: u64) {
+    BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
+    BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
+    EVENT_SEQUENCE.store(0, Ordering::Relaxed);
+}
+
+fn boot_id() -> u64 {
+    u64::from(BOOT_ID_LOW.load(Ordering::Acquire))
+        | (u64::from(BOOT_ID_HIGH.load(Ordering::Acquire)) << 32)
+}
+
+/// Queues a typed event without making a radio or network task wait for USB.
+pub fn publish_event(session_id: u64, request_id: u32, body: Event) {
+    let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let event = Envelope::new(boot_id(), message_sequence, session_id, request_id, body);
+    if EVENTS.try_send(event).is_err() {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Waits without polling until the host provisions this boot's network.
+pub async fn receive_network_credentials() -> NetworkCredentials {
+    NETWORK_CREDENTIALS.receive().await
+}
+
+async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
+    let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    EVENTS
+        .send(Envelope::new(
+            boot_id(),
+            message_sequence,
+            session_id,
+            request_id,
+            body,
+        ))
+        .await;
+}
+
+/// Owns commands while individual benchmark services migrate to
+/// runtime-configured sessions. Unsupported mutations receive an explicit
+/// response instead of being silently ignored.
+#[embassy_executor::task]
+pub async fn protocol_task(capabilities: Capabilities) {
+    publish_event_reliably(0, 0, Event::Hello(capabilities)).await;
+    publish_event_reliably(
+        0,
+        0,
+        Event::State(StateChange {
+            previous: SessionState::Booting,
+            current: SessionState::WaitingForNetwork,
+        }),
+    )
+    .await;
+    let mut network_provisioned = false;
+    loop {
+        let command = COMMANDS.receive().await;
+        match command.body {
+            Command::GetCapabilities => {
+                publish_event_reliably(
+                    command.session_id,
+                    command.request_id,
+                    Event::Hello(capabilities),
+                )
+                .await;
+            }
+            Command::ProvisionNetwork(credentials) => {
+                let (response, accepted) = if network_provisioned {
+                    (Event::Rejected(RejectReason::InvalidState), false)
+                } else if credentials.validate().is_err() {
+                    (Event::Rejected(RejectReason::InvalidConfiguration), false)
+                } else if NETWORK_CREDENTIALS.try_send(credentials).is_err() {
+                    (Event::Rejected(RejectReason::Busy), false)
+                } else {
+                    network_provisioned = true;
+                    (Event::Accepted, true)
+                };
+                publish_event_reliably(command.session_id, command.request_id, response).await;
+                if accepted {
+                    publish_event_reliably(
+                        0,
+                        0,
+                        Event::State(StateChange {
+                            previous: SessionState::WaitingForNetwork,
+                            current: SessionState::Idle,
+                        }),
+                    )
+                    .await;
+                }
+            }
+            Command::Configure(_)
+            | Command::Arm
+            | Command::Start
+            | Command::Stop
+            | Command::Abort
+            | Command::GetLastResult
+            | Command::AcknowledgeResult => {
+                publish_event_reliably(
+                    command.session_id,
+                    command.request_id,
+                    Event::Rejected(RejectReason::Unsupported),
+                )
+                .await;
+            }
+        }
+    }
+}
+
 /// Runs the runtime transport worker.
 ///
 /// Spawn this task once the Embassy executor starts. Before it starts, records
@@ -122,22 +257,75 @@ pub fn truncated_records() -> u32 {
 /// it never spins waiting for the host.
 #[embassy_executor::task]
 pub async fn logger_task(usb_device: USB_DEVICE<'static>) {
-    let (_, mut tx) = UsbSerialJtag::new(usb_device).into_async().split();
+    let (mut rx, mut tx) = UsbSerialJtag::new(usb_device).into_async().split();
     RUNTIME_ACTIVE.store(true, Ordering::Release);
     let mut reported_dropped = 0;
     let mut reported_truncated = 0;
+    let mut decoder = FrameDecoder::new();
+    let mut encoder = FrameEncoder::new();
+    let mut rx_buffer = [0_u8; USB_RX_CHUNK_BYTES];
     loop {
-        let record = RECORDS.receive().await;
-        write_record_async(&mut tx, &record).await;
+        match select3(EVENTS.receive(), rx.read(&mut rx_buffer), RECORDS.receive()).await {
+            Either3::First(event) => write_event_async(&mut tx, &mut encoder, &event).await,
+            Either3::Second(Ok(length)) => {
+                decoder.feed::<Envelope<Command>>(&rx_buffer[..length], |message| {
+                    if let Ok(command) = message {
+                        receive_command(command);
+                    }
+                });
+            }
+            Either3::Second(Err(_)) => {}
+            Either3::Third(record) => write_record_async(&mut tx, &record).await,
+        }
 
         for _ in 1..DRAIN_BATCH {
-            let Ok(record) = RECORDS.try_receive() else {
+            if let Ok(event) = EVENTS.try_receive() {
+                write_event_async(&mut tx, &mut encoder, &event).await;
+            } else if let Ok(record) = RECORDS.try_receive() {
+                write_record_async(&mut tx, &record).await;
+            } else {
                 break;
-            };
-            write_record_async(&mut tx, &record).await;
+            }
         }
         report_health_changes(&mut tx, &mut reported_dropped, &mut reported_truncated).await;
         embassy_futures::yield_now().await;
+    }
+}
+
+fn receive_command(command: Envelope<Command>) {
+    let session_id = command.session_id;
+    let request_id = command.request_id;
+    let rejection = if command.protocol_version != PROTOCOL_VERSION {
+        Some(RejectReason::ProtocolVersion)
+    } else if command.boot_id != boot_id() {
+        Some(RejectReason::BootId)
+    } else {
+        None
+    };
+    if let Some(reason) = rejection {
+        publish_event(session_id, request_id, Event::Rejected(reason));
+    } else if COMMANDS.try_send(command).is_err() {
+        publish_event(session_id, request_id, Event::Rejected(RejectReason::Busy));
+    }
+}
+
+async fn write_event_async(
+    tx: &mut UsbSerialJtagTx<'static, Async>,
+    encoder: &mut FrameEncoder,
+    event: &Envelope<Event>,
+) {
+    let Ok(frame) = encoder.encode(event) else {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    let Ok(_guard) = WriterGuard::acquire() else {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
+        PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
+    } else {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
     }
 }
 

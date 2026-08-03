@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/hil-protocol",
     "crates/radio",
     "crates/integration/network/embassy-net",
     "crates/integration/esp32s31/wifi-embassy",

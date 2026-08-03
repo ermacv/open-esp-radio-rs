@@ -38,6 +38,7 @@ open-esp-radio-esp32s31-phy = { path = "../../crates/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../crates/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../crates/integration/esp32s31/wifi-embassy" }
 open-esp-radio-ieee80211 = { path = "../../crates/wifi/ieee80211" }
+open-esp-radio-hil-protocol = { path = "../../crates/hil-protocol" }
 portable-atomic = { version = "1.11", default-features = false }
 static_cell = "2.1.1"
 

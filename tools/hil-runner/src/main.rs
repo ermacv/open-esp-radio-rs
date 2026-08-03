@@ -163,6 +163,8 @@ fn print_help() {
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \
          PSRAM/SRAM placement contract, and emits an ESP application image.\n\
+         Traffic commands provision Wi-Fi at runtime from \
+         OPEN_RADIO_HIL_STA_SSID and OPEN_RADIO_HIL_STA_PASSWORD.\n\
          Run `cargo hil scenarios` for the firmware scenario list."
     );
 }

@@ -142,6 +142,11 @@ use open_esp_radio::{
     },
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use open_esp_radio_hil_protocol::{
+    Capabilities, Direction as HilDirection, Event as HilEvent, FeatureCapabilities,
+    MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
+    Transport as HilTransport,
+};
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
 // ordinal is deterministic for a fixed PHY transition and can therefore be
@@ -286,6 +291,28 @@ const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
 const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
+
+/// Describes only behavior implemented by the current image. Session-time
+/// configuration and structured benchmark evidence remain false until the
+/// compatibility migration no longer depends on compile-time scenarios and
+/// text reports.
+pub const fn hil_capabilities() -> Capabilities {
+    Capabilities {
+        features: FeatureCapabilities {
+            udp: true,
+            tcp: false,
+            rx: !OPEN_RADIO_THROUGHPUT_BENCH || OPEN_RADIO_BIDIRECTIONAL_BENCH,
+            tx: OPEN_RADIO_THROUGHPUT_BENCH,
+            bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH,
+            network_provisioning: true,
+            runtime_configuration: false,
+            structured_evidence: false,
+        },
+        maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
+        maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
+    }
+}
+
 // Every HE matrix owns a synthetic A-MPDU traffic source. Requiring a second
 // independent build flag previously allowed the matrix selector and its log
 // labels to be active while no matrix traffic was generated.
@@ -621,19 +648,6 @@ const fn sta_scan_channel(index: usize) -> u8 {
         }
     }
 }
-const STA_TARGET_SSID: &[u8] = if let Some(ssid) = option_env!("OPEN_RADIO_STA_SSID") {
-    ssid.as_bytes()
-} else if OPEN_RADIO_HE_MATRIX_HIL
-    || OPEN_RADIO_HE_DCM_HIL
-    || OPEN_RADIO_HE_TB_HIL
-    || OPEN_RADIO_HE_DELIMITER_HIL
-{
-    b"codex_he20_wpa"
-} else if PERF_AP_PROFILE {
-    b"codex_ht_wpa"
-} else {
-    b"FRITZ!Box 7530 FN"
-};
 const WPA2_PROTECTED_ARP_TIMEOUT_MS: u32 = 1_500;
 const WPA2_CONTROLLED_PORT_SETTLE_MS: u64 = 10;
 const WPA2_PROTECTED_ARP_ATTEMPTS: u8 = 3;
@@ -642,7 +656,6 @@ const WPA2_PROTECTED_ARP_RETRY_DELAY_MS: u64 = 20;
 // measured plaintext layout until the M4 TX-done edge opens the controlled
 // port. Protected M4 remains a useful explicit negative control experiment.
 const WPA2_MESSAGE_4_HARDWARE_PROTECTED: bool = false;
-const STA_PASSPHRASE: Option<&str> = option_env!("OPEN_RADIO_STA_PASSWORD");
 const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
 
 const fn selected_ipv4(value: Option<&str>, default: [u8; 4]) -> [u8; 4] {
@@ -3071,6 +3084,15 @@ async fn report_network_configuration(stack: Stack<'_>) -> ! {
     for elapsed_ms in 0..15_000_u32 {
         if let Some(config) = stack.config_v4() {
             let local_ipv4 = config.address.address().octets();
+            crate::console::publish_event(
+                0,
+                0,
+                HilEvent::NetworkReady(NetworkInfo {
+                    address: local_ipv4,
+                    prefix_length: config.address.prefix_len(),
+                    gateway: config.gateway.map(|address| address.octets()),
+                }),
+            );
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-dhcp \
                  address={} gateway={:?} dns={:?} elapsed_ms={elapsed_ms}",
@@ -3537,6 +3559,16 @@ async fn run_open_radio_udp_tx_benchmark(
         }
     }
     let server = Ipv4Address::from_octets(OPEN_RADIO_TX_BENCH_TARGET_IPV4);
+    crate::console::publish_event(
+        0,
+        0,
+        HilEvent::ServiceReady(ServiceInfo {
+            transport: HilTransport::Udp,
+            direction: HilDirection::Tx,
+            local_port: 4_324,
+            maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
+        }),
+    );
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
          target={server}:{OPEN_RADIO_UDP_TX_BENCH_PORT} \
@@ -3767,6 +3799,16 @@ async fn run_open_radio_udp_rx_benchmark_with_buffers(
             Timer::after_secs(60).await;
         }
     }
+    crate::console::publish_event(
+        0,
+        0,
+        HilEvent::ServiceReady(ServiceInfo {
+            transport: HilTransport::Udp,
+            direction: HilDirection::Rx,
+            local_port: OPEN_RADIO_UDP_RX_PORT,
+            maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
+        }),
+    );
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-rx-ready \
          port={OPEN_RADIO_UDP_RX_PORT} queue={rx_queue_depth} \
@@ -5257,6 +5299,7 @@ async fn run_promiscuous_rx_hil(
     mut platform: EspHalRadioPeripheral,
     mut cold_mmio: ColdRadioRegisters,
     trng: &Trng,
+    network_credentials: &mut NetworkCredentials,
 ) -> bool {
     let platform = &mut platform;
     let mmio = &mut cold_mmio;
@@ -5770,7 +5813,7 @@ async fn run_promiscuous_rx_hil(
     let rx_dma_pass = summary.records != 0 && raw_frames != 0;
     let active_scan_pass =
         tx_completions >= STA_SCAN_CHANNEL_COUNT as u32 && probe_responses != 0 && tx_failures == 0;
-    let target = best_matching_ssid(scan_table.records(), STA_TARGET_SSID).copied();
+    let target = best_matching_ssid(scan_table.records(), network_credentials.ssid()).copied();
     // No cold MAC operation is permitted beyond this point. Consume the cold
     // owner before authentication and retain the one-shot interrupt setup
     // token until WPA2 has opened the controlled port.
@@ -5788,17 +5831,13 @@ async fn run_promiscuous_rx_hil(
                 access_point.rssi,
                 access_point.rsn,
             ));
-            let Some(passphrase) = STA_PASSPHRASE else {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-config \
-                     error=missing-OPEN_RADIO_STA_PASSWORD"
-                ));
-                return false;
-            };
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL stage=wpa2-pmk-derive start iterations=4096"
             ));
-            let pmk = match Pmk::derive(passphrase.as_bytes(), STA_TARGET_SSID) {
+            let pmk_result =
+                Pmk::derive(network_credentials.passphrase(), network_credentials.ssid());
+            network_credentials.clear_passphrase();
+            let pmk = match pmk_result {
                 Ok(pmk) => pmk,
                 Err(error) => {
                     emergency_log(format_args!(
@@ -5871,7 +5910,8 @@ async fn run_promiscuous_rx_hil(
         }
         None => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-target ssid={STA_TARGET_SSID:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-target ssid={:?}",
+                network_credentials.ssid(),
             ));
             (false, false, false, false)
         }
@@ -5933,6 +5973,14 @@ pub async fn run(
     platform: EspHalRadioPeripheral,
     trng: Trng,
 ) {
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL stage=network-config-waiting source=hil-protocol"
+    ));
+    let mut network_credentials = crate::console::receive_network_credentials().await;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=network-config-received ssid_length={}",
+        network_credentials.ssid().len(),
+    ));
     set_diagnostic_stage(10);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL schema=8 writes=full-phy+mac-rx+mac-tx+active-scan mac=open \
@@ -6076,6 +6124,7 @@ pub async fn run(
             platform,
             registers,
             &trng,
+            &mut network_credentials,
         )
         .await;
         break;

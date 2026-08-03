@@ -1,16 +1,23 @@
 //! Shared UART capture and end-to-end readiness probes for traffic HIL cells.
 
 use std::{
-    io::Read,
+    io::{Read, Write},
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::Path,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
+
+use open_esp_radio_hil_protocol::{
+    Capabilities, Command, Direction, Envelope, Event, FrameDecoder, FrameEncoder,
+    NetworkCredentials, Transport,
+};
+use zeroize::Zeroizing;
 
 use crate::Result;
 
@@ -19,11 +26,20 @@ const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
+const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
+
+struct ProtocolEvents {
+    messages: Mutex<Vec<Envelope<Event>>>,
+    changed: Condvar,
+}
 
 /// Concurrent UART transcript retained across traffic setup and measurement.
 pub(crate) struct SerialCapture {
     stop: Arc<AtomicBool>,
     bytes: Arc<Mutex<Vec<u8>>>,
+    protocol: Arc<ProtocolEvents>,
+    outbound: mpsc::Sender<Zeroizing<Vec<u8>>>,
+    next_host_sequence: AtomicU32,
     worker: Option<thread::JoinHandle<()>>,
 }
 
@@ -44,12 +60,18 @@ impl SerialCapture {
     fn start_inner(port: &Path, reset_target: bool) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let bytes = Arc::new(Mutex::new(Vec::new()));
+        let protocol = Arc::new(ProtocolEvents {
+            messages: Mutex::new(Vec::new()),
+            changed: Condvar::new(),
+        });
+        let (outbound, outbound_rx) = mpsc::channel::<Zeroizing<Vec<u8>>>();
         let worker_stop = Arc::clone(&stop);
         let worker_bytes = Arc::clone(&bytes);
+        let worker_protocol = Arc::clone(&protocol);
         let port = port.to_owned();
         let worker = thread::spawn(move || {
             let mut serial = match serialport::new(port.to_string_lossy(), 115_200)
-                .timeout(Duration::from_millis(100))
+                .timeout(Duration::from_millis(20))
                 .open()
             {
                 Ok(serial) => serial,
@@ -62,6 +84,9 @@ impl SerialCapture {
                     return;
                 }
             };
+            if reset_target {
+                let _ = serial.clear(serialport::ClearBuffer::Input);
+            }
             if reset_target && let Err(error) = reset_usb_serial_jtag(&mut *serial) {
                 append(
                     &worker_bytes,
@@ -73,10 +98,32 @@ impl SerialCapture {
                 );
                 return;
             }
+            let mut decoder = FrameDecoder::new();
             let mut buffer = [0_u8; 2_048];
             while !worker_stop.load(Ordering::Acquire) {
+                while let Ok(frame) = outbound_rx.try_recv() {
+                    if let Err(error) = serial.write_all(frame.as_slice()) {
+                        append(
+                            &worker_bytes,
+                            format!("\nserial write failed: {error}\n").as_bytes(),
+                        );
+                        return;
+                    }
+                }
                 match serial.read(&mut buffer) {
-                    Ok(length) => append(&worker_bytes, &buffer[..length]),
+                    Ok(length) => {
+                        append(&worker_bytes, &buffer[..length]);
+                        decoder.feed::<Envelope<Event>>(&buffer[..length], |message| {
+                            if let Ok(message) = message {
+                                let mut messages = worker_protocol
+                                    .messages
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                messages.push(message);
+                                worker_protocol.changed.notify_all();
+                            }
+                        });
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
                     Err(error) => {
                         append(
@@ -91,7 +138,193 @@ impl SerialCapture {
         Self {
             stop,
             bytes,
+            protocol,
+            outbound,
+            next_host_sequence: AtomicU32::new(1),
             worker: Some(worker),
+        }
+    }
+
+    /// Performs one typed host-to-target round trip and returns the current
+    /// image capabilities. The old text readiness path remains active only as
+    /// a compatibility oracle while benchmark evidence is migrated.
+    pub(crate) fn request_capabilities(&self, timeout: Duration) -> Result<Capabilities> {
+        let hello = self
+            .wait_for_protocol_after(0, timeout, |message| {
+                matches!(message.body, Event::Hello(_))
+            })
+            .ok_or("device did not publish a HIL protocol hello")?;
+        let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
+        let event_count = self.protocol_event_count();
+        let command = Envelope::new(
+            hello.boot_id,
+            request_id,
+            0,
+            request_id,
+            Command::GetCapabilities,
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder
+            .encode(&command)
+            .map_err(|error| format!("cannot encode HIL capability request: {error}"))?
+            .to_vec();
+        self.outbound
+            .send(Zeroizing::new(frame))
+            .map_err(|_| "serial worker stopped before capability request")?;
+        let response = self
+            .wait_for_protocol_after(event_count, timeout, |message| {
+                message.boot_id == hello.boot_id
+                    && message.request_id == request_id
+                    && matches!(message.body, Event::Hello(_))
+            })
+            .ok_or("device did not answer the HIL capability request")?;
+        match response.body {
+            Event::Hello(capabilities) => Ok(capabilities),
+            _ => unreachable!("protocol event predicate accepted only Hello"),
+        }
+    }
+
+    /// Establishes the typed link and provisions this boot from host-owned
+    /// environment secrets. The passphrase is never echoed by the target or
+    /// appended to the UART capture.
+    fn prepare_protocol(&self) -> Result<Capabilities> {
+        let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
+        if capabilities.features.network_provisioning {
+            self.provision_network(PROTOCOL_READY_TIMEOUT)?;
+        }
+        Ok(capabilities)
+    }
+
+    fn provision_network(&self, timeout: Duration) -> Result<()> {
+        let ssid = network_environment("OPEN_RADIO_HIL_STA_SSID", "OPEN_RADIO_STA_SSID")?;
+        let passphrase = Zeroizing::new(network_environment(
+            "OPEN_RADIO_HIL_STA_PASSWORD",
+            "OPEN_RADIO_STA_PASSWORD",
+        )?);
+        let credentials = NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
+            .map_err(|error| format!("invalid HIL network credentials: {error}"))?;
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("HIL protocol hello disappeared before network provisioning")?;
+        let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
+        let event_count = self.protocol_event_count();
+        let command = Envelope::new(
+            boot_id,
+            request_id,
+            0,
+            request_id,
+            Command::ProvisionNetwork(credentials),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder
+            .encode(&command)
+            .map_err(|error| format!("cannot encode HIL network provisioning: {error}"))?
+            .to_vec();
+        self.outbound
+            .send(Zeroizing::new(frame))
+            .map_err(|_| "serial worker stopped before network provisioning")?;
+        let response = self
+            .wait_for_protocol_after(event_count, timeout, |message| {
+                message.boot_id == boot_id && message.request_id == request_id
+            })
+            .ok_or("device did not acknowledge HIL network provisioning")?;
+        match response.body {
+            Event::Accepted => Ok(()),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected HIL network provisioning: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid network provisioning response".into()),
+        }
+    }
+
+    fn latest_boot_id(&self) -> Option<u64> {
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        messages.iter().rev().find_map(|message| {
+            if matches!(message.body, Event::Hello(_)) {
+                Some(message.boot_id)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub(crate) fn observed_protocol_ipv4(&self) -> Option<Ipv4Addr> {
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        messages
+            .iter()
+            .rev()
+            .find_map(|message| match message.body {
+                Event::NetworkReady(network) => Some(Ipv4Addr::from(network.address)),
+                _ => None,
+            })
+    }
+
+    fn observed_udp_service(&self, direction: Direction, port: u16) -> bool {
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        messages.iter().any(|message| match message.body {
+            Event::ServiceReady(service) => {
+                service.transport == Transport::Udp
+                    && service.direction == direction
+                    && service.local_port == port
+            }
+            _ => false,
+        })
+    }
+
+    fn protocol_event_count(&self) -> usize {
+        self.protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    fn wait_for_protocol_after(
+        &self,
+        start: usize,
+        timeout: Duration,
+        predicate: impl Fn(&Envelope<Event>) -> bool,
+    ) -> Option<Envelope<Event>> {
+        let deadline = Instant::now() + timeout;
+        let mut messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some(message) = messages
+                .get(start..)
+                .unwrap_or_default()
+                .iter()
+                .find(|message| predicate(message))
+            {
+                return Some(message.clone());
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let (next, result) = self
+                .protocol
+                .changed
+                .wait_timeout(messages, deadline - now)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            messages = next;
+            if result.timed_out() {
+                return None;
+            }
         }
     }
 
@@ -188,6 +421,17 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
+fn network_environment(primary: &str, compatibility: &str) -> Result<String> {
+    std::env::var(primary)
+        .or_else(|_| std::env::var(compatibility))
+        .map_err(|_| {
+            format!(
+                "missing `{primary}`; provide network credentials to the HIL runner environment"
+            )
+            .into()
+        })
+}
+
 /// Prove that the target owns its IPv4 address, UART and complete UDP RX path.
 ///
 /// One positive datagram followed by the target's idle timeout creates one
@@ -202,6 +446,10 @@ pub(crate) fn await_udp_rx_ready(
     port: u16,
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
+    let capabilities = capture.prepare_protocol()?;
+    if !capabilities.features.udp || !capabilities.features.rx {
+        return Err("firmware does not advertise UDP RX capability".into());
+    }
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
     socket.connect(SocketAddrV4::new(address, port))?;
@@ -213,14 +461,20 @@ pub(crate) fn await_udp_rx_ready(
         if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
             return Err("radio runner failed before UDP RX became ready".into());
         }
-        if let Some(discovered) = observed_dhcp_ipv4(&capture.transcript())
+        if let Some(discovered) = capture
+            .observed_protocol_ipv4()
+            .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
             && discovered != address
         {
             address = discovered;
             socket.connect(SocketAddrV4::new(address, port))?;
         }
-        if !capture.contains("stage=udp-rx-ready")
-            || observed_dhcp_ipv4(&capture.transcript()).is_none()
+        if !(capture.observed_udp_service(Direction::Rx, port)
+            || capture.contains("stage=udp-rx-ready"))
+            || capture
+                .observed_protocol_ipv4()
+                .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
+                .is_none()
         {
             thread::sleep(Duration::from_millis(20));
             continue;
@@ -255,15 +509,19 @@ pub(crate) fn await_device_marker(
     address_hint: Ipv4Addr,
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
+    let _ = capture.prepare_protocol()?;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
             return Err(format!("radio runner failed before `{marker}`").into());
         }
-        if capture.contains(marker) {
+        if capture.observed_udp_service(Direction::Tx, 4_324) || capture.contains(marker) {
             let discovery_deadline = Instant::now() + DHCP_DISCOVERY_GRACE;
             while Instant::now() < discovery_deadline {
-                if let Some(address) = observed_dhcp_ipv4(&capture.transcript()) {
+                if let Some(address) = capture
+                    .observed_protocol_ipv4()
+                    .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
+                {
                     return Ok(address);
                 }
                 thread::sleep(Duration::from_millis(10));

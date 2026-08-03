@@ -317,6 +317,8 @@ extern "C" fn runtime_main() -> ! {
         let trng_source = TrngSource::new(peripherals.RNG);
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
+        let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
+        console::init_protocol(boot_id);
         let radio = open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
             peripherals.WIFI,
             peripherals.MODEM_SYSCON,
@@ -334,6 +336,10 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
+            let Ok(protocol) = console::protocol_task(radio_hil::hil_capabilities()) else {
+                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
+            };
+            spawner.spawn(protocol);
             let Ok(hil) =
                 open_radio_hil_task(spawner, app_spawner, radio, trng, trng_source)
             else {

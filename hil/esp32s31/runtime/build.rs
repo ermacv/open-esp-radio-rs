@@ -5,7 +5,8 @@ const BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 fn main() {
     // `radio_hil` consumes these values through `option_env!`. Explicitly
     // tracking them prevents Cargo from reusing an image configured for a
-    // previous AP, PHY vector or traffic mode.
+    // previous PHY vector or traffic mode. Network credentials are provisioned
+    // at runtime over the HIL protocol and must not affect image identity.
     for variable in [
         "OPEN_RADIO_AMPDU_COALESCE_US",
         "OPEN_RADIO_AMPDU_LIMIT",
@@ -37,8 +38,6 @@ fn main() {
         "OPEN_RADIO_STA_CHANNEL",
         "OPEN_RADIO_STA_GATEWAY_IPV4",
         "OPEN_RADIO_STA_IPV4",
-        "OPEN_RADIO_STA_PASSWORD",
-        "OPEN_RADIO_STA_SSID",
         "OPEN_RADIO_TX_BENCH",
     ] {
         println!("cargo:rerun-if-env-changed={variable}");

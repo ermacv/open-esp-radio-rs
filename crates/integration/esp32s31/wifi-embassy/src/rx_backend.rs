@@ -521,15 +521,13 @@ pub struct ConnectedControlQueue<const CAPACITY: usize> {
 fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedRxControlEvent> {
     match event.control()? {
         // These are the only event classes consumed by
-        // `Esp32s31ConnectedControl` today. High-rate protected-data
-        // observations and diagnostic Trigger/NDPA events must not starve a
-        // beacon or ADDBA/DELBA transition in the bounded mailbox.
+        // `Esp32s31ConnectedControl` today. Diagnostic Trigger/NDPA events
+        // must not starve a beacon or ADDBA/DELBA transition in the bounded
+        // mailbox.
         event @ (ConnectedRxControlEvent::Beacon(_) | ConnectedRxControlEvent::BlockAck(_)) => {
             Some(event)
         }
-        ConnectedRxControlEvent::ProtectedFrame(_)
-        | ConnectedRxControlEvent::Trigger { .. }
-        | ConnectedRxControlEvent::Ndpa { .. } => None,
+        ConnectedRxControlEvent::Trigger { .. } | ConnectedRxControlEvent::Ndpa { .. } => None,
     }
 }
 
@@ -989,10 +987,6 @@ mod tests {
             action,
             body: &body,
         });
-        queue.publish(ConnectedRxEvent::ProtectedFrame(
-            open_esp_radio_esp32s31_wifi_mac::connected_rx::ConnectedRxProtection::Pairwise,
-        ));
-
         assert_eq!(queue.len(), 1);
         assert_eq!(queue.dropped(), 0);
         assert_eq!(queue.pop(), Some(ConnectedRxControlEvent::BlockAck(action)));

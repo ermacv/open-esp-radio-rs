@@ -28,6 +28,9 @@ pub struct RxPipelineCounters {
     backpressured_services: AtomicU32,
     pool_credit_limited_services: AtomicU32,
     queue_credit_limited_services: AtomicU32,
+    maximum_deferred_frames: AtomicU32,
+    minimum_backpressured_pool_credits: AtomicU32,
+    minimum_backpressured_queue_credits: AtomicU32,
     maximum_frontier: AtomicU32,
     maximum_admitted: AtomicU32,
     service_micros: AtomicU32,
@@ -75,6 +78,9 @@ impl RxPipelineCounters {
             backpressured_services: AtomicU32::new(0),
             pool_credit_limited_services: AtomicU32::new(0),
             queue_credit_limited_services: AtomicU32::new(0),
+            maximum_deferred_frames: AtomicU32::new(0),
+            minimum_backpressured_pool_credits: AtomicU32::new(u32::MAX),
+            minimum_backpressured_queue_credits: AtomicU32::new(u32::MAX),
             maximum_frontier: AtomicU32::new(0),
             maximum_admitted: AtomicU32::new(0),
             service_micros: AtomicU32::new(0),
@@ -185,6 +191,13 @@ impl RxPipelineCounters {
             queue_credit_limited_services: self
                 .queue_credit_limited_services
                 .load(Ordering::Relaxed),
+            maximum_deferred_frames: self.maximum_deferred_frames.load(Ordering::Relaxed),
+            minimum_backpressured_pool_credits: self
+                .minimum_backpressured_pool_credits
+                .load(Ordering::Relaxed),
+            minimum_backpressured_queue_credits: self
+                .minimum_backpressured_queue_credits
+                .load(Ordering::Relaxed),
             maximum_frontier: self.maximum_frontier.load(Ordering::Relaxed),
             maximum_admitted: self.maximum_admitted.load(Ordering::Relaxed),
             service_micros: self.service_micros.load(Ordering::Relaxed),
@@ -247,6 +260,18 @@ impl RxPipelineCounters {
         );
         if admitted < frontier {
             self.backpressured_services.fetch_add(1, Ordering::Relaxed);
+            self.maximum_deferred_frames.fetch_max(
+                u32::try_from(frontier - admitted).unwrap_or(u32::MAX),
+                Ordering::Relaxed,
+            );
+            self.minimum_backpressured_pool_credits.fetch_min(
+                u32::try_from(pool_credits).unwrap_or(u32::MAX),
+                Ordering::Relaxed,
+            );
+            self.minimum_backpressured_queue_credits.fetch_min(
+                u32::try_from(queue_credits).unwrap_or(u32::MAX),
+                Ordering::Relaxed,
+            );
             if pool_credits <= queue_credits {
                 self.pool_credit_limited_services
                     .fetch_add(1, Ordering::Relaxed);
@@ -332,6 +357,12 @@ pub struct RxPipelineCounterSnapshot {
     pub backpressured_services: u32,
     pub pool_credit_limited_services: u32,
     pub queue_credit_limited_services: u32,
+    /// Largest completed frontier suffix deferred by one service since boot.
+    pub maximum_deferred_frames: u32,
+    /// Smallest staging-pool credit observation at a backpressured service.
+    pub minimum_backpressured_pool_credits: u32,
+    /// Smallest staging-queue credit observation at a backpressured service.
+    pub minimum_backpressured_queue_credits: u32,
     /// Maximum observed since boot, not an interval delta.
     pub maximum_frontier: u32,
     /// Maximum observed since boot, not an interval delta.
@@ -406,6 +437,9 @@ impl RxPipelineCounterSnapshot {
             queue_credit_limited_services: self
                 .queue_credit_limited_services
                 .wrapping_sub(earlier.queue_credit_limited_services),
+            maximum_deferred_frames: self.maximum_deferred_frames,
+            minimum_backpressured_pool_credits: self.minimum_backpressured_pool_credits,
+            minimum_backpressured_queue_credits: self.minimum_backpressured_queue_credits,
             maximum_frontier: self.maximum_frontier,
             maximum_admitted: self.maximum_admitted,
             service_micros: self.service_micros.wrapping_sub(earlier.service_micros),
@@ -492,6 +526,9 @@ mod tests {
         assert_eq!(delta.backpressured_services, 1);
         assert_eq!(delta.pool_credit_limited_services, 1);
         assert_eq!(delta.queue_credit_limited_services, 0);
+        assert_eq!(delta.maximum_deferred_frames, 1);
+        assert_eq!(delta.minimum_backpressured_pool_credits, 3);
+        assert_eq!(delta.minimum_backpressured_queue_credits, 5);
         assert_eq!(delta.maximum_frontier, 4);
         assert_eq!(delta.maximum_admitted, 3);
         assert_eq!(delta.service_micros, 70);

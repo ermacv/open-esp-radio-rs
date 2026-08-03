@@ -123,7 +123,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Host payload: `{}` bytes in `{}` datagrams\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
-             - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
+             - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `0` / `0`\n\n\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
@@ -131,7 +131,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
-             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
+             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
@@ -188,6 +188,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             pipeline.backpressured_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,
+            pipeline.maximum_deferred_frames,
+            pipeline.minimum_backpressured_pool_credits,
+            pipeline.minimum_backpressured_queue_credits,
             pipeline.protocol_frames,
             pipeline.protocol_data_frames,
             average_dispatch_us,

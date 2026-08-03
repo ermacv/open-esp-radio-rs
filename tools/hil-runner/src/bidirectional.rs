@@ -312,6 +312,9 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) backpressured_services: u64,
     pub(crate) pool_credit_limited_services: u64,
     pub(crate) queue_credit_limited_services: u64,
+    pub(crate) maximum_deferred_frames: u64,
+    pub(crate) minimum_backpressured_pool_credits: u64,
+    pub(crate) minimum_backpressured_queue_credits: u64,
     pub(crate) maximum_frontier: u64,
     pub(crate) maximum_admitted: u64,
     pub(crate) service_us: u64,
@@ -339,6 +342,8 @@ pub(crate) struct RxPipelineEvidence {
 
 impl RxPipelineEvidence {
     fn merge(&mut self, sample: Self) {
+        let had_backpressure = self.backpressured_services != 0;
+        let sample_has_backpressure = sample.backpressured_services != 0;
         self.service_calls = self.service_calls.saturating_add(sample.service_calls);
         self.frontier_zero_services = self
             .frontier_zero_services
@@ -379,6 +384,23 @@ impl RxPipelineEvidence {
         self.queue_credit_limited_services = self
             .queue_credit_limited_services
             .saturating_add(sample.queue_credit_limited_services);
+        self.maximum_deferred_frames = self
+            .maximum_deferred_frames
+            .max(sample.maximum_deferred_frames);
+        if sample_has_backpressure {
+            if had_backpressure {
+                self.minimum_backpressured_pool_credits = self
+                    .minimum_backpressured_pool_credits
+                    .min(sample.minimum_backpressured_pool_credits);
+                self.minimum_backpressured_queue_credits = self
+                    .minimum_backpressured_queue_credits
+                    .min(sample.minimum_backpressured_queue_credits);
+            } else {
+                self.minimum_backpressured_pool_credits = sample.minimum_backpressured_pool_credits;
+                self.minimum_backpressured_queue_credits =
+                    sample.minimum_backpressured_queue_credits;
+            }
+        }
         self.maximum_frontier = self.maximum_frontier.max(sample.maximum_frontier);
         self.maximum_admitted = self.maximum_admitted.max(sample.maximum_admitted);
         self.service_us = self.service_us.saturating_add(sample.service_us);
@@ -790,10 +812,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     backpressured_services: field(line, "back")?,
                     pool_credit_limited_services: field(line, "pool")?,
                     queue_credit_limited_services: field(line, "queue")?,
+                    maximum_deferred_frames: field(line, "deferred_max")?,
+                    minimum_backpressured_pool_credits: field(line, "pool_min")?,
+                    minimum_backpressured_queue_credits: field(line, "queue_min")?,
                     maximum_frontier: field(line, "fmax")?,
                     maximum_admitted: field(line, "amax")?,
                     service_us: field(line, "service_us")?,
-                    service_max_us: field(line, "service_max_us")?,
+                    service_max_us: field(line, "service_boot_max_us")?,
                     ..RxPipelineEvidence::default()
                 })
             })();
@@ -807,13 +832,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     protocol_data_frames: field(line, "data")?,
                     network_ready_waits: field(line, "waits")?,
                     network_ready_wait_us: field(line, "wait_us")?,
-                    network_ready_wait_max_us: field(line, "wait_max_us")?,
+                    network_ready_wait_max_us: field(line, "wait_boot_max_us")?,
                     dispatch_us: field(line, "dispatch_us")?,
-                    dispatch_max_us: field(line, "dispatch_max_us")?,
+                    dispatch_max_us: field(line, "dispatch_boot_max_us")?,
                     network_publications: field(line, "publications")?,
                     network_published_bytes: field(line, "bytes")?,
                     network_publish_us: field(line, "publish_us")?,
-                    network_publish_max_us: field(line, "publish_max_us")?,
+                    network_publish_max_us: field(line, "publish_boot_max_us")?,
                     ..RxPipelineEvidence::default()
                 })
             })();
@@ -837,7 +862,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     rx_irq_service_samples: field(line, "irq_samples")?,
                     rx_irq_clock_skew_samples: field(line, "irq_skew")?,
                     rx_irq_to_service_us: field(line, "irq_service_us")?,
-                    rx_irq_to_service_max_us: field(line, "irq_service_max_us")?,
+                    rx_irq_to_service_max_us: field(line, "irq_service_boot_max_us")?,
                     ..RxPipelineEvidence::default()
                 })
             })();
@@ -1316,13 +1341,13 @@ fn write_report(
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
-             - HE-SU MCS0..11 frame histogram: `{:?}`; other PHY frames: `{}`\n\
+             - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
              - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
-             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`\n\
+             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
@@ -1395,6 +1420,9 @@ fn write_report(
             pipeline.backpressured_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,
+            pipeline.maximum_deferred_frames,
+            pipeline.minimum_backpressured_pool_credits,
+            pipeline.minimum_backpressured_queue_credits,
             pipeline.protocol_frames,
             pipeline.protocol_data_frames,
             average_dispatch_us,
@@ -1470,9 +1498,9 @@ mod tests {
              OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240\n\
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
-             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
-             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
-             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
@@ -1497,9 +1525,9 @@ mod tests {
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 receive_errors=0 terminal=1\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path mpdu=5000 data_success=5000 fcs_error=0 buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_irqs=5000 reload_delays=0 rx_format=4\n\
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
-             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 fmax=1 amax=1 service_us=100000 service_max_us=24\n\
-             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_max_us=2 dispatch_us=150000 dispatch_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_max_us=15\n\
-             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_max_us=8\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
+             ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\

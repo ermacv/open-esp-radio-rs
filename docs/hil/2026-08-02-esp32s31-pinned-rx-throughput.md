@@ -265,6 +265,34 @@ These results establish that the old roughly 70-Mbit/s TX observation was not
 a PHY ceiling. The remaining RX-only variance is in staging/protocol credit
 turnaround and is independent of the repaired aggregate admission path.
 
+## Hot-observer and credit-depth follow-up
+
+The apparent roughly 15.5-ms protocol-dispatch tail was not a data-parser
+latency. `dispatch_max_us` retained a boot-lifetime maximum, while the HIL
+observer synchronously printed the received BlockAck action through UART from
+inside `ConnectedRxSink::publish`. Removing that hot-path print reduced the
+cold-boot dispatch maximum to 43 us. UART field names now explicitly say
+`boot_max`, so an interval total can no longer be compared with a mislabeled
+lifetime peak.
+
+An attempted 32-frame cooperative ingress quantum was rejected after HIL:
+ending `smoltcp` ingress after one hardware window increased `BUFFER_FULL`
+from one observation to 32 without reducing the IRQ-to-service tail. The
+64-entry network ingress queue must remain drainable; this experiment did not
+justify a NAPI-like budget at the `embassy-net` device boundary.
+
+The retained implementation removes the unused per-data `ProtectedFrame`
+callback (the production control adapter discarded it) and samples HIL PHY
+metadata once per 64 Ethernet frames instead of decoding and updating
+diagnostic atomics on every benchmark packet. It also records maximum deferred
+frontier length and minimum credits at a backpressured service. A cold 30-s
+HE20 run then delivered all 218,752 UDP datagrams at a 70.001-Mbit/s host
+offer, with zero `BUFFER_FULL`, FIFO overflow, software drop, oversize discard
+or unknown IRQ. Dispatch averaged 19.11 us/frame with a 39-us boot maximum;
+81 services observed backpressure, with a maximum 30-frame deferred suffix
+and one remaining pool/queue credit. This shows burst phase overlap rather
+than a permanent zero-credit deadlock.
+
 ## Interrupt-to-poll experiment
 
 The recovered vendor `wDev_ProcessFiq` is not NAPI-like: it reads one masked
@@ -367,6 +395,9 @@ beneficial here; see the
 - Descriptor-policy bidirectional UART/report SHA-256:
   `cba4981b87d864d498e7fc36ac8372b187d2371558215f773de771ad9104f303` /
   `936778091d1f9c69fc9eb5ce8dab06c587f3d9fd825a4cfc30d59edf6e2cc016`.
+- Hot-observer/credit-depth 70-Mbit/s RX UART/report SHA-256:
+  `db20d355c9e7c1517f043fbfffc700c1ca366e8bcfb3c5ee3aace5a0634b2af1` /
+  `3ef83ffe58918db5008777c76173cb936e7f77a60714d74affe751157b727f2c`.
 
 Generated UART logs and reports remain under `target/hil/esp32s31/qualification`;
 this record preserves their exact identity.

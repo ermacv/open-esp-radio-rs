@@ -2891,6 +2891,7 @@ impl RxReloadDelay for OpenRadioRxReloadDelay {
 struct HilConnectedRxObserver<S> {
     control: S,
     station_address: [u8; 6],
+    phy_sample_cursor: u8,
 }
 
 impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
@@ -2907,7 +2908,10 @@ impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
             if is_probe_reply {
                 OPEN_RADIO_LAN_PROBE_RESPONSE.store(true, Ordering::Release);
             }
-            if ipv4_udp_destination_port(frame) == Some(OPEN_RADIO_UDP_RX_PORT)
+            let sample_phy = self.phy_sample_cursor == 0;
+            self.phy_sample_cursor = self.phy_sample_cursor.wrapping_add(1) & 63;
+            if sample_phy
+                && ipv4_udp_destination_port(frame) == Some(OPEN_RADIO_UDP_RX_PORT)
                 && let Some(phy) = decode_rx_phy_info(raw)
             {
                 OPEN_RADIO_RX_LAST_UDP_FORMAT
@@ -2945,11 +2949,10 @@ impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
                 OPEN_RADIO_RX_LAST_UDP_PHY.store(packed, Ordering::Relaxed);
             }
         }
-        if let ConnectedRxEvent::BlockAck { action, .. } = event {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=OBSERVE stage=connected-block-ack action={action:?}"
-            ));
-        }
+        // Never print from this synchronous callback. In particular, the
+        // former BlockAck observation spent roughly 15.5 ms in the UART
+        // logger while the staging lease remained owned, manufacturing the
+        // apparent long protocol-dispatch tail reported by HIL.
         self.control.publish(event);
     }
 }
@@ -3460,8 +3463,8 @@ fn log_open_radio_rx_pipeline_interval(
         .wrapping_delta_since(earlier);
     emergency_log(format_args!(
         "ORXS calls={} frontier={} admitted={} bytes={} discard_empty={} discard_long={} \
-         back={} pool={} queue={} \
-         fmax={} amax={} service_us={} service_max_us={}",
+         back={} pool={} queue={} deferred_max={} pool_min={} queue_min={} \
+         fmax={} amax={} service_us={} service_boot_max_us={}",
         pipeline.service_calls,
         pipeline.completion_frontier_frames,
         pipeline.admitted_frames,
@@ -3471,14 +3474,17 @@ fn log_open_radio_rx_pipeline_interval(
         pipeline.backpressured_services,
         pipeline.pool_credit_limited_services,
         pipeline.queue_credit_limited_services,
+        pipeline.maximum_deferred_frames,
+        pipeline.minimum_backpressured_pool_credits,
+        pipeline.minimum_backpressured_queue_credits,
         pipeline.maximum_frontier,
         pipeline.maximum_admitted,
         pipeline.service_micros,
         pipeline.service_lifetime_max_micros,
     ));
     emergency_log(format_args!(
-        "ORXD frames={} data={} waits={} wait_us={} wait_max_us={} dispatch_us={} \
-         dispatch_max_us={} publications={} bytes={} publish_us={} publish_max_us={}",
+        "ORXD frames={} data={} waits={} wait_us={} wait_boot_max_us={} dispatch_us={} \
+         dispatch_boot_max_us={} publications={} bytes={} publish_us={} publish_boot_max_us={}",
         pipeline.protocol_frames,
         pipeline.protocol_data_frames,
         pipeline.network_ready_waits,
@@ -3495,7 +3501,7 @@ fn log_open_radio_rx_pipeline_interval(
         "ORXF zero={} one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_thirty_one={} thirty_two_plus={} irq_posts={} irq_epochs={} \
          irq_entries={} irq_coalesced={} irq_samples={} irq_skew={} \
-         irq_service_us={} irq_service_max_us={}",
+         irq_service_us={} irq_service_boot_max_us={}",
         pipeline.frontier_zero_services,
         pipeline.frontier_one_services,
         pipeline.frontier_two_three_services,
@@ -3714,6 +3720,7 @@ async fn run_connected_network(
         HilConnectedRxObserver {
             control: control_publisher,
             station_address,
+            phy_sample_cursor: 0,
         },
     )
     .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS)

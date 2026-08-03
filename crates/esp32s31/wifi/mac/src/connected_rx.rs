@@ -61,7 +61,6 @@ pub enum ConnectedRxProtection {
 #[derive(Clone, Copy, Debug)]
 pub enum ConnectedRxEvent<'frame> {
     Beacon(StaBeaconObservation),
-    ProtectedFrame(ConnectedRxProtection),
     Trigger {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
@@ -92,7 +91,6 @@ pub enum ConnectedRxEvent<'frame> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedRxControlEvent {
     Beacon(StaBeaconObservation),
-    ProtectedFrame(ConnectedRxProtection),
     Trigger {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
@@ -111,9 +109,6 @@ impl ConnectedRxEvent<'_> {
     pub const fn control(self) -> Option<ConnectedRxControlEvent> {
         match self {
             Self::Beacon(observation) => Some(ConnectedRxControlEvent::Beacon(observation)),
-            Self::ProtectedFrame(protection) => {
-                Some(ConnectedRxControlEvent::ProtectedFrame(protection))
-            }
             Self::Trigger {
                 common,
                 schedule,
@@ -326,7 +321,6 @@ impl ConnectedRxDispatcher {
         if public_frame_control & (DATA_TYPE_MASK | PROTECTED) != DATA_TYPE | PROTECTED {
             return ConnectedRxDispatch::Ignored;
         }
-        sink.publish(ConnectedRxEvent::ProtectedFrame(protection));
         let data = match view_ccmp_data(&segment, self.config.ingress) {
             Ok(data) => data,
             Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
@@ -482,7 +476,6 @@ mod tests {
     #[derive(Default)]
     struct RecordingSink {
         beacons: Vec<StaBeaconObservation>,
-        protected: Vec<ConnectedRxProtection>,
         ethernet: Vec<Vec<u8>>,
         block_ack: Vec<BlockAckAction>,
     }
@@ -491,7 +484,6 @@ mod tests {
         fn publish(&mut self, event: ConnectedRxEvent<'_>) {
             match event {
                 ConnectedRxEvent::Beacon(observation) => self.beacons.push(observation),
-                ConnectedRxEvent::ProtectedFrame(protection) => self.protected.push(protection),
                 ConnectedRxEvent::Ethernet { frame, .. } => {
                     let mut bytes = std::vec![0; frame.length()];
                     frame.copy_to(&mut bytes).unwrap();
@@ -605,7 +597,6 @@ mod tests {
                 amsdu: false,
             }
         );
-        assert_eq!(sink.protected, [ConnectedRxProtection::Pairwise]);
         assert_eq!(sink.ethernet.len(), 1);
         assert_eq!(&sink.ethernet[0][..6], &STATION);
         assert_eq!(&sink.ethernet[0][6..12], &SOURCE);

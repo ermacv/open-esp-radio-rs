@@ -142,8 +142,12 @@ folded into either loss or reordering.
 ## Migration boundary
 
 UDP RX, TX and bidirectional qualification now share runtime network
-provisioning, configuration, lifecycle and structured evidence. TCP
-RX/TX/bidirectional is the next protocol migration. The session state machine
-and asymmetric flow model are transport-neutral; TCP still needs its own
-connection setup, completion semantics and stream evidence rather than UDP
-datagram/sequence assumptions.
+provisioning, configuration, lifecycle and structured evidence. TCP RX is the
+first stream-oriented vertical slice: the target begins listening after
+`Start`, the host half-closes after its bounded interval, and target EOF closes
+the evidence interval. For TCP, one `rx_unit` is one EOF-completed stream;
+exact byte equality replaces UDP datagram/sequence accounting.
+
+TCP TX and bidirectional remain the next migrations. They must retain TCP
+connection and half-close semantics rather than reusing UDP terminal datagrams
+or treating application write sizes as packet boundaries.

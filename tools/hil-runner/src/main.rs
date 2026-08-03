@@ -11,8 +11,10 @@ use std::{
 };
 
 mod bidirectional;
+mod paced_tcp;
 mod paced_udp;
 mod rx_traffic;
+mod tcp_rx;
 mod traffic_capture;
 mod trigger;
 mod tx_traffic;
@@ -36,6 +38,7 @@ const SCENARIO_ENVIRONMENT: &[&str] = &[
     "OPEN_RADIO_BIDIRECTIONAL_BENCH",
     "OPEN_RADIO_RAW_MAC_BENCH",
     "OPEN_RADIO_TX_BENCH",
+    "OPEN_RADIO_TCP_RX_BENCH",
     "OPEN_RADIO_AMSDU_BENCH",
     "OPEN_RADIO_NETWORK_AMSDU_BENCH",
     "OPEN_RADIO_HE_MATRIX_HIL",
@@ -99,12 +102,14 @@ fn run() -> Result<()> {
         Some("traffic") => match arguments.next().as_deref() {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
             Some("rx") => rx_traffic::run(arguments.collect(), &root),
+            Some("tcp-rx") => tcp_rx::run(arguments.collect(), &root),
             Some("tx") => tx_traffic::run(arguments.collect(), &root),
             Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
             Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
-            _ => {
-                Err("usage: cargo hil traffic <rx|tx|bidirectional|trigger|trigger-hil> ...".into())
-            }
+            _ => Err(
+                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|trigger|trigger-hil> ..."
+                    .into(),
+            ),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
@@ -156,6 +161,7 @@ fn print_help() {
          cargo hil traffic rx <device-ipv4> [options]\n\
          cargo hil traffic tx <device-ipv4> [options]\n\
          cargo hil traffic bidirectional <ipv4> [options]\n\
+         cargo hil traffic tcp-rx <device-ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
          cargo hil oracle verify\n\
@@ -416,16 +422,18 @@ enum Scenario {
     RadioRxOrderProfile,
     UdpTx,
     Bidirectional,
+    TcpRx,
 }
 
 impl Scenario {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::BootSmoke,
         Self::Radio,
         Self::RadioPollProfile,
         Self::RadioRxOrderProfile,
         Self::UdpTx,
         Self::Bidirectional,
+        Self::TcpRx,
     ];
 
     fn parse(value: &str) -> Result<Self> {
@@ -438,6 +446,7 @@ impl Scenario {
             }
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
+            "tcp-rx" | "open-radio-tcp-rx" => Ok(Self::TcpRx),
             _ => Err(format!(
                 "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
             )
@@ -453,6 +462,7 @@ impl Scenario {
             Self::RadioRxOrderProfile => "radio-rx-order-profile",
             Self::UdpTx => "udp-tx",
             Self::Bidirectional => "bidirectional",
+            Self::TcpRx => "tcp-rx",
         }
     }
 
@@ -464,6 +474,7 @@ impl Scenario {
             Self::RadioRxOrderProfile => "open-radio-rx-order-profile",
             Self::UdpTx => "open-radio-udp-tx",
             Self::Bidirectional => "open-radio-bidirectional",
+            Self::TcpRx => "open-radio-tcp-rx",
         }
     }
 
@@ -473,7 +484,7 @@ impl Scenario {
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
             Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
-            Self::UdpTx | Self::Bidirectional => "open-radio-hil",
+            Self::UdpTx | Self::Bidirectional | Self::TcpRx => "open-radio-hil",
         }
     }
 
@@ -487,6 +498,7 @@ impl Scenario {
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
             ],
+            Self::TcpRx => &[("OPEN_RADIO_TCP_RX_BENCH", "1")],
         }
     }
 
@@ -502,6 +514,7 @@ impl Scenario {
             }
             Self::UdpTx => "production WifiRunner embassy-net UDP throughput",
             Self::Bidirectional => "production WifiRunner simultaneous RX/TX throughput",
+            Self::TcpRx => "production WifiRunner embassy-net TCP receive throughput",
         }
     }
 }
@@ -1041,6 +1054,7 @@ mod tests {
             Scenario::parse("bidirectional").unwrap(),
             Scenario::Bidirectional
         );
+        assert_eq!(Scenario::parse("tcp-rx").unwrap(), Scenario::TcpRx);
         assert!(Scenario::parse("he-dcm-matrix").is_err());
     }
 
@@ -1069,6 +1083,10 @@ mod tests {
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
             ]
+        );
+        assert_eq!(
+            Scenario::TcpRx.environment(),
+            &[("OPEN_RADIO_TCP_RX_BENCH", "1")]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {

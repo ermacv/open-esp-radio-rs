@@ -58,6 +58,12 @@ pub(crate) struct UdpTxReady {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct TcpRxReady {
+    pub(crate) address: Ipv4Addr,
+    pub(crate) runtime_session: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionHandle {
     session_id: u64,
     first_event: usize,
@@ -360,6 +366,10 @@ impl SerialCapture {
     }
 
     fn observed_udp_service(&self, direction: Direction, port: u16) -> bool {
+        self.observed_service(Transport::Udp, direction, port)
+    }
+
+    fn observed_service(&self, transport: Transport, direction: Direction, port: u16) -> bool {
         let messages = self
             .protocol
             .messages
@@ -367,7 +377,7 @@ impl SerialCapture {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         messages.iter().any(|message| match message.body {
             Event::ServiceReady(service) => {
-                service.transport == Transport::Udp
+                service.transport == transport
                     && service.direction == direction
                     && service.local_port == port
             }
@@ -483,6 +493,48 @@ impl SerialCapture {
             let _ = worker.join();
         }
     }
+}
+
+/// Wait for a runtime-configured TCP receive service and its current IPv4
+/// address. Unlike UDP, readiness does not inject a probe connection: the
+/// target begins listening only after the session `Start` transition, and the
+/// measured host connection is the sole stream owned by that session.
+pub(crate) fn await_tcp_rx_ready(
+    capture: &SerialCapture,
+    address_hint: Ipv4Addr,
+    port: u16,
+    timeout: Duration,
+) -> Result<TcpRxReady> {
+    let capabilities = capture.prepare_protocol()?;
+    if !capabilities.features.tcp || !capabilities.features.rx {
+        return Err("firmware does not advertise TCP RX capability".into());
+    }
+    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
+        return Err("TCP RX requires runtime sessions and structured evidence".into());
+    }
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
+            return Err("radio runner failed before TCP RX became ready".into());
+        }
+        let address = capture
+            .observed_protocol_ipv4()
+            .or_else(|| observed_dhcp_ipv4(&capture.transcript()));
+        if capture.observed_service(Transport::Tcp, Direction::Rx, port)
+            && let Some(address) = address
+        {
+            return Ok(TcpRxReady {
+                address,
+                runtime_session: true,
+            });
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Err(format!(
+        "device {address_hint}:{port} did not publish TCP RX readiness within {} seconds",
+        timeout.as_secs(),
+    )
+    .into())
 }
 
 /// Reset an ESP USB-Serial/JTAG target without giving up the capture handle.

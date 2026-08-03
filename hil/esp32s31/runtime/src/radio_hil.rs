@@ -11,6 +11,7 @@ use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::{select::select, yield_now};
 use embassy_net::{
     Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
+    tcp::TcpSocket,
     udp::{PacketMetadata, UdpSocket},
 };
 use embassy_net_driver::{Driver, LinkState, RxToken as _, TxToken as _};
@@ -285,29 +286,40 @@ const OPEN_RADIO_UDP_TX_BENCH_PORT: u16 = 9_002;
 const OPEN_RADIO_UDP_TX_BENCH_DURATION: Duration = Duration::from_secs(5);
 const OPEN_RADIO_UDP_TX_DRAIN: Duration = Duration::from_millis(250);
 const OPEN_RADIO_UDP_RX_IDLE: Duration = Duration::from_millis(750);
+const OPEN_RADIO_TCP_RX_PORT: u16 = 4_325;
+const OPEN_RADIO_TCP_RX_BUFFER_CAPACITY: usize = 65_536;
+const OPEN_RADIO_TCP_TX_BUFFER_CAPACITY: usize = 1_024;
+const OPEN_RADIO_TCP_READ_CAPACITY: usize = 32_768;
+const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
+const OPEN_RADIO_TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 const OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET: Duration = Duration::from_micros(500);
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
 const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
     option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
+const OPEN_RADIO_TCP_RX_BENCH: bool = option_env!("OPEN_RADIO_TCP_RX_BENCH").is_some();
 const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
 
-/// Describes only behavior implemented by the current image. All UDP
-/// throughput profiles use runtime sessions and structured evidence.
+/// Describes only behavior implemented by the current image. Every advertised
+/// throughput profile uses runtime sessions and structured evidence.
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
-            udp: true,
-            tcp: false,
+            udp: !OPEN_RADIO_TCP_RX_BENCH,
+            tcp: OPEN_RADIO_TCP_RX_BENCH,
             rx: !OPEN_RADIO_THROUGHPUT_BENCH || OPEN_RADIO_BIDIRECTIONAL_BENCH,
-            tx: OPEN_RADIO_THROUGHPUT_BENCH,
-            bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH,
+            tx: OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_TCP_RX_BENCH,
+            bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH && !OPEN_RADIO_TCP_RX_BENCH,
             network_provisioning: true,
             runtime_configuration: OPEN_RADIO_RUNTIME_SESSIONS,
             structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
         },
-        maximum_payload_bytes: OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16,
+        maximum_payload_bytes: if OPEN_RADIO_TCP_RX_BENCH {
+            OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
+        } else {
+            OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16
+        },
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
     }
 }
@@ -1093,6 +1105,12 @@ static OPEN_RADIO_UDP_TX_BUFFER: StaticCell<
     [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
 > = StaticCell::new();
 static OPEN_RADIO_UDP_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]> = StaticCell::new();
+static OPEN_RADIO_TCP_RX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]> =
+    StaticCell::new();
+static OPEN_RADIO_TCP_TX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]> =
+    StaticCell::new();
+static OPEN_RADIO_TCP_READ_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_READ_CAPACITY]> =
+    StaticCell::new();
 static OPEN_RADIO_BIDIRECTIONAL_RX_METADATA: StaticCell<
     [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
 > = StaticCell::new();
@@ -3547,7 +3565,9 @@ async fn run_open_radio_udp_benchmark(
     data_tx_rate: TxPhyRate,
     registers: &RefCell<&mut RadioRegisters>,
 ) -> ! {
-    if OPEN_RADIO_RAW_MAC_BENCH {
+    if OPEN_RADIO_TCP_RX_BENCH {
+        run_open_radio_tcp_rx_benchmark(stack, registers).await
+    } else if OPEN_RADIO_RAW_MAC_BENCH {
         loop {
             Timer::after_secs(60).await;
         }
@@ -3569,6 +3589,130 @@ async fn run_open_radio_udp_benchmark(
         run_open_radio_udp_tx_benchmark(stack, association_phy, data_tx_rate).await
     } else {
         run_open_radio_udp_rx_benchmark(stack, association_phy, data_tx_rate, registers).await
+    }
+}
+
+async fn run_open_radio_tcp_rx_benchmark(
+    stack: Stack<'static>,
+    registers: &RefCell<&mut RadioRegisters>,
+) -> ! {
+    stack.wait_config_up().await;
+    while stack.config_v4().is_none() {
+        Timer::after_millis(100).await;
+    }
+
+    let rx_buffer = OPEN_RADIO_TCP_RX_BUFFER.init([0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]);
+    let tx_buffer = OPEN_RADIO_TCP_TX_BUFFER.init([0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]);
+    let read_buffer = OPEN_RADIO_TCP_READ_BUFFER.init([0; OPEN_RADIO_TCP_READ_CAPACITY]);
+    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
+    crate::console::publish_event(
+        0,
+        0,
+        HilEvent::ServiceReady(ServiceInfo {
+            transport: HilTransport::Tcp,
+            direction: HilDirection::Rx,
+            local_port: OPEN_RADIO_TCP_RX_PORT,
+            maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
+        }),
+    );
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=tcp-rx-ready port={OPEN_RADIO_TCP_RX_PORT} \
+         receive_buffer={OPEN_RADIO_TCP_RX_BUFFER_CAPACITY} \
+         read_capacity={OPEN_RADIO_TCP_READ_CAPACITY} runtime_session=1"
+    ));
+
+    loop {
+        let session = crate::console::receive_session_start().await;
+        let flow = session
+            .config
+            .target_rx
+            .expect("validated TCP RX session carries a target RX flow");
+        let duration_millis = match session.config.completion {
+            HilCompletion::DurationMillis(duration) => duration,
+            HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
+                unreachable!("protocol owner accepts only duration-completed sessions")
+            }
+        };
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=tcp-rx-session-start session={} \
+             chunk={} duration_ms={} offered_bps={:?}",
+            session.session_id,
+            flow.payload_bytes,
+            duration_millis,
+            flow.offered_rate_bps,
+        ));
+
+        let hardware_start = registers.borrow().rx_statistics_snapshot().primary;
+        let enqueue_start = OPEN_RADIO_RX_ENQUEUE_COUNTERS.snapshot();
+        let accept_timeout =
+            Duration::from_millis(u64::from(duration_millis)) + Duration::from_secs(5);
+        let mut bytes = 0_u64;
+        let mut read_errors = 0_u32;
+        let mut eof = false;
+        let accepted = matches!(
+            with_timeout(accept_timeout, socket.accept(OPEN_RADIO_TCP_RX_PORT)).await,
+            Ok(Ok(()))
+        );
+        let started = Instant::now();
+        if accepted {
+            loop {
+                match with_timeout(OPEN_RADIO_TCP_IDLE_TIMEOUT, socket.read(read_buffer)).await {
+                    Ok(Ok(0)) => {
+                        eof = true;
+                        break;
+                    }
+                    Ok(Ok(length)) => bytes = bytes.saturating_add(length as u64),
+                    Ok(Err(_)) | Err(_) => {
+                        read_errors = read_errors.saturating_add(1);
+                        break;
+                    }
+                }
+            }
+        } else {
+            read_errors = read_errors.saturating_add(1);
+        }
+        let elapsed_us = started.elapsed().as_micros().max(1);
+        socket.abort();
+
+        let hardware_delta = registers
+            .borrow()
+            .rx_statistics_snapshot()
+            .primary
+            .wrapping_delta_since(hardware_start);
+        let enqueue_end = OPEN_RADIO_RX_ENQUEUE_COUNTERS.snapshot();
+        let enqueued = enqueue_end.enqueued.wrapping_sub(enqueue_start.enqueued);
+        let queue_dropped = enqueue_end.dropped.wrapping_sub(enqueue_start.dropped);
+        let health_errors = u32::from(hardware_delta.buffer_full)
+            .saturating_add(u32::from(hardware_delta.fifo_overflow))
+            .saturating_add(queue_dropped);
+        let transport_errors = read_errors.saturating_add(health_errors);
+        let throughput_kbps = bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(elapsed_us)
+            .unwrap_or(0);
+        emergency_log(format_args!(
+            "OTCPRX b={bytes} s={} u={elapsed_us} k={throughput_kbps} e={transport_errors} \
+             bf={} fo={} enq={enqueued} drop={queue_dropped} eof={}",
+            u8::from(accepted),
+            hardware_delta.buffer_full,
+            hardware_delta.fifo_overflow,
+            u8::from(eof),
+        ));
+        let passed = accepted && eof && bytes != 0 && transport_errors == 0;
+        crate::console::complete_session(
+            session.session_id,
+            TransportEvidence {
+                rx_bytes: bytes,
+                tx_bytes: 0,
+                rx_units: u64::from(accepted && eof),
+                tx_units: 0,
+                elapsed_micros: elapsed_us,
+                transport_errors,
+            },
+            passed,
+        )
+        .await;
     }
 }
 
@@ -4986,6 +5130,7 @@ async fn associate_target(
         ring: None,
     };
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
+    let association_started = Instant::now();
     let success = match runner
         .associate(station_address, access_point.bssid, sequences.non_qos_mut())
         .await
@@ -5000,6 +5145,10 @@ async fn associate_target(
             return (false, false, false);
         }
     };
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=OBSERVE stage=sta-assoc-timing elapsed_ms={}",
+        association_started.elapsed().as_millis(),
+    ));
     let (mut backend, _) = runner.into_parts();
     let rx_ring = match backend.take_live_ring() {
         Ok(ring) => ring,
@@ -5221,6 +5370,7 @@ async fn await_wpa2_message_1(
     };
     let mut runner =
         Wpa2HandshakeRunner::new(backend, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
+    let handshake_started = Instant::now();
     let pending = match runner.run(handshake, session.sequences.non_qos_mut()).await {
         Ok(pending) => pending,
         Err(error) => {
@@ -5237,10 +5387,11 @@ async fn await_wpa2_message_1(
     };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-3-key-request \
-         frames={} message2_transmissions={} replay={}",
+         frames={} message2_transmissions={} replay={} elapsed_ms={}",
         pending.completed_frames(),
         pending.message2_transmissions(),
         pending.request().replay_counter(),
+        handshake_started.elapsed().as_millis(),
     ));
     let (backend, _, _) = runner.into_parts();
     drop(backend);
@@ -5675,6 +5826,7 @@ async fn run_promiscuous_rx_hil(
     let mut tx_failures = 0_u32;
     let mut active_tx_available = true;
     let mut ring_epochs = 0_u32;
+    let scan_started = Instant::now();
     for channel_index in 0..STA_SCAN_CHANNEL_COUNT {
         let channel = sta_scan_channel(channel_index);
         if let Err(error) =
@@ -5833,6 +5985,11 @@ async fn run_promiscuous_rx_hil(
             }
         }
     }
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=OBSERVE stage=active-scan-timing channels={} elapsed_ms={}",
+        STA_SCAN_CHANNEL_COUNT,
+        scan_started.elapsed().as_millis(),
+    ));
 
     // First isolate the RX descriptor publication edge. This does not reset or
     // reconfigure either PHY or MAC; it only returns ownership of the stopped
@@ -6069,6 +6226,7 @@ async fn run_promiscuous_rx_hil(
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL stage=wpa2-pmk-derive start iterations=4096"
             ));
+            let pmk_started = Instant::now();
             let pmk_result =
                 Pmk::derive(network_credentials.passphrase(), network_credentials.ssid());
             network_credentials.clear_passphrase();
@@ -6082,7 +6240,8 @@ async fn run_promiscuous_rx_hil(
                 }
             };
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-pmk-derive"
+                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-pmk-derive elapsed_ms={}",
+                pmk_started.elapsed().as_millis(),
             ));
             let mut supplicant_nonce = [0; 32];
             for word in supplicant_nonce.chunks_exact_mut(4) {
@@ -6124,8 +6283,14 @@ async fn run_promiscuous_rx_hil(
                     ethernet: ethernet_frame,
                 },
             };
+            let authentication_started = Instant::now();
             let authenticated =
                 authenticate_target(&mut join_fixture, target, sequences.non_qos_mut()).await;
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=OBSERVE stage=sta-auth-timing passed={} elapsed_ms={}",
+                authenticated,
+                authentication_started.elapsed().as_millis(),
+            ));
             let (associated, message1, message3) = if authenticated {
                 associate_target(
                     join_fixture.into_connected(),
@@ -6246,6 +6411,7 @@ pub async fn run(
     let mut transition = PhyRegisterTransition::with_default_profile();
     let mut port =
         TargetPhyRegisterPort::<_, EmbassyPhyDelay, _>::new(&mut powered, HilPhyObserver);
+    let phy_started = Instant::now();
     loop {
         set_diagnostic_stage(100);
         let outcome = match run_phy_register(&mut transition, &mut port).await {
@@ -6285,13 +6451,14 @@ pub async fn run(
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} \
                      mmio={} delays={} reset_samples={} rf_operations={} \
-                     baseband_operations={}",
+                     baseband_operations={} elapsed_ms={}",
             outcome.full_calibration_performed,
             counters.mmio,
             counters.delays,
             counters.reset_samples,
             counters.rf_operations,
             counters.baseband_operations,
+            phy_started.elapsed().as_millis(),
         ));
         // `TargetPhyRegisterPort` borrowed the complete radio while the PHY
         // transition was active.  The transition is now finished, so

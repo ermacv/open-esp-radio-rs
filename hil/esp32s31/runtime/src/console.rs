@@ -434,8 +434,11 @@ fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bo
                 && config.target_tx.is_some_and(valid_flow)
         }
     };
-    config.transport == Transport::Udp
-        && capabilities.features.udp
+    let transport_valid = match config.transport {
+        Transport::Udp => capabilities.features.udp,
+        Transport::Tcp => capabilities.features.tcp,
+    };
+    transport_valid
         && direction_valid
         && matches!(config.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
 }

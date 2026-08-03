@@ -59,6 +59,7 @@ named mode, so an old shell export cannot silently combine two HIL workloads.
 | `boot-smoke` | bootstrap, Flash/PSRAM and stage-two runtime | inspect UART PASS marker |
 | `radio` | production `WifiRunner` PHY/MAC/STA/WPA2 path | scenario-specific UART inspection |
 | `udp-tx` | `embassy-net` device-to-host UDP throughput | provide the configured UDP receiver |
+| `tcp-rx` | runtime-configured host-to-device TCP stream | `cargo hil traffic tcp-rx <device-ipv4>` |
 
 The `radio` path uses the production `StaJoinRunner` for Open Authentication
 and Association, `Wpa2HandshakeRunner` for the WPA2 Message 1/3 exchange, and

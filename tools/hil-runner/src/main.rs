@@ -411,15 +411,17 @@ enum Scenario {
     BootSmoke,
     Radio,
     RadioPollProfile,
+    RadioRxOrderProfile,
     UdpTx,
     Bidirectional,
 }
 
 impl Scenario {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::BootSmoke,
         Self::Radio,
         Self::RadioPollProfile,
+        Self::RadioRxOrderProfile,
         Self::UdpTx,
         Self::Bidirectional,
     ];
@@ -429,6 +431,9 @@ impl Scenario {
             "boot-smoke" => Ok(Self::BootSmoke),
             "radio" | "open-radio-hil" => Ok(Self::Radio),
             "radio-poll-profile" | "open-radio-poll-profile" => Ok(Self::RadioPollProfile),
+            "radio-rx-order-profile" | "open-radio-rx-order-profile" => {
+                Ok(Self::RadioRxOrderProfile)
+            }
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
             _ => Err(format!(
@@ -443,6 +448,7 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "radio",
             Self::RadioPollProfile => "radio-poll-profile",
+            Self::RadioRxOrderProfile => "radio-rx-order-profile",
             Self::UdpTx => "udp-tx",
             Self::Bidirectional => "bidirectional",
         }
@@ -453,6 +459,7 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-poll-profile",
+            Self::RadioRxOrderProfile => "open-radio-rx-order-profile",
             Self::UdpTx => "open-radio-udp-tx",
             Self::Bidirectional => "open-radio-bidirectional",
         }
@@ -463,13 +470,16 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
+            Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
             Self::UdpTx | Self::Bidirectional => "open-radio-hil",
         }
     }
 
     const fn environment(self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::BootSmoke | Self::Radio | Self::RadioPollProfile => &[],
+            Self::BootSmoke | Self::Radio | Self::RadioPollProfile | Self::RadioRxOrderProfile => {
+                &[]
+            }
             Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
             Self::Bidirectional => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
@@ -484,6 +494,9 @@ impl Scenario {
             Self::Radio => "production WifiRunner PHY/MAC/STA/WPA2 HIL",
             Self::RadioPollProfile => {
                 "radio HIL with diagnostic Embassy Future::poll residence telemetry"
+            }
+            Self::RadioRxOrderProfile => {
+                "radio HIL correlating UDP and 802.11 receive sequence order"
             }
             Self::UdpTx => "production WifiRunner embassy-net UDP throughput",
             Self::Bidirectional => "production WifiRunner simultaneous RX/TX throughput",
@@ -1013,6 +1026,14 @@ mod tests {
             Scenario::RadioPollProfile.runtime_feature(),
             "open-radio-hil,task-poll-telemetry"
         );
+        assert_eq!(
+            Scenario::parse("radio-rx-order-profile").unwrap(),
+            Scenario::RadioRxOrderProfile
+        );
+        assert_eq!(
+            Scenario::RadioRxOrderProfile.runtime_feature(),
+            "open-radio-hil,rx-order-telemetry"
+        );
         assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
         assert_eq!(
             Scenario::parse("bidirectional").unwrap(),
@@ -1035,6 +1056,7 @@ mod tests {
     fn scenario_environment_selects_one_reproducible_mode() {
         assert!(Scenario::Radio.environment().is_empty());
         assert!(Scenario::RadioPollProfile.environment().is_empty());
+        assert!(Scenario::RadioRxOrderProfile.environment().is_empty());
         assert_eq!(
             Scenario::UdpTx.environment(),
             &[("OPEN_RADIO_TX_BENCH", "1")]

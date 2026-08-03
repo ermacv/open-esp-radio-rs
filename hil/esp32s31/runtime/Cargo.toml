@@ -28,6 +28,10 @@ open-radio-hil = [
 # residence. Keep it out of ordinary throughput qualification because the
 # per-poll timer reads and atomics are intentionally observable overhead.
 task-poll-telemetry = []
+# Diagnostic overlay correlating application UDP order with the public
+# 802.11 sequence/TID carried by each received MPDU. Ordinary throughput
+# images compile the observer branch out completely.
+rx-order-telemetry = []
 
 [dependencies]
 embassy-executor.workspace = true

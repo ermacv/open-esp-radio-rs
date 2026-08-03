@@ -246,6 +246,7 @@ pub(crate) struct RxQualification {
     pub(crate) irq: MacIrqEvidence,
     pub(crate) task_polls: TaskPollSet,
     pub(crate) sequence: UdpSequenceEvidence,
+    pub(crate) order: RxOrderEvidence,
     pub(crate) buffer_full: u64,
     pub(crate) fifo_overflow: u64,
 }
@@ -305,6 +306,47 @@ impl UdpSequenceEvidence {
             self.maximum_interarrival_us = sample.maximum_interarrival_us;
             self.maximum_interarrival_at = sample.maximum_interarrival_at;
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RxOrderEvidence {
+    pub(crate) intervals: u64,
+    pub(crate) gap_events: u64,
+    pub(crate) forward_missing: u64,
+    pub(crate) backward: u64,
+    pub(crate) adjacent_duplicates: u64,
+    pub(crate) backward_mac_backward: u64,
+    pub(crate) backward_mac_same: u64,
+    pub(crate) backward_mac_forward: u64,
+    pub(crate) backward_mac_other_tid: u64,
+    pub(crate) backward_mac_unavailable: u64,
+}
+
+impl RxOrderEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.intervals = self.intervals.saturating_add(sample.intervals);
+        self.gap_events = self.gap_events.saturating_add(sample.gap_events);
+        self.forward_missing = self.forward_missing.saturating_add(sample.forward_missing);
+        self.backward = self.backward.saturating_add(sample.backward);
+        self.adjacent_duplicates = self
+            .adjacent_duplicates
+            .saturating_add(sample.adjacent_duplicates);
+        self.backward_mac_backward = self
+            .backward_mac_backward
+            .saturating_add(sample.backward_mac_backward);
+        self.backward_mac_same = self
+            .backward_mac_same
+            .saturating_add(sample.backward_mac_same);
+        self.backward_mac_forward = self
+            .backward_mac_forward
+            .saturating_add(sample.backward_mac_forward);
+        self.backward_mac_other_tid = self
+            .backward_mac_other_tid
+            .saturating_add(sample.backward_mac_other_tid);
+        self.backward_mac_unavailable = self
+            .backward_mac_unavailable
+            .saturating_add(sample.backward_mac_unavailable);
     }
 }
 
@@ -583,6 +625,7 @@ struct DeviceReport {
     mac_irq: Vec<MacIrqEvidence>,
     task_polls: TaskPollSet,
     rx_sequences: Vec<UdpSequenceEvidence>,
+    rx_order: Vec<RxOrderEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
@@ -883,6 +926,24 @@ fn parse_device_report(log: &str) -> DeviceReport {
             })();
             if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_sequences.push(sample);
+            }
+        } else if line.starts_with("ORXO ") || line.contains(" ORXO ") {
+            let sample = (|| {
+                Some(RxOrderEvidence {
+                    intervals: 1,
+                    gap_events: field(line, "gap_events")?,
+                    forward_missing: field(line, "forward_missing")?,
+                    backward: field(line, "backward")?,
+                    adjacent_duplicates: field(line, "adjacent_duplicates")?,
+                    backward_mac_backward: field(line, "backward_mac_backward")?,
+                    backward_mac_same: field(line, "backward_mac_same")?,
+                    backward_mac_forward: field(line, "backward_mac_forward")?,
+                    backward_mac_other_tid: field(line, "backward_mac_other_tid")?,
+                    backward_mac_unavailable: field(line, "backward_mac_unavailable")?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_order.push(sample);
             }
         } else if line.starts_with("ORTP ") || line.contains(" ORTP ") {
             let sample = (|| {
@@ -1325,6 +1386,10 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
     for sample in &report.rx_sequences {
         sequence.merge(*sample);
     }
+    let mut order = RxOrderEvidence::default();
+    for sample in &report.rx_order {
+        order.merge(*sample);
+    }
     Ok(RxQualification {
         throughput_median_kbps: median(rx.iter().map(|sample| sample.throughput_kbps).collect())
             .expect("nonempty RX samples"),
@@ -1346,6 +1411,7 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         irq,
         task_polls: report.task_polls,
         sequence,
+        order,
         buffer_full: report.dma_health.iter().map(|(full, _)| *full).sum(),
         fifo_overflow: report
             .dma_health
@@ -1539,6 +1605,39 @@ pub(crate) fn udp_sequence_markdown(sequence: UdpSequenceEvidence, host_datagram
     )
 }
 
+pub(crate) fn rx_order_markdown(order: RxOrderEvidence) -> String {
+    if order.intervals == 0 {
+        return String::from(
+            "## RX order correlation\n\n\
+             Not collected in the ordinary throughput image. Use the explicit \
+             `radio-rx-order-profile` HIL scenario to correlate UDP and 802.11 ordering.\n\n",
+        );
+    }
+    let classified = order
+        .backward_mac_backward
+        .saturating_add(order.backward_mac_same)
+        .saturating_add(order.backward_mac_forward)
+        .saturating_add(order.backward_mac_other_tid)
+        .saturating_add(order.backward_mac_unavailable);
+    format!(
+        "## RX order correlation\n\n\
+         - Observer interval records: `{}`; UDP gap events/forward-missing/backward/adjacent duplicates: `{}` / `{}` / `{}` / `{}`\n\
+         - Backward UDP classified by 802.11 sequence: MAC-backward `{}`, same MPDU `{}`, MAC-forward `{}`, different TID `{}`, unavailable `{}`; classified `{classified}/{}`\n\
+         - A MAC-backward classification is direct evidence that an MPDU crossed the open driver out of its negotiated per-TID BlockAck order. Same-MPDU records can be distinct A-MSDU subframes.\n\n",
+        order.intervals,
+        order.gap_events,
+        order.forward_missing,
+        order.backward,
+        order.adjacent_duplicates,
+        order.backward_mac_backward,
+        order.backward_mac_same,
+        order.backward_mac_forward,
+        order.backward_mac_other_tid,
+        order.backward_mac_unavailable,
+        order.backward,
+    )
+}
+
 fn write_report(
     output: &Path,
     options: &Options,
@@ -1569,6 +1668,7 @@ fn write_report(
     let average_exchange_us = ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
+    let rx_order_report = rx_order_markdown(rx.order);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1584,6 +1684,7 @@ fn write_report(
             - Concurrent open-radio TX floor: `{:.3} Mbit/s`\n\
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
              {udp_sequence_report}\
+             {rx_order_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
@@ -1744,11 +1845,13 @@ mod tests {
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=64 datagrams=1 elapsed_us=1 throughput_kbps=512000 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=54 queue_dropped=1 rx_format=4\n\
              ORXQ first=0 highest=0 next=1 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=0 maximum_interarrival_at=4294967295\n\
+             ORXO gap_events=0 forward_missing=0 backward=0 adjacent_duplicates=0 backward_mac_backward=0 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
              ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
              ORTP task=network polls=2 poll_us=1626 poll_boot_max_us=1582 over_100us=1 over_500us=1 over_1000us=1 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=2 forward_missing=3 maximum_gap=2 maximum_gap_at=100 first_gap_at=100 last_gap_at=3000 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=250 maximum_interarrival_at=100\n\
+             ORXO gap_events=2 forward_missing=3 backward=3 adjacent_duplicates=0 backward_mac_backward=3 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
         );
@@ -1761,6 +1864,8 @@ mod tests {
         assert_eq!(report.task_polls.network.polls, 5_100);
         assert_eq!(report.rx_sequences.len(), 1);
         assert_eq!(report.rx_sequences[0].forward_missing, 3);
+        assert_eq!(report.rx_order.len(), 1);
+        assert_eq!(report.rx_order[0].backward_mac_backward, 3);
     }
 
     #[test]

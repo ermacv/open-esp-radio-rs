@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     Result,
-    bidirectional::{assess_rx_log, task_poll_markdown, udp_sequence_markdown},
+    bidirectional::{assess_rx_log, rx_order_markdown, task_poll_markdown, udp_sequence_markdown},
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
@@ -108,6 +108,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
+    let rx_order_report = rx_order_markdown(rx.order);
     fs::write(
         output.join("report.md"),
         format!(
@@ -123,6 +124,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\n\
              {udp_sequence_report}\
+             {rx_order_report}\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\

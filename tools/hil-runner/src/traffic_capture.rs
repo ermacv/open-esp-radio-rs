@@ -15,11 +15,13 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
-    FrameEncoder, NetworkCredentials, SessionConfig, Transport, TransportEvidence, evidence_crc32c,
+    FrameEncoder, NetworkCredentials, SessionConfig, StartupArtifactChunk, StartupArtifactStatus,
+    Transport, TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
 use crate::Result;
+use crate::startup_artifact;
 
 const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete";
 const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
@@ -28,6 +30,7 @@ const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const RX_SESSION_WARMUP_SETTLE: Duration = Duration::from_secs(1);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
+const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct ProtocolEvents {
     messages: Mutex<Vec<Envelope<Event>>>,
@@ -202,10 +205,134 @@ impl SerialCapture {
     /// appended to the UART capture.
     fn prepare_protocol(&self) -> Result<Capabilities> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
+        let artifact_path = startup_artifact::configured_path()?;
+        if artifact_path.is_some() && !capabilities.features.startup_artifact {
+            return Err("firmware does not support a host-owned startup artifact".into());
+        }
+        let artifact_event_start = self.protocol_event_count();
+        if capabilities.features.startup_artifact
+            && let Some(path) = artifact_path.as_deref()
+            && let Some(bytes) = startup_artifact::load_if_present(path)?
+        {
+            self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
+        }
         if capabilities.features.network_provisioning {
             self.provision_network(PROTOCOL_READY_TIMEOUT)?;
         }
+        if capabilities.features.startup_artifact
+            && let Some(path) = artifact_path.as_deref()
+        {
+            let status = self.wait_for_startup_artifact_status_after(
+                artifact_event_start,
+                STARTUP_ARTIFACT_TIMEOUT,
+            )?;
+            let bytes = self
+                .wait_for_startup_artifact_after(artifact_event_start, STARTUP_ARTIFACT_TIMEOUT)?;
+            if usize::from(status.total_length) != bytes.len() {
+                return Err(format!(
+                    "startup artifact status length {} does not match {} returned bytes",
+                    status.total_length,
+                    bytes.len()
+                )
+                .into());
+            }
+            startup_artifact::persist_atomically(path, &bytes)?;
+            eprintln!(
+                "startup_artifact={} disposition={:?} bytes={} initialization_elapsed_us={}",
+                path.display(),
+                status.disposition,
+                bytes.len(),
+                status.initialization_elapsed_micros,
+            );
+        }
         Ok(capabilities)
+    }
+
+    fn wait_for_startup_artifact_status_after(
+        &self,
+        start: usize,
+        timeout: Duration,
+    ) -> Result<StartupArtifactStatus> {
+        let event = self
+            .wait_for_protocol_after(start, timeout, |message| {
+                matches!(&message.body, Event::StartupArtifactReady(_))
+            })
+            .ok_or("device did not report startup artifact initialization status")?;
+        match event.body {
+            Event::StartupArtifactReady(status) => Ok(status),
+            _ => unreachable!("startup artifact status predicate accepted only status events"),
+        }
+    }
+
+    fn upload_startup_artifact(&self, bytes: &[u8], timeout: Duration) -> Result<()> {
+        for chunk in startup_artifact::chunks(bytes)? {
+            match self
+                .send_command(0, Command::UploadStartupArtifact(chunk), timeout)?
+                .body
+            {
+                Event::Accepted => {}
+                Event::Rejected(reason) => {
+                    return Err(format!("device rejected HIL startup artifact: {reason:?}").into());
+                }
+                _ => return Err("device returned an invalid startup artifact response".into()),
+            }
+        }
+        Ok(())
+    }
+
+    fn wait_for_startup_artifact_after(&self, start: usize, timeout: Duration) -> Result<Vec<u8>> {
+        let deadline = Instant::now() + timeout;
+        let mut cursor = start;
+        let mut assembler = startup_artifact::Assembler::new();
+        loop {
+            let chunk = self
+                .wait_for_startup_artifact_chunk(&mut cursor, deadline)
+                .ok_or("device did not return its startup artifact")?;
+            if let Some(bytes) = assembler.push(&chunk)? {
+                return Ok(bytes);
+            }
+        }
+    }
+
+    fn wait_for_startup_artifact_chunk(
+        &self,
+        cursor: &mut usize,
+        deadline: Instant,
+    ) -> Option<StartupArtifactChunk> {
+        let mut messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some((relative, chunk)) = messages
+                .get(*cursor..)
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .find_map(|(relative, message)| match &message.body {
+                    Event::StartupArtifact(chunk) => Some((relative, chunk.clone())),
+                    _ => None,
+                })
+            {
+                *cursor += relative + 1;
+                return Some(chunk);
+            }
+            *cursor = messages.len();
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let (next, result) = self
+                .protocol
+                .changed
+                .wait_timeout(messages, deadline - now)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            messages = next;
+            if result.timed_out() {
+                return None;
+            }
+        }
     }
 
     fn provision_network(&self, timeout: Duration) -> Result<()> {

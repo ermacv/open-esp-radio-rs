@@ -16,10 +16,13 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
+use open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN;
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
     FrameDecoder, FrameEncoder, NetworkCredentials, PROTOCOL_VERSION, RejectReason, ResultSummary,
-    SessionConfig, SessionState, StateChange, Transport, TransportEvidence, evidence_crc32c,
+    STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
+    StartupArtifactDisposition, StartupArtifactStatus, StateChange, Transport, TransportEvidence,
+    evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -57,7 +60,7 @@ static COMMANDS: Channel<CriticalSectionRawMutex, Envelope<Command>, COMMAND_QUE
 static EVENTS: Channel<CriticalSectionRawMutex, Envelope<Event>, EVENT_QUEUE_CAPACITY> =
     Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
-static NETWORK_CREDENTIALS: Channel<CriticalSectionRawMutex, NetworkCredentials, 1> =
+static STARTUP_CONFIGURATIONS: Channel<CriticalSectionRawMutex, StartupConfiguration, 1> =
     Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
@@ -68,6 +71,73 @@ static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Cha
 pub struct ActiveSession {
     pub session_id: u64,
     pub config: SessionConfig,
+}
+
+pub struct StartupConfiguration {
+    pub network_credentials: NetworkCredentials,
+    pub phy_calibration_record: Option<[u8; PHY_COLD_CALIBRATION_RECORD_LEN]>,
+}
+
+struct StartupArtifactAssembler {
+    bytes: [u8; PHY_COLD_CALIBRATION_RECORD_LEN],
+    expected_total: Option<u16>,
+    expected_crc32c: u32,
+    received: usize,
+    complete: bool,
+}
+
+impl StartupArtifactAssembler {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; PHY_COLD_CALIBRATION_RECORD_LEN],
+            expected_total: None,
+            expected_crc32c: 0,
+            received: 0,
+            complete: false,
+        }
+    }
+
+    fn push(&mut self, chunk: &StartupArtifactChunk) -> Result<(), ()> {
+        chunk.validate().map_err(|_| ())?;
+        if usize::from(chunk.total_length()) != self.bytes.len() {
+            return Err(());
+        }
+        if chunk.offset() == 0 {
+            self.expected_total = Some(chunk.total_length());
+            self.expected_crc32c = chunk.crc32c();
+            self.received = 0;
+            self.complete = false;
+        }
+        if self.complete
+            || self.expected_total != Some(chunk.total_length())
+            || self.expected_crc32c != chunk.crc32c()
+            || usize::from(chunk.offset()) != self.received
+        {
+            return Err(());
+        }
+        let end = self.received + chunk.bytes().len();
+        self.bytes[self.received..end].copy_from_slice(chunk.bytes());
+        self.received = end;
+        if chunk.is_final() {
+            if self.received != self.bytes.len()
+                || startup_artifact_crc32c(&self.bytes) != self.expected_crc32c
+            {
+                self.expected_total = None;
+                self.received = 0;
+                return Err(());
+            }
+            self.complete = true;
+        }
+        Ok(())
+    }
+
+    fn started_but_incomplete(&self) -> bool {
+        self.expected_total.is_some() && !self.complete
+    }
+
+    fn completed_record(&self) -> Option<[u8; PHY_COLD_CALIBRATION_RECORD_LEN]> {
+        self.complete.then_some(self.bytes)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -179,9 +249,47 @@ pub fn publish_event(session_id: u64, request_id: u32, body: Event) {
     }
 }
 
-/// Waits without polling until the host provisions this boot's network.
-pub async fn receive_network_credentials() -> NetworkCredentials {
-    NETWORK_CREDENTIALS.receive().await
+/// Waits without polling until the host provisions this boot's complete
+/// startup configuration.
+pub async fn receive_startup_configuration() -> StartupConfiguration {
+    STARTUP_CONFIGURATIONS.receive().await
+}
+
+/// Returns the current target-defined startup artifact to the host in bounded
+/// wire frames. This runs before traffic measurement and never writes flash or
+/// NVS on the target.
+pub async fn publish_startup_artifact(
+    disposition: StartupArtifactDisposition,
+    initialization_elapsed_micros: u64,
+    bytes: &[u8],
+) {
+    let Ok(total_length) = u16::try_from(bytes.len()) else {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    let checksum = startup_artifact_crc32c(bytes);
+    publish_event_reliably(
+        0,
+        0,
+        Event::StartupArtifactReady(StartupArtifactStatus {
+            disposition,
+            total_length,
+            initialization_elapsed_micros,
+        }),
+    )
+    .await;
+    for (index, part) in bytes.chunks(STARTUP_ARTIFACT_CHUNK_MAX_LEN).enumerate() {
+        let offset = index * STARTUP_ARTIFACT_CHUNK_MAX_LEN;
+        let Ok(offset) = u16::try_from(offset) else {
+            PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        let Ok(chunk) = StartupArtifactChunk::try_new(total_length, offset, checksum, part) else {
+            PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        publish_event_reliably(0, 0, Event::StartupArtifact(chunk)).await;
+    }
 }
 
 /// Waits until the host has configured, armed, and started one benchmark.
@@ -235,6 +343,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
     let mut state = SessionState::WaitingForNetwork;
     let mut configured = None::<ActiveSession>;
     let mut last_result = None::<SessionResult>;
+    let mut startup_artifact = StartupArtifactAssembler::new();
     loop {
         match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
             Either::First(command) => {
@@ -245,12 +354,32 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
                             .await;
                     }
+                    Command::UploadStartupArtifact(chunk) => {
+                        let response = if !capabilities.features.startup_artifact {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if network_provisioned || state != SessionState::WaitingForNetwork {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if startup_artifact.push(&chunk).is_err() {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::ProvisionNetwork(credentials) => {
                         let (response, accepted) = if network_provisioned {
                             (Event::Rejected(RejectReason::InvalidState), false)
                         } else if credentials.validate().is_err() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
-                        } else if NETWORK_CREDENTIALS.try_send(credentials).is_err() {
+                        } else if startup_artifact.started_but_incomplete() {
+                            (Event::Rejected(RejectReason::InvalidConfiguration), false)
+                        } else if STARTUP_CONFIGURATIONS
+                            .try_send(StartupConfiguration {
+                                network_credentials: credentials,
+                                phy_calibration_record: startup_artifact.completed_record(),
+                            })
+                            .is_err()
+                        {
                             (Event::Rejected(RejectReason::Busy), false)
                         } else {
                             network_provisioned = true;

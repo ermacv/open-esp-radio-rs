@@ -27,6 +27,15 @@ pub fn evidence_crc32c(evidence: &[EvidenceRecord]) -> Result<u32, EncodeError> 
     Ok(CRC32C.checksum(payload))
 }
 
+/// Computes the transfer-integrity digest of one opaque startup artifact.
+///
+/// This checksum is not an identity or qualification hash. It only prevents
+/// a receiver from accepting an incomplete or internally inconsistent UART
+/// transfer.
+pub fn startup_artifact_crc32c(bytes: &[u8]) -> u32 {
+    CRC32C.checksum(bytes)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EncodeError {
     Serialize,
@@ -253,7 +262,7 @@ mod tests {
     use super::*;
     use crate::{
         Command, Completion, Direction, Envelope, FlowConfig, Ipv4Endpoint, SessionConfig,
-        Transport,
+        StartupArtifactChunk, Transport,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -397,6 +406,35 @@ mod tests {
         let mut observed = None;
         decoder.feed(frame, |result| observed = Some(result.unwrap()));
         assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn maximum_startup_artifact_chunk_fits_and_round_trips() {
+        let bytes = [0x5a; crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
+        let checksum = startup_artifact_crc32c(&bytes);
+        let chunk = StartupArtifactChunk::try_new(
+            crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN as u16,
+            0,
+            checksum,
+            &bytes,
+        )
+        .unwrap();
+        let expected = Envelope::new(7, 2, 0, 2, Command::UploadStartupArtifact(chunk));
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
+        assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
+        assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
+        assert!(StartupArtifactChunk::try_new(4, 3, 0, &[1, 2]).is_err());
     }
 
     #[test]

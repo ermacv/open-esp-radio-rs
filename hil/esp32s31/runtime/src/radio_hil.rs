@@ -29,9 +29,10 @@ use open_esp_radio::{
             mac::{self as mac_pac, init as mac_registers},
         },
         phy::{
-            PhyRegisterRunError, PhyRegisterTransition, PhyRfBoundary, PhyTargetObserver,
-            TargetPhyRegisterPort,
-            phy_cold::PhyColdState,
+            PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterRunError, PhyRegisterTransition,
+            PhyRfBoundary, PhyTargetObserver, TargetPhyRegisterPort,
+            phy_cold::{PhyCalibrationRecord, PhyColdState},
+            phy_rfpll::phy_get_rf_cal_version,
             run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
             target_executor::{PhyAsyncDelay, PhyTargetPortError},
         },
@@ -146,7 +147,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_protocol::{
     Capabilities, Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
     FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
-    Transport as HilTransport, TransportEvidence,
+    StartupArtifactDisposition, Transport as HilTransport, TransportEvidence,
 };
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
@@ -314,6 +315,7 @@ pub const fn hil_capabilities() -> Capabilities {
             network_provisioning: true,
             runtime_configuration: OPEN_RADIO_RUNTIME_SESSIONS,
             structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
+            startup_artifact: true,
         },
         maximum_payload_bytes: if OPEN_RADIO_TCP_RX_BENCH {
             OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
@@ -6376,7 +6378,11 @@ pub async fn run(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=network-config-waiting source=hil-protocol"
     ));
-    let mut network_credentials = crate::console::receive_network_credentials().await;
+    let startup_configuration = crate::console::receive_startup_configuration().await;
+    let mut network_credentials = startup_configuration.network_credentials;
+    let calibration_record = startup_configuration
+        .phy_calibration_record
+        .map(PhyCalibrationRecord::from_bytes);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=network-config-received ssid_length={}",
         network_credentials.ssid().len(),
@@ -6408,7 +6414,16 @@ pub async fn run(
     // `register_chipv7_phy` always finishes `phy_bb_init` on channel 11.
     // Selecting the requested listen channel is a separate post-init call,
     // matching the vendor call graph instead of folding it into cold init.
-    let mut transition = PhyRegisterTransition::with_default_profile();
+    let efuse = esp_hal::peripherals::EFUSE::regs();
+    let calibration_identity = PhyCalibrationIdentity {
+        rf_cal_version: phy_get_rf_cal_version(),
+        mac_sys0: efuse.rd_mac_sys0().read().bits(),
+        mac_sys1: efuse.rd_mac_sys1().read().bits(),
+    };
+    let mut transition = PhyRegisterTransition::with_default_profile_and_calibration(
+        calibration_identity,
+        calibration_record,
+    );
     let mut port =
         TargetPhyRegisterPort::<_, EmbassyPhyDelay, _>::new(&mut powered, HilPhyObserver);
     let phy_started = Instant::now();
@@ -6438,6 +6453,8 @@ pub async fn run(
             }
         };
         set_diagnostic_stage(200);
+        let phy_elapsed = phy_started.elapsed();
+        let calibration_record = transition.take_calibration_record();
         let mut state = match transition.into_state() {
             Ok(state) => state,
             Err(_) => {
@@ -6449,22 +6466,38 @@ pub async fn run(
         };
         let counters = port.counters();
         emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} \
+            "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} calibration_path={:?} \
                      mmio={} delays={} reset_samples={} rf_operations={} \
                      baseband_operations={} elapsed_ms={}",
             outcome.full_calibration_performed,
+            outcome.calibration_path,
             counters.mmio,
             counters.delays,
             counters.reset_samples,
             counters.rf_operations,
             counters.baseband_operations,
-            phy_started.elapsed().as_millis(),
+            phy_elapsed.as_millis(),
         ));
         // `TargetPhyRegisterPort` borrowed the complete radio while the PHY
         // transition was active.  The transition is now finished, so
         // release that borrow before lending the owned register block
         // to the MAC/RX HIL.
         drop(port);
+        if let Some(record) = calibration_record.as_ref() {
+            let disposition = match outcome.calibration_path {
+                PhyCalibrationPath::FullUncached | PhyCalibrationPath::FullForRecord => {
+                    StartupArtifactDisposition::Created
+                }
+                PhyCalibrationPath::FullAfterRejectedRecord => StartupArtifactDisposition::Replaced,
+                PhyCalibrationPath::PartialRestored => StartupArtifactDisposition::Restored,
+            };
+            crate::console::publish_startup_artifact(
+                disposition,
+                phy_elapsed.as_micros(),
+                record.bytes(),
+            )
+            .await;
+        }
         // Match Espressif's `enable_phy_with_wifi_rx` lifecycle
         // wrapper.  PHY registration may leave WIFI_ENABLE cleared;
         // the powered radio owner must make RX/baseband live before

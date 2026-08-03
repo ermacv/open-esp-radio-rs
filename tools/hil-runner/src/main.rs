@@ -14,6 +14,7 @@ mod bidirectional;
 mod paced_tcp;
 mod paced_udp;
 mod rx_traffic;
+mod startup_artifact;
 mod tcp_rx;
 mod traffic_capture;
 mod trigger;

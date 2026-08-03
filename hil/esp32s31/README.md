@@ -98,6 +98,15 @@ external HIL configuration. They are intentionally not written to
 name selects the workload and artifact identity; it does not claim that the
 connected AP can satisfy every cell in that workload.
 
+Set `OPEN_RADIO_HIL_STARTUP_ARTIFACT` to a caller-owned file when qualifying
+retained PHY calibration. A missing file selects full calibration and is
+created from the record returned by the target. A subsequent reset uploads the
+same record before network provisioning, allowing the HIL report to distinguish
+`FullForRecord`, `FullAfterRejectedRecord` and `PartialRestored` and compare
+their elapsed time. The target stores no copy in NVS or flash; eFuse identity
+is read by the ESP32-S31 HIL adapter through the PAC and remains outside the
+PHY state machine.
+
 STA connection scans all ESP32-S31 2.4-GHz channels automatically.
 `OPEN_RADIO_STA_CHANNEL` is only a preferred first-channel hint for controlled
 setups; a stale hint cannot pin the connection to the wrong channel.

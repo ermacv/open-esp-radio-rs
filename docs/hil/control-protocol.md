@@ -20,10 +20,10 @@ Every envelope carries `protocol_version`, `boot_id`, `message_sequence`,
 machine-readable lifecycle dependency once its corresponding event has been
 migrated.
 
-Protocol version 2 represents the target RX and target TX traffic shapes as
-separate optional flows. Each flow has its own payload length and offered-rate
-bound. This keeps one-way sessions unambiguous and permits asymmetric
-bidirectional tests without adding transport-specific fields to the envelope.
+Protocol version 3 retains separate target RX and target TX traffic shapes and
+adds one opaque startup artifact. The protocol defines only ordered chunks,
+the total length and a transfer CRC32C. Its meaning and exact length belong to
+the selected target adapter, not to the shared wire crate.
 
 The protocol contains no expected firmware hashes, ELF paths, vendor ABI
 versions or target-specific register layouts. The firmware publishes actual
@@ -40,6 +40,8 @@ reset
   -> WaitingForNetwork
   <- GetCapabilities
   -> Hello(capabilities)
+  <- UploadStartupArtifact(chunk 0..N)  [optional]
+  -> Accepted                           [per chunk]
   <- ProvisionNetwork(credentials)
   -> Accepted
   -> Idle
@@ -53,6 +55,7 @@ read them at runtime from:
 ```text
 OPEN_RADIO_HIL_STA_SSID
 OPEN_RADIO_HIL_STA_PASSWORD
+OPEN_RADIO_HIL_STARTUP_ARTIFACT          [optional input/output path]
 ```
 
 The older `OPEN_RADIO_STA_SSID` and `OPEN_RADIO_STA_PASSWORD` names are accepted
@@ -62,6 +65,16 @@ written to UART capture, redacted from `Debug`, and cleared from transient
 protocol buffers. They remain in target RAM only until PMK derivation; the
 passphrase is then cleared. The SSID may still appear in ordinary scan and
 association diagnostics; it is not treated as secret material.
+
+If the startup-artifact path exists, the host uploads it before provisioning.
+If it does not exist, initialization proceeds without retained state. After
+initialization the target returns the validated or newly produced artifact and
+the host replaces that file atomically. A typed status reports whether the
+artifact was created, restored or rejected and replaced, together with the
+initialization time. The ESP32-S31 adapter uses this for its 524-byte PHY
+calibration record; the shared protocol contains neither that size nor
+eFuse/ABI fields. Target firmware never writes NVS or flash for this flow. The
+artifact CRC is transport integrity, not a firmware/oracle identity hash.
 
 ## Ownership
 

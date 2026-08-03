@@ -10,12 +10,14 @@ mod message;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
-    MAX_WIRE_FRAME_BYTES, evidence_crc32c,
+    MAX_WIRE_FRAME_BYTES, evidence_crc32c, startup_artifact_crc32c,
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
     FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkCredentials,
     NetworkCredentialsError, NetworkInfo, PROTOCOL_VERSION, RejectReason, ResultSummary,
-    ServiceInfo, SessionConfig, SessionState, StateChange, Transport, TransportEvidence,
-    WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,
+    STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionState, StartupArtifactChunk,
+    StartupArtifactChunkError, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
+    Transport, TransportEvidence, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
+    WPA2_SSID_MAX_LEN,
 };

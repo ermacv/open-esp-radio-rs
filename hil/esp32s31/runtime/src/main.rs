@@ -19,13 +19,19 @@ use core::{
     ffi::CStr,
     ptr,
 };
+#[cfg(feature = "open-radio-hil")]
+use core::sync::atomic::{AtomicPtr, Ordering};
 
+#[cfg(feature = "open-radio-hil")]
+use embassy_executor::SendSpawner;
 #[cfg(feature = "boot-smoke")]
 use embassy_time::{Duration, Timer};
 use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     timer::{OneShotTimer, timg::TimerGroup},
 };
+#[cfg(feature = "open-radio-hil")]
+use esp_hal::system::{CpuControl, Stack};
 use open_esp_radio_hil_esp32s31_runtime_support::Executor;
 use static_cell::StaticCell;
 
@@ -58,6 +64,15 @@ const PROFILE_DATA_START: u32 = INTERNAL_SRAM_START;
 const PROFILE_DATA_END: u32 = INTERNAL_SRAM_END;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+#[cfg(feature = "open-radio-hil")]
+static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
+#[cfg(feature = "open-radio-hil")]
+static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
+#[cfg(feature = "open-radio-hil")]
+static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_mut());
+#[cfg(feature = "open-radio-hil")]
+#[unsafe(link_section = ".critical.bss.open_radio_app_core_stack")]
+static mut APP_CORE_STACK: Stack<16384> = Stack::new();
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
 
@@ -243,6 +258,44 @@ extern "C" fn runtime_main() -> ! {
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_hil_esp32s31_runtime_support::init(OneShotTimer::new(timer_group.timer0));
+
+    #[cfg(feature = "open-radio-hil")]
+    let app_spawner = {
+        let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+        let app_interrupt = software_interrupts.software_interrupt1;
+        let guard = cpu_control
+            .start_app_core(
+                unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
+                move || {
+                    // Core 1 enters directly from ROM rather than through
+                    // `_runtime_start`, so hand global interrupt enable to
+                    // its executor explicitly after esp-hal has installed
+                    // the per-hart vector state.
+                    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+                    APP_EXECUTOR
+                        .init(Executor::new(app_interrupt))
+                        .run(|spawner| {
+                            let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
+                            APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
+                        })
+                },
+            )
+            .unwrap_or_else(|_| {
+                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-core-start\r\n")
+            });
+        // The HIL runtime owns both cores until reset. Dropping this guard
+        // would park Core 1 while its Embassy executor still owns tasks.
+        core::mem::forget(guard);
+
+        loop {
+            let pointer = APP_SEND_SPAWNER_PTR.load(Ordering::Acquire);
+            if let Some(spawner) = unsafe { pointer.as_ref() } {
+                break *spawner;
+            }
+            core::hint::spin_loop();
+        }
+    };
+
     let executor = EXECUTOR.init(Executor::new(software_interrupts.software_interrupt0));
 
     // Bootstrap intentionally hands MIE over clear. Timer and software wake
@@ -281,7 +334,9 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
-            let Ok(hil) = open_radio_hil_task(spawner, radio, trng, trng_source) else {
+            let Ok(hil) =
+                open_radio_hil_task(spawner, app_spawner, radio, trng, trng_source)
+            else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };
             spawner.spawn(hil);
@@ -304,11 +359,12 @@ async fn boot_smoke() {
 #[embassy_executor::task]
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,
+    protocol_spawner: SendSpawner,
     radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
     _trng_source: esp_hal::rng::TrngSource<'static>,
 ) {
-    radio_hil::run(spawner, radio, trng).await;
+    radio_hil::run(spawner, protocol_spawner, radio, trng).await;
 }
 
 fn validate_runtime_layout() {

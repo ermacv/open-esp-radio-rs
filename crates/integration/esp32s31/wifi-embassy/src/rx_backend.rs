@@ -32,7 +32,7 @@ use crate::{
     backend::Esp32s31ConnectedRxService,
     embassy_rx::{RxReloadDelay, await_staged_rx_reload},
     runner::WifiRxProgress,
-    rx_telemetry::RxPipelineCounters,
+    rx_telemetry::{RxPipelineCounters, RxServiceObservation},
     staged_rx::{ConnectedRxProtocolSink, Esp32s31StagedRxFrame},
 };
 
@@ -319,6 +319,9 @@ where
             let service_started = self
                 .pipeline_counters
                 .map(RxPipelineCounters::begin_service);
+            let hardware_buffer_full = self
+                .pipeline_counters
+                .and_then(|_| hardware.buffer_full_count());
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
@@ -421,14 +424,15 @@ where
             }
 
             if let (Some(counters), Some(started)) = (self.pipeline_counters, service_started) {
-                counters.record_service(
+                counters.record_service(RxServiceObservation {
                     frontier,
                     pool_credits,
                     queue_credits,
                     admitted,
                     staged_bytes,
-                    counters.elapsed_micros_since(started),
-                );
+                    micros: counters.elapsed_micros_since(started),
+                    hardware_buffer_full,
+                });
             }
 
             Ok(if admitted < frontier {

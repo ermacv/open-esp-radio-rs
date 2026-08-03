@@ -8,6 +8,17 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStageError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RxServiceObservation {
+    pub frontier: usize,
+    pub pool_credits: usize,
+    pub queue_credits: usize,
+    pub admitted: usize,
+    pub staged_bytes: usize,
+    pub micros: u64,
+    pub hardware_buffer_full: Option<u16>,
+}
+
 /// Diagnostic observations spanning DMA staging, protocol dispatch and the
 /// final `embassy-net` publication copy.
 pub struct RxPipelineCounters {
@@ -35,6 +46,12 @@ pub struct RxPipelineCounters {
     maximum_admitted: AtomicU32,
     service_micros: AtomicU32,
     service_lifetime_max_micros: AtomicU32,
+    dma_buffer_full_last_observation: AtomicU32,
+    dma_buffer_full_increments: AtomicU32,
+    dma_buffer_full_service_samples: AtomicU32,
+    dma_buffer_full_last_service: AtomicU32,
+    dma_buffer_full_last_context: AtomicU32,
+    dma_buffer_full_last_service_micros: AtomicU32,
     protocol_frames: AtomicU32,
     protocol_data_frames: AtomicU32,
     protocol_amsdu_mpdus: AtomicU32,
@@ -104,6 +121,12 @@ impl RxPipelineCounters {
             maximum_admitted: AtomicU32::new(0),
             service_micros: AtomicU32::new(0),
             service_lifetime_max_micros: AtomicU32::new(0),
+            dma_buffer_full_last_observation: AtomicU32::new(0),
+            dma_buffer_full_increments: AtomicU32::new(0),
+            dma_buffer_full_service_samples: AtomicU32::new(0),
+            dma_buffer_full_last_service: AtomicU32::new(0),
+            dma_buffer_full_last_context: AtomicU32::new(0),
+            dma_buffer_full_last_service_micros: AtomicU32::new(0),
             protocol_frames: AtomicU32::new(0),
             protocol_data_frames: AtomicU32::new(0),
             protocol_amsdu_mpdus: AtomicU32::new(0),
@@ -204,6 +227,10 @@ impl RxPipelineCounters {
     }
 
     pub fn snapshot(&self) -> RxPipelineCounterSnapshot {
+        let buffer_full_observation = self
+            .dma_buffer_full_last_observation
+            .load(Ordering::Relaxed);
+        let buffer_full_context = self.dma_buffer_full_last_context.load(Ordering::Relaxed);
         RxPipelineCounterSnapshot {
             service_calls: self.service_calls.load(Ordering::Relaxed),
             frontier_zero_services: self.frontier_zero_services.load(Ordering::Relaxed),
@@ -240,6 +267,19 @@ impl RxPipelineCounters {
             maximum_admitted: self.maximum_admitted.load(Ordering::Relaxed),
             service_micros: self.service_micros.load(Ordering::Relaxed),
             service_lifetime_max_micros: self.service_lifetime_max_micros.load(Ordering::Relaxed),
+            dma_buffer_full_increments: self.dma_buffer_full_increments.load(Ordering::Relaxed),
+            dma_buffer_full_service_samples: self
+                .dma_buffer_full_service_samples
+                .load(Ordering::Relaxed),
+            dma_buffer_full_last_service: self.dma_buffer_full_last_service.load(Ordering::Relaxed),
+            dma_buffer_full_last_counter: buffer_full_observation & u32::from(u16::MAX),
+            dma_buffer_full_last_frontier: buffer_full_context & 0xff,
+            dma_buffer_full_last_admitted: buffer_full_context >> 8 & 0xff,
+            dma_buffer_full_last_pool_credits: buffer_full_context >> 16 & 0xff,
+            dma_buffer_full_last_queue_credits: buffer_full_context >> 24,
+            dma_buffer_full_last_service_micros: self
+                .dma_buffer_full_last_service_micros
+                .load(Ordering::Relaxed),
             protocol_frames: self.protocol_frames.load(Ordering::Relaxed),
             protocol_data_frames: self.protocol_data_frames.load(Ordering::Relaxed),
             protocol_amsdu_mpdus: self.protocol_amsdu_mpdus.load(Ordering::Relaxed),
@@ -286,16 +326,17 @@ impl RxPipelineCounters {
         }
     }
 
-    pub(crate) fn record_service(
-        &self,
-        frontier: usize,
-        pool_credits: usize,
-        queue_credits: usize,
-        admitted: usize,
-        staged_bytes: usize,
-        micros: u64,
-    ) {
-        self.service_calls.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn record_service(&self, observation: RxServiceObservation) {
+        let RxServiceObservation {
+            frontier,
+            pool_credits,
+            queue_credits,
+            admitted,
+            staged_bytes,
+            micros,
+            hardware_buffer_full: _,
+        } = observation;
+        let service = self.service_calls.fetch_add(1, Ordering::Relaxed) + 1;
         match frontier {
             0 => &self.frontier_zero_services,
             1 => &self.frontier_one_services,
@@ -344,6 +385,45 @@ impl RxPipelineCounters {
             &self.service_micros,
             &self.service_lifetime_max_micros,
             micros,
+        );
+        self.record_dma_buffer_full(service, observation);
+    }
+
+    fn record_dma_buffer_full(&self, service: u32, observation: RxServiceObservation) {
+        const VALID: u32 = 1 << 16;
+
+        let Some(current) = observation.hardware_buffer_full else {
+            return;
+        };
+        let encoded = VALID | u32::from(current);
+        let previous = self
+            .dma_buffer_full_last_observation
+            .swap(encoded, Ordering::Relaxed);
+        if previous & VALID == 0 {
+            return;
+        }
+        let increments = current.wrapping_sub(previous as u16);
+        if increments == 0 {
+            return;
+        }
+
+        self.dma_buffer_full_increments
+            .fetch_add(u32::from(increments), Ordering::Relaxed);
+        self.dma_buffer_full_service_samples
+            .fetch_add(1, Ordering::Relaxed);
+        self.dma_buffer_full_last_service
+            .store(service, Ordering::Relaxed);
+        let byte = |value: usize| u32::try_from(value.min(0xff)).unwrap_or(0xff);
+        self.dma_buffer_full_last_context.store(
+            byte(observation.frontier)
+                | byte(observation.admitted) << 8
+                | byte(observation.pool_credits) << 16
+                | byte(observation.queue_credits) << 24,
+            Ordering::Relaxed,
+        );
+        self.dma_buffer_full_last_service_micros.store(
+            u32::try_from(observation.micros).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
         );
     }
 
@@ -505,6 +585,18 @@ pub struct RxPipelineCounterSnapshot {
     pub service_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub service_lifetime_max_micros: u32,
+    /// Hardware `BUFFER_FULL` increments observed at RX service boundaries.
+    pub dma_buffer_full_increments: u32,
+    /// Service boundaries at which one or more new increments were observed.
+    pub dma_buffer_full_service_samples: u32,
+    /// Boot-lifetime service ordinal carrying the most recent observation.
+    pub dma_buffer_full_last_service: u32,
+    pub dma_buffer_full_last_counter: u32,
+    pub dma_buffer_full_last_frontier: u32,
+    pub dma_buffer_full_last_admitted: u32,
+    pub dma_buffer_full_last_pool_credits: u32,
+    pub dma_buffer_full_last_queue_credits: u32,
+    pub dma_buffer_full_last_service_micros: u32,
     pub protocol_frames: u32,
     pub protocol_data_frames: u32,
     pub protocol_amsdu_mpdus: u32,
@@ -601,6 +693,19 @@ impl RxPipelineCounterSnapshot {
             maximum_admitted: self.maximum_admitted,
             service_micros: self.service_micros.wrapping_sub(earlier.service_micros),
             service_lifetime_max_micros: self.service_lifetime_max_micros,
+            dma_buffer_full_increments: self
+                .dma_buffer_full_increments
+                .wrapping_sub(earlier.dma_buffer_full_increments),
+            dma_buffer_full_service_samples: self
+                .dma_buffer_full_service_samples
+                .wrapping_sub(earlier.dma_buffer_full_service_samples),
+            dma_buffer_full_last_service: self.dma_buffer_full_last_service,
+            dma_buffer_full_last_counter: self.dma_buffer_full_last_counter,
+            dma_buffer_full_last_frontier: self.dma_buffer_full_last_frontier,
+            dma_buffer_full_last_admitted: self.dma_buffer_full_last_admitted,
+            dma_buffer_full_last_pool_credits: self.dma_buffer_full_last_pool_credits,
+            dma_buffer_full_last_queue_credits: self.dma_buffer_full_last_queue_credits,
+            dma_buffer_full_last_service_micros: self.dma_buffer_full_last_service_micros,
             protocol_frames: self.protocol_frames.wrapping_sub(earlier.protocol_frames),
             protocol_data_frames: self
                 .protocol_data_frames
@@ -677,7 +782,7 @@ mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
     use open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStageError;
 
-    use super::RxPipelineCounters;
+    use super::{RxPipelineCounters, RxServiceObservation};
 
     static IRQ_CLOCK: AtomicU64 = AtomicU64::new(0);
     static IRQ_SKEW_CLOCK: AtomicU64 = AtomicU64::new(0);
@@ -698,7 +803,15 @@ mod tests {
     fn interval_delta_retains_totals_limits_and_phase_times() {
         let counters = RxPipelineCounters::new(test_clock);
         let before = counters.snapshot();
-        counters.record_service(4, 3, 5, 3, 4_500, 70);
+        counters.record_service(RxServiceObservation {
+            frontier: 4,
+            pool_credits: 3,
+            queue_credits: 5,
+            admitted: 3,
+            staged_bytes: 4_500,
+            micros: 70,
+            hardware_buffer_full: None,
+        });
         counters.record_stage_discard(RxStageError::Empty);
         counters.record_stage_discard(RxStageError::TooLong);
         counters.record_network_ready_wait(2);
@@ -743,9 +856,25 @@ mod tests {
         counters.record_rx_irq_epoch();
         IRQ_CLOCK.store((1_u64 << 31) + 4, Ordering::Relaxed);
         let started = counters.begin_service();
-        counters.record_service(32, 32, 32, 32, 48_000, 80);
+        counters.record_service(RxServiceObservation {
+            frontier: 32,
+            pool_credits: 32,
+            queue_credits: 32,
+            admitted: 32,
+            staged_bytes: 48_000,
+            micros: 80,
+            hardware_buffer_full: None,
+        });
         counters.begin_service();
-        counters.record_service(0, 32, 32, 0, 0, 1);
+        counters.record_service(RxServiceObservation {
+            frontier: 0,
+            pool_credits: 32,
+            queue_credits: 32,
+            admitted: 0,
+            staged_bytes: 0,
+            micros: 1,
+            hardware_buffer_full: None,
+        });
         let delta = counters.snapshot().wrapping_delta_since(before);
 
         assert_eq!(started, (1_u64 << 31) + 4);
@@ -770,5 +899,41 @@ mod tests {
         assert_eq!(snapshot.rx_irq_service_samples, 0);
         assert_eq!(snapshot.rx_irq_clock_skew_samples, 1);
         assert_eq!(snapshot.rx_irq_to_service_micros, 0);
+    }
+
+    #[test]
+    fn buffer_full_wrap_is_attributed_to_the_next_service_context() {
+        let counters = RxPipelineCounters::new(test_clock);
+        counters.record_service(RxServiceObservation {
+            frontier: 1,
+            pool_credits: 64,
+            queue_credits: 64,
+            admitted: 1,
+            staged_bytes: 1_600,
+            micros: 20,
+            hardware_buffer_full: Some(0xfffe),
+        });
+        let before = counters.snapshot();
+
+        counters.record_service(RxServiceObservation {
+            frontier: 7,
+            pool_credits: 60,
+            queue_credits: 61,
+            admitted: 7,
+            staged_bytes: 11_200,
+            micros: 73,
+            hardware_buffer_full: Some(1),
+        });
+        let delta = counters.snapshot().wrapping_delta_since(before);
+
+        assert_eq!(delta.dma_buffer_full_increments, 3);
+        assert_eq!(delta.dma_buffer_full_service_samples, 1);
+        assert_eq!(delta.dma_buffer_full_last_service, 2);
+        assert_eq!(delta.dma_buffer_full_last_counter, 1);
+        assert_eq!(delta.dma_buffer_full_last_frontier, 7);
+        assert_eq!(delta.dma_buffer_full_last_admitted, 7);
+        assert_eq!(delta.dma_buffer_full_last_pool_credits, 60);
+        assert_eq!(delta.dma_buffer_full_last_queue_credits, 61);
+        assert_eq!(delta.dma_buffer_full_last_service_micros, 73);
     }
 }

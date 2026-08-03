@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::console::emergency_log;
-use embassy_executor::Spawner;
+use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::{select::select, yield_now};
 use embassy_net::{
     Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
@@ -1009,6 +1009,7 @@ struct StaAssociationSecurity<'a> {
 /// WPA2-to-connected ownership transition.
 struct RadioHilConnectedFixture<'a> {
     spawner: Spawner,
+    protocol_spawner: SendSpawner,
     platform: &'a mut EspHalRadioPeripheral,
     mmio: &'static mut RadioRegisters,
     interrupt_setup: &'a mut Option<MacInterruptSetup>,
@@ -4042,6 +4043,19 @@ fn log_open_radio_rx_pipeline_interval(
         pipeline.service_lifetime_max_micros,
     ));
     emergency_log(format_args!(
+        "ORXB increments={} samples={} last_service={} last_counter={} \
+         last_frontier={} last_admitted={} last_pool={} last_queue={} last_service_us={}",
+        pipeline.dma_buffer_full_increments,
+        pipeline.dma_buffer_full_service_samples,
+        pipeline.dma_buffer_full_last_service,
+        pipeline.dma_buffer_full_last_counter,
+        pipeline.dma_buffer_full_last_frontier,
+        pipeline.dma_buffer_full_last_admitted,
+        pipeline.dma_buffer_full_last_pool_credits,
+        pipeline.dma_buffer_full_last_queue_credits,
+        pipeline.dma_buffer_full_last_service_micros,
+    ));
+    emergency_log(format_args!(
         "ORXD frames={} data={} amsdu={} amsdu_subframes={} unit_le1700={} \
          unit_1701_3400={} unit_over3400={} unit_boot_max_bytes={} \
          waits={} wait_us={} wait_boot_max_us={} dispatch_us={} \
@@ -4250,6 +4264,7 @@ async fn run_connected_network(
 ) -> ! {
     let RadioHilConnectedFixture {
         spawner,
+        protocol_spawner,
         platform,
         mmio,
         interrupt_setup,
@@ -4493,7 +4508,13 @@ async fn run_connected_network(
     spawner.spawn(stack_task);
     let protocol_task = connected_rx_protocol_task(rx_protocol)
         .unwrap_or_else(|_| panic!("connected RX protocol task allocation failed"));
-    spawner.spawn(protocol_task);
+    // embassy-net intentionally stores its Stack/Runner state behind a
+    // RefCell and is therefore !Send. Keep that owner, the PAC runner and the
+    // MMIO-backed tasks on Core 0. The staged protocol owns only cross-core
+    // CriticalSectionRawMutex queues and is compiler-proven Send, so moving it
+    // to Core 1 removes one long cooperative poll interval without inventing
+    // a fixed per-wake frame ceiling.
+    protocol_spawner.spawn(protocol_task);
     let radio_task = connected_radio_task(radio_runner)
         .unwrap_or_else(|_| panic!("connected radio task allocation failed"));
     spawner.spawn(radio_task);
@@ -4510,8 +4531,8 @@ async fn run_connected_network(
     spawner.spawn(benchmark_task);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-task-topology \
-         network=independent rx_protocol=independent radio=independent \
-         report=independent benchmark=independent"
+         network=core0 rx_protocol=core1 radio=core0 \
+         report=core0 benchmark=core0"
     ));
 
     // Retain the platform token and one-shot interrupt-setup lifetime in the
@@ -4624,6 +4645,7 @@ async fn associate_target(
 ) -> (bool, bool, bool) {
     let RadioHilConnectedFixture {
         spawner,
+        protocol_spawner,
         platform,
         mmio,
         interrupt_setup,
@@ -4885,6 +4907,7 @@ async fn associate_target(
         };
         let fixture = RadioHilConnectedFixture {
             spawner,
+            protocol_spawner,
             platform,
             mmio,
             interrupt_setup,
@@ -4956,6 +4979,7 @@ async fn complete_wpa2_key_install_and_connect(
 ) -> bool {
     let RadioHilConnectedFixture {
         spawner,
+        protocol_spawner,
         platform,
         mmio,
         interrupt_setup,
@@ -5181,6 +5205,7 @@ async fn complete_wpa2_key_install_and_connect(
         run_connected_network(
             RadioHilConnectedFixture {
                 spawner,
+                protocol_spawner,
                 platform,
                 mmio,
                 interrupt_setup,
@@ -5227,6 +5252,7 @@ async fn complete_wpa2_key_install_and_connect(
 
 async fn run_promiscuous_rx_hil(
     spawner: Spawner,
+    protocol_spawner: SendSpawner,
     state: &mut PhyColdState,
     mut platform: EspHalRadioPeripheral,
     mut cold_mmio: ColdRadioRegisters,
@@ -5812,6 +5838,7 @@ async fn run_promiscuous_rx_hil(
                 state,
                 radio: RadioHilConnectedFixture {
                     spawner,
+                    protocol_spawner,
                     platform,
                     mmio,
                     interrupt_setup: &mut interrupt_setup,
@@ -5900,7 +5927,12 @@ async fn run_promiscuous_rx_hil(
 /// peripheral token into this function. Keeping the workload outside the
 /// standalone binary lets the same source run inside the relocated
 /// PSRAM/PSRAM runtime image.
-pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) {
+pub async fn run(
+    spawner: Spawner,
+    protocol_spawner: SendSpawner,
+    platform: EspHalRadioPeripheral,
+    trng: Trng,
+) {
     set_diagnostic_stage(10);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL schema=8 writes=full-phy+mac-rx+mac-tx+active-scan mac=open \
@@ -6037,7 +6069,15 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
             .install_phy_tx_power_profile(tx_power_profile);
         set_diagnostic_stage(230);
         let (platform, registers) = powered.into_parts();
-        let _ = run_promiscuous_rx_hil(spawner, &mut state, platform, registers, &trng).await;
+        let _ = run_promiscuous_rx_hil(
+            spawner,
+            protocol_spawner,
+            &mut state,
+            platform,
+            registers,
+            &trng,
+        )
+        .await;
         break;
     }
     set_diagnostic_stage(250);

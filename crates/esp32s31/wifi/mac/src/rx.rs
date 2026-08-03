@@ -16,6 +16,14 @@ use open_esp_radio_ieee80211::he::{
 /// Production uses the generated PAC implementation below. Host tests model
 /// these finite operations without receiving arbitrary register identities.
 pub trait RxDma {
+    /// Optional monotonic hardware starvation counter for boundary telemetry.
+    ///
+    /// This observation never participates in descriptor ownership. Host
+    /// models and platforms without such a counter keep the default `None`.
+    fn buffer_full_count(&mut self) -> Option<u16> {
+        None
+    }
+
     fn last_descriptor_low(&mut self) -> u32;
     fn next_descriptor_low(&mut self) -> u32;
     fn walker_enabled(&mut self) -> bool;
@@ -30,6 +38,10 @@ pub trait RxDma {
 }
 
 impl RxDma for RadioRegisters {
+    fn buffer_full_count(&mut self) -> Option<u16> {
+        Some(self.mac_rx_buffer_full_count())
+    }
+
     fn last_descriptor_low(&mut self) -> u32 {
         self.mac_rx_last_descriptor_low()
     }
@@ -76,6 +88,10 @@ impl RxDma for RadioRegisters {
 }
 
 impl RxDma for ColdRadioRegisters {
+    fn buffer_full_count(&mut self) -> Option<u16> {
+        RxDma::buffer_full_count(&mut **self)
+    }
+
     fn last_descriptor_low(&mut self) -> u32 {
         RxDma::last_descriptor_low(&mut **self)
     }

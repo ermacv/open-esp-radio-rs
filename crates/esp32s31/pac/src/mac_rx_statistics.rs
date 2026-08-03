@@ -141,6 +141,22 @@ pub struct MacRxStatisticsSnapshot {
 }
 
 impl RadioRegisters {
+    /// Read only the receive-buffer starvation counter.
+    ///
+    /// Unlike [`Self::rx_statistics_snapshot`], this single-register accessor
+    /// is cheap enough to sample at an RX service boundary. It exists so the
+    /// live owner can correlate a newly observed starvation event with its
+    /// descriptor frontier and software credits without decoding the complete
+    /// diagnostic register bank on every wake.
+    pub fn mac_rx_buffer_full_count(&self) -> u16 {
+        self.peripherals
+            .wifi_mac_rx_statistics
+            .buffer_full()
+            .read()
+            .count()
+            .bits()
+    }
+
     /// Read the recovered HE BSS-color collision state.
     ///
     /// SOURCE: complete pinned `_oracles/libpp.a[hal_debug.o]`

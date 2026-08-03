@@ -151,6 +151,10 @@ impl HtAmpduHardware for CooperativeTxHardware<'_, '_> {
 }
 
 impl RxDma for CooperativeTxHardware<'_, '_> {
+    fn buffer_full_count(&mut self) -> Option<u16> {
+        RxDma::buffer_full_count(&mut **self.registers.borrow_mut())
+    }
+
     fn last_descriptor_low(&mut self) -> u32 {
         RxDma::last_descriptor_low(&mut **self.registers.borrow_mut())
     }

@@ -10,7 +10,10 @@ use std::{
 
 use crate::{
     Result,
-    bidirectional::{assess_rx_log, rx_order_markdown, task_poll_markdown, udp_sequence_markdown},
+    bidirectional::{
+        assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
+        udp_sequence_markdown,
+    },
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
@@ -109,6 +112,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let task_poll_report = task_poll_markdown(rx.task_polls);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
+    let rx_reorder_report = rx_reorder_markdown(rx.reorder);
     fs::write(
         output.join("report.md"),
         format!(
@@ -125,6 +129,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\n\
              {udp_sequence_report}\
              {rx_order_report}\
+             {rx_reorder_report}\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
@@ -133,6 +138,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
              {task_poll_report}\
@@ -201,6 +207,12 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             pipeline.protocol_data_frames,
             average_dispatch_us,
             pipeline.dispatch_max_us,
+            pipeline.protocol_amsdu_mpdus,
+            pipeline.protocol_amsdu_subframes,
+            pipeline.protocol_units_le_1700,
+            pipeline.protocol_units_1701_3400,
+            pipeline.protocol_units_over_3400,
+            pipeline.protocol_unit_max_bytes,
             pipeline.network_publications,
             pipeline.network_published_bytes,
             average_publish_us,

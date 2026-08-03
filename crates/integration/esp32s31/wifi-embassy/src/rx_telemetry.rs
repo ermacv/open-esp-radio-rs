@@ -37,6 +37,12 @@ pub struct RxPipelineCounters {
     service_lifetime_max_micros: AtomicU32,
     protocol_frames: AtomicU32,
     protocol_data_frames: AtomicU32,
+    protocol_amsdu_mpdus: AtomicU32,
+    protocol_amsdu_subframes: AtomicU32,
+    protocol_units_le_1700: AtomicU32,
+    protocol_units_1701_3400: AtomicU32,
+    protocol_units_over_3400: AtomicU32,
+    protocol_unit_lifetime_max_bytes: AtomicU32,
     reorder_starts: AtomicU32,
     reorder_stops: AtomicU32,
     reorder_last_start: AtomicU32,
@@ -100,6 +106,12 @@ impl RxPipelineCounters {
             service_lifetime_max_micros: AtomicU32::new(0),
             protocol_frames: AtomicU32::new(0),
             protocol_data_frames: AtomicU32::new(0),
+            protocol_amsdu_mpdus: AtomicU32::new(0),
+            protocol_amsdu_subframes: AtomicU32::new(0),
+            protocol_units_le_1700: AtomicU32::new(0),
+            protocol_units_1701_3400: AtomicU32::new(0),
+            protocol_units_over_3400: AtomicU32::new(0),
+            protocol_unit_lifetime_max_bytes: AtomicU32::new(0),
             reorder_starts: AtomicU32::new(0),
             reorder_stops: AtomicU32::new(0),
             reorder_last_start: AtomicU32::new(0),
@@ -230,6 +242,14 @@ impl RxPipelineCounters {
             service_lifetime_max_micros: self.service_lifetime_max_micros.load(Ordering::Relaxed),
             protocol_frames: self.protocol_frames.load(Ordering::Relaxed),
             protocol_data_frames: self.protocol_data_frames.load(Ordering::Relaxed),
+            protocol_amsdu_mpdus: self.protocol_amsdu_mpdus.load(Ordering::Relaxed),
+            protocol_amsdu_subframes: self.protocol_amsdu_subframes.load(Ordering::Relaxed),
+            protocol_units_le_1700: self.protocol_units_le_1700.load(Ordering::Relaxed),
+            protocol_units_1701_3400: self.protocol_units_1701_3400.load(Ordering::Relaxed),
+            protocol_units_over_3400: self.protocol_units_over_3400.load(Ordering::Relaxed),
+            protocol_unit_lifetime_max_bytes: self
+                .protocol_unit_lifetime_max_bytes
+                .load(Ordering::Relaxed),
             reorder_starts: self.reorder_starts.load(Ordering::Relaxed),
             reorder_stops: self.reorder_stops.load(Ordering::Relaxed),
             reorder_last_start: self.reorder_last_start.load(Ordering::Relaxed),
@@ -345,11 +365,33 @@ impl RxPipelineCounters {
         .fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(crate) fn record_dispatch(&self, data: bool, micros: u64) {
+    pub(crate) fn record_dispatch(
+        &self,
+        data: bool,
+        amsdu: bool,
+        amsdu_subframes: u8,
+        unit_bytes: usize,
+        micros: u64,
+    ) {
         self.protocol_frames.fetch_add(1, Ordering::Relaxed);
         if data {
             self.protocol_data_frames.fetch_add(1, Ordering::Relaxed);
         }
+        if amsdu {
+            self.protocol_amsdu_mpdus.fetch_add(1, Ordering::Relaxed);
+            self.protocol_amsdu_subframes
+                .fetch_add(u32::from(amsdu_subframes), Ordering::Relaxed);
+        }
+        match unit_bytes {
+            0..=1700 => &self.protocol_units_le_1700,
+            1701..=3400 => &self.protocol_units_1701_3400,
+            _ => &self.protocol_units_over_3400,
+        }
+        .fetch_add(1, Ordering::Relaxed);
+        self.protocol_unit_lifetime_max_bytes.fetch_max(
+            u32::try_from(unit_bytes).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
         Self::record_time(
             &self.dispatch_micros,
             &self.dispatch_lifetime_max_micros,
@@ -465,6 +507,13 @@ pub struct RxPipelineCounterSnapshot {
     pub service_lifetime_max_micros: u32,
     pub protocol_frames: u32,
     pub protocol_data_frames: u32,
+    pub protocol_amsdu_mpdus: u32,
+    pub protocol_amsdu_subframes: u32,
+    pub protocol_units_le_1700: u32,
+    pub protocol_units_1701_3400: u32,
+    pub protocol_units_over_3400: u32,
+    /// Maximum raw staged unit size observed since boot, not an interval delta.
+    pub protocol_unit_lifetime_max_bytes: u32,
     pub reorder_starts: u32,
     pub reorder_stops: u32,
     /// Last packed `tid[28:26] | window[21:16] | starting_sequence[11:0]`.
@@ -556,6 +605,22 @@ impl RxPipelineCounterSnapshot {
             protocol_data_frames: self
                 .protocol_data_frames
                 .wrapping_sub(earlier.protocol_data_frames),
+            protocol_amsdu_mpdus: self
+                .protocol_amsdu_mpdus
+                .wrapping_sub(earlier.protocol_amsdu_mpdus),
+            protocol_amsdu_subframes: self
+                .protocol_amsdu_subframes
+                .wrapping_sub(earlier.protocol_amsdu_subframes),
+            protocol_units_le_1700: self
+                .protocol_units_le_1700
+                .wrapping_sub(earlier.protocol_units_le_1700),
+            protocol_units_1701_3400: self
+                .protocol_units_1701_3400
+                .wrapping_sub(earlier.protocol_units_1701_3400),
+            protocol_units_over_3400: self
+                .protocol_units_over_3400
+                .wrapping_sub(earlier.protocol_units_over_3400),
+            protocol_unit_lifetime_max_bytes: self.protocol_unit_lifetime_max_bytes,
             reorder_starts: self.reorder_starts.wrapping_sub(earlier.reorder_starts),
             reorder_stops: self.reorder_stops.wrapping_sub(earlier.reorder_stops),
             reorder_last_start: self.reorder_last_start,
@@ -638,7 +703,7 @@ mod tests {
         counters.record_stage_discard(RxStageError::TooLong);
         counters.record_network_ready_wait(2);
         counters.record_network_publish(1_514, 13);
-        counters.record_dispatch(true, 31);
+        counters.record_dispatch(true, true, 3, 2_750, 31);
         let delta = counters.snapshot().wrapping_delta_since(before);
 
         assert_eq!(delta.service_calls, 1);
@@ -661,6 +726,10 @@ mod tests {
         assert_eq!(delta.network_published_bytes, 1_514);
         assert_eq!(delta.network_publish_micros, 13);
         assert_eq!(delta.protocol_data_frames, 1);
+        assert_eq!(delta.protocol_amsdu_mpdus, 1);
+        assert_eq!(delta.protocol_amsdu_subframes, 3);
+        assert_eq!(delta.protocol_units_1701_3400, 1);
+        assert_eq!(delta.protocol_unit_lifetime_max_bytes, 2_750);
         assert_eq!(delta.dispatch_micros, 31);
     }
 

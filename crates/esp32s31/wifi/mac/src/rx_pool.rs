@@ -22,8 +22,8 @@ use core::{
 use crate::{
     descriptor::length as descriptor_length,
     rx::{
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxDma, RxReloadObservation,
-        RxRingError, RxRingLive, RxSegment,
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit, RxDma,
+        RxReloadObservation, RxRingError, RxRingLive, RxSegment,
     },
 };
 
@@ -129,6 +129,70 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         })
     }
 
+    fn try_stage_unit<'pool, F>(
+        &'pool self,
+        unit: &RxCompletedUnit,
+        mut copy_segment: F,
+    ) -> Result<RadioRxFrame<'pool, SLOTS, CAPACITY>, RxStageError>
+    where
+        F: FnMut(usize, &mut [u8]) -> Result<(), RxStageError>,
+    {
+        if SLOTS == 0 || SLOTS > RX_STAGE_BITMAP_WORDS * usize::BITS as usize || CAPACITY == 0 {
+            return Err(RxStageError::InvalidPool);
+        }
+        let length = unit.total_length();
+        if length == 0 {
+            return Err(RxStageError::Empty);
+        }
+        if length > CAPACITY {
+            return Err(RxStageError::TooLong);
+        }
+        let slot = (0..SLOTS)
+            .find(|&slot| self.try_claim_radio(slot))
+            .ok_or(RxStageError::Exhausted)?;
+
+        let copied = (|| {
+            let mut offset = 0_usize;
+            for step in 0..unit.descriptor_count() {
+                let segment_length = unit
+                    .segment_length(step)
+                    .ok_or(RxStageError::SourceTooShort)?;
+                let end = offset
+                    .checked_add(segment_length)
+                    .filter(|&end| end <= length)
+                    .ok_or(RxStageError::SourceTooShort)?;
+                // SAFETY: the claimed slot is uniquely Radio-owned and the
+                // range is bounded by the validated complete unit length.
+                let destination = unsafe {
+                    let slot_bytes = &mut *self.slots[slot].0.get();
+                    &mut slot_bytes[offset..end]
+                };
+                copy_segment(step, destination)?;
+                offset = end;
+            }
+            (offset == length)
+                .then_some(())
+                .ok_or(RxStageError::SourceTooShort)
+        })();
+        if let Err(error) = copied {
+            let released = self.release_radio(slot);
+            debug_assert!(released);
+            return Err(error);
+        }
+
+        Ok(RadioRxFrame {
+            pool: self,
+            slot,
+            metadata: StagedMetadata {
+                descriptor_address: unit.descriptor_address(),
+                descriptor_word0: unit.staged_word0(),
+                next_descriptor_address: 0,
+                length,
+            },
+            live: true,
+        })
+    }
+
     /// Copy one completed DMA frame and begin returning its descriptor to
     /// hardware.
     ///
@@ -172,6 +236,39 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             .map_err(RxStageTransactionError::Ring)?
             .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
         if append.descriptor_count != 1 {
+            return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+        }
+        Ok(RxStageReloadPending {
+            frame: Some(radio_frame),
+            reload_samples: 0,
+        })
+    }
+
+    /// Copy one complete RX unit, then atomically recycle all DMA descriptors
+    /// that carried it. `copy_segment` receives the zero-based unit segment
+    /// and an exactly sized destination range in the independent stage slot.
+    pub fn stage_unit_recycle<'pool, const COUNT: usize, M, C, F>(
+        &'pool self,
+        unit: RxCompletedUnit,
+        mut copy_segment: C,
+        mmio: &mut M,
+        ring: &mut RxRingLive<'_, COUNT>,
+        prepare_buffer: F,
+    ) -> Result<RxStageReloadPending<'pool, SLOTS, CAPACITY>, RxStageTransactionError>
+    where
+        M: RxDma,
+        C: FnMut(usize, &mut [u8]) -> Result<(), RxStageError>,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        let descriptor_count = unit.descriptor_count();
+        let radio_frame = self
+            .try_stage_unit(&unit, |step, destination| copy_segment(step, destination))
+            .map_err(RxStageTransactionError::Stage)?;
+        let append = ring
+            .recycle_completed_unit(mmio, descriptor_count, prepare_buffer)
+            .map_err(RxStageTransactionError::Ring)?
+            .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+        if append.descriptor_count != descriptor_count {
             return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
         }
         Ok(RxStageReloadPending {

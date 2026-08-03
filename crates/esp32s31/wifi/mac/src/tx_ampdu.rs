@@ -307,7 +307,11 @@ impl HtAmpduHardware for RadioRegisters {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HtAmpduTxError {
-    Busy,
+    /// A storage transition requiring software-owned idle state observed a
+    /// different lifecycle state.
+    NotFree(TxSlotState),
+    /// A commit attempted to advance beyond the statically bounded slot set.
+    SlotCapacity,
     Stale,
     FrameIndexOutOfRange {
         index: u8,
@@ -542,7 +546,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // pinned descriptor or DMA buffer.
         let storage = unsafe { self.get_unchecked_mut() };
         if storage.state != TxSlotState::Free {
-            return Err(HtAmpduTxError::Busy);
+            return Err(HtAmpduTxError::NotFree(storage.state));
         }
         if max_aggregate_bytes == 0 {
             return Err(HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits));
@@ -727,7 +731,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // pinned descriptors or buffers.
         let storage = unsafe { self.get_unchecked_mut() };
         if storage.state != TxSlotState::Free {
-            return Err(HtAmpduTxError::Busy);
+            return Err(HtAmpduTxError::NotFree(storage.state));
         }
         if SLOTS < 2
             || SLOTS > TX_AMPDU_SLOT_CAPACITY
@@ -770,7 +774,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let index = usize::from(storage.count);
         if index >= SLOTS {
-            return Err(HtAmpduTxError::Busy);
+            return Err(HtAmpduTxError::SlotCapacity);
         }
         if BUFFER_SIZE <= TX_AMPDU_METADATA_SIZE {
             return Err(HtAmpduTxError::InvalidStorageGeometry {
@@ -1232,7 +1236,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let index = usize::from(storage.count);
         if index >= SLOTS {
-            return Err(HtAmpduTxError::Busy);
+            return Err(HtAmpduTxError::SlotCapacity);
         }
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))
@@ -1331,7 +1335,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let index = usize::from(storage.count);
         if index >= SLOTS {
-            return Err(HtAmpduTxError::Busy);
+            return Err(HtAmpduTxError::SlotCapacity);
         }
         let psdu_length = frame_length
             .checked_add(usize::from(hardware_mic_length))

@@ -68,7 +68,17 @@ pub enum AggregateTxResetReason {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxError {
-    Busy,
+    /// A new network publication was requested while the shared TX owner
+    /// still retained an ordinary or aggregate transaction.
+    ActiveTransaction,
+    /// TX service was entered without an ordinary or aggregate transaction.
+    InactiveTransaction,
+    /// The aggregate state lost the cookie that proves ownership of the
+    /// reserved DMA arena.
+    MissingCookie,
+    /// A prepared aggregate did not reach the publication state expected by
+    /// the initial submit edge.
+    InvalidPublicationState,
     PeerDoesNotSupportQos,
     UnsupportedRate,
     InvalidFrameLimit {
@@ -656,7 +666,7 @@ where
         network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         if self.active() {
-            return Err(AggregateTxError::Busy);
+            return Err(AggregateTxError::ActiveTransaction);
         }
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));
         let ht_requires_pair = matches!(self.config.rate, TxPhyRate::Ht(_));
@@ -757,7 +767,7 @@ where
     ) -> Result<WifiTxProgress, AggregateTxError> {
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
         match active {
-            ConnectedTxActive::Idle => Err(AggregateTxError::Busy),
+            ConnectedTxActive::Idle => Err(AggregateTxError::InactiveTransaction),
             ConnectedTxActive::Ordinary => {
                 let progress = self.ordinary.service(hardware, wake).await?;
                 if progress == WifiTxProgress::Pending {
@@ -843,7 +853,7 @@ where
     }
 
     fn can_push(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {
-        let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
@@ -905,7 +915,7 @@ where
                 metadata_size,
             });
         }
-        let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         // SAFETY: `frame` moves into `self.frames` immediately after the
         // commit and stays there through every exposed hardware state.
@@ -1014,7 +1024,7 @@ where
     ) -> Result<WifiTxProgress, AggregateTxError> {
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
         let ConnectedTxActive::Aggregate(mut active) = active else {
-            return Err(AggregateTxError::Busy);
+            return Err(AggregateTxError::InvalidPublicationState);
         };
         if let Err(error) = self.publish_attempt(hardware, &mut active) {
             self.cancel_prepared();
@@ -1037,13 +1047,13 @@ where
         match active.config {
             AmpduTxConfig::Ht(config) => self.ampdu.as_mut().submit(
                 hardware,
-                self.cookie.ok_or(AggregateTxError::Busy)?,
+                self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,
                 config,
             )?,
             AmpduTxConfig::He(config) => self.ampdu.as_mut().submit_he(
                 hardware,
-                self.cookie.ok_or(AggregateTxError::Busy)?,
+                self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,
                 config,
             )?,
@@ -1078,7 +1088,7 @@ where
         }
 
         if let Some(completion) = self.ampdu.as_mut().acknowledge_completion(hardware)? {
-            let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+            let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
             self.ampdu.as_mut().detach_completed(hardware, cookie)?;
             let current_subframes = self.ampdu.frame_count();
             let decision = active.retry.observe(completion, current_subframes)?;
@@ -1167,7 +1177,7 @@ where
             return self.reset_required(AggregateTxResetReason::CompletionInterruptWithoutState);
         }
         if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
-            let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+            let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
             if !self.ampdu.as_mut().begin_timeout_abort(hardware, cookie)? {
                 return self.reset_required(if matches!(wake, WifiTxWake::Deadline) {
                     AggregateTxResetReason::ExecutorDeadline
@@ -1193,7 +1203,7 @@ where
             return Ok(WifiTxProgress::Complete);
         }
         if tx_events == MAC_INT_COLLISION {
-            let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+            let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
             if !self.ampdu.as_mut().abort_collision(hardware, cookie)? {
                 return self.reset_required(AggregateTxResetReason::CollisionInterruptWithoutState);
             }
@@ -1233,7 +1243,7 @@ where
     }
 
     fn release_completed(&mut self) -> Result<(), AggregateTxError> {
-        let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         self.ampdu.as_mut().release_completed(cookie)?;
         self.cookie = None;
         self.release_frames();
@@ -1260,7 +1270,7 @@ where
         &mut self,
         reason: AggregateTxResetReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
-        let cookie = self.cookie.ok_or(AggregateTxError::Busy)?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         self.ampdu.as_mut().require_reset(cookie)?;
         self.forget_frames();
         Err(AggregateTxError::RadioResetRequired(reason))

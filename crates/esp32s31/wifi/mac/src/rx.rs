@@ -1,8 +1,9 @@
 //! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
 use crate::descriptor::{
-    BIT_31, DESCRIPTOR_BYTES, Descriptor, descriptor_address_valid, dma_range_valid,
-    length as descriptor_length, rx_armed_word, rx_done, rx_rearm_word, size as descriptor_size,
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
+    descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
+    rx_rearm_word, size as descriptor_size,
 };
 use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
 use open_esp_radio_ieee80211::he::{
@@ -886,6 +887,75 @@ impl RxCompletedDescriptor {
     }
 }
 
+/// Finite snapshot of complete RX units at the live recycle frontier.
+///
+/// A unit may occupy more than one descriptor. Only the final descriptor has
+/// `RX_DONE`; a later terminal descriptor proves that each preceding node in
+/// the sequential ring belongs to that same completed unit.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RxCompletedUnitFrontier {
+    pub unit_count: usize,
+    pub descriptor_count: usize,
+}
+
+/// Unique ownership of one complete, possibly chained, RX unit.
+///
+/// Segment indices are implicit contiguous ring indices beginning at
+/// [`head_index`](Self::head_index). Lengths are captured before recycle so a
+/// staging owner can copy every DMA segment without rereading mutable
+/// descriptor state. S31 live rings are limited to the 64 bits represented by
+/// `RxRingLive::observed_mask`.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RxCompletedUnit {
+    head_index: usize,
+    descriptor_count: usize,
+    descriptor_address: u32,
+    staged_word0: u32,
+    total_length: usize,
+    segment_lengths: RxCompletedUnitLengths,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum RxCompletedUnitLengths {
+    Single(u16),
+    Chained([u16; 64]),
+}
+
+impl RxCompletedUnit {
+    pub const fn head_index(&self) -> usize {
+        self.head_index
+    }
+
+    pub const fn descriptor_count(&self) -> usize {
+        self.descriptor_count
+    }
+
+    pub const fn descriptor_address(&self) -> u32 {
+        self.descriptor_address
+    }
+
+    /// Synthetic single-segment metadata for the independent contiguous
+    /// staging copy. It preserves the first descriptor's status bits while
+    /// describing the complete unit length and terminal ownership.
+    pub const fn staged_word0(&self) -> u32 {
+        self.staged_word0
+    }
+
+    pub const fn total_length(&self) -> usize {
+        self.total_length
+    }
+
+    pub fn segment_length(&self, step: usize) -> Option<usize> {
+        if step >= self.descriptor_count {
+            return None;
+        }
+        match &self.segment_lengths {
+            RxCompletedUnitLengths::Single(length) => (step == 0).then_some(usize::from(*length)),
+            RxCompletedUnitLengths::Chained(lengths) => Some(usize::from(lengths[step])),
+        }
+    }
+}
+
 /// One live append accepted for publication to the RX descriptor walker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxLiveAppend {
@@ -1037,6 +1107,165 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         completed
     }
 
+    /// Snapshot complete RX units, including units split across descriptors.
+    ///
+    /// A non-terminal descriptor is never reported by itself: the scan only
+    /// extends `descriptor_count` after observing a later `RX_DONE` terminal.
+    /// Thus an armed or partially filled frontier remains owned by hardware.
+    pub fn completed_unit_frontier(&self) -> RxCompletedUnitFrontier {
+        self.completed_unit_frontier_with(|_| true)
+    }
+
+    /// Variant of [`completed_unit_frontier`](Self::completed_unit_frontier)
+    /// that requires buffer-side evidence for each non-terminal descriptor.
+    ///
+    /// An armed descriptor and a consumed full non-terminal descriptor can
+    /// have the same ownership word. The storage owner can disambiguate them
+    /// by checking the buffer guard restored at recycle. This also prevents a
+    /// terminal left elsewhere in a handoff epoch from being joined to an
+    /// untouched frontier descriptor.
+    pub fn completed_unit_frontier_with<F>(
+        &self,
+        mut nonterminal_consumed: F,
+    ) -> RxCompletedUnitFrontier
+    where
+        F: FnMut(usize) -> bool,
+    {
+        if COUNT == 0 || COUNT > 64 {
+            return RxCompletedUnitFrontier::default();
+        }
+        let first_index = self.recycle_start;
+        if self.observed_mask & (1_u64 << first_index) != 0 {
+            return RxCompletedUnitFrontier::default();
+        }
+        if rx_done(self.descriptors[first_index].word0()) {
+            let mut completed = 0;
+            while completed < COUNT {
+                let index = wrap_add::<COUNT>(self.recycle_start, completed);
+                let bit = 1_u64 << index;
+                if self.observed_mask & bit != 0 || !rx_done(self.descriptors[index].word0()) {
+                    break;
+                }
+                completed += 1;
+            }
+            return RxCompletedUnitFrontier {
+                unit_count: completed,
+                descriptor_count: completed,
+            };
+        }
+        if !nonterminal_consumed(first_index) {
+            return RxCompletedUnitFrontier::default();
+        }
+        // Only a later terminal can distinguish a consumed non-terminal
+        // segment from an ordinary armed descriptor. Report at most this one
+        // chain; a following unit belongs to the next finite service epoch.
+        for step in 1..COUNT {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            let bit = 1_u64 << index;
+            if self.observed_mask & bit != 0 {
+                break;
+            }
+            if rx_done(self.descriptors[index].word0()) {
+                return RxCompletedUnitFrontier {
+                    unit_count: 1,
+                    descriptor_count: step + 1,
+                };
+            }
+            if !nonterminal_consumed(index) {
+                break;
+            }
+        }
+        RxCompletedUnitFrontier::default()
+    }
+
+    /// Transfer one complete RX unit at the recycle frontier exactly once.
+    ///
+    /// `descriptor_limit` should come from a prior
+    /// [`completed_unit_frontier`](Self::completed_unit_frontier) snapshot. It
+    /// prevents a saturated producer from extending this ownership transfer
+    /// to a later completion epoch.
+    pub fn take_completed_unit(&mut self, descriptor_limit: usize) -> Option<RxCompletedUnit> {
+        if COUNT == 0 || COUNT > 64 || descriptor_limit == 0 || descriptor_limit > COUNT {
+            return None;
+        }
+        let first_index = self.recycle_start;
+        let first_bit = 1_u64 << first_index;
+        if self.observed_mask & first_bit != 0 {
+            return None;
+        }
+        let first_descriptor = &self.descriptors[first_index];
+        let first_word0 = first_descriptor.word0();
+        let first_length = descriptor_length(first_word0);
+        if descriptor_size(first_word0) == 0 || first_length > descriptor_size(first_word0) {
+            return None;
+        }
+        if rx_done(first_word0) {
+            self.observed_mask |= first_bit;
+            let encoded_length = first_length;
+            return Some(RxCompletedUnit {
+                head_index: first_index,
+                descriptor_count: 1,
+                descriptor_address: descriptor_address(self.descriptor_base, first_index).ok()?,
+                staged_word0: (first_word0 & !(SIZE_MASK | LENGTH_MASK))
+                    | encoded_length
+                    | (encoded_length << LENGTH_SHIFT)
+                    | BIT_30
+                    | BIT_31,
+                total_length: first_length as usize,
+                segment_lengths: RxCompletedUnitLengths::Single(u16::try_from(first_length).ok()?),
+            });
+        }
+
+        let mut segment_lengths = [0_u16; 64];
+        segment_lengths[0] = u16::try_from(first_length).ok()?;
+        let mut total_length = first_length as usize;
+        for step in 1..descriptor_limit {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            let bit = 1_u64 << index;
+            if self.observed_mask & bit != 0 {
+                return None;
+            }
+            let descriptor = &self.descriptors[index];
+            let word0 = descriptor.word0();
+            let length = descriptor_length(word0);
+            if descriptor_size(word0) == 0 || length > descriptor_size(word0) {
+                return None;
+            }
+            let previous = wrap_add::<COUNT>(self.recycle_start, step - 1);
+            if self.descriptors[previous].next_address()
+                != descriptor_address(self.descriptor_base, index).ok()?
+            {
+                return None;
+            }
+            segment_lengths[step] = u16::try_from(length).ok()?;
+            total_length = total_length.checked_add(length as usize)?;
+            if !rx_done(word0) {
+                continue;
+            }
+            if total_length > SIZE_MASK as usize {
+                return None;
+            }
+            let descriptor_count = step + 1;
+            let group_mask = recycle_group_mask::<COUNT>(self.recycle_start, descriptor_count);
+            self.observed_mask |= group_mask;
+            let encoded_length = u32::try_from(total_length).ok()?;
+            return Some(RxCompletedUnit {
+                head_index: self.recycle_start,
+                descriptor_count,
+                descriptor_address: descriptor_address(self.descriptor_base, self.recycle_start)
+                    .ok()?,
+                staged_word0: (first_word0 & !(SIZE_MASK | LENGTH_MASK))
+                    | encoded_length
+                    | (encoded_length << LENGTH_SHIFT)
+                    | BIT_30
+                    | BIT_31,
+                total_length,
+                segment_lengths: RxCompletedUnitLengths::Chained(segment_lengths),
+            });
+        }
+        None
+    }
+
     /// Takes one newly completed descriptor exactly once for this ring epoch.
     ///
     /// Kept in internal SRAM for PSRAM-code profiles: this is invoked once for
@@ -1092,7 +1321,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
-        self.recycle_completed_group(mmio, COUNT / 2, prepare_buffer)
+        self.recycle_completed_group(mmio, COUNT / 2, false, prepare_buffer)
     }
 
     /// Rearm and append one fixed-size, contiguous group of completed slots.
@@ -1123,7 +1352,7 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         if BATCH == 0 || BATCH > COUNT || !COUNT.is_multiple_of(BATCH) {
             return Err(RxRingError::Count);
         }
-        self.recycle_completed_group(mmio, BATCH, prepare_buffer)
+        self.recycle_completed_group(mmio, BATCH, false, prepare_buffer)
     }
 
     /// Rearm the longest currently completed prefix, up to `MAX_BATCH`.
@@ -1181,13 +1410,33 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
         if completed == 0 {
             return Ok(None);
         }
-        self.recycle_completed_group(mmio, completed, prepare_buffer)
+        self.recycle_completed_group(mmio, completed, false, prepare_buffer)
+    }
+
+    /// Rearm and append one observed RX unit, preserving a multi-descriptor
+    /// unit's `not-done .. done` completion shape until all of its bytes have
+    /// been copied to independent storage.
+    pub fn recycle_completed_unit<M, F>(
+        &mut self,
+        mmio: &mut M,
+        descriptor_count: usize,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        if descriptor_count == 0 || descriptor_count > COUNT {
+            return Err(RxRingError::Count);
+        }
+        self.recycle_completed_group(mmio, descriptor_count, true, prepare_buffer)
     }
 
     fn recycle_completed_group<M, F>(
         &mut self,
         mmio: &mut M,
         group_size: usize,
+        chained_unit: bool,
         mut prepare_buffer: F,
     ) -> Result<Option<RxLiveAppend>, RxRingError>
     where
@@ -1206,7 +1455,9 @@ impl<const COUNT: usize> RxRingLive<'_, COUNT> {
 
         for step in 0..group_size {
             let index = wrap_add::<COUNT>(self.recycle_start, step);
-            if !rx_done(self.descriptors[index].word0()) {
+            let terminal = rx_done(self.descriptors[index].word0());
+            let expected_terminal = !chained_unit || step + 1 == group_size;
+            if terminal != expected_terminal {
                 return Err(RxRingError::Corrupt);
             }
         }

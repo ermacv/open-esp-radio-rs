@@ -247,6 +247,7 @@ pub(crate) struct RxQualification {
     pub(crate) task_polls: TaskPollSet,
     pub(crate) sequence: UdpSequenceEvidence,
     pub(crate) order: RxOrderEvidence,
+    pub(crate) reorder: RxReorderEvidence,
     pub(crate) buffer_full: u64,
     pub(crate) fifo_overflow: u64,
 }
@@ -347,6 +348,55 @@ impl RxOrderEvidence {
         self.backward_mac_unavailable = self
             .backward_mac_unavailable
             .saturating_add(sample.backward_mac_unavailable);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RxReorderEvidence {
+    pub(crate) intervals: u64,
+    pub(crate) starts: u64,
+    pub(crate) stops: u64,
+    pub(crate) last_start_tid: u64,
+    pub(crate) last_start_sequence: u64,
+    pub(crate) window: u64,
+    pub(crate) first_samples: u64,
+    pub(crate) first_tid: u64,
+    pub(crate) first_start_sequence: u64,
+    pub(crate) first_frame_sequence: u64,
+    pub(crate) first_distance: u64,
+    pub(crate) buffered: u64,
+    pub(crate) released: u64,
+    pub(crate) missing: u64,
+    pub(crate) stale: u64,
+    pub(crate) gap_expiries: u64,
+    pub(crate) occupied: u64,
+    pub(crate) maximum_occupied: u64,
+}
+
+impl RxReorderEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.intervals = self.intervals.saturating_add(sample.intervals);
+        self.starts = self.starts.saturating_add(sample.starts);
+        self.stops = self.stops.saturating_add(sample.stops);
+        if sample.window != 0 {
+            self.last_start_tid = sample.last_start_tid;
+            self.last_start_sequence = sample.last_start_sequence;
+            self.window = sample.window;
+        }
+        if sample.first_samples != 0 {
+            self.first_tid = sample.first_tid;
+            self.first_start_sequence = sample.first_start_sequence;
+            self.first_frame_sequence = sample.first_frame_sequence;
+            self.first_distance = sample.first_distance;
+        }
+        self.first_samples = self.first_samples.saturating_add(sample.first_samples);
+        self.buffered = self.buffered.saturating_add(sample.buffered);
+        self.released = self.released.saturating_add(sample.released);
+        self.missing = self.missing.saturating_add(sample.missing);
+        self.stale = self.stale.saturating_add(sample.stale);
+        self.gap_expiries = self.gap_expiries.saturating_add(sample.gap_expiries);
+        self.occupied = sample.occupied;
+        self.maximum_occupied = self.maximum_occupied.max(sample.maximum_occupied);
     }
 }
 
@@ -469,6 +519,12 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) service_max_us: u64,
     pub(crate) protocol_frames: u64,
     pub(crate) protocol_data_frames: u64,
+    pub(crate) protocol_amsdu_mpdus: u64,
+    pub(crate) protocol_amsdu_subframes: u64,
+    pub(crate) protocol_units_le_1700: u64,
+    pub(crate) protocol_units_1701_3400: u64,
+    pub(crate) protocol_units_over_3400: u64,
+    pub(crate) protocol_unit_max_bytes: u64,
     pub(crate) network_ready_waits: u64,
     pub(crate) network_ready_wait_us: u64,
     pub(crate) network_ready_wait_max_us: u64,
@@ -557,6 +613,24 @@ impl RxPipelineEvidence {
         self.protocol_data_frames = self
             .protocol_data_frames
             .saturating_add(sample.protocol_data_frames);
+        self.protocol_amsdu_mpdus = self
+            .protocol_amsdu_mpdus
+            .saturating_add(sample.protocol_amsdu_mpdus);
+        self.protocol_amsdu_subframes = self
+            .protocol_amsdu_subframes
+            .saturating_add(sample.protocol_amsdu_subframes);
+        self.protocol_units_le_1700 = self
+            .protocol_units_le_1700
+            .saturating_add(sample.protocol_units_le_1700);
+        self.protocol_units_1701_3400 = self
+            .protocol_units_1701_3400
+            .saturating_add(sample.protocol_units_1701_3400);
+        self.protocol_units_over_3400 = self
+            .protocol_units_over_3400
+            .saturating_add(sample.protocol_units_over_3400);
+        self.protocol_unit_max_bytes = self
+            .protocol_unit_max_bytes
+            .max(sample.protocol_unit_max_bytes);
         self.network_ready_waits = self
             .network_ready_waits
             .saturating_add(sample.network_ready_waits);
@@ -626,6 +700,7 @@ struct DeviceReport {
     task_polls: TaskPollSet,
     rx_sequences: Vec<UdpSequenceEvidence>,
     rx_order: Vec<RxOrderEvidence>,
+    rx_reorder: Vec<RxReorderEvidence>,
     rx_formats: Vec<u8>,
     dma_health: Vec<(u64, u64)>,
     software_health: Vec<(u64, u64)>,
@@ -997,6 +1072,12 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 Some(RxPipelineEvidence {
                     protocol_frames: field(line, "frames")?,
                     protocol_data_frames: field(line, "data")?,
+                    protocol_amsdu_mpdus: field(line, "amsdu").unwrap_or(0),
+                    protocol_amsdu_subframes: field(line, "amsdu_subframes").unwrap_or(0),
+                    protocol_units_le_1700: field(line, "unit_le1700").unwrap_or(0),
+                    protocol_units_1701_3400: field(line, "unit_1701_3400").unwrap_or(0),
+                    protocol_units_over_3400: field(line, "unit_over3400").unwrap_or(0),
+                    protocol_unit_max_bytes: field(line, "unit_boot_max_bytes").unwrap_or(0),
                     network_ready_waits: field(line, "waits")?,
                     network_ready_wait_us: field(line, "wait_us")?,
                     network_ready_wait_max_us: field(line, "wait_boot_max_us")?,
@@ -1011,6 +1092,32 @@ fn parse_device_report(log: &str) -> DeviceReport {
             })();
             if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_dispatch.push(sample);
+            }
+        } else if line.starts_with("ORXR ") || line.contains(" ORXR ") {
+            let sample = (|| {
+                Some(RxReorderEvidence {
+                    intervals: 1,
+                    starts: field(line, "starts")?,
+                    stops: field(line, "stops")?,
+                    last_start_tid: field(line, "start_tid")?,
+                    last_start_sequence: field(line, "start_seq")?,
+                    window: field(line, "window")?,
+                    first_samples: field(line, "first_samples")?,
+                    first_tid: field(line, "first_tid")?,
+                    first_start_sequence: field(line, "first_start")?,
+                    first_frame_sequence: field(line, "first_seq")?,
+                    first_distance: field(line, "first_distance")?,
+                    buffered: field(line, "buffered")?,
+                    released: field(line, "released")?,
+                    missing: field(line, "missing")?,
+                    stale: field(line, "stale")?,
+                    gap_expiries: field(line, "expiries")?,
+                    occupied: field(line, "occupied")?,
+                    maximum_occupied: field(line, "occupied_max")?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_reorder.push(sample);
             }
         } else if line.starts_with("ORXF ") || line.contains(" ORXF ") {
             let sample = (|| {
@@ -1342,6 +1449,14 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         )
         .into());
     }
+    if report.rx_reorder.len() != rx.len() {
+        return Err(format!(
+            "incomplete RX BlockAck reorder evidence: records={} qualified_samples={}",
+            report.rx_reorder.len(),
+            rx.len(),
+        )
+        .into());
+    }
     if report.mac_irq.is_empty() {
         return Err("missing MAC interrupt classification telemetry".into());
     }
@@ -1390,6 +1505,44 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
     for sample in &report.rx_order {
         order.merge(*sample);
     }
+    let mut reorder = RxReorderEvidence::default();
+    for sample in &report.rx_reorder {
+        reorder.merge(*sample);
+    }
+    if reorder.window == 0 || reorder.window > 64 || reorder.last_start_tid > 7 {
+        return Err(format!(
+            "invalid RX BlockAck agreement evidence: tid={} window={}",
+            reorder.last_start_tid, reorder.window,
+        )
+        .into());
+    }
+    if reorder.occupied > reorder.maximum_occupied || reorder.maximum_occupied >= reorder.window {
+        return Err(format!(
+            "invalid RX reorder occupancy: current={} maximum={} window={}",
+            reorder.occupied, reorder.maximum_occupied, reorder.window,
+        )
+        .into());
+    }
+    if reorder.first_samples != 0 {
+        let distance = reorder
+            .first_frame_sequence
+            .wrapping_sub(reorder.first_start_sequence)
+            & 0x0fff;
+        if reorder.first_tid > 7
+            || reorder.first_distance != distance
+            || reorder.first_distance >= reorder.window
+        {
+            return Err(format!(
+                "invalid first RX reorder frame: tid={} start={} sequence={} distance={} window={}",
+                reorder.first_tid,
+                reorder.first_start_sequence,
+                reorder.first_frame_sequence,
+                reorder.first_distance,
+                reorder.window,
+            )
+            .into());
+        }
+    }
     Ok(RxQualification {
         throughput_median_kbps: median(rx.iter().map(|sample| sample.throughput_kbps).collect())
             .expect("nonempty RX samples"),
@@ -1412,6 +1565,7 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         task_polls: report.task_polls,
         sequence,
         order,
+        reorder,
         buffer_full: report.dma_health.iter().map(|(full, _)| *full).sum(),
         fifo_overflow: report
             .dma_health
@@ -1638,6 +1792,35 @@ pub(crate) fn rx_order_markdown(order: RxOrderEvidence) -> String {
     )
 }
 
+pub(crate) fn rx_reorder_markdown(reorder: RxReorderEvidence) -> String {
+    format!(
+        "## RX BlockAck reorder\n\n\
+         - Agreement interval records/starts/stops: `{}` / `{}` / `{}`; last TID/start/window: `{}` / `{}` / `{}`\n\
+         - First-frame samples/TID/start/sequence/distance: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+         - Buffered/released/missing/stale/gap expiries: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+         - Occupied at report/maximum: `{}` / `{}` of `{}` negotiated slots\n\n",
+        reorder.intervals,
+        reorder.starts,
+        reorder.stops,
+        reorder.last_start_tid,
+        reorder.last_start_sequence,
+        reorder.window,
+        reorder.first_samples,
+        reorder.first_tid,
+        reorder.first_start_sequence,
+        reorder.first_frame_sequence,
+        reorder.first_distance,
+        reorder.buffered,
+        reorder.released,
+        reorder.missing,
+        reorder.stale,
+        reorder.gap_expiries,
+        reorder.occupied,
+        reorder.maximum_occupied,
+        reorder.window,
+    )
+}
+
 fn write_report(
     output: &Path,
     options: &Options,
@@ -1669,6 +1852,7 @@ fn write_report(
     let task_poll_report = task_poll_markdown(rx.task_polls);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
+    let rx_reorder_report = rx_reorder_markdown(rx.reorder);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1685,6 +1869,7 @@ fn write_report(
              - Combined conservative floor: `{:.3} Mbit/s`\n\n\
              {udp_sequence_report}\
              {rx_order_report}\
+             {rx_reorder_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
@@ -1695,6 +1880,7 @@ fn write_report(
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
              {task_poll_report}\
@@ -1777,6 +1963,12 @@ fn write_report(
             pipeline.protocol_data_frames,
             average_dispatch_us,
             pipeline.dispatch_max_us,
+            pipeline.protocol_amsdu_mpdus,
+            pipeline.protocol_amsdu_subframes,
+            pipeline.protocol_units_le_1700,
+            pipeline.protocol_units_1701_3400,
+            pipeline.protocol_units_over_3400,
+            pipeline.protocol_unit_max_bytes,
             pipeline.network_publications,
             pipeline.network_published_bytes,
             average_publish_us,
@@ -1880,6 +2072,7 @@ mod tests {
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
+             ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
@@ -1915,6 +2108,7 @@ mod tests {
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
+             ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
              ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
@@ -1958,10 +2152,24 @@ mod tests {
         assert_eq!(rx.sequence.adjacent_duplicates, 2);
         assert_eq!(rx.sequence.maximum_interarrival_us, 300);
         assert_eq!(rx.sequence.maximum_interarrival_at, Some(4_000));
+        assert_eq!(rx.reorder.window, 8);
+        assert_eq!(rx.reorder.first_start_sequence, 6);
+        assert_eq!(rx.reorder.first_frame_sequence, 6);
+        assert_eq!(rx.reorder.buffered, 3);
+        assert_eq!(rx.reorder.released, 5_000);
+        assert_eq!(rx.reorder.maximum_occupied, 7);
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);
 
+        report.rx_reorder[0].maximum_occupied = 8;
+        assert!(
+            qualify_rx_report(&report, 4)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid RX reorder occupancy")
+        );
+        report.rx_reorder[0].maximum_occupied = 7;
         report.dma_health[0] = (2, 0);
         let assessment = assess_rx_report(&report, 4).unwrap();
         assert_eq!(assessment.rx.buffer_full, 2);

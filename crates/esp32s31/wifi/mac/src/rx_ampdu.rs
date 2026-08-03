@@ -395,10 +395,10 @@ impl RxAmpduRelease {
 }
 
 /// One receive BlockAck agreement with a fixed maximum sequence window and an
-/// explicit integration-owned staging-slot domain.
+/// explicit integration-owned frame-token domain.
 ///
 /// Every retained packet is represented only by a checked slot index. The
-/// owner maps that index to its SRAM ESF storage and recycles every frame
+/// owner maps that index to its independent frame storage and recycles every frame
 /// returned by `ingest`, `expire_gap`, or `stop`.
 pub struct RxBlockAckReorderState<const SLOT_CAPACITY: usize> {
     next_sequence: u16,
@@ -433,6 +433,32 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
 
     pub const fn occupied(&self) -> u32 {
         self.occupied.count_ones()
+    }
+
+    /// Decide whether this sequence will remain owned after a successful
+    /// [`Self::ingest`].
+    ///
+    /// The next expected sequence is released immediately. Every forward
+    /// sequence has at least that first gap in front of it, including after a
+    /// bounded window advance, and must therefore receive persistent backing.
+    /// A stale frame is rejected by `ingest` and needs no retained owner.
+    pub fn retains_on_ingest(&self, sequence: u16) -> Result<bool, RxAmpduError> {
+        if sequence > SEQUENCE_MASK {
+            return Err(RxAmpduError::InvalidSequence(sequence));
+        }
+        let distance = forward_distance(self.next_sequence, sequence);
+        if distance >= SEQUENCE_HALF_RANGE {
+            return Ok(false);
+        }
+        if distance < self.window && self.has_sequence(sequence) {
+            return Err(RxAmpduError::DuplicateSequence(sequence));
+        }
+        let distance_after_advance = if distance >= self.window {
+            self.window - 1
+        } else {
+            distance
+        };
+        Ok(distance_after_advance != 0)
     }
 
     pub fn ingest(&mut self, frame: RxAmpduMpdu) -> Result<RxAmpduRelease, RxAmpduError> {
@@ -584,6 +610,7 @@ mod tests {
     #[test]
     fn in_order_frames_are_released_immediately() {
         let mut reorder = RxBlockAckReorder::new(10, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+        assert_eq!(reorder.retains_on_ingest(10), Ok(false));
         let release = reorder.ingest(frame(10, 0)).unwrap();
         assert_eq!(release.iter().collect::<std::vec::Vec<_>>(), [frame(10, 0)]);
         assert_eq!(reorder.next_sequence(), 11);
@@ -593,8 +620,11 @@ mod tests {
     #[test]
     fn gap_is_buffered_and_then_released_in_sequence_order() {
         let mut reorder = RxBlockAckReorder::new(100, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+        assert_eq!(reorder.retains_on_ingest(102), Ok(true));
         assert!(reorder.ingest(frame(102, 2)).unwrap().buffered);
+        assert_eq!(reorder.retains_on_ingest(101), Ok(true));
         assert!(reorder.ingest(frame(101, 1)).unwrap().buffered);
+        assert_eq!(reorder.retains_on_ingest(100), Ok(false));
         let release = reorder.ingest(frame(100, 0)).unwrap();
         assert_eq!(
             release.iter().collect::<std::vec::Vec<_>>(),
@@ -637,6 +667,7 @@ mod tests {
     #[test]
     fn sequence_wrap_and_stale_rejection_are_unambiguous() {
         let mut reorder = RxBlockAckReorder::new(0x0fff, 8).unwrap();
+        assert_eq!(reorder.retains_on_ingest(0), Ok(true));
         reorder.ingest(frame(0, 1)).unwrap();
         let release = reorder.ingest(frame(0x0fff, 0)).unwrap();
         assert_eq!(
@@ -645,6 +676,22 @@ mod tests {
         );
         let stale = reorder.ingest(frame(0x0fff, 2)).unwrap();
         assert_eq!(stale.rejected, Some(frame(0x0fff, 2)));
+        assert_eq!(reorder.retains_on_ingest(0x0fff), Ok(false));
+    }
+
+    #[test]
+    fn retention_prediction_matches_window_advance_and_duplicate_edges() {
+        let mut reorder = RxBlockAckReorder::new(10, 8).unwrap();
+        assert_eq!(reorder.retains_on_ingest(20), Ok(true));
+        reorder.ingest(frame(20, 0)).unwrap();
+        assert_eq!(
+            reorder.retains_on_ingest(20),
+            Err(RxAmpduError::DuplicateSequence(20))
+        );
+
+        let mut singleton = RxBlockAckReorderState::<1>::new(10, 1).unwrap();
+        assert_eq!(singleton.retains_on_ingest(20), Ok(false));
+        assert!(!singleton.ingest(frame(20, 0)).unwrap().buffered);
     }
 
     #[test]

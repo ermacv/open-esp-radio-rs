@@ -100,7 +100,9 @@ use open_esp_radio::{
                 EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
                 RxEnqueueCounters,
             },
-            rx_reorder::{RX_REORDER_OVERLAP_SLOT_RESERVE, RxReorderCommandResources},
+            rx_reorder::{
+                RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
+            },
             rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
             single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxConfig},
             sta_join::{
@@ -172,55 +174,36 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 use static_cell::StaticCell;
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
-// HIL 2026-07-30: increasing this ring to the vendor throughput profile's 48
-// buffers did not improve simultaneous RX/TX throughput or eliminate the
-// hardware BUFFER_FULL count. Keep the smaller ring until that counter's
-// precise contract is recovered instead of permanently spending 74 KiB SRAM.
+// A reset-separated 48-by-1,700 experiment reduced BUFFER_FULL from four to
+// one at 80 Mbit/s/full MTU, but turned 3,196 of 3,959 service calls into
+// staging backpressure and did not improve end-to-end delivery (both rings
+// delivered every datagram). Keep one complete 32-member A-MPDU here; more
+// DMA descriptors are not useful without increasing downstream ownership too.
 const RX_DESCRIPTOR_COUNT: usize = 32;
 const RX_DESCRIPTOR_COMPLETE_MASK: u64 = (1_u64 << RX_DESCRIPTOR_COUNT) - 1;
-// HT Capabilities Info keeps Max A-MSDU Length clear, so the negotiated
-// maximum MPDU is the 3,839-byte A-MSDU class plus MAC/CCMP/metadata overhead.
-// 1,700 bytes was sufficient for one ordinary Ethernet MSDU, but HT40 HIL
-// proved that the AP can use a split RX unit under load. Keeping the complete
-// negotiated MPDU in one descriptor avoids a descriptor-frontier stall while
-// the upper Rust path decapsulates its bounded A-MSDU subframes.
-const RX_BUFFER_SIZE: usize = 4_608;
-// Staging owns the complete negotiated MPDU after DMA recycle. Keeping the
-// older 1,700-byte vendor singleton capacity here silently discarded valid
-// A-MSDU units even though both the DMA owner and connected dispatcher already
-// support the negotiated 3,839-byte class.
-const RX_STAGE_CAPACITY: usize = RX_BUFFER_SIZE;
-// The vendor-equivalent default remains 32. Sustained HE20 HIL, however,
-// observed both pool and queue credits at zero while the 32-descriptor DMA
-// ring was complete. Retain half of one additional aggregate here so protocol
-// publication can overlap the next hardware burst without enlarging the DMA
-// ring or imposing a per-poll frame budget. Forty-eight slots crossed the
-// linker's protected 64-KiB CPU0-stack frontier. Both 47 (about 66 KiB left)
-// and 44 (about 80 KiB left) passed linking but failed the on-device readiness
-// path. Forty slots retain roughly 98 KiB and are the largest runtime-stable
-// geometry qualified so far. The TX-only image does not carry downlink load;
-// retain the vendor 32-slot RX ownership there so its 64-entry TX DMA pool
-// remains placeable. Bidirectional and RX-shaped images retain 40.
-const RX_STAGE_SLOT_COUNT: usize =
-    if OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_BIDIRECTIONAL_BENCH {
-        32
-    } else {
-        40
-    };
-// A receive BlockAck session retains staging leases until a missing sequence
-// arrives or the vendor-exact gap timer expires. Do not advertise the entire
-// ownership pool to the peer: protocol publication must be able to release a
-// completed run while the DMA path stages the next aggregate.
-const RX_BLOCK_ACK_SOFTWARE_WINDOW: usize =
-    if RX_STAGE_SLOT_COUNT > RX_REORDER_OVERLAP_SLOT_RESERVE {
-        RX_STAGE_SLOT_COUNT - RX_REORDER_OVERLAP_SLOT_RESERVE
-    } else {
-        // The TX-only image keeps a smaller staging pool because it carries no
-        // sustained downlink. Retain a valid finite agreement for incidental
-        // control traffic without claiming the full RX-qualified overlap.
-        8
-    };
-const _: () = assert!(RX_BLOCK_ACK_SOFTWARE_WINDOW < RX_STAGE_SLOT_COUNT);
+// Match the recovered vendor large-RX payload object. A larger MPDU is carried
+// by a bounded descriptor chain and becomes one contiguous staged unit before
+// any descriptor is returned to DMA. This avoids reserving 4,608 bytes in all
+// 32 DMA slots merely because a peer may occasionally send an A-MSDU.
+const RX_BUFFER_SIZE: usize = 1_700;
+const RX_BUFFER_STORAGE_SIZE: usize = RX_BUFFER_SIZE + 4;
+// Reset-separated 70/80-Mbit/s HE20 HIL observed 184,719 ordinary units, no
+// A-MSDU and no unit above 1,336 bytes. Keep the recovered 1,700-byte vendor
+// large-RX capacity on the hot path. The descriptor-chain owner remains able
+// to identify a larger unit, which is explicitly discarded until a distinct
+// cold-jumbo pool is composed rather than reserving jumbo capacity per slot.
+const RX_STAGE_CAPACITY: usize = 1_700;
+// A maximum 32-entry BlockAck window can retain at most 31 frames behind a
+// gap. Sixty-four slots therefore cover those 31 owners, the next complete
+// 32-descriptor hardware burst and one current frame. At 1,700 bytes this
+// costs about 106 KiB, substantially less than the former 40-by-4,608 arena,
+// while letting ordinary reorder stay in SRAM instead of copying to PSRAM.
+const RX_STAGE_SLOT_COUNT: usize = 64;
+// Smaller library compositions may still select the independent PSRAM
+// backing. This HIL composition uses its 64 hot slots first; the cold owner is
+// retained as a correctness fallback and for explicit lower-memory profiles.
+const RX_BLOCK_ACK_SOFTWARE_WINDOW: usize = 32;
+const _: () = assert!(RX_BLOCK_ACK_SOFTWARE_WINDOW <= RX_REORDER_BACKING_SLOT_COUNT);
 const _: () = assert!(RX_BLOCK_ACK_SOFTWARE_WINDOW <= 64);
 const NETWORK_FRAME_CAPACITY: usize = 1_600;
 const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
@@ -736,8 +719,9 @@ const PROBE_REQUEST_RATES: [u8; 12] = [
     0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
 ];
 
-type RxStorage = Esp32s31RxDmaStorage<RX_DESCRIPTOR_COUNT>;
-const _: () = assert!(RX_BUFFER_SIZE == ESP32S31_RX_BUFFER_SIZE);
+type RxStorage =
+    Esp32s31RxDmaStorage<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
+const _: () = assert!(RX_BUFFER_SIZE <= ESP32S31_RX_BUFFER_SIZE);
 
 type ControlTx = Esp32s31ControlTx<
     'static,
@@ -835,8 +819,8 @@ static OPEN_RADIO_TX_AMPDU_STORAGE: StaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = StaticCell::new();
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
-static SCAN_FRAME: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
-static ETHERNET_FRAME: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
+static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
+static ETHERNET_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
 // The vendor `wDev_IndicateFrame` allocates an ESF buffer and copies the
 // completed RX unit before `wDev_DiscardFrame` returns the DMA descriptors.
 // Keep the same ownership boundary explicit in the open HIL. This hot staging
@@ -860,6 +844,11 @@ type StagedRxQueue = Esp32s31StagedRxQueue<
 static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
 static OPEN_RADIO_RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
+// Ordinary `.bss` belongs to PSRAM in the qualified profile. Only MPDUs that
+// actually cross a sequence gap touch this cold backing; in-order frames stay
+// on the internal SRAM staging fast path.
+static OPEN_RADIO_RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY> =
+    RxReorderFrameStorage::new();
 type NetworkResources = OpenRadioNetworkResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -935,6 +924,8 @@ type ConnectedRxOwner = Esp32s31ConnectedRx<
     RX_DESCRIPTOR_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
 >;
 type ConnectedTxOwner = Esp32s31ConnectedTx<
     'static,
@@ -1025,8 +1016,8 @@ struct RadioHilConnectedFixture<'a> {
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'static mut [u8; RX_BUFFER_SIZE],
-    ethernet: &'static mut [u8; RX_BUFFER_SIZE],
+    frame: &'static mut [u8; RX_STAGE_CAPACITY],
+    ethernet: &'static mut [u8; RX_STAGE_CAPACITY],
 }
 
 /// Join-time extension of the board fixture with the PHY channel owner.
@@ -1585,7 +1576,7 @@ struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch> {
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'scratch mut [u8; RX_BUFFER_SIZE],
+    frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     access_point: ScanRecord,
     ring: Option<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>>,
@@ -1750,7 +1741,7 @@ struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch> {
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
-    frame: &'scratch mut [u8; RX_BUFFER_SIZE],
+    frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     bssid: [u8; 6],
     ring: Option<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>>,
@@ -2323,7 +2314,7 @@ fn observe_scan_descriptors<M: Mmio>(
     storage: &RxStorage,
     descriptor_base: u32,
     scan_table: &mut ScanTable,
-    scan_frame: &mut [u8; RX_BUFFER_SIZE],
+    scan_frame: &mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     channel: u8,
     observed_mask: &mut u64,
@@ -2876,8 +2867,8 @@ async fn transmit_protected_ethernet_frame<M: Mmio + TxHardware>(
 async fn await_protected_arp_response(
     mmio: &mut RadioRegisters,
     rx_storage: &RxStorage,
-    frame: &mut [u8; RX_BUFFER_SIZE],
-    ethernet: &mut [u8; RX_BUFFER_SIZE],
+    frame: &mut [u8; RX_STAGE_CAPACITY],
+    ethernet: &mut [u8; RX_STAGE_CAPACITY],
     network_device: &mut NetworkDevice,
     network_runner: &NetworkRunner,
     station_address: [u8; 6],
@@ -4051,10 +4042,18 @@ fn log_open_radio_rx_pipeline_interval(
         pipeline.service_lifetime_max_micros,
     ));
     emergency_log(format_args!(
-        "ORXD frames={} data={} waits={} wait_us={} wait_boot_max_us={} dispatch_us={} \
+        "ORXD frames={} data={} amsdu={} amsdu_subframes={} unit_le1700={} \
+         unit_1701_3400={} unit_over3400={} unit_boot_max_bytes={} \
+         waits={} wait_us={} wait_boot_max_us={} dispatch_us={} \
          dispatch_boot_max_us={} publications={} bytes={} publish_us={} publish_boot_max_us={}",
         pipeline.protocol_frames,
         pipeline.protocol_data_frames,
+        pipeline.protocol_amsdu_mpdus,
+        pipeline.protocol_amsdu_subframes,
+        pipeline.protocol_units_le_1700,
+        pipeline.protocol_units_1701_3400,
+        pipeline.protocol_units_over_3400,
+        pipeline.protocol_unit_lifetime_max_bytes,
         pipeline.network_ready_waits,
         pipeline.network_ready_wait_micros,
         pipeline.network_ready_wait_lifetime_max_micros,
@@ -4422,6 +4421,7 @@ async fn run_connected_network(
         ethernet,
     )
     .with_rx_reorder_commands(rx_reorder_receiver)
+    .with_rx_reorder_storage(&OPEN_RADIO_RX_REORDER_STORAGE)
     .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
 
     let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
@@ -5302,8 +5302,8 @@ async fn run_promiscuous_rx_hil(
     }
     let scan_table = SCAN_TABLE.init(ScanTable::new());
     scan_table.clear();
-    let scan_frame = SCAN_FRAME.init([0; RX_BUFFER_SIZE]);
-    let ethernet_frame = ETHERNET_FRAME.init([0; RX_BUFFER_SIZE]);
+    let scan_frame = SCAN_FRAME.init([0; RX_STAGE_CAPACITY]);
+    let ethernet_frame = ETHERNET_FRAME.init([0; RX_STAGE_CAPACITY]);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=rx-active descriptor_base={descriptor_base:#010x} \
          buffer0={:#010x} handshake_samples={} handshake_value={:#010x} \

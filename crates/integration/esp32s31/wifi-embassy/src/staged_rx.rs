@@ -21,8 +21,9 @@ use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use crate::{
     embassy_irq::EmbassyMacIrqRuntime,
     rx_reorder::{
-        RX_REORDER_GAP_TIMEOUT_MICROS, RxReorderCommand, RxReorderCommandReceiver,
-        try_receive_rx_reorder_command,
+        RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
+        RX_REORDER_SLOT_DOMAIN, RxReorderCommand, RxReorderCommandReceiver, RxReorderFrame,
+        RxReorderFrameStorage, try_receive_rx_reorder_command,
     },
     rx_telemetry::RxPipelineCounters,
 };
@@ -112,6 +113,11 @@ pub type Esp32s31StagedRxFrame<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > = NetworkRxFrame<'pool, SLOTS, CAPACITY>;
 
+enum RetainedRxFrame<'pool, const CAPACITY: usize, const SLOTS: usize> {
+    Hot(Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>),
+    Cold(RxReorderFrame<'pool, CAPACITY>),
+}
+
 /// Static bounded storage for the radio-to-protocol ownership handoff.
 ///
 /// Queue depth is a memory/resource limit, not a per-poll processing budget.
@@ -182,10 +188,12 @@ pub struct Esp32s31ConnectedRxProtocol<
     ethernet: &'scratch mut [u8],
     pipeline_counters: Option<&'queue RxPipelineCounters>,
     reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
-    reorders: [Option<RxBlockAckReorderState<SLOTS>>; RX_BLOCK_ACK_TID_COUNT],
+    reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY>>,
+    reorder_scratch: Option<&'scratch mut [u8]>,
+    reorders: [Option<RxBlockAckReorderState<RX_REORDER_SLOT_DOMAIN>>; RX_BLOCK_ACK_TID_COUNT],
     reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
     gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
-    retained: [Option<Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>>; SLOTS],
+    retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS>>; RX_REORDER_BACKING_SLOT_COUNT],
 }
 
 impl<
@@ -232,6 +240,8 @@ where
             ethernet,
             pipeline_counters: None,
             reorder_commands: None,
+            reorder_storage: None,
+            reorder_scratch: None,
             reorders: core::array::from_fn(|_| None),
             reorder_first_starts: [None; RX_BLOCK_ACK_TID_COUNT],
             gap_deadlines: [None; RX_BLOCK_ACK_TID_COUNT],
@@ -244,6 +254,28 @@ where
         commands: RxReorderCommandReceiver<'queue, M>,
     ) -> Self {
         self.reorder_commands = Some(commands);
+        self
+    }
+
+    /// Install cold backing for the MPDUs that actually cross a sequence gap.
+    /// In-order frames continue directly from the SRAM staging lease.
+    pub fn with_rx_reorder_storage(
+        mut self,
+        storage: &'pool RxReorderFrameStorage<CAPACITY>,
+    ) -> Self {
+        self.reorder_storage = Some(storage);
+        self
+    }
+
+    /// Install one internal-SRAM readback scratch for a retained ordinary
+    /// MPDU. This avoids repeatedly parsing the cold PSRAM backing in place.
+    /// A-MSDU keeps its distinct output-scratch path.
+    pub fn with_rx_reorder_scratch(mut self, scratch: &'scratch mut [u8]) -> Self {
+        assert!(
+            scratch.len() >= CAPACITY,
+            "reorder readback scratch must cover one complete staged RX unit"
+        );
+        self.reorder_scratch = Some(scratch);
         self
     }
 
@@ -352,15 +384,56 @@ where
             counters.record_reorder_first(key.tid, start, key.sequence);
         }
 
-        let slot = frame.slot();
-        if self.retained[slot].is_some() {
-            // Unique pool ownership makes this impossible unless integration
-            // state is corrupt. Release the new lease instead of aliasing it.
-            drop(frame);
-            self.irq.notify_rx_capacity();
-            return Some(ConnectedRxDispatch::Ignored);
-        }
-        self.retained[slot] = Some(frame);
+        let retain = match self.reorders[tid]
+            .as_ref()
+            .expect("active TID was checked above")
+            .retains_on_ingest(key.sequence)
+        {
+            Ok(retain) => retain,
+            Err(error) => {
+                drop(frame);
+                self.irq.notify_rx_capacity();
+                return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
+                    ConnectedRxDispatch::Duplicate
+                } else {
+                    ConnectedRxDispatch::Ignored
+                });
+            }
+        };
+        // A 64-slot hot pool can retain the maximum 31 out-of-order frames,
+        // admit the next 32-descriptor hardware burst and still own the
+        // current frontier frame. Smaller compositions keep the independent
+        // cold backing so one sequence gap cannot exhaust DMA staging.
+        let retain_hot = retain && SLOTS == RX_REORDER_BACKING_SLOT_COUNT;
+        let reservation = if retain && !retain_hot {
+            let Some(storage) = self.reorder_storage else {
+                // An agreement must never retain the finite hot staging pool
+                // when its independent backing was omitted by the composition.
+                drop(frame);
+                self.irq.notify_rx_capacity();
+                return Some(ConnectedRxDispatch::Ignored);
+            };
+            match storage.try_reserve() {
+                Ok(reservation) => Some(reservation),
+                Err(_) => {
+                    drop(frame);
+                    self.irq.notify_rx_capacity();
+                    return Some(ConnectedRxDispatch::Ignored);
+                }
+            }
+        } else {
+            None
+        };
+        let slot = reservation.as_ref().map_or_else(
+            || {
+                if retain_hot {
+                    frame.slot()
+                } else {
+                    RX_REORDER_CURRENT_SLOT
+                }
+            },
+            |reservation| reservation.slot(),
+        );
         let mpdu = RxAmpduMpdu {
             sequence: key.sequence,
             slot: slot as u8,
@@ -372,7 +445,9 @@ where
         {
             Ok(release) => release,
             Err(error) => {
-                self.release_retained_slot(slot);
+                drop(reservation);
+                drop(frame);
+                self.irq.notify_rx_capacity();
                 return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
                     ConnectedRxDispatch::Duplicate
                 } else {
@@ -382,7 +457,41 @@ where
         };
         self.update_gap_deadline(tid);
         self.record_reorder_occupied();
-        self.dispatch_release(release).await
+        if release.buffered {
+            if retain_hot {
+                debug_assert!(slot < self.retained.len());
+                debug_assert!(self.retained[slot].is_none());
+                self.retained[slot] = Some(RetainedRxFrame::Hot(frame));
+                return self.dispatch_release(release).await;
+            }
+            let reservation = reservation.expect("predicted retained frame owns backing");
+            let retained = match reservation.copy_from(frame.segment()) {
+                Ok(retained) => retained,
+                Err((_error, reservation)) => {
+                    let mut reorder = self.reorders[tid]
+                        .take()
+                        .expect("active reorder owns the failed retained copy");
+                    let rollback = reorder.stop();
+                    self.gap_deadlines[tid] = None;
+                    self.reorder_first_starts[tid] = None;
+                    drop(reservation);
+                    return self
+                        .dispatch_release_with_current(rollback, slot, frame)
+                        .await
+                        .or(Some(ConnectedRxDispatch::Ignored));
+                }
+            };
+            debug_assert_eq!(retained.slot(), slot);
+            debug_assert!(self.retained[slot].is_none());
+            self.retained[slot] = Some(RetainedRxFrame::Cold(retained));
+            drop(frame);
+            self.irq.notify_rx_capacity();
+            self.dispatch_release(release).await
+        } else {
+            drop(reservation);
+            self.dispatch_release_with_current(release, slot, frame)
+                .await
+        }
     }
 
     async fn apply_reorder_command(
@@ -400,8 +509,11 @@ where
                     return None;
                 }
                 let released = self.stop_reorder(tid).await;
-                self.reorders[tid] =
-                    RxBlockAckReorderState::<SLOTS>::new(starting_sequence, window).ok();
+                self.reorders[tid] = RxBlockAckReorderState::<RX_REORDER_SLOT_DOMAIN>::new(
+                    starting_sequence,
+                    window,
+                )
+                .ok();
                 self.reorder_first_starts[tid] = Some(starting_sequence);
                 self.gap_deadlines[tid] = None;
                 if let Some(counters) = self.pipeline_counters {
@@ -502,7 +614,7 @@ where
             let frame = self.retained[slot]
                 .take()
                 .expect("reorder release must reference one retained frame lease");
-            result = Some(self.dispatch_owned_frame(frame).await);
+            result = Some(self.dispatch_retained_frame(frame).await);
         }
         if let Some(rejected) = release.rejected {
             self.release_retained_slot(usize::from(rejected.slot));
@@ -511,63 +623,161 @@ where
         result
     }
 
+    async fn dispatch_release_with_current(
+        &mut self,
+        release: RxAmpduRelease,
+        current_slot: usize,
+        current_frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Option<ConnectedRxDispatch> {
+        if let Some(counters) = self.pipeline_counters {
+            counters.record_reorder_release(
+                release.buffered,
+                release.count,
+                release.missing,
+                release.rejected.is_some(),
+            );
+        }
+        let mut current_frame = Some(current_frame);
+        let mut result = None;
+        for released in release.iter() {
+            let slot = usize::from(released.slot);
+            result = Some(if slot == current_slot {
+                self.dispatch_owned_frame(
+                    current_frame
+                        .take()
+                        .expect("current reorder release is unique"),
+                )
+                .await
+            } else {
+                let frame = self.retained[slot]
+                    .take()
+                    .expect("reorder release references retained cold backing");
+                self.dispatch_retained_frame(frame).await
+            });
+        }
+        if let Some(rejected) = release.rejected {
+            let slot = usize::from(rejected.slot);
+            if slot == current_slot {
+                drop(current_frame.take());
+                self.irq.notify_rx_capacity();
+            } else {
+                self.release_retained_slot(slot);
+            }
+            result = Some(ConnectedRxDispatch::Duplicate);
+        }
+        debug_assert!(current_frame.is_none());
+        result
+    }
+
     fn release_retained_slot(&mut self, slot: usize) {
         if let Some(frame) = self.retained[slot].take() {
+            let hot = matches!(&frame, RetainedRxFrame::Hot(_));
             drop(frame);
-            self.irq.notify_rx_capacity();
+            if hot {
+                self.irq.notify_rx_capacity();
+            }
         }
+    }
+
+    async fn dispatch_retained_frame(
+        &mut self,
+        frame: RetainedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> ConnectedRxDispatch {
+        match frame {
+            RetainedRxFrame::Hot(frame) => self.dispatch_owned_frame(frame).await,
+            RetainedRxFrame::Cold(frame) => self.dispatch_reordered_frame(frame).await,
+        }
+    }
+
+    async fn dispatch_reordered_frame(
+        &mut self,
+        frame: RxReorderFrame<'pool, CAPACITY>,
+    ) -> ConnectedRxDispatch {
+        let source = frame.segment();
+        let ordinary = !self.dispatcher.may_publish_amsdu(source);
+        let result = if ordinary {
+            if let Some(scratch) = self.reorder_scratch.as_deref_mut() {
+                let length = source.buffer.len();
+                scratch[..length].copy_from_slice(source.buffer);
+                let segment = open_esp_radio_esp32s31_wifi_mac::rx::RxSegment {
+                    descriptor_address: source.descriptor_address,
+                    descriptor_word0: source.descriptor_word0,
+                    buffer: &scratch[..length],
+                    next_descriptor_address: source.next_descriptor_address,
+                };
+                dispatch_non_amsdu_segment(
+                    &mut self.dispatcher,
+                    &mut self.sink,
+                    self.mpdu,
+                    segment,
+                    self.pipeline_counters,
+                )
+                .await
+            } else {
+                self.dispatch_segment(source).await
+            }
+        } else {
+            self.dispatch_segment(source).await
+        };
+        drop(frame);
+        result
     }
 
     async fn dispatch_owned_frame(
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> ConnectedRxDispatch {
-        if self.dispatcher.may_publish_amsdu(frame.segment()) {
-            return self.dispatch_amsdu(frame).await;
-        }
-        if self.dispatcher.may_publish_ethernet(frame.segment()) {
-            // Keep the staging lease until the single-MSDU path owns its one
-            // network output slot. A-MSDU uses the deferred streaming path
-            // above and acquires one slot per decoded subframe.
-            let wait_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
-            self.sink.wait_ready().await;
-            if let (Some(counters), Some(started)) = (self.pipeline_counters, wait_started) {
-                counters.record_network_ready_wait(counters.elapsed_micros_since(started));
-            }
-        }
-        let dispatch_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
-        let result =
-            self.dispatcher
-                .dispatch(frame.segment(), self.mpdu, self.ethernet, &mut self.sink);
-        if let (Some(counters), Some(started)) = (self.pipeline_counters, dispatch_started) {
-            counters.record_dispatch(
-                matches!(result, ConnectedRxDispatch::Data { .. }),
-                counters.elapsed_micros_since(started),
-            );
-        }
+        let result = self.dispatch_segment(frame.segment()).await;
         drop(frame);
         self.irq.notify_rx_capacity();
         result
     }
 
+    async fn dispatch_segment(
+        &mut self,
+        segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+    ) -> ConnectedRxDispatch {
+        if self.dispatcher.may_publish_amsdu(segment) {
+            return self.dispatch_amsdu(segment).await;
+        }
+        dispatch_non_amsdu_segment(
+            &mut self.dispatcher,
+            &mut self.sink,
+            self.mpdu,
+            segment,
+            self.pipeline_counters,
+        )
+        .await
+    }
+
     async fn dispatch_amsdu(
         &mut self,
-        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
     ) -> ConnectedRxDispatch {
         let dispatch_started = self.pipeline_counters.map(RxPipelineCounters::now_micros);
         let mut deferred = DeferredEthernetFrames::new(self.ethernet);
         let result = self
             .dispatcher
-            .dispatch(frame.segment(), self.mpdu, &mut [], &mut deferred);
+            .dispatch(segment, self.mpdu, &mut [], &mut deferred);
         let used = deferred.used;
         drop(deferred);
         if let (Some(counters), Some(started)) = (self.pipeline_counters, dispatch_started) {
+            let (data, amsdu, amsdu_subframes) = match result {
+                ConnectedRxDispatch::Data {
+                    ethernet_frames,
+                    amsdu,
+                } => (true, amsdu, ethernet_frames),
+                _ => (false, false, 0),
+            };
             counters.record_dispatch(
-                matches!(result, ConnectedRxDispatch::Data { .. }),
+                data,
+                amsdu,
+                amsdu_subframes,
+                segment.buffer.len(),
                 counters.elapsed_micros_since(started),
             );
         }
-        let raw = frame.segment().buffer;
+        let raw = segment.buffer;
         let mut offset = 0_usize;
         while offset < used {
             let length = usize::from(u16::from_be_bytes([
@@ -598,9 +808,6 @@ where
             });
             offset = end;
         }
-
-        drop(frame);
-        self.irq.notify_rx_capacity();
         result
     }
 
@@ -610,6 +817,44 @@ where
             self.dispatch_next().await;
         }
     }
+}
+
+async fn dispatch_non_amsdu_segment<S: ConnectedRxProtocolSink>(
+    dispatcher: &mut ConnectedRxDispatcher,
+    sink: &mut S,
+    mpdu: &mut [u8],
+    segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+    pipeline_counters: Option<&RxPipelineCounters>,
+) -> ConnectedRxDispatch {
+    if dispatcher.may_publish_ethernet(segment) {
+        // Keep the staging lease until the single-MSDU path owns its one
+        // network output slot. A-MSDU uses the deferred streaming path
+        // above and acquires one slot per decoded subframe.
+        let wait_started = pipeline_counters.map(RxPipelineCounters::now_micros);
+        sink.wait_ready().await;
+        if let (Some(counters), Some(started)) = (pipeline_counters, wait_started) {
+            counters.record_network_ready_wait(counters.elapsed_micros_since(started));
+        }
+    }
+    let dispatch_started = pipeline_counters.map(RxPipelineCounters::now_micros);
+    let result = dispatcher.dispatch(segment, mpdu, &mut [], sink);
+    if let (Some(counters), Some(started)) = (pipeline_counters, dispatch_started) {
+        let (data, amsdu, amsdu_subframes) = match result {
+            ConnectedRxDispatch::Data {
+                ethernet_frames,
+                amsdu,
+            } => (true, amsdu, ethernet_frames),
+            _ => (false, false, 0),
+        };
+        counters.record_dispatch(
+            data,
+            amsdu,
+            amsdu_subframes,
+            segment.buffer.len(),
+            counters.elapsed_micros_since(started),
+        );
+    }
+    result
 }
 
 #[cfg(test)]

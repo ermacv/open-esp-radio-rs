@@ -1535,6 +1535,52 @@ fn live_rx_ring_snapshots_only_the_current_contiguous_frontier() {
 }
 
 #[test]
+fn live_rx_ring_transfers_and_recycles_one_chained_unit_atomically() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    descriptors[0].write_word0(BUFFER_SIZE | (BUFFER_SIZE << LENGTH_SHIFT) | BIT_31);
+    descriptors[1].write_word0(BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+
+    assert_eq!(live.completed_frontier_len(), 0);
+    let frontier = live.completed_unit_frontier();
+    assert_eq!(frontier.unit_count, 1);
+    assert_eq!(frontier.descriptor_count, 2);
+    let unit = live.take_completed_unit(frontier.descriptor_count).unwrap();
+    assert_eq!(unit.head_index(), 0);
+    assert_eq!(unit.descriptor_count(), 2);
+    assert_eq!(unit.segment_length(0), Some(256));
+    assert_eq!(unit.segment_length(1), Some(80));
+    assert_eq!(unit.total_length(), 336);
+    assert_ne!(unit.staged_word0() & BIT_30, 0);
+    assert_eq!(length(unit.staged_word0()), 336);
+
+    let mut recycled = Vec::new();
+    let append = live
+        .recycle_completed_unit(&mut mmio, unit.descriptor_count(), |index| {
+            recycled.push(index);
+            Ok(())
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(recycled, [0, 1]);
+    assert_eq!(append.descriptor_count, 2);
+    assert_eq!(live.recycle_start(), 2);
+    assert_eq!(descriptors[0].word0() & BIT_30, 0);
+    assert_eq!(descriptors[1].word0() & BIT_30, 0);
+}
+
+#[test]
 fn live_rx_ring_replenishes_the_available_variable_prefix() {
     const COUNT: usize = 4;
     const BASE: u32 = 0x2f00_1000;

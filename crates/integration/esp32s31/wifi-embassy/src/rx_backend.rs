@@ -18,7 +18,10 @@ use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
     descriptor::Descriptor,
-    rx::{RxDma, RxReloadObservation, RxRingError, RxRingLive, prepare_recycled_buffer},
+    rx::{
+        RX_BUFFER_SENTINEL, RxDma, RxReloadObservation, RxRingError, RxRingLive,
+        prepare_recycled_buffer,
+    },
     rx_pool::{
         RxStageError, RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
         VENDOR_LARGE_RX_SLOT_COUNT,
@@ -40,11 +43,17 @@ pub const ESP32S31_RX_BUFFER_SIZE: usize = 4_608;
 pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
 
 #[repr(C, align(4))]
-pub struct Esp32s31RxDmaBuffer(UnsafeCell<[u8; ESP32S31_RX_BUFFER_STORAGE_SIZE]>);
+pub struct Esp32s31RxDmaBuffer<
+    const BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+>(UnsafeCell<[u8; STORAGE_SIZE]>);
 
-impl Esp32s31RxDmaBuffer {
+impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
+    Esp32s31RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>
+{
     const fn new() -> Self {
-        Self(UnsafeCell::new([0; ESP32S31_RX_BUFFER_STORAGE_SIZE]))
+        assert!(STORAGE_SIZE >= BUFFER_SIZE + 4);
+        Self(UnsafeCell::new([0; STORAGE_SIZE]))
     }
 
     pub fn dma_address(&self) -> Result<u32, Esp32s31RxStorageError> {
@@ -53,21 +62,21 @@ impl Esp32s31RxDmaBuffer {
 
     /// The caller must own the matching completed descriptor. The returned
     /// view must not survive descriptor recycle.
-    pub unsafe fn completed(&self) -> &[u8; ESP32S31_RX_BUFFER_SIZE] {
+    pub unsafe fn completed(&self) -> &[u8; BUFFER_SIZE] {
         // SAFETY: the type guarantees a prefix of exactly this size.
-        unsafe { &*self.0.get().cast::<[u8; ESP32S31_RX_BUFFER_SIZE]>() }
+        unsafe { &*self.0.get().cast::<[u8; BUFFER_SIZE]>() }
     }
 
     /// The caller must own the matching completed descriptor and must invoke
     /// this only from the ring's rearm closure.
     pub unsafe fn prepare_for_recycle(&self) -> Result<(), RxRingError> {
         // SAFETY: ring ownership makes this the only CPU or DMA writer.
-        unsafe { prepare_recycled_buffer(&mut *self.0.get(), ESP32S31_RX_BUFFER_SIZE) }
+        unsafe { prepare_recycled_buffer(&mut *self.0.get(), BUFFER_SIZE) }
     }
 
     /// Volatile diagnostic word read after the matching descriptor completed.
     pub unsafe fn read_word(&self, offset: usize) -> u32 {
-        assert!(offset + 4 <= ESP32S31_RX_BUFFER_SIZE);
+        assert!(offset + 4 <= BUFFER_SIZE);
         // SAFETY: the caller owns the completed descriptor and the assertion
         // bounds all four volatile byte reads.
         unsafe {
@@ -83,16 +92,30 @@ impl Esp32s31RxDmaBuffer {
 
     /// Volatile diagnostic byte read after the matching descriptor completed.
     pub unsafe fn read_byte(&self, offset: usize) -> u8 {
-        assert!(offset < ESP32S31_RX_BUFFER_SIZE);
+        assert!(offset < BUFFER_SIZE);
         // SAFETY: the caller owns the completed descriptor and offset is in
         // the advertised DMA prefix.
         unsafe { self.0.get().cast::<u8>().add(offset).read_volatile() }
+    }
+
+    /// Whether DMA has overwritten the leading recycle guard.
+    ///
+    /// This is observation only: it never transfers buffer ownership. It is
+    /// used together with a later terminal descriptor to distinguish a full
+    /// non-terminal segment from an untouched armed descriptor.
+    pub fn leading_guard_overwritten(&self) -> bool {
+        // SAFETY: volatile access models the asynchronous DMA writer. The
+        // result is only evidence for a subsequent descriptor observation.
+        unsafe { self.0.get().cast::<u32>().read_volatile() != RX_BUFFER_SENTINEL }
     }
 }
 
 // SAFETY: access to the cell is admitted only through the unique live-ring
 // transaction. The storage may be moved to a radio task before DMA starts.
-unsafe impl Send for Esp32s31RxDmaBuffer {}
+unsafe impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Send
+    for Esp32s31RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>
+{
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RxStorageError {
@@ -105,12 +128,18 @@ pub enum Esp32s31RxStorageError {
 /// borrows it for its entire epoch. Keeping that table separate avoids a
 /// self-referential owner and lets a platform place only DMA-visible storage
 /// in its dedicated linker section.
-pub struct Esp32s31RxDmaStorage<const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT> {
+pub struct Esp32s31RxDmaStorage<
+    const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
+    const BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+> {
     descriptors: [Descriptor; COUNT],
-    buffers: [Esp32s31RxDmaBuffer; COUNT],
+    buffers: [Esp32s31RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
 }
 
-impl<const COUNT: usize> Esp32s31RxDmaStorage<COUNT> {
+impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
+    Esp32s31RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>
+{
     pub const fn new() -> Self {
         Self {
             descriptors: [const { Descriptor::new() }; COUNT],
@@ -125,7 +154,8 @@ impl<const COUNT: usize> Esp32s31RxDmaStorage<COUNT> {
         // is initialized exactly once before the reference is formed.
         unsafe {
             let descriptors = ptr::addr_of_mut!((*storage).descriptors).cast::<Descriptor>();
-            let buffers = ptr::addr_of_mut!((*storage).buffers).cast::<Esp32s31RxDmaBuffer>();
+            let buffers = ptr::addr_of_mut!((*storage).buffers)
+                .cast::<Esp32s31RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>>();
             for index in 0..COUNT {
                 descriptors.add(index).write(Descriptor::new());
                 buffers.add(index).write(Esp32s31RxDmaBuffer::new());
@@ -138,7 +168,7 @@ impl<const COUNT: usize> Esp32s31RxDmaStorage<COUNT> {
         &self.descriptors
     }
 
-    pub const fn buffers(&self) -> &[Esp32s31RxDmaBuffer; COUNT] {
+    pub const fn buffers(&self) -> &[Esp32s31RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT] {
         &self.buffers
     }
 
@@ -154,7 +184,9 @@ impl<const COUNT: usize> Esp32s31RxDmaStorage<COUNT> {
     }
 }
 
-impl<const COUNT: usize> Default for Esp32s31RxDmaStorage<COUNT> {
+impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Default
+    for Esp32s31RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -171,9 +203,11 @@ pub struct Esp32s31ConnectedRx<
     const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
     const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingLive<'storage, COUNT>,
-    buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
+    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames:
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
@@ -191,6 +225,8 @@ impl<
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
 >
     Esp32s31ConnectedRx<
         'storage,
@@ -202,11 +238,13 @@ impl<
         COUNT,
         STAGE_CAPACITY,
         STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
     >
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
-        buffers: &'storage [Esp32s31RxDmaBuffer; COUNT],
+        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
         frames: Sender<
@@ -251,6 +289,8 @@ impl<
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
 > Esp32s31ConnectedRxService<H>
     for Esp32s31ConnectedRx<
         'storage,
@@ -262,6 +302,8 @@ impl<
         COUNT,
         STAGE_CAPACITY,
         STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
     >
 where
     H: RxDma,
@@ -280,26 +322,46 @@ where
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
-            let frontier = self.ring.completed_frontier_len();
+            let frontier_snapshot = self.ring.completed_unit_frontier_with(|index| {
+                // SAFETY: this is only a volatile guard observation. A word
+                // different from the recycle sentinel proves that DMA has
+                // begun consuming this non-terminal buffer; ownership is not
+                // transferred until a later terminal descriptor is visible.
+                self.buffers[index].leading_guard_overwritten()
+            });
+            let frontier = frontier_snapshot.unit_count;
             let pool_credits = self.pool.available_slots();
             let queue_credits = self.frames.free_capacity();
             let credits = pool_credits.min(queue_credits);
             let admitted = frontier.min(credits);
             let mut staged_bytes = 0_usize;
+            let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..admitted {
-                let index = self.ring.recycle_start();
-                let completed = self
+                let unit = self
                     .ring
-                    .take_completed(index)
+                    .take_completed_unit(remaining_descriptors)
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                // SAFETY: `take_completed` uniquely transferred the matching
-                // descriptor. `stage_recycle` copies this view before its
-                // rearm closure publishes the buffer to DMA again.
-                let source = unsafe { self.buffers[index].completed() };
-                let pending = self.pool.stage_recycle(
-                    completed,
-                    source,
+                let head_index = unit.head_index();
+                let unit_descriptor_count = unit.descriptor_count();
+                remaining_descriptors = remaining_descriptors
+                    .checked_sub(unit_descriptor_count)
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                let pending = self.pool.stage_unit_recycle(
+                    unit,
+                    |step, destination| {
+                        let index = (head_index + step) % COUNT;
+                        // SAFETY: `take_completed_unit` transferred every
+                        // segment through its terminal descriptor. The copy
+                        // completes before the recycle closure can publish any
+                        // of those buffers back to DMA.
+                        let source = unsafe { self.buffers[index].completed() };
+                        let source = source
+                            .get(..destination.len())
+                            .ok_or(RxStageError::SourceTooShort)?;
+                        destination.copy_from_slice(source);
+                        Ok(())
+                    },
                     hardware,
                     &mut self.ring,
                     |recycled| {
@@ -325,14 +387,14 @@ where
                         }
                         let append = self
                             .ring
-                            .recycle_completed_prefix::<1, _, _>(hardware, |recycled| {
+                            .recycle_completed_unit(hardware, unit_descriptor_count, |recycled| {
                                 // SAFETY: this is the same uniquely observed
                                 // descriptor rejected before staging copied it.
                                 unsafe { self.buffers[recycled].prepare_for_recycle() }
                             })
                             .map_err(RxStageTransactionError::Ring)?
                             .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
-                        if append.descriptor_count != 1 {
+                        if append.descriptor_count != unit_descriptor_count {
                             return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
                         }
                         loop {
@@ -879,6 +941,52 @@ mod tests {
     }
 
     #[test]
+    fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
+        const COUNT: usize = 2;
+        const STAGED_DEPTH: usize = 1;
+        const STAGE_CAPACITY: usize = 16;
+        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let addresses = [0x2f00_2000, 0x2f00_3200];
+        let mut hardware = MockRxDma::default();
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+        // SAFETY: the mock walker never accesses host storage; the test owns
+        // both buffers until service copies and recycles the complete unit.
+        unsafe {
+            (&mut *storage.buffers()[0].0.get())[..4].copy_from_slice(&[1, 2, 3, 4]);
+            (&mut *storage.buffers()[1].0.get())[..4].copy_from_slice(&[5, 6, 7, 8]);
+        }
+        storage.descriptors()[0]
+            .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_31);
+        storage.descriptors()[1]
+            .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+        let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
+        let queue =
+            Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new(
+            );
+        let (sender, receiver) = queue.split();
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        let frame = receiver.try_receive().expect("one chained staged unit");
+        assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(service.ring().recycle_start(), 0);
+        drop(frame);
+        assert_eq!(pool.claimed_slots(), 0);
+    }
+
+    #[test]
     fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         const COUNT: usize = 4;
         const STAGED_DEPTH: usize = 3;
@@ -924,6 +1032,9 @@ mod tests {
         }
 
         let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
+        // Declared before the queue because protocol frame types borrow both
+        // pools and Rust drops local owners in reverse declaration order.
+        let reorder_storage = crate::rx_reorder::RxReorderFrameStorage::<STAGE_CAPACITY>::new();
         let queue =
             Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new(
             );
@@ -942,6 +1053,7 @@ mod tests {
         let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let mut mpdu = [0; STAGE_CAPACITY];
         let mut ethernet = [0; STAGE_CAPACITY];
+        let mut reorder_scratch = [0; STAGE_CAPACITY];
         let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
         let mut protocol = Esp32s31ConnectedRxProtocol::new(
             receiver,
@@ -951,7 +1063,9 @@ mod tests {
             &mut mpdu,
             &mut ethernet,
         )
-        .with_rx_reorder_commands(reorder_receiver);
+        .with_rx_reorder_commands(reorder_receiver)
+        .with_rx_reorder_storage(&reorder_storage)
+        .with_rx_reorder_scratch(&mut reorder_scratch);
 
         assert_eq!(
             embassy_futures::block_on(service.service(&mut hardware)),
@@ -960,10 +1074,21 @@ mod tests {
         assert_eq!(pool.claimed_slots(), 3);
         embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(protocol.sink().0.0, [100]);
-        assert_eq!(pool.claimed_slots(), 2);
+        // Sequence 102 is retained in the cold reorder backing while 100 has
+        // been dispatched. The former implementation retained both staging
+        // leases here and therefore reported two claimed SRAM slots.
+        assert_eq!(pool.claimed_slots(), 1);
+        assert_eq!(
+            reorder_storage.available_slots(),
+            crate::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT - 1
+        );
         embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(protocol.sink().0.0, [100, 101, 102]);
         assert_eq!(pool.claimed_slots(), 0);
+        assert_eq!(
+            reorder_storage.available_slots(),
+            crate::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT
+        );
     }
 
     #[test]

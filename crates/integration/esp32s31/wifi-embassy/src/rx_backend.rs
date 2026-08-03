@@ -719,7 +719,7 @@ mod tests {
     use open_esp_radio_esp32s31_wifi_mac::{
         connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent},
         descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT},
-        rx::{RxIngressConfig, RxRingStopped},
+        rx::{PUBLIC_HEADER_SIZE, RxIngressConfig, RxRingStopped},
         tx_ampdu::BlockAckAction,
     };
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -727,6 +727,7 @@ mod tests {
     use super::*;
     use crate::{
         embassy_irq::EmbassyMacIrqRuntime,
+        rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_send_rx_reorder_command},
         staged_rx::{Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue},
     };
 
@@ -784,6 +785,21 @@ mod tests {
     impl ConnectedRxSink for Observer {
         fn publish(&mut self, _event: ConnectedRxEvent<'_>) {
             self.0 += 1;
+        }
+    }
+
+    #[derive(Default)]
+    struct OrderObserver(std::vec::Vec<u16>);
+
+    impl ConnectedRxSink for OrderObserver {
+        fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+            if let ConnectedRxEvent::Ethernet { raw, .. } = event {
+                let sequence_control = u16::from_le_bytes([
+                    raw[PUBLIC_HEADER_SIZE + 22],
+                    raw[PUBLIC_HEADER_SIZE + 23],
+                ]);
+                self.0.push(sequence_control >> 4);
+            }
         }
     }
 
@@ -860,6 +876,94 @@ mod tests {
         embassy_futures::block_on(protocol.dispatch_next());
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
+    }
+
+    #[test]
+    fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
+        const COUNT: usize = 4;
+        const STAGED_DEPTH: usize = 3;
+        const STAGE_CAPACITY: usize = 192;
+        const MPDU: usize = 26 + 8 + 8 + 4 + 8;
+        const SIGNAL: usize = MPDU + 4;
+        const RECEIVED: usize = PUBLIC_HEADER_SIZE + SIGNAL;
+
+        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let mut hardware = MockRxDma::default();
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+
+        for (index, sequence) in [102_u16, 100, 101].into_iter().enumerate() {
+            // SAFETY: the test owns the stopped DMA storage before service
+            // publishes any descriptor back to the mock walker.
+            let buffer = unsafe { &mut *storage.buffers()[index].0.get() };
+            buffer.fill(0);
+            buffer[0x38..0x3c]
+                .copy_from_slice(&(((SIGNAL + 4) as u32) << 16 | SIGNAL as u32).to_le_bytes());
+            let frame = &mut buffer[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + MPDU];
+            frame[..2].copy_from_slice(&0x4288_u16.to_le_bytes());
+            frame[4..10].copy_from_slice(&[2, 3, 4, 5, 6, 7]);
+            frame[10..16].copy_from_slice(&[8, 9, 10, 11, 12, 13]);
+            frame[16..22].copy_from_slice(&[14, 15, 16, 17, 18, 19]);
+            frame[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
+            frame[24] = 0;
+            frame[26..34].copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+            frame[34..42].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+            frame[42..46].copy_from_slice(&sequence.to_be_bytes().repeat(2));
+            storage.descriptors()[index].write_word0(
+                STAGE_CAPACITY as u32 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+            );
+        }
+
+        let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
+        let queue =
+            Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new(
+            );
+        let (sender, receiver) = queue.split();
+        let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
+        let (reorder_sender, reorder_receiver) = reorder_resources.split();
+        try_send_rx_reorder_command(
+            &reorder_sender,
+            RxReorderCommand::Start {
+                tid: 0,
+                starting_sequence: 100,
+                window: 8,
+            },
+        )
+        .unwrap();
+        let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let mut mpdu = [0; STAGE_CAPACITY];
+        let mut ethernet = [0; STAGE_CAPACITY];
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut protocol = Esp32s31ConnectedRxProtocol::new(
+            receiver,
+            &irq,
+            dispatcher(),
+            crate::staged_rx::AlwaysReadyConnectedRxSink(OrderObserver::default()),
+            &mut mpdu,
+            &mut ethernet,
+        )
+        .with_rx_reorder_commands(reorder_receiver);
+
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        assert_eq!(pool.claimed_slots(), 3);
+        embassy_futures::block_on(protocol.dispatch_next());
+        assert_eq!(protocol.sink().0.0, [100]);
+        assert_eq!(pool.claimed_slots(), 2);
+        embassy_futures::block_on(protocol.dispatch_next());
+        assert_eq!(protocol.sink().0.0, [100, 101, 102]);
+        assert_eq!(pool.claimed_slots(), 0);
     }
 
     #[test]

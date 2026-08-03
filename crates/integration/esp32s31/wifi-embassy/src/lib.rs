@@ -21,6 +21,7 @@ pub mod link_monitor;
 mod ordinary_tx;
 pub mod runner;
 pub mod rx_backend;
+pub mod rx_reorder;
 pub mod rx_telemetry;
 pub mod single_mpdu_tx;
 pub mod sta_join;

@@ -44,7 +44,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
     fs::create_dir_all(&output)?;
-    let capture = SerialCapture::start(&options.serial);
+    let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
         options.address,

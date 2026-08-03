@@ -7,15 +7,27 @@
 
 use core::future::{Future, ready};
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{Channel, Receiver, Sender};
+use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
+    rx_ampdu::{RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderState},
     rx_pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
-use crate::{embassy_irq::EmbassyMacIrqRuntime, rx_telemetry::RxPipelineCounters};
+use crate::{
+    embassy_irq::EmbassyMacIrqRuntime,
+    rx_reorder::{
+        RX_REORDER_GAP_TIMEOUT_MICROS, RxReorderCommand, RxReorderCommandReceiver,
+        try_receive_rx_reorder_command,
+    },
+    rx_telemetry::RxPipelineCounters,
+};
+
+const RX_BLOCK_ACK_TID_COUNT: usize = 8;
 
 /// Async admission edge required by the staged protocol consumer.
 ///
@@ -169,6 +181,11 @@ pub struct Esp32s31ConnectedRxProtocol<
     mpdu: &'scratch mut [u8],
     ethernet: &'scratch mut [u8],
     pipeline_counters: Option<&'queue RxPipelineCounters>,
+    reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
+    reorders: [Option<RxBlockAckReorderState<SLOTS>>; RX_BLOCK_ACK_TID_COUNT],
+    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
+    gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
+    retained: [Option<Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>>; SLOTS],
 }
 
 impl<
@@ -201,6 +218,11 @@ where
             ethernet.len() >= CAPACITY,
             "A-MSDU output scratch must cover one complete staged RX unit"
         );
+        assert!(SLOTS != 0, "staged RX pool must not be empty");
+        assert!(
+            SLOTS <= usize::from(u8::MAX) + 1,
+            "reorder slot identity must fit the MAC token"
+        );
         Self {
             frames,
             irq,
@@ -209,7 +231,20 @@ where
             mpdu,
             ethernet,
             pipeline_counters: None,
+            reorder_commands: None,
+            reorders: core::array::from_fn(|_| None),
+            reorder_first_starts: [None; RX_BLOCK_ACK_TID_COUNT],
+            gap_deadlines: [None; RX_BLOCK_ACK_TID_COUNT],
+            retained: core::array::from_fn(|_| None),
         }
+    }
+
+    pub fn with_rx_reorder_commands(
+        mut self,
+        commands: RxReorderCommandReceiver<'queue, M>,
+    ) -> Self {
+        self.reorder_commands = Some(commands);
+        self
     }
 
     pub fn with_pipeline_counters(mut self, counters: &'queue RxPipelineCounters) -> Self {
@@ -235,7 +270,258 @@ where
 
     /// Wait for and dispatch one independently owned staged frame.
     pub async fn dispatch_next(&mut self) -> ConnectedRxDispatch {
-        let frame = self.frames.receive().await;
+        loop {
+            if let Some(command) = self
+                .reorder_commands
+                .as_ref()
+                .and_then(try_receive_rx_reorder_command)
+            {
+                if let Some(result) = self.apply_reorder_command(command).await {
+                    return result;
+                }
+                continue;
+            }
+
+            let next_gap = self.next_gap_deadline();
+            let frame = if let Some(commands) = &self.reorder_commands {
+                if let Some((tid, deadline)) = next_gap {
+                    match select(
+                        select(commands.receive(), self.frames.receive()),
+                        Timer::at(deadline),
+                    )
+                    .await
+                    {
+                        Either::First(Either::First(command)) => {
+                            if let Some(result) = self.apply_reorder_command(command).await {
+                                return result;
+                            }
+                            continue;
+                        }
+                        Either::First(Either::Second(frame)) => frame,
+                        Either::Second(()) => {
+                            if let Some(result) = self.expire_reorder_gap(tid).await {
+                                return result;
+                            }
+                            continue;
+                        }
+                    }
+                } else {
+                    match select(commands.receive(), self.frames.receive()).await {
+                        Either::First(command) => {
+                            if let Some(result) = self.apply_reorder_command(command).await {
+                                return result;
+                            }
+                            continue;
+                        }
+                        Either::Second(frame) => frame,
+                    }
+                }
+            } else if let Some((tid, deadline)) = next_gap {
+                match select(self.frames.receive(), Timer::at(deadline)).await {
+                    Either::First(frame) => frame,
+                    Either::Second(()) => {
+                        if let Some(result) = self.expire_reorder_gap(tid).await {
+                            return result;
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                self.frames.receive().await
+            };
+            if let Some(result) = self.accept_frame(frame).await {
+                return result;
+            }
+        }
+    }
+
+    async fn accept_frame(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Option<ConnectedRxDispatch> {
+        let Some(key) = self.dispatcher.reorder_key(frame.segment()) else {
+            return Some(self.dispatch_owned_frame(frame).await);
+        };
+        let tid = usize::from(key.tid);
+        if tid >= self.reorders.len() || self.reorders[tid].is_none() {
+            return Some(self.dispatch_owned_frame(frame).await);
+        }
+        if let Some(start) = self.reorder_first_starts[tid].take()
+            && let Some(counters) = self.pipeline_counters
+        {
+            counters.record_reorder_first(key.tid, start, key.sequence);
+        }
+
+        let slot = frame.slot();
+        if self.retained[slot].is_some() {
+            // Unique pool ownership makes this impossible unless integration
+            // state is corrupt. Release the new lease instead of aliasing it.
+            drop(frame);
+            self.irq.notify_rx_capacity();
+            return Some(ConnectedRxDispatch::Ignored);
+        }
+        self.retained[slot] = Some(frame);
+        let mpdu = RxAmpduMpdu {
+            sequence: key.sequence,
+            slot: slot as u8,
+        };
+        let release = match self.reorders[tid]
+            .as_mut()
+            .expect("active TID was checked above")
+            .ingest(mpdu)
+        {
+            Ok(release) => release,
+            Err(error) => {
+                self.release_retained_slot(slot);
+                return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
+                    ConnectedRxDispatch::Duplicate
+                } else {
+                    ConnectedRxDispatch::Ignored
+                });
+            }
+        };
+        self.update_gap_deadline(tid);
+        self.record_reorder_occupied();
+        self.dispatch_release(release).await
+    }
+
+    async fn apply_reorder_command(
+        &mut self,
+        command: RxReorderCommand,
+    ) -> Option<ConnectedRxDispatch> {
+        match command {
+            RxReorderCommand::Start {
+                tid,
+                starting_sequence,
+                window,
+            } => {
+                let tid = usize::from(tid);
+                if tid >= self.reorders.len() {
+                    return None;
+                }
+                let released = self.stop_reorder(tid).await;
+                self.reorders[tid] =
+                    RxBlockAckReorderState::<SLOTS>::new(starting_sequence, window).ok();
+                self.reorder_first_starts[tid] = Some(starting_sequence);
+                self.gap_deadlines[tid] = None;
+                if let Some(counters) = self.pipeline_counters {
+                    counters.record_reorder_start(tid as u8, starting_sequence, window);
+                }
+                released
+            }
+            RxReorderCommand::Stop { tid } => {
+                let tid = usize::from(tid);
+                if tid >= self.reorders.len() {
+                    None
+                } else {
+                    self.stop_reorder(tid).await
+                }
+            }
+            RxReorderCommand::StopAll => {
+                let mut result = None;
+                for tid in 0..self.reorders.len() {
+                    if let Some(released) = self.stop_reorder(tid).await {
+                        result = Some(released);
+                    }
+                }
+                result
+            }
+        }
+    }
+
+    async fn stop_reorder(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
+        self.gap_deadlines[tid] = None;
+        self.reorder_first_starts[tid] = None;
+        let mut reorder = self.reorders[tid].take()?;
+        let release = reorder.stop();
+        if let Some(counters) = self.pipeline_counters {
+            counters.record_reorder_stop();
+        }
+        self.record_reorder_occupied();
+        self.dispatch_release(release).await
+    }
+
+    fn next_gap_deadline(&self) -> Option<(usize, Instant)> {
+        self.gap_deadlines
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(tid, deadline)| deadline.map(|deadline| (tid, deadline)))
+            .min_by_key(|(_, deadline)| *deadline)
+    }
+
+    fn update_gap_deadline(&mut self, tid: usize) {
+        if self.reorders[tid]
+            .as_ref()
+            .is_some_and(|reorder| reorder.occupied() != 0)
+        {
+            self.gap_deadlines[tid].get_or_insert_with(|| {
+                Instant::now() + Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS)
+            });
+        } else {
+            self.gap_deadlines[tid] = None;
+        }
+    }
+
+    async fn expire_reorder_gap(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
+        self.gap_deadlines[tid] = None;
+        let release = self.reorders[tid].as_mut()?.expire_gap();
+        if let Some(counters) = self.pipeline_counters {
+            counters.record_reorder_gap_expiry();
+        }
+        self.update_gap_deadline(tid);
+        self.record_reorder_occupied();
+        self.dispatch_release(release).await
+    }
+
+    fn record_reorder_occupied(&self) {
+        let Some(counters) = self.pipeline_counters else {
+            return;
+        };
+        let occupied = self
+            .reorders
+            .iter()
+            .flatten()
+            .map(RxBlockAckReorderState::occupied)
+            .sum();
+        counters.record_reorder_occupied(occupied);
+    }
+
+    async fn dispatch_release(&mut self, release: RxAmpduRelease) -> Option<ConnectedRxDispatch> {
+        if let Some(counters) = self.pipeline_counters {
+            counters.record_reorder_release(
+                release.buffered,
+                release.count,
+                release.missing,
+                release.rejected.is_some(),
+            );
+        }
+        let mut result = None;
+        for released in release.iter() {
+            let slot = usize::from(released.slot);
+            let frame = self.retained[slot]
+                .take()
+                .expect("reorder release must reference one retained frame lease");
+            result = Some(self.dispatch_owned_frame(frame).await);
+        }
+        if let Some(rejected) = release.rejected {
+            self.release_retained_slot(usize::from(rejected.slot));
+            result = Some(ConnectedRxDispatch::Duplicate);
+        }
+        result
+    }
+
+    fn release_retained_slot(&mut self, slot: usize) {
+        if let Some(frame) = self.retained[slot].take() {
+            drop(frame);
+            self.irq.notify_rx_capacity();
+        }
+    }
+
+    async fn dispatch_owned_frame(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> ConnectedRxDispatch {
         if self.dispatcher.may_publish_amsdu(frame.segment()) {
             return self.dispatch_amsdu(frame).await;
         }

@@ -29,6 +29,19 @@ pub(crate) struct SerialCapture {
 
 impl SerialCapture {
     pub(crate) fn start(port: &Path) -> Self {
+        Self::start_inner(port, false)
+    }
+
+    /// Open the diagnostics owner before resetting the USB-Serial/JTAG target.
+    ///
+    /// Traffic qualification needs the DHCP and UDP-ready records from the
+    /// current boot. Resetting through a second process after opening this
+    /// handle is impossible because `serialport` owns the device exclusively.
+    pub(crate) fn start_with_reset(port: &Path) -> Self {
+        Self::start_inner(port, true)
+    }
+
+    fn start_inner(port: &Path, reset_target: bool) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let worker_stop = Arc::clone(&stop);
@@ -49,6 +62,17 @@ impl SerialCapture {
                     return;
                 }
             };
+            if reset_target && let Err(error) = reset_usb_serial_jtag(&mut *serial) {
+                append(
+                    &worker_bytes,
+                    format!(
+                        "serial target reset failed for {}: {error}\n",
+                        port.display()
+                    )
+                    .as_bytes(),
+                );
+                return;
+            }
             let mut buffer = [0_u8; 2_048];
             while !worker_stop.load(Ordering::Acquire) {
                 match serial.read(&mut buffer) {
@@ -134,6 +158,21 @@ impl SerialCapture {
             let _ = worker.join();
         }
     }
+}
+
+/// Reset an ESP USB-Serial/JTAG target without giving up the capture handle.
+///
+/// This is the `espflash` `reset_after_flash` USB-Serial/JTAG sequence. DTR is
+/// kept high at the board pin, while the RTS transition issues the chip reset.
+fn reset_usb_serial_jtag(serial: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
+    thread::sleep(Duration::from_millis(100));
+    serial.write_data_terminal_ready(false)?;
+    thread::sleep(Duration::from_millis(100));
+    serial.write_request_to_send(true)?;
+    serial.write_data_terminal_ready(false)?;
+    serial.write_request_to_send(true)?;
+    thread::sleep(Duration::from_millis(100));
+    serial.write_request_to_send(false)
 }
 
 impl Drop for SerialCapture {

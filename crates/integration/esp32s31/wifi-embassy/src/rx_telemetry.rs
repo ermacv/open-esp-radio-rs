@@ -37,6 +37,19 @@ pub struct RxPipelineCounters {
     service_lifetime_max_micros: AtomicU32,
     protocol_frames: AtomicU32,
     protocol_data_frames: AtomicU32,
+    reorder_starts: AtomicU32,
+    reorder_stops: AtomicU32,
+    reorder_last_start: AtomicU32,
+    reorder_first_samples: AtomicU32,
+    reorder_last_first: AtomicU32,
+    reorder_last_first_distance: AtomicU32,
+    reorder_buffered: AtomicU32,
+    reorder_released: AtomicU32,
+    reorder_missing: AtomicU32,
+    reorder_stale: AtomicU32,
+    reorder_gap_expiries: AtomicU32,
+    reorder_current_occupied: AtomicU32,
+    reorder_maximum_occupied: AtomicU32,
     network_ready_waits: AtomicU32,
     network_ready_wait_micros: AtomicU32,
     network_ready_wait_lifetime_max_micros: AtomicU32,
@@ -87,6 +100,19 @@ impl RxPipelineCounters {
             service_lifetime_max_micros: AtomicU32::new(0),
             protocol_frames: AtomicU32::new(0),
             protocol_data_frames: AtomicU32::new(0),
+            reorder_starts: AtomicU32::new(0),
+            reorder_stops: AtomicU32::new(0),
+            reorder_last_start: AtomicU32::new(0),
+            reorder_first_samples: AtomicU32::new(0),
+            reorder_last_first: AtomicU32::new(0),
+            reorder_last_first_distance: AtomicU32::new(0),
+            reorder_buffered: AtomicU32::new(0),
+            reorder_released: AtomicU32::new(0),
+            reorder_missing: AtomicU32::new(0),
+            reorder_stale: AtomicU32::new(0),
+            reorder_gap_expiries: AtomicU32::new(0),
+            reorder_current_occupied: AtomicU32::new(0),
+            reorder_maximum_occupied: AtomicU32::new(0),
             network_ready_waits: AtomicU32::new(0),
             network_ready_wait_micros: AtomicU32::new(0),
             network_ready_wait_lifetime_max_micros: AtomicU32::new(0),
@@ -204,6 +230,19 @@ impl RxPipelineCounters {
             service_lifetime_max_micros: self.service_lifetime_max_micros.load(Ordering::Relaxed),
             protocol_frames: self.protocol_frames.load(Ordering::Relaxed),
             protocol_data_frames: self.protocol_data_frames.load(Ordering::Relaxed),
+            reorder_starts: self.reorder_starts.load(Ordering::Relaxed),
+            reorder_stops: self.reorder_stops.load(Ordering::Relaxed),
+            reorder_last_start: self.reorder_last_start.load(Ordering::Relaxed),
+            reorder_first_samples: self.reorder_first_samples.load(Ordering::Relaxed),
+            reorder_last_first: self.reorder_last_first.load(Ordering::Relaxed),
+            reorder_last_first_distance: self.reorder_last_first_distance.load(Ordering::Relaxed),
+            reorder_buffered: self.reorder_buffered.load(Ordering::Relaxed),
+            reorder_released: self.reorder_released.load(Ordering::Relaxed),
+            reorder_missing: self.reorder_missing.load(Ordering::Relaxed),
+            reorder_stale: self.reorder_stale.load(Ordering::Relaxed),
+            reorder_gap_expiries: self.reorder_gap_expiries.load(Ordering::Relaxed),
+            reorder_current_occupied: self.reorder_current_occupied.load(Ordering::Relaxed),
+            reorder_maximum_occupied: self.reorder_maximum_occupied.load(Ordering::Relaxed),
             network_ready_waits: self.network_ready_waits.load(Ordering::Relaxed),
             network_ready_wait_micros: self.network_ready_wait_micros.load(Ordering::Relaxed),
             network_ready_wait_lifetime_max_micros: self
@@ -318,6 +357,60 @@ impl RxPipelineCounters {
         );
     }
 
+    pub(crate) fn record_reorder_start(&self, tid: u8, starting_sequence: u16, window: u16) {
+        self.reorder_starts.fetch_add(1, Ordering::Relaxed);
+        self.reorder_last_start.store(
+            u32::from(starting_sequence) | (u32::from(window) << 16) | (u32::from(tid) << 26),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(crate) fn record_reorder_stop(&self) {
+        self.reorder_stops.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_reorder_first(&self, tid: u8, start: u16, sequence: u16) {
+        self.reorder_first_samples.fetch_add(1, Ordering::Relaxed);
+        self.reorder_last_first.store(
+            u32::from(sequence) | (u32::from(start) << 12) | (u32::from(tid) << 24),
+            Ordering::Relaxed,
+        );
+        self.reorder_last_first_distance.store(
+            u32::from(sequence.wrapping_sub(start) & 0x0fff),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(crate) fn record_reorder_release(
+        &self,
+        buffered: bool,
+        released: u8,
+        missing: u16,
+        stale: bool,
+    ) {
+        if buffered {
+            self.reorder_buffered.fetch_add(1, Ordering::Relaxed);
+        }
+        self.reorder_released
+            .fetch_add(u32::from(released), Ordering::Relaxed);
+        self.reorder_missing
+            .fetch_add(u32::from(missing), Ordering::Relaxed);
+        if stale {
+            self.reorder_stale.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn record_reorder_gap_expiry(&self) {
+        self.reorder_gap_expiries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_reorder_occupied(&self, occupied: u32) {
+        self.reorder_current_occupied
+            .store(occupied, Ordering::Relaxed);
+        self.reorder_maximum_occupied
+            .fetch_max(occupied, Ordering::Relaxed);
+    }
+
     pub(crate) fn record_network_publish(&self, bytes: usize, micros: u64) {
         self.network_publications.fetch_add(1, Ordering::Relaxed);
         Self::add_usize(&self.network_published_bytes, bytes);
@@ -372,6 +465,21 @@ pub struct RxPipelineCounterSnapshot {
     pub service_lifetime_max_micros: u32,
     pub protocol_frames: u32,
     pub protocol_data_frames: u32,
+    pub reorder_starts: u32,
+    pub reorder_stops: u32,
+    /// Last packed `tid[28:26] | window[21:16] | starting_sequence[11:0]`.
+    pub reorder_last_start: u32,
+    pub reorder_first_samples: u32,
+    /// Last packed `tid[27:24] | start[23:12] | first_sequence[11:0]`.
+    pub reorder_last_first: u32,
+    pub reorder_last_first_distance: u32,
+    pub reorder_buffered: u32,
+    pub reorder_released: u32,
+    pub reorder_missing: u32,
+    pub reorder_stale: u32,
+    pub reorder_gap_expiries: u32,
+    pub reorder_current_occupied: u32,
+    pub reorder_maximum_occupied: u32,
     pub network_ready_waits: u32,
     pub network_ready_wait_micros: u32,
     /// Maximum observed since boot, not an interval delta.
@@ -448,6 +556,23 @@ impl RxPipelineCounterSnapshot {
             protocol_data_frames: self
                 .protocol_data_frames
                 .wrapping_sub(earlier.protocol_data_frames),
+            reorder_starts: self.reorder_starts.wrapping_sub(earlier.reorder_starts),
+            reorder_stops: self.reorder_stops.wrapping_sub(earlier.reorder_stops),
+            reorder_last_start: self.reorder_last_start,
+            reorder_first_samples: self
+                .reorder_first_samples
+                .wrapping_sub(earlier.reorder_first_samples),
+            reorder_last_first: self.reorder_last_first,
+            reorder_last_first_distance: self.reorder_last_first_distance,
+            reorder_buffered: self.reorder_buffered.wrapping_sub(earlier.reorder_buffered),
+            reorder_released: self.reorder_released.wrapping_sub(earlier.reorder_released),
+            reorder_missing: self.reorder_missing.wrapping_sub(earlier.reorder_missing),
+            reorder_stale: self.reorder_stale.wrapping_sub(earlier.reorder_stale),
+            reorder_gap_expiries: self
+                .reorder_gap_expiries
+                .wrapping_sub(earlier.reorder_gap_expiries),
+            reorder_current_occupied: self.reorder_current_occupied,
+            reorder_maximum_occupied: self.reorder_maximum_occupied,
             network_ready_waits: self
                 .network_ready_waits
                 .wrapping_sub(earlier.network_ready_waits),

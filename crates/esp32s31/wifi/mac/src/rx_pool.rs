@@ -364,6 +364,14 @@ pub struct NetworkRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACITY> {
+    /// Stable index of this unique lease in its integration-owned pool.
+    ///
+    /// The index is metadata, not an address. It lets an allocation-free
+    /// reorder state refer back to this token without exposing pool storage.
+    pub const fn slot(&self) -> usize {
+        self.slot
+    }
+
     pub fn segment(&self) -> RxSegment<'_> {
         // SAFETY: this non-Clone token uniquely retains Network ownership, so
         // the pool cannot mutate or reclaim the matching slot.
@@ -476,6 +484,7 @@ mod tests {
         assert_eq!(pool.network_slots(), 0);
         let network = radio.publish().ok().unwrap();
         assert_eq!(pool.network_slots(), 1);
+        assert_eq!(network.slot(), 0);
         assert_eq!(network.segment().buffer, &[1, 2, 3, 4]);
         drop(network);
         assert_eq!(pool.claimed_slots(), 0);

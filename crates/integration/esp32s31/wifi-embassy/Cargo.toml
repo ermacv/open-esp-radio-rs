@@ -19,5 +19,8 @@ open-esp-radio-esp32s31-wifi-mac = { path = "../../../esp32s31/wifi/mac" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 
+[dev-dependencies]
+embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
+
 [lints]
 workspace = true

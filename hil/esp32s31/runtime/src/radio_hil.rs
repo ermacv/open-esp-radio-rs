@@ -100,6 +100,7 @@ use open_esp_radio::{
                 EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
                 RxEnqueueCounters,
             },
+            rx_reorder::{RX_REORDER_OVERLAP_SLOT_RESERVE, RxReorderCommandResources},
             rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
             single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxConfig},
             sta_join::{
@@ -206,6 +207,21 @@ const RX_STAGE_SLOT_COUNT: usize =
     } else {
         40
     };
+// A receive BlockAck session retains staging leases until a missing sequence
+// arrives or the vendor-exact gap timer expires. Do not advertise the entire
+// ownership pool to the peer: protocol publication must be able to release a
+// completed run while the DMA path stages the next aggregate.
+const RX_BLOCK_ACK_SOFTWARE_WINDOW: usize =
+    if RX_STAGE_SLOT_COUNT > RX_REORDER_OVERLAP_SLOT_RESERVE {
+        RX_STAGE_SLOT_COUNT - RX_REORDER_OVERLAP_SLOT_RESERVE
+    } else {
+        // The TX-only image keeps a smaller staging pool because it carries no
+        // sustained downlink. Retain a valid finite agreement for incidental
+        // control traffic without claiming the full RX-qualified overlap.
+        8
+    };
+const _: () = assert!(RX_BLOCK_ACK_SOFTWARE_WINDOW < RX_STAGE_SLOT_COUNT);
+const _: () = assert!(RX_BLOCK_ACK_SOFTWARE_WINDOW <= 64);
 const NETWORK_FRAME_CAPACITY: usize = 1_600;
 const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
 // Raw A-MSDU/A-MPDU HIL generates TX below the network stack, and its direct
@@ -215,6 +231,9 @@ const CONNECTED_CONTROL_QUEUE_DEPTH: usize = 32;
 // plus eight overlap owners in ordinary/PSRAM storage, matching the qualified
 // 40-slot staging profile. A 64-entry experiment removed network-ready waits
 // but increased PSRAM/cache cost and did not improve the 80-Mbit/s boundary.
+// Repeating it with RX BlockAck reorder made starvation worse while at least
+// eight network slots remained free, proving that the staging pool rather
+// than this PSRAM-backed queue was the constrained owner.
 // TX depth is selected independently because its backing pool is DMA-visible
 // internal SRAM: ordinary and RX-only images keep 32 TX leases, while the
 // dedicated TX throughput image retains 64.
@@ -839,6 +858,8 @@ type StagedRxQueue = Esp32s31StagedRxQueue<
     RX_STAGE_SLOT_COUNT,
 >;
 static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
+static OPEN_RADIO_RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
+    RxReorderCommandResources::new();
 type NetworkResources = OpenRadioNetworkResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -4045,6 +4066,28 @@ fn log_open_radio_rx_pipeline_interval(
         pipeline.network_publish_lifetime_max_micros,
     ));
     emergency_log(format_args!(
+        "ORXR starts={} stops={} start_tid={} start_seq={} window={} first_samples={} \
+         first_tid={} first_start={} first_seq={} first_distance={} buffered={} released={} \
+         missing={} stale={} expiries={} occupied={} occupied_max={}",
+        pipeline.reorder_starts,
+        pipeline.reorder_stops,
+        pipeline.reorder_last_start >> 26 & 0x07,
+        pipeline.reorder_last_start & 0x0fff,
+        pipeline.reorder_last_start >> 16 & 0x03ff,
+        pipeline.reorder_first_samples,
+        pipeline.reorder_last_first >> 24 & 0x0f,
+        pipeline.reorder_last_first >> 12 & 0x0fff,
+        pipeline.reorder_last_first & 0x0fff,
+        pipeline.reorder_last_first_distance,
+        pipeline.reorder_buffered,
+        pipeline.reorder_released,
+        pipeline.reorder_missing,
+        pipeline.reorder_stale,
+        pipeline.reorder_gap_expiries,
+        pipeline.reorder_current_occupied,
+        pipeline.reorder_maximum_occupied,
+    ));
+    emergency_log(format_args!(
         "ORXF zero={} one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_thirty_one={} thirty_two_plus={} irq_posts={} irq_epochs={} \
          irq_entries={} irq_coalesced={} irq_samples={} irq_skew={} \
@@ -4310,6 +4353,7 @@ async fn run_connected_network(
          frame_capacity={NETWORK_FRAME_CAPACITY} \
          rx_queue_depth={NETWORK_RX_QUEUE_DEPTH} tx_queue_depth={NETWORK_TX_QUEUE_DEPTH} \
          rx_stage_slots={RX_STAGE_SLOT_COUNT} rx_stage_capacity={RX_STAGE_CAPACITY} \
+         rx_ba_window={RX_BLOCK_ACK_SOFTWARE_WINDOW} \
          bandwidth_mhz={} phy={} data_rate_code={:#04x} data_rate_kbps={} \
          ampdu_rate_code={:#04x} ampdu_rate_kbps={} peer_ampdu_limit={} rate_ampdu_limit={}",
         association_phy.bandwidth_mhz(),
@@ -4350,6 +4394,7 @@ async fn run_connected_network(
     .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS)
     .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
     let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
+    let (rx_reorder_sender, rx_reorder_receiver) = OPEN_RADIO_RX_REORDER_COMMANDS.split();
     let rx = Esp32s31ConnectedRx::new(
         rx_ring,
         rx_storage.buffers(),
@@ -4376,6 +4421,7 @@ async fn run_connected_network(
         frame,
         ethernet,
     )
+    .with_rx_reorder_commands(rx_reorder_receiver)
     .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
 
     let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
@@ -4424,7 +4470,10 @@ async fn run_connected_network(
         bssid,
         association_phy == StaAssociationPhy::He20,
         tx_block_ack,
-    );
+    )
+    .with_rx_block_ack_maximum_window(RX_BLOCK_ACK_SOFTWARE_WINDOW as u16)
+    .expect("staging-derived RX BlockAck window is valid")
+    .with_rx_reorder_commands(rx_reorder_sender);
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(beacon_interval_tu, CONNECTED_BEACON_MISS_LIMIT)
             .expect("scan admitted a nonzero connected beacon interval"),

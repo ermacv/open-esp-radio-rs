@@ -113,7 +113,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     fs::create_dir_all(&output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-    let capture = SerialCapture::start(&options.serial);
+    let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_device_marker(
         &capture,
         DEVICE_TX_READY_MARKER,

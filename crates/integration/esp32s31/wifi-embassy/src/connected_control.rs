@@ -28,6 +28,10 @@ use crate::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor},
     runner::{WifiControlContext, WifiControlProgress},
     rx_backend::ConnectedControlReceiver,
+    rx_reorder::{
+        RxReorderCommand, RxReorderCommandError, RxReorderCommandSender,
+        try_send_rx_reorder_command,
+    },
     single_mpdu_tx::{
         ActionTxConfig, Esp32s31SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
     },
@@ -190,6 +194,7 @@ pub enum ConnectedControlError {
     BeaconDeadline(StaBeaconLossConfigError),
     PowerSaveCompletion(UnexpectedStaPowerManagementCompletion),
     MissingPowerSavePlanner,
+    RxReorderCommand(RxReorderCommandError),
 }
 
 impl From<StaRxBlockAckSessionsError> for ConnectedControlError {
@@ -228,6 +233,12 @@ impl From<UnexpectedStaPowerManagementCompletion> for ConnectedControlError {
     }
 }
 
+impl From<RxReorderCommandError> for ConnectedControlError {
+    fn from(error: RxReorderCommandError) -> Self {
+        Self::RxReorderCommand(error)
+    }
+}
+
 enum ControlInFlight {
     RxAddba(StaRxBlockAckActivation),
     TxAddba { tid: u8 },
@@ -262,6 +273,7 @@ pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usi
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
     pending_doze_permit: Option<StaDozePermit>,
+    rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
 }
 
 impl<'resources, M: RawMutex, const CAPACITY: usize>
@@ -288,7 +300,30 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             beacon_lost: false,
             power_save: None,
             pending_doze_permit: None,
+            rx_reorder_commands: None,
         }
+    }
+
+    /// Bind the control owner to the staged-RX reorder command path.
+    ///
+    /// Minimal fixtures may omit this adapter. A production owner that
+    /// accepts RX BlockAck agreements must install it before service starts.
+    pub fn with_rx_reorder_commands(
+        mut self,
+        commands: RxReorderCommandSender<'resources, M>,
+    ) -> Self {
+        self.rx_reorder_commands = Some(commands);
+        self
+    }
+
+    /// Bound negotiated receive BlockAck windows to the staging resources
+    /// selected by the platform composition.
+    pub fn with_rx_block_ack_maximum_window(
+        mut self,
+        maximum_window: u16,
+    ) -> Result<Self, StaRxBlockAckSessionsError> {
+        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)?;
+        Ok(self)
     }
 
     /// Install the association-derived beacon-loss policy. This only arms a
@@ -441,6 +476,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                     }
                     ControlInFlight::RxAddba(activation) => {
                         hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
+                        self.publish_rx_reorder_command(RxReorderCommand::Stop {
+                            tid: activation.negotiated().tid,
+                        })?;
                         self.rx_block_ack.cancel(activation)?;
                     }
                     ControlInFlight::TxAddba { .. } if success => {}
@@ -507,6 +545,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 .as_ref()
                 .is_some_and(|monitor| monitor.expired(now_micros))
             {
+                for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
+                    self.rx_block_ack.stop(agreement.tid);
+                    hardware.clear_rx_block_ack(agreement.hardware_index)?;
+                }
+                self.publish_rx_reorder_command(RxReorderCommand::StopAll)?;
                 for tid in STA_TX_BLOCK_ACK_TIDS {
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_operational(tid, false);
@@ -633,6 +676,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 if initiator {
                     if let Some(agreement) = self.rx_block_ack.stop(tid) {
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
+                        self.publish_rx_reorder_command(RxReorderCommand::Stop { tid })?;
                     }
                 } else {
                     self.tx_block_ack.stop(tid);
@@ -650,6 +694,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         context.network_tx_pending
             || self.receiver.len() != 0
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
+    }
+
+    fn publish_rx_reorder_command(
+        &self,
+        command: RxReorderCommand,
+    ) -> Result<(), RxReorderCommandError> {
+        let Some(sender) = &self.rx_reorder_commands else {
+            return Ok(());
+        };
+        try_send_rx_reorder_command(sender, command)
     }
 
     fn apply_power_save_decision<H, X>(
@@ -691,15 +745,35 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         X: ConnectedControlTx,
     {
         if let Some(replaced) = activation.replaced() {
+            if let Err(error) =
+                self.publish_rx_reorder_command(RxReorderCommand::Stop { tid: replaced.tid })
+            {
+                hardware.clear_rx_block_ack(replaced.hardware_index)?;
+                self.rx_block_ack.cancel(activation)?;
+                return Err(error.into());
+            }
             hardware.clear_rx_block_ack(replaced.hardware_index)?;
         }
         hardware.program_rx_block_ack(activation.hardware())?;
+        let negotiated = activation.negotiated();
+        if let Err(error) = self.publish_rx_reorder_command(RxReorderCommand::Start {
+            tid: negotiated.tid,
+            starting_sequence: negotiated.starting_sequence,
+            window: negotiated.window,
+        }) {
+            hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
+            self.rx_block_ack.cancel(activation)?;
+            return Err(error.into());
+        }
         if let Err(error) = tx.start_action(
             hardware,
             activation.response_body(),
             ActionTxConfig::RX_ADDBA_RESPONSE,
         ) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
+            self.publish_rx_reorder_command(RxReorderCommand::Stop {
+                tid: activation.negotiated().tid,
+            })?;
             self.rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }
@@ -780,6 +854,7 @@ mod tests {
     use crate::{
         runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
         rx_backend::ConnectedControlResources,
+        rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_receive_rx_reorder_command},
         single_mpdu_tx::{SingleMpduTxConfig, WifiTxPowerPair, WifiTxPowerProfile, WifiTxTimer},
     };
 
@@ -1045,12 +1120,15 @@ mod tests {
     fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
+        let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
+        let (reorder_sender, reorder_receiver) = reorder_resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
             BSSID,
             false,
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
-        );
+        )
+        .with_rx_reorder_commands(reorder_sender);
         let mut slot = core::pin::pin!(TxSlot::<512>::new());
         let mut hardware = Hardware {
             prepare: true,
@@ -1084,6 +1162,14 @@ mod tests {
                 .iter()
                 .all(Option::is_none)
         );
+        assert_eq!(
+            try_receive_rx_reorder_command(&reorder_receiver),
+            Some(RxReorderCommand::Start {
+                tid: 3,
+                starting_sequence: 0x123,
+                window: 16,
+            })
+        );
 
         finish_tx(&mut hardware, &mut tx, 0);
         assert_eq!(
@@ -1097,18 +1183,39 @@ mod tests {
             3
         );
         assert_eq!(hardware.clear_count, 0);
+
+        publisher.publish(ConnectedRxEvent::BlockAck {
+            action: BlockAckAction::Delba {
+                tid: 3,
+                initiator: true,
+                reason: 37,
+            },
+            body: &[0; 6],
+        });
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+        assert_eq!(
+            try_receive_rx_reorder_command(&reorder_receiver),
+            Some(RxReorderCommand::Stop { tid: 3 })
+        );
+        assert_eq!(hardware.cleared[0], Some(agreement.hardware_index));
     }
 
     #[test]
     fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         let mut resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
         let (mut publisher, receiver) = resources.split();
+        let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
+        let (reorder_sender, reorder_receiver) = reorder_resources.split();
         let mut control = Esp32s31ConnectedControl::new(
             receiver,
             BSSID,
             false,
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
-        );
+        )
+        .with_rx_reorder_commands(reorder_sender);
         let mut slot = core::pin::pin!(TxSlot::<512>::new());
         let mut hardware = Hardware {
             prepare: true,
@@ -1133,6 +1240,10 @@ mod tests {
             Ok(WifiControlProgress::TxPending)
         );
         let hardware_index = hardware.programmed.unwrap().hardware_index;
+        assert!(matches!(
+            try_receive_rx_reorder_command(&reorder_receiver),
+            Some(RxReorderCommand::Start { tid: 3, .. })
+        ));
 
         finish_tx(&mut hardware, &mut tx, 2);
         assert_eq!(
@@ -1140,6 +1251,10 @@ mod tests {
             Ok(WifiControlProgress::More)
         );
         assert_eq!(hardware.cleared[0], Some(hardware_index));
+        assert_eq!(
+            try_receive_rx_reorder_command(&reorder_receiver),
+            Some(RxReorderCommand::Stop { tid: 3 })
+        );
         assert!(
             control
                 .rx_block_ack()

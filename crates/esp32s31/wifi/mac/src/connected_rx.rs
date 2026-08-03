@@ -55,6 +55,17 @@ pub enum ConnectedRxProtection {
     Other,
 }
 
+/// Public 802.11 ordering identity for one addressed protected QoS MPDU.
+///
+/// Both fields precede the encrypted body, so the async integration can make
+/// a receive BlockAck ordering decision without decrypting or mutating the
+/// dispatcher's duplicate history twice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectedRxReorderKey {
+    pub tid: u8,
+    pub sequence: u16,
+}
+
 /// One semantic event emitted by the connected frame dispatcher.
 ///
 /// Borrowed frame slices remain valid only for the duration of
@@ -220,6 +231,38 @@ impl ConnectedRxDispatcher {
             PUBLIC_HEADER_SIZE + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
         raw.get(qos_control_offset)
             .is_some_and(|control| control & QOS_AMSDU_PRESENT != 0)
+    }
+
+    /// Classify a frame that belongs to a receive BlockAck sequence space.
+    ///
+    /// Group, foreign, unprotected, non-QoS and fragmented frames remain on
+    /// the direct dispatch path. Agreement state still decides whether the
+    /// returned TID is currently reordered.
+    pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<ConnectedRxReorderKey> {
+        let raw = segment.buffer;
+        let frame_control = public_frame_control(raw)?;
+        if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE)
+            != DATA_TYPE | PROTECTED | QOS_SUBTYPE
+        {
+            return None;
+        }
+        let frame_offset = PUBLIC_HEADER_SIZE;
+        if raw.get(frame_offset + 4..frame_offset + 10)? != self.config.station_address
+            || raw.get(frame_offset + 10..frame_offset + 16)? != self.config.bssid
+        {
+            return None;
+        }
+        let sequence_control =
+            u16::from_le_bytes([*raw.get(frame_offset + 22)?, *raw.get(frame_offset + 23)?]);
+        if sequence_control & 0x000f != 0 {
+            return None;
+        }
+        let qos_offset =
+            frame_offset + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
+        Some(ConnectedRxReorderKey {
+            tid: *raw.get(qos_offset)? & 0x0f,
+            sequence: sequence_control >> 4,
+        })
     }
 
     /// Consume one staged S31 frame and publish its connected-station effects.
@@ -675,6 +718,13 @@ mod tests {
 
         let mut dispatcher = ConnectedRxDispatcher::new(config());
         let segment = segment(&storage, SIGNAL);
+        assert_eq!(
+            dispatcher.reorder_key(segment),
+            Some(ConnectedRxReorderKey {
+                tid: 0,
+                sequence: 0x123,
+            })
+        );
         assert!(dispatcher.may_publish_amsdu(segment));
         // Preflight is repeatable and does not claim duplicate history.
         assert!(dispatcher.may_publish_amsdu(segment));

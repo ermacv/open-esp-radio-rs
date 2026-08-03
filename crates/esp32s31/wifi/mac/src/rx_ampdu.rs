@@ -1,9 +1,10 @@
 //! Allocation-free receive BlockAck reorder state in the live MAC crate.
 //!
 //! The vendor implementation allocates one 40-byte agreement object and a
-//! variable pointer array for every receive TID. This module keeps the same
-//! protocol ownership in a fixed array of slot indices. Raw packet pointers
-//! stay outside the state machine.
+//! variable pointer array for every receive TID. This module keeps negotiation
+//! state and the data-plane reorder engine as separate owned values. The
+//! integration layer binds the latter to its exact staging-pool capacity, and
+//! raw packet pointers stay outside both state machines.
 
 use crate::rx_ampdu_hw::{S31_RX_BLOCK_ACK_MAX_TID, S31RxBlockAckAgreement};
 
@@ -28,7 +29,7 @@ pub(crate) const RX_ESF_SLOT_ID_CAPACITY: usize = 32;
 // Rare multi-descriptor MPDUs use a separate split SRAM/PSRAM pool. Its
 // IDs participate in reorder ownership, but must not inflate the ordinary
 // zero-copy channel budget computed from `RX_ESF_SLOT_ID_CAPACITY`.
-pub(crate) const RX_REORDER_SLOT_ID_CAPACITY: usize = RX_ESF_SLOT_ID_CAPACITY + 2;
+pub const RX_REORDER_SLOT_ID_CAPACITY: usize = RX_ESF_SLOT_ID_CAPACITY + 2;
 const SEQUENCE_MASK: u16 = 0x0fff;
 const SEQUENCE_HALF_RANGE: u16 = 0x0800;
 
@@ -66,7 +67,6 @@ pub enum StaRxBlockAckSessionsError {
     ActivationBusy,
     StaleActivation,
     NoFreeHardwareBank,
-    Reorder(RxAmpduError),
     Response(RxAddbaResponseError),
 }
 
@@ -88,9 +88,6 @@ pub struct StaRxBlockAckSnapshot {
 
 struct ActiveStaRxBlockAck {
     snapshot: StaRxBlockAckSnapshot,
-    // The agreement owns this software reorder state for exactly as long as
-    // the corresponding hardware bank remains published.
-    _reorder: RxBlockAckReorder,
 }
 
 /// One private activation transaction spanning software and hardware state.
@@ -105,7 +102,6 @@ pub struct StaRxBlockAckActivation {
     response_body: [u8; 9],
     negotiated: StaRxBlockAckSnapshot,
     replaced: Option<StaRxBlockAckSnapshot>,
-    reorder: RxBlockAckReorder,
 }
 
 impl StaRxBlockAckActivation {
@@ -140,6 +136,7 @@ pub struct StaRxBlockAckSessions {
     active: [Option<ActiveStaRxBlockAck>; STA_RX_BLOCK_ACK_BANK_COUNT],
     generation: u32,
     in_flight: Option<u32>,
+    maximum_window: u16,
 }
 
 impl StaRxBlockAckSessions {
@@ -149,7 +146,28 @@ impl StaRxBlockAckSessions {
             active: core::array::from_fn(|_| None),
             generation: 0,
             in_flight: None,
+            maximum_window: RX_BLOCK_ACK_MAX_WINDOW,
         }
+    }
+
+    /// Construct an agreement owner with an integration-qualified reorder
+    /// limit no wider than the vendor maximum.
+    ///
+    /// The composition layer uses this when its independent staging pool must
+    /// retain credits beyond the negotiated reorder window. Hardware still
+    /// receives its separately qualified 64-entry agreement geometry.
+    pub fn with_maximum_window(maximum_window: u16) -> Result<Self, StaRxBlockAckSessionsError> {
+        if maximum_window == 0 || maximum_window > RX_BLOCK_ACK_MAX_WINDOW {
+            return Err(StaRxBlockAckSessionsError::InvalidWindow(maximum_window));
+        }
+        Ok(Self {
+            maximum_window,
+            ..Self::new()
+        })
+    }
+
+    pub const fn maximum_window(&self) -> u16 {
+        self.maximum_window
     }
 
     /// Admit one parsed immediate ADDBA request into its per-TID pending slot.
@@ -222,9 +240,7 @@ impl StaRxBlockAckSessions {
         let replaced = self.active[hardware_index]
             .take()
             .map(|agreement| agreement.snapshot);
-        let window = request.requested_window.min(RX_BLOCK_ACK_MAX_WINDOW);
-        let reorder = RxBlockAckReorder::new(request.starting_sequence, window)
-            .map_err(StaRxBlockAckSessionsError::Reorder)?;
+        let window = request.requested_window.min(self.maximum_window);
         let mut response_body = [0_u8; 9];
         write_successful_addba_response(
             &mut response_body,
@@ -257,7 +273,6 @@ impl StaRxBlockAckSessions {
             response_body,
             negotiated,
             replaced,
-            reorder,
         }))
     }
 
@@ -270,10 +285,7 @@ impl StaRxBlockAckSessions {
         }
         self.in_flight = None;
         let snapshot = activation.negotiated;
-        self.active[usize::from(snapshot.hardware_index)] = Some(ActiveStaRxBlockAck {
-            snapshot,
-            _reorder: activation.reorder,
-        });
+        self.active[usize::from(snapshot.hardware_index)] = Some(ActiveStaRxBlockAck { snapshot });
         Ok(snapshot)
     }
 
@@ -382,19 +394,20 @@ impl RxAmpduRelease {
     }
 }
 
-/// One receive BlockAck agreement with a fixed, build-selected maximum window.
+/// One receive BlockAck agreement with a fixed maximum sequence window and an
+/// explicit integration-owned staging-slot domain.
 ///
 /// Every retained packet is represented only by a checked slot index. The
 /// owner maps that index to its SRAM ESF storage and recycles every frame
 /// returned by `ingest`, `expire_gap`, or `stop`.
-pub struct RxBlockAckReorder {
+pub struct RxBlockAckReorderState<const SLOT_CAPACITY: usize> {
     next_sequence: u16,
     window: u16,
     occupied: u64,
     frames: [Option<RxAmpduMpdu>; RX_AMPDU_SLOT_CAPACITY],
 }
 
-impl RxBlockAckReorder {
+impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
     pub const fn new(starting_sequence: u16, window: u16) -> Result<Self, RxAmpduError> {
         if window == 0 || window > RX_BLOCK_ACK_MAX_WINDOW {
             return Err(RxAmpduError::InvalidWindow(window));
@@ -426,7 +439,10 @@ impl RxBlockAckReorder {
         if frame.sequence > SEQUENCE_MASK {
             return Err(RxAmpduError::InvalidSequence(frame.sequence));
         }
-        if usize::from(frame.slot) >= RX_REORDER_SLOT_ID_CAPACITY {
+        if SLOT_CAPACITY == 0
+            || SLOT_CAPACITY > usize::from(u8::MAX) + 1
+            || usize::from(frame.slot) >= SLOT_CAPACITY
+        {
             return Err(RxAmpduError::InvalidSlot(frame.slot));
         }
         if self
@@ -538,6 +554,12 @@ impl RxBlockAckReorder {
         self.frames[index].take()
     }
 }
+
+/// Reorder state bound to the MAC crate's default receive-slot domain.
+///
+/// Integrations whose staging pool has a different compile-time size use
+/// [`RxBlockAckReorderState`] directly.
+pub type RxBlockAckReorder = RxBlockAckReorderState<RX_REORDER_SLOT_ID_CAPACITY>;
 
 const fn forward_distance(from: u16, to: u16) -> u16 {
     to.wrapping_sub(from) & SEQUENCE_MASK
@@ -655,6 +677,23 @@ mod tests {
     }
 
     #[test]
+    fn integration_can_bind_the_reorder_to_its_exact_slot_domain() {
+        let mut reorder = RxBlockAckReorderState::<40>::new(1, 8).unwrap();
+        assert_eq!(
+            reorder
+                .ingest(frame(1, 39))
+                .unwrap()
+                .iter()
+                .collect::<std::vec::Vec<_>>(),
+            [frame(1, 39)]
+        );
+        assert_eq!(
+            reorder.ingest(frame(2, 40)),
+            Err(RxAmpduError::InvalidSlot(40))
+        );
+    }
+
+    #[test]
     fn window_cannot_exceed_the_owned_reorder_slot_pool() {
         assert!(RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW).is_ok());
         assert!(matches!(
@@ -741,6 +780,40 @@ mod tests {
         assert_eq!(sessions.snapshots()[0], Some(snapshot));
         assert_eq!(sessions.stop(7), Some(snapshot));
         assert_eq!(sessions.snapshots(), [None; STA_RX_BLOCK_ACK_BANK_COUNT]);
+    }
+
+    #[test]
+    fn integration_can_narrow_the_negotiated_rx_window_without_changing_hardware_geometry() {
+        let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
+        let mut sessions = StaRxBlockAckSessions::with_maximum_window(32).unwrap();
+        assert_eq!(sessions.maximum_window(), 32);
+        sessions.offer(17, 0, true, 64, 0, 123).unwrap();
+
+        let activation = sessions.begin_pending(peer).unwrap().unwrap();
+        assert_eq!(activation.negotiated().window, 32);
+        assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
+        assert_eq!(
+            crate::tx_ampdu::parse_block_ack_action(activation.response_body()),
+            Some(crate::tx_ampdu::BlockAckAction::AddbaResponse {
+                dialog_token: 17,
+                status: 0,
+                tid: 0,
+                immediate: true,
+                amsdu: false,
+                window: 32,
+                timeout_tu: 0,
+            })
+        );
+
+        assert!(matches!(
+            StaRxBlockAckSessions::with_maximum_window(0),
+            Err(StaRxBlockAckSessionsError::InvalidWindow(0))
+        ));
+        assert!(matches!(
+            StaRxBlockAckSessions::with_maximum_window(RX_BLOCK_ACK_MAX_WINDOW + 1),
+            Err(StaRxBlockAckSessionsError::InvalidWindow(window))
+                if window == RX_BLOCK_ACK_MAX_WINDOW + 1
+        ));
     }
 
     #[test]

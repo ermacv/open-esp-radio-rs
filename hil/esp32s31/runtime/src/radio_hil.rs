@@ -43,8 +43,8 @@ use open_esp_radio::{
                 ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
             },
             crypto::{
-                CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp,
-                install_sta_pairwise_ccmp,
+                CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
+                install_sta_group_ccmp, install_sta_pairwise_ccmp,
             },
             descriptor::{DESCRIPTOR_BYTES, length as descriptor_length, rx_done},
             edca::EdcaParametersError,
@@ -66,9 +66,9 @@ use open_esp_radio::{
                 TX_Q_ENABLE_VALID,
             },
             rx::{
-                HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxRingError,
-                RxRingLive, RxRingStopped, RxSegment, build_cold_ring, decode_rx_phy_info,
-                disable_receive, enable_receive, extract_ccmp_data, extract_data,
+                HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
+                RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment, build_cold_ring,
+                decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data, extract_data,
                 extract_management, first_segment_layout, publish_cold_ring,
             },
             rx_pool::RxStagePool,
@@ -102,7 +102,7 @@ use open_esp_radio::{
             rx_backend::{
                 ConnectedControlPublisher, ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE,
                 EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
-                Esp32s31StoppedRx, RxEnqueueCounters,
+                Esp32s31RxEpochResources, Esp32s31StoppedRx, RxEnqueueCounters,
             },
             rx_reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
@@ -956,7 +956,23 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
 >;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
 type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
+
+fn assert_join_hardware_capabilities<H: Mmio + RxDma + TxHardware + CcmpKeyHardware>(_: &H) {}
+
 type ConnectedStoppedRx = Esp32s31StoppedRx<
+    'static,
+    'static,
+    'static,
+    OpenRadioRxReloadDelay,
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+    RX_DESCRIPTOR_COUNT,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
+type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     'static,
     'static,
     'static,
@@ -978,10 +994,12 @@ type ConnectedStoppedRx = Esp32s31StoppedRx<
 enum RadioHilConnectedEpochResources {
     Initial {
         registers: &'static mut RadioRegisters,
+        rx: RadioHilJoinRx<'static>,
     },
     Reconnected {
         hardware: ConnectedHardware,
-        rx: ConnectedStoppedRx,
+        rx: RadioHilJoinRx<'static>,
+        rx_resources: ConnectedRxEpochResources,
         ampdu: Pin<
             &'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
         >,
@@ -1009,11 +1027,14 @@ impl RadioHilDisconnectedEpoch {
     fn into_reconnected_resources(
         self,
     ) -> (RadioHilRunningNetwork, RadioHilConnectedEpochResources) {
+        assert_join_hardware_capabilities(&self.hardware);
+        let (rx, rx_resources) = self.rx.into_epoch_parts();
         (
             self.network,
             RadioHilConnectedEpochResources::Reconnected {
                 hardware: self.hardware,
-                rx: self.rx,
+                rx: RadioHilJoinRx::Halted(rx),
+                rx_resources,
                 ampdu: self.ampdu,
                 control_resources: self.control_resources,
             },
@@ -1034,11 +1055,13 @@ struct StaConnectedLink {
     peer_dcm_receive: HeDcmConstellation,
 }
 
-struct StaConnectedSession<'a> {
+struct StaConnectedSession<'rate, 'security> {
     link: StaConnectedLink,
     network: RadioHilStaNetwork,
-    rate_control: &'a mut StaRateControlAssociation,
-    sequences: &'a mut StaTxSequenceCounters,
+    rate_control: &'rate mut StaRateControlAssociation,
+    pmk: &'security Pmk,
+    supplicant_nonce: [u8; 32],
+    sequences: &'security mut StaTxSequenceCounters,
 }
 
 /// One-time versus persistent `embassy-net` ownership for STA epochs.
@@ -1065,6 +1088,102 @@ struct StaAssociationSecurity<'a> {
     pmk: &'a Pmk,
     supplicant_nonce: [u8; 32],
     sequences: &'a mut StaTxSequenceCounters,
+}
+
+/// Complete retry ownership returned by a failed Association/WPA2 attempt.
+///
+/// No field is reconstructed from a static address. The outer STA lifecycle
+/// receives the exact board fixture, DMA frontier, persistent network owner
+/// and security/sequence state that the failed finite runner stopped using.
+struct RadioHilJoinRetry<'fixture, 'security> {
+    fixture: RadioHilConnectedFixture<'fixture>,
+    target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
+    network: RadioHilStaNetwork,
+    security: StaAssociationSecurity<'security>,
+}
+
+/// Observable progress plus the resources needed for a bounded retry.
+struct RadioHilJoinFailure<'fixture, 'security> {
+    retry: RadioHilJoinRetry<'fixture, 'security>,
+    associated: bool,
+    message1: bool,
+    message3: bool,
+}
+
+impl<'fixture, 'security> RadioHilJoinFailure<'fixture, 'security> {
+    const fn new(
+        retry: RadioHilJoinRetry<'fixture, 'security>,
+        associated: bool,
+        message1: bool,
+        message3: bool,
+    ) -> Self {
+        Self {
+            retry,
+            associated,
+            message1,
+            message3,
+        }
+    }
+
+    const fn progress(&self) -> (bool, bool, bool) {
+        (self.associated, self.message1, self.message3)
+    }
+}
+
+fn failed_join<'fixture, 'security>(
+    fixture: RadioHilConnectedFixture<'fixture>,
+    target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
+    network: RadioHilStaNetwork,
+    security: StaAssociationSecurity<'security>,
+    associated: bool,
+) -> RadioHilJoinFailure<'fixture, 'security> {
+    RadioHilJoinFailure::new(
+        RadioHilJoinRetry {
+            fixture,
+            target,
+            rx,
+            network,
+            security,
+        },
+        associated,
+        false,
+        false,
+    )
+}
+
+fn failed_join_from_session<'fixture, 'rate, 'security>(
+    fixture: RadioHilConnectedFixture<'fixture>,
+    target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
+    session: StaConnectedSession<'rate, 'security>,
+    message1: bool,
+) -> RadioHilJoinFailure<'fixture, 'security> {
+    let StaConnectedSession {
+        link: _,
+        network,
+        rate_control: _,
+        pmk,
+        supplicant_nonce,
+        sequences,
+    } = session;
+    RadioHilJoinFailure::new(
+        RadioHilJoinRetry {
+            fixture,
+            target,
+            rx,
+            network,
+            security: StaAssociationSecurity {
+                pmk,
+                supplicant_nonce,
+                sequences,
+            },
+        },
+        true,
+        message1,
+        false,
+    )
 }
 
 /// Board-owned resources required by the connected HIL path.
@@ -1704,42 +1823,134 @@ static OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegist
 static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
     AtomicPtr::new(core::ptr::null_mut());
 
-async fn start_live_rx_ring<'a>(
-    mmio: &mut RadioRegisters,
-    rx_storage: &'a RxStorage,
-    descriptor_base: u32,
-    buffer_addresses: &'a [u32; RX_DESCRIPTOR_COUNT],
-) -> Result<RxRingLive<'a, RX_DESCRIPTOR_COUNT>, RxRingError> {
-    // A consumed zero-terminated cold list cannot be safely restarted from
-    // descriptor zero: LAST_DESCRIPTOR still retains the old frontier. The
-    // live owner rotates the new head past that retained tail and subsequently
-    // appends completed halves with the recovered reload doorbell.
-    //
-    // SOURCE: promoted migration
-    // `migration/esp32s31-hybrid-runtime/src/wdev.rs::
-    // prepare_rx_recycle_chain` and `wDev_AppendRxBlocks`; qualified by the
-    // connected-path HIL `HIL_OPEN_RX_LIVE_APPEND_2026_07_27`.
-    let stopped = RxRingStopped::prepare(
-        mmio,
-        rx_storage.descriptors(),
-        descriptor_base,
-        buffer_addresses,
-        RX_BUFFER_SIZE as u32,
-        |index| {
-            // SAFETY: RxRingStopped has confirmed that hardware released the
-            // walker before it transfers each DMA buffer back for preparation.
-            unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
-        },
-    )?;
-    Timer::after_micros(5).await;
-    stopped.start(mmio)
+/// RX descriptor authority carried through pre-connected STA phases.
+///
+/// `Initial` is the one cold handoff from scan. Every later start must consume
+/// a hardware-confirmed `Halted` owner or retry an already published
+/// `Prepared` owner. `Vacant` exists only while a transition has moved the
+/// non-Copy authority out of this enum; it is never an externally observable
+/// station state.
+enum RadioHilJoinRx<'storage> {
+    Initial,
+    Halted(RxRingHalted<'storage, RX_DESCRIPTOR_COUNT>),
+    Prepared(RxRingStopped<'storage, RX_DESCRIPTOR_COUNT>),
+    Live(RxRingLive<'storage, RX_DESCRIPTOR_COUNT>),
+    Vacant,
+}
+
+impl<'storage> RadioHilJoinRx<'storage> {
+    async fn start<M: RxDma>(
+        &mut self,
+        mmio: &mut M,
+        rx_storage: &'storage RxStorage,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
+    ) -> Result<(), RadioHilStaJoinError> {
+        let state = core::mem::replace(self, Self::Vacant);
+        let prepared = match state {
+            Self::Initial => match RxRingStopped::prepare(
+                mmio,
+                rx_storage.descriptors(),
+                descriptor_base,
+                buffer_addresses,
+                RX_BUFFER_SIZE as u32,
+                |index| {
+                    // SAFETY: the prepare transaction first confirms that the
+                    // walker is stopped, then transfers this buffer index to
+                    // its caller before the recycle guards are restored.
+                    unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
+                },
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    *self = Self::Initial;
+                    return Err(error.into());
+                }
+            },
+            Self::Halted(halted) => match halted.prepare(
+                mmio,
+                RX_BUFFER_SIZE as u32,
+                |index| {
+                    // SAFETY: `RxRingHalted` proves that DMA released the
+                    // matching buffer before invoking this closure.
+                    unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
+                },
+            ) {
+                Ok(prepared) => prepared,
+                Err((halted, error)) => {
+                    *self = Self::Halted(halted);
+                    return Err(error.into());
+                }
+            },
+            Self::Prepared(prepared) => prepared,
+            live @ Self::Live(_) => {
+                *self = live;
+                return Err(RadioHilStaJoinError::ReceiveAlreadyStarted);
+            }
+            Self::Vacant => {
+                *self = Self::Vacant;
+                return Err(RadioHilStaJoinError::ReceiveNotStarted);
+            }
+        };
+        Timer::after_micros(5).await;
+        match prepared.try_start(mmio) {
+            Ok(live) => {
+                *self = Self::Live(live);
+                Ok(())
+            }
+            Err((prepared, error)) => {
+                *self = Self::Prepared(prepared);
+                Err(error.into())
+            }
+        }
+    }
+
+    fn stop<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RadioHilStaJoinError> {
+        let state = core::mem::replace(self, Self::Vacant);
+        let Self::Live(live) = state else {
+            *self = state;
+            return Err(RadioHilStaJoinError::ReceiveNotStarted);
+        };
+        match live.try_stop(mmio) {
+            Ok(halted) => {
+                *self = Self::Halted(halted);
+                Ok(())
+            }
+            Err((live, error)) => {
+                *self = Self::Live(live);
+                Err(error.into())
+            }
+        }
+    }
+
+    fn live_mut(
+        &mut self,
+    ) -> Result<&mut RxRingLive<'storage, RX_DESCRIPTOR_COUNT>, RadioHilStaJoinError> {
+        match self {
+            Self::Live(ring) => Ok(ring),
+            _ => Err(RadioHilStaJoinError::ReceiveNotStarted),
+        }
+    }
+
+    fn take_live(
+        &mut self,
+    ) -> Result<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>, RadioHilStaJoinError> {
+        let state = core::mem::replace(self, Self::Vacant);
+        match state {
+            Self::Live(ring) => Ok(ring),
+            state => {
+                *self = state;
+                Err(RadioHilStaJoinError::ReceiveNotStarted)
+            }
+        }
+    }
 }
 
 /// HIL fixture which supplies the production STA join runner with the current
 /// S31 PAC/DMA owners. Protocol retry/deadline state lives in `StaJoinRunner`;
 /// this adapter performs only finite hardware operations and frame extraction.
-struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch> {
-    mmio: &'hardware mut RadioRegisters,
+struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H> {
+    mmio: &'hardware mut H,
     rx_storage: &'storage RxStorage,
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
@@ -1747,7 +1958,7 @@ struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch> {
     frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     access_point: ScanRecord,
-    ring: Option<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>>,
+    rx: RadioHilJoinRx<'storage>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1770,45 +1981,35 @@ impl From<ActiveScanTxError> for RadioHilStaJoinError {
     }
 }
 
-impl<'hardware, 'storage, 'scratch> RadioHilStaJoinBackend<'hardware, 'storage, 'scratch> {
-    fn take_live_ring(
-        &mut self,
-    ) -> Result<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>, RadioHilStaJoinError> {
-        self.ring
-            .take()
-            .ok_or(RadioHilStaJoinError::ReceiveNotStarted)
+impl<'hardware, 'storage, 'scratch, H>
+    RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H>
+{
+    fn into_rx(self) -> RadioHilJoinRx<'storage> {
+        self.rx
     }
 }
 
-impl StaJoinBackend for RadioHilStaJoinBackend<'_, '_, '_> {
+impl<H> StaJoinBackend for RadioHilStaJoinBackend<'_, '_, '_, H>
+where
+    H: Mmio + RxDma + TxHardware,
+{
     type Error = RadioHilStaJoinError;
 
     fn start_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            if self.ring.is_some() {
-                return Err(RadioHilStaJoinError::ReceiveAlreadyStarted);
-            }
-            self.ring = Some(
-                start_live_rx_ring(
+            self.rx
+                .start(
                     self.mmio,
                     self.rx_storage,
                     self.descriptor_base,
                     self.buffer_addresses,
                 )
-                .await?,
-            );
-            Ok(())
+                .await
         }
     }
 
     fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            self.ring
-                .take()
-                .ok_or(RadioHilStaJoinError::ReceiveNotStarted)?;
-            disable_receive(self.mmio)?;
-            Ok(())
-        }
+        async move { self.rx.stop(self.mmio) }
     }
 
     fn transmit_open_authentication(
@@ -1853,10 +2054,7 @@ impl StaJoinBackend for RadioHilStaJoinBackend<'_, '_, '_> {
         O: StaJoinRxObserver + 'a,
     {
         async move {
-            let ring = self
-                .ring
-                .as_mut()
-                .ok_or(RadioHilStaJoinError::ReceiveNotStarted)?;
+            let ring = self.rx.live_mut()?;
             for index in 0..RX_DESCRIPTOR_COUNT {
                 let Some(completed) = ring.take_completed(index) else {
                     continue;
@@ -1903,8 +2101,8 @@ impl StaJoinBackend for RadioHilStaJoinBackend<'_, '_, '_> {
 /// HIL PAC/DMA fixture for the production WPA2 response runner. The adapter
 /// copies one complete EAPOL packet before returning and never awaits while a
 /// descriptor or mutable PAC transaction is borrowed.
-struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch> {
-    mmio: &'hardware mut RadioRegisters,
+struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch, H> {
+    mmio: &'hardware mut H,
     rx_storage: &'storage RxStorage,
     tx_storage: &'hardware mut TxStorage,
     descriptor_base: u32,
@@ -1912,21 +2110,27 @@ struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch> {
     frame: &'scratch mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     bssid: [u8; 6],
-    ring: Option<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>>,
+    rx: RadioHilJoinRx<'storage>,
     message2_transmissions: u16,
 }
 
-impl Wpa2HandshakeBackend for RadioHilWpa2Backend<'_, '_, '_> {
+impl<'storage, H> RadioHilWpa2Backend<'_, 'storage, '_, H> {
+    fn into_rx(self) -> RadioHilJoinRx<'storage> {
+        self.rx
+    }
+}
+
+impl<H> Wpa2HandshakeBackend for RadioHilWpa2Backend<'_, '_, '_, H>
+where
+    H: Mmio + RxDma + TxHardware,
+{
     type Error = RadioHilStaJoinError;
 
     fn service_receive(
         &mut self,
     ) -> impl Future<Output = Result<Wpa2RxProgress, Self::Error>> + '_ {
         async move {
-            let ring = self
-                .ring
-                .as_mut()
-                .ok_or(RadioHilStaJoinError::ReceiveNotStarted)?;
+            let ring = self.rx.live_mut()?;
             let mut completed_frames = 0_u32;
             for index in 0..RX_DESCRIPTOR_COUNT {
                 let Some(completed) = ring.take_completed(index) else {
@@ -1992,31 +2196,20 @@ impl Wpa2HandshakeBackend for RadioHilWpa2Backend<'_, '_, '_> {
 
     fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            self.ring
-                .take()
-                .ok_or(RadioHilStaJoinError::ReceiveNotStarted)?;
-            disable_receive(self.mmio)?;
-            self.ring = Some(
-                start_live_rx_ring(
+            self.rx.stop(self.mmio)?;
+            self.rx
+                .start(
                     self.mmio,
                     self.rx_storage,
                     self.descriptor_base,
                     self.buffer_addresses,
                 )
-                .await?,
-            );
-            Ok(())
+                .await
         }
     }
 
     fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            self.ring
-                .take()
-                .ok_or(RadioHilStaJoinError::ReceiveNotStarted)?;
-            disable_receive(self.mmio)?;
-            Ok(())
-        }
+        async move { self.rx.stop(self.mmio) }
     }
 
     fn transmit_message2<'a>(
@@ -2053,8 +2246,8 @@ enum RadioHilWpa2KeyError {
     TxStatus(u8),
 }
 
-struct RadioHilWpa2KeyBackend<'hardware, 'sequence> {
-    mmio: &'hardware mut RadioRegisters,
+struct RadioHilWpa2KeyBackend<'hardware, 'sequence, H> {
+    mmio: &'hardware mut H,
     tx_storage: &'hardware mut TxStorage,
     station_address: [u8; 6],
     bssid: [u8; 6],
@@ -2063,7 +2256,10 @@ struct RadioHilWpa2KeyBackend<'hardware, 'sequence> {
     completion: Option<TxCompletion>,
 }
 
-impl Wpa2KeyInstallBackend for RadioHilWpa2KeyBackend<'_, '_> {
+impl<H> Wpa2KeyInstallBackend for RadioHilWpa2KeyBackend<'_, '_, H>
+where
+    H: Mmio + CcmpKeyHardware + TxHardware,
+{
     type Error = RadioHilWpa2KeyError;
     type InstalledKeys = RadioHilInstalledWpa2Keys;
 
@@ -3104,8 +3300,8 @@ async fn transmit_protected_ethernet_frame<M: Mmio + TxHardware>(
         .map_err(Into::into)
 }
 
-async fn await_protected_arp_response(
-    mmio: &mut RadioRegisters,
+async fn await_protected_arp_response<M: Mmio + RxDma>(
+    mmio: &mut M,
     rx_storage: &RxStorage,
     frame: &mut [u8; RX_STAGE_CAPACITY],
     ethernet: &mut [u8; RX_STAGE_CAPACITY],
@@ -3113,8 +3309,18 @@ async fn await_protected_arp_response(
     network_runner: &NetworkRunner,
     station_address: [u8; 6],
     bssid: [u8; 6],
-    mut rx_ring: RxRingLive<'_, RX_DESCRIPTOR_COUNT>,
+    rx: &mut RadioHilJoinRx<'_>,
 ) -> bool {
+    let rx_ring = match rx.live_mut() {
+        Ok(ring) => ring,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx \
+                 error={error:?}"
+            ));
+            return false;
+        }
+    };
     let mut received_frames = 0_u32;
     let mut protected_frames = 0_u32;
     let mut mic_failures = 0_u32;
@@ -3257,7 +3463,7 @@ async fn await_protected_arp_response(
                 continue;
             };
             let pn = &frame[data.ccmp_header_offset..data.payload_offset];
-            let _ = disable_receive(mmio);
+            let _ = rx.stop(mmio);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-protected-rx \
                  protocol=arp source={:02x?} target={}.{}.{}.{} pn={pn:02x?} \
@@ -3280,7 +3486,7 @@ async fn await_protected_arp_response(
             // detached half before republishing it to hardware.
             unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
         }) {
-            let _ = disable_receive(mmio);
+            let _ = rx.stop(mmio);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx-recycle \
                  error={error:?}"
@@ -3288,7 +3494,7 @@ async fn await_protected_arp_response(
             return false;
         }
         if rx_ring.all_observed() {
-            let _ = disable_receive(mmio);
+            let _ = rx.stop(mmio);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx-recycle \
                  error=terminal-before-recycle"
@@ -3297,7 +3503,7 @@ async fn await_protected_arp_response(
         }
         Timer::after_millis(1).await;
     }
-    let _ = disable_receive(mmio);
+    let _ = rx.stop(mmio);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx error=timeout \
          frames={received_frames} protected={protected_frames} \
@@ -4839,7 +5045,7 @@ async fn connected_benchmark_task(
 async fn run_connected_network(
     fixture: RadioHilConnectedTaskFixture<'_>,
     epoch_resources: RadioHilConnectedEpochResources,
-    session: StaConnectedSession<'_>,
+    session: StaConnectedSession<'_, '_>,
     pairwise_slot: StaPairwiseCcmpSlot,
     group_slot: StaGroupCcmpSlot,
 ) -> RadioHilDisconnectedEpoch {
@@ -4859,6 +5065,8 @@ async fn run_connected_network(
         link,
         network,
         rate_control,
+        pmk: _,
+        supplicant_nonce: _,
         sequences,
     } = session;
     let StaConnectedLink {
@@ -4950,22 +5158,34 @@ async fn run_connected_network(
 
     let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
-        RadioHilConnectedEpochResources::Initial { registers } => {
-            let rx_ring =
-                match start_live_rx_ring(registers, rx_storage, descriptor_base, buffer_addresses)
-                    .await
-                {
-                    Ok(ring) => ring,
-                    Err(error) => {
+        RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
+            if let Err(error) = rx
+                .start(registers, rx_storage, descriptor_base, buffer_addresses)
+                .await
+            {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \
                              stage=production-runner-rx-arm epoch=initial error={error:?}"
                         ));
+                let _owner = rx;
                         loop {
                             Timer::after_secs(60).await;
                         }
                     }
-                };
+            let rx_ring = match rx.take_live() {
+                Ok(ring) => ring,
+                Err(error) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-runner-rx-arm epoch=initial \
+                         transition=take-live error={error:?}"
+                    ));
+                    let _owner = rx;
+                    loop {
+                        Timer::after_secs(60).await;
+                    }
+                }
+            };
             let rx = Esp32s31ConnectedRx::new(
                 rx_ring,
                 rx_storage.buffers(),
@@ -4992,27 +5212,20 @@ async fn run_connected_network(
         }
         RadioHilConnectedEpochResources::Reconnected {
             mut hardware,
-            rx,
+            mut rx,
+            rx_resources,
             ampdu,
             control_resources,
         } => {
-            let prepared = match rx.prepare(&mut hardware) {
-                Ok(prepared) => prepared,
-                Err((rx, error)) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-runner-rx-arm epoch=reconnected \
-                         transition=prepare error={error:?}"
-                    ));
-                    let _owners = (hardware, rx, ampdu, control_resources, network_runner);
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
-                }
-            };
-            let rx = match prepared.start(&mut hardware).await {
-                Ok(rx) => rx,
-                Err((prepared, error)) => {
+            if let Err(error) = rx
+                .start(
+                    &mut hardware,
+                    rx_storage,
+                    descriptor_base,
+                    buffer_addresses,
+                )
+                .await
+            {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL \
                          stage=production-runner-rx-arm epoch=reconnected \
@@ -5020,7 +5233,28 @@ async fn run_connected_network(
                     ));
                     let _owners = (
                         hardware,
-                        prepared,
+                        rx,
+                        rx_resources,
+                        ampdu,
+                        control_resources,
+                        network_runner,
+                    );
+                    loop {
+                        Timer::after_secs(60).await;
+                    }
+                }
+            let rx_ring = match rx.take_live() {
+                Ok(ring) => ring,
+                Err(error) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-runner-rx-arm epoch=reconnected \
+                         transition=take-live error={error:?}"
+                    ));
+                    let _owners = (
+                        hardware,
+                        rx,
+                        rx_resources,
                         ampdu,
                         control_resources,
                         network_runner,
@@ -5030,6 +5264,7 @@ async fn run_connected_network(
                     }
                 }
             };
+            let rx = rx_resources.with_live_ring(rx_ring);
             (hardware, rx, ampdu, control_resources)
         }
     };
@@ -5391,7 +5626,7 @@ async fn authenticate_target(
     fixture: &mut RadioHilJoinFixture<'_>,
     target: StaJoinTarget,
     sequence: &mut StaSequenceCounter,
-) -> bool {
+) -> (bool, RadioHilJoinRx<'static>) {
     let StaJoinTarget {
         station_address,
         access_point,
@@ -5428,7 +5663,7 @@ async fn authenticate_target(
              channel={} error={error:?}",
             access_point.channel,
         ));
-        return false;
+        return (false, RadioHilJoinRx::Initial);
     }
     // The vendor HE-node lifecycle remains deferred until Association.
     emergency_log(format_args!(
@@ -5457,20 +5692,22 @@ async fn authenticate_target(
         frame,
         station_address,
         access_point,
-        ring: None,
+        rx: RadioHilJoinRx::Initial,
     };
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
-    match runner
+    let result = runner
         .authenticate(station_address, access_point.bssid, sequence)
-        .await
-    {
+        .await;
+    let (backend, _) = runner.into_parts();
+    let rx = backend.into_rx();
+    match result {
         Ok(success) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=sta-auth-response \\
                  attempt={} frames={} bssid={:02x?}",
                 success.attempt, success.total_received_frames, access_point.bssid,
             ));
-            true
+            (true, rx)
         }
         Err(error) => {
             emergency_log(format_args!(
@@ -5478,37 +5715,38 @@ async fn authenticate_target(
                  error={error:?} bssid={:02x?}",
                 access_point.bssid,
             ));
-            false
+            (false, rx)
         }
     }
 }
-async fn associate_target(
-    fixture: RadioHilConnectedFixture<'_>,
+
+/// Allocate the station/network ownership graph exactly once.
+///
+/// Keep both 32-frame queues out of the task stack. Passing
+/// `NetworkResources::new()` to `StaticCell::init` materializes a temporary of
+/// more than 100 KiB and previously corrupted the saved channel waker. A
+/// reconnect never calls this function: it receives `RadioHilStaNetwork::Running`
+/// from the completed connected epoch.
+fn initialize_sta_network(station_address: [u8; 6]) -> RadioHilStaNetwork {
+    let resources = NetworkResources::init_in_place(OPEN_RADIO_NETWORK_RESOURCES.uninit());
+    let tx_pool = NetworkTxPool::pin_static(NetworkTxPool::init_in_place(
+        OPEN_RADIO_NETWORK_TX_POOL.uninit(),
+    ));
+    let (device, runner) = resources.split(tx_pool, station_address);
+    RadioHilStaNetwork::Unstarted { device, runner }
+}
+
+async fn associate_target<'fixture, 'security>(
+    fixture: RadioHilConnectedFixture<'fixture>,
     target: StaJoinTarget,
-    security: StaAssociationSecurity<'_>,
-) -> (bool, bool, bool) {
-    let RadioHilConnectedFixture {
-        spawner,
-        protocol_spawner,
-        platform,
-        mmio,
-        interrupt_setup,
-        rx_storage,
-        tx_storage,
-        descriptor_base,
-        buffer_addresses,
-        frame,
-        ethernet,
-    } = fixture;
+    rx: RadioHilJoinRx<'static>,
+    network: RadioHilStaNetwork,
+    security: StaAssociationSecurity<'security>,
+) -> RadioHilJoinFailure<'fixture, 'security> {
     let StaJoinTarget {
         station_address,
         access_point,
     } = target;
-    let StaAssociationSecurity {
-        pmk,
-        supplicant_nonce,
-        sequences,
-    } = security;
     let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
     let peer_scan_policy = match StaPeerScanPolicy::new(&access_point) {
         Ok(policy) => policy,
@@ -5516,48 +5754,47 @@ async fn associate_target(
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-peer-scan-policy error={error:?}"
             ));
-            return (false, false, false);
+            return failed_join(fixture, target, rx, network, security, false);
         }
     };
-    tx_storage.install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
-    tx_storage.install_he_bss_color(peer_scan_policy.he_bss_color);
+    fixture
+        .tx_storage
+        .install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
+    fixture
+        .tx_storage
+        .install_he_bss_color(peer_scan_policy.he_bss_color);
     if let Some(parameters) = peer_scan_policy.wmm.parameters() {
-        if let Err(error) = tx_storage.install_wmm_edca(parameters) {
+        if let Err(error) = fixture.tx_storage.install_wmm_edca(parameters) {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                  source=scan error={error:?}"
             ));
-            return (false, false, false);
+            return failed_join(fixture, target, rx, network, security, false);
         }
     }
-    // Keep both 32-frame queues out of the task stack. Passing
-    // `NetworkResources::new()` to `StaticCell::init` materializes a temporary
-    // of more than 100 KiB before association and corrupts the saved channel
-    // waker. HIL on 2026-07-29 observed the resulting misaligned load at
-    // embassy-sync `Channel::poll_ready_to_send` immediately after WPA2 M4.
-    let network_resources = NetworkResources::init_in_place(OPEN_RADIO_NETWORK_RESOURCES.uninit());
-    let network_tx_pool = NetworkTxPool::pin_static(NetworkTxPool::init_in_place(
-        OPEN_RADIO_NETWORK_TX_POOL.uninit(),
-    ));
-    let (network_device, network_runner) =
-        network_resources.split(network_tx_pool, station_address);
     let backend = RadioHilStaJoinBackend {
-        mmio,
-        rx_storage,
-        tx_storage,
-        descriptor_base,
-        buffer_addresses,
-        frame,
+        mmio: &mut *fixture.mmio,
+        rx_storage: fixture.rx_storage,
+        tx_storage: &mut *fixture.tx_storage,
+        descriptor_base: fixture.descriptor_base,
+        buffer_addresses: fixture.buffer_addresses,
+        frame: &mut *fixture.frame,
         station_address,
         access_point,
-        ring: None,
+        rx,
     };
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
     let association_started = Instant::now();
-    let success = match runner
-        .associate(station_address, access_point.bssid, sequences.non_qos_mut())
-        .await
-    {
+    let result = runner
+        .associate(
+            station_address,
+            access_point.bssid,
+            security.sequences.non_qos_mut(),
+        )
+        .await;
+    let (backend, _) = runner.into_parts();
+    let rx = backend.into_rx();
+    let success = match result {
         Ok(success) => success,
         Err(error) => {
             emergency_log(format_args!(
@@ -5565,25 +5802,14 @@ async fn associate_target(
                  error={error:?} bssid={:02x?}",
                 access_point.bssid,
             ));
-            return (false, false, false);
+            return failed_join(fixture, target, rx, network, security, false);
         }
     };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=OBSERVE stage=sta-assoc-timing elapsed_ms={}",
         association_started.elapsed().as_millis(),
     ));
-    let (mut backend, _) = runner.into_parts();
-    let rx_ring = match backend.take_live_ring() {
-        Ok(ring) => ring,
-        Err(error) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-assoc-rx-handoff \\
-                 error={error:?}"
-            ));
-            return (false, false, false);
-        }
-    };
-    drop(backend);
+    let mut rx = rx;
     let response = success.response;
     let received_frames = success.total_received_frames;
     {
@@ -5602,14 +5828,14 @@ async fn associate_target(
         let selected_rsn = match select_wpa2_psk_rsn(&access_point) {
             Ok(rsn) => rsn,
             Err(error) => {
-                let _ = disable_receive(mmio);
+                let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-rsn-select error={error:?}"
                 ));
-                return (true, false, false);
+                return failed_join(fixture, target, rx, network, security, true);
             }
         };
-        let noise_floor_dbm = mmio.read_noise_floor_dbm();
+        let noise_floor_dbm = fixture.mmio.read_noise_floor_dbm();
         let mut peer_plan = match peer_scan_policy.complete(
             &access_point,
             &response,
@@ -5618,43 +5844,48 @@ async fn associate_target(
         ) {
             Ok(plan) => plan,
             Err(error) => {
-                let _ = disable_receive(mmio);
+                let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
                              stage=sta-peer-association-plan error={error:?}"
                 ));
-                return (false, false, false);
+                return failed_join(fixture, target, rx, network, security, true);
             }
         };
-        tx_storage.install_ht_ampdu_policy(peer_plan.ht_ampdu);
-        tx_storage.install_he_bss_color(peer_plan.he_bss_color);
+        fixture
+            .tx_storage
+            .install_ht_ampdu_policy(peer_plan.ht_ampdu);
+        fixture
+            .tx_storage
+            .install_he_bss_color(peer_plan.he_bss_color);
         if peer_plan.wmm.source() == StaWmmSource::AssociationResponse {
             let Some(parameters) = peer_plan.wmm.parameters() else {
-                let _ = disable_receive(mmio);
+                let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                              source=association-response error=missing-parameters"
                 ));
-                return (false, false, false);
+                return failed_join(fixture, target, rx, network, security, true);
             };
-            if let Err(error) = tx_storage.install_wmm_edca(parameters) {
-                let _ = disable_receive(mmio);
+            if let Err(error) = fixture.tx_storage.install_wmm_edca(parameters) {
+                let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                              source=association-response error={error:?}"
                 ));
-                return (false, false, false);
+                return failed_join(fixture, target, rx, network, security, true);
             }
         }
         if let Some(state) = peer_plan.he_peer_state {
-            if let Err(error) = program_he20_peer_state(mmio, state, response.association_id, 0, 0)
+            if let Err(error) =
+                program_he20_peer_state(fixture.mmio, state, response.association_id, 0, 0)
             {
-                let _ = disable_receive(mmio);
+                let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-he20-peer \
                              error={error:?}"
                 ));
-                return (false, false, false);
+                return failed_join(fixture, target, rx, network, security, true);
             }
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=sta-he20-peer \
@@ -5701,13 +5932,13 @@ async fn associate_target(
             });
         let link_metric = peer_plan.link_metric;
         let rate_control = &mut peer_plan.rate_control;
-        if let Err(error) = rate_control.program_hardware(mmio) {
-            let _ = disable_receive(mmio);
+        if let Err(error) = rate_control.program_hardware(fixture.mmio) {
+            let _ = rx.stop(fixture.mmio);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-rate-control \
                          error={error:?}"
             ));
-            return (false, false, false);
+            return failed_join(fixture, target, rx, network, security, true);
         }
         let rate_schedule = schedule_state(rate_control.current_schedule());
         emergency_log(format_args!(
@@ -5738,6 +5969,11 @@ async fn associate_target(
             peer_supports_ldpc,
             peer_dcm_receive: peer_dcm_constellation,
         };
+        let StaAssociationSecurity {
+            pmk,
+            supplicant_nonce,
+            sequences,
+        } = security;
         let handshake = Wpa2HandshakeConfig {
             local: station_address,
             authenticator: access_point.bssid,
@@ -5749,37 +5985,23 @@ async fn associate_target(
         };
         let session = StaConnectedSession {
             link,
-            network: RadioHilStaNetwork::Unstarted {
-                device: network_device,
-                runner: network_runner,
-            },
+            network,
             rate_control,
+            pmk,
+            supplicant_nonce,
             sequences,
         };
-        let fixture = RadioHilConnectedFixture {
-            spawner,
-            protocol_spawner,
-            platform,
-            mmio,
-            interrupt_setup,
-            rx_storage,
-            tx_storage,
-            descriptor_base,
-            buffer_addresses,
-            frame,
-            ethernet,
-        };
-        let (message1, message3) = await_wpa2_message_1(fixture, rx_ring, handshake, session).await;
-        return (true, message1, message3);
+        return await_wpa2_message_1(fixture, target, rx, handshake, session).await;
     }
 }
 
-async fn await_wpa2_message_1(
-    fixture: RadioHilConnectedFixture<'_>,
-    rx_ring: RxRingLive<'_, RX_DESCRIPTOR_COUNT>,
+async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
+    fixture: RadioHilConnectedFixture<'fixture>,
+    target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
     handshake: Wpa2HandshakeConfig<'_>,
-    session: StaConnectedSession<'_>,
-) -> (bool, bool) {
+    session: StaConnectedSession<'rate, 'security>,
+) -> RadioHilJoinFailure<'fixture, 'security> {
     let link = session.link;
     let backend = RadioHilWpa2Backend {
         mmio: &mut *fixture.mmio,
@@ -5790,7 +6012,7 @@ async fn await_wpa2_message_1(
         frame: &mut *fixture.frame,
         station_address: link.station_address,
         bssid: link.bssid,
-        ring: Some(rx_ring),
+        rx,
         message2_transmissions: 0,
     };
     let mut runner =
@@ -5806,8 +6028,14 @@ async fn await_wpa2_message_1(
                 link.bssid,
             ));
             let (backend, _, _) = runner.into_parts();
-            drop(backend);
-            return (message1_complete, false);
+            let rx = backend.into_rx();
+            return failed_join_from_session(
+                fixture,
+                target,
+                rx,
+                session,
+                message1_complete,
+            );
         }
     };
     emergency_log(format_args!(
@@ -5819,17 +6047,18 @@ async fn await_wpa2_message_1(
         handshake_started.elapsed().as_millis(),
     ));
     let (backend, _, _) = runner.into_parts();
-    drop(backend);
+    let rx = backend.into_rx();
 
-    let message3 = complete_wpa2_key_install_and_connect(fixture, pending, session).await;
-    (true, message3)
+    complete_wpa2_key_install_and_connect(fixture, target, pending, session, rx).await
 }
 
-async fn complete_wpa2_key_install_and_connect(
-    fixture: RadioHilConnectedFixture<'_>,
+async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
+    fixture: RadioHilConnectedFixture<'fixture>,
+    target: StaJoinTarget,
     pending: Wpa2PendingKeyInstall,
-    session: StaConnectedSession<'_>,
-) -> bool {
+    session: StaConnectedSession<'rate, 'security>,
+    mut rx: RadioHilJoinRx<'static>,
+) -> RadioHilJoinFailure<'fixture, 'security> {
     let RadioHilConnectedFixture {
         spawner,
         protocol_spawner,
@@ -5847,6 +6076,8 @@ async fn complete_wpa2_key_install_and_connect(
         link,
         mut network,
         rate_control,
+        pmk,
+        supplicant_nonce,
         sequences,
     } = session;
     let StaConnectedLink {
@@ -5870,22 +6101,57 @@ async fn complete_wpa2_key_install_and_connect(
         completion: None,
     };
     let mut runner = Wpa2KeyInstallRunner::new(backend);
-    let established = match runner.run(pending).await {
+    let result = runner.run(pending).await;
+    let backend = runner.into_backend();
+    let RadioHilWpa2KeyBackend {
+        mmio,
+        tx_storage,
+        station_address: _,
+        bssid: _,
+        peer_qos: _,
+        sequences,
+        completion,
+    } = backend;
+    let established = match result {
         Ok(established) => established,
         Err(error) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-key-install-runner \
                  error={error:?} bssid={bssid:02x?}"
             ));
-            return false;
+            return RadioHilJoinFailure::new(
+                RadioHilJoinRetry {
+                    fixture: RadioHilConnectedFixture {
+                        spawner,
+                        protocol_spawner,
+                        platform,
+                        mmio,
+                        interrupt_setup,
+                        rx_storage,
+                        tx_storage,
+                        descriptor_base,
+                        buffer_addresses,
+                        frame,
+                        ethernet,
+                    },
+                    target,
+                    rx,
+                    network,
+                    security: StaAssociationSecurity {
+                        pmk,
+                        supplicant_nonce,
+                        sequences,
+                    },
+                },
+                true,
+                true,
+                false,
+            );
         }
     };
     let metadata = established.metadata();
-    let backend = runner.into_backend();
-    let completion = backend
-        .completion
+    let completion = completion
         .expect("successful WPA2 key runner retains Message 4 completion");
-    drop(backend);
     let RadioHilInstalledWpa2Keys {
         pairwise: mut key_slot,
         group: group_slot,
@@ -5976,11 +6242,10 @@ async fn complete_wpa2_key_install_and_connect(
                 network_runner.set_link_state(LinkState::Up);
                 let mut passed = false;
                 for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-            let protected_rx_ring =
-                match start_live_rx_ring(mmio, rx_storage, descriptor_base, buffer_addresses).await
-                {
-                    Ok(ring) => ring,
-                    Err(error) => {
+                    if let Err(error) = rx
+                        .start(mmio, rx_storage, descriptor_base, buffer_addresses)
+                        .await
+                    {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \
                                      stage=wpa2-protected-rx-arm attempt={attempt} \
@@ -5988,10 +6253,9 @@ async fn complete_wpa2_key_install_and_connect(
                         ));
                         break;
                     }
-                };
             let Some(queued_arp) = queue_arp_probe(network_device, network_runner, station_address)
             else {
-                let _ = disable_receive(mmio);
+                let _ = rx.stop(mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
                                  stage=wpa2-protected-arp-tx attempt={attempt} \
@@ -6033,7 +6297,7 @@ async fn complete_wpa2_key_install_and_connect(
                             network_runner,
                             station_address,
                             bssid,
-                            protected_rx_ring,
+                            &mut rx,
                         )
                         .await
                     {
@@ -6041,11 +6305,11 @@ async fn complete_wpa2_key_install_and_connect(
                         break;
                     }
                     if !transmitted {
-                        let _ = disable_receive(mmio);
+                        let _ = rx.stop(mmio);
                     }
                 }
                 Err(error) => {
-                    let _ = disable_receive(mmio);
+                    let _ = rx.stop(mmio);
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL \
                                      stage=wpa2-protected-arp-tx attempt={attempt} \
@@ -6090,11 +6354,14 @@ async fn complete_wpa2_key_install_and_connect(
             connected_fixture,
             RadioHilConnectedEpochResources::Initial {
                 registers,
+                rx,
             },
             StaConnectedSession {
                 link,
                 network,
                 rate_control,
+                pmk,
+                supplicant_nonce,
                 sequences,
             },
             key_slot,
@@ -6132,11 +6399,38 @@ async fn complete_wpa2_key_install_and_connect(
         "OPEN_RADIO_PHY_HIL result={} stage=wpa2-pairwise-key-clear slot={hardware_index}",
         if key_cleared { "PASS" } else { "FAIL" },
     ));
-    return message4_valid
+    let _cleanup_complete = message4_valid
         && message4_sent
-        && protected_arp_pass
         && group_key_cleared
         && key_cleared;
+    RadioHilJoinFailure::new(
+        RadioHilJoinRetry {
+            fixture: RadioHilConnectedFixture {
+                spawner,
+                protocol_spawner,
+                platform,
+                mmio,
+                interrupt_setup,
+                rx_storage,
+                tx_storage,
+                descriptor_base,
+                buffer_addresses,
+                frame,
+                ethernet,
+            },
+            target,
+            rx,
+            network,
+            security: StaAssociationSecurity {
+                pmk,
+                supplicant_nonce,
+                sequences,
+            },
+        },
+        true,
+        true,
+        false,
+    )
 }
 
 async fn run_promiscuous_rx_hil(
@@ -6346,7 +6640,7 @@ async fn run_promiscuous_rx_hil(
                     // channel can accidentally republish the same descriptor.
                     let control = mmio.read32(TX_Q_CONTROL[0]);
                     mmio.write32(TX_Q_CONTROL[0], control & !TX_Q_ENABLE_VALID);
-                    mmio.fence();
+                    Mmio::fence(mmio);
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL stage=passive-fallback \
                          channel={channel} tx_error={error:?}"
@@ -6745,7 +7039,7 @@ async fn run_promiscuous_rx_hil(
                 },
             };
             let authentication_started = Instant::now();
-            let authenticated =
+            let (authenticated, join_rx) =
                 authenticate_target(&mut join_fixture, target, sequences.non_qos_mut()).await;
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=OBSERVE stage=sta-auth-timing passed={} elapsed_ms={}",
@@ -6753,17 +7047,30 @@ async fn run_promiscuous_rx_hil(
                 authentication_started.elapsed().as_millis(),
             ));
             let (associated, message1, message3) = if authenticated {
-                associate_target(
+                let network = initialize_sta_network(station_address);
+                let failure = associate_target(
                     join_fixture.into_connected(),
                     target,
+                    join_rx,
+                    network,
                     StaAssociationSecurity {
                         pmk: &pmk,
                         supplicant_nonce,
                         sequences: &mut sequences,
                     },
                 )
-                .await
+                .await;
+                let progress = failure.progress();
+                let RadioHilJoinRetry {
+                    fixture: _fixture,
+                    target: _target,
+                    rx: _rx,
+                    network: _network,
+                    security: _security,
+                } = failure.retry;
+                progress
             } else {
+                let _rx = join_rx;
                 (false, false, false)
             };
             supplicant_nonce.fill(0);

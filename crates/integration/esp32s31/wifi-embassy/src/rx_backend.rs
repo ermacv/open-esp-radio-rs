@@ -243,6 +243,35 @@ pub struct Esp32s31StoppedRx<
     pipeline_counters: Option<&'pool RxPipelineCounters>,
 }
 
+/// Peer-independent resources retained while a halted ring is used by a
+/// finite Authentication/Association/WPA2 receive epoch.
+///
+/// Splitting these resources from [`RxRingHalted`] lets the station lifecycle
+/// pass the descriptor frontier through its pre-connected type state without
+/// discarding the production staging pool, queue sender, reload delay or
+/// telemetry binding. Reassembly consumes both owners, so it cannot create a
+/// second connected RX service for the same static storage.
+pub struct Esp32s31RxEpochResources<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const COUNT: usize = ESP32S31_RX_DESCRIPTOR_COUNT,
+    const STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
+    const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+> {
+    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+    frames:
+        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    delay: D,
+    pipeline_counters: Option<&'pool RxPipelineCounters>,
+}
+
 /// Connected RX resources after descriptor rebuild but before walker enable.
 ///
 /// Keeping this state distinct preserves the platform settle edge and returns
@@ -327,6 +356,46 @@ impl<
         self.frames.len()
     }
 
+    /// Separate the peer-specific halted frontier from persistent connected
+    /// RX resources for a finite pre-connected protocol epoch.
+    pub fn into_epoch_parts(
+        self,
+    ) -> (
+        RxRingHalted<'storage, COUNT>,
+        Esp32s31RxEpochResources<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+    ) {
+        let Self {
+            ring,
+            buffers,
+            pool,
+            frames,
+            delay,
+            pipeline_counters,
+        } = self;
+        (
+            ring,
+            Esp32s31RxEpochResources {
+                buffers,
+                pool,
+                frames,
+                delay,
+                pipeline_counters,
+            },
+        )
+    }
+
     /// Rebuild descriptor and buffer state for a fresh association epoch.
     ///
     /// Hardware is already confirmed stopped by this type. On every failure
@@ -388,6 +457,93 @@ impl<
                 },
                 error,
             )),
+        }
+    }
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+>
+    Esp32s31RxEpochResources<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >
+{
+    pub fn queued_frames(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Reassemble the stopped production owner after a finite join attempt.
+    pub fn with_halted_ring(
+        self,
+        ring: RxRingHalted<'storage, COUNT>,
+    ) -> Esp32s31StoppedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    > {
+        Esp32s31StoppedRx {
+            ring,
+            buffers: self.buffers,
+            pool: self.pool,
+            frames: self.frames,
+            delay: self.delay,
+            pipeline_counters: self.pipeline_counters,
+        }
+    }
+
+    /// Promote the same persistent resources into a connected RX service
+    /// after Association/WPA2 returns the live ring frontier.
+    pub fn with_live_ring(
+        self,
+        ring: RxRingLive<'storage, COUNT>,
+    ) -> Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    > {
+        Esp32s31ConnectedRx {
+            ring,
+            buffers: self.buffers,
+            pool: self.pool,
+            frames: self.frames,
+            delay: self.delay,
+            pipeline_counters: self.pipeline_counters,
         }
     }
 }
@@ -1323,6 +1479,11 @@ mod tests {
         assert_eq!(stopped.ring().buffer_addresses(), &addresses);
         assert_eq!(stopped.queued_frames(), 0);
 
+        let (ring, epoch_resources) = stopped.into_epoch_parts();
+        assert_eq!(ring.descriptor_base(), BASE);
+        assert_eq!(epoch_resources.queued_frames(), 0);
+        let stopped = epoch_resources.with_halted_ring(ring);
+
         let prepared = match stopped.prepare(&mut hardware) {
             Ok(prepared) => prepared,
             Err(_) => panic!("halted owner must rebuild the next descriptor epoch"),
@@ -1345,6 +1506,25 @@ mod tests {
             Ok(restarted) => restarted,
             Err(_) => panic!("prepared owner must reopen the mock walker"),
         };
+        assert!(hardware.walker);
+        assert_eq!(restarted.ring().descriptor_base(), BASE);
+        assert_eq!(restarted.queued_frames(), 0);
+
+        let stopped = match restarted.try_stop(&mut hardware) {
+            Ok(stopped) => stopped,
+            Err(_) => panic!("restarted owner must stop before the split test"),
+        };
+        let (ring, epoch_resources) = stopped.into_epoch_parts();
+        let prepared = match ring.prepare(&mut hardware, ESP32S31_RX_BUFFER_SIZE as u32, |index| {
+            // SAFETY: the halted ring proves the mock walker released
+            // every matching test buffer before this preparation edge.
+            unsafe { storage.buffers()[index].prepare_for_recycle() }
+        }) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("split halted ring must rebuild"),
+        };
+        let ring = prepared.start(&mut hardware).unwrap();
+        let restarted = epoch_resources.with_live_ring(ring);
         assert!(hardware.walker);
         assert_eq!(restarted.ring().descriptor_base(), BASE);
         assert_eq!(restarted.queued_frames(), 0);

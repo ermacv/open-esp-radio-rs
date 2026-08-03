@@ -1,7 +1,6 @@
 # Integration backlog
 
-Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-03
-(7,034 lines).
+Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-04.
 
 The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
 executor, concrete `embassy-net` scenarios, credentials, traffic generation
@@ -235,7 +234,37 @@ The first reconnect seam is now production-owned:
   the same static Embassy channel. Its host test closes one publisher/consumer
   scope, opens a second and proves FIFO delivery again. The HIL does not open
   the next scope until the RX protocol stop acknowledgement and connected
-  control shutdown have completed.
+  control shutdown have completed;
+- pre-connected RX now has one explicit HIL type-state owner:
+  `Initial → Prepared → Live → Halted`. Authentication returns its halted
+  frontier to Association; Association transfers the live frontier into WPA2;
+  WPA2 restart/stop and the protected ARP probe preserve the same owner; and
+  the initial connected epoch consumes it instead of reconstructing a ring
+  from static addresses. Failed prepare/start/stop transitions retain the
+  last hardware-valid owner for fail-closed handling;
+- network frame queues and their pinned TX pool are now initialized by one
+  explicit `initialize_sta_network` edge outside Association. Association
+  consumes either that `Unstarted` owner or, in a later reconnect composition,
+  the existing `Running` owner; it can no longer hide another static network
+  allocation inside each protocol attempt;
+- the finite Authentication/Association and WPA2 HIL backends now depend only
+  on their actual `Mmio`, `RxDma`, `TxHardware` and `CcmpKeyHardware`
+  capabilities. They are no longer tied to the cold `RadioRegisters` type and
+  can therefore operate on the `CooperativeTxHardware` returned by a completed
+  connected epoch;
+- every returning Association/WPA2 error now produces one
+  `RadioHilJoinFailure` with observable progress and a `RadioHilJoinRetry`
+  owner. That owner contains the exact board fixture, RX type-state frontier,
+  network queues/stack state, PMK, nonce and sequence counters; key-install
+  rollback and protected-data failure no longer terminate by dropping those
+  capabilities inside a nested function;
+- stopped production RX can now be split into a peer-specific
+  `RxRingHalted` frontier and peer-independent `Esp32s31RxEpochResources`, then
+  reassembled with either a halted or live frontier. The reconnected HIL epoch
+  carries the same `RadioHilJoinRx` type state used by Association while
+  retaining its staging pool, queue sender, reload delay and telemetry owner;
+  the next connected epoch consumes both halves instead of rebuilding those
+  resources from globals.
 
 This is necessary but not yet a reconnect implementation. The next slices,
 in order, are:
@@ -253,9 +282,14 @@ later connected epoch, but still retains that input in its WPA2 parent instead
 of entering a second scan/join epoch. Network stack/report lifetime,
 per-epoch benchmark lifetime and connected static-resource lifetime are now
 separated correctly. The remaining incompatibility is earlier in the chain:
-scan, join and WPA2 still accept only the initial raw-register fixture and do
-not yet return their RX owner on every failure. Therefore HIL cannot yet serve
-as evidence for reassociation.
+the successful initial join/WPA2 chain preserves RX ownership, its finite
+backends accept both cold and cooperative hardware, and every returning error
+has a complete retry owner. Board orchestration still bundles the initial
+raw-register fixture and deliberately terminates the returned retry owner,
+however. It must next accept either the cold register owner or the cooperative
+owner returned by the previous connected epoch and drive a bounded second
+Association/WPA2 attempt. Therefore HIL cannot yet serve as evidence for
+reassociation.
 
 ## Completion gate
 

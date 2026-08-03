@@ -45,6 +45,13 @@ cargo hil oracle build
 cargo hil oracle flash --port /dev/ttyACM0
 ```
 
+HIL builds use the git revisions recorded in `Cargo.lock`, even when a sibling
+`../esp-hal` checkout exists. Set `ESP_HAL_ROOT` explicitly only while
+co-developing against a local esp-hal tree. The runner validates the required
+package directories and restores the embedded lock file byte-for-byte after
+that opt-in build, so a local dependency experiment cannot dirty the radio
+repository.
+
 ## Firmware scenarios
 
 `cargo hil scenarios` prints the authoritative list. Each scenario has its

@@ -521,6 +521,31 @@ impl Scenario {
 }
 
 fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
+    let local_esp_hal = local_esp_hal_override()?;
+    if local_esp_hal.is_none() {
+        return build_resolved(root, scenario, None);
+    }
+
+    let lockfile = root.join("hil/esp32s31/Cargo.lock");
+    let mut snapshot = TrackedFileSnapshot::capture(lockfile)?;
+    let result = build_resolved(root, scenario, local_esp_hal.as_deref());
+    let restore = snapshot.restore();
+    match (result, restore) {
+        (Ok(artifacts), Ok(())) => Ok(artifacts),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(format!("restore embedded Cargo.lock: {error}").into()),
+        (Err(build_error), Err(restore_error)) => Err(format!(
+            "{build_error}; additionally failed to restore embedded Cargo.lock: {restore_error}"
+        )
+        .into()),
+    }
+}
+
+fn build_resolved(
+    root: &Path,
+    scenario: Scenario,
+    local_esp_hal: Option<&Path>,
+) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/esp32s31/Cargo.toml");
     let output =
@@ -554,13 +579,16 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
         .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target);
+    if local_esp_hal.is_none() {
+        runtime.arg("--locked");
+    }
     for variable in SCENARIO_ENVIRONMENT {
         runtime.env_remove(variable);
     }
     for (variable, value) in scenario.environment() {
         runtime.env(variable, value);
     }
-    add_local_esp_hal_patches(&mut runtime, root);
+    add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
 
@@ -582,7 +610,10 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
         .args(["-p", BOOTSTRAP_BIN, "--release", "--target", TARGET])
         .env("CARGO_TARGET_DIR", &bootstrap_target)
         .env("PSRAM_RUNTIME_BIN", absolute(&runtime_bin)?);
-    add_local_esp_hal_patches(&mut bootstrap, root);
+    if local_esp_hal.is_none() {
+        bootstrap.arg("--locked");
+    }
+    add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
 
@@ -620,6 +651,62 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
         bootstrap_elf,
         application_image,
     })
+}
+
+/// Byte-exact restoration guard for a caller-owned tracked file.
+///
+/// An explicitly requested local Cargo override legitimately resolves the
+/// embedded workspace against path packages and therefore rewrites package
+/// `source` fields in its lock file. That resolution is a build fixture, not a
+/// repository mutation. The explicit `restore` reports failures; `Drop` is
+/// the fallback for every early return and panic path.
+struct TrackedFileSnapshot {
+    path: PathBuf,
+    contents: Option<Vec<u8>>,
+    restored: bool,
+}
+
+impl TrackedFileSnapshot {
+    fn capture(path: PathBuf) -> std::io::Result<Self> {
+        let contents = match fs::read(&path) {
+            Ok(contents) => Some(contents),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            path,
+            contents,
+            restored: false,
+        })
+    }
+
+    fn restore(&mut self) -> std::io::Result<()> {
+        if self.restored {
+            return Ok(());
+        }
+        match &self.contents {
+            Some(contents) => {
+                let unchanged = fs::read(&self.path)
+                    .is_ok_and(|current| current.as_slice() == contents.as_slice());
+                if !unchanged {
+                    fs::write(&self.path, contents)?;
+                }
+            }
+            None => match fs::remove_file(&self.path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            },
+        }
+        self.restored = true;
+        Ok(())
+    }
+}
+
+impl Drop for TrackedFileSnapshot {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
 }
 
 fn parse_flash_arguments(
@@ -783,18 +870,39 @@ fn program_from_env(variable: &str, fallback: &str) -> OsString {
     env::var_os(variable).unwrap_or_else(|| fallback.into())
 }
 
-fn add_local_esp_hal_patches(command: &mut Command, root: &Path) {
-    let local = env::var_os("ESP_HAL_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.parent().unwrap_or(root).join("esp-hal"));
+fn local_esp_hal_override() -> Result<Option<PathBuf>> {
+    let Some(local) = env::var_os("ESP_HAL_ROOT").map(PathBuf::from) else {
+        return Ok(None);
+    };
     let packages = [
         ("esp-bootloader-esp-idf", "esp-bootloader-esp-idf"),
         ("esp-hal", "esp-hal"),
         ("esp-sync", "esp-sync"),
     ];
-    if !packages.iter().all(|(_, path)| local.join(path).is_dir()) {
-        return;
+    let missing = packages
+        .iter()
+        .filter_map(|(_, path)| (!local.join(path).is_dir()).then_some(*path))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "ESP_HAL_ROOT={} is missing required package directories: {}",
+            local.display(),
+            missing.join(", ")
+        )
+        .into());
     }
+    Ok(Some(local))
+}
+
+fn add_local_esp_hal_patches(command: &mut Command, local: Option<&Path>) {
+    let Some(local) = local else {
+        return;
+    };
+    let packages = [
+        ("esp-bootloader-esp-idf", "esp-bootloader-esp-idf"),
+        ("esp-hal", "esp-hal"),
+        ("esp-sync", "esp-sync"),
+    ];
     for (package, path) in packages {
         command.arg("--config").arg(format!(
             "patch.\"https://github.com/ermacv/esp-hal\".{package}.path=\"{}\"",
@@ -1015,6 +1123,18 @@ fn audit_application_image(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn scratch_directory(name: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = env::temp_dir().join(format!(
+            "open-esp-radio-hil-runner-{name}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
 
     #[test]
     fn qualified_profile_name_is_stable() {
@@ -1127,5 +1247,33 @@ mod tests {
             crc32_idf(&1_u32.to_le_bytes())
         );
         assert!(image[32..].iter().all(|byte| *byte == 0xff));
+    }
+
+    #[test]
+    fn tracked_file_snapshot_restores_exact_contents() {
+        let directory = scratch_directory("restore");
+        let lockfile = directory.join("Cargo.lock");
+        let original = b"version = 4\n\n[[package]]\nname = \"fixture\"\n";
+        fs::write(&lockfile, original).unwrap();
+
+        let mut snapshot = TrackedFileSnapshot::capture(lockfile.clone()).unwrap();
+        fs::write(&lockfile, b"rewritten by cargo\n").unwrap();
+        snapshot.restore().unwrap();
+
+        assert_eq!(fs::read(&lockfile).unwrap(), original);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn tracked_file_snapshot_drop_removes_new_file() {
+        let directory = scratch_directory("drop");
+        let lockfile = directory.join("Cargo.lock");
+        {
+            let _snapshot = TrackedFileSnapshot::capture(lockfile.clone()).unwrap();
+            fs::write(&lockfile, b"generated by cargo\n").unwrap();
+        }
+
+        assert!(!lockfile.exists());
+        fs::remove_dir_all(directory).unwrap();
     }
 }

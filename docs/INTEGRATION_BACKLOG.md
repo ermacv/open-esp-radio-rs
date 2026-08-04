@@ -292,6 +292,13 @@ The first reconnect seam is now production-owned:
   its proven same-peer frontier with `Reuse`, so it cannot claim an
   unperformed scan. The ESP32-S31 HIL implements only the concrete attempt and
   Embassy timer adapter; retry policy no longer lives in PASS/FAIL code.
+- `StaCandidateScanService` now owns the chip- and executor-independent scan
+  transaction: one explicit preparation edge, a finite caller-supplied channel
+  plan, and a distinct candidate-selection edge. Every channel failure, stop,
+  empty plan and no-candidate result returns the exact caller owner with
+  bounded progress. Cold and running ESP32-S31 adapters are intentionally not
+  conflated; neither exists yet, so this interface does not widen the current
+  HIL evidence.
 
 This is now a bounded same-peer reconnect implementation with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
@@ -308,10 +315,11 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. move cold scan into the same service owner. Open Authentication now begins
-   as `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
-   RX, network and security frontier through bounded backoff. Success crosses
-   into `Join`, and later into `Reconnect`, without a shared mutable context;
+1. implement separate ESP32-S31 cold and running backends for
+   `StaCandidateScanService`, then add their owner variants to the outer
+   service. Open Authentication already begins as
+   `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
+   RX, network and security frontier through bounded backoff;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify repeated controlled cycles, real AP loss/recovery and one injected
@@ -319,12 +327,13 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is the cold candidate owner before Open Authentication: scan still runs
-outside the service and produces a copied `ScanRecord`. The already composed
-`Authenticate`, `Join` and `Reconnect` variants deliberately retain their
-different types; extend that sum type with a real scan owner instead of hiding
-the phases inside a mutable vendor-style context or claiming that a retained
-record is a refreshed candidate.
+gap is now the ESP32-S31 adapter, not generic scan policy. Initial scan still
+runs outside the service and produces a copied `ScanRecord`; later disconnects
+have no running-scan owner. The already composed `Authenticate`, `Join` and
+`Reconnect` variants deliberately retain their different types. Extend that
+sum type with real cold/running scan owners instead of hiding the phases inside
+a mutable vendor-style context or claiming that a retained record is a
+refreshed candidate.
 
 ## Completion gate
 

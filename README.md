@@ -15,7 +15,7 @@ only opt-in exception.
 | --- | --- |
 | `crates/radio` | Application-facing `open-esp-radio` facade |
 | `crates/wifi/` | Chip-independent Wi-Fi protocols |
-| `crates/wifi/lifecycle` | Chip/executor-independent STA attempt, reconnect and backoff ownership |
+| `crates/wifi/lifecycle` | Chip/executor-independent STA scan, attempt, reconnect and backoff ownership |
 | `crates/integration/` | Reusable network, runtime and ecosystem adapters |
 | `crates/integration/esp32s31/wifi-embassy` | ESP32-S31 Wi-Fi/Embassy runtime composition |
 | `crates/integration/esp32s31/wifi-esp-hal` | Optional `esp-hal` Wi-Fi singleton adapter |

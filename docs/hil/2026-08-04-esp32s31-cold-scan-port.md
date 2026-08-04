@@ -51,3 +51,9 @@ attempt composition. HIL still sequences channel retune, Authentication,
 Association, peer programming and WPA2 ports separately for those two modes;
 their production primitive owners are already shared, but their higher-level
 typed transaction is not.
+
+A subsequent source-only cleanup moved HIL PHY observers and diagnostic
+snapshots into `radio_hil/phy_diagnostics.rs`. The resulting release layout
+had CRC32 `882f93b8`; placement/source-graph audits and another three reconnect
+cycles passed. Its UART evidence had SHA-256
+`927d23a0c87d70a85e50278742edae06bf1bec3002c2d57d24bc1fbcb3cd15db`.

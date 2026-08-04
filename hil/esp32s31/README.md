@@ -23,6 +23,12 @@ reporting belong here. PHY/MAC/STA behavior belongs in `../../crates` and must
 be moved there before a new behavior is entered in the canonical feature
 ledger.
 
+HIL-only PHY observation is isolated in
+`runtime/src/radio_hil/phy_diagnostics.rs`. It owns raw comparison snapshots,
+observer breadcrumbs and UART evidence callbacks, but no radio transition.
+The main `radio_hil.rs` file consumes that observer while keeping the station
+ownership flow separate from diagnostic register inventories.
+
 The closed vendor oracle is never a dependency of this workspace. It is an
 explicitly excluded sibling workspace at `../vendor-oracle/esp32s31` and is
 reachable only through `cargo hil oracle ...`.

@@ -571,7 +571,7 @@ impl SerialCapture {
             .any(|candidate| candidate == marker.as_bytes())
     }
 
-    fn marker_count(&self, marker: &str) -> usize {
+    pub(crate) fn marker_count(&self, marker: &str) -> usize {
         let bytes = self
             .bytes
             .lock()

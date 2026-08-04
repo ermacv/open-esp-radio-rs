@@ -10,14 +10,14 @@ Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
 ## Claim
 
-One healthy connected epoch can be stopped at a production runner transaction
-boundary, fully torn down, scanned again and reconstructed on the selected
-same-SSID candidate without another PAC singleton or static allocation. The
-returned cooperative hardware, RX DMA frontier, network stack, TX/A-MPDU
-resources, control mailbox, PMK, nonce and sequence owners complete fresh Open
-Authentication, a second Association, WPA2 four-way handshake and entry into
-the production connected runner. The available candidate happened to be the
-same peer in this cell.
+Healthy connected epochs can be stopped repeatedly at a production runner
+transaction boundary, fully torn down, scanned again and reconstructed on a
+selected same-SSID candidate without another PAC singleton or static
+allocation. The returned cooperative hardware, RX DMA frontier, network
+stack, TX/A-MPDU resources, control mailbox, PMK, nonce and sequence owners
+completed three consecutive fresh Open Authentication, Association, WPA2
+four-way handshake and connected-runner transitions. The available candidate
+happened to be the same peer in this cell.
 
 This does not claim recovery from AP disappearance. The latest controlled run
 performs a full running scan and feeds the selected candidate into fresh Open
@@ -40,16 +40,19 @@ Credentials remained host-owned and were provisioned over the framed UART
 protocol. The lifecycle qualification was then run with:
 
 ```text
-cargo hil station reconnect --serial /dev/ttyACM0 --timeout-seconds 120
+cargo hil station reconnect --serial /dev/ttyACM0 --cycles 3 --timeout-seconds 120
 ```
 
 The host accepts the cell only when protocol v4 advertises station epoch
 control, the stop command is acknowledged, the production stop marker is
 observed, the outer attempt advertises `refresh_candidate=1
 phase=running-scan`, all 13 channels complete, RX/TX owners return, fresh Open
-Authentication passes, no reconnect failure marker appears, and the target
-reaches `production-reconnect-connected-enter`. The local transcript is
-written to `target/hil/esp32s31/qualification/station-reconnect/uart.log`.
+Authentication passes, no reconnect or running-scan failure marker appears,
+and the target reaches both `production-reconnect-connected-enter` and a new
+`embassy-task-topology` marker. Marker counts must advance independently for
+every requested cycle; evidence retained from an earlier cycle cannot satisfy
+a later one. The local transcript is written to
+`target/hil/esp32s31/qualification/station-reconnect/uart.log`.
 
 ## Observed evidence
 
@@ -78,9 +81,28 @@ graph audit. Host tests prove that a stop already ready at idle publishes
 link-down and returns `Stopped`, while a stop raised during an active TX waits
 for the normal completion path before returning ownership.
 
+## Repeated-cycle evidence
+
+The same `1774ee7a` image completed one initial connection followed by three
+host-requested lifecycle cycles in a single boot. The strengthened runner
+snapshots marker counts before every command, so an earlier generation cannot
+satisfy a later generation. Every cycle reached a newly emitted connected task
+topology with `network_started=0`, confirming that the persistent network
+stack was reused rather than initialized again.
+
+| Generation | Scan | Authentication | Association | WPA2 M3/M4 | Connected topology |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 5,817 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 30 | 8 ms, replay 14 | PASS |
+| 2 | 5,819 ms, 13/13 Probe TX | 52 ms | 23 ms, AID 28 | 10 ms, replay 16 | PASS |
+| 3 | 5,777 ms, 13/13 Probe TX | 52 ms | 26 ms, AID 23 | 14 ms, replay 18 | PASS |
+
+All three scans returned an empty RX queue and the same descriptor base
+`0x2f03ec50`; each reported zero Probe TX failures. No running-scan or
+reconnect failure marker occurred. This closes the repeated healthy-cycle
+qualification gap, but still does not simulate loss of the AP.
+
 ## Remaining qualification
 
-- repeat several controlled cycles instead of parking in epoch two;
 - route real beacon loss through scan/candidate selection and Authentication;
 - qualify AP loss and recovery, retry/backoff exhaustion, and an injected
   TX/RX hardware failure;

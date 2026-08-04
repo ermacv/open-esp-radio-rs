@@ -86,14 +86,15 @@ network data, but the HIL does not enable it or consume its doze permit. Actual
 modem sleep remains disabled until its complete PAC sleep/wakeup transaction
 is qualified.
 
-`cargo hil station reconnect` provisions credentials over HIL protocol v4,
-requests one hardware-safe `WifiRunner` stop and waits for a full running scan,
-fresh Open Authentication and a second Association/WPA2/connected epoch on the
-selected same-SSID candidate. The stop has its own `Stopped` outcome and is
-converted by the qualification adapter into the distinct `CycleRequested`
-edge; it is never reported as beacon loss. The outer lifecycle then enters its
-`RunningScan` owner with `refresh_candidate=1`. This qualifies resource reuse
-and controlled rescan/re-authentication, not recovery after an AP disappears.
+`cargo hil station reconnect` provisions credentials over HIL protocol v4 and
+requests one or more hardware-safe `WifiRunner` stops. `--cycles 3`, for
+example, requires three independently observed full running scans, fresh Open
+Authentication and Association/WPA2/connected epochs on selected same-SSID
+candidates. The stop has its own `Stopped` outcome and is converted by the
+qualification adapter into the distinct `CycleRequested` edge; it is never
+reported as beacon loss. The outer lifecycle then enters its `RunningScan`
+owner with `refresh_candidate=1`. This qualifies repeated resource reuse and
+controlled rescan/re-authentication, not recovery after an AP disappears.
 
 Build and flash a named scenario with the same identifier:
 

@@ -375,8 +375,8 @@ The next slices, in order, are:
    terminal because DMA ownership is unconfirmed;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
-3. qualify repeated controlled cycles, real AP loss/recovery and one injected
-   TX/RX failure before resuming feature expansion.
+3. qualify real AP loss/recovery and one injected TX/RX failure before
+   resuming feature expansion.
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is

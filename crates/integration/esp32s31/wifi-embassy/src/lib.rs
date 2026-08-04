@@ -31,6 +31,7 @@ pub mod sta_scan;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_scan_target;
 pub mod staged_rx;
+pub mod station_epoch;
 pub mod station_power_save;
 pub mod wpa2;
 

@@ -125,6 +125,10 @@ use open_esp_radio::{
                 EmbassyStaJoinTimer, StaJoinBackend, StaJoinRunner, StaJoinRxDirective,
                 StaJoinRxObserver,
             },
+            station_epoch::{
+                Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch,
+                Esp32s31ReconnectedStaEpochParts, Esp32s31RunningScanEpochParts,
+            },
             sta_scan::{
                 Esp32s31ActiveProbeOutcome, Esp32s31ScanFrameObserver,
                 Esp32s31RunningScanRx, Esp32s31RunningScanTx, Esp32s31ScanObservationContext,
@@ -1091,6 +1095,22 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
+type ConnectedAmpduStorage =
+    Pin<&'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>>;
+type RadioHilReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
+    ConnectedHardware,
+    RadioHilJoinRx<'static>,
+    ConnectedRxEpochResources,
+    ConnectedAmpduStorage,
+    &'static ControlResources,
+>;
+type RadioHilDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
+    RadioHilRunningNetwork,
+    ConnectedHardware,
+    ConnectedStoppedRx,
+    ConnectedAmpduStorage,
+    &'static ControlResources,
+>;
 
 async fn start_preconnected_rx<'storage, M: RxDma>(
     rx: &mut RadioHilJoinRx<'storage>,
@@ -1115,31 +1135,7 @@ enum RadioHilConnectedEpochResources {
         registers: &'static mut RadioRegisters,
         rx: RadioHilJoinRx<'static>,
     },
-    Reconnected {
-        hardware: ConnectedHardware,
-        rx: RadioHilJoinRx<'static>,
-        rx_resources: ConnectedRxEpochResources,
-        ampdu: Pin<
-            &'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
-        >,
-        control_resources: &'static ControlResources,
-    },
-}
-
-/// Resources returned after one connected HIL epoch is completely quiesced.
-///
-/// `embassy-net` itself remains alive with link-down; this owner carries only
-/// the driver side needed by a later association. The register cell and
-/// descriptor arenas retain stable addresses while their finite PAC/DMA
-/// capabilities are no longer borrowed by spawned tasks.
-struct RadioHilDisconnectedEpoch {
-    network: RadioHilRunningNetwork,
-    hardware: ConnectedHardware,
-    rx: ConnectedStoppedRx,
-    ampdu: Pin<
-        &'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
-    >,
-    control_resources: &'static ControlResources,
+    Reconnected(RadioHilReconnectedEpoch),
 }
 
 /// Board and station state returned after all connected tasks have stopped.
@@ -1183,25 +1179,6 @@ struct RadioHilRunningScanReady<'fixture, 'security> {
     previous_target: StaJoinTarget,
     disconnected: RadioHilDisconnectedEpoch,
     security: StaAssociationSecurity<'security>,
-}
-
-impl RadioHilDisconnectedEpoch {
-    fn into_reconnected_resources(
-        self,
-    ) -> (RadioHilRunningNetwork, RadioHilConnectedEpochResources) {
-        assert_join_hardware_capabilities(&self.hardware);
-        let (rx, rx_resources) = self.rx.into_epoch_parts();
-        (
-            self.network,
-            RadioHilConnectedEpochResources::Reconnected {
-                hardware: self.hardware,
-                rx: RadioHilJoinRx::from_halted(rx),
-                rx_resources,
-                ampdu: self.ampdu,
-                control_resources: self.control_resources,
-            },
-        )
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5077,15 +5054,15 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
         RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
             if let Err(error) = start_preconnected_rx(&mut rx, registers, rx_storage).await
             {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL \
-                             stage=production-runner-rx-arm epoch=initial error={error:?}"
-                        ));
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL \
+                     stage=production-runner-rx-arm epoch=initial error={error:?}"
+                ));
                 let _owner = rx;
-                        loop {
-                            Timer::after_secs(60).await;
-                        }
-                    }
+                loop {
+                    Timer::after_secs(60).await;
+                }
+            }
             let rx_ring = match rx.take_live() {
                 Ok(ring) => ring,
                 Err(error) => {
@@ -5124,32 +5101,33 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                 &*control_resources,
             )
         }
-        RadioHilConnectedEpochResources::Reconnected {
-            mut hardware,
-            mut rx,
-            rx_resources,
-            ampdu,
-            control_resources,
-        } => {
+        RadioHilConnectedEpochResources::Reconnected(epoch) => {
+            let Esp32s31ReconnectedStaEpochParts {
+                mut hardware,
+                mut rx,
+                rx_resources,
+                aggregate_tx: ampdu,
+                control: control_resources,
+            } = epoch.into_parts();
             if let Err(error) = start_preconnected_rx(&mut rx, &mut hardware, rx_storage).await
             {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-runner-rx-arm epoch=reconnected \
-                         transition=start error={error:?}"
-                    ));
-                    let _owners = (
-                        hardware,
-                        rx,
-                        rx_resources,
-                        ampdu,
-                        control_resources,
-                        network_runner,
-                    );
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL \
+                     stage=production-runner-rx-arm epoch=reconnected \
+                     transition=start error={error:?}"
+                ));
+                let _owners = (
+                    hardware,
+                    rx,
+                    rx_resources,
+                    ampdu,
+                    control_resources,
+                    network_runner,
+                );
+                loop {
+                    Timer::after_secs(60).await;
                 }
+            }
             let rx_ring = match rx.take_live() {
                 Ok(ring) => ring,
                 Err(error) => {
@@ -5461,16 +5439,16 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                             frame,
                             ethernet,
                         },
-                        disconnected: RadioHilDisconnectedEpoch {
-                            network: RadioHilRunningNetwork {
+                        disconnected: RadioHilDisconnectedEpoch::new(
+                            RadioHilRunningNetwork {
                                 stack,
                                 runner: network,
                             },
                             hardware,
-                            rx: stopped_rx,
+                            stopped_rx,
                             ampdu,
                             control_resources,
-                        },
+                        ),
                         security: StaAssociationSecurity {
                             pmk,
                             supplicant_nonce,
@@ -5586,13 +5564,11 @@ async fn qualify_disconnected_running_scan(
         target_ssid,
         sequence,
     } = context;
-    let RadioHilDisconnectedEpoch {
-        network,
+    let Esp32s31RunningScanEpochParts {
+        retained,
         hardware,
         rx,
-        ampdu,
-        control_resources,
-    } = epoch;
+    } = epoch.into_running_scan_parts();
     let control = tx_storage
         .control
         .take()
@@ -5725,7 +5701,7 @@ async fn qualify_disconnected_running_scan(
                  stage=production-running-scan-return phase={:?}",
                 rx.phase(),
             ));
-            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+            let _owners = (retained, hardware, rx, tx);
             loop {
                 Timer::after_secs(60).await;
             }
@@ -5745,13 +5721,7 @@ async fn qualify_disconnected_running_scan(
         probe_responses,
         telemetry.ring_epochs,
     ));
-    let disconnected = RadioHilDisconnectedEpoch {
-        network,
-        hardware,
-        rx,
-        ampdu,
-        control_resources,
-    };
+    let disconnected = retained.restore(hardware, rx);
     match outcome {
         Ok(candidate) => Ok(RadioHilRunningScanReturn {
             disconnected,
@@ -5848,7 +5818,10 @@ async fn run_running_scan_attempt<'fixture, 'security>(
         station_address: previous_target.station_address,
         access_point: scan_return.candidate,
     };
-    let (network, epoch) = scan_return.disconnected.into_reconnected_resources();
+    assert_join_hardware_capabilities(scan_return.disconnected.hardware());
+    let (network, epoch) = scan_return
+        .disconnected
+        .prepare_reconnect::<EmbassyEsp32s31PreconnectedRxDelay>();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready \
          candidate_channel={} candidate_bssid={:02x?}",
@@ -5859,7 +5832,7 @@ async fn run_running_scan_attempt<'fixture, 'security>(
         fixture,
         target,
         network: RadioHilStaNetwork::Running(network),
-        epoch,
+        epoch: RadioHilConnectedEpochResources::Reconnected(epoch),
         security,
     })
     .await
@@ -6143,13 +6116,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         }
     }
 
-    let RadioHilConnectedEpochResources::Reconnected {
-        hardware,
-        rx,
-        rx_resources: _,
-        ampdu: _,
-        control_resources: _,
-    } = &mut ready.epoch
+    let RadioHilConnectedEpochResources::Reconnected(epoch) = &mut ready.epoch
     else {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -6162,6 +6129,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             RadioHilStaLifecycleFailure::InvalidEpochOwner,
         );
     };
+    let (hardware, rx) = epoch.hardware_and_rx_mut();
 
     let selection = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE);
     let authentication_started = Instant::now();
@@ -7396,8 +7364,8 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
              descriptor_base={:#010x} queued_frames={}",
-            disconnected.rx.ring().descriptor_base(),
-            disconnected.rx.queued_frames(),
+            disconnected.rx().ring().descriptor_base(),
+            disconnected.rx().queued_frames(),
         ));
         let ready = RadioHilRunningScanReady {
             fixture,

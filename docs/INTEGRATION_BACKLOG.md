@@ -218,17 +218,18 @@ The first reconnect seam is now production-owned:
   HIL creates and confirms a second RX DMA epoch using the same static arena;
 - the HIL benchmark now has a stop acknowledgement and cannot retain the PAC
   register cell after disconnect. `run_connected_network` returns a coherent
-  `RadioHilDisconnectedEpoch` containing the persistent network runner,
+  production `Esp32s31DisconnectedStaEpoch` containing the persistent network runner,
   register-backed hardware, halted RX and A-MPDU storage. `embassy-net` and
   its report task are created only for `Unstarted`; the returned `Running`
   state keeps that stack alive with link-down rather than calling
   `StackResources::init` again;
-- connected-epoch construction now distinguishes
-  `RadioHilConnectedEpochResources::Initial` from `Reconnected`. Only the
+- connected-epoch construction now distinguishes the board-only
+  `RadioHilConnectedEpochResources::Initial` edge from the production
+  `Esp32s31ReconnectedStaEpoch`. Only the
   initial variant can promote raw `RadioRegisters` into the cooperative cell
   and initialize A-MPDU/control storage. The reconnect variant accepts only
   the hardware, halted RX, pinned A-MPDU arena and control mailbox returned by
-  `RadioHilDisconnectedEpoch`, so a second connected epoch cannot compile a
+  `Esp32s31DisconnectedStaEpoch`, so a second connected epoch cannot compile a
   repeated `StaticCell::init` path;
 - `ConnectedControlResources` now supports sequential endpoint recreation on
   the same static Embassy channel. Its host test closes one publisher/consumer
@@ -245,7 +246,7 @@ The first reconnect seam is now production-owned:
   last hardware-valid owner for fail-closed handling. The owner now lives in
   the ESP32-S31 Embassy integration crate; HIL supplies only its static DMA
   buffer recycle closure. Its host test moves the live frontier between
-  protocol phases and returns it to halted, and runtime CRC32 `4331250c`
+  protocol phases and returns it to halted, and runtime CRC32 `dc73a25e`
   repeated the complete scan/Authentication/Association/WPA2 transition three
   times on hardware;
 - network frame queues and their pinned TX pool are now initialized by one
@@ -271,6 +272,17 @@ The first reconnect seam is now production-owned:
   retaining its staging pool, queue sender, reload delay and telemetry owner;
   the next connected epoch consumes both halves instead of rebuilding those
   resources from globals;
+- the complete disconnected/reconnected station epoch now lives in
+  `station_epoch.rs`. A running scan consumes a named split containing only
+  hardware and stopped RX while the network, A-MPDU arena and control mailbox
+  remain inaccessible in `Esp32s31RunningScanRetained`. Restoring the scan
+  owner produces `Esp32s31DisconnectedStaEpoch`; `prepare_reconnect` then
+  consumes that value once and yields `Esp32s31ReconnectedStaEpoch` with a
+  pre-connected RX frontier plus its persistent staging resources. HIL keeps
+  only the genuinely board-specific initial `StaticCell` promotion. Host
+  coverage proves the split/restore/prepare transition preserves every
+  owner, and runtime CRC32 `dc73a25e` completed three hardware cycles with the
+  same descriptor base;
 - `Esp32s31RunningScanRx` now keeps that halted ring together with the exact
   staging pool, queue sender, reload delay and telemetry binding throughout a
   running scan. Its `Halted -> Prepared -> Live -> Halted` transition uses the
@@ -385,11 +397,10 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract the remaining disconnected/reconnect epoch composition from HIL
-   into the reusable Embassy integration layer. The production running-scan
-   port is already there; recoverable scan failures reconstruct
-   `RadioHilDisconnectedEpoch`, while an RX-stop failure remains terminal
-   because DMA ownership is unconfirmed;
+1. extract the remaining reconnect protocol/session composition from HIL.
+   The reusable Embassy layer now owns the disconnected/running-scan/
+   reconnected resource transition, while the board still sequences
+   Authentication, Association, peer programming, WPA2 and connected entry;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -399,10 +410,10 @@ Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
 closed for running scan: `refresh_candidate` selects a distinct owner, and the
 scan result crosses fresh Authentication before Association. The remaining
-architectural gap is now the outer epoch bundle rather than the scan port:
-`RadioHilDisconnectedEpoch`, reconnect Association/WPA2 and connected-entry
-composition still live in `radio_hil.rs` and must move behind the ESP32-S31
-Embassy adapter.
+architectural gap is now the reconnect protocol/session composition:
+Association/WPA2 policy, peer programming and connected-entry sequencing still
+live in `radio_hil.rs` and must move behind a narrower ESP32-S31 Embassy
+adapter.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

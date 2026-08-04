@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `4331250c`
+Latest qualified runtime CRC32: `dc73a25e`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -83,7 +83,7 @@ for the normal completion path before returning ownership.
 
 ## Repeated-cycle evidence
 
-The latest `4331250c` image completed one initial connection followed by three
+The latest `dc73a25e` image completed one initial connection followed by three
 host-requested lifecycle cycles in a single boot. The strengthened runner
 snapshots marker counts before every command, so an earlier generation cannot
 satisfy a later generation. Every cycle reached a newly emitted connected task
@@ -92,9 +92,9 @@ stack was reused rather than initialized again.
 
 | Generation | Scan | Authentication | Association | WPA2 M3/M4 | Connected topology |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 5,433 ms, 13/13 Probe TX | 57 ms | 21 ms, AID 20 | 1,003 ms, replay 5 | PASS |
-| 2 | 5,335 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 26 | 10 ms, replay 7 | PASS |
-| 3 | 5,325 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 29 | 9 ms, replay 9 | PASS |
+| 1 | 5,376 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 33 | 8 ms, replay 4 | PASS |
+| 2 | 5,327 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 31 | 9 ms, replay 6 | PASS |
+| 3 | 5,346 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 30 | 9 ms, replay 8 | PASS |
 
 All three scans returned an empty RX queue and the same descriptor base
 `0x2f03ec50`; each reported zero Probe TX failures. No running-scan or
@@ -118,6 +118,13 @@ transition. The production owner carried the exact RX frontier through fresh
 Authentication, Association and WPA2 in every generation, including a valid
 1,003 ms Message 3 wait in generation one, and returned to the identical
 descriptor base before the next scan.
+
+It also qualifies the production station epoch transition. Connected teardown
+now returns `Esp32s31DisconnectedStaEpoch`; running scan can move only its
+hardware and stopped RX while the persistent network, A-MPDU and control
+owners remain sealed in a retention value. `prepare_reconnect` consumes the
+restored epoch and returns `Esp32s31ReconnectedStaEpoch`. All three generations
+crossed that exact transition and reused descriptor base `0x2f03ec50`.
 
 ## Remaining qualification
 

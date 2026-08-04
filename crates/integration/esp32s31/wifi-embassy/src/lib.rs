@@ -27,6 +27,7 @@ pub mod rx_reorder;
 pub mod rx_telemetry;
 pub mod single_mpdu_tx;
 pub mod sta_join;
+pub mod sta_join_port;
 pub mod sta_scan;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_scan_target;

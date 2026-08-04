@@ -69,16 +69,21 @@ named mode, so an old shell export cannot silently combine two HIL workloads.
 | `udp-tx` | `embassy-net` device-to-host UDP throughput | provide the configured UDP receiver |
 | `tcp-rx` | runtime-configured host-to-device TCP stream | `cargo hil traffic tcp-rx <device-ipv4>` |
 
-The `radio` path uses the production `StaJoinRunner` for Open Authentication
-and Association, `Wpa2HandshakeRunner` for the WPA2 Message 1/3 exchange, and
+The `radio` path uses the production `StaJoinRunner` plus
+`Esp32s31StaJoinPort` for Open Authentication and Association,
+`Wpa2HandshakeRunner` for the WPA2 Message 1/3 exchange, and
 `Wpa2KeyInstallRunner` for typed PTK/GTK publication, Message 4 and rollback.
 `Esp32s31ControlTx` owns Probe, Authentication, Association, EAPOL and the
 protected bootstrap publication until it transfers the same pinned descriptor,
 EDCA state, calibrated power and executor adapters to `Esp32s31SingleMpduTx`.
-Their HIL adapters now own diagnostics and finite PAC/RX capabilities only;
-absolute Embassy deadlines, retry state, RX-before-timeout ordering and
-live-ring/key/TX ownership are shared driver behavior rather than parallel
-test-only loops. The connected handoff wraps that ordinary owner in
+The join port binds the PAC, retained RX frontier, fixed DMA/scratch storage
+and control TX in the production integration crate. HIL supplies station
+policy and diagnostic observer callbacks only; it no longer parses join RX,
+builds HE power fields or publishes Authentication/Association frames.
+Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
+live-ring/TX ownership are shared driver behavior rather than parallel
+test-only loops. WPA2 still has a HIL PAC/RX adapter and is the next extraction
+boundary. The connected handoff wraps the ordinary TX owner in
 `Esp32s31ConnectedTx`: referenced A-MPDU leases, BlockAck retry and the
 beacon-loss deadline now run on this one production runner. The opt-in
 connected power planner also ACK-gates PM=1 and restores PM=0 before queued

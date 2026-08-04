@@ -386,6 +386,14 @@ The first reconnect seam is now production-owned:
   running-scan/reconnect cycles on ESP32-S31 with the same descriptor base,
   empty returned RX queues, 13/13 Probe TX in each generation and a fresh
   connected task topology after every WPA2 handshake.
+  Authentication and Association now cross the same boundary. The concrete
+  `Esp32s31StaJoinPort` binds the retained RX frontier/DMA storage, management
+  extraction, peer RX-filter setup, control TX, PHY preference and calibrated
+  HE power capabilities. HIL supplies the candidate and diagnostics only; its
+  former `RadioHilStaJoinBackend` and auth/association TX helpers are removed.
+  Runtime CRC32 `080db958` subsequently completed three controlled reconnect
+  cycles through this port; see the
+  [join-port qualification](hil/2026-08-04-esp32s31-sta-join-port.md).
   `RadioHilStaLifecycleOwner::RunningScan` is now a distinct outer owner:
   generation 1 entered it only with `refresh_candidate=1`, and the successful
   transaction produced the separate `Reconnect` owner.
@@ -408,10 +416,11 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract the remaining reconnect protocol/session composition from HIL.
-   The reusable Embassy layer now owns the disconnected/running-scan/
-   reconnected resource transition, while the board still sequences
-   Authentication, Association, peer programming, WPA2 and connected entry;
+1. extract the remaining WPA2/key-install/connected-session composition from
+   HIL. The reusable Embassy layer now owns the disconnected/running-scan/
+   reconnected resource transition and the complete Authentication/
+   Association port, while the board still sequences peer programming, WPA2
+   and connected entry;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -421,10 +430,9 @@ Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
 closed for running scan: `refresh_candidate` selects a distinct owner, and the
 scan result crosses fresh Authentication before Association. The remaining
-architectural gap is now the reconnect protocol/session composition:
-Association/WPA2 policy, peer programming and connected-entry sequencing still
-live in `radio_hil.rs` and must move behind a narrower ESP32-S31 Embassy
-adapter.
+architectural gap is now the security/session composition: WPA2 RX/TX/key
+installation, peer programming and connected-entry sequencing still live in
+`radio_hil.rs` and must move behind narrower ESP32-S31 Embassy ports.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

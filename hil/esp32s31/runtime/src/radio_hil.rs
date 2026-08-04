@@ -51,8 +51,7 @@ use open_esp_radio::{
             he::{He20PeerHardware, program_he20_peer_state},
             init::{
                 MAC_COLD_RX_INTERRUPT_MASK, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
-                StaPeerScanPolicy, StaWmmSource, configure_sta_link_receive_policy,
-                initialize_promiscuous_receive,
+                StaPeerScanPolicy, StaWmmSource, initialize_promiscuous_receive,
             },
             irq::{
                 IrqSink, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
@@ -69,8 +68,7 @@ use open_esp_radio::{
             },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
-                RxRingError, RxSegment,
-                decode_rx_phy_info, extract_ccmp_data, extract_data, extract_management,
+                RxSegment, decode_rx_phy_info, extract_ccmp_data, extract_data,
                 first_segment_layout,
             },
             rx_pool::RxStagePool,
@@ -121,9 +119,11 @@ use open_esp_radio::{
             },
             rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
             single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxConfig},
-            sta_join::{
-                EmbassyStaJoinTimer, StaJoinBackend, StaJoinRunner, StaJoinRxDirective,
-                StaJoinRxObserver,
+            sta_join::{EmbassyStaJoinTimer, StaJoinRunner},
+            sta_join_port::{
+                Esp32s31StaAssociationProfile, Esp32s31StaJoinObserver, Esp32s31StaJoinPort,
+                Esp32s31StaJoinRadio, Esp32s31StaJoinRx, Esp32s31StaJoinStation,
+                Esp32s31StaJoinStorage,
             },
             station_epoch::{
                 Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch,
@@ -159,11 +159,9 @@ use open_esp_radio::{
         he::HeDcmConstellation,
         scan::best_matching_ssid,
         station::{
-            AssociationRequest, HeUlMuPowerCapability, HeUlMuPowerCapabilityError,
-            OpenAuthenticationRequest, STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationAttempt,
-            StaAssociationPhy, StaAssociationPreference, StaAuthenticationAttempt, StaDataFrame,
-            StaPowerCapability, StaPowerCapabilityError, StaProtectedDataFrame, StaSequenceCounter,
-            StaTxSequenceCounters, select_sta_association, select_wpa2_psk_rsn,
+            STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPhy, StaAssociationPreference,
+            StaDataFrame, StaProtectedDataFrame, StaSequenceCounter, StaTxSequenceCounters,
+            select_sta_association, select_wpa2_psk_rsn,
         },
     },
     wifi::lifecycle::station::{
@@ -888,8 +886,6 @@ impl TxStorage {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActiveScanTxError {
-    PowerCapability(StaPowerCapabilityError),
-    HeUlMuPower(HeUlMuPowerCapabilityError),
     Control(ControlTxError),
 }
 
@@ -1987,140 +1983,103 @@ static OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegist
 static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
     AtomicPtr::new(core::ptr::null_mut());
 
-/// HIL fixture which supplies the production STA join runner with the current
-/// S31 PAC/DMA owners. Protocol retry/deadline state lives in `StaJoinRunner`;
-/// this adapter performs only finite hardware operations and frame extraction.
-struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H> {
-    mmio: &'hardware mut H,
+/// HIL diagnostics attached to the production join port. These callbacks do
+/// not select policy, access DMA ownership or wrap a driver transaction.
+#[derive(Clone, Copy, Debug, Default)]
+struct RadioHilStaJoinObserver;
+
+impl Esp32s31StaJoinObserver for RadioHilStaJoinObserver {
+    fn authentication_transmitted(&mut self, _completion: TxCompletion) {
+        if AUTH_REGISTER_SNAPSHOT_CAPTURED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            log_open_auth_register_snapshot();
+        }
+    }
+
+    fn association_profile_selected(&mut self, profile: Esp32s31StaAssociationProfile) {
+        let (Some(power), Some(capability), Some(rate_power)) = (
+            profile.power_capability,
+            profile.he_ul_mu_power,
+            profile.rate_16_through_25,
+        ) else {
+            return;
+        };
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL stage=sta-he-ul-mu-power \
+             minimum_dbm={} maximum_dbm={} rate_16_through_25={rate_power:?} \
+             relative_to_rate_16={:?}",
+            power.minimum_dbm(),
+            power.maximum_dbm(),
+            capability.relative_to_rate_16(),
+        ));
+    }
+}
+
+type RadioHilStaJoinReceive<'storage> = Esp32s31StaJoinRx<
+    'storage,
+    EmbassyEsp32s31PreconnectedRxDelay,
+    RX_DESCRIPTOR_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
+
+type RadioHilStaJoinPort<'hardware, 'transmit, 'storage, 'scratch, H> = Esp32s31StaJoinPort<
+    'hardware,
+    'transmit,
+    'scratch,
+    H,
+    RadioHilStaJoinReceive<'storage>,
+    ControlTx,
+    RadioHilStaJoinObserver,
+>;
+
+fn radio_hil_sta_join_port<'hardware, 'transmit, 'storage, 'scratch, H>(
+    hardware: &'hardware mut H,
     rx_storage: &'storage RxStorage,
-    tx_storage: &'hardware mut TxStorage,
+    transmit: &'transmit mut ControlTx,
     frame: &'scratch mut [u8],
     station_address: [u8; 6],
     access_point: ScanRecord,
     rx: RadioHilJoinRx<'storage>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RadioHilStaJoinError {
-    Receive(Esp32s31PreconnectedRxError),
-    Rx(RxRingError),
-    Tx(ActiveScanTxError),
-}
-
-impl From<Esp32s31PreconnectedRxError> for RadioHilStaJoinError {
-    fn from(error: Esp32s31PreconnectedRxError) -> Self {
-        Self::Receive(error)
-    }
-}
-
-impl From<RxRingError> for RadioHilStaJoinError {
-    fn from(error: RxRingError) -> Self {
-        Self::Rx(error)
-    }
-}
-
-impl From<ActiveScanTxError> for RadioHilStaJoinError {
-    fn from(error: ActiveScanTxError) -> Self {
-        Self::Tx(error)
-    }
-}
-
-impl<'hardware, 'storage, 'scratch, H>
-    RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H>
-{
-    fn into_rx(self) -> RadioHilJoinRx<'storage> {
-        self.rx
-    }
-}
-
-impl<H> StaJoinBackend for RadioHilStaJoinBackend<'_, '_, '_, H>
-where
-    H: Mmio + RxDma + TxHardware,
-{
-    type Error = RadioHilStaJoinError;
-
-    fn start_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            self.rx
-                .start_with_storage(self.mmio, self.rx_storage)
-                .await
-                .map_err(Into::into)
-        }
-    }
-
-    fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move { self.rx.stop(self.mmio).map_err(Into::into) }
-    }
-
-    fn transmit_open_authentication(
-        &mut self,
-        attempt: StaAuthenticationAttempt,
-    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            transmit_open_authentication(
-                self.mmio,
-                self.tx_storage,
-                self.station_address,
-                self.access_point.bssid,
-                attempt.sequence_number,
-            )
-            .await?;
-            Ok(())
-        }
-    }
-
-    fn transmit_association(
-        &mut self,
-        attempt: StaAssociationAttempt,
-    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            transmit_association_request(
-                self.mmio,
-                self.tx_storage,
-                self.station_address,
-                &self.access_point,
-                attempt.sequence_number,
-            )
-            .await?;
-            Ok(())
-        }
-    }
-
-    fn service_receive<'a, O>(
-        &'a mut self,
-        observer: &'a mut O,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
-    where
-        O: StaJoinRxObserver + 'a,
-    {
-        async move {
-            self.rx
-                .service_completed(self.mmio, self.rx_storage, |segment| {
-                    let management = extract_management(
-                        core::slice::from_ref(&segment),
-                        RxIngressConfig {
-                            ring_entry_limit: 1,
-                            csi_config: 0,
-                            flags: 0,
-                        },
-                        self.frame,
-                    )
-                    .ok();
-                    let management = management.map(|frame| &self.frame[..frame.length]);
-                    match observer.observe_completed(management) {
-                        StaJoinRxDirective::Continue => Esp32s31PreconnectedRxDirective::Continue,
-                        StaJoinRxDirective::Stop => Esp32s31PreconnectedRxDirective::Stop,
-                    }
-                })
-                .map(|_| ())
-                .map_err(Into::into)
-        }
-    }
+) -> RadioHilStaJoinPort<'hardware, 'transmit, 'storage, 'scratch, H> {
+    Esp32s31StaJoinPort::new(
+        Esp32s31StaJoinRadio::new(
+            hardware,
+            Esp32s31StaJoinRx::new(rx, rx_storage),
+            transmit,
+        ),
+        Esp32s31StaJoinStorage::new(frame, RadioHilStaJoinObserver),
+        Esp32s31StaJoinStation::new(
+            station_address,
+            access_point,
+            STA_ASSOCIATION_PREFERENCE,
+        ),
+    )
 }
 
 /// HIL PAC/DMA fixture for the production WPA2 response runner. The adapter
 /// copies one complete EAPOL packet before returning and never awaits while a
 /// descriptor or mutable PAC transaction is borrowed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilWpa2Error {
+    Receive(Esp32s31PreconnectedRxError),
+    Transmit(ActiveScanTxError),
+}
+
+impl From<Esp32s31PreconnectedRxError> for RadioHilWpa2Error {
+    fn from(error: Esp32s31PreconnectedRxError) -> Self {
+        Self::Receive(error)
+    }
+}
+
+impl From<ActiveScanTxError> for RadioHilWpa2Error {
+    fn from(error: ActiveScanTxError) -> Self {
+        Self::Transmit(error)
+    }
+}
+
 struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch, H> {
     mmio: &'hardware mut H,
     rx_storage: &'storage RxStorage,
@@ -2142,7 +2101,7 @@ impl<H> Wpa2HandshakeBackend for RadioHilWpa2Backend<'_, '_, '_, H>
 where
     H: Mmio + RxDma + TxHardware,
 {
-    type Error = RadioHilStaJoinError;
+    type Error = RadioHilWpa2Error;
 
     fn service_receive(
         &mut self,
@@ -2197,7 +2156,7 @@ where
 
     fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            self.rx.stop(self.mmio).map_err(RadioHilStaJoinError::from)?;
+            self.rx.stop(self.mmio).map_err(RadioHilWpa2Error::from)?;
             self.rx
                 .start_with_storage(self.mmio, self.rx_storage)
                 .await
@@ -2742,49 +2701,6 @@ fn log_open_rf_boundary_mmio(source: &str) {
     ));
 }
 
-async fn transmit_open_authentication<M: Mmio + TxHardware>(
-    mmio: &mut M,
-    storage: &mut TxStorage,
-    source: [u8; 6],
-    bssid: [u8; 6],
-    sequence_number: u16,
-) -> Result<TxCompletion, ActiveScanTxError> {
-    // A live vendor STA capture for this exact 30-byte open-authentication
-    // request publishes a 40-byte source allocation and the legacy vector
-    // PLCP1=0x00b6. Our direct descriptor additionally publishes the
-    // hardware-appended four-byte FCS in its length field, so its bounded DMA
-    // capacity must cover metadata + MPDU + FCS: align4(8 + 30 + 4) = 44.
-    // Keeping the vendor source capacity of 40 here formerly produced the
-    // contradictory descriptor length=42 > capacity=40; the pinned owner now
-    // rejects that geometry before the MAC can observe it.
-    //
-    // The complete blob call graph separately proves scheduler priority 1
-    // and packet PTI 1; a post-completion register snapshot that read zero
-    // was therefore not a valid source for the submitted PTI.
-    // The direct legacy queue consumes MPDU+FCS length in PLCP1. The earlier
-    // `0x00b6` vendor-context snapshot was not portable to this raw q0 path;
-    // deriving `30 + 4 = 0x22` produces a valid over-air authentication frame.
-    let completion = storage
-        .control_mut()
-        .transmit_open_authentication(
-            mmio,
-            OpenAuthenticationRequest {
-                source,
-                bssid,
-                sequence_number,
-            },
-        )
-        .await
-        .map_err(Into::into);
-    if AUTH_REGISTER_SNAPSHOT_CAPTURED
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-    {
-        log_open_auth_register_snapshot();
-    }
-    completion
-}
-
 /// Capture the first open Authentication TX state without changing it.
 ///
 /// The order is intentionally fixed and shared with the address-by-address
@@ -2877,61 +2793,6 @@ fn log_open_auth_register_snapshot() {
             "OPEN_AUTH_REGISTER_SNAPSHOT chunk={chunk} values={words:08x?}"
         ));
     }
-}
-
-async fn transmit_association_request<M: Mmio + TxHardware>(
-    mmio: &mut M,
-    storage: &mut TxStorage,
-    source: [u8; 6],
-    access_point: &ScanRecord,
-    sequence_number: u16,
-) -> Result<TxCompletion, ActiveScanTxError> {
-    let phy = select_sta_association(access_point, STA_ASSOCIATION_PREFERENCE).phy;
-    let (power_capability, he_ul_mu_power) = if phy == StaAssociationPhy::He20 {
-        let profile = storage.control_mut().power_profile();
-        let rate_power = core::array::from_fn(|offset| profile.pair(16 + offset as u8).primary);
-        // SOURCE: complete `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_init`
-        // installs -11 through `hal_set_tx_min_pwr`; complete
-        // `_oracles/libnet80211.a[ieee80211_he.o]::
-        // ieee80211_add_power_cap` pairs it with `hal_get_tx_pwr(16, 1)`.
-        let power_capability = StaPowerCapability::new(-11, rate_power[0])
-            .map_err(ActiveScanTxError::PowerCapability)?;
-        let capability = HeUlMuPowerCapability::from_rate_power_indices(rate_power)
-            .map_err(ActiveScanTxError::HeUlMuPower)?;
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=sta-he-ul-mu-power \
-             minimum_dbm={} maximum_dbm={} rate_16_through_25={rate_power:?} \
-             relative_to_rate_16={:?}",
-            power_capability.minimum_dbm(),
-            power_capability.maximum_dbm(),
-            capability.relative_to_rate_16(),
-        ));
-        (Some(power_capability), Some(capability))
-    } else {
-        (None, None)
-    };
-    // `transmit_encoded_management` publishes four additional bytes in the
-    // descriptor length for the hardware-appended FCS. Keep the allocation
-    // capacity large enough for that hardware-visible length before rounding
-    // it to the recovered four-byte DMA granularity.
-    storage
-        .control_mut()
-        .transmit_association(
-            mmio,
-            AssociationRequest {
-                source,
-                access_point,
-                sequence_number,
-                // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: successful vendor
-                // association frame 7624 uses listen interval three.
-                listen_interval: 3,
-                phy,
-                power_capability,
-                he_ul_mu_power,
-            },
-        )
-        .await
-        .map_err(Into::into)
 }
 
 const STA_ASSOCIATION_PREFERENCE: StaAssociationPreference =
@@ -6126,15 +5987,17 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         }
     };
     let (authenticated, returned_rx) = run_open_authentication(
-        RadioHilStaJoinBackend {
-            mmio: hardware,
-            rx_storage: ready.fixture.rx_storage,
-            tx_storage: &mut *ready.fixture.tx_storage,
-            frame: &mut *ready.fixture.frame,
+        radio_hil_sta_join_port(
+            hardware,
+            ready.fixture.rx_storage,
+            ready.fixture.tx_storage.control_mut(),
+            &mut *ready.fixture.frame,
             station_address,
             access_point,
-            rx: join_rx,
-        },
+            join_rx,
+        ),
+        station_address,
+        access_point,
         ready.security.sequences.non_qos_mut(),
     )
     .await;
@@ -6175,15 +6038,15 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             );
         }
     };
-    let backend = RadioHilStaJoinBackend {
-        mmio: hardware,
-        rx_storage: ready.fixture.rx_storage,
-        tx_storage: &mut *ready.fixture.tx_storage,
-        frame: &mut *ready.fixture.frame,
+    let backend = radio_hil_sta_join_port(
+        hardware,
+        ready.fixture.rx_storage,
+        ready.fixture.tx_storage.control_mut(),
+        &mut *ready.fixture.frame,
         station_address,
         access_point,
-        rx: join_rx,
-    };
+        join_rx,
+    );
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
     let association_started = Instant::now();
     let result = runner
@@ -6194,7 +6057,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         )
         .await;
     let (backend, _) = runner.into_parts();
-    *rx = backend.into_rx();
+    *rx = backend.into_receive().into_owner();
     let success = match result {
         Ok(success) => success,
         Err(error) => {
@@ -6584,15 +6447,17 @@ async fn authenticate_target(
     }
 
     run_open_authentication(
-        RadioHilStaJoinBackend {
+        radio_hil_sta_join_port(
             mmio,
-            rx_storage: fixture.rx_storage,
-            tx_storage: &mut *fixture.tx_storage,
-            frame: &mut *fixture.frame,
+            fixture.rx_storage,
+            fixture.tx_storage.control_mut(),
+            &mut *fixture.frame,
             station_address,
             access_point,
             rx,
-        },
+        ),
+        station_address,
+        access_point,
         sequence,
     )
     .await
@@ -6604,15 +6469,15 @@ async fn authenticate_target(
 /// Channel selection remains a separate PHY capability edge. This helper owns
 /// only link RX policy plus the production join runner, and always returns the
 /// exact halted RX frontier through the backend.
-async fn run_open_authentication<'hardware, 'storage, 'scratch, H>(
-    backend: RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H>,
+async fn run_open_authentication<'hardware, 'transmit, 'storage, 'scratch, H>(
+    mut backend: RadioHilStaJoinPort<'hardware, 'transmit, 'storage, 'scratch, H>,
+    station_address: [u8; 6],
+    access_point: ScanRecord,
     sequence: &mut StaSequenceCounter,
 ) -> (bool, RadioHilJoinRx<'storage>)
 where
     H: Mmio + RxDma + TxHardware + StaLinkRxPolicyHardware,
 {
-    let access_point = backend.access_point;
-    let station_address = backend.station_address;
     // The vendor HE-node lifecycle remains deferred until Association.
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=sta-he-bsr deferred=post-association"
@@ -6620,13 +6485,20 @@ where
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=sta-he-operation deferred=post-association"
     ));
-    configure_sta_link_receive_policy(backend.mmio, access_point.bssid);
+    backend.prepare_authentication();
+    let (frame_policy, address_policy) = {
+        let hardware = backend.hardware_mut();
+        (
+            hardware.read32(mac_registers::RX_FILTER[0]),
+            hardware.read32(mac_registers::BSSID_HIGH[0]),
+        )
+    };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=sta-link-rx-policy \
          frame_policy={:#010x} address_policy={:#010x} \
          sniffer_policy={:#010x} misc_policy={:#010x}",
-        backend.mmio.read32(mac_registers::RX_FILTER[0]),
-        backend.mmio.read32(mac_registers::BSSID_HIGH[0]),
+        frame_policy,
+        address_policy,
         read_diagnostic_mmio(0x2010_40e4),
         read_diagnostic_mmio(0x2010_40f4),
     ));
@@ -6636,7 +6508,7 @@ where
         .authenticate(station_address, access_point.bssid, sequence)
         .await;
     let (backend, _) = runner.into_parts();
-    let rx = backend.into_rx();
+    let rx = backend.into_receive().into_owner();
     match result {
         Ok(success) => {
             emergency_log(format_args!(
@@ -6709,15 +6581,15 @@ async fn associate_target<'fixture, 'security>(
             return failed_join(fixture, target, rx, network, security, false).into();
         }
     }
-    let backend = RadioHilStaJoinBackend {
-        mmio: &mut *fixture.mmio,
-        rx_storage: fixture.rx_storage,
-        tx_storage: &mut *fixture.tx_storage,
-        frame: &mut *fixture.frame,
+    let backend = radio_hil_sta_join_port(
+        &mut *fixture.mmio,
+        fixture.rx_storage,
+        fixture.tx_storage.control_mut(),
+        &mut *fixture.frame,
         station_address,
         access_point,
         rx,
-    };
+    );
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
     let association_started = Instant::now();
     let result = runner
@@ -6728,7 +6600,7 @@ async fn associate_target<'fixture, 'security>(
         )
         .await;
     let (backend, _) = runner.into_parts();
-    let rx = backend.into_rx();
+    let rx = backend.into_receive().into_owner();
     let success = match result {
         Ok(success) => success,
         Err(error) => {

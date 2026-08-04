@@ -9,10 +9,10 @@ use core::{future::Future, marker::PhantomData};
 
 use embassy_time::Timer;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
+    RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
 };
 
-use crate::rx_backend::ESP32S31_RX_WALKER_ENABLE_SETTLE_US;
+use crate::rx_backend::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
 
 /// Executor edge between walker publication and its first live observation.
 pub trait Esp32s31PreconnectedRxDelay {
@@ -61,6 +61,20 @@ pub enum Esp32s31PreconnectedRxError {
     AlreadyStarted,
     OwnerUnavailable,
     Ring(RxRingError),
+}
+
+/// Decision made while observing one completed pre-connected descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31PreconnectedRxDirective {
+    Continue,
+    Stop,
+}
+
+/// Finite progress returned by one descriptor service transaction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31PreconnectedRxProgress {
+    pub completed: u32,
+    pub stopped: bool,
 }
 
 impl From<RxRingError> for Esp32s31PreconnectedRxError {
@@ -155,6 +169,23 @@ where
         }
     }
 
+    /// Start RX using the production DMA storage bound to this ring.
+    pub fn start_with_storage<'operation, M, const DMA_STORAGE_SIZE: usize>(
+        &'operation mut self,
+        hardware: &'operation mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> impl Future<Output = Result<(), Esp32s31PreconnectedRxError>> + 'operation
+    where
+        M: RxDma,
+        'storage: 'operation,
+    {
+        self.start(hardware, move |index| {
+            // SAFETY: the halted ring invokes this only after DMA released
+            // the matching buffer and immediately before descriptor rearm.
+            unsafe { storage.buffers()[index].prepare_for_recycle() }
+        })
+    }
+
     pub fn stop<M: RxDma>(&mut self, hardware: &mut M) -> Result<(), Esp32s31PreconnectedRxError> {
         let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
         let Esp32s31PreconnectedRxState::Live(live) = state else {
@@ -182,6 +213,57 @@ where
         }
     }
 
+    /// Observe every currently completed descriptor, then recycle the
+    /// completed half unless the observer reports a terminal frame.
+    ///
+    /// The higher-ranked observer lifetime prevents a DMA-buffer reference
+    /// from escaping across the recycle edge. A terminal descriptor remains
+    /// owned and observed by the live ring for transfer into the next finite
+    /// protocol phase.
+    pub fn service_completed<M, F, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        mut observe: F,
+    ) -> Result<Esp32s31PreconnectedRxProgress, Esp32s31PreconnectedRxError>
+    where
+        M: RxDma,
+        F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31PreconnectedRxDirective,
+    {
+        let ring = self.live_mut()?;
+        let mut progress = Esp32s31PreconnectedRxProgress::default();
+        for index in 0..COUNT {
+            let Some(completed) = ring.take_completed(index) else {
+                continue;
+            };
+            progress.completed = progress.completed.saturating_add(1);
+            let segment = RxSegment {
+                descriptor_address: completed.descriptor_address(),
+                descriptor_word0: completed.word0(),
+                buffer: unsafe {
+                    // SAFETY: taking the completed descriptor transferred the
+                    // matching buffer from DMA to this unique live owner.
+                    storage.buffers()[index].completed()
+                },
+                next_descriptor_address: completed.next_descriptor_address(),
+            };
+            if observe(segment) == Esp32s31PreconnectedRxDirective::Stop {
+                progress.stopped = true;
+                return Ok(progress);
+            }
+        }
+
+        ring.recycle_completed_half(hardware, |index| {
+            // SAFETY: the live ring invokes this only for a detached completed
+            // half immediately before republishing it to DMA.
+            unsafe { storage.buffers()[index].prepare_for_recycle() }
+        })?;
+        if ring.all_observed() {
+            return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+        }
+        Ok(progress)
+    }
+
     pub fn take_live(
         &mut self,
     ) -> Result<RxRingLive<'storage, COUNT>, Esp32s31PreconnectedRxError> {
@@ -201,7 +283,7 @@ mod tests {
     use core::future::{Future, ready};
 
     use open_esp_radio_esp32s31_wifi_mac::{
-        descriptor::DESCRIPTOR_BYTES,
+        descriptor::{BIT_30, DESCRIPTOR_BYTES},
         rx::{RxDma, RxRingStopped},
     };
 
@@ -285,20 +367,30 @@ mod tests {
     }
 
     #[test]
-    fn owner_round_trips_halted_live_halted_and_can_move_between_phases() {
+    fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
         let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
         let mut hardware = Hardware::default();
         let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(
             halted_ring(&mut hardware, &storage),
         );
-        let mut prepared = 0;
-        embassy_futures::block_on(rx.start(&mut hardware, |_| {
-            prepared += 1;
-            Ok(())
-        }))
-        .unwrap();
+        embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
         assert_eq!(rx.phase(), Esp32s31PreconnectedRxPhase::Live);
-        assert_eq!(prepared, COUNT);
+
+        storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
+        let progress = rx
+            .service_completed(&mut hardware, &storage, |segment| {
+                assert_eq!(segment.descriptor_address, BASE);
+                assert_eq!(segment.buffer.len(), BUFFER_SIZE);
+                Esp32s31PreconnectedRxDirective::Stop
+            })
+            .unwrap();
+        assert_eq!(
+            progress,
+            Esp32s31PreconnectedRxProgress {
+                completed: 1,
+                stopped: true,
+            }
+        );
 
         let mut moved = rx.take().unwrap();
         assert_eq!(rx.phase(), Esp32s31PreconnectedRxPhase::Vacant);

@@ -102,7 +102,7 @@ use open_esp_radio::{
             link_monitor::StaBeaconLossConfig,
             preconnected_rx::{
                 EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx,
-                Esp32s31PreconnectedRxError,
+                Esp32s31PreconnectedRxDirective, Esp32s31PreconnectedRxError,
             },
             runner::{WifiRunner, WifiRunnerExit},
             running_scan::{
@@ -1112,19 +1112,6 @@ type RadioHilDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
     &'static ControlResources,
 >;
 
-async fn start_preconnected_rx<'storage, M: RxDma>(
-    rx: &mut RadioHilJoinRx<'storage>,
-    hardware: &mut M,
-    storage: &'storage RxStorage,
-) -> Result<(), Esp32s31PreconnectedRxError> {
-    rx.start(hardware, |index| {
-        // SAFETY: the halted RX owner invokes this only after DMA released
-        // the matching static buffer.
-        unsafe { storage.buffers()[index].prepare_for_recycle() }
-    })
-    .await
-}
-
 /// Hardware/storage input for one production connected epoch.
 ///
 /// Only the first variant may initialize static cells. The reconnect variant
@@ -2054,7 +2041,8 @@ where
 
     fn start_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            start_preconnected_rx(&mut self.rx, self.mmio, self.rx_storage)
+            self.rx
+                .start_with_storage(self.mmio, self.rx_storage)
                 .await
                 .map_err(Into::into)
         }
@@ -2106,46 +2094,26 @@ where
         O: StaJoinRxObserver + 'a,
     {
         async move {
-            let ring = self.rx.live_mut().map_err(RadioHilStaJoinError::from)?;
-            for index in 0..RX_DESCRIPTOR_COUNT {
-                let Some(completed) = ring.take_completed(index) else {
-                    continue;
-                };
-                let segment = RxSegment {
-                    descriptor_address: completed.descriptor_address(),
-                    descriptor_word0: completed.word0(),
-                    buffer: unsafe {
-                        // The live ring transferred the completed descriptor
-                        // and matching buffer to this unique backend.
-                        self.rx_storage.buffers()[index].completed()
-                    },
-                    next_descriptor_address: completed.next_descriptor_address(),
-                };
-                let management = extract_management(
-                    core::slice::from_ref(&segment),
-                    RxIngressConfig {
-                        ring_entry_limit: 1,
-                        csi_config: 0,
-                        flags: 0,
-                    },
-                    self.frame,
-                )
-                .ok();
-                let management = management.map(|frame| &self.frame[..frame.length]);
-                if observer.observe_completed(management) == StaJoinRxDirective::Stop {
-                    return Ok(());
-                }
-            }
-
-            ring.recycle_completed_half(self.mmio, |index| {
-                // The live ring invokes this only for a detached completed
-                // half immediately before republishing it to DMA.
-                unsafe { self.rx_storage.buffers()[index].prepare_for_recycle() }
-            })?;
-            if ring.all_observed() {
-                return Err(RadioHilStaJoinError::Rx(RxRingError::Corrupt));
-            }
-            Ok(())
+            self.rx
+                .service_completed(self.mmio, self.rx_storage, |segment| {
+                    let management = extract_management(
+                        core::slice::from_ref(&segment),
+                        RxIngressConfig {
+                            ring_entry_limit: 1,
+                            csi_config: 0,
+                            flags: 0,
+                        },
+                        self.frame,
+                    )
+                    .ok();
+                    let management = management.map(|frame| &self.frame[..frame.length]);
+                    match observer.observe_completed(management) {
+                        StaJoinRxDirective::Continue => Esp32s31PreconnectedRxDirective::Continue,
+                        StaJoinRxDirective::Stop => Esp32s31PreconnectedRxDirective::Stop,
+                    }
+                })
+                .map(|_| ())
+                .map_err(Into::into)
         }
     }
 }
@@ -2180,74 +2148,58 @@ where
         &mut self,
     ) -> impl Future<Output = Result<Wpa2RxProgress, Self::Error>> + '_ {
         async move {
-            let ring = self.rx.live_mut()?;
-            let mut completed_frames = 0_u32;
-            for index in 0..RX_DESCRIPTOR_COUNT {
-                let Some(completed) = ring.take_completed(index) else {
-                    continue;
-                };
-                completed_frames = completed_frames.saturating_add(1);
-                let segment = RxSegment {
-                    descriptor_address: completed.descriptor_address(),
-                    descriptor_word0: completed.word0(),
-                    buffer: unsafe {
-                        // The live ring transferred this completed descriptor
-                        // and matching buffer to the unique WPA2 backend.
-                        self.rx_storage.buffers()[index].completed()
-                    },
-                    next_descriptor_address: completed.next_descriptor_address(),
-                };
-                let Ok(data) = extract_data(
-                    core::slice::from_ref(&segment),
-                    RxIngressConfig {
-                        ring_entry_limit: 1,
-                        csi_config: 0,
-                        flags: 0,
-                    },
-                    self.frame,
-                ) else {
-                    continue;
-                };
-                if data.mpdu.length < 24
-                    || self.frame[4..10] != self.station_address
-                    || self.frame[10..16] != self.bssid
-                {
-                    continue;
-                }
-                let Some(eapol_offset) = data.payload_offset.checked_add(LLC_SNAP_EAPOL.len())
-                else {
-                    continue;
-                };
-                if self.frame.get(data.payload_offset..eapol_offset) != Some(&LLC_SNAP_EAPOL) {
-                    continue;
-                }
-                let Some(eapol) = self.frame.get(eapol_offset..data.mpdu.length) else {
-                    continue;
-                };
-                let Ok(owned) =
-                    OwnedEapolFrame::try_copy(Wpa2Interface::Station, self.bssid, eapol)
-                else {
-                    continue;
-                };
-                return Ok(Wpa2RxProgress::eapol(completed_frames, owned));
+            let mut eapol = None;
+            let progress = self.rx.service_completed(
+                self.mmio,
+                self.rx_storage,
+                |segment| {
+                    let candidate = (|| {
+                        let data = extract_data(
+                            core::slice::from_ref(&segment),
+                            RxIngressConfig {
+                                ring_entry_limit: 1,
+                                csi_config: 0,
+                                flags: 0,
+                            },
+                            self.frame,
+                        )
+                        .ok()?;
+                        if data.mpdu.length < 24
+                            || self.frame[4..10] != self.station_address
+                            || self.frame[10..16] != self.bssid
+                        {
+                            return None;
+                        }
+                        let eapol_offset =
+                            data.payload_offset.checked_add(LLC_SNAP_EAPOL.len())?;
+                        if self.frame.get(data.payload_offset..eapol_offset)
+                            != Some(&LLC_SNAP_EAPOL)
+                        {
+                            return None;
+                        }
+                        let frame = self.frame.get(eapol_offset..data.mpdu.length)?;
+                        OwnedEapolFrame::try_copy(Wpa2Interface::Station, self.bssid, frame).ok()
+                    })();
+                    if let Some(candidate) = candidate {
+                        eapol = Some(candidate);
+                        Esp32s31PreconnectedRxDirective::Stop
+                    } else {
+                        Esp32s31PreconnectedRxDirective::Continue
+                    }
+                },
+            )?;
+            if let Some(eapol) = eapol {
+                return Ok(Wpa2RxProgress::eapol(progress.completed, eapol));
             }
-
-            ring.recycle_completed_half(self.mmio, |index| {
-                // The ring invokes this only for a detached completed half
-                // immediately before republishing it to hardware.
-                unsafe { self.rx_storage.buffers()[index].prepare_for_recycle() }
-            })?;
-            if ring.all_observed() {
-                return Err(RadioHilStaJoinError::Rx(RxRingError::Corrupt));
-            }
-            Ok(Wpa2RxProgress::drained(completed_frames))
+            Ok(Wpa2RxProgress::drained(progress.completed))
         }
     }
 
     fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
             self.rx.stop(self.mmio).map_err(RadioHilStaJoinError::from)?;
-            start_preconnected_rx(&mut self.rx, self.mmio, self.rx_storage)
+            self.rx
+                .start_with_storage(self.mmio, self.rx_storage)
                 .await
                 .map_err(Into::into)
         }
@@ -5052,7 +5004,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
         RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
-            if let Err(error) = start_preconnected_rx(&mut rx, registers, rx_storage).await
+            if let Err(error) = rx.start_with_storage(registers, rx_storage).await
             {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -5109,7 +5061,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                 aggregate_tx: ampdu,
                 control: control_resources,
             } = epoch.into_parts();
-            if let Err(error) = start_preconnected_rx(&mut rx, &mut hardware, rx_storage).await
+            if let Err(error) = rx.start_with_storage(&mut hardware, rx_storage).await
             {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -7229,7 +7181,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                 network_runner.set_link_state(LinkState::Up);
                 let mut passed = false;
                 for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-                    if let Err(error) = start_preconnected_rx(&mut rx, mmio, rx_storage).await
+                    if let Err(error) = rx.start_with_storage(mmio, rx_storage).await
                     {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \

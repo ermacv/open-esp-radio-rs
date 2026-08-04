@@ -246,7 +246,7 @@ The first reconnect seam is now production-owned:
   last hardware-valid owner for fail-closed handling. The owner now lives in
   the ESP32-S31 Embassy integration crate; HIL supplies only its static DMA
   buffer recycle closure. Its host test moves the live frontier between
-  protocol phases and returns it to halted, and runtime CRC32 `dc73a25e`
+  protocol phases and returns it to halted, and runtime CRC32 `165ac77c`
   repeated the complete scan/Authentication/Association/WPA2 transition three
   times on hardware;
 - network frame queues and their pinned TX pool are now initialized by one
@@ -281,8 +281,19 @@ The first reconnect seam is now production-owned:
   pre-connected RX frontier plus its persistent staging resources. HIL keeps
   only the genuinely board-specific initial `StaticCell` promotion. Host
   coverage proves the split/restore/prepare transition preserves every
-  owner, and runtime CRC32 `dc73a25e` completed three hardware cycles with the
+  owner, and runtime CRC32 `165ac77c` completed three hardware cycles with the
   same descriptor base;
+- `Esp32s31PreconnectedRx::service_completed` now owns the common finite
+  descriptor walk used by Authentication, Association and WPA2. It is the
+  only layer in those paths which turns a completed descriptor into a DMA
+  buffer reference or rearms a completed half. Its higher-ranked observer
+  lifetime prevents a buffer reference from escaping across recycle, and a
+  terminal observation deliberately keeps the descriptor in the live ring
+  for the next protocol phase. The HIL management/EAPOL adapters now only
+  parse copied frames and select `Continue`/`Stop`. Host coverage synthesizes
+  a terminal completion; CRC32 `165ac77c` repeated the real management and
+  EAPOL paths three times. Returning the existing future directly avoids an
+  extra async state machine and keeps the image at 1,203,712 bytes;
 - `Esp32s31RunningScanRx` now keeps that halted ring together with the exact
   staging pool, queue sender, reload delay and telemetry binding throughout a
   running scan. Its `Halted -> Prepared -> Live -> Halted` transition uses the

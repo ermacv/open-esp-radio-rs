@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `dc73a25e`
+Latest qualified runtime CRC32: `165ac77c`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -83,7 +83,7 @@ for the normal completion path before returning ownership.
 
 ## Repeated-cycle evidence
 
-The latest `dc73a25e` image completed one initial connection followed by three
+The latest `165ac77c` image completed one initial connection followed by three
 host-requested lifecycle cycles in a single boot. The strengthened runner
 snapshots marker counts before every command, so an earlier generation cannot
 satisfy a later generation. Every cycle reached a newly emitted connected task
@@ -92,9 +92,9 @@ stack was reused rather than initialized again.
 
 | Generation | Scan | Authentication | Association | WPA2 M3/M4 | Connected topology |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 5,376 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 33 | 8 ms, replay 4 | PASS |
-| 2 | 5,327 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 31 | 9 ms, replay 6 | PASS |
-| 3 | 5,346 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 30 | 9 ms, replay 8 | PASS |
+| 1 | 5,373 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 23 | 11 ms, replay 4 | PASS |
+| 2 | 5,411 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 32 | 10 ms, replay 6 | PASS |
+| 3 | 5,317 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 22 | 9 ms, replay 8 | PASS |
 
 All three scans returned an empty RX queue and the same descriptor base
 `0x2f03ec50`; each reported zero Probe TX failures. No running-scan or
@@ -125,6 +125,12 @@ hardware and stopped RX while the persistent network, A-MPDU and control
 owners remain sealed in a retention value. `prepare_reconnect` consumes the
 restored epoch and returns `Esp32s31ReconnectedStaEpoch`. All three generations
 crossed that exact transition and reused descriptor base `0x2f03ec50`.
+
+The same image routes both management-frame and EAPOL descriptor walks through
+`Esp32s31PreconnectedRx::service_completed`. HIL no longer forms unsafe DMA
+buffer references or rearms descriptor halves in either backend. A terminal
+frame still stops before recycle and transfers the observed live-ring frontier
+to the next protocol phase. The release image remains 1,203,712 bytes.
 
 ## Remaining qualification
 

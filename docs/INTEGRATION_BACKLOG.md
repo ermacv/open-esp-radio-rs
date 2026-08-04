@@ -346,7 +346,17 @@ The first reconnect seam is now production-owned:
   returned every RX/TX owner and transferred the selected `ScanRecord` into a
   fresh Open Authentication transaction on `CooperativeTxHardware`. The
   resulting target then completed the second Association/WPA2 epoch. This
-  proves the running transaction, candidate transfer and HIL composition root.
+  proves the running transaction and candidate transfer. The concrete
+  `Esp32s31RunningScanPort` which binds PHY retune, cooperative hardware,
+  stopped RX, polling control TX, Embassy dwell timing, scan storage and SSID
+  selection now lives in the ESP32-S31 Embassy integration crate. HIL supplies
+  only its returned epoch owners, fixed storage, station policy and diagnostic
+  frame observer; it no longer implements `Esp32s31StaScanPort` for running
+  scan.
+  Runtime CRC32 `7a076726` then completed three sequential controlled
+  running-scan/reconnect cycles on ESP32-S31 with the same descriptor base,
+  empty returned RX queues, 13/13 Probe TX in each generation and a fresh
+  connected task topology after every WPA2 handshake.
   `RadioHilStaLifecycleOwner::RunningScan` is now a distinct outer owner:
   generation 1 entered it only with `refresh_candidate=1`, and the successful
   transaction produced the separate `Reconnect` owner.
@@ -369,10 +379,11 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract the now-proven ESP32-S31 running-scan/reconnect composition from HIL
-   into the reusable Embassy integration layer. Recoverable scan failures
-   already reconstruct `RadioHilDisconnectedEpoch`; an RX-stop failure remains
-   terminal because DMA ownership is unconfirmed;
+1. extract the remaining disconnected/reconnect epoch composition from HIL
+   into the reusable Embassy integration layer. The production running-scan
+   port is already there; recoverable scan failures reconstruct
+   `RadioHilDisconnectedEpoch`, while an RX-stop failure remains terminal
+   because DMA ownership is unconfirmed;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -382,8 +393,10 @@ Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
 closed for running scan: `refresh_candidate` selects a distinct owner, and the
 scan result crosses fresh Authentication before Association. The remaining
-architectural gap is location rather than ordering: that concrete composition
-still lives in `radio_hil.rs` and must move to the ESP32-S31 Embassy adapter.
+architectural gap is now the outer epoch bundle rather than the scan port:
+`RadioHilDisconnectedEpoch`, reconnect Association/WPA2 and connected-entry
+composition still live in `radio_hil.rs` and must move behind the ESP32-S31
+Embassy adapter.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

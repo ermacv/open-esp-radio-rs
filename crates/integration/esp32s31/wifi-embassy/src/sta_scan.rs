@@ -515,6 +515,21 @@ impl<'a, O, const RECORDS: usize> Esp32s31ScanObservationContext<'a, O, RECORDS>
             observer,
         }
     }
+
+    /// Publish one already-extracted management frame through the owned scan
+    /// table and its non-retaining observer.
+    ///
+    /// Concrete RX ports use this boundary when frame extraction is provided
+    /// by another typed DMA owner. The frame borrow is never retained beyond
+    /// this call.
+    pub fn observe_management_frame(&mut self, frame: &[u8], rssi: i8) -> ScanObservation
+    where
+        O: Esp32s31ScanFrameObserver,
+    {
+        let outcome = self.table.observe_management(frame, self.channel, rssi);
+        self.observer.observe(frame, rssi, outcome);
+        outcome
+    }
 }
 
 enum Esp32s31ScanRxState<'storage, const COUNT: usize> {

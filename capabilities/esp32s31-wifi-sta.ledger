@@ -205,6 +205,7 @@ owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31StaScanBa
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31ScanRx
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31RunningScanRx
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31RunningScanTx
+owner crates/integration/esp32s31/wifi-embassy/src/running_scan.rs Esp32s31RunningScanPort
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan_target.rs Esp32s31ScanPhy
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan_target.rs Esp32s31ColdScanTx
 owner crates/wifi/lifecycle/src/scan.rs StaCandidateScanService
@@ -229,7 +230,7 @@ vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeo
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 depends-on rx-tx-dma
 depends-on power-management
-gap implementation running-scan-composition-not-extracted-from-hil
+gap implementation station-reconnect-epoch-composition-not-extracted-from-hil
 gap implementation running-scan-stop-failure-needs-reset-owner
 gap vendor failure-cleanup-contracts-incomplete
 gap hil injected-fault-matrix-missing

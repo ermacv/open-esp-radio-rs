@@ -10,7 +10,9 @@ use core::marker::PhantomData;
 
 use crate::{
     control_tx::{ControlTxError, Esp32s31ControlTx},
+    cooperative_tx::CooperativeTxHardware,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    running_scan::Esp32s31RunningScanPhy,
     sta_scan::{
         Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
         Esp32s31ScanTxSummary,
@@ -79,6 +81,29 @@ where
     /// the scan transaction has stopped RX and selected its candidate.
     pub fn into_parts(self) -> (&'state mut PhyColdState, &'state mut P, O) {
         (self.state, self.platform, self.observer)
+    }
+}
+
+impl<'state, 'cell, 'registers, P, O, D>
+    Esp32s31RunningScanPhy<CooperativeTxHardware<'cell, 'registers>>
+    for Esp32s31ScanPhy<'state, P, O, D>
+where
+    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    O: PhyTargetObserver,
+    D: PhyAsyncDelay,
+{
+    type Error = PhyTargetPortError;
+
+    fn switch_channel<'a>(
+        &'a mut self,
+        hardware: &'a mut CooperativeTxHardware<'cell, 'registers>,
+        channel: u8,
+    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
+        async move {
+            let mut registers = hardware.register_cell().borrow_mut();
+            self.switch_channel(u16::from(channel), 0, &mut registers)
+                .await
+        }
     }
 }
 

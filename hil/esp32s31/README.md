@@ -95,6 +95,9 @@ qualification adapter into the distinct `CycleRequested` edge; it is never
 reported as beacon loss. The outer lifecycle then enters its `RunningScan`
 owner with `refresh_candidate=1`. This qualifies repeated resource reuse and
 controlled rescan/re-authentication, not recovery after an AP disappears.
+The finite PHY/RX/TX/dwell/candidate transaction is composed by the reusable
+`Esp32s31RunningScanPort`; HIL retains only the board epoch bundle, station
+policy, fixed storage and UART evidence observer.
 
 Build and flash a named scenario with the same identifier:
 

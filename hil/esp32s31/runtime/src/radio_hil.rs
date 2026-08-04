@@ -117,8 +117,9 @@ use open_esp_radio::{
             },
             sta_scan::{
                 Esp32s31ActiveProbeOutcome, Esp32s31ScanFrameObserver,
-                Esp32s31ScanObservationContext, Esp32s31ScanRx, Esp32s31ScanRxError,
-                Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanPort,
+                Esp32s31RunningScanRx, Esp32s31ScanObservationContext, Esp32s31ScanRx,
+                Esp32s31ScanRxError, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
+                Esp32s31StaScanPort,
             },
             sta_scan_target::{
                 Esp32s31ColdScanTx, Esp32s31ScanPhy, Esp32s31ScanProbeReport,
@@ -1040,6 +1041,19 @@ type ConnectedStoppedRx = Esp32s31StoppedRx<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
+type RunningScanRx = Esp32s31RunningScanRx<
+    'static,
+    'static,
+    'static,
+    OpenRadioRxReloadDelay,
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+    RX_DESCRIPTOR_COUNT,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
 type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     'static,
     'static,
@@ -1323,6 +1337,7 @@ fn failed_join_from_session<'fixture, 'rate, 'security>(
 struct RadioHilConnectedFixture<'a> {
     spawner: Spawner,
     protocol_spawner: SendSpawner,
+    state: &'a mut PhyColdState,
     platform: &'a mut EspHalRadioPeripheral,
     mmio: &'static mut RadioRegisters,
     interrupt_setup: &'a mut Option<MacInterruptSetup>,
@@ -1341,6 +1356,7 @@ struct RadioHilConnectedFixture<'a> {
 struct RadioHilConnectedTaskFixture<'a> {
     spawner: Spawner,
     protocol_spawner: SendSpawner,
+    state: &'a mut PhyColdState,
     platform: &'a mut EspHalRadioPeripheral,
     interrupt_setup: &'a mut Option<MacInterruptSetup>,
     rx_storage: &'static RxStorage,
@@ -1362,6 +1378,7 @@ impl<'a> RadioHilConnectedFixture<'a> {
             RadioHilConnectedTaskFixture {
                 spawner: self.spawner,
                 protocol_spawner: self.protocol_spawner,
+                state: self.state,
                 platform: self.platform,
                 interrupt_setup: self.interrupt_setup,
                 rx_storage: self.rx_storage,
@@ -1376,35 +1393,21 @@ impl<'a> RadioHilConnectedFixture<'a> {
     }
 }
 
-/// Join-time extension of the board fixture with the PHY channel owner.
-///
-/// Authentication needs to switch the PHY channel; after that transition the
-/// same concrete radio resources continue through Association, WPA2 and the
-/// connected runner without being repeated as positional arguments.
-struct RadioHilJoinFixture<'a> {
-    state: &'a mut PhyColdState,
-    radio: RadioHilConnectedFixture<'a>,
-}
-
 /// Complete same-candidate frontier before Open Authentication.
 ///
-/// The PHY channel owner is present only in this phase. Successful
-/// authentication consumes it into the connected fixture; a failed finite
-/// authentication returns the complete value so the outer lifecycle can wait
-/// and retry without recreating DMA or security state.
+/// The PHY channel owner remains part of the connected fixture after this
+/// phase so a later running rescan can retune without reconstructing hidden
+/// state. A failed finite authentication returns the complete value so the
+/// outer lifecycle can wait and retry without recreating DMA or security
+/// state.
 struct RadioHilAuthenticationReady<'fixture, 'security> {
-    fixture: RadioHilJoinFixture<'fixture>,
+    fixture: RadioHilConnectedFixture<'fixture>,
     target: StaJoinTarget,
     rx: RadioHilJoinRx<'static>,
     network: RadioHilStaNetwork,
     security: StaAssociationSecurity<'security>,
 }
 
-impl<'a> RadioHilJoinFixture<'a> {
-    fn into_connected(self) -> RadioHilConnectedFixture<'a> {
-        self.radio
-    }
-}
 // The embassy-net RX slots and index queues are CPU-owned and are never
 // presented to the Wi-Fi DMA engine. In the qualified
 // `psram-code-psram-data` runtime ordinary `.bss` already lives in PSRAM; an
@@ -5002,6 +5005,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     let RadioHilConnectedTaskFixture {
         spawner,
         protocol_spawner,
+        state,
         platform,
         interrupt_setup,
         rx_storage,
@@ -5488,6 +5492,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                         fixture: RadioHilConnectedTaskFixture {
                             spawner,
                             protocol_spawner,
+                            state,
                             platform,
                             interrupt_setup,
                             rx_storage,
@@ -5551,40 +5556,46 @@ async fn qualify_disconnected_rx_restart(
         ampdu,
         control_resources,
     } = epoch;
-    let prepared = match rx.prepare(&mut hardware) {
-        Ok(prepared) => prepared,
-        Err((rx, error)) => {
+    let mut rx = RunningScanRx::from_stopped(rx);
+    if let Err(error) = rx.prepare_initial(&mut hardware) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-prepare \
+             error={error:?}"
+        ));
+        let _owners = (network, hardware, rx, ampdu, control_resources);
+        loop {
+            Timer::after_secs(60).await;
+        }
+    }
+    if let Err(error) = rx.start(&mut hardware).await {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-enable \
+             error={error:?}"
+        ));
+        let _owners = (network, hardware, rx, ampdu, control_resources);
+        loop {
+            Timer::after_secs(60).await;
+        }
+    }
+    if let Err(error) = rx.stop(&mut hardware) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-stop \
+             error={error:?}"
+        ));
+        let _owners = (network, hardware, rx, ampdu, control_resources);
+        loop {
+            Timer::after_secs(60).await;
+        }
+    }
+    let rx = match rx.into_stopped() {
+        Ok(rx) => rx,
+        Err(rx) => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-prepare \
-                 error={error:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-rx-restart-return phase={:?}",
+                rx.phase(),
             ));
             let _owners = (network, hardware, rx, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
-    };
-    let live = match prepared.start(&mut hardware).await {
-        Ok(live) => live,
-        Err((prepared, error)) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-enable \
-                 error={error:?}"
-            ));
-            let _owners = (network, hardware, prepared, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
-    };
-    let rx = match live.try_stop(&mut hardware) {
-        Ok(rx) => rx,
-        Err((live, error)) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-stop \
-                 error={error:?}"
-            ));
-            let _owners = (network, hardware, live, ampdu, control_resources);
             loop {
                 Timer::after_secs(60).await;
             }
@@ -5750,14 +5761,7 @@ impl<'fixture, 'security> StaLifecycleBackend
                     ));
                     if authenticated {
                         initial_join_outcome(
-                            associate_target(
-                                fixture.into_connected(),
-                                target,
-                                rx,
-                                network,
-                                security,
-                            )
-                            .await,
+                            associate_target(fixture, target, rx, network, security).await,
                         )
                     } else {
                         StaAttemptOutcome::Failed {
@@ -6264,7 +6268,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
 }
 
 async fn authenticate_target(
-    fixture: &mut RadioHilJoinFixture<'_>,
+    fixture: &mut RadioHilConnectedFixture<'_>,
     target: StaJoinTarget,
     rx: RadioHilJoinRx<'static>,
     sequence: &mut StaSequenceCounter,
@@ -6274,12 +6278,11 @@ async fn authenticate_target(
         access_point,
     } = target;
     let state = &mut *fixture.state;
-    let radio = &mut fixture.radio;
-    let platform = &mut *radio.platform;
-    let mmio = &mut *radio.mmio;
-    let rx_storage = radio.rx_storage;
-    let tx_storage = &mut *radio.tx_storage;
-    let frame = &mut *radio.frame;
+    let platform = &mut *fixture.platform;
+    let mmio = &mut *fixture.mmio;
+    let rx_storage = fixture.rx_storage;
+    let tx_storage = &mut *fixture.tx_storage;
+    let frame = &mut *fixture.frame;
     let selection = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE);
     let association_phy = selection.phy;
     let channel_or_frequency = selection.channel_or_frequency;
@@ -6697,6 +6700,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     let RadioHilConnectedFixture {
         spawner,
         protocol_spawner,
+        state,
         platform,
         mmio,
         interrupt_setup,
@@ -6759,6 +6763,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                     fixture: RadioHilConnectedFixture {
                         spawner,
                         protocol_spawner,
+                        state,
                         platform,
                         mmio,
                         interrupt_setup,
@@ -6973,6 +6978,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         let (connected_fixture, registers) = RadioHilConnectedFixture {
             spawner,
             protocol_spawner,
+            state,
             platform,
             mmio,
             interrupt_setup,
@@ -7049,6 +7055,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             fixture: RadioHilConnectedFixture {
                 spawner,
                 protocol_spawner,
+                state,
                 platform,
                 mmio,
                 interrupt_setup,
@@ -7648,24 +7655,22 @@ async fn run_promiscuous_rx_hil(
                 station_address,
                 access_point,
             };
-            let join_fixture = RadioHilJoinFixture {
+            let fixture = RadioHilConnectedFixture {
                 state,
-                radio: RadioHilConnectedFixture {
-                    spawner,
-                    protocol_spawner,
-                    platform,
-                    mmio,
-                    interrupt_setup: &mut interrupt_setup,
-                    rx_storage: storage,
-                    tx_storage,
-                    descriptor_base,
-                    buffer_addresses,
-                    frame: scan_frame,
-                    ethernet: ethernet_frame,
-                },
+                spawner,
+                protocol_spawner,
+                platform,
+                mmio,
+                interrupt_setup: &mut interrupt_setup,
+                rx_storage: storage,
+                tx_storage,
+                descriptor_base,
+                buffer_addresses,
+                frame: scan_frame,
+                ethernet: ethernet_frame,
             };
             let owner = RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
-                fixture: join_fixture,
+                fixture,
                 target,
                 rx: RadioHilJoinRx::Halted(scan_ring),
                 network: initialize_sta_network(station_address),

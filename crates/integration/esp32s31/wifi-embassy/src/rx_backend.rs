@@ -41,6 +41,8 @@ use crate::{
 pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 32;
 pub const ESP32S31_RX_BUFFER_SIZE: usize = 4_608;
 pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
+/// Platform settle edge between stopped-ring publication and walker enable.
+pub const ESP32S31_RX_WALKER_ENABLE_SETTLE_US: u32 = 5;
 
 #[repr(C, align(4))]
 pub struct Esp32s31RxDmaBuffer<
@@ -502,6 +504,16 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    pub const fn buffers(
+        &self,
+    ) -> &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT] {
+        self.buffers
+    }
+
+    pub fn delay_mut(&mut self) -> &mut D {
+        &mut self.delay
+    }
+
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
     }
@@ -632,7 +644,9 @@ impl<
             mut delay,
             pipeline_counters,
         } = self;
-        delay.after_micros(5).await;
+        delay
+            .after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US)
+            .await;
         match ring.try_start(hardware) {
             Ok(ring) => Ok(Esp32s31ConnectedRx {
                 ring,

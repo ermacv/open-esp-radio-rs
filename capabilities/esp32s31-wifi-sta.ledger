@@ -203,6 +203,7 @@ owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs ConnectedContro
 owner crates/integration/esp32s31/wifi-embassy/src/connected_control.rs ConnectedControlShutdown
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31StaScanBackend
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31ScanRx
+owner crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs Esp32s31RunningScanRx
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan_target.rs Esp32s31ScanPhy
 owner crates/integration/esp32s31/wifi-embassy/src/sta_scan_target.rs Esp32s31ColdScanTx
 owner crates/wifi/lifecycle/src/scan.rs StaCandidateScanService
@@ -217,6 +218,7 @@ test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs dwell_failure_stil
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs fatal_probe_failure_still_closes_the_live_rx_epoch
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs scan_rx_hands_the_exact_halted_ring_to_the_next_phase
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs scan_rx_retains_its_typed_phase_across_enable_and_disable_failure
+test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs running_scan_rx_returns_the_exact_connected_epoch_resources
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs stop_failure_takes_precedence_over_an_earlier_dwell_failure
 test crates/wifi/lifecycle/src/scan.rs channel_failure_returns_the_exact_owner_and_stops_the_plan
 test crates/wifi/lifecycle/src/station.rs terminal_failure_and_backoff_stop_both_return_hardware_ownership

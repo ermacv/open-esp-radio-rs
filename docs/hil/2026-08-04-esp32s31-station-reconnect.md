@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Runtime CRC32: `5d5b575d`
+Latest qualified runtime CRC32: `fc9c9d37`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -128,3 +128,26 @@ epoch stop then completed same-peer reassociation (AID 24) and WPA2 at replay
 as the controlled reconnect. It does not replace deterministic injected-fault
 qualification. This qualifies the shared transaction and cold PHY/RX/TX
 owners, not a running scan port or a rescan after AP loss.
+
+## Persistent PHY and running-RX ownership addendum
+
+The cell was repeated with runtime CRC32 `fc9c9d37`; the image remained
+1,129,104 bytes and passed both placement and autonomous-source-graph audits.
+`PhyColdState` is now a field of the fixture returned by every connected
+epoch, rather than a join-only reference dropped after Authentication. The
+same owner is therefore available to retune a later candidate scan.
+
+The disconnected RX restart was also changed to consume
+`Esp32s31RunningScanRx`. That production owner separates the halted ring from
+the connected epoch only while RX is prepared/live, retains the staging pool,
+queue sender, reload delay and telemetry binding, applies the qualified 5 us
+walker-enable settle edge, and returns the exact `Esp32s31StoppedRx` after
+stop. The board emitted `production-rx-restart` with the same descriptor base
+`0x2f03e910` and an empty retained queue, then completed Association (status 0,
+AID 27), WPA2 (replay 5) and `production-reconnect-connected-enter`.
+
+This addendum qualifies persistent PHY ownership and the running-scan RX
+sub-owner on hardware. It deliberately does not claim a channel scan after
+disconnect: running PHY, active-probe TX and observation ownership still need
+to be composed into an `Esp32s31StaScanPort` and routed through the outer
+lifecycle before AP-loss rescan can be qualified.

@@ -8,6 +8,14 @@
 
 use core::marker::PhantomData;
 
+use crate::{
+    control_tx::{ControlTxError, Esp32s31ControlTx},
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    sta_scan::{
+        Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
+        Esp32s31ScanTxSummary,
+    },
+};
 use open_esp_radio_esp32s31_hal::{
     ColdRadioRegisters, RadioRegisters, phy_i2c::PhyI2cMasterControl,
     phy_temperature::PhyTemperatureSystemControl, wifi_bb::PhyWifiBbControl,
@@ -16,14 +24,7 @@ use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyColdState,
     switch_phy_channel_with_mac_restart,
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::management::ProbeRequest;
-
-use crate::{
-    control_tx::{ControlTxError, Esp32s31ControlTx},
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    sta_scan::Esp32s31ActiveProbeOutcome,
-};
 
 /// Persistent PHY authority used by either a cold scan or a running rescan.
 ///
@@ -81,52 +82,16 @@ where
     }
 }
 
-/// Complete inputs for one active-scan Probe Request publication.
-pub struct Esp32s31ScanProbeRequest<'a> {
-    pub source: [u8; 6],
-    pub sequence_number: u16,
-    pub ssid: &'a [u8],
-    pub supported_rates: &'a [u8],
-    pub current_channel: Option<u8>,
-    pub descriptor_capacity: Option<u32>,
-}
-
-/// Detailed terminal observation retained for HIL evidence and telemetry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31ScanProbeReport {
-    Transmitted(TxCompletion),
-    PassiveWithoutAttempt,
-    PassiveAfterCompletion(TxCompletion),
-    PassiveAfterError(ControlTxError),
-}
-
-impl Esp32s31ScanProbeReport {
-    pub const fn outcome(self) -> Esp32s31ActiveProbeOutcome {
-        match self {
-            Self::Transmitted(_) => Esp32s31ActiveProbeOutcome::Transmitted,
-            Self::PassiveWithoutAttempt
-            | Self::PassiveAfterCompletion(_)
-            | Self::PassiveAfterError(_) => Esp32s31ActiveProbeOutcome::PassiveFallback,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Esp32s31ScanTxSummary {
-    pub completions: u32,
-    pub failures: u32,
-}
-
 /// Unique polling-only TX owner for a cold active scan.
 ///
-/// Running rescan cannot use this owner: once the MAC IRQ runtime exists, TX
-/// completion must be driven by the cooperative runner rather than polling.
-/// Keeping this type cold-specific prevents those two executor contracts from
-/// being silently conflated.
+/// Running rescan cannot use this owner because the one-way PAC transition
+/// removes its task-side interrupt clear capability. The distinct running
+/// owner may poll only while borrowing the `MacInterruptSetup` returned by a
+/// fully quiesced connected epoch. Keeping the types separate makes that
+/// executor and interrupt-ownership boundary explicit.
 pub struct Esp32s31ColdScanTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
-    active_probe_available: bool,
-    summary: Esp32s31ScanTxSummary,
+    state: Esp32s31ScanTxState,
 }
 
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31ColdScanTx<'slot, P, E, T, BUFFER_SIZE>
@@ -138,18 +103,13 @@ where
     pub const fn new(control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>) -> Self {
         Self {
             control,
-            active_probe_available: true,
-            summary: Esp32s31ScanTxSummary {
-                completions: 0,
-                failures: 0,
-            },
+            state: Esp32s31ScanTxState::new(),
         }
     }
 
     /// Start one cold scan transaction with a fresh bounded telemetry epoch.
     pub fn begin_scan(&mut self) {
-        self.active_probe_available = true;
-        self.summary = Esp32s31ScanTxSummary::default();
+        self.state.begin_scan();
     }
 
     /// Publish one Probe Request or return a safe passive-scan disposition.
@@ -162,7 +122,7 @@ where
         registers: &mut ColdRadioRegisters,
         request: Esp32s31ScanProbeRequest<'_>,
     ) -> Result<Esp32s31ScanProbeReport, ControlTxError> {
-        if !self.active_probe_available {
+        if !self.state.active_probe_available() {
             return Ok(Esp32s31ScanProbeReport::PassiveWithoutAttempt);
         }
         // SOURCE: complete `_oracles/libpp.a[hal_tsf.o]` station-start
@@ -178,7 +138,7 @@ where
             current_channel,
             descriptor_capacity,
         } = request;
-        match self
+        let result = self
             .control
             .transmit_probe_request(
                 registers,
@@ -191,29 +151,8 @@ where
                 current_channel,
                 descriptor_capacity,
             )
-            .await
-        {
-            Ok(completion) => {
-                self.summary.completions = self.summary.completions.saturating_add(1);
-                if completion.status == 0 {
-                    Ok(Esp32s31ScanProbeReport::Transmitted(completion))
-                } else {
-                    self.summary.failures = self.summary.failures.saturating_add(1);
-                    self.active_probe_available = false;
-                    Ok(Esp32s31ScanProbeReport::PassiveAfterCompletion(completion))
-                }
-            }
-            Err(error) if error.retains_quiescent_owner() => {
-                self.summary.failures = self.summary.failures.saturating_add(1);
-                self.active_probe_available = false;
-                Ok(Esp32s31ScanProbeReport::PassiveAfterError(error))
-            }
-            Err(error) => {
-                self.summary.failures = self.summary.failures.saturating_add(1);
-                self.active_probe_available = false;
-                Err(error)
-            }
-        }
+            .await;
+        self.state.classify(result)
     }
 
     pub fn into_parts(
@@ -222,6 +161,6 @@ where
         Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
         Esp32s31ScanTxSummary,
     ) {
-        (self.control, self.summary)
+        (self.control, self.state.summary())
     }
 }

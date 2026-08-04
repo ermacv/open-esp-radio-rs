@@ -272,6 +272,16 @@ The first reconnect seam is now production-owned:
   host ownership test proves an exact round trip back to
   `Esp32s31StoppedRx`, and the controlled reconnect HIL executes this
   production owner when it qualifies the second RX DMA epoch;
+- `Esp32s31RunningScanTx` now consumes the ordinary descriptor returned by
+  connected teardown only after both CPU and peripheral IRQ routes are
+  quiesced; its public constructor requires a borrow of the returned
+  `MacInterruptSetup`, so an active IRQ epoch cannot accidentally select the
+  polling contract. It shares the cold path's fail-closed Probe Request
+  classifier, returns the exact `Esp32s31ControlTx` for Association, and
+  disables further active attempts after a safe passive-fallback edge. Host
+  tests cover owner return and fallback. HIL published a real same-channel
+  Probe Request with TX status zero between connected epochs, then returned
+  the descriptor and completed the second Association/WPA2 epoch;
 - connected protocol shutdown now returns a typed stopped owner rather than
   only diagnostic counters. The spawned protocol task releases its receiver,
   sink and reorder bindings and returns the exact MPDU/Ethernet scratch
@@ -328,8 +338,8 @@ The first reconnect seam is now production-owned:
   `into_running` transition. The board fixture now also retains the unique
   `PhyColdState` after Authentication and throughout both connected epochs;
   it is no longer dropped at the first Association boundary. This concrete
-  cold port and the reusable running RX sub-owner have board evidence; the
-  running PHY/TX/observation port and its outer lifecycle variant do not yet
+  cold port and the reusable running RX/TX sub-owners have board evidence; the
+  running PHY/observation port and its outer lifecycle variant do not yet
   exist.
 
 This is now a bounded same-peer reconnect implementation with board evidence.
@@ -347,7 +357,7 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. compose the existing running RX sub-owner with running PHY, TX and
+1. compose the existing running RX/TX sub-owners with running PHY and
    observation ownership in a port for the shared `Esp32s31StaScanBackend`,
    then add distinct cold/running scan owner variants to the outer service. Open
    Authentication already begins as
@@ -360,12 +370,12 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is now the running PHY/TX port and outer lifecycle composition, not
+gap is now the running PHY/observation port and outer lifecycle composition, not
 generic scan policy, ESP32-S31 transaction ordering, persistent PHY state or
-RX epoch ownership. Initial
+RX/TX epoch ownership. Initial
 HIL scan uses `StaCandidateScanService` plus
 `Esp32s31StaScanBackend` but still runs before the outer station service; later
-disconnects do not yet route their running-scan RX owner through that service.
+disconnects do not yet route their running-scan RX/TX owners through that service.
 The already composed `Authenticate`,
 `Join` and
 `Reconnect` variants deliberately retain their different types. Extend that

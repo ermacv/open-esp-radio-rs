@@ -117,14 +117,12 @@ use open_esp_radio::{
             },
             sta_scan::{
                 Esp32s31ActiveProbeOutcome, Esp32s31ScanFrameObserver,
-                Esp32s31RunningScanRx, Esp32s31ScanObservationContext, Esp32s31ScanRx,
+                Esp32s31RunningScanRx, Esp32s31RunningScanTx, Esp32s31ScanObservationContext,
+                Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanRx,
                 Esp32s31ScanRxError, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
                 Esp32s31StaScanPort,
             },
-            sta_scan_target::{
-                Esp32s31ColdScanTx, Esp32s31ScanPhy, Esp32s31ScanProbeReport,
-                Esp32s31ScanProbeRequest,
-            },
+            sta_scan_target::{Esp32s31ColdScanTx, Esp32s31ScanPhy},
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol,
                 Esp32s31StagedRxQueue,
@@ -1053,6 +1051,13 @@ type RunningScanRx = Esp32s31RunningScanRx<
     RX_STAGE_SLOT_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
+>;
+type RunningScanTx = Esp32s31RunningScanTx<
+    'static,
+    PhyTxTargetPowerProfile,
+    fn() -> u32,
+    EmbassyWifiTxTimer,
+    TX_BUFFER_SIZE,
 >;
 type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     'static,
@@ -5544,10 +5549,15 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     }
 }
 
-/// Prove that one disconnected owner can create and close a second RX epoch
-/// without reinitializing any static storage.
+/// Prove that one disconnected owner can open a finite running-scan RX/TX
+/// epoch and return every resource without reinitializing static storage.
 async fn qualify_disconnected_rx_restart(
     epoch: RadioHilDisconnectedEpoch,
+    tx_storage: &mut TxStorage,
+    interrupt_setup: &MacInterruptSetup,
+    station_address: [u8; 6],
+    channel: u8,
+    sequence: &mut StaSequenceCounter,
 ) -> RadioHilDisconnectedEpoch {
     let RadioHilDisconnectedEpoch {
         network,
@@ -5577,12 +5587,60 @@ async fn qualify_disconnected_rx_restart(
             Timer::after_secs(60).await;
         }
     }
+    let control = tx_storage
+        .control
+        .take()
+        .expect("connected teardown returned the ordinary TX owner");
+    let mut tx: RunningScanTx = RunningScanTx::new(control, interrupt_setup);
+    tx.begin_scan();
+    match tx
+        .transmit_probe_request(
+            &mut hardware,
+            Esp32s31ScanProbeRequest {
+                source: station_address,
+                sequence_number: sequence.take(),
+                ssid: b"",
+                supported_rates: &PROBE_REQUEST_RATES,
+                current_channel: Some(channel),
+                descriptor_capacity: Some(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
+            },
+        )
+        .await
+    {
+        Ok(Esp32s31ScanProbeReport::Transmitted(completion)) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-probe \
+                 channel={channel} status={} primary={:#010x}",
+                completion.status, completion.primary_word,
+            ));
+        }
+        Ok(report) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-probe \
+                 channel={channel} report={report:?}"
+            ));
+            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-probe \
+                 channel={channel} error={error:?}"
+            ));
+            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    }
     if let Err(error) = rx.stop(&mut hardware) {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-stop \
              error={error:?}"
         ));
-        let _owners = (network, hardware, rx, ampdu, control_resources);
+        let _owners = (network, hardware, rx, tx, ampdu, control_resources);
         loop {
             Timer::after_secs(60).await;
         }
@@ -5595,17 +5653,21 @@ async fn qualify_disconnected_rx_restart(
                  stage=production-rx-restart-return phase={:?}",
                 rx.phase(),
             ));
-            let _owners = (network, hardware, rx, ampdu, control_resources);
+            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
             loop {
                 Timer::after_secs(60).await;
             }
         }
     };
+    let (control, tx_summary) = tx.into_parts();
+    tx_storage.control = Some(control);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-restart \
-         descriptor_base={:#010x} queued_frames={}",
+         descriptor_base={:#010x} queued_frames={} probe_completions={} probe_failures={}",
         rx.ring().descriptor_base(),
         rx.queued_frames(),
+        tx_summary.completions,
+        tx_summary.failures,
     ));
     RadioHilDisconnectedEpoch {
         network,
@@ -6236,7 +6298,18 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         security,
         exit,
     } = returned;
-    let disconnected = qualify_disconnected_rx_restart(disconnected).await;
+    let disconnected = qualify_disconnected_rx_restart(
+        disconnected,
+        &mut *fixture.tx_storage,
+        fixture
+            .interrupt_setup
+            .as_ref()
+            .expect("connected teardown returned the quiesced interrupt owner"),
+        target.station_address,
+        target.access_point.channel,
+        security.sequences.non_qos_mut(),
+    )
+    .await;
     let (network, epoch) = disconnected.into_reconnected_resources();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS \
@@ -7008,7 +7081,24 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             group_slot,
         )
         .await;
-        let disconnected = qualify_disconnected_rx_restart(returned.disconnected).await;
+        let RadioHilConnectedEpochReturn {
+            fixture,
+            disconnected,
+            security,
+            exit,
+        } = returned;
+        let disconnected = qualify_disconnected_rx_restart(
+            disconnected,
+            &mut *fixture.tx_storage,
+            fixture
+                .interrupt_setup
+                .as_ref()
+                .expect("connected teardown returned the quiesced interrupt owner"),
+            target.station_address,
+            target.access_point.channel,
+            security.sequences.non_qos_mut(),
+        )
+        .await;
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
              descriptor_base={:#010x} queued_frames={}",
@@ -7017,18 +7107,18 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         ));
         let (network, reconnect_resources) = disconnected.into_reconnected_resources();
         let ready = RadioHilReconnectReady {
-            fixture: returned.fixture,
+            fixture,
             target,
             network: RadioHilStaNetwork::Running(network),
             epoch: reconnect_resources,
-            security: returned.security,
+            security,
         };
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready"
         ));
         return RadioHilJoinOutcome::Connected {
             ready,
-            exit: returned.exit,
+            exit,
         };
     }
     let group_hardware_index = group_slot.hardware_index();

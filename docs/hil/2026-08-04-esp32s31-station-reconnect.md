@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `fc9c9d37`
+Latest qualified runtime CRC32: `b209ee33`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -131,7 +131,7 @@ owners, not a running scan port or a rescan after AP loss.
 
 ## Persistent PHY and running-RX ownership addendum
 
-The cell was repeated with runtime CRC32 `fc9c9d37`; the image remained
+The cell was repeated with runtime CRC32 `b209ee33`; the image remained
 1,129,104 bytes and passed both placement and autonomous-source-graph audits.
 `PhyColdState` is now a field of the fixture returned by every connected
 epoch, rather than a join-only reference dropped after Authentication. The
@@ -143,11 +143,19 @@ the connected epoch only while RX is prepared/live, retains the staging pool,
 queue sender, reload delay and telemetry binding, applies the qualified 5 us
 walker-enable settle edge, and returns the exact `Esp32s31StoppedRx` after
 stop. The board emitted `production-rx-restart` with the same descriptor base
-`0x2f03e910` and an empty retained queue, then completed Association (status 0,
-AID 27), WPA2 (replay 5) and `production-reconnect-connected-enter`.
+`0x2f03e910` and an empty retained queue.
 
-This addendum qualifies persistent PHY ownership and the running-scan RX
-sub-owner on hardware. It deliberately does not claim a channel scan after
-disconnect: running PHY, active-probe TX and observation ownership still need
-to be composed into an `Esp32s31StaScanPort` and routed through the outer
-lifecycle before AP-loss rescan can be qualified.
+The same finite epoch now also consumes `Esp32s31RunningScanTx` after the MAC
+IRQ routes are disabled. It publishes through the ordinary descriptor returned
+by connected teardown; construction requires a borrow of the quiesced
+`MacInterruptSetup`. It applies the same fail-closed active/passive classifier
+as cold scan and returns that exact `Esp32s31ControlTx` before Association.
+The board emitted `production-running-probe channel=1 status=0`, reported one
+completion and zero probe failures at `production-rx-restart`, then completed
+Association/WPA2 and `production-reconnect-connected-enter`.
+
+This addendum qualifies persistent PHY ownership and the running-scan RX/TX
+sub-owners on hardware. It deliberately does not claim a channel scan after
+disconnect: PHY retune and observation/candidate ownership still need to be
+composed into an `Esp32s31StaScanPort` and routed through the outer lifecycle
+before AP-loss rescan can be qualified.

@@ -35,6 +35,7 @@ pub mod staged_rx;
 pub mod station_epoch;
 pub mod station_power_save;
 pub mod wpa2;
+pub mod wpa2_port;
 
 /// Chip-independent outer station lifecycle contracts used by this adapter.
 pub use open_esp_radio_wifi_lifecycle::station as sta_lifecycle;

@@ -2,9 +2,9 @@
 //!
 //! The WPA2 crate owns cryptography, replay state and key-install tickets.
 //! This module owns only absolute response deadlines and the ordering of
-//! finite RX, RX restart and Message 2 TX transactions. Key-slot publication
-//! and Message 4 remain explicit caller transactions until the shared
-//! management/EAPOL TX owner is extracted from the HIL.
+//! finite RX, RX restart and Message 2 TX transactions. The concrete
+//! ESP32-S31 DMA/EAPOL/key-slot/Message-4 binding lives in
+//! [`crate::wpa2_port`] rather than in a board or HIL fixture.
 
 use core::future::Future;
 

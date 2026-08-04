@@ -4,7 +4,6 @@ use core::{
     marker::PhantomData,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
-    task::{Context, Waker},
 };
 
 use crate::console::emergency_log;
@@ -15,7 +14,7 @@ use embassy_net::{
     tcp::TcpSocket,
     udp::{PacketMetadata, UdpSocket},
 };
-use embassy_net_driver::{Driver, LinkState, RxToken as _, TxToken as _};
+use embassy_net_driver::LinkState;
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
 };
@@ -44,8 +43,7 @@ use open_esp_radio::{
                 ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
             },
             crypto::{
-                CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
-                install_sta_group_ccmp, install_sta_pairwise_ccmp,
+                CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
             },
             edca::EdcaParametersError,
             he::{He20PeerHardware, program_he20_peer_state},
@@ -67,16 +65,15 @@ use open_esp_radio::{
                 RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR,
             },
             rx::{
-                HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
-                RxSegment, decode_rx_phy_info, extract_ccmp_data, extract_data,
-                first_segment_layout,
+                HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxIngressConfig,
+                decode_rx_phy_info,
             },
             rx_pool::RxStagePool,
             scan::{ScanObservation, ScanRecord, ScanTable},
             tx::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
-                HtMcs, HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError,
-                TxHardware, TxPhyRate, TxSlot,
+                HtMcs, HtPeerAmpduParameters, LegacyRate, TxCompletion, TxHardware, TxPhyRate,
+                TxSlot,
             },
             tx_ampdu::{HtAmpduTxStorage, StaTxBlockAckSessions},
             tx_runtime::StaTxRuntimePolicy,
@@ -98,10 +95,7 @@ use open_esp_radio::{
             embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
             embassy_rx::RxReloadDelay,
             link_monitor::StaBeaconLossConfig,
-            preconnected_rx::{
-                EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx,
-                Esp32s31PreconnectedRxDirective, Esp32s31PreconnectedRxError,
-            },
+            preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             runner::{WifiRunner, WifiRunnerExit},
             running_scan::{
                 EmbassyEsp32s31RunningScanTimer, Esp32s31RunningScanParts,
@@ -142,26 +136,29 @@ use open_esp_radio::{
                 Esp32s31StagedRxQueue,
             },
             wpa2::{
-                EmbassyWpa2HandshakeTimer, Wpa2HandshakeBackend, Wpa2HandshakeConfig,
-                Wpa2HandshakeRunner, Wpa2KeyInstallBackend, Wpa2KeyInstallRunner,
-                Wpa2PendingKeyInstall, Wpa2RxProgress,
+                EmbassyWpa2HandshakeTimer, Wpa2HandshakeConfig, Wpa2HandshakeRunner,
+                Wpa2KeyInstallRunner, Wpa2PendingKeyInstall,
+            },
+            wpa2_port::{
+                Esp32s31Wpa2HandshakePort, Esp32s31Wpa2HandshakeRadio,
+                Esp32s31Wpa2HandshakeStorage, Esp32s31Wpa2KeyPort, Esp32s31Wpa2KeyRadio,
+                Esp32s31Wpa2KeySession, Esp32s31Wpa2Message4Protection, Esp32s31Wpa2Rx,
+                Esp32s31Wpa2Station,
             },
         },
         network::embassy_net::{
-            PinnedTxFrame as OpenRadioNetworkTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
-            SplitPinnedDevice as OpenRadioNetworkDevice,
+            PinnedTxPool as OpenRadioNetworkTxPool, SplitPinnedDevice as OpenRadioNetworkDevice,
             SplitPinnedRadioRunner as OpenRadioNetworkRunner,
             SplitPinnedResources as OpenRadioNetworkResources,
         },
     },
     wifi::ieee80211::{
-        data::{DataInterfaceRole, decapsulate_data},
         he::HeDcmConstellation,
         scan::best_matching_ssid,
         station::{
             STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPhy, StaAssociationPreference,
-            StaDataFrame, StaProtectedDataFrame, StaSequenceCounter, StaTxSequenceCounters,
-            select_sta_association, select_wpa2_psk_rsn,
+            StaSequenceCounter, StaTxSequenceCounters, select_sta_association,
+            select_wpa2_psk_rsn,
         },
     },
     wifi::lifecycle::station::{
@@ -172,10 +169,7 @@ use open_esp_radio::{
     wifi::lifecycle::scan::{
         StaCandidateScanExit, StaCandidateScanService, StaScanChannelContext, StaScanPlanError,
     },
-    wifi::wpa2::{
-        OwnedEapolFrame, Pmk, Wpa2Interface, aes::Wpa2SoftwareAes, frames::Wpa2TxFrame,
-        keys::Wpa2KeyKind,
-    },
+    wifi::wpa2::{Pmk, aes::Wpa2SoftwareAes},
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_protocol::{
@@ -716,15 +710,10 @@ const fn sta_scan_channels() -> [u8; STA_SCAN_CHANNEL_COUNT] {
 }
 
 const STA_SCAN_CHANNELS: [u8; STA_SCAN_CHANNEL_COUNT] = sta_scan_channels();
-const WPA2_PROTECTED_ARP_TIMEOUT_MS: u32 = 1_500;
-const WPA2_CONTROLLED_PORT_SETTLE_MS: u64 = 10;
-const WPA2_PROTECTED_ARP_ATTEMPTS: u8 = 3;
-const WPA2_PROTECTED_ARP_RETRY_DELAY_MS: u64 = 20;
 // Migration installs both keys before queueing M4, but keeps STA EAPOL on its
 // measured plaintext layout until the M4 TX-done edge opens the controlled
 // port. Protected M4 remains a useful explicit negative control experiment.
 const WPA2_MESSAGE_4_HARDWARE_PROTECTED: bool = false;
-const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
 
 const fn selected_ipv4(value: Option<&str>, default: [u8; 4]) -> [u8; 4] {
     let Some(value) = value else {
@@ -978,14 +967,6 @@ type NetworkRunner = OpenRadioNetworkRunner<
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
     NETWORK_RX_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
->;
-type NetworkTxFrame = OpenRadioNetworkTxFrame<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkTxPool = OpenRadioNetworkTxPool<
@@ -2059,233 +2040,50 @@ fn radio_hil_sta_join_port<'hardware, 'transmit, 'storage, 'scratch, H>(
     )
 }
 
-/// HIL PAC/DMA fixture for the production WPA2 response runner. The adapter
-/// copies one complete EAPOL packet before returning and never awaits while a
-/// descriptor or mutable PAC transaction is borrowed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RadioHilWpa2Error {
-    Receive(Esp32s31PreconnectedRxError),
-    Transmit(ActiveScanTxError),
-}
+type RadioHilWpa2Receive<'storage> = Esp32s31Wpa2Rx<
+    'storage,
+    EmbassyEsp32s31PreconnectedRxDelay,
+    RX_DESCRIPTOR_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
 
-impl From<Esp32s31PreconnectedRxError> for RadioHilWpa2Error {
-    fn from(error: Esp32s31PreconnectedRxError) -> Self {
-        Self::Receive(error)
-    }
-}
+type RadioHilWpa2HandshakePort<'hardware, 'transmit, 'storage, 'scratch, H> =
+    Esp32s31Wpa2HandshakePort<
+        'hardware,
+        'transmit,
+        'scratch,
+        H,
+        RadioHilWpa2Receive<'storage>,
+        ControlTx,
+    >;
 
-impl From<ActiveScanTxError> for RadioHilWpa2Error {
-    fn from(error: ActiveScanTxError) -> Self {
-        Self::Transmit(error)
-    }
-}
-
-struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch, H> {
-    mmio: &'hardware mut H,
+fn radio_hil_wpa2_handshake_port<'hardware, 'transmit, 'storage, 'scratch, H>(
+    hardware: &'hardware mut H,
     rx_storage: &'storage RxStorage,
-    tx_storage: &'hardware mut TxStorage,
+    transmit: &'transmit mut ControlTx,
     frame: &'scratch mut [u8],
     station_address: [u8; 6],
     bssid: [u8; 6],
     rx: RadioHilJoinRx<'storage>,
-    message2_transmissions: u16,
+) -> RadioHilWpa2HandshakePort<'hardware, 'transmit, 'storage, 'scratch, H> {
+    let station = Esp32s31Wpa2Station::new(station_address, bssid);
+    Esp32s31Wpa2HandshakePort::new(
+        Esp32s31Wpa2HandshakeRadio::new(
+            hardware,
+            Esp32s31Wpa2Rx::new(rx, rx_storage, station),
+            transmit,
+        ),
+        Esp32s31Wpa2HandshakeStorage::new(frame),
+        station,
+    )
 }
 
-impl<'storage, H> RadioHilWpa2Backend<'_, 'storage, '_, H> {
-    fn into_rx(self) -> RadioHilJoinRx<'storage> {
-        self.rx
-    }
-}
-
-impl<H> Wpa2HandshakeBackend for RadioHilWpa2Backend<'_, '_, '_, H>
-where
-    H: Mmio + RxDma + TxHardware,
-{
-    type Error = RadioHilWpa2Error;
-
-    fn service_receive(
-        &mut self,
-    ) -> impl Future<Output = Result<Wpa2RxProgress, Self::Error>> + '_ {
-        async move {
-            let mut eapol = None;
-            let progress = self.rx.service_completed(
-                self.mmio,
-                self.rx_storage,
-                |segment| {
-                    let candidate = (|| {
-                        let data = extract_data(
-                            core::slice::from_ref(&segment),
-                            RxIngressConfig {
-                                ring_entry_limit: 1,
-                                csi_config: 0,
-                                flags: 0,
-                            },
-                            self.frame,
-                        )
-                        .ok()?;
-                        if data.mpdu.length < 24
-                            || self.frame[4..10] != self.station_address
-                            || self.frame[10..16] != self.bssid
-                        {
-                            return None;
-                        }
-                        let eapol_offset =
-                            data.payload_offset.checked_add(LLC_SNAP_EAPOL.len())?;
-                        if self.frame.get(data.payload_offset..eapol_offset)
-                            != Some(&LLC_SNAP_EAPOL)
-                        {
-                            return None;
-                        }
-                        let frame = self.frame.get(eapol_offset..data.mpdu.length)?;
-                        OwnedEapolFrame::try_copy(Wpa2Interface::Station, self.bssid, frame).ok()
-                    })();
-                    if let Some(candidate) = candidate {
-                        eapol = Some(candidate);
-                        Esp32s31PreconnectedRxDirective::Stop
-                    } else {
-                        Esp32s31PreconnectedRxDirective::Continue
-                    }
-                },
-            )?;
-            if let Some(eapol) = eapol {
-                return Ok(Wpa2RxProgress::eapol(progress.completed, eapol));
-            }
-            Ok(Wpa2RxProgress::drained(progress.completed))
-        }
-    }
-
-    fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move {
-            self.rx.stop(self.mmio).map_err(RadioHilWpa2Error::from)?;
-            self.rx
-                .start_with_storage(self.mmio, self.rx_storage)
-                .await
-                .map_err(Into::into)
-        }
-    }
-
-    fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move { self.rx.stop(self.mmio).map_err(Into::into) }
-    }
-
-    fn transmit_message2<'a>(
-        &'a mut self,
-        frame: &'a Wpa2TxFrame<512>,
-        sequence_number: u16,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            transmit_unprotected_eapol(
-                self.mmio,
-                self.tx_storage,
-                self.station_address,
-                self.bssid,
-                frame.as_bytes(),
-                sequence_number,
-            )
-            .await?;
-            self.message2_transmissions = self.message2_transmissions.saturating_add(1);
-            Ok(())
-        }
-    }
-}
-
-struct RadioHilInstalledWpa2Keys {
-    pairwise: StaPairwiseCcmpSlot,
-    group: StaGroupCcmpSlot,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RadioHilWpa2KeyError {
-    InvalidRequest,
-    Install(CryptoKeyError),
-    Transmit(ActiveScanTxError),
-    TxStatus(u8),
-}
-
-struct RadioHilWpa2KeyBackend<'hardware, 'sequence, H> {
-    mmio: &'hardware mut H,
-    tx_storage: &'hardware mut TxStorage,
-    station_address: [u8; 6],
-    bssid: [u8; 6],
-    peer_qos: bool,
-    sequences: &'sequence mut StaTxSequenceCounters,
-    completion: Option<TxCompletion>,
-}
-
-impl<H> Wpa2KeyInstallBackend for RadioHilWpa2KeyBackend<'_, '_, H>
-where
-    H: Mmio + CcmpKeyHardware + TxHardware,
-{
-    type Error = RadioHilWpa2KeyError;
-    type InstalledKeys = RadioHilInstalledWpa2Keys;
-
-    fn install_keys(
-        &mut self,
-        request: &open_esp_radio::wifi::wpa2::supplicant::Wpa2StaKeyInstallRequest,
-    ) -> Result<Self::InstalledKeys, Self::Error> {
-        let pairwise = request.pairwise();
-        let group = request.group();
-        let Wpa2KeyKind::Group { key_id, .. } = group.kind() else {
-            return Err(RadioHilWpa2KeyError::InvalidRequest);
-        };
-        let pairwise =
-            install_sta_pairwise_ccmp(self.mmio, *pairwise.peer(), pairwise.key().as_bytes())
-                .map_err(RadioHilWpa2KeyError::Install)?;
-        let group = match install_sta_group_ccmp(self.mmio, key_id, group.key().as_bytes()) {
-            Ok(group) => group,
-            Err(error) => {
-                pairwise.clear(self.mmio);
-                return Err(RadioHilWpa2KeyError::Install(error));
-            }
-        };
-        Ok(RadioHilInstalledWpa2Keys { pairwise, group })
-    }
-
-    fn rollback_keys(&mut self, keys: Self::InstalledKeys) -> Result<(), Self::Error> {
-        keys.group.clear(self.mmio);
-        keys.pairwise.clear(self.mmio);
-        Ok(())
-    }
-
-    fn transmit_message4<'a>(
-        &'a mut self,
-        frame: &'a Wpa2TxFrame<512>,
-        keys: &'a mut Self::InstalledKeys,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            let completion = if WPA2_MESSAGE_4_HARDWARE_PROTECTED {
-                transmit_eapol_message_4(
-                    self.mmio,
-                    self.tx_storage,
-                    self.station_address,
-                    self.bssid,
-                    frame,
-                    &mut keys.pairwise,
-                    self.sequences
-                        .take_data(self.peer_qos.then_some(0))
-                        .expect("selected EAPOL sequence-number owner exists"),
-                    self.peer_qos,
-                )
-                .await
-            } else {
-                transmit_unprotected_eapol(
-                    self.mmio,
-                    self.tx_storage,
-                    self.station_address,
-                    self.bssid,
-                    frame.as_bytes(),
-                    self.sequences.take_non_qos(),
-                )
-                .await
-            }
-            .map_err(RadioHilWpa2KeyError::Transmit)?;
-            self.completion = Some(completion);
-            if completion.status == 0 {
-                Ok(())
-            } else {
-                Err(RadioHilWpa2KeyError::TxStatus(completion.status))
-            }
-        }
+const fn radio_hil_message4_protection() -> Esp32s31Wpa2Message4Protection {
+    if WPA2_MESSAGE_4_HARDWARE_PROTECTED {
+        Esp32s31Wpa2Message4Protection::PairwiseCcmp
+    } else {
+        Esp32s31Wpa2Message4Protection::Unprotected
     }
 }
 
@@ -2861,358 +2659,6 @@ const fn selected_data_tx_rate(association_phy: StaAssociationPhy, peer_qos: boo
 
 fn open_radio_tx_entropy() -> u32 {
     Rng::new().random()
-}
-
-async fn transmit_unprotected_eapol<M: Mmio + TxHardware>(
-    mmio: &mut M,
-    storage: &mut TxStorage,
-    station_address: [u8; 6],
-    bssid: [u8; 6],
-    eapol: &[u8],
-    sequence_number: u16,
-) -> Result<TxCompletion, ActiveScanTxError> {
-    storage
-        .control_mut()
-        .transmit_unprotected_data(
-            mmio,
-            StaDataFrame {
-                source: station_address,
-                bssid,
-                destination: bssid,
-                sequence_number,
-                ether_type: 0x888e,
-                payload: eapol,
-            },
-        )
-        .await
-        .map_err(Into::into)
-}
-
-async fn transmit_eapol_message_4<M: Mmio + TxHardware>(
-    mmio: &mut M,
-    storage: &mut TxStorage,
-    station_address: [u8; 6],
-    bssid: [u8; 6],
-    message: &Wpa2TxFrame,
-    key_slot: &mut StaPairwiseCcmpSlot,
-    sequence_number: u16,
-    peer_qos: bool,
-) -> Result<TxCompletion, ActiveScanTxError> {
-    let ccmp_header = key_slot.next_tx_ccmp_header();
-    storage
-        .control_mut()
-        .transmit_protected_data(
-            mmio,
-            StaProtectedDataFrame {
-                source: station_address,
-                bssid,
-                destination: bssid,
-                sequence_number,
-                user_priority: 7,
-                peer_qos,
-                ccmp_header,
-                ether_type: 0x888e,
-                payload: message.as_bytes(),
-            },
-            LegacyTxQueue::Voice,
-            TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-            key_slot.hardware_index(),
-        )
-        .await
-        .map_err(Into::into)
-}
-
-fn arp_probe_payload(station_address: [u8; 6]) -> [u8; 28] {
-    let mut payload = [0_u8; 28];
-    payload[0..2].copy_from_slice(&1_u16.to_be_bytes());
-    payload[2..4].copy_from_slice(&0x0800_u16.to_be_bytes());
-    payload[4] = 6;
-    payload[5] = 4;
-    payload[6..8].copy_from_slice(&1_u16.to_be_bytes());
-    payload[8..14].copy_from_slice(&station_address);
-    // The ordinary-router path has not acquired its DHCP lease yet, so its
-    // sender protocol address intentionally remains 0.0.0.0 (an ARP probe).
-    // The controlled throughput profile already owns STA_HIL_IPV4 through
-    // `NetworkConfig::ipv4_static`; Linux does not reply deterministically to
-    // an RFC 5227-style probe for its own gateway address, so publish the
-    // station's actual address and send an ordinary ARP request there.
-    if PERF_AP_PROFILE {
-        payload[14..18].copy_from_slice(&STA_HIL_IPV4);
-    }
-    payload[24..28].copy_from_slice(&STA_ARP_TARGET_IPV4);
-    payload
-}
-
-fn queue_arp_probe(
-    device: &mut NetworkDevice,
-    runner: &NetworkRunner,
-    station_address: [u8; 6],
-) -> Option<NetworkTxFrame> {
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    device.transmit(&mut context)?.consume(14 + 28, |ethernet| {
-        ethernet[..6].fill(0xff);
-        ethernet[6..12].copy_from_slice(&station_address);
-        ethernet[12..14].copy_from_slice(&0x0806_u16.to_be_bytes());
-        ethernet[14..].copy_from_slice(&arp_probe_payload(station_address));
-    });
-    runner.try_receive_tx()
-}
-
-async fn transmit_protected_ethernet_frame<M: Mmio + TxHardware>(
-    mmio: &mut M,
-    storage: &mut TxStorage,
-    bssid: [u8; 6],
-    key_slot: &mut StaPairwiseCcmpSlot,
-    sequence_number: u16,
-    peer_qos: bool,
-    data_rate: TxPhyRate,
-    ethernet: &[u8],
-) -> Result<TxCompletion, ActiveScanTxError> {
-    if ethernet.len() < 14 {
-        return Err(ControlTxError::Tx(TxError::Invalid).into());
-    }
-    let destination = ethernet[..6]
-        .try_into()
-        .map_err(|_| ActiveScanTxError::from(ControlTxError::Tx(TxError::Invalid)))?;
-    let source = ethernet[6..12]
-        .try_into()
-        .map_err(|_| ActiveScanTxError::from(ControlTxError::Tx(TxError::Invalid)))?;
-    let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
-    let ccmp_header = key_slot.next_tx_ccmp_header();
-    storage
-        .control_mut()
-        .transmit_protected_data(
-            mmio,
-            StaProtectedDataFrame {
-                source,
-                bssid,
-                destination,
-                sequence_number,
-                user_priority: 0,
-                peer_qos,
-                ccmp_header,
-                ether_type,
-                payload: &ethernet[14..],
-            },
-            LegacyTxQueue::BestEffort,
-            data_rate,
-            key_slot.hardware_index(),
-        )
-        .await
-        .map_err(Into::into)
-}
-
-async fn await_protected_arp_response<M: Mmio + RxDma>(
-    mmio: &mut M,
-    rx_storage: &RxStorage,
-    frame: &mut [u8],
-    ethernet: &mut [u8],
-    network_device: &mut NetworkDevice,
-    network_runner: &NetworkRunner,
-    station_address: [u8; 6],
-    bssid: [u8; 6],
-    rx: &mut RadioHilJoinRx<'_>,
-) -> bool {
-    let rx_ring = match rx.live_mut() {
-        Ok(ring) => ring,
-        Err(error) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx \
-                 error={error:?}"
-            ));
-            return false;
-        }
-    };
-    let mut received_frames = 0_u32;
-    let mut protected_frames = 0_u32;
-    let mut mic_failures = 0_u32;
-    let mut addressed_protected = 0_u32;
-    for _ in 0..WPA2_PROTECTED_ARP_TIMEOUT_MS {
-        for index in 0..RX_DESCRIPTOR_COUNT {
-            let Some(completed) = rx_ring.take_completed(index) else {
-                continue;
-            };
-            received_frames = received_frames.saturating_add(1);
-            let segment = RxSegment {
-                descriptor_address: completed.descriptor_address(),
-                descriptor_word0: completed.word0(),
-                buffer: unsafe { rx_storage.buffers()[index].completed() },
-                next_descriptor_address: completed.next_descriptor_address(),
-            };
-            let raw = segment.buffer;
-            let raw_fc = u16::from_le_bytes([raw[PUBLIC_HEADER_SIZE], raw[PUBLIC_HEADER_SIZE + 1]]);
-            let raw_addressed_protected = raw_fc & 0x400c == 0x4008
-                && raw[PUBLIC_HEADER_SIZE + 4..PUBLIC_HEADER_SIZE + 10] == station_address;
-            if raw_addressed_protected {
-                addressed_protected = addressed_protected.saturating_add(1);
-            }
-            let data = match extract_ccmp_data(
-                core::slice::from_ref(&segment),
-                RxIngressConfig {
-                    ring_entry_limit: 1,
-                    csi_config: 0,
-                    flags: 0,
-                },
-                frame,
-            ) {
-                Ok(data) => data,
-                Err(RxError::MicFailure) => {
-                    mic_failures = mic_failures.saturating_add(1);
-                    if raw_addressed_protected {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                             result=mic-failure fc={raw_fc:#06x} state={:#04x} \
-                             internal={:#04x}",
-                            raw[PUBLIC_HEADER_SIZE - 4],
-                            raw[PUBLIC_HEADER_SIZE - 3],
-                        ));
-                    }
-                    continue;
-                }
-                Err(error) => {
-                    if raw_addressed_protected {
-                        let layout = first_segment_layout(
-                            &segment,
-                            RxIngressConfig {
-                                ring_entry_limit: 1,
-                                csi_config: 0,
-                                flags: 0,
-                            },
-                        );
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                             result=reject error={error:?} fc={raw_fc:#06x} state={:#04x} \
-                             internal={:#04x} layout={layout:?}",
-                            raw[PUBLIC_HEADER_SIZE - 4],
-                            raw[PUBLIC_HEADER_SIZE - 3],
-                        ));
-                    }
-                    continue;
-                }
-            };
-            protected_frames = protected_frames.saturating_add(1);
-            if data.mpdu.length < 24 || frame[4..10] != station_address || frame[10..16] != bssid {
-                continue;
-            }
-            if addressed_protected <= 8 {
-                let prefix_end = data.payload_offset.saturating_add(16).min(data.mic_offset);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                     result=crypto-ok fc={:#06x} pn={:02x?} mpdu={} payload={} prefix={:02x?}",
-                    u16::from_le_bytes([frame[0], frame[1]]),
-                    &frame[data.ccmp_header_offset..data.payload_offset],
-                    data.mpdu.length,
-                    data.payload_length,
-                    &frame[data.payload_offset..prefix_end],
-                ));
-            }
-            let ethernet_plan = match decapsulate_data(
-                DataInterfaceRole::Station,
-                &frame[..data.mpdu.length],
-                data.payload_offset,
-                data.payload_length,
-                ethernet,
-            ) {
-                Ok(plan) => plan,
-                Err(error) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                         result=decap-reject error={error:?}"
-                    ));
-                    continue;
-                }
-            };
-            if ethernet_plan.destination != station_address || ethernet_plan.ether_type != 0x0806 {
-                continue;
-            }
-            if let Err(error) =
-                network_runner.try_send_rx(&ethernet[..ethernet_plan.ethernet_length])
-            {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                     result=network-rx-enqueue-reject error={error:?}"
-                ));
-                continue;
-            }
-            let waker = Waker::noop();
-            let mut context = Context::from_waker(waker);
-            let Some((rx_token, reply_token)) = network_device.receive(&mut context) else {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=wpa2-protected-rx-addressed \
-                     result=network-rx-token-missing"
-                ));
-                continue;
-            };
-            drop(reply_token);
-            let Some(arp_source) = rx_token.consume(|network_frame| {
-                if network_frame.len() < 14 + 28
-                    || network_frame[..6] != station_address
-                    || network_frame[12..14] != 0x0806_u16.to_be_bytes()
-                {
-                    return None;
-                }
-                let arp = &network_frame[14..];
-                if arp[6..8] != 2_u16.to_be_bytes()
-                    || arp[14..18] != STA_ARP_TARGET_IPV4
-                    || arp[18..24] != station_address
-                {
-                    return None;
-                }
-                let mut source = [0_u8; 6];
-                source.copy_from_slice(&arp[8..14]);
-                Some(source)
-            }) else {
-                continue;
-            };
-            let pn = &frame[data.ccmp_header_offset..data.payload_offset];
-            let _ = rx.stop(mmio);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-protected-rx \
-                 protocol=arp source={:02x?} target={}.{}.{}.{} pn={pn:02x?} \
-                 mpdu={} payload={} ethernet={} mic_in_dma={} owned_rx=true \
-                 frames={received_frames} protected={protected_frames} mic_failures={mic_failures}",
-                arp_source,
-                STA_ARP_TARGET_IPV4[0],
-                STA_ARP_TARGET_IPV4[1],
-                STA_ARP_TARGET_IPV4[2],
-                STA_ARP_TARGET_IPV4[3],
-                data.mpdu.length,
-                data.payload_length,
-                ethernet_plan.ethernet_length,
-                data.mic_present_in_dma,
-            ));
-            return true;
-        }
-        if let Err(error) = rx_ring.recycle_completed_half(mmio, |index| {
-            // SAFETY: RxRingLive invokes this only for a fully completed,
-            // detached half before republishing it to hardware.
-            unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
-        }) {
-            let _ = rx.stop(mmio);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx-recycle \
-                 error={error:?}"
-            ));
-            return false;
-        }
-        if rx_ring.all_observed() {
-            let _ = rx.stop(mmio);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx-recycle \
-                 error=terminal-before-recycle"
-            ));
-            return false;
-        }
-        Timer::after_millis(1).await;
-    }
-    let _ = rx.stop(mmio);
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-protected-rx error=timeout \
-         frames={received_frames} protected={protected_frames} \
-         addressed_protected={addressed_protected} mic_failures={mic_failures}"
-    ));
-    false
 }
 
 async fn report_network_configuration(stack: Stack<'_>) -> ! {
@@ -6247,16 +5693,15 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             );
         }
     };
-    let backend = RadioHilWpa2Backend {
-        mmio: hardware,
-        rx_storage: ready.fixture.rx_storage,
-        tx_storage: &mut *ready.fixture.tx_storage,
-        frame: &mut *ready.fixture.frame,
+    let backend = radio_hil_wpa2_handshake_port(
+        hardware,
+        ready.fixture.rx_storage,
+        ready.fixture.tx_storage.control_mut(),
+        &mut *ready.fixture.frame,
         station_address,
-        bssid: access_point.bssid,
-        rx: join_rx,
-        message2_transmissions: 0,
-    };
+        access_point.bssid,
+        join_rx,
+    );
     let mut runner =
         Wpa2HandshakeRunner::new(backend, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
     let handshake_started = Instant::now();
@@ -6273,7 +5718,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 handshake_started.elapsed().as_millis(),
             ));
             let (backend, _, _) = runner.into_parts();
-            *rx = backend.into_rx();
+            *rx = backend.into_receive().into_owner();
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::Security,
@@ -6292,17 +5737,17 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         handshake_started.elapsed().as_millis(),
     ));
     let (backend, _, _) = runner.into_parts();
-    *rx = backend.into_rx();
+    *rx = backend.into_receive().into_owner();
 
-    let backend = RadioHilWpa2KeyBackend {
-        mmio: hardware,
-        tx_storage: &mut *ready.fixture.tx_storage,
-        station_address,
-        bssid: access_point.bssid,
-        peer_qos: link.peer_qos,
-        sequences: ready.security.sequences,
-        completion: None,
-    };
+    let backend = Esp32s31Wpa2KeyPort::new(
+        Esp32s31Wpa2KeyRadio::new(hardware, ready.fixture.tx_storage.control_mut()),
+        Esp32s31Wpa2KeySession::new(
+            Esp32s31Wpa2Station::new(station_address, access_point.bssid),
+            link.peer_qos,
+            ready.security.sequences,
+            radio_hil_message4_protection(),
+        ),
+    );
     let mut runner = Wpa2KeyInstallRunner::new(backend);
     let established = match runner.run(pending).await {
         Ok(established) => established,
@@ -6322,9 +5767,9 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     let metadata = established.metadata();
     let backend = runner.into_backend();
     let completion = backend
-        .completion
+        .completion()
         .expect("successful reconnect WPA2 key runner retains Message 4 completion");
-    let RadioHilInstalledWpa2Keys { pairwise, group } = established.into_keys();
+    let (pairwise, group) = established.into_keys().into_parts();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS \
          stage=production-reconnect-wpa2-complete replay={} \
@@ -6810,30 +6255,29 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
     session: StaConnectedSession<'rate, 'security>,
 ) -> RadioHilJoinOutcome<'fixture, 'security> {
     let link = session.link;
-    let backend = RadioHilWpa2Backend {
-        mmio: &mut *fixture.mmio,
-        rx_storage: fixture.rx_storage,
-        tx_storage: &mut *fixture.tx_storage,
-        frame: &mut *fixture.frame,
-        station_address: link.station_address,
-        bssid: link.bssid,
+    let backend = radio_hil_wpa2_handshake_port(
+        &mut *fixture.mmio,
+        fixture.rx_storage,
+        fixture.tx_storage.control_mut(),
+        &mut *fixture.frame,
+        link.station_address,
+        link.bssid,
         rx,
-        message2_transmissions: 0,
-    };
+    );
     let mut runner =
         Wpa2HandshakeRunner::new(backend, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
     let handshake_started = Instant::now();
     let pending = match runner.run(handshake, session.sequences.non_qos_mut()).await {
         Ok(pending) => pending,
         Err(error) => {
-            let message1_complete = runner.backend().message2_transmissions != 0;
+            let message1_complete = runner.backend().telemetry().message2_transmissions != 0;
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-handshake-runner \
                  message1_complete={message1_complete} error={error:?} bssid={:02x?}",
                 link.bssid,
             ));
             let (backend, _, _) = runner.into_parts();
-            let rx = backend.into_rx();
+            let rx = backend.into_receive().into_owner();
             return failed_join_from_session(
                 fixture,
                 target,
@@ -6853,7 +6297,7 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
         handshake_started.elapsed().as_millis(),
     ));
     let (backend, _, _) = runner.into_parts();
-    let rx = backend.into_rx();
+    let rx = backend.into_receive().into_owner();
 
     complete_wpa2_key_install_and_connect(fixture, target, pending, session, rx).await
 }
@@ -6863,7 +6307,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     target: StaJoinTarget,
     pending: Wpa2PendingKeyInstall,
     session: StaConnectedSession<'rate, 'security>,
-    mut rx: RadioHilJoinRx<'static>,
+    rx: RadioHilJoinRx<'static>,
 ) -> RadioHilJoinOutcome<'fixture, 'security> {
     let RadioHilConnectedFixture {
         spawner,
@@ -6882,7 +6326,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     } = fixture;
     let StaConnectedSession {
         link,
-        mut network,
+        network,
         rate_control,
         pmk,
         supplicant_nonce,
@@ -6894,32 +6338,27 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         association_id: _,
         beacon_interval_tu: _,
         peer_qos,
-        association_phy,
+        association_phy: _,
         peer_supports_one_ltf_800ns_gi: _,
         peer_supports_ldpc: _,
         peer_dcm_receive: _,
     } = link;
-    let backend = RadioHilWpa2KeyBackend {
-        mmio,
-        tx_storage,
-        station_address,
-        bssid,
-        peer_qos,
-        sequences,
-        completion: None,
-    };
+    let backend = Esp32s31Wpa2KeyPort::new(
+        Esp32s31Wpa2KeyRadio::new(mmio, tx_storage.control_mut()),
+        Esp32s31Wpa2KeySession::new(
+            Esp32s31Wpa2Station::new(station_address, bssid),
+            peer_qos,
+            sequences,
+            radio_hil_message4_protection(),
+        ),
+    );
     let mut runner = Wpa2KeyInstallRunner::new(backend);
     let result = runner.run(pending).await;
     let backend = runner.into_backend();
-    let RadioHilWpa2KeyBackend {
-        mmio,
-        tx_storage,
-        station_address: _,
-        bssid: _,
-        peer_qos: _,
-        sequences,
-        completion,
-    } = backend;
+    let parts = backend.into_parts();
+    let mmio = parts.hardware;
+    let sequences = parts.sequences;
+    let completion = parts.completion;
     let established = match result {
         Ok(established) => established,
         Err(error) => {
@@ -6963,10 +6402,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     let metadata = established.metadata();
     let completion = completion
         .expect("successful WPA2 key runner retains Message 4 completion");
-    let RadioHilInstalledWpa2Keys {
-        pairwise: mut key_slot,
-        group: group_slot,
-    } = established.into_keys();
+    let (key_slot, group_slot) = established.into_keys().into_parts();
     let replay_counter = metadata.replay_counter;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=wpa2-message-3-key-data \
@@ -7018,243 +6454,64 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         completion.status,
         completion.primary_word,
     ));
-    let hardware_index = key_slot.hardware_index();
-    let message4_valid = true;
-    let message4_sent = true;
-    let protected_arp_pass = if message4_sent {
-        // M4 TX completion only proves that the AP acknowledged
-        // the EAPOL MPDU. The vendor STA path reports the connected
-        // event separately, after its EAPOL callback has completed,
-        // so do not queue ordinary protected traffic on the same
-        // scheduling edge.
-        //
-        // SOURCE: promoted migration STA connected/EAPOL callback
-        // split; 2026-07-29 open-TX/hostapd HIL, where hostapd
-        // completed the four-way handshake but four immediate ARP
-        // MAC retries all returned status 5.
-        Timer::after_millis(WPA2_CONTROLLED_PORT_SETTLE_MS).await;
-        match &mut network {
-            RadioHilStaNetwork::Running(_) => {
-                // On reassociation the persistent stack already owns the
-                // network device. Its ordinary connected traffic is the
-                // protected-data assertion; manufacturing a second direct
-                // device alias solely for this HIL probe would violate that
-                // ownership boundary.
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=PASS \
-                     stage=wpa2-protected-arp-deferred reason=persistent-stack"
-                ));
-                true
-            }
-            RadioHilStaNetwork::Unstarted {
-                device: network_device,
-                runner: network_runner,
-            } => {
-                network_runner.set_link_state(LinkState::Up);
-                let mut passed = false;
-                for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-                    if let Err(error) = rx.start_with_storage(mmio, rx_storage).await
-                    {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL result=FAIL \
-                                     stage=wpa2-protected-rx-arm attempt={attempt} \
-                                     error={error:?}"
-                        ));
-                        break;
-                    }
-            let Some(queued_arp) = queue_arp_probe(network_device, network_runner, station_address)
-            else {
-                let _ = rx.stop(mmio);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL \
-                                 stage=wpa2-protected-arp-tx attempt={attempt} \
-                                 error=network-tx-token"
-                ));
-                break;
-            };
-            match transmit_protected_ethernet_frame(
-                mmio,
-                tx_storage,
-                bssid,
-                &mut key_slot,
-                sequences
-                    .take_data(peer_qos.then_some(0))
-                    .expect("selected data sequence-number owner exists"),
-                peer_qos,
-                selected_data_tx_rate(association_phy, peer_qos),
-                queued_arp.as_slice(),
-            )
-            .await
-            {
-                Ok(completion) => {
-                    let transmitted = completion.status == 0;
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result={} \
-                                     stage=wpa2-protected-arp-tx attempt={attempt} \
-                                     status={} primary={:#010x} owned_tx=true",
-                        if transmitted { "PASS" } else { "FAIL" },
-                        completion.status,
-                        completion.primary_word,
-                    ));
-                    if transmitted
-                        && await_protected_arp_response(
-                            mmio,
-                            rx_storage,
-                            frame,
-                            ethernet,
-                            network_device,
-                            network_runner,
-                            station_address,
-                            bssid,
-                            &mut rx,
-                        )
-                        .await
-                    {
-                        passed = true;
-                        break;
-                    }
-                    if !transmitted {
-                        let _ = rx.stop(mmio);
-                    }
-                }
-                Err(error) => {
-                    let _ = rx.stop(mmio);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                                     stage=wpa2-protected-arp-tx attempt={attempt} \
-                                     error={error:?}"
-                    ));
-                }
-            }
-            if attempt < WPA2_PROTECTED_ARP_ATTEMPTS {
-                // An ARP reply is ordinary data, not part of the
-                // four-way handshake. Losing it must allocate a new
-                // 802.11 sequence number and CCMP PN; it must not
-                // roll the WPA state machine back to M2.
-                //
-                // SOURCE: IEEE 802.11 CCMP packet-number uniqueness;
-                // 2026-07-29 HIL run 4, where hostapd remained
-                // authorized after the first ARP response was lost.
-                Timer::after_millis(WPA2_PROTECTED_ARP_RETRY_DELAY_MS).await;
-            }
-        }
-                passed
-            }
-        }
-    } else {
-        false
-    };
-    if message4_valid && message4_sent && protected_arp_pass {
-        let (connected_fixture, registers) = RadioHilConnectedFixture {
-            spawner,
-            protocol_spawner,
-            state,
-            platform,
-            mmio,
-            interrupt_setup,
-            rx_storage,
-            tx_storage,
-            descriptor_base,
-            buffer_addresses,
-            scan_table,
-            frame,
-            ethernet,
-        }
-        .into_task_fixture();
-        let returned = run_connected_network(
-            connected_fixture,
-            RadioHilConnectedEpochResources::Initial {
-                registers,
-                rx,
-            },
-            StaConnectedSession {
-                link,
-                network,
-                rate_control,
-                pmk,
-                supplicant_nonce,
-                sequences,
-            },
-            key_slot,
-            group_slot,
-        )
-        .await;
-        let RadioHilConnectedEpochReturn {
-            fixture,
-            disconnected,
-            security,
-            exit,
-        } = returned;
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
-             descriptor_base={:#010x} queued_frames={}",
-            disconnected.rx().ring().descriptor_base(),
-            disconnected.rx().queued_frames(),
-        ));
-        let ready = RadioHilRunningScanReady {
-            fixture,
-            previous_target: target,
-            disconnected,
-            security,
-        };
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-owner-ready"
-        ));
-        return RadioHilJoinOutcome::Connected {
-            ready,
-            exit,
-        };
+    // Protected traffic is owned by the production connected runner. The HIL
+    // formerly manufactured an extra direct ARP frame/ring loop here, which
+    // duplicated the driver and created a second success gate between M4 and
+    // connected entry. Hand the exact keys, descriptor and stopped RX owner
+    // directly to the production epoch instead.
+    let (connected_fixture, registers) = RadioHilConnectedFixture {
+        spawner,
+        protocol_spawner,
+        state,
+        platform,
+        mmio,
+        interrupt_setup,
+        rx_storage,
+        tx_storage,
+        descriptor_base,
+        buffer_addresses,
+        scan_table,
+        frame,
+        ethernet,
     }
-    let group_hardware_index = group_slot.hardware_index();
-    group_slot.clear(mmio);
-    let group_key_cleared =
-        mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << group_hardware_index) == 0;
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result={} stage=wpa2-group-key-clear \
-                     slot={group_hardware_index}",
-        if group_key_cleared { "PASS" } else { "FAIL" },
-    ));
-    key_slot.clear(mmio);
-    let key_cleared = mmio.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP) & (1 << hardware_index) == 0;
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result={} stage=wpa2-pairwise-key-clear slot={hardware_index}",
-        if key_cleared { "PASS" } else { "FAIL" },
-    ));
-    let _cleanup_complete = message4_valid
-        && message4_sent
-        && group_key_cleared
-        && key_cleared;
-    RadioHilJoinFailure::new(
-        RadioHilJoinRetry {
-            fixture: RadioHilConnectedFixture {
-                spawner,
-                protocol_spawner,
-                state,
-                platform,
-                mmio,
-                interrupt_setup,
-                rx_storage,
-                tx_storage,
-                descriptor_base,
-                buffer_addresses,
-                scan_table,
-                frame,
-                ethernet,
-            },
-            target,
-            rx,
+    .into_task_fixture();
+    let returned = run_connected_network(
+        connected_fixture,
+        RadioHilConnectedEpochResources::Initial { registers, rx },
+        StaConnectedSession {
+            link,
             network,
-            security: StaAssociationSecurity {
-                pmk,
-                supplicant_nonce,
-                sequences,
-            },
+            rate_control,
+            pmk,
+            supplicant_nonce,
+            sequences,
         },
-        true,
-        true,
-        false,
+        key_slot,
+        group_slot,
     )
-    .into()
+    .await;
+    let RadioHilConnectedEpochReturn {
+        fixture,
+        disconnected,
+        security,
+        exit,
+    } = returned;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
+         descriptor_base={:#010x} queued_frames={}",
+        disconnected.rx().ring().descriptor_base(),
+        disconnected.rx().queued_frames(),
+    ));
+    let ready = RadioHilRunningScanReady {
+        fixture,
+        previous_target: target,
+        disconnected,
+        security,
+    };
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-owner-ready"
+    ));
+    RadioHilJoinOutcome::Connected { ready, exit }
 }
 
 /// Borrowed owner for the currently qualified cold scan transaction.

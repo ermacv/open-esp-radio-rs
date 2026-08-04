@@ -82,8 +82,11 @@ policy and diagnostic observer callbacks only; it no longer parses join RX,
 builds HE power fields or publishes Authentication/Association frames.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
-test-only loops. WPA2 still has a HIL PAC/RX adapter and is the next extraction
-boundary. The connected handoff wraps the ordinary TX owner in
+test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise
+own EAPOL extraction, M2/M4 publication and atomic PTK/GTK slot ownership.
+After M4, HIL transfers those owners directly to the connected runner; it no
+longer runs a separate protected-ARP TX/RX loop. The connected handoff wraps
+the ordinary TX owner in
 `Esp32s31ConnectedTx`: referenced A-MPDU leases, BlockAck retry and the
 beacon-loss deadline now run on this one production runner. The opt-in
 connected power planner also ACK-gates PM=1 and restores PM=0 before queued

@@ -1188,6 +1188,7 @@ impl<'fixture, 'security> From<RadioHilJoinFailure<'fixture, 'security>>
 /// different Rust types. This enum is only the outer lifecycle's sum type; it
 /// does not erase either phase into a mutable vendor-style context.
 enum RadioHilStaLifecycleOwner<'fixture, 'security> {
+    Authenticate(RadioHilAuthenticationReady<'fixture, 'security>),
     Join(RadioHilJoinRetry<'fixture, 'security>),
     Reconnect(RadioHilReconnectReady<'fixture, 'security>),
 }
@@ -1337,6 +1338,20 @@ impl<'a> RadioHilConnectedFixture<'a> {
 struct RadioHilJoinFixture<'a> {
     state: &'a mut PhyColdState,
     radio: RadioHilConnectedFixture<'a>,
+}
+
+/// Complete same-candidate frontier before Open Authentication.
+///
+/// The PHY channel owner is present only in this phase. Successful
+/// authentication consumes it into the connected fixture; a failed finite
+/// authentication returns the complete value so the outer lifecycle can wait
+/// and retry without recreating DMA or security state.
+struct RadioHilAuthenticationReady<'fixture, 'security> {
+    fixture: RadioHilJoinFixture<'fixture>,
+    target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
+    network: RadioHilStaNetwork,
+    security: StaAssociationSecurity<'security>,
 }
 
 impl<'a> RadioHilJoinFixture<'a> {
@@ -5744,6 +5759,7 @@ async fn qualify_disconnected_rx_restart(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RadioHilStaLifecycleFailure {
+    Authentication,
     InitialJoin {
         associated: bool,
         message1: bool,
@@ -5775,6 +5791,55 @@ fn failed_reconnect<'fixture, 'security>(
     }
 }
 
+fn initial_join_outcome<'fixture, 'security>(
+    outcome: RadioHilJoinOutcome<'fixture, 'security>,
+) -> StaAttemptOutcome<
+    RadioHilStaLifecycleOwner<'fixture, 'security>,
+    RadioHilStaLifecycleFailure,
+> {
+    match outcome {
+        RadioHilJoinOutcome::Failed(failure) => {
+            let (associated, message1, message3) = failure.progress();
+            let stage = if associated {
+                StaLifecycleStage::Security
+            } else {
+                StaLifecycleStage::Association
+            };
+            StaAttemptOutcome::Failed {
+                owner: RadioHilStaLifecycleOwner::Join(failure.retry),
+                failure: StaAttemptFailure::new(
+                    stage,
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    RadioHilStaLifecycleFailure::InitialJoin {
+                        associated,
+                        message1,
+                        message3,
+                    },
+                ),
+            }
+        }
+        RadioHilJoinOutcome::Connected { ready, exit } => match exit {
+            RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
+                owner: RadioHilStaLifecycleOwner::Reconnect(ready),
+                failure: StaAttemptFailure::new(
+                    StaLifecycleStage::Hardware,
+                    StaFailureDisposition::Terminal,
+                    RadioHilStaLifecycleFailure::ConnectedHardware,
+                ),
+            },
+            RadioHilConnectedExit::Disconnected | RadioHilConnectedExit::Stopped => {
+                // The HIL's first controlled runner stop is an explicit
+                // request to cross the reconnect boundary. Production callers
+                // preserve the distinction in `RadioHilConnectedExit`.
+                StaAttemptOutcome::Disconnected {
+                    owner: RadioHilStaLifecycleOwner::Reconnect(ready),
+                    next_candidate: StaNextCandidate::Reuse,
+                }
+            }
+        },
+    }
+}
+
 struct RadioHilStaLifecycleBackend<O> {
     _owner: PhantomData<fn() -> O>,
 }
@@ -5799,15 +5864,72 @@ impl<'fixture, 'security> StaLifecycleBackend
         context: StaAttemptContext,
     ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
         async move {
+            let phase = match &owner {
+                RadioHilStaLifecycleOwner::Authenticate(_) => "authentication",
+                RadioHilStaLifecycleOwner::Join(_) => "join",
+                RadioHilStaLifecycleOwner::Reconnect(_) => "reconnect",
+            };
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=OBSERVE \
                  stage=production-sta-lifecycle-attempt generation={} attempt={} \
-                 refresh_candidate={}",
+                 refresh_candidate={} phase={phase}",
                 context.generation,
                 context.attempt,
                 u8::from(context.refresh_candidate),
             ));
             match owner {
+                RadioHilStaLifecycleOwner::Authenticate(ready) => {
+                    let RadioHilAuthenticationReady {
+                        mut fixture,
+                        target,
+                        rx,
+                        network,
+                        security,
+                    } = ready;
+                    let authentication_started = Instant::now();
+                    let (authenticated, rx) = authenticate_target(
+                        &mut fixture,
+                        target,
+                        rx,
+                        security.sequences.non_qos_mut(),
+                    )
+                    .await;
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=OBSERVE \
+                         stage=sta-auth-timing passed={} elapsed_ms={}",
+                        authenticated,
+                        authentication_started.elapsed().as_millis(),
+                    ));
+                    if authenticated {
+                        initial_join_outcome(
+                            associate_target(
+                                fixture.into_connected(),
+                                target,
+                                rx,
+                                network,
+                                security,
+                            )
+                            .await,
+                        )
+                    } else {
+                        StaAttemptOutcome::Failed {
+                            owner: RadioHilStaLifecycleOwner::Authenticate(
+                                RadioHilAuthenticationReady {
+                                    fixture,
+                                    target,
+                                    rx,
+                                    network,
+                                    security,
+                                },
+                            ),
+                            failure: StaAttemptFailure::new(
+                                StaLifecycleStage::Authentication,
+                                StaFailureDisposition::RetryCurrentCandidate,
+                                RadioHilStaLifecycleFailure::Authentication,
+                            ),
+                        }
+                    }
+                }
                 RadioHilStaLifecycleOwner::Join(retry) => {
                     let RadioHilJoinRetry {
                         fixture,
@@ -5816,49 +5938,9 @@ impl<'fixture, 'security> StaLifecycleBackend
                         network,
                         security,
                     } = retry;
-                    match associate_target(fixture, target, rx, network, security).await {
-                        RadioHilJoinOutcome::Failed(failure) => {
-                            let (associated, message1, message3) = failure.progress();
-                            let stage = if associated {
-                                StaLifecycleStage::Security
-                            } else {
-                                StaLifecycleStage::Association
-                            };
-                            StaAttemptOutcome::Failed {
-                                owner: RadioHilStaLifecycleOwner::Join(failure.retry),
-                                failure: StaAttemptFailure::new(
-                                    stage,
-                                    StaFailureDisposition::RetryCurrentCandidate,
-                                    RadioHilStaLifecycleFailure::InitialJoin {
-                                        associated,
-                                        message1,
-                                        message3,
-                                    },
-                                ),
-                            }
-                        }
-                        RadioHilJoinOutcome::Connected { ready, exit } => match exit {
-                            RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
-                                owner: RadioHilStaLifecycleOwner::Reconnect(ready),
-                                failure: StaAttemptFailure::new(
-                                    StaLifecycleStage::Hardware,
-                                    StaFailureDisposition::Terminal,
-                                    RadioHilStaLifecycleFailure::ConnectedHardware,
-                                ),
-                            },
-                            RadioHilConnectedExit::Disconnected
-                            | RadioHilConnectedExit::Stopped => {
-                                // The HIL's first controlled runner stop is an
-                                // explicit request to cross the reconnect
-                                // boundary. Production callers preserve the
-                                // distinction in `RadioHilConnectedExit`.
-                                StaAttemptOutcome::Disconnected {
-                                    owner: RadioHilStaLifecycleOwner::Reconnect(ready),
-                                    next_candidate: StaNextCandidate::Reuse,
-                                }
-                            }
-                        },
-                    }
+                    initial_join_outcome(
+                        associate_target(fixture, target, rx, network, security).await,
+                    )
                 }
                 RadioHilStaLifecycleOwner::Reconnect(ready) => {
                     match qualify_reconnected_epoch(ready).await {
@@ -5927,7 +6009,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::CandidateSelection,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::PeerScanPolicy,
             );
         }
@@ -5949,7 +6031,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::CandidateSelection,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::ScanWmmPolicy,
             );
         }
@@ -6038,7 +6120,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::Security,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::SecuritySelection,
             );
         }
@@ -6061,7 +6143,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::Association,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::PeerPlan,
             );
         }
@@ -6085,7 +6167,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::Association,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::AssociationWmmPolicy,
             );
         };
@@ -6099,7 +6181,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             return failed_reconnect(
                 ready,
                 StaLifecycleStage::Association,
-                StaFailureDisposition::RefreshCandidate,
+                StaFailureDisposition::Terminal,
                 RadioHilStaLifecycleFailure::AssociationWmmPolicy,
             );
         }
@@ -6340,6 +6422,7 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
 async fn authenticate_target(
     fixture: &mut RadioHilJoinFixture<'_>,
     target: StaJoinTarget,
+    rx: RadioHilJoinRx<'static>,
     sequence: &mut StaSequenceCounter,
 ) -> (bool, RadioHilJoinRx<'static>) {
     let StaJoinTarget {
@@ -6378,7 +6461,7 @@ async fn authenticate_target(
              channel={} error={error:?}",
             access_point.channel,
         ));
-        return (false, RadioHilJoinRx::Initial);
+        return (false, rx);
     }
     // The vendor HE-node lifecycle remains deferred until Association.
     emergency_log(format_args!(
@@ -6407,7 +6490,7 @@ async fn authenticate_target(
         frame,
         station_address,
         access_point,
-        rx: RadioHilJoinRx::Initial,
+        rx,
     };
     let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
     let result = runner
@@ -7747,7 +7830,7 @@ async fn run_promiscuous_rx_hil(
                 station_address,
                 access_point,
             };
-            let mut join_fixture = RadioHilJoinFixture {
+            let join_fixture = RadioHilJoinFixture {
                 state,
                 radio: RadioHilConnectedFixture {
                     spawner,
@@ -7763,35 +7846,25 @@ async fn run_promiscuous_rx_hil(
                     ethernet: ethernet_frame,
                 },
             };
-            let authentication_started = Instant::now();
-            let (authenticated, join_rx) =
-                authenticate_target(&mut join_fixture, target, sequences.non_qos_mut()).await;
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=OBSERVE stage=sta-auth-timing passed={} elapsed_ms={}",
-                authenticated,
-                authentication_started.elapsed().as_millis(),
-            ));
-            let (associated, message1, message3) = if authenticated {
-                let network = initialize_sta_network(station_address);
-                let owner = RadioHilStaLifecycleOwner::Join(RadioHilJoinRetry {
-                    fixture: join_fixture.into_connected(),
-                    target,
-                    rx: join_rx,
-                    network,
-                    security: StaAssociationSecurity {
-                        pmk: &pmk,
-                        supplicant_nonce,
-                        sequences: &mut sequences,
-                    },
-                });
-                let policy = StaReconnectPolicy::new(3, 100, 1_000, 100)
-                    .expect("fixed HIL station reconnect policy is valid");
-                let backend = RadioHilStaLifecycleBackend::new();
-                let mut lifecycle = StaLifecycleService::new(backend, policy);
-                match lifecycle
-                    .run_with_candidate(owner, StaNextCandidate::Reuse)
-                    .await
-                {
+            let owner = RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
+                fixture: join_fixture,
+                target,
+                rx: RadioHilJoinRx::Initial,
+                network: initialize_sta_network(station_address),
+                security: StaAssociationSecurity {
+                    pmk: &pmk,
+                    supplicant_nonce,
+                    sequences: &mut sequences,
+                },
+            });
+            let policy = StaReconnectPolicy::new(3, 100, 1_000, 100)
+                .expect("fixed HIL station reconnect policy is valid");
+            let backend = RadioHilStaLifecycleBackend::new();
+            let mut lifecycle = StaLifecycleService::new(backend, policy);
+            let progress = match lifecycle
+                .run_with_candidate(owner, StaNextCandidate::Reuse)
+                .await
+            {
                     StaLifecycleExit::Stopped { owner, progress } => {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=PASS \
@@ -7802,7 +7875,12 @@ async fn run_promiscuous_rx_hil(
                         let completed_join =
                             matches!(&owner, RadioHilStaLifecycleOwner::Reconnect(_));
                         let _owner = owner;
-                        (completed_join, completed_join, completed_join)
+                        (
+                            completed_join,
+                            completed_join,
+                            completed_join,
+                            completed_join,
+                        )
                     }
                     StaLifecycleExit::Exhausted {
                         owner,
@@ -7816,12 +7894,15 @@ async fn run_promiscuous_rx_hil(
                             progress.connected_epochs, progress.attempts_started,
                         ));
                         let result = match failure.error {
+                            RadioHilStaLifecycleFailure::Authentication => {
+                                (false, false, false, false)
+                            }
                             RadioHilStaLifecycleFailure::InitialJoin {
                                 associated,
                                 message1,
                                 message3,
-                            } => (associated, message1, message3),
-                            _ => (true, true, true),
+                            } => (true, associated, message1, message3),
+                            _ => (true, true, true, true),
                         };
                         let _owner = owner;
                         result
@@ -7840,15 +7921,16 @@ async fn run_promiscuous_rx_hil(
                         let completed_join =
                             matches!(&owner, RadioHilStaLifecycleOwner::Reconnect(_));
                         let _owner = owner;
-                        (completed_join, completed_join, completed_join)
+                        (
+                            completed_join,
+                            completed_join,
+                            completed_join,
+                            completed_join,
+                        )
                     }
-                }
-            } else {
-                let _rx = join_rx;
-                (false, false, false)
             };
             supplicant_nonce.fill(0);
-            (authenticated, associated, message1, message3)
+            progress
         }
         None => {
             emergency_log(format_args!(

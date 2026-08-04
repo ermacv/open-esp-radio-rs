@@ -308,10 +308,10 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. move cold scan and Authentication into the same service owner. Initial
-   Association/WPA2 now begins as `RadioHilStaLifecycleOwner::Join`; a failed
-   attempt retains the exact `RadioHilJoinRetry`, waits through bounded
-   backoff, and retries before the owner crosses once into `Reconnect`;
+1. move cold scan into the same service owner. Open Authentication now begins
+   as `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
+   RX, network and security frontier through bounded backoff. Success crosses
+   into `Join`, and later into `Reconnect`, without a shared mutable context;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify repeated controlled cycles, real AP loss/recovery and one injected
@@ -319,11 +319,12 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is the cold owner before the first Association attempt: scan and Open
-Authentication still borrow `RadioHilJoinFixture` outside the service. The
-already composed `Join` and `Reconnect` variants deliberately retain their
-different types; extend that sum type with a cold candidate owner instead of
-hiding the phases inside a mutable vendor-style context.
+gap is the cold candidate owner before Open Authentication: scan still runs
+outside the service and produces a copied `ScanRecord`. The already composed
+`Authenticate`, `Join` and `Reconnect` variants deliberately retain their
+different types; extend that sum type with a real scan owner instead of hiding
+the phases inside a mutable vendor-style context or claiming that a retained
+record is a refreshed candidate.
 
 ## Completion gate
 

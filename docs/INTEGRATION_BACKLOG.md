@@ -283,7 +283,15 @@ The first reconnect seam is now production-owned:
   persistent network stack, A-MPDU arena and control mailbox returned by the
   first epoch. A second connected teardown recreates the same typed frontier
   once more, proving at compile time that no reconnect phase needs another
-  PAC singleton or static allocation.
+  PAC singleton or static allocation;
+- `open-esp-radio-wifi-lifecycle` now owns the executor- and chip-independent
+  outer attempt loop. `StaLifecycleService` consumes one caller-defined owner
+  across attempt, retry/backoff, disconnect and stop edges, applies bounded
+  exponential retry policy, and returns that exact owner on stop, exhaustion
+  or terminal hardware failure. Candidate refresh is explicit: the HIL starts
+  its proven same-peer frontier with `Reuse`, so it cannot claim an
+  unperformed scan. The ESP32-S31 HIL implements only the concrete attempt and
+  Embassy timer adapter; retry policy no longer lives in PASS/FAIL code.
 
 This is now a bounded same-peer reconnect implementation with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
@@ -300,20 +308,22 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. compose the proven edges as one allocation-free STA service with explicit
-   `Disconnected`, `Reconnecting`, `Stopped` and terminal hardware-failure
-   outcomes;
+1. move cold scan and Authentication into the same service owner. Initial
+   Association/WPA2 now begins as `RadioHilStaLifecycleOwner::Join`; a failed
+   attempt retains the exact `RadioHilJoinRetry`, waits through bounded
+   backoff, and retries before the owner crosses once into `Reconnect`;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify repeated controlled cycles, real AP loss/recovery and one injected
    TX/RX failure before resuming feature expansion.
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
-static-resource lifetime are separated correctly. The remaining gap is now
-outer lifecycle policy: today the HIL owns the one controlled transition and
-parks after entering the second connected epoch. Move that loop, retry budget
-and candidate policy into a reusable STA service; do not turn the HIL command
-or its PASS markers into driver state.
+static-resource lifetime are separated correctly. The remaining composition
+gap is the cold owner before the first Association attempt: scan and Open
+Authentication still borrow `RadioHilJoinFixture` outside the service. The
+already composed `Join` and `Reconnect` variants deliberately retain their
+different types; extend that sum type with a cold candidate owner instead of
+hiding the phases inside a mutable vendor-style context.
 
 ## Completion gate
 

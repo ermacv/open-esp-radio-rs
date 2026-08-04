@@ -131,8 +131,6 @@ mod tests {
 
     #[test]
     fn rejects_unbounded_station_reconnect_timeout() {
-        assert!(
-            parse_options(&["--timeout-seconds".into(), "301".into()]).is_err()
-        );
+        assert!(parse_options(&["--timeout-seconds".into(), "301".into()]).is_err());
     }
 }

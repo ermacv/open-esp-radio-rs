@@ -11,6 +11,7 @@ description = "Application facade for the source-only Rust ESP radio stack"
 default = ["esp32s31-wifi"]
 wifi = [
     "dep:open-esp-radio-ieee80211",
+    "dep:open-esp-radio-wifi-lifecycle",
     "dep:open-esp-radio-wpa2",
 ]
 integration-embassy-net = ["dep:open-esp-radio-embassy-net"]
@@ -38,6 +39,7 @@ open-esp-radio-esp32s31-wifi-embassy = { path = "../integration/esp32s31/wifi-em
 open-esp-radio-esp32s31-pac = { path = "../esp32s31/pac", optional = true }
 open-esp-radio-esp32s31-phy = { path = "../esp32s31/phy", optional = true }
 open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
+open-esp-radio-wifi-lifecycle = { path = "../wifi/lifecycle", optional = true }
 open-esp-radio-wpa2 = { path = "../wifi/wpa2", optional = true }
 
 [lints]

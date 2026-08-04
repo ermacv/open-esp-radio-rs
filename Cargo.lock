@@ -1078,6 +1078,7 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-lifecycle",
  "open-esp-radio-wpa2",
 ]
 
@@ -1135,6 +1136,7 @@ dependencies = [
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-lifecycle",
  "open-esp-radio-wpa2",
 ]
 
@@ -1192,6 +1194,10 @@ dependencies = [
  "svd-parser",
  "svd2rust",
 ]
+
+[[package]]
+name = "open-esp-radio-wifi-lifecycle"
+version = "0.1.0"
 
 [[package]]
 name = "open-esp-radio-wpa2"

@@ -6,6 +6,7 @@ extern crate std;
 #[cfg(feature = "wifi")]
 pub mod wifi {
     pub use open_esp_radio_ieee80211 as ieee80211;
+    pub use open_esp_radio_wifi_lifecycle as lifecycle;
     pub use open_esp_radio_wpa2 as wpa2;
 }
 

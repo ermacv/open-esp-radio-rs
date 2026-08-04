@@ -17,6 +17,7 @@ open-esp-radio-esp32s31-pac = { path = "../../../esp32s31/pac" }
 open-esp-radio-esp32s31-phy = { path = "../../../esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../esp32s31/wifi/mac" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+open-esp-radio-wifi-lifecycle = { path = "../../../wifi/lifecycle" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 
 [dev-dependencies]

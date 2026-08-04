@@ -5,6 +5,7 @@ members = [
     "crates/integration/network/embassy-net",
     "crates/integration/esp32s31/wifi-embassy",
     "crates/integration/esp32s31/wifi-esp-hal",
+    "crates/wifi/lifecycle",
     "crates/wifi/ieee80211",
     "crates/wifi/wpa2",
     "crates/esp32s31/hal",

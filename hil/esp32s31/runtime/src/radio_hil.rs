@@ -1,6 +1,7 @@
 use core::{
     cell::RefCell,
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
     task::{Context, Waker},
@@ -145,6 +146,11 @@ use open_esp_radio::{
             StaPowerCapability, StaPowerCapabilityError, StaProtectedDataFrame, StaSequenceCounter,
             StaTxSequenceCounters, select_sta_association, select_wpa2_psk_rsn,
         },
+    },
+    wifi::lifecycle::station::{
+        StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
+        StaBackoffReason, StaFailureDisposition, StaLifecycleBackend, StaLifecycleExit,
+        StaLifecycleService, StaLifecycleStage, StaNextCandidate, StaReconnectPolicy,
     },
     wifi::wpa2::{
         OwnedEapolFrame, Pmk, Wpa2Interface, aes::Wpa2SoftwareAes, frames::Wpa2TxFrame,
@@ -1049,6 +1055,14 @@ struct RadioHilConnectedEpochReturn<'fixture, 'security> {
     fixture: RadioHilConnectedTaskFixture<'fixture>,
     disconnected: RadioHilDisconnectedEpoch,
     security: StaAssociationSecurity<'security>,
+    exit: RadioHilConnectedExit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilConnectedExit {
+    Disconnected,
+    Stopped,
+    HardwareFailure,
 }
 
 /// Complete input frontier for the next Association/WPA2 epoch.
@@ -1146,6 +1160,36 @@ struct RadioHilJoinFailure<'fixture, 'security> {
     associated: bool,
     message1: bool,
     message3: bool,
+}
+
+/// Finite result of an initial Association/WPA2/connected attempt.
+///
+/// Success crosses the one-time static-resource boundary and therefore
+/// returns the later reconnect owner as a distinct variant. Failure keeps the
+/// earlier join owner intact so the outer lifecycle can apply bounded retry
+/// policy without reconstructing any board resource.
+enum RadioHilJoinOutcome<'fixture, 'security> {
+    Connected {
+        ready: RadioHilReconnectReady<'fixture, 'security>,
+        exit: RadioHilConnectedExit,
+    },
+    Failed(RadioHilJoinFailure<'fixture, 'security>),
+}
+
+impl<'fixture, 'security> From<RadioHilJoinFailure<'fixture, 'security>>
+    for RadioHilJoinOutcome<'fixture, 'security>
+{
+    fn from(failure: RadioHilJoinFailure<'fixture, 'security>) -> Self {
+        Self::Failed(failure)
+    }
+}
+
+/// The initial join and later reconnect frontiers intentionally remain
+/// different Rust types. This enum is only the outer lifecycle's sum type; it
+/// does not erase either phase into a mutable vendor-style context.
+enum RadioHilStaLifecycleOwner<'fixture, 'security> {
+    Join(RadioHilJoinRetry<'fixture, 'security>),
+    Reconnect(RadioHilReconnectReady<'fixture, 'security>),
 }
 
 impl<'fixture, 'security> RadioHilJoinFailure<'fixture, 'security> {
@@ -5442,7 +5486,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     // disconnect returns RX/TX/control ownership into the same scope that
     // retains the GTK and platform token. A spawned task could only report
     // the edge and would strand those values in its private task storage.
-    match observe_open_radio_task_polls(
+    let runner_exit = match observe_open_radio_task_polls(
         radio_runner.run_until(crate::console::receive_station_epoch_cycle()),
         &OPEN_RADIO_TASK_POLLS.radio,
     )
@@ -5461,15 +5505,22 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                 control.last_event(),
                 control.last_tx_failure(),
             ));
+            RadioHilConnectedExit::Disconnected
         }
-        Ok(WifiRunnerExit::Stopped) => emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
-             source=host-station-epoch-cycle"
-        )),
-        Err(error) => emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
-        )),
-    }
+        Ok(WifiRunnerExit::Stopped) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
+                 source=host-station-epoch-cycle"
+            ));
+            RadioHilConnectedExit::Stopped
+        }
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
+            ));
+            RadioHilConnectedExit::HardwareFailure
+        }
+    };
     // Close hardware publication before stopping the protocol consumer. The
     // radio runner no longer schedules RX/control; masking both CPU and
     // peripheral routes now makes the command/frame drain finite and prevents
@@ -5598,6 +5649,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                             supplicant_nonce,
                             sequences,
                         },
+                        exit: runner_exit,
                     };
                 }
                 Err(tx) => {
@@ -5690,6 +5742,166 @@ async fn qualify_disconnected_rx_restart(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilStaLifecycleFailure {
+    InitialJoin {
+        associated: bool,
+        message1: bool,
+        message3: bool,
+    },
+    PeerScanPolicy,
+    ScanWmmPolicy,
+    InvalidEpochOwner,
+    Association,
+    SecuritySelection,
+    PeerPlan,
+    AssociationWmmPolicy,
+    HePeerProgramming,
+    RateControlProgramming,
+    Wpa2Handshake,
+    Wpa2KeyInstall,
+    ConnectedHardware,
+}
+
+fn failed_reconnect<'fixture, 'security>(
+    ready: RadioHilReconnectReady<'fixture, 'security>,
+    stage: StaLifecycleStage,
+    disposition: StaFailureDisposition,
+    error: RadioHilStaLifecycleFailure,
+) -> StaAttemptOutcome<RadioHilReconnectReady<'fixture, 'security>, RadioHilStaLifecycleFailure> {
+    StaAttemptOutcome::Failed {
+        owner: ready,
+        failure: StaAttemptFailure::new(stage, disposition, error),
+    }
+}
+
+struct RadioHilStaLifecycleBackend<O> {
+    _owner: PhantomData<fn() -> O>,
+}
+
+impl<O> RadioHilStaLifecycleBackend<O> {
+    const fn new() -> Self {
+        Self {
+            _owner: PhantomData,
+        }
+    }
+}
+
+impl<'fixture, 'security> StaLifecycleBackend
+    for RadioHilStaLifecycleBackend<RadioHilStaLifecycleOwner<'fixture, 'security>>
+{
+    type Owner = RadioHilStaLifecycleOwner<'fixture, 'security>;
+    type Error = RadioHilStaLifecycleFailure;
+
+    fn run_attempt(
+        &mut self,
+        owner: Self::Owner,
+        context: StaAttemptContext,
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
+        async move {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=OBSERVE \
+                 stage=production-sta-lifecycle-attempt generation={} attempt={} \
+                 refresh_candidate={}",
+                context.generation,
+                context.attempt,
+                u8::from(context.refresh_candidate),
+            ));
+            match owner {
+                RadioHilStaLifecycleOwner::Join(retry) => {
+                    let RadioHilJoinRetry {
+                        fixture,
+                        target,
+                        rx,
+                        network,
+                        security,
+                    } = retry;
+                    match associate_target(fixture, target, rx, network, security).await {
+                        RadioHilJoinOutcome::Failed(failure) => {
+                            let (associated, message1, message3) = failure.progress();
+                            let stage = if associated {
+                                StaLifecycleStage::Security
+                            } else {
+                                StaLifecycleStage::Association
+                            };
+                            StaAttemptOutcome::Failed {
+                                owner: RadioHilStaLifecycleOwner::Join(failure.retry),
+                                failure: StaAttemptFailure::new(
+                                    stage,
+                                    StaFailureDisposition::RetryCurrentCandidate,
+                                    RadioHilStaLifecycleFailure::InitialJoin {
+                                        associated,
+                                        message1,
+                                        message3,
+                                    },
+                                ),
+                            }
+                        }
+                        RadioHilJoinOutcome::Connected { ready, exit } => match exit {
+                            RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
+                                owner: RadioHilStaLifecycleOwner::Reconnect(ready),
+                                failure: StaAttemptFailure::new(
+                                    StaLifecycleStage::Hardware,
+                                    StaFailureDisposition::Terminal,
+                                    RadioHilStaLifecycleFailure::ConnectedHardware,
+                                ),
+                            },
+                            RadioHilConnectedExit::Disconnected
+                            | RadioHilConnectedExit::Stopped => {
+                                // The HIL's first controlled runner stop is an
+                                // explicit request to cross the reconnect
+                                // boundary. Production callers preserve the
+                                // distinction in `RadioHilConnectedExit`.
+                                StaAttemptOutcome::Disconnected {
+                                    owner: RadioHilStaLifecycleOwner::Reconnect(ready),
+                                    next_candidate: StaNextCandidate::Reuse,
+                                }
+                            }
+                        },
+                    }
+                }
+                RadioHilStaLifecycleOwner::Reconnect(ready) => {
+                    match qualify_reconnected_epoch(ready).await {
+                        StaAttemptOutcome::Disconnected {
+                            owner,
+                            next_candidate,
+                        } => StaAttemptOutcome::Disconnected {
+                            owner: RadioHilStaLifecycleOwner::Reconnect(owner),
+                            next_candidate,
+                        },
+                        StaAttemptOutcome::Stopped { owner } => StaAttemptOutcome::Stopped {
+                            owner: RadioHilStaLifecycleOwner::Reconnect(owner),
+                        },
+                        StaAttemptOutcome::Failed { owner, failure } => {
+                            StaAttemptOutcome::Failed {
+                                owner: RadioHilStaLifecycleOwner::Reconnect(owner),
+                                failure,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn wait_backoff(
+        &mut self,
+        owner: Self::Owner,
+        delay_millis: u32,
+        reason: StaBackoffReason,
+    ) -> impl Future<Output = StaBackoffOutcome<Self::Owner>> + '_ {
+        async move {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=OBSERVE \
+                 stage=production-sta-lifecycle-backoff delay_ms={delay_millis} \
+                 reason={reason:?}"
+            ));
+            Timer::after_millis(u64::from(delay_millis)).await;
+            StaBackoffOutcome::Elapsed { owner }
+        }
+    }
+}
+
 /// Execute a complete Association/WPA2/connected epoch on the exact owners
 /// returned by the preceding connected epoch.
 ///
@@ -5700,7 +5912,7 @@ async fn qualify_disconnected_rx_restart(
 /// running with link-down, and their RX frontier came from connected teardown.
 async fn qualify_reconnected_epoch<'fixture, 'security>(
     mut ready: RadioHilReconnectReady<'fixture, 'security>,
-) -> (RadioHilReconnectReady<'fixture, 'security>, bool) {
+) -> StaAttemptOutcome<RadioHilReconnectReady<'fixture, 'security>, RadioHilStaLifecycleFailure> {
     let StaJoinTarget {
         station_address,
         access_point,
@@ -5712,7 +5924,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
                  stage=production-reconnect-peer-scan-policy error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::CandidateSelection,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::PeerScanPolicy,
+            );
         }
     };
     ready
@@ -5729,7 +5946,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
                  stage=production-reconnect-wmm-edca source=scan error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::CandidateSelection,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::ScanWmmPolicy,
+            );
         }
     }
 
@@ -5745,7 +5967,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             "OPEN_RADIO_PHY_HIL result=FAIL \
              stage=production-reconnect-association error=initial-epoch-owner"
         ));
-        return (ready, false);
+        return failed_reconnect(
+            ready,
+            StaLifecycleStage::Hardware,
+            StaFailureDisposition::Terminal,
+            RadioHilStaLifecycleFailure::InvalidEpochOwner,
+        );
     };
     let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
     let backend = RadioHilStaJoinBackend {
@@ -5780,7 +6007,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 association_started.elapsed().as_millis(),
                 access_point.bssid,
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Association,
+                StaFailureDisposition::RetryCurrentCandidate,
+                RadioHilStaLifecycleFailure::Association,
+            );
         }
     };
     let response = success.response;
@@ -5803,7 +6035,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
                  stage=production-reconnect-rsn-select error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Security,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::SecuritySelection,
+            );
         }
     };
     let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
@@ -5821,7 +6058,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
                  stage=production-reconnect-peer-plan error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Association,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::PeerPlan,
+            );
         }
     };
     ready
@@ -5840,7 +6082,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                  stage=production-reconnect-wmm-edca \
                  source=association-response error=missing-parameters"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Association,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::AssociationWmmPolicy,
+            );
         };
         if let Err(error) = ready.fixture.tx_storage.install_wmm_edca(parameters) {
             let _ = rx.stop(hardware);
@@ -5849,7 +6096,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                  stage=production-reconnect-wmm-edca \
                  source=association-response error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Association,
+                StaFailureDisposition::RefreshCandidate,
+                RadioHilStaLifecycleFailure::AssociationWmmPolicy,
+            );
         }
     }
     if let Some(state) = peer_plan.he_peer_state
@@ -5861,7 +6113,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             "OPEN_RADIO_PHY_HIL result=FAIL \
              stage=production-reconnect-he20-peer error={error:?}"
         ));
-        return (ready, false);
+        return failed_reconnect(
+            ready,
+            StaLifecycleStage::Hardware,
+            StaFailureDisposition::Terminal,
+            RadioHilStaLifecycleFailure::HePeerProgramming,
+        );
     }
     if let Err(error) = peer_plan.rate_control.program_hardware(hardware) {
         let _ = rx.stop(hardware);
@@ -5869,7 +6126,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             "OPEN_RADIO_PHY_HIL result=FAIL \
              stage=production-reconnect-rate-control error={error:?}"
         ));
-        return (ready, false);
+        return failed_reconnect(
+            ready,
+            StaLifecycleStage::Hardware,
+            StaFailureDisposition::Terminal,
+            RadioHilStaLifecycleFailure::RateControlProgramming,
+        );
     }
     let peer_he_capabilities = peer_plan.he_capabilities;
     let link = StaConnectedLink {
@@ -5939,7 +6201,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             ));
             let (backend, _, _) = runner.into_parts();
             *rx = backend.into_rx();
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Security,
+                StaFailureDisposition::RetryCurrentCandidate,
+                RadioHilStaLifecycleFailure::Wpa2Handshake,
+            );
         }
     };
     emergency_log(format_args!(
@@ -5971,7 +6238,12 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
                  stage=production-reconnect-wpa2-key-install error={error:?}"
             ));
-            return (ready, false);
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Security,
+                StaFailureDisposition::RetryCurrentCandidate,
+                RadioHilStaLifecycleFailure::Wpa2KeyInstall,
+            );
         }
     };
     let metadata = established.metadata();
@@ -6028,22 +6300,41 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         group,
     )
     .await;
-    let disconnected = qualify_disconnected_rx_restart(returned.disconnected).await;
+    let RadioHilConnectedEpochReturn {
+        fixture,
+        disconnected,
+        security,
+        exit,
+    } = returned;
+    let disconnected = qualify_disconnected_rx_restart(disconnected).await;
     let (network, epoch) = disconnected.into_reconnected_resources();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS \
          stage=production-reconnect-connected-returned"
     ));
-    (
-        RadioHilReconnectReady {
-            fixture: returned.fixture,
-            target,
-            network: RadioHilStaNetwork::Running(network),
-            epoch,
-            security: returned.security,
+    let owner = RadioHilReconnectReady {
+        fixture,
+        target,
+        network: RadioHilStaNetwork::Running(network),
+        epoch,
+        security,
+    };
+    match exit {
+        RadioHilConnectedExit::Disconnected => StaAttemptOutcome::Disconnected {
+            owner,
+            // This adapter currently owns only a proven same-peer frontier.
+            // A future cold candidate variant must perform scan/auth before
+            // it may return `Refresh` here.
+            next_candidate: StaNextCandidate::Reuse,
         },
-        true,
-    )
+        RadioHilConnectedExit::Stopped => StaAttemptOutcome::Stopped { owner },
+        RadioHilConnectedExit::HardwareFailure => failed_reconnect(
+            owner,
+            StaLifecycleStage::Hardware,
+            StaFailureDisposition::Terminal,
+            RadioHilStaLifecycleFailure::ConnectedHardware,
+        ),
+    }
 }
 
 async fn authenticate_target(
@@ -6166,7 +6457,7 @@ async fn associate_target<'fixture, 'security>(
     rx: RadioHilJoinRx<'static>,
     network: RadioHilStaNetwork,
     security: StaAssociationSecurity<'security>,
-) -> RadioHilJoinFailure<'fixture, 'security> {
+) -> RadioHilJoinOutcome<'fixture, 'security> {
     let StaJoinTarget {
         station_address,
         access_point,
@@ -6178,7 +6469,7 @@ async fn associate_target<'fixture, 'security>(
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-peer-scan-policy error={error:?}"
             ));
-            return failed_join(fixture, target, rx, network, security, false);
+            return failed_join(fixture, target, rx, network, security, false).into();
         }
     };
     fixture
@@ -6193,7 +6484,7 @@ async fn associate_target<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                  source=scan error={error:?}"
             ));
-            return failed_join(fixture, target, rx, network, security, false);
+            return failed_join(fixture, target, rx, network, security, false).into();
         }
     }
     let backend = RadioHilStaJoinBackend {
@@ -6226,7 +6517,7 @@ async fn associate_target<'fixture, 'security>(
                  error={error:?} bssid={:02x?}",
                 access_point.bssid,
             ));
-            return failed_join(fixture, target, rx, network, security, false);
+            return failed_join(fixture, target, rx, network, security, false).into();
         }
     };
     emergency_log(format_args!(
@@ -6256,7 +6547,7 @@ async fn associate_target<'fixture, 'security>(
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=wpa2-rsn-select error={error:?}"
                 ));
-                return failed_join(fixture, target, rx, network, security, true);
+                return failed_join(fixture, target, rx, network, security, true).into();
             }
         };
         let noise_floor_dbm = fixture.mmio.read_noise_floor_dbm();
@@ -6273,7 +6564,7 @@ async fn associate_target<'fixture, 'security>(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
                              stage=sta-peer-association-plan error={error:?}"
                 ));
-                return failed_join(fixture, target, rx, network, security, true);
+                return failed_join(fixture, target, rx, network, security, true).into();
             }
         };
         fixture
@@ -6289,7 +6580,7 @@ async fn associate_target<'fixture, 'security>(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                              source=association-response error=missing-parameters"
                 ));
-                return failed_join(fixture, target, rx, network, security, true);
+                return failed_join(fixture, target, rx, network, security, true).into();
             };
             if let Err(error) = fixture.tx_storage.install_wmm_edca(parameters) {
                 let _ = rx.stop(fixture.mmio);
@@ -6297,7 +6588,7 @@ async fn associate_target<'fixture, 'security>(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
                              source=association-response error={error:?}"
                 ));
-                return failed_join(fixture, target, rx, network, security, true);
+                return failed_join(fixture, target, rx, network, security, true).into();
             }
         }
         if let Some(state) = peer_plan.he_peer_state {
@@ -6309,7 +6600,7 @@ async fn associate_target<'fixture, 'security>(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-he20-peer \
                              error={error:?}"
                 ));
-                return failed_join(fixture, target, rx, network, security, true);
+                return failed_join(fixture, target, rx, network, security, true).into();
             }
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=sta-he20-peer \
@@ -6362,7 +6653,7 @@ async fn associate_target<'fixture, 'security>(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-rate-control \
                          error={error:?}"
             ));
-            return failed_join(fixture, target, rx, network, security, true);
+            return failed_join(fixture, target, rx, network, security, true).into();
         }
         let rate_schedule = schedule_state(rate_control.current_schedule());
         emergency_log(format_args!(
@@ -6425,7 +6716,7 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
     rx: RadioHilJoinRx<'static>,
     handshake: Wpa2HandshakeConfig<'_>,
     session: StaConnectedSession<'rate, 'security>,
-) -> RadioHilJoinFailure<'fixture, 'security> {
+) -> RadioHilJoinOutcome<'fixture, 'security> {
     let link = session.link;
     let backend = RadioHilWpa2Backend {
         mmio: &mut *fixture.mmio,
@@ -6459,7 +6750,8 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
                 rx,
                 session,
                 message1_complete,
-            );
+            )
+            .into();
         }
     };
     emergency_log(format_args!(
@@ -6482,7 +6774,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     pending: Wpa2PendingKeyInstall,
     session: StaConnectedSession<'rate, 'security>,
     mut rx: RadioHilJoinRx<'static>,
-) -> RadioHilJoinFailure<'fixture, 'security> {
+) -> RadioHilJoinOutcome<'fixture, 'security> {
     let RadioHilConnectedFixture {
         spawner,
         protocol_spawner,
@@ -6570,7 +6862,8 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                 true,
                 true,
                 false,
-            );
+            )
+            .into();
         }
     };
     let metadata = established.metadata();
@@ -6810,23 +7103,10 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready"
         ));
-        let (ready, reconnected) = qualify_reconnected_epoch(ready).await;
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result={} \
-             stage=production-reconnect-epoch-qualified",
-            if reconnected { "PASS" } else { "FAIL" },
-        ));
-        let RadioHilReconnectReady {
-            fixture,
-            target,
-            network,
-            epoch,
-            security,
-        } = ready;
-        let _owners = (fixture, target, network, epoch, security);
-        loop {
-            Timer::after_secs(60).await;
-        }
+        return RadioHilJoinOutcome::Connected {
+            ready,
+            exit: returned.exit,
+        };
     }
     let group_hardware_index = group_slot.hardware_index();
     group_slot.clear(mmio);
@@ -6875,6 +7155,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         true,
         false,
     )
+    .into()
 }
 
 async fn run_promiscuous_rx_hil(
@@ -7492,27 +7773,76 @@ async fn run_promiscuous_rx_hil(
             ));
             let (associated, message1, message3) = if authenticated {
                 let network = initialize_sta_network(station_address);
-                let failure = associate_target(
-                    join_fixture.into_connected(),
+                let owner = RadioHilStaLifecycleOwner::Join(RadioHilJoinRetry {
+                    fixture: join_fixture.into_connected(),
                     target,
-                    join_rx,
+                    rx: join_rx,
                     network,
-                    StaAssociationSecurity {
+                    security: StaAssociationSecurity {
                         pmk: &pmk,
                         supplicant_nonce,
                         sequences: &mut sequences,
                     },
-                )
-                .await;
-                let progress = failure.progress();
-                let RadioHilJoinRetry {
-                    fixture: _fixture,
-                    target: _target,
-                    rx: _rx,
-                    network: _network,
-                    security: _security,
-                } = failure.retry;
-                progress
+                });
+                let policy = StaReconnectPolicy::new(3, 100, 1_000, 100)
+                    .expect("fixed HIL station reconnect policy is valid");
+                let backend = RadioHilStaLifecycleBackend::new();
+                let mut lifecycle = StaLifecycleService::new(backend, policy);
+                match lifecycle
+                    .run_with_candidate(owner, StaNextCandidate::Reuse)
+                    .await
+                {
+                    StaLifecycleExit::Stopped { owner, progress } => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=PASS \
+                             stage=production-sta-lifecycle-stop \
+                             connected_epochs={} attempts={}",
+                            progress.connected_epochs, progress.attempts_started,
+                        ));
+                        let completed_join =
+                            matches!(&owner, RadioHilStaLifecycleOwner::Reconnect(_));
+                        let _owner = owner;
+                        (completed_join, completed_join, completed_join)
+                    }
+                    StaLifecycleExit::Exhausted {
+                        owner,
+                        progress,
+                        failure,
+                    } => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL \
+                             stage=production-sta-lifecycle-exhausted \
+                             connected_epochs={} attempts={} failure={failure:?}",
+                            progress.connected_epochs, progress.attempts_started,
+                        ));
+                        let result = match failure.error {
+                            RadioHilStaLifecycleFailure::InitialJoin {
+                                associated,
+                                message1,
+                                message3,
+                            } => (associated, message1, message3),
+                            _ => (true, true, true),
+                        };
+                        let _owner = owner;
+                        result
+                    }
+                    StaLifecycleExit::Terminal {
+                        owner,
+                        progress,
+                        failure,
+                    } => {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL \
+                             stage=production-sta-lifecycle-terminal \
+                             connected_epochs={} attempts={} failure={failure:?}",
+                            progress.connected_epochs, progress.attempts_started,
+                        ));
+                        let completed_join =
+                            matches!(&owner, RadioHilStaLifecycleOwner::Reconnect(_));
+                        let _owner = owner;
+                        (completed_join, completed_join, completed_join)
+                    }
+                }
             } else {
                 let _rx = join_rx;
                 (false, false, false)

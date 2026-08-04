@@ -71,5 +71,27 @@ for the normal completion path before returning ownership.
 - route real beacon loss through scan/candidate selection and Authentication;
 - qualify AP loss and recovery, retry/backoff exhaustion, and an injected
   TX/RX hardware failure;
-- move the outer lifecycle loop and policy from HIL composition into a reusable
-  allocation-free STA service.
+- move cold scan and Authentication into the reusable allocation-free STA
+  service which now owns initial Association/WPA2 and later reconnect attempts.
+
+## Production lifecycle addendum
+
+The reconnect cell was repeated after introducing the executor- and
+chip-independent `StaLifecycleService`. The qualified runtime CRC32 was
+`8e6d77ab`;
+image size remained exactly 1,129,104 bytes and both placement/source-graph
+audits passed. The UART trace proved that generation 0, attempt 1 began with
+`refresh_candidate=0`, completed initial Association (status 0, AID 19) and
+WPA2 Message 3 (one Message 2 transmission, replay 7), then returned the exact
+connected owner. After the explicit 100 ms disconnect backoff, generation 1,
+attempt 1 also began with `refresh_candidate=0`, completed reassociation (AID
+19), WPA2 (one Message 2 transmission, replay 9) and entry into the second
+connected epoch.
+
+An earlier image had stopped after initial WPA2 timed out waiting three seconds
+for Message 1 because that returned retry owner was discarded. Initial
+Association/WPA2 now runs inside `StaLifecycleService`, so this failure is
+bounded and retryable without rebuilding hardware. The error path has host
+ownership tests and target compilation, but still needs an injected board
+failure to qualify the retry itself. Cold scan and Authentication remain
+outside the service and are the next composition boundary.

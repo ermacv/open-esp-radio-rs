@@ -137,12 +137,12 @@ reads may remain only when they are explicit comparison evidence and cannot
 affect runtime transitions.
 
 The WPA2/connected transition no longer exposes 23–28 positional arguments.
-After extracting key/M4 orchestration, its entry points take three or four
-coherent owners: `StaConnectedLink` for peer/BSSID/AID/PHY facts,
-`StaConnectedSession` for network/rate/sequence state, and
-`RadioHilConnectedFixture` for the concrete board-owned resources. Keep this
-rule while shrinking other HIL paths: create a type only for one ownership or
-domain invariant, never merely to hide an arbitrary argument list.
+After extracting key/M4 and peer orchestration, its entry points take coherent
+owners: production `Esp32s31ConnectedStaPeer` for peer/BSSID/AID/PHY and
+initialized rate-control state, a small HIL session for network/security state,
+and `RadioHilConnectedFixture` for concrete board resources. Keep this rule
+while shrinking other HIL paths: create a type only for one ownership or domain
+invariant, never merely to hide an arbitrary argument list.
 
 The same rule now covers the earlier join boundary. `authenticate_target`
 accepts a `RadioHilJoinFixture`, `StaJoinTarget` and the non-QoS sequence
@@ -403,6 +403,15 @@ The first reconnect seam is now production-owned:
   Runtime CRC32 `9e080a3b` completed three cycles without that artificial
   gate; see the
   [WPA2-port qualification](hil/2026-08-04-esp32s31-wpa2-port.md).
+  Association-time peer programming now follows the same boundary.
+  `Esp32s31StaPeerPort` installs scan-time HT/WMM/HE policy, consumes an opaque
+  prepared token plus the successful Association Response, programs HE
+  peer/AID/BSR and rate-control hardware, then returns a production
+  `Esp32s31ConnectedStaPeer`. Both initial and reconnect HIL paths consume this
+  owner; the duplicate policy/programming blocks and private HIL connected-link
+  type are gone. Runtime CRC32 `bf8e8ead` completed three cycles with a stable
+  descriptor base and empty returned queues; see the
+  [peer-port qualification](hil/2026-08-04-esp32s31-sta-peer-port.md).
   `RadioHilStaLifecycleOwner::RunningScan` is now a distinct outer owner:
   generation 1 entered it only with `refresh_candidate=1`, and the successful
   transaction produced the separate `Reconnect` owner.
@@ -425,9 +434,10 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract peer programming and connected-session composition from HIL. The
-   reusable Embassy layer now owns disconnected/running-scan/reconnected
-   resource transition, Authentication/Association and complete WPA2 ports;
+1. extract the remaining connected-entry/teardown resource composition from
+   HIL. The reusable Embassy layer now owns disconnected/running-scan/
+   reconnected resource transition, Authentication/Association, selected-peer
+   hardware programming and complete WPA2 ports;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -436,10 +446,13 @@ The next slices, in order, are:
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
 closed for running scan: `refresh_candidate` selects a distinct owner, and the
-scan result crosses fresh Authentication before Association. The remaining
-architectural gap is now peer/session composition: association-response peer
-programming, rate-control activation and connected-entry sequencing still
-live in `radio_hil.rs` and must move behind a narrower ESP32-S31 Embassy port.
+scan result crosses fresh Authentication before Association. Peer programming
+and rate-control activation now live behind `Esp32s31StaPeerPort`. The
+remaining architectural gap is connected-entry sequencing: RX protocol,
+ordinary/aggregate TX, control/BlockAck, interrupt activation and teardown are
+still assembled inside `radio_hil.rs`; qualification tasks and network policy
+must be separated from that production owner graph before moving the latter to
+the ESP32-S31 Embassy layer.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

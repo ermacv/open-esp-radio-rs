@@ -22,7 +22,6 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
-use open_esp_radio::wifi::ieee80211::wmm::WmmParameterSet;
 use open_esp_radio::{
     esp32s31::{
         hal::{ColdRadioRegisters, Radio, RadioRegisters},
@@ -45,20 +44,17 @@ use open_esp_radio::{
             crypto::{
                 CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
             },
-            edca::EdcaParametersError,
-            he::{He20PeerHardware, program_he20_peer_state},
+            he::He20PeerHardware,
             init::{
                 MAC_COLD_RX_INTERRUPT_MASK, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
-                StaPeerScanPolicy, StaWmmSource, initialize_promiscuous_receive,
+                initialize_promiscuous_receive,
             },
             irq::{
                 IrqSink, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
                 MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, handle_mac_irq,
                 handle_power_irq,
             },
-            rate_control::{
-                BeamformingReportHardware, StaRateControlAssociation, StaTxRatePolicy,
-            },
+            rate_control::{BeamformingReportHardware, StaTxRatePolicy},
             rate_schedule::schedule_state,
             registers::{
                 MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
@@ -72,8 +68,7 @@ use open_esp_radio::{
             scan::{ScanObservation, ScanRecord, ScanTable},
             tx::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
-                HtMcs, HtPeerAmpduParameters, LegacyRate, TxCompletion, TxHardware, TxPhyRate,
-                TxSlot,
+                HtMcs, LegacyRate, TxCompletion, TxHardware, TxPhyRate, TxSlot,
             },
             tx_ampdu::{HtAmpduTxStorage, StaTxBlockAckSessions},
             tx_runtime::StaTxRuntimePolicy,
@@ -118,6 +113,11 @@ use open_esp_radio::{
                 Esp32s31StaAssociationProfile, Esp32s31StaJoinObserver, Esp32s31StaJoinPort,
                 Esp32s31StaJoinRadio, Esp32s31StaJoinRx, Esp32s31StaJoinStation,
                 Esp32s31StaJoinStorage,
+            },
+            sta_peer_port::{
+                Esp32s31ConnectedStaPeer, Esp32s31ProgrammedStaPeer, Esp32s31StaConnectedLink,
+                Esp32s31StaPeerPort, Esp32s31StaPeerPortError, Esp32s31StaPeerRadio,
+                Esp32s31StaPeerStation,
             },
             station_epoch::{
                 Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch,
@@ -859,18 +859,6 @@ impl TxStorage {
             "control TX owner cannot be restored over a live phase"
         );
     }
-
-    fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
-        self.control_mut().install_ht_ampdu_policy(parameters);
-    }
-
-    fn install_he_bss_color(&mut self, bss_color: u8) {
-        self.control_mut().install_he_bss_color(bss_color);
-    }
-
-    fn install_wmm_edca(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError> {
-        self.control_mut().install_wmm_edca(parameters)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1145,23 +1133,9 @@ struct RadioHilRunningScanReady<'fixture, 'security> {
     security: StaAssociationSecurity<'security>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct StaConnectedLink {
-    station_address: [u8; 6],
-    bssid: [u8; 6],
-    association_id: u16,
-    beacon_interval_tu: u16,
-    peer_qos: bool,
-    association_phy: StaAssociationPhy,
-    peer_supports_one_ltf_800ns_gi: bool,
-    peer_supports_ldpc: bool,
-    peer_dcm_receive: HeDcmConstellation,
-}
-
-struct StaConnectedSession<'rate, 'security> {
-    link: StaConnectedLink,
+struct StaConnectedSession<'security> {
+    peer: Esp32s31ConnectedStaPeer,
     network: RadioHilStaNetwork,
-    rate_control: &'rate mut StaRateControlAssociation,
     pmk: &'security Pmk,
     supplicant_nonce: [u8; 32],
     sequences: &'security mut StaTxSequenceCounters,
@@ -1288,17 +1262,16 @@ fn failed_join<'fixture, 'security>(
     )
 }
 
-fn failed_join_from_session<'fixture, 'rate, 'security>(
+fn failed_join_from_session<'fixture, 'security>(
     fixture: RadioHilConnectedFixture<'fixture>,
     target: StaJoinTarget,
     rx: RadioHilJoinRx<'static>,
-    session: StaConnectedSession<'rate, 'security>,
+    session: StaConnectedSession<'security>,
     message1: bool,
 ) -> RadioHilJoinFailure<'fixture, 'security> {
     let StaConnectedSession {
-        link: _,
+        peer: _,
         network,
-        rate_control: _,
         pmk,
         supplicant_nonce,
         sequences,
@@ -4192,10 +4165,10 @@ async fn connected_benchmark_task(
     OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED.signal(());
 }
 
-async fn run_connected_network<'fixture, 'rate, 'security>(
+async fn run_connected_network<'fixture, 'security>(
     fixture: RadioHilConnectedTaskFixture<'fixture>,
     epoch_resources: RadioHilConnectedEpochResources,
-    session: StaConnectedSession<'rate, 'security>,
+    session: StaConnectedSession<'security>,
     pairwise_slot: StaPairwiseCcmpSlot,
     group_slot: StaGroupCcmpSlot,
 ) -> RadioHilConnectedEpochReturn<'fixture, 'security> {
@@ -4214,14 +4187,17 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
         ethernet,
     } = fixture;
     let StaConnectedSession {
-        link,
+        peer,
         network,
-        rate_control,
         pmk,
         supplicant_nonce,
         sequences,
     } = session;
-    let StaConnectedLink {
+    let Esp32s31ConnectedStaPeer {
+        link,
+        rate_control,
+    } = peer;
+    let Esp32s31StaConnectedLink {
         station_address,
         bssid,
         association_id,
@@ -5105,19 +5081,14 @@ enum RadioHilStaLifecycleFailure {
         message1: bool,
         message3: bool,
     },
-    PeerScanPolicy,
+    PeerPolicy(Esp32s31StaPeerPortError),
     CandidateRefreshContract,
     RunningScanNoCandidate,
     RunningScanTransaction(Esp32s31StaScanError<RadioHilRunningScanPortError>),
     RunningScanPlan(StaScanPlanError),
-    ScanWmmPolicy,
     InvalidEpochOwner,
     Association,
     SecuritySelection,
-    PeerPlan,
-    AssociationWmmPolicy,
-    HePeerProgramming,
-    RateControlProgramming,
     Wpa2Handshake,
     Wpa2KeyInstall,
     ConnectedHardware,
@@ -5337,8 +5308,11 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         station_address,
         access_point,
     } = ready.target;
-    let peer_scan_policy = match StaPeerScanPolicy::new(&access_point) {
-        Ok(policy) => policy,
+    let prepared_peer = match Esp32s31StaPeerPort::prepare(
+        ready.fixture.tx_storage.control_mut(),
+        &access_point,
+    ) {
+        Ok(prepared) => prepared,
         Err(error) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -5348,32 +5322,10 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
                 ready,
                 StaLifecycleStage::CandidateSelection,
                 StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::PeerScanPolicy,
+                RadioHilStaLifecycleFailure::PeerPolicy(error),
             );
         }
     };
-    ready
-        .fixture
-        .tx_storage
-        .install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
-    ready
-        .fixture
-        .tx_storage
-        .install_he_bss_color(peer_scan_policy.he_bss_color);
-    if let Some(parameters) = peer_scan_policy.wmm.parameters() {
-        if let Err(error) = ready.fixture.tx_storage.install_wmm_edca(parameters) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-reconnect-wmm-edca source=scan error={error:?}"
-            ));
-            return failed_reconnect(
-                ready,
-                StaLifecycleStage::CandidateSelection,
-                StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::ScanWmmPolicy,
-            );
-        }
-    }
 
     let RadioHilConnectedEpochResources::Reconnected(epoch) = &mut ready.epoch
     else {
@@ -5550,123 +5502,40 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             );
         }
     };
-    let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
-    let noise_floor_dbm = hardware.read_noise_floor_dbm();
-    let mut peer_plan = match peer_scan_policy.complete(
-        &access_point,
+    let association_phy = selection.phy;
+    let programmed_peer = match Esp32s31StaPeerPort::program(
+        Esp32s31StaPeerRadio::new(hardware, ready.fixture.tx_storage.control_mut()),
+        Esp32s31StaPeerStation::new(station_address, association_phy),
         &response,
-        association_phy,
-        noise_floor_dbm,
+        prepared_peer,
     ) {
-        Ok(plan) => plan,
+        Ok(programmed) => programmed,
         Err(error) => {
             let _ = rx.stop(hardware);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-reconnect-peer-plan error={error:?}"
+                 stage=production-reconnect-peer-programming error={error:?}"
             ));
             return failed_reconnect(
                 ready,
-                StaLifecycleStage::Association,
+                StaLifecycleStage::Hardware,
                 StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::PeerPlan,
+                RadioHilStaLifecycleFailure::PeerPolicy(error),
             );
         }
     };
-    ready
-        .fixture
-        .tx_storage
-        .install_ht_ampdu_policy(peer_plan.ht_ampdu);
-    ready
-        .fixture
-        .tx_storage
-        .install_he_bss_color(peer_plan.he_bss_color);
-    if peer_plan.wmm.source() == StaWmmSource::AssociationResponse {
-        let Some(parameters) = peer_plan.wmm.parameters() else {
-            let _ = rx.stop(hardware);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-reconnect-wmm-edca \
-                 source=association-response error=missing-parameters"
-            ));
-            return failed_reconnect(
-                ready,
-                StaLifecycleStage::Association,
-                StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::AssociationWmmPolicy,
-            );
-        };
-        if let Err(error) = ready.fixture.tx_storage.install_wmm_edca(parameters) {
-            let _ = rx.stop(hardware);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-reconnect-wmm-edca \
-                 source=association-response error={error:?}"
-            ));
-            return failed_reconnect(
-                ready,
-                StaLifecycleStage::Association,
-                StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::AssociationWmmPolicy,
-            );
-        }
-    }
-    if let Some(state) = peer_plan.he_peer_state
-        && let Err(error) =
-            program_he20_peer_state(hardware, state, response.association_id, 0, 0)
-    {
-        let _ = rx.stop(hardware);
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL \
-             stage=production-reconnect-he20-peer error={error:?}"
-        ));
-        return failed_reconnect(
-            ready,
-            StaLifecycleStage::Hardware,
-            StaFailureDisposition::Terminal,
-            RadioHilStaLifecycleFailure::HePeerProgramming,
-        );
-    }
-    if let Err(error) = peer_plan.rate_control.program_hardware(hardware) {
-        let _ = rx.stop(hardware);
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL \
-             stage=production-reconnect-rate-control error={error:?}"
-        ));
-        return failed_reconnect(
-            ready,
-            StaLifecycleStage::Hardware,
-            StaFailureDisposition::Terminal,
-            RadioHilStaLifecycleFailure::RateControlProgramming,
-        );
-    }
-    let peer_he_capabilities = peer_plan.he_capabilities;
-    let link = StaConnectedLink {
-        station_address,
-        bssid: access_point.bssid,
-        association_id: response.association_id,
-        beacon_interval_tu: access_point.beacon_interval_tu,
-        peer_qos: peer_plan.peer_qos,
-        association_phy,
-        peer_supports_one_ltf_800ns_gi: peer_he_capabilities
-            .is_some_and(|capability| capability.supports_one_ltf_800ns_gi()),
-        peer_supports_ldpc: peer_he_capabilities
-            .is_some_and(|capability| capability.supports_ldpc_coding_in_payload()),
-        peer_dcm_receive: peer_he_capabilities.map_or(
-            HeDcmConstellation::NotSupported,
-            |capability| capability.dcm_receive_constellation(),
-        ),
-    };
+    let Esp32s31ProgrammedStaPeer { peer, report } = programmed_peer;
+    let link = peer.link;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS \
          stage=production-reconnect-peer-programmed phy={association_phy:?} \
          qos={} noise_floor_dbm={} metric={} \
          bf_mode={} bf_rate={}",
         u8::from(link.peer_qos),
-        noise_floor_dbm,
-        peer_plan.link_metric.value(),
-        peer_plan.rate_control.beamforming_report().signal_mode(),
-        peer_plan.rate_control.beamforming_report().rate_code(),
+        report.noise_floor_dbm,
+        report.link_metric.value(),
+        peer.rate_control.beamforming_report().signal_mode(),
+        peer.rate_control.beamforming_report().rate_code(),
     ));
 
     let handshake = Wpa2HandshakeConfig {
@@ -5807,9 +5676,8 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         fixture,
         epoch,
         StaConnectedSession {
-            link,
+            peer,
             network,
-            rate_control: &mut peer_plan.rate_control,
             pmk,
             supplicant_nonce,
             sequences,
@@ -6002,8 +5870,11 @@ async fn associate_target<'fixture, 'security>(
         access_point,
     } = target;
     let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
-    let peer_scan_policy = match StaPeerScanPolicy::new(&access_point) {
-        Ok(policy) => policy,
+    let prepared_peer = match Esp32s31StaPeerPort::prepare(
+        fixture.tx_storage.control_mut(),
+        &access_point,
+    ) {
+        Ok(prepared) => prepared,
         Err(error) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-peer-scan-policy error={error:?}"
@@ -6011,21 +5882,6 @@ async fn associate_target<'fixture, 'security>(
             return failed_join(fixture, target, rx, network, security, false).into();
         }
     };
-    fixture
-        .tx_storage
-        .install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
-    fixture
-        .tx_storage
-        .install_he_bss_color(peer_scan_policy.he_bss_color);
-    if let Some(parameters) = peer_scan_policy.wmm.parameters() {
-        if let Err(error) = fixture.tx_storage.install_wmm_edca(parameters) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
-                 source=scan error={error:?}"
-            ));
-            return failed_join(fixture, target, rx, network, security, false).into();
-        }
-    }
     let backend = radio_hil_sta_join_port(
         &mut *fixture.mmio,
         fixture.rx_storage,
@@ -6087,58 +5943,27 @@ async fn associate_target<'fixture, 'security>(
                 return failed_join(fixture, target, rx, network, security, true).into();
             }
         };
-        let noise_floor_dbm = fixture.mmio.read_noise_floor_dbm();
-        let mut peer_plan = match peer_scan_policy.complete(
-            &access_point,
+        let programmed_peer = match Esp32s31StaPeerPort::program(
+            Esp32s31StaPeerRadio::new(
+                fixture.mmio,
+                fixture.tx_storage.control_mut(),
+            ),
+            Esp32s31StaPeerStation::new(station_address, association_phy),
             &response,
-            association_phy,
-            noise_floor_dbm,
+            prepared_peer,
         ) {
-            Ok(plan) => plan,
+            Ok(programmed) => programmed,
             Err(error) => {
                 let _ = rx.stop(fixture.mmio);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL \
-                             stage=sta-peer-association-plan error={error:?}"
+                             stage=sta-peer-programming error={error:?}"
                 ));
                 return failed_join(fixture, target, rx, network, security, true).into();
             }
         };
-        fixture
-            .tx_storage
-            .install_ht_ampdu_policy(peer_plan.ht_ampdu);
-        fixture
-            .tx_storage
-            .install_he_bss_color(peer_plan.he_bss_color);
-        if peer_plan.wmm.source() == StaWmmSource::AssociationResponse {
-            let Some(parameters) = peer_plan.wmm.parameters() else {
-                let _ = rx.stop(fixture.mmio);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
-                             source=association-response error=missing-parameters"
-                ));
-                return failed_join(fixture, target, rx, network, security, true).into();
-            };
-            if let Err(error) = fixture.tx_storage.install_wmm_edca(parameters) {
-                let _ = rx.stop(fixture.mmio);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-wmm-edca \
-                             source=association-response error={error:?}"
-                ));
-                return failed_join(fixture, target, rx, network, security, true).into();
-            }
-        }
-        if let Some(state) = peer_plan.he_peer_state {
-            if let Err(error) =
-                program_he20_peer_state(fixture.mmio, state, response.association_id, 0, 0)
-            {
-                let _ = rx.stop(fixture.mmio);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-he20-peer \
-                             error={error:?}"
-                ));
-                return failed_join(fixture, target, rx, network, security, true).into();
-            }
+        let Esp32s31ProgrammedStaPeer { peer, report } = programmed_peer;
+        if let Some(state) = report.he_peer_state {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=sta-he20-peer \
                          max_rate_code={} padding_8us={} operation={:#08x} \
@@ -6153,8 +5978,7 @@ async fn associate_target<'fixture, 'security>(
                 state.extended_range_single_user_permitted(),
             ));
         }
-        let peer_he_capabilities = peer_plan.he_capabilities;
-        if let Some(capability) = peer_he_capabilities {
+        if let Some(capability) = report.he_capabilities {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=OBSERVE stage=he20-peer-capabilities \
                          stbc_tx_under_80={} stbc_rx_under_80={} \
@@ -6173,54 +5997,24 @@ async fn associate_target<'fixture, 'security>(
                 capability.non_triggered_cqi_feedback,
             ));
         }
-        let peer_qos = peer_plan.peer_qos;
-        let peer_supports_short_guard_interval =
-            peer_he_capabilities.is_some_and(|capability| capability.supports_one_ltf_800ns_gi());
-        let peer_supports_ldpc = peer_he_capabilities
-            .is_some_and(|capability| capability.supports_ldpc_coding_in_payload());
-        let peer_dcm_constellation = peer_he_capabilities
-            .map_or(HeDcmConstellation::NotSupported, |capability| {
-                capability.dcm_receive_constellation()
-            });
-        let link_metric = peer_plan.link_metric;
-        let rate_control = &mut peer_plan.rate_control;
-        if let Err(error) = rate_control.program_hardware(fixture.mmio) {
-            let _ = rx.stop(fixture.mmio);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-rate-control \
-                         error={error:?}"
-            ));
-            return failed_join(fixture, target, rx, network, security, true).into();
-        }
-        let rate_schedule = schedule_state(rate_control.current_schedule());
+        let rate_schedule = schedule_state(peer.rate_control.current_schedule());
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=sta-rate-control \
                      rssi_dbm={} noise_floor_dbm={} metric={} \
                      schedule={:?}/{} rate={:#04x} max_schedule={} count={} \
                      ampdu_limit_rate={:?} bf_mode={} bf_rate={}",
-            access_point.rssi,
-            noise_floor_dbm,
-            link_metric.value(),
-            rate_control.current_schedule().kind,
-            rate_control.current_schedule().index,
+            report.rssi_dbm,
+            report.noise_floor_dbm,
+            report.link_metric.value(),
+            peer.rate_control.current_schedule().kind,
+            peer.rate_control.current_schedule().index,
             rate_schedule.rate,
-            rate_control.maximum_schedule_index(),
-            rate_control.schedule_count(),
-            rate_control.ampdu_limit_rate(),
-            rate_control.beamforming_report().signal_mode(),
-            rate_control.beamforming_report().rate_code(),
+            peer.rate_control.maximum_schedule_index(),
+            peer.rate_control.schedule_count(),
+            peer.rate_control.ampdu_limit_rate(),
+            peer.rate_control.beamforming_report().signal_mode(),
+            peer.rate_control.beamforming_report().rate_code(),
         ));
-        let link = StaConnectedLink {
-            station_address,
-            bssid: access_point.bssid,
-            association_id: response.association_id,
-            beacon_interval_tu: access_point.beacon_interval_tu,
-            peer_qos,
-            association_phy,
-            peer_supports_one_ltf_800ns_gi: peer_supports_short_guard_interval,
-            peer_supports_ldpc,
-            peer_dcm_receive: peer_dcm_constellation,
-        };
         let StaAssociationSecurity {
             pmk,
             supplicant_nonce,
@@ -6236,9 +6030,8 @@ async fn associate_target<'fixture, 'security>(
             pmk,
         };
         let session = StaConnectedSession {
-            link,
+            peer,
             network,
-            rate_control,
             pmk,
             supplicant_nonce,
             sequences,
@@ -6247,14 +6040,14 @@ async fn associate_target<'fixture, 'security>(
     }
 }
 
-async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
+async fn await_wpa2_message_1<'fixture, 'security>(
     fixture: RadioHilConnectedFixture<'fixture>,
     target: StaJoinTarget,
     rx: RadioHilJoinRx<'static>,
     handshake: Wpa2HandshakeConfig<'_>,
-    session: StaConnectedSession<'rate, 'security>,
+    session: StaConnectedSession<'security>,
 ) -> RadioHilJoinOutcome<'fixture, 'security> {
-    let link = session.link;
+    let link = session.peer.link;
     let backend = radio_hil_wpa2_handshake_port(
         &mut *fixture.mmio,
         fixture.rx_storage,
@@ -6302,11 +6095,11 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
     complete_wpa2_key_install_and_connect(fixture, target, pending, session, rx).await
 }
 
-async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
+async fn complete_wpa2_key_install_and_connect<'fixture, 'security>(
     fixture: RadioHilConnectedFixture<'fixture>,
     target: StaJoinTarget,
     pending: Wpa2PendingKeyInstall,
-    session: StaConnectedSession<'rate, 'security>,
+    session: StaConnectedSession<'security>,
     rx: RadioHilJoinRx<'static>,
 ) -> RadioHilJoinOutcome<'fixture, 'security> {
     let RadioHilConnectedFixture {
@@ -6325,14 +6118,13 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         ethernet,
     } = fixture;
     let StaConnectedSession {
-        link,
+        peer,
         network,
-        rate_control,
         pmk,
         supplicant_nonce,
         sequences,
     } = session;
-    let StaConnectedLink {
+    let Esp32s31StaConnectedLink {
         station_address,
         bssid,
         association_id: _,
@@ -6342,7 +6134,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         peer_supports_one_ltf_800ns_gi: _,
         peer_supports_ldpc: _,
         peer_dcm_receive: _,
-    } = link;
+    } = peer.link;
     let backend = Esp32s31Wpa2KeyPort::new(
         Esp32s31Wpa2KeyRadio::new(mmio, tx_storage.control_mut()),
         Esp32s31Wpa2KeySession::new(
@@ -6479,9 +6271,8 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         connected_fixture,
         RadioHilConnectedEpochResources::Initial { registers, rx },
         StaConnectedSession {
-            link,
+            peer,
             network,
-            rate_control,
             pmk,
             supplicant_nonce,
             sequences,

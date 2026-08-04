@@ -80,6 +80,13 @@ The join port binds the PAC, retained RX frontier, fixed DMA/scratch storage
 and control TX in the production integration crate. HIL supplies station
 policy and diagnostic observer callbacks only; it no longer parses join RX,
 builds HE power fields or publishes Authentication/Association frames.
+`Esp32s31StaPeerPort` then owns both sides of the association-time peer
+transition: it installs scan-advertised HT/WMM/HE policy before the request,
+consumes the accepted response to program HE peer/AID/BSR and rate-control
+hardware, and returns `Esp32s31ConnectedStaPeer` by value. Initial and
+reconnected HIL paths consume that same owner and only report its value-only
+diagnostics; they do not recreate peer policy or a private connected-link
+model.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise

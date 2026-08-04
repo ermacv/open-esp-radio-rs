@@ -148,12 +148,14 @@ impl Esp32s31ScanTxState {
 /// completion may therefore use the same finite polling transaction as the
 /// pre-connected path without racing the connected runner. Re-entering a
 /// connected epoch consumes the returned control owner and reactivates IRQs.
-pub struct Esp32s31RunningScanTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
+pub struct Esp32s31RunningScanTx<'slot, 'interrupt, P, E, T, const BUFFER_SIZE: usize> {
     control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
     state: Esp32s31ScanTxState,
+    _interrupts: Option<&'interrupt MacInterruptSetup>,
 }
 
-impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31RunningScanTx<'slot, P, E, T, BUFFER_SIZE>
+impl<'slot, 'interrupt, P, E, T, const BUFFER_SIZE: usize>
+    Esp32s31RunningScanTx<'slot, 'interrupt, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -161,11 +163,21 @@ where
 {
     pub const fn new(
         control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
-        _interrupt_setup: &MacInterruptSetup,
+        interrupt_setup: &'interrupt MacInterruptSetup,
     ) -> Self {
         Self {
             control,
             state: Esp32s31ScanTxState::new(),
+            _interrupts: Some(interrupt_setup),
+        }
+    }
+
+    #[cfg(test)]
+    const fn new_for_test(control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>) -> Self {
+        Self {
+            control,
+            state: Esp32s31ScanTxState::new(),
+            _interrupts: None,
         }
     }
 
@@ -1061,27 +1073,24 @@ mod tests {
 
     fn running_scan_tx<'a>(
         slot: Pin<&'a mut TxSlot<256>>,
-    ) -> Esp32s31RunningScanTx<'a, ScanTxPower, fn() -> u32, ScanTxTimer, 256> {
+    ) -> Esp32s31RunningScanTx<'a, 'static, ScanTxPower, fn() -> u32, ScanTxTimer, 256> {
         fn entropy() -> u32 {
             0x1234_5678
         }
-        Esp32s31RunningScanTx {
-            control: Esp32s31ControlTx::new(
-                WifiTxResources {
-                    slot,
-                    policy: StaTxRuntimePolicy::vendor_defaults(),
-                    power: ScanTxPower,
-                    entropy,
-                    timer: ScanTxTimer::default(),
-                },
-                ControlTxConfig {
-                    unicast_attempt_limit: 2,
-                    completion_timeout_us: 10,
-                    poll_interval_us: 1,
-                },
-            ),
-            state: Esp32s31ScanTxState::new(),
-        }
+        Esp32s31RunningScanTx::new_for_test(Esp32s31ControlTx::new(
+            WifiTxResources {
+                slot,
+                policy: StaTxRuntimePolicy::vendor_defaults(),
+                power: ScanTxPower,
+                entropy,
+                timer: ScanTxTimer::default(),
+            },
+            ControlTxConfig {
+                unicast_attempt_limit: 2,
+                completion_timeout_us: 10,
+                poll_interval_us: 1,
+            },
+        ))
     }
 
     fn scan_probe_request() -> Esp32s31ScanProbeRequest<'static> {

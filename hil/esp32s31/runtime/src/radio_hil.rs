@@ -1052,8 +1052,9 @@ type RunningScanRx = Esp32s31RunningScanRx<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
-type RunningScanTx = Esp32s31RunningScanTx<
+type RunningScanTx<'interrupt> = Esp32s31RunningScanTx<
     'static,
+    'interrupt,
     PhyTxTargetPowerProfile,
     fn() -> u32,
     EmbassyWifiTxTimer,
@@ -5591,7 +5592,7 @@ async fn qualify_disconnected_rx_restart(
         .control
         .take()
         .expect("connected teardown returned the ordinary TX owner");
-    let mut tx: RunningScanTx = RunningScanTx::new(control, interrupt_setup);
+    let mut tx: RunningScanTx<'_> = RunningScanTx::new(control, interrupt_setup);
     tx.begin_scan();
     match tx
         .transmit_probe_request(

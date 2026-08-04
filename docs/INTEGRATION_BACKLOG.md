@@ -275,8 +275,9 @@ The first reconnect seam is now production-owned:
 - `Esp32s31RunningScanTx` now consumes the ordinary descriptor returned by
   connected teardown only after both CPU and peripheral IRQ routes are
   quiesced; its public constructor requires a borrow of the returned
-  `MacInterruptSetup`, so an active IRQ epoch cannot accidentally select the
-  polling contract. It shares the cold path's fail-closed Probe Request
+  `MacInterruptSetup` and retains that borrow for the complete TX-owner
+  lifetime, so an active IRQ epoch cannot accidentally select the polling
+  contract. It shares the cold path's fail-closed Probe Request
   classifier, returns the exact `Esp32s31ControlTx` for Association, and
   disables further active attempts after a safe passive-fallback edge. Host
   tests cover owner return and fallback. HIL published a real same-channel

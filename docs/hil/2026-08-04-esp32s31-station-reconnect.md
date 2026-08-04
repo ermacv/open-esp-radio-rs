@@ -102,12 +102,29 @@ The initial cold scan runs under `StaCandidateScanService` and the production
 across the complete channel order 6, 1--5, 7--13, returned that token after
 candidate selection, and only then crossed `into_running`. The production
 executor owns mandatory RX-stop cleanup after every bounded dwell and its host
-tests also cover a drain failure followed by stop and stop-failure precedence.
+tests also cover a drain failure followed by stop, stop-failure precedence and
+a fatal active-probe failure followed by stop. Passive fallback is now allowed
+only when the control-TX error proves that the descriptor owner is quiescent;
+reset-required or uncertain TX ownership returns to the lifecycle instead.
 `Esp32s31ScanRx` additionally retained the descriptor capability through
 `Prepared -> Live -> Halted`, recycled completed prefixes without the former
 full-ring mask, and transferred the exact halted ring into Authentication.
 `RadioHilJoinRx::Initial` and both raw-address recovery loops were absent from
-this image. All 13 board channel transactions completed without a scan-service
-failure in 5,641 ms. This qualifies the shared transaction/RX owners and HIL
-cold port, not production placement of cold PHY/TX, a running port or a rescan
-after AP loss.
+this image. `Esp32s31ScanPhy` carried the persistent PHY state, platform,
+delay and observer outside HIL. `Esp32s31ColdScanTx` carried the control
+descriptor, TSF/interrupt preparation and passive-fallback decision; the old
+HIL Probe Request helper and raw queue cleanup were absent. Runtime CRC32
+`9770bd1d` passed placement and autonomous-source audits; all 13 board channel
+transactions completed without a scan-service failure in 5,620 ms.
+
+The first generation then supplied unplanned but valid failure-path evidence:
+Association returned AID 24, the first WPA2 Message 1 wait expired after its
+bounded 3,000 ms deadline, and the lifecycle retained the join owner across a
+100 ms `AttemptFailed { stage: Security }` backoff. Attempt two reused that
+owner, associated with AID 24 and completed M3/M4 at replay 6. The host-driven
+epoch stop then completed same-peer reassociation (AID 24) and WPA2 at replay
+8 before entering the second connected epoch. The overall
+`station_reconnect=PASS` result therefore covers a real security retry as well
+as the controlled reconnect. It does not replace deterministic injected-fault
+qualification. This qualifies the shared transaction and cold PHY/RX/TX
+owners, not a running scan port or a rescan after AP loss.

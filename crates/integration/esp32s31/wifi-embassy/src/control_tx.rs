@@ -82,6 +82,30 @@ pub enum ControlTxError {
     RadioResetRequired(TxResetReason),
 }
 
+impl ControlTxError {
+    /// Whether this failure proves that no ordinary TX publication remains
+    /// owned by hardware.
+    ///
+    /// A cold active scan may safely continue as passive only for these
+    /// terminal or pre-publication failures. `Busy`, an unclassified low-level
+    /// `Tx` error and `RadioResetRequired` retain uncertain or quarantined
+    /// descriptor ownership and must instead return to the radio lifecycle.
+    pub const fn retains_quiescent_owner(self) -> bool {
+        matches!(
+            self,
+            Self::ProbeEncode(_)
+                | Self::StationEncode(_)
+                | Self::AssociationEncode(_)
+                | Self::UnsupportedHeOrdinaryMpdu
+                | Self::BufferSizeOverflow
+                | Self::DeadlineOverflow
+                | Self::Retry(_)
+                | Self::HardwareTimeout
+                | Self::CollisionLimit
+        )
+    }
+}
+
 impl From<OrdinaryTxError> for ControlTxError {
     fn from(error: OrdinaryTxError) -> Self {
         match error {
@@ -635,6 +659,17 @@ mod tests {
             ))
         );
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
+    }
+
+    #[test]
+    fn passive_fallback_requires_a_proven_quiescent_tx_owner() {
+        assert!(ControlTxError::HardwareTimeout.retains_quiescent_owner());
+        assert!(ControlTxError::CollisionLimit.retains_quiescent_owner());
+        assert!(!ControlTxError::Busy.retains_quiescent_owner());
+        assert!(
+            !ControlTxError::RadioResetRequired(TxResetReason::ExecutorDeadline)
+                .retains_quiescent_owner()
+        );
     }
 
     #[test]

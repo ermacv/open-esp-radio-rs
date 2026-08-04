@@ -65,8 +65,7 @@ use open_esp_radio::{
             rate_schedule::schedule_state,
             registers::{
                 MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
-                RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, TX_Q_CONTROL,
-                TX_Q_ENABLE_VALID,
+                RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR,
             },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
@@ -121,6 +120,10 @@ use open_esp_radio::{
                 Esp32s31ScanObservationContext, Esp32s31ScanRx, Esp32s31ScanRxError,
                 Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanPort,
             },
+            sta_scan_target::{
+                Esp32s31ColdScanTx, Esp32s31ScanPhy, Esp32s31ScanProbeReport,
+                Esp32s31ScanProbeRequest,
+            },
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol,
                 Esp32s31StagedRxQueue,
@@ -141,7 +144,6 @@ use open_esp_radio::{
     wifi::ieee80211::{
         data::{DataInterfaceRole, decapsulate_data},
         he::HeDcmConstellation,
-        management::ProbeRequest,
         scan::best_matching_ssid,
         station::{
             AssociationRequest, HeUlMuPowerCapability, HeUlMuPowerCapabilityError,
@@ -804,6 +806,13 @@ type ControlTx = Esp32s31ControlTx<
     EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
+type ScanTx = Esp32s31ColdScanTx<
+    'static,
+    PhyTxTargetPowerProfile,
+    fn() -> u32,
+    EmbassyWifiTxTimer,
+    TX_BUFFER_SIZE,
+>;
 
 struct TxStorage {
     control: Option<ControlTx>,
@@ -836,6 +845,19 @@ impl TxStorage {
         self.control
             .as_mut()
             .expect("control TX owner has not moved into the connected runner")
+    }
+
+    fn take_control(&mut self) -> ControlTx {
+        self.control
+            .take()
+            .expect("control TX owner is already held by another phase")
+    }
+
+    fn restore_control(&mut self, control: ControlTx) {
+        assert!(
+            self.control.replace(control).is_none(),
+            "control TX owner cannot be restored over a live phase"
+        );
     }
 
     fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
@@ -2825,50 +2847,6 @@ fn log_open_rf_boundary_mmio(source: &str) {
         read_diagnostic_mmio(0x2010_08a4),
         read_diagnostic_mmio(0x2010_0c04),
     ));
-}
-
-async fn transmit_probe_request(
-    mmio: &mut RadioRegisters,
-    storage: &mut TxStorage,
-    source: [u8; 6],
-    sequence_number: u16,
-) -> Result<TxCompletion, ActiveScanTxError> {
-    // The cold MAC transaction has already programmed the interface
-    // addresses, HE broadcast-RU policy, TX/RX timing and response-rate
-    // tables from complete blob call graphs. Do not replay the old
-    // HIL_VENDOR_STA_START_DIFF register snapshot here:
-    //
-    // - 0x2010_4c54/58 are WDEVDELAY1/WDEVDELAY and complete
-    //   `hal_he_set_mac_delay` derives their high fields from
-    //   `_random() % 11`; the former fixed images merely froze slot nine.
-    // - 0x2010_448c is canonically PHY_I2C.I2C_TX_RATE_CONTROL according to
-    //   complete rev0 ROM PHY initialization, not a MAC state-clear word.
-    // - 0x2010_4c30 is the read-only WDEV_INT1_RAW diagnostic word named by
-    //   complete `libpp.a[hal_debug.o]::print_isr_regs`.
-    //
-    // SOURCE: `_oracles/libpp.a[hal_mac.o]::mac_txrx_init`,
-    // `_oracles/libpp.a[hal_mac_ctl.o]::hal_he_set_mac_delay`,
-    // `_oracles/libpp.a[hal_debug.o]::print_isr_regs`, and complete rev0 ROM
-    // `phy_i2c_txrate_init`. Cold MAC initialization already owns interface
-    // address publication. The only live STA-start operation here is the
-    // generated-PAC transaction for complete `hal_set_sta_tsf(0)` followed by
-    // complete `hal_enable_sta_tsf`.
-    mmio.start_station_tsf(0);
-    storage
-        .control_mut()
-        .transmit_probe_request(
-            mmio,
-            ProbeRequest {
-                source,
-                sequence_number,
-                ssid: b"",
-                supported_rates: &PROBE_REQUEST_RATES,
-            },
-            Some(sequence_number as u8),
-            Some(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
-        )
-        .await
-        .map_err(Into::into)
 }
 
 async fn transmit_open_authentication<M: Mmio + TxHardware>(
@@ -7100,24 +7078,21 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
 /// Borrowed owner for the currently qualified cold scan transaction.
 ///
 /// This is deliberately not the future running-rescan owner. It retains the
-/// cold PAC view and the staged raw RX ring used before the one-way
-/// `ColdRadioRegisters::into_running` transition.
+/// cold PAC view and production polling-only PHY/RX/TX owners used before the
+/// one-way `ColdRadioRegisters::into_running` transition.
 struct RadioHilColdScanOwner<'hardware, 'ssid> {
-    state: &'hardware mut PhyColdState,
-    platform: &'hardware mut EspHalRadioPeripheral,
+    phy: Esp32s31ScanPhy<'hardware, EspHalRadioPeripheral, HilPhyObserver, EmbassyPhyDelay>,
     mmio: ColdRadioRegisters,
     storage: &'static RxStorage,
     rx: ScanRx,
     tx_storage: &'static mut TxStorage,
+    tx: ScanTx,
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
     target_ssid: &'ssid [u8],
     raw_frames: u32,
     probe_responses: u32,
-    tx_completions: u32,
-    tx_failures: u32,
-    active_tx_available: bool,
     ring_epochs: u32,
     channel_records_before: usize,
     channel_frames_before: u32,
@@ -7127,6 +7102,7 @@ struct RadioHilColdScanOwner<'hardware, 'ssid> {
 enum RadioHilColdScanPortError {
     ChannelSwitch,
     Rx(Esp32s31ScanRxError),
+    Tx(ActiveScanTxError),
 }
 
 struct RadioHilColdScanFrameObserver<'a> {
@@ -7189,9 +7165,7 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
             self.scan_table.clear();
             self.raw_frames = 0;
             self.probe_responses = 0;
-            self.tx_completions = 0;
-            self.tx_failures = 0;
-            self.active_tx_available = true;
+            self.tx.begin_scan();
             self.ring_epochs = 0;
             self.channel_records_before = 0;
             self.channel_frames_before = 0;
@@ -7205,14 +7179,10 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
             let channel = context.channel;
-            if let Err(error) = switch_channel_with_mac_restart(
-                self.state,
-                u16::from(channel),
-                0,
-                self.platform,
-                &mut self.mmio,
-            )
-            .await
+            if let Err(error) = self
+                .phy
+                .switch_channel(u16::from(channel), 0, &mut self.mmio)
+                .await
             {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=scan-channel \
@@ -7246,59 +7216,62 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
     fn transmit_active_probe(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = Esp32s31ActiveProbeOutcome> + '_ {
+    ) -> impl Future<Output = Result<Esp32s31ActiveProbeOutcome, Self::Error>> + '_ {
         async move {
             let channel = context.channel;
-            if self.active_tx_available {
-                self.mmio.clear_mac_interrupts(u32::MAX);
-                match transmit_probe_request(
+            match self
+                .tx
+                .transmit_probe_request(
                     &mut self.mmio,
-                    self.tx_storage,
-                    self.station_address,
-                    u16::from(channel),
+                    Esp32s31ScanProbeRequest {
+                        source: self.station_address,
+                        sequence_number: u16::from(channel),
+                        ssid: b"",
+                        supported_rates: &PROBE_REQUEST_RATES,
+                        current_channel: Some(channel),
+                        descriptor_capacity: Some(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
+                    },
                 )
                 .await
-                {
-                    Ok(completion) => {
-                        self.tx_completions = self.tx_completions.saturating_add(1);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL stage=probe-request-tx channel={channel} \
-                             status={} alternate={} trigger={} primary={:#010x} alternate_word={:#010x}",
-                            completion.status,
-                            completion.used_alternate,
-                            completion.trigger_flow,
-                            completion.primary_word,
-                            completion.alternate_word,
-                        ));
-                        if completion.status != 0 {
-                            self.tx_failures = self.tx_failures.saturating_add(1);
-                            self.active_tx_available = false;
-                            emergency_log(format_args!(
-                                "OPEN_RADIO_PHY_HIL stage=passive-fallback \
-                                 channel={channel} tx_status={}",
-                                 completion.status,
-                            ));
-                            return Esp32s31ActiveProbeOutcome::PassiveFallback;
-                        }
-                    }
-                    Err(error) => {
-                        self.tx_failures = self.tx_failures.saturating_add(1);
-                        self.active_tx_available = false;
-                        let control = self.mmio.read32(TX_Q_CONTROL[0]);
-                        self
-                            .mmio
-                            .write32(TX_Q_CONTROL[0], control & !TX_Q_ENABLE_VALID);
-                        Mmio::fence(&mut self.mmio);
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL stage=passive-fallback \
-                             channel={channel} tx_error={error:?}"
-                        ));
-                        return Esp32s31ActiveProbeOutcome::PassiveFallback;
-                    }
+            {
+                Ok(Esp32s31ScanProbeReport::Transmitted(completion)) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL stage=probe-request-tx channel={channel} \
+                         status={} alternate={} trigger={} primary={:#010x} alternate_word={:#010x}",
+                        completion.status,
+                        completion.used_alternate,
+                        completion.trigger_flow,
+                        completion.primary_word,
+                        completion.alternate_word,
+                    ));
+                    Ok(Esp32s31ActiveProbeOutcome::Transmitted)
                 }
-                Esp32s31ActiveProbeOutcome::Transmitted
-            } else {
-                Esp32s31ActiveProbeOutcome::PassiveFallback
+                Ok(Esp32s31ScanProbeReport::PassiveAfterCompletion(completion)) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL stage=passive-fallback \
+                         channel={channel} tx_status={}",
+                        completion.status,
+                    ));
+                    Ok(Esp32s31ActiveProbeOutcome::PassiveFallback)
+                }
+                Ok(Esp32s31ScanProbeReport::PassiveAfterError(error)) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL stage=passive-fallback \
+                         channel={channel} tx_error={error:?}"
+                    ));
+                    Ok(Esp32s31ActiveProbeOutcome::PassiveFallback)
+                }
+                Ok(Esp32s31ScanProbeReport::PassiveWithoutAttempt) => {
+                    Ok(Esp32s31ActiveProbeOutcome::PassiveFallback)
+                }
+                Err(error) => {
+                    let error = ActiveScanTxError::Control(error);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=active-probe-owner \
+                         channel={channel} tx_error={error:?}"
+                    ));
+                    Err(RadioHilColdScanPortError::Tx(error))
+                }
             }
         }
     }
@@ -7501,22 +7474,20 @@ async fn run_promiscuous_rx_hil(
     ));
 
     let scan_started = Instant::now();
+    let scan_tx = ScanTx::new(tx_storage.take_control());
     let scan_owner = RadioHilColdScanOwner {
-        state,
-        platform,
+        phy: Esp32s31ScanPhy::new(state, platform, HilPhyObserver),
         mmio: cold_mmio,
         storage,
         rx: scan_rx,
         tx_storage,
+        tx: scan_tx,
         scan_table,
         scan_frame,
         station_address,
         target_ssid: network_credentials.ssid(),
         raw_frames: 0,
         probe_responses: 0,
-        tx_completions: 0,
-        tx_failures: 0,
-        active_tx_available: true,
         ring_epochs: 0,
         channel_records_before: 0,
         channel_frames_before: 0,
@@ -7570,25 +7541,27 @@ async fn run_promiscuous_rx_hil(
         }
     };
     let RadioHilColdScanOwner {
-        state,
-        platform,
+        phy,
         mmio: cold_mmio,
         storage,
         rx: scan_rx,
         tx_storage,
+        tx: scan_tx,
         scan_table,
         scan_frame,
         station_address,
         target_ssid: _,
         raw_frames,
         probe_responses,
-        tx_completions,
-        tx_failures,
-        active_tx_available: _,
         ring_epochs,
         channel_records_before: _,
         channel_frames_before: _,
     } = scan_owner;
+    let (state, platform, _observer) = phy.into_parts();
+    let (control_tx, tx_summary) = scan_tx.into_parts();
+    tx_storage.restore_control(control_tx);
+    let tx_completions = tx_summary.completions;
+    let tx_failures = tx_summary.failures;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=OBSERVE stage=active-scan-timing channels={} elapsed_ms={}",
         STA_SCAN_CHANNEL_COUNT,

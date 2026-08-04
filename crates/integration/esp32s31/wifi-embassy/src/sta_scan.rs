@@ -36,6 +36,7 @@ pub enum Esp32s31StaScanError<E> {
     Begin(E),
     ChannelSwitch(E),
     ReceiveStart(E),
+    ActiveProbe(E),
     ReceiveObserve(E),
     DwellWait(E),
     ReceiveStop(E),
@@ -95,7 +96,7 @@ pub trait Esp32s31StaScanPort {
     fn transmit_active_probe(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = Esp32s31ActiveProbeOutcome> + '_;
+    ) -> impl Future<Output = Result<Esp32s31ActiveProbeOutcome, Self::Error>> + '_;
 
     fn observe_receive(
         &mut self,
@@ -183,16 +184,20 @@ where
                 };
             }
 
-            let _probe = owner.transmit_active_probe(context).await;
-            let mut dwell_failure = None;
-            for _ in 0..self.config.dwell_ticks() {
-                if let Err(error) = owner.observe_receive(context) {
-                    dwell_failure = Some(Esp32s31StaScanError::ReceiveObserve(error));
-                    break;
-                }
-                if let Err(error) = owner.wait_dwell_tick().await {
-                    dwell_failure = Some(Esp32s31StaScanError::DwellWait(error));
-                    break;
+            let mut transaction_failure = match owner.transmit_active_probe(context).await {
+                Ok(_probe) => None,
+                Err(error) => Some(Esp32s31StaScanError::ActiveProbe(error)),
+            };
+            if transaction_failure.is_none() {
+                for _ in 0..self.config.dwell_ticks() {
+                    if let Err(error) = owner.observe_receive(context) {
+                        transaction_failure = Some(Esp32s31StaScanError::ReceiveObserve(error));
+                        break;
+                    }
+                    if let Err(error) = owner.wait_dwell_tick().await {
+                        transaction_failure = Some(Esp32s31StaScanError::DwellWait(error));
+                        break;
+                    }
                 }
             }
 
@@ -205,7 +210,7 @@ where
                     error: Esp32s31StaScanError::ReceiveStop(error),
                 };
             }
-            if let Some(error) = dwell_failure {
+            if let Some(error) = transaction_failure {
                 return StaScanStepOutcome::Failed { owner, error };
             }
 
@@ -642,12 +647,17 @@ mod tests {
         fn transmit_active_probe(
             &mut self,
             context: StaScanChannelContext<Self::Channel>,
-        ) -> impl Future<Output = Esp32s31ActiveProbeOutcome> + '_ {
+        ) -> impl Future<Output = Result<Esp32s31ActiveProbeOutcome, Self::Error>> + '_ {
             self.actions.push(Action::Probe(context.channel));
-            ready(if self.probe_fallback {
+            let outcome = if self.probe_fallback {
                 Esp32s31ActiveProbeOutcome::PassiveFallback
             } else {
                 Esp32s31ActiveProbeOutcome::Transmitted
+            };
+            ready(if self.fail == Some(Action::Probe(context.channel)) {
+                Err(Action::Probe(context.channel))
+            } else {
+                Ok(outcome)
             })
         }
 
@@ -755,6 +765,30 @@ mod tests {
     }
 
     #[test]
+    fn fatal_probe_failure_still_closes_the_live_rx_epoch() {
+        let mut owner = Owner::new(17);
+        owner.fail = Some(Action::Probe(3));
+        let mut service = StaCandidateScanService::new(backend());
+
+        let exit = block_on(service.run(owner, &[3]));
+        let StaCandidateScanExit::Failed { owner, error, .. } = exit else {
+            panic!("fatal active-probe failure must be returned")
+        };
+
+        assert_eq!(error, Esp32s31StaScanError::ActiveProbe(Action::Probe(3)));
+        assert_eq!(
+            owner.actions,
+            [
+                Action::Begin,
+                Action::Switch(3),
+                Action::Start(3),
+                Action::Probe(3),
+                Action::Stop(3),
+            ]
+        );
+    }
+
+    #[test]
     fn dwell_failure_still_stops_rx_and_returns_the_exact_owner() {
         let mut owner = Owner::new(99);
         owner.fail = Some(Action::Observe(4));
@@ -813,7 +847,8 @@ mod tests {
             fn transmit_active_probe(
                 &mut self,
                 context: StaScanChannelContext<Self::Channel>,
-            ) -> impl Future<Output = Esp32s31ActiveProbeOutcome> + '_ {
+            ) -> impl Future<Output = Result<Esp32s31ActiveProbeOutcome, Self::Error>> + '_
+            {
                 self.0.transmit_active_probe(context)
             }
 

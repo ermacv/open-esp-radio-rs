@@ -11,6 +11,7 @@ use open_esp_radio_ieee80211::{
         DataDecapError, DataInterfaceRole, EthernetFrameParts, amsdu_subframes,
         plan_data_decapsulation,
     },
+    mac_service::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata},
     ndpa::{HeNdpa, HeNdpaError},
     station::StaRxDuplicateFilter,
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
@@ -19,8 +20,8 @@ use open_esp_radio_ieee80211::{
 
 use crate::{
     rx::{
-        PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxSegment, extract_control,
-        extract_management, view_ccmp_data,
+        PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, RxSegment,
+        decode_normalized_rx_metadata, extract_control, extract_management, view_ccmp_data,
     },
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
@@ -73,7 +74,10 @@ pub struct ConnectedRxReorderKey {
 /// transfer them into storage that it owns before returning.
 #[derive(Clone, Copy, Debug)]
 pub enum ConnectedRxEvent<'frame> {
-    Beacon(StaBeaconObservation),
+    Beacon {
+        observation: StaBeaconObservation,
+        metadata: MacRxMetadata<RxPhyInfo>,
+    },
     Trigger {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
@@ -91,6 +95,7 @@ pub enum ConnectedRxEvent<'frame> {
         frame: EthernetFrameParts<'frame>,
         raw: &'frame [u8],
         amsdu: bool,
+        metadata: MacRxMetadata<RxPhyInfo>,
     },
 }
 
@@ -121,7 +126,7 @@ impl ConnectedRxEvent<'_> {
     /// staged RX allocation.
     pub const fn control(self) -> Option<ConnectedRxControlEvent> {
         match self {
-            Self::Beacon(observation) => Some(ConnectedRxControlEvent::Beacon(observation)),
+            Self::Beacon { observation, .. } => Some(ConnectedRxControlEvent::Beacon(observation)),
             Self::Trigger {
                 common,
                 schedule,
@@ -301,7 +306,13 @@ impl ConnectedRxDispatcher {
                     Ok(observation) => observation,
                     Err(error) => return rejected(protection, ConnectedRxError::Beacon(error)),
                 };
-                sink.publish(ConnectedRxEvent::Beacon(observation));
+                let Some(metadata) = decode_normalized_rx_metadata(raw) else {
+                    return rejected(protection, ConnectedRxError::Rx(RxError::Metadata));
+                };
+                sink.publish(ConnectedRxEvent::Beacon {
+                    observation,
+                    metadata,
+                });
                 ConnectedRxDispatch::Beacon
             }
             TRIGGER_FRAME_CONTROL => {
@@ -393,6 +404,13 @@ impl ConnectedRxDispatcher {
             Ok(data) => data,
             Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
         };
+        let Some(mut metadata) = decode_normalized_rx_metadata(raw) else {
+            return rejected(protection, ConnectedRxError::Rx(RxError::Metadata));
+        };
+        // `view_ccmp_data` admits only the successful S31 RX state and rejects
+        // the dedicated MIC-failure state before exposing plaintext.
+        metadata.crypto =
+            MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
         let mpdu = data.mpdu;
         if data.frame.mpdu.length < 24 || mpdu[10..16] != self.config.bssid {
             return ConnectedRxDispatch::Ignored;
@@ -418,6 +436,7 @@ impl ConnectedRxDispatcher {
             data.frame.payload_length,
         ) {
             Ok(plan) => {
+                metadata.amsdu = MacRxEvidence::ProtocolValidated(false);
                 let Some(payload_end) = plan.payload_offset.checked_add(plan.payload_length) else {
                     return rejected(
                         protection,
@@ -439,6 +458,7 @@ impl ConnectedRxDispatcher {
                     },
                     raw,
                     amsdu: false,
+                    metadata,
                 });
                 ConnectedRxDispatch::Data {
                     ethernet_frames: 1,
@@ -456,6 +476,7 @@ impl ConnectedRxDispatcher {
                     Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
                 };
                 let mut count = 0_u8;
+                metadata.amsdu = MacRxEvidence::ProtocolValidated(true);
                 for subframe in subframes {
                     let subframe = match subframe {
                         Ok(subframe) => subframe,
@@ -470,6 +491,7 @@ impl ConnectedRxDispatcher {
                         },
                         raw,
                         amsdu: true,
+                        metadata,
                     });
                     count = count.saturating_add(1);
                 }
@@ -544,18 +566,29 @@ mod tests {
     #[derive(Default)]
     struct RecordingSink {
         beacons: Vec<StaBeaconObservation>,
+        beacon_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         ethernet: Vec<Vec<u8>>,
+        ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         block_ack: Vec<BlockAckAction>,
     }
 
     impl ConnectedRxSink for RecordingSink {
         fn publish(&mut self, event: ConnectedRxEvent<'_>) {
             match event {
-                ConnectedRxEvent::Beacon(observation) => self.beacons.push(observation),
-                ConnectedRxEvent::Ethernet { frame, .. } => {
+                ConnectedRxEvent::Beacon {
+                    observation,
+                    metadata,
+                } => {
+                    self.beacons.push(observation);
+                    self.beacon_metadata.push(metadata);
+                }
+                ConnectedRxEvent::Ethernet {
+                    frame, metadata, ..
+                } => {
                     let mut bytes = std::vec![0; frame.length()];
                     frame.copy_to(&mut bytes).unwrap();
                     self.ethernet.push(bytes);
+                    self.ethernet_metadata.push(metadata);
                 }
                 ConnectedRxEvent::BlockAck { action, .. } => self.block_ack.push(action),
                 ConnectedRxEvent::Trigger { .. } | ConnectedRxEvent::Ndpa { .. } => {}
@@ -600,6 +633,14 @@ mod tests {
         assert_eq!(sink.beacons[0].interval_tu, 100);
         assert!(sink.beacons[0].tim.unwrap().unicast_buffered);
         assert!(sink.beacons[0].tim.unwrap().group_buffered);
+        assert_eq!(
+            sink.beacon_metadata[0].s_mpdu,
+            MacRxEvidence::HardwareObserved(true)
+        );
+        assert_eq!(
+            sink.beacon_metadata[0].ampdu,
+            MacRxEvidence::ProtocolValidated(false)
+        );
     }
 
     fn config() -> ConnectedRxConfig {
@@ -626,6 +667,9 @@ mod tests {
     }
 
     fn set_tail(storage: &mut [u8; 192], signal_length: usize) {
+        // Synthetic connected frames are standalone MPDUs unless a test
+        // explicitly overrides the hardware `cur_single_mpdu` bit.
+        storage[0x1f] = 1;
         storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
             &(((signal_length + 4) as u32) << 16 | signal_length as u32).to_le_bytes(),
         );
@@ -672,6 +716,22 @@ mod tests {
         assert_eq!(&sink.ethernet[0][6..12], &SOURCE);
         assert_eq!(&sink.ethernet[0][12..14], &0x0800_u16.to_be_bytes());
         assert_eq!(&sink.ethernet[0][14..], &PAYLOAD);
+        assert_eq!(
+            sink.ethernet_metadata[0].crypto,
+            MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified)
+        );
+        assert_eq!(
+            sink.ethernet_metadata[0].amsdu,
+            MacRxEvidence::ProtocolValidated(false)
+        );
+        assert_eq!(
+            sink.ethernet_metadata[0].s_mpdu,
+            MacRxEvidence::HardwareObserved(true)
+        );
+        assert_eq!(
+            sink.ethernet_metadata[0].ampdu,
+            MacRxEvidence::ProtocolValidated(false)
+        );
 
         storage[FRAME_OFFSET + 1] |= 0x08;
         assert_eq!(
@@ -740,6 +800,15 @@ mod tests {
             }
         );
         assert_eq!(sink.ethernet.len(), 2);
+        assert!(sink.ethernet_metadata.iter().all(|metadata| {
+            metadata.amsdu == MacRxEvidence::ProtocolValidated(true)
+                && metadata.s_mpdu == MacRxEvidence::HardwareObserved(true)
+                && metadata.ampdu == MacRxEvidence::ProtocolValidated(false)
+                && metadata.crypto
+                    == MacRxEvidence::HardwareObserved(
+                        MacRxCryptoStatus::DecryptedAndIntegrityVerified,
+                    )
+        }));
     }
 
     #[test]

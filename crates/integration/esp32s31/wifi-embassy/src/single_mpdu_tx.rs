@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
     tx_runtime::{StaTxRuntimePolicy, UnicastRetryError},
 };
+use open_esp_radio_ieee80211::mac_service::{MacTxPlan, MacTxQueueState};
 use open_esp_radio_ieee80211::station::{
     StaActionFrame, StaProtectedDataFrame, StaProtectedEthernetFrame, StaTxSequenceCounters,
     StationFrameError,
@@ -19,8 +20,9 @@ use open_esp_radio_ieee80211::station::{
 use open_esp_radio_ieee80211::station_power_save::{StaNullDataFrame, StaPowerManagement};
 
 pub use crate::ordinary_tx::{
-    EmbassyWifiTxTimer, OrdinaryTxOutcome as SingleMpduTxOutcome, TxResetReason, WifiTxEntropy,
-    WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+    EmbassyWifiTxTimer, OrdinaryTxOutcome as SingleMpduTxOutcome,
+    OrdinaryTxReport as SingleMpduTxReport, TxResetReason, WifiTxEntropy, WifiTxPowerPair,
+    WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
 };
 use crate::ordinary_tx::{
     OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE, TX_METADATA_SIZE,
@@ -33,11 +35,8 @@ pub struct SingleMpduTxConfig {
     pub station_address: [u8; 6],
     pub bssid: [u8; 6],
     pub peer_qos: bool,
-    pub rate: TxPhyRate,
-    /// Maximum number of hardware publications, including the first one.
-    pub attempt_limit: u8,
-    /// Executor watchdog for a publication whose interrupt is lost.
-    pub completion_timeout_us: u64,
+    /// Chip-independent exchange policy selected at the association handoff.
+    pub exchange: MacTxPlan<TxPhyRate>,
 }
 
 /// Protocol resources installed at the WPA2-to-connected TX handoff.
@@ -159,6 +158,10 @@ where
 
     pub const fn active(&self) -> bool {
         self.ordinary.active()
+    }
+
+    pub fn queue_state(&self) -> MacTxQueueState {
+        self.ordinary.queue_state()
     }
 
     pub const fn policy(&self) -> &StaTxRuntimePolicy {
@@ -287,10 +290,12 @@ where
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    queue: LegacyTxQueue::BestEffort,
-                    rate,
-                    attempt_limit: self.config.attempt_limit,
-                    completion_timeout_us: self.config.completion_timeout_us,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::BestEffort.access_category(),
+                        initial_rate: rate,
+                        publication_limit: self.config.exchange.publication_limit,
+                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                    },
                     hardware_mic_length,
                     hardware_key_selector: self.key.hardware_index(),
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
@@ -317,7 +322,7 @@ where
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
-        if matches!(self.config.rate, TxPhyRate::He(_)) {
+        if matches!(self.config.exchange.initial_rate, TxPhyRate::He(_)) {
             return Err(SingleMpduTxError::UnsupportedHeOrdinaryMpdu);
         }
         if ethernet.len() < 14 {
@@ -358,10 +363,7 @@ where
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    queue: LegacyTxQueue::BestEffort,
-                    rate: self.config.rate,
-                    attempt_limit: self.config.attempt_limit,
-                    completion_timeout_us: self.config.completion_timeout_us,
+                    exchange: self.config.exchange,
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: self.key.hardware_index(),
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
@@ -404,12 +406,14 @@ where
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    queue: LegacyTxQueue::Voice,
-                    rate: TxPhyRate::Legacy(
-                        open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
-                    ),
-                    attempt_limit: self.config.attempt_limit,
-                    completion_timeout_us: self.config.completion_timeout_us,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::Voice.access_category(),
+                        initial_rate: TxPhyRate::Legacy(
+                            open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                        ),
+                        publication_limit: self.config.exchange.publication_limit,
+                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                    },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
                     scheduler_priority: config.scheduler_priority,
@@ -450,12 +454,14 @@ where
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    queue: LegacyTxQueue::Voice,
-                    rate: TxPhyRate::Legacy(
-                        open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
-                    ),
-                    attempt_limit: self.config.attempt_limit,
-                    completion_timeout_us: self.config.completion_timeout_us,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::Voice.access_category(),
+                        initial_rate: TxPhyRate::Legacy(
+                            open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                        ),
+                        publication_limit: self.config.exchange.publication_limit,
+                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                    },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
@@ -496,6 +502,7 @@ mod tests {
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         tx::{LegacyRate, TxCompletion, TxSlot, TxSlotState},
     };
+    use open_esp_radio_ieee80211::mac_service::MacTxResult;
 
     use super::*;
 
@@ -657,9 +664,12 @@ mod tests {
                     station_address: [2, 3, 4, 5, 6, 7],
                     bssid: BSSID,
                     peer_qos: true,
-                    rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    attempt_limit,
-                    completion_timeout_us: 250_000,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::BestEffort.access_category(),
+                        initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                        publication_limit: attempt_limit,
+                        publication_timeout_micros: 250_000,
+                    },
                 },
             },
         )
@@ -674,10 +684,13 @@ mod tests {
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
 
+        assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
+
         assert_eq!(
             tx.start(&mut hardware, &ethernet()),
             Ok(WifiTxProgress::Pending)
         );
+        assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
         assert_eq!(hardware.publications, 1);
         hardware.completion = Some(completion(0));
         assert_eq!(
@@ -691,9 +704,12 @@ mod tests {
         );
         assert!(matches!(
             tx.take_last_outcome(),
-            Some(SingleMpduTxOutcome::Success(TxCompletion { status: 0, .. }))
+            Some(SingleMpduTxOutcome::Success(report))
+                if matches!(report.completion, Some(TxCompletion { status: 0, .. }))
+                    && report.status.attempts == 1
         ));
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+        assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
     }
 
     #[test]
@@ -872,6 +888,17 @@ mod tests {
             tx.ordinary.slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] & 0x08,
             0
         );
+        let report = tx
+            .take_last_outcome()
+            .expect("successful retried exchange")
+            .report();
+        assert_eq!(report.status.result, MacTxResult::Transmitted);
+        assert_eq!(report.status.attempts, 2);
+        assert_eq!(
+            report.status.final_rate,
+            TxPhyRate::Legacy(LegacyRate::Ofdm54M)
+        );
+        assert_eq!(report.status.acknowledged, Some(true));
     }
 
     #[test]
@@ -900,8 +927,12 @@ mod tests {
         );
         assert_eq!(tx.ordinary.timer.settled, 32);
         assert_eq!(
-            tx.take_last_outcome(),
-            Some(SingleMpduTxOutcome::HardwareTimeout)
+            tx.take_last_outcome()
+                .expect("terminal timeout report")
+                .report()
+                .status
+                .result,
+            MacTxResult::HardwareTimeout
         );
     }
 
@@ -933,8 +964,12 @@ mod tests {
             0
         );
         assert_eq!(
-            tx.take_last_outcome(),
-            Some(SingleMpduTxOutcome::CollisionLimit)
+            tx.take_last_outcome()
+                .expect("terminal collision report")
+                .report()
+                .status
+                .result,
+            MacTxResult::CollisionLimit
         );
     }
 
@@ -955,6 +990,7 @@ mod tests {
             ))
         );
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
+        assert_eq!(tx.queue_state(), MacTxQueueState::ResetRequired);
     }
 
     #[test]

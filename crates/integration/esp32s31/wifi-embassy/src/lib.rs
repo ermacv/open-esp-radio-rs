@@ -11,6 +11,8 @@ extern crate std;
 
 pub mod aggregate_tx;
 pub mod backend;
+#[cfg(target_arch = "riscv32")]
+pub mod cold_start;
 pub mod connected_control;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
@@ -21,6 +23,8 @@ pub mod embassy_rx;
 pub mod embassy_tx;
 pub mod link_monitor;
 mod ordinary_tx;
+#[cfg(target_arch = "riscv32")]
+pub mod phy_delay;
 pub mod preconnected_rx;
 pub mod runner;
 pub mod running_scan;
@@ -29,6 +33,9 @@ pub mod rx_reorder;
 pub mod rx_telemetry;
 pub mod scan_port;
 pub mod single_mpdu_tx;
+pub mod sta_attempt;
+#[cfg(target_arch = "riscv32")]
+pub mod sta_attempt_target;
 pub mod sta_join;
 pub mod sta_join_port;
 pub mod sta_peer_port;
@@ -37,8 +44,10 @@ pub mod sta_scan;
 pub mod sta_scan_target;
 pub mod sta_tx_epoch;
 pub mod staged_rx;
+pub mod station;
 pub mod station_epoch;
 pub mod station_power_save;
+mod station_tasks;
 pub mod wpa2;
 pub mod wpa2_port;
 

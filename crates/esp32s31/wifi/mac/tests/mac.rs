@@ -42,10 +42,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
         RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxError,
         RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError,
-        RxRingStopped, RxSegment, build_cold_ring, decode_rx_he_mu_sig_b, decode_rx_phy_info,
-        disable_receive, enable_receive, extract_ccmp_data, extract_control, extract_data,
-        extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
-        rearm_descriptor,
+        RxRingStopped, RxSegment, build_cold_ring, decode_normalized_rx_metadata,
+        decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive, enable_receive,
+        extract_ccmp_data, extract_control, extract_data, extract_management, first_segment_layout,
+        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor,
     },
     rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
@@ -59,6 +59,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
 };
 use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBNonMimoUser, HeMuSigBUser};
+use open_esp_radio_ieee80211::mac_service::{MacRxEvidence, MacRxMetadata};
 use open_esp_radio_ieee80211::trigger::{
     parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
@@ -3506,6 +3507,78 @@ fn rx_phy_info_matches_the_pinned_s31_public_metadata_layout() {
         })
     );
     assert_eq!(decode_rx_phy_info(&metadata[..0x25]), None);
+}
+
+#[test]
+fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[0] = (-47_i8) as u8;
+    metadata[1] = 0xeb;
+    metadata[4..8].copy_from_slice(&0x0040_5b4b_u32.to_le_bytes());
+    metadata[9..11].copy_from_slice(&0x1234_u16.to_le_bytes());
+    metadata[0x1c] = 6;
+    metadata[0x1f] = 0;
+    metadata[0x25] = 0x4f;
+
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata),
+        Some(MacRxMetadata {
+            channel: MacRxEvidence::HardwareObserved(6),
+            rate: MacRxEvidence::HardwareObserved(RxPhyInfo {
+                rate: 11,
+                bb_format: 4,
+                he_siga1: 0x0040_5b4b,
+                he_siga2: 0x1234,
+            }),
+            rssi_dbm: MacRxEvidence::HardwareObserved(-47),
+            crypto: MacRxEvidence::Unavailable,
+            s_mpdu: MacRxEvidence::HardwareObserved(false),
+            ampdu: MacRxEvidence::ProtocolValidated(true),
+            amsdu: MacRxEvidence::Unavailable,
+        })
+    );
+    assert_eq!(decode_normalized_rx_metadata(&metadata[..0x1c]), None);
+}
+
+#[test]
+fn normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[4..8].copy_from_slice(&(1_u32 << 27).to_le_bytes());
+    metadata[0x1c] = 11;
+    metadata[0x1f] = 0;
+    metadata[0x25] = 2 << 4;
+
+    let decoded = decode_normalized_rx_metadata(&metadata).unwrap();
+    assert_eq!(decoded.s_mpdu, MacRxEvidence::HardwareObserved(false));
+    assert_eq!(decoded.ampdu, MacRxEvidence::HardwareObserved(true));
+
+    metadata[4..8].fill(0);
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
+        MacRxEvidence::HardwareObserved(false)
+    );
+}
+
+#[test]
+fn normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_status() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[0x25] = 4 << 4;
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
+        MacRxEvidence::ProtocolValidated(true)
+    );
+
+    metadata[0x25] = 1 << 4;
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
+        MacRxEvidence::ProtocolValidated(false)
+    );
+
+    metadata[0x25] = 9 << 4;
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
+        MacRxEvidence::Unavailable
+    );
 }
 
 #[test]

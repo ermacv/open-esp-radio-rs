@@ -232,6 +232,10 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
+             - Benchmark UDP datagrams marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Connected beacons marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Benchmark UDP datagrams marked A-MPDU / not A-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - A-MPDU provenance hardware true/false, protocol true/false: `{}` / `{}`, `{}` / `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\n\
              {udp_sequence_report}\
              {rx_order_report}\
@@ -266,6 +270,19 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             rx.dropped,
             rx.he_mcs_histogram,
             rx.other_phy_frames,
+            rx.s_mpdu.s_mpdu_datagrams,
+            rx.s_mpdu.not_s_mpdu_datagrams,
+            rx.s_mpdu.unavailable_datagrams,
+            rx.s_mpdu.s_mpdu_beacons,
+            rx.s_mpdu.not_s_mpdu_beacons,
+            rx.s_mpdu.unavailable_beacons,
+            rx.ampdu.ampdu_datagrams,
+            rx.ampdu.not_ampdu_datagrams,
+            rx.ampdu.unavailable_datagrams,
+            rx.ampdu.hardware_ampdu_datagrams,
+            rx.ampdu.hardware_not_ampdu_datagrams,
+            rx.ampdu.protocol_ampdu_datagrams,
+            rx.ampdu.protocol_not_ampdu_datagrams,
             rx.buffer_full,
             rx.fifo_overflow,
             pipeline.service_calls,
@@ -363,7 +380,7 @@ fn print_help() {
          --payload <64..1472> UDP payload bytes (default 1200)\n\
          --port <port>      device UDP sink (default 4323)\n\
          --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
-         --phy <he20|ht40> expected RX vector (default he20)\n\n\
+         --phy <he20|ht20|ht40> expected RX vector (default he20)\n\n\
          Flash `cargo hil flash radio` and wait for DHCP first."
     );
 }
@@ -410,11 +427,15 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
                     options.expected_rx_format = 4;
                     options.phy = "he20";
                 }
+                "ht20" => {
+                    options.expected_rx_format = 2;
+                    options.phy = "ht20";
+                }
                 "ht40" => {
                     options.expected_rx_format = 2;
                     options.phy = "ht40";
                 }
-                _ => return Err("--phy must be he20 or ht40".into()),
+                _ => return Err("--phy must be he20, ht20 or ht40".into()),
             },
             other => return Err(format!("unknown RX option `{other}`").into()),
         }
@@ -460,5 +481,9 @@ mod tests {
         .unwrap();
         assert_eq!(options.rate_bps, 40_000_000);
         assert_eq!(options.expected_rx_format, 2);
+        let ht20 =
+            parse_options(&["192.168.178.141".into(), "--phy".into(), "ht20".into()]).unwrap();
+        assert_eq!(ht20.expected_rx_format, 2);
+        assert_eq!(ht20.phy, "ht20");
     }
 }

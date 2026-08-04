@@ -44,6 +44,7 @@ cargo hil scenarios
 cargo hil doctor
 cargo hil build radio
 cargo hil flash radio --port /dev/ttyACM0
+cargo hil station ap-loss --serial /dev/ttyACM0
 cargo hil station reconnect --serial /dev/ttyACM0
 cargo hil build udp-tx
 cargo hil traffic trigger <monitor-interface> --transmitter <bssid> --aid <aid>
@@ -75,10 +76,14 @@ named mode, so an old shell export cannot silently combine two HIL workloads.
 | `udp-tx` | `embassy-net` device-to-host UDP throughput | provide the configured UDP receiver |
 | `tcp-rx` | runtime-configured host-to-device TCP stream | `cargo hil traffic tcp-rx <device-ipv4>` |
 
-The `radio` path uses the production `StaJoinRunner` plus
-`Esp32s31StaJoinPort` for Open Authentication and Association,
-`Wpa2HandshakeRunner` for the WPA2 Message 1/3 exchange, and
-`Wpa2KeyInstallRunner` for typed PTK/GTK publication, Message 4 and rollback.
+The `radio` path uses one production `Esp32s31StaAttempt` for both the initial
+join and every reconnect. Its concrete target owner composes
+`StaJoinRunner`/`Esp32s31StaJoinPort` for Open Authentication and Association,
+`Esp32s31StaPeerPort` for the accepted peer, `Wpa2HandshakeRunner` for the WPA2
+Message 1/3 exchange, and `Wpa2KeyInstallRunner` for typed PTK/GTK publication,
+Message 4 and rollback. A failed finite phase returns the exact RX, TX,
+sequence and security owner to `StaLifecycleService`; HIL no longer carries a
+second phase sequencer or a reconnect-only implementation of those steps.
 `Esp32s31ControlTx` owns Probe, Authentication, Association, EAPOL and the
 protected bootstrap publication until it transfers the same pinned descriptor,
 EDCA state, calibrated power and executor adapters to `Esp32s31SingleMpduTx`.
@@ -105,8 +110,15 @@ shutdown, RX-DMA stop, TX return and PTK/GTK clear. HIL only reports the typed
 result and restores its network fixture. `Esp32s31MacInterruptEpoch` plus the
 ESP-HAL route now own stable PAC storage, CPU route activation/quiescence,
 hard-handler service and Embassy wake drain. HIL retains only handler
-observations, task placement and stop signals. A compact bounded task-stop
-acknowledgement/reset policy remains the next fixture/recovery boundary.
+observations, task placement and stop signals. Protocol v7 correlates each HIL
+cycle request with a reliable completion covering runner return, scan-owner
+return, fresh join and replacement connected-runner startup. The task-stop
+deadline is no longer HIL policy:
+`stop_esp32s31_connected_task_group` requests the fixture-defined task group,
+returns its exact stopped owner, and otherwise reports `ResetRequired`. HIL
+implements only the benchmark/protocol signals and maps that terminal outcome
+to evidence. Executing a complete platform radio reset from the returned
+reset-required frontier remains recovery work.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise
@@ -121,15 +133,35 @@ network data, but the HIL does not enable it or consume its doze permit. Actual
 modem sleep remains disabled until its complete PAC sleep/wakeup transaction
 is qualified.
 
-`cargo hil station reconnect` provisions credentials over HIL protocol v4 and
+`cargo hil station reconnect` provisions credentials over the current HIL
+protocol and
 requests one or more hardware-safe `WifiRunner` stops. `--cycles 3`, for
-example, requires three independently observed full running scans, fresh Open
-Authentication and Association/WPA2/connected epochs on selected same-SSID
-candidates. The stop has its own `Stopped` outcome and is converted by the
+example, requires three request-correlated typed completions covering the
+runner/teardown stop, returned scan owners, fresh Open Authentication and
+Association/WPA2, and the replacement connected runner on selected same-SSID
+candidates. Text output is diagnostic-only. The stop has its own `Stopped`
+outcome and is converted by the
 qualification adapter into the distinct `CycleRequested` edge; it is never
 reported as beacon loss. The outer lifecycle then enters its `RunningScan`
 owner with `refresh_candidate=1`. This qualifies repeated resource reuse and
 controlled rescan/re-authentication, not recovery after an AP disappears.
+`cargo hil station ap-loss` is the separate real peer-loss cell. It controls
+the repository HE20 hostapd fixture, requires reliable generation-zero
+`Connected` and `BeaconLoss` events, restores the AP, and accepts only a new
+generation-one `Connected` event. A guard restores the host interface to
+managed mode on every normal or error return.
+`cargo hil station ap-absence` keeps the same controlled AP down after the
+typed `BeaconLoss` edge. It then requires all three generation-one
+`AttemptFailed(CandidateSelection, NoCandidate)` events followed by the exact
+typed `RetryExhausted` edge. This tests the bounded outer policy rather than
+merely waiting for a timeout or matching UART text.
+`cargo hil station tx-fault` uses the dedicated
+`cargo hil flash station-tx-fault` image. It arms a one-shot fault only after a
+real connected network TX has published its descriptor, requires the
+production reset-required error plus the returned runner/task/RX frontier,
+and confirms that the TX slot remains quarantined. It then cold-resets the
+board and requires a fresh network-ready epoch against the same controlled AP.
+This does not claim that an in-place platform radio reset exists.
 The finite PHY/RX/TX/dwell/candidate transaction is composed by the reusable
 `Esp32s31ScanPort` for both the initial cold scan and later running rescans.
 The cold binding carries `ColdRadioRegisters`; the running binding carries the

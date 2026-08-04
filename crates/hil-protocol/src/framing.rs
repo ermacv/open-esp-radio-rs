@@ -261,8 +261,10 @@ impl Drop for FrameDecoder {
 mod tests {
     use super::*;
     use crate::{
-        Command, Completion, Direction, Envelope, FlowConfig, Ipv4Endpoint, SessionConfig,
-        StartupArtifactChunk, Transport,
+        Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
+        StartupArtifactChunk, StationAttemptFailureReason, StationDisconnectReason,
+        StationFailureStage, StationFaultClassification, StationFaultEvidence,
+        StationFaultInjection, StationLifecycleEvent, Transport,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -398,6 +400,72 @@ mod tests {
                     payload_bytes: 1_472,
                     offered_rate_bps: None,
                 }),
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn station_beacon_loss_generation_round_trips() {
+        let expected = Envelope::new(
+            7,
+            3,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+                generation: 4,
+                reason: StationDisconnectReason::BeaconLoss,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn station_retry_exhaustion_round_trips_without_text_markers() {
+        let expected = Envelope::new(
+            7,
+            4,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::RetryExhausted {
+                generation: 1,
+                attempts: 3,
+                stage: StationFailureStage::CandidateSelection,
+                reason: StationAttemptFailureReason::NoCandidate,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn station_fault_frontier_round_trips_with_request_identity() {
+        let expected = Envelope::new(
+            7,
+            5,
+            0,
+            91,
+            Event::StationFault(StationFaultEvidence {
+                injection: StationFaultInjection::ConnectedTxAfterPublication,
+                classification: StationFaultClassification::RadioResetRequired,
+                runner_returned: true,
+                executor_tasks_stopped: true,
+                rx_dma_stopped: true,
+                tx_owner_reset_required: true,
             }),
         );
         let mut encoder = FrameEncoder::new();

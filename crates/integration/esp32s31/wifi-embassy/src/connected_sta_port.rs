@@ -10,6 +10,7 @@ use core::pin::Pin;
 use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
+    capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher},
     rate_control::StaTxRatePolicy,
     rx::RxIngressConfig,
@@ -22,7 +23,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     he::HeDcmConstellation,
+    mac_service::{MacServiceCapabilities, MacTxPlan},
     station::{StaAssociationPhy, StaTxSequenceCounters},
+    wmm::WmmAccessCategory,
 };
 
 use crate::{
@@ -34,7 +37,10 @@ use crate::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_backend::ConnectedControlReceiver,
-    rx_reorder::{RxReorderCommandReceiver, RxReorderCommandSender, RxReorderFrameStorage},
+    rx_reorder::{
+        RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
+        RxReorderFrameStorage,
+    },
     rx_telemetry::RxPipelineCounters,
     single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
     sta_peer_port::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink},
@@ -77,6 +83,7 @@ pub struct Esp32s31ConnectedStaConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ConnectedStaConfigError {
     AggregateFrameLimit { limit: u8, capacity: usize },
+    RxBlockAckWindowExceedsStorage { window: u16, capacity: usize },
     ZeroUnicastAttemptLimit,
     PeerDoesNotSupportQos,
     TxBlockAck(TxBlockAckError),
@@ -132,9 +139,12 @@ impl Esp32s31ConnectedStaPlan {
             station_address: self.link.station_address,
             bssid: self.link.bssid,
             peer_qos: self.link.peer_qos,
-            rate: self.data_tx_rate,
-            attempt_limit: self.config.unicast_attempt_limit,
-            completion_timeout_us: self.config.completion_timeout_us,
+            exchange: MacTxPlan {
+                access_category: WmmAccessCategory::BestEffort,
+                initial_rate: self.data_tx_rate,
+                publication_limit: self.config.unicast_attempt_limit,
+                publication_timeout_micros: self.config.completion_timeout_us,
+            },
         }
     }
 
@@ -153,10 +163,31 @@ impl Esp32s31ConnectedStaPlan {
 pub struct Esp32s31ConnectedStaPort;
 
 impl Esp32s31ConnectedStaPort {
+    /// Return the portable service contract implemented by this production
+    /// ESP32-S31 adapter. HMAC policy can inspect this value without importing
+    /// PAC, DMA, interrupt or executor types.
+    pub const fn capabilities() -> MacServiceCapabilities {
+        ESP32S31_MAC_SERVICE_CAPABILITIES
+    }
+
     /// Validate all value policy before consuming the peer's rate-control
     /// owner, pairwise key, sequences or pinned descriptor storage.
     #[allow(clippy::result_large_err)]
     pub fn prepare<const AGGREGATE_SLOTS: usize>(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_with_storage::<AGGREGATE_SLOTS, RX_REORDER_BACKING_SLOT_COUNT>(peer, config)
+    }
+
+    /// Validate connected policy against the concrete TX aggregate and RX
+    /// reorder storage selected by the board composition.
+    ///
+    /// Compact SRAM profiles must use this entry point. It prevents a runtime
+    /// Block Ack window from retaining more MPDUs than the statically allocated
+    /// reorder backing can own.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_with_storage<const AGGREGATE_SLOTS: usize, const RX_REORDER_SLOTS: usize>(
         peer: Esp32s31ConnectedStaPeer,
         config: Esp32s31ConnectedStaConfig,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
@@ -167,6 +198,15 @@ impl Esp32s31ConnectedStaPort {
                 error: Esp32s31ConnectedStaConfigError::AggregateFrameLimit {
                     limit: config.aggregate_frame_limit,
                     capacity: AGGREGATE_SLOTS,
+                },
+                peer,
+            });
+        }
+        if usize::from(config.rx_block_ack_maximum_window) > RX_REORDER_SLOTS {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::RxBlockAckWindowExceedsStorage {
+                    window: config.rx_block_ack_maximum_window,
+                    capacity: RX_REORDER_SLOTS,
                 },
                 peer,
             });
@@ -238,6 +278,7 @@ impl Esp32s31ConnectedStaPort {
         const DEPTH: usize,
         const CAPACITY: usize,
         const SLOTS: usize,
+        const REORDER_SLOTS: usize,
     >(
         plan: &Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaRxProtocolResources<
@@ -250,13 +291,25 @@ impl Esp32s31ConnectedStaPort {
             DEPTH,
             CAPACITY,
             SLOTS,
+            REORDER_SLOTS,
         >,
-    ) -> Esp32s31ConnectedRxProtocol<'queue, 'pool, 'scratch, 'irq, M, S, DEPTH, CAPACITY, SLOTS>
+    ) -> Esp32s31ConnectedRxProtocol<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        DEPTH,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >
     where
         M: RawMutex,
         S: ConnectedRxProtocolSink,
     {
-        let protocol = Esp32s31ConnectedRxProtocol::new(
+        let mut protocol = Esp32s31ConnectedRxProtocol::new_with_reorder_slots(
             resources.frames,
             resources.irq,
             ConnectedRxDispatcher::new(plan.rx_config()),
@@ -265,8 +318,10 @@ impl Esp32s31ConnectedStaPort {
             resources.ethernet,
         )
         .with_rx_reorder_commands(resources.reorder_commands)
-        .with_rx_reorder_storage(resources.reorder_storage)
-        .with_pipeline_counters(resources.pipeline_counters);
+        .with_rx_reorder_storage(resources.reorder_storage);
+        if let Some(counters) = resources.pipeline_counters {
+            protocol = protocol.with_pipeline_counters(counters);
+        }
         match resources.reorder_scratch {
             Some(scratch) => protocol.with_rx_reorder_scratch(scratch),
             None => protocol,
@@ -467,6 +522,7 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     pub frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
     pub irq: &'irq EmbassyMacIrqRuntime<M>,
@@ -474,9 +530,10 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     pub mpdu: &'scratch mut [u8],
     pub ethernet: &'scratch mut [u8],
     pub reorder_commands: RxReorderCommandReceiver<'queue, M>,
-    pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY>,
+    pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
     pub reorder_scratch: Option<&'scratch mut [u8]>,
-    pub pipeline_counters: &'queue RxPipelineCounters,
+    /// Optional observation-only counters used by qualification fixtures.
+    pub pipeline_counters: Option<&'queue RxPipelineCounters>,
 }
 
 /// Named resources consumed by the control-to-connected TX handoff.
@@ -707,9 +764,17 @@ mod tests {
 
     #[test]
     fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
+        let capabilities = Esp32s31ConnectedStaPort::capabilities();
+        assert_eq!(capabilities.resources.channel_contexts, 1);
+        assert!(capabilities.supports_rx_block_ack_window(32));
+        assert!(capabilities.supports_tx_block_ack_window(32));
+
         let plan = Esp32s31ConnectedStaPort::prepare::<32>(peer(), config()).unwrap();
         assert_eq!(plan.rx_config().association_id, 7);
-        assert_eq!(plan.single_mpdu_tx_config().rate.code(), 23);
+        assert_eq!(
+            plan.single_mpdu_tx_config().exchange.initial_rate.code(),
+            23
+        );
         assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::He(_)));
         assert_eq!(plan.beacon_loss().window_micros(), 1_024_000);
     }
@@ -738,7 +803,7 @@ mod tests {
                 reorder_commands: reorder_receiver,
                 reorder_storage: &reorder_storage,
                 reorder_scratch: None,
-                pipeline_counters: &counters,
+                pipeline_counters: Some(&counters),
             },
         );
         assert_eq!(protocol.dispatcher().config(), plan.rx_config());
@@ -774,6 +839,22 @@ mod tests {
             Esp32s31ConnectedStaConfigError::AggregateFrameLimit {
                 limit: 33,
                 capacity: 32,
+            }
+        );
+        assert_eq!(failure.peer.link, link);
+    }
+
+    #[test]
+    fn compact_profile_rejects_rx_window_larger_than_reorder_storage() {
+        let original = peer();
+        let link = original.link;
+        let failure = Esp32s31ConnectedStaPort::prepare_with_storage::<32, 8>(original, config())
+            .unwrap_err();
+        assert_eq!(
+            failure.error,
+            Esp32s31ConnectedStaConfigError::RxBlockAckWindowExceedsStorage {
+                window: 32,
+                capacity: 8,
             }
         );
         assert_eq!(failure.peer.link, link);

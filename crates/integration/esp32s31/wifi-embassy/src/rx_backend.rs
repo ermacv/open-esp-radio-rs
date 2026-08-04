@@ -1738,6 +1738,10 @@ mod tests {
 
     #[test]
     fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
+        fn now_micros() -> u64 {
+            0
+        }
+
         const COUNT: usize = 2;
         const STAGED_DEPTH: usize = 1;
         let storage = Esp32s31RxDmaStorage::<COUNT>::new();
@@ -1760,9 +1764,11 @@ mod tests {
                 | BIT_31,
         );
         let pool = RxStagePool::new();
+        let counters = RxPipelineCounters::new(now_micros);
         let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
         let (sender, receiver) = queue.split();
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender)
+            .with_pipeline_counters(&counters);
 
         assert_eq!(
             embassy_futures::block_on(service.service(&mut hardware)),
@@ -1776,6 +1782,20 @@ mod tests {
             receiver.try_receive(),
             Err(TryReceiveError::Empty)
         ));
+        assert_eq!(counters.snapshot().stage_too_long_discards, 1);
+
+        // The recovered discard path is not a reset frontier: the following
+        // descriptor is still accepted, staged and returned to the caller.
+        storage.descriptors()[1]
+            .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+        assert_eq!(
+            embassy_futures::block_on(service.service(&mut hardware)),
+            Ok(WifiRxProgress::Drained),
+        );
+        let next = receiver.try_receive().expect("post-discard frame");
+        assert_eq!(next.length(), 4);
+        drop(next);
+        assert_eq!(pool.claimed_slots(), 0);
     }
 
     #[test]
@@ -1846,6 +1866,7 @@ mod tests {
             },
             raw: &ethernet,
             amsdu: false,
+            metadata: open_esp_radio_ieee80211::mac_service::MacRxMetadata::unavailable(),
         };
 
         sink.publish(event);
@@ -1886,6 +1907,7 @@ mod tests {
             },
             raw: &[0; 14],
             amsdu: false,
+            metadata: open_esp_radio_ieee80211::mac_service::MacRxMetadata::unavailable(),
         });
         queue.publish(ConnectedRxEvent::BlockAck {
             action,

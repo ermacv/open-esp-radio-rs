@@ -7,6 +7,12 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 HE RX A-MPDU containment](2026-08-04-esp32s31-he-rx-ampdu-containment.md);
+- [ESP32-S31 direct HT RX aggregation metadata](2026-08-04-esp32s31-ht-rx-aggregation-metadata.md);
+- [ESP32-S31 RX S-MPDU metadata](2026-08-04-esp32s31-rx-s-mpdu-metadata.md);
+- [ESP32-S31 connected TX reset frontier](2026-08-04-esp32s31-station-tx-fault.md);
+- [ESP32-S31 prolonged AP absence and retry exhaustion](2026-08-04-esp32s31-station-ap-absence.md);
+- [ESP32-S31 controlled AP-loss recovery](2026-08-04-esp32s31-station-ap-loss.md);
 - [driver-repository HE20 bidirectional](2026-07-31-driver-repo-he20-bidirectional.md);
 - [connected HE20 BCC DCM](2026-07-31-he20-dcm-connected.md);
 - [connected HE20 LDPC DCM](2026-07-31-he20-dcm-ldpc-connected.md);

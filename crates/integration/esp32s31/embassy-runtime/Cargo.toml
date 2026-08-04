@@ -1,0 +1,34 @@
+[package]
+name = "open-esp-radio-esp32s31-embassy-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ermacv/open-esp-radio-rs"
+description = "Scheduler-free Embassy executor and time driver for ESP32-S31 applications"
+
+[features]
+default = []
+esp32s31 = [
+    "dep:embassy-executor",
+    "dep:embassy-time-driver",
+    "dep:embassy-time-queue-utils",
+    "dep:esp-hal",
+    "dep:esp-sync",
+    "dep:portable-atomic",
+    "dep:riscv",
+]
+
+[dependencies]
+embassy-executor = { version = "0.10.0", default-features = false, optional = true }
+embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"], optional = true }
+embassy-time-queue-utils = { version = "0.3", optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "rt", "unstable"], optional = true }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", features = ["esp32s31"], optional = true }
+portable-atomic = { version = "1.11", default-features = false, optional = true }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.15", optional = true }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

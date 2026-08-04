@@ -26,6 +26,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     data::DataHeControl,
+    mac_service::{MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult},
     station::{STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError},
     station_power_save::StaPowerManagement,
 };
@@ -107,6 +108,9 @@ pub enum AggregateTxError {
     Aggregate(HtAmpduTxError),
     Retry(AmpduRetryError),
     Ordinary(SingleMpduTxError),
+    /// An aggregate detached one MPDU into the ordinary owner, but that owner
+    /// completed without publishing its normalized terminal status.
+    MissingOrdinaryRetryStatus,
     RadioResetRequired(AggregateTxResetReason),
 }
 
@@ -126,18 +130,6 @@ impl From<SingleMpduTxError> for AggregateTxError {
     fn from(error: SingleMpduTxError) -> Self {
         Self::Ordinary(error)
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AggregateTxOutcome {
-    Complete {
-        original_subframes: u8,
-        aggregate_attempts: u8,
-        acknowledged: u8,
-        individual_retry: bool,
-    },
-    HardwareTimeout,
-    Collision,
 }
 
 /// Number of histogram entries required for all legal A-MPDU sizes.
@@ -535,7 +527,8 @@ pub struct Esp32s31ConnectedTx<
     block_ack_operational: [bool; 8],
     config: AggregateTxConfig,
     active: ConnectedTxActive<SLOTS>,
-    last_aggregate_outcome: Option<AggregateTxOutcome>,
+    last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
+    pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
     counters: Option<&'ampdu AggregateTxCounters>,
 }
 
@@ -610,7 +603,8 @@ where
             block_ack_operational: [false; 8],
             config,
             active: ConnectedTxActive::Idle,
-            last_aggregate_outcome: None,
+            last_aggregate_status: None,
+            pending_ordinary_retry: None,
             counters: None,
         })
     }
@@ -645,8 +639,14 @@ where
             .unwrap_or(false)
     }
 
-    pub fn take_last_aggregate_outcome(&mut self) -> Option<AggregateTxOutcome> {
-        self.last_aggregate_outcome.take()
+    /// Take one terminal HMAC-visible aggregate exchange status.
+    ///
+    /// When HT retry policy detaches one missing MPDU into the ordinary owner,
+    /// this remains `None` until that ordinary retry also reaches a terminal
+    /// status.  Callers therefore cannot accidentally treat the intermediate
+    /// BlockAck as completion of the logical exchange.
+    pub fn take_last_aggregate_status(&mut self) -> Option<MacAmpduTxStatus<TxPhyRate>> {
+        self.last_aggregate_status.take()
     }
 
     pub fn take_last_ordinary_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
@@ -655,6 +655,30 @@ where
 
     pub fn active(&self) -> bool {
         !matches!(self.active, ConnectedTxActive::Idle)
+    }
+
+    /// Portable queue state across the aggregate and ordinary descriptor
+    /// owners that form one connected TX service.
+    pub fn queue_state(&self) -> MacTxQueueState {
+        if self.ampdu.as_ref().get_ref().state() == TxSlotState::ResetRequired
+            || self.ordinary.queue_state() == MacTxQueueState::ResetRequired
+        {
+            MacTxQueueState::ResetRequired
+        } else if self.active() || self.ordinary.queue_state() == MacTxQueueState::Backpressured {
+            MacTxQueueState::Backpressured
+        } else {
+            MacTxQueueState::Ready
+        }
+    }
+
+    /// Whether either hardware-visible TX owner has been quarantined pending
+    /// a platform radio reset.
+    ///
+    /// This is intentionally observational: a caller may report the terminal
+    /// frontier, but cannot turn it back into an idle owner without the
+    /// platform reset transaction.
+    pub fn is_reset_required(&self) -> bool {
+        self.queue_state() == MacTxQueueState::ResetRequired
     }
 
     /// Recover the ordinary connected owner and descriptor-only aggregate
@@ -774,6 +798,8 @@ where
         if self.active() {
             return Err(AggregateTxError::ActiveTransaction);
         }
+        self.last_aggregate_status = None;
+        self.pending_ordinary_retry = None;
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));
         let ht_requires_pair = matches!(self.config.rate, TxPhyRate::Ht(_));
         if !aggregate_rate {
@@ -878,6 +904,20 @@ where
                 let progress = self.ordinary.service(hardware, wake).await?;
                 if progress == WifiTxProgress::Pending {
                     self.active = ConnectedTxActive::Ordinary;
+                } else if let Some(mut aggregate) = self.pending_ordinary_retry.take() {
+                    let ordinary = self
+                        .ordinary
+                        .ordinary()
+                        .last_outcome()
+                        .ok_or(AggregateTxError::MissingOrdinaryRetryStatus)?;
+                    let ordinary = ordinary.report().status;
+                    aggregate.result = if matches!(ordinary.result, MacTxResult::Transmitted) {
+                        MacAmpduTxResult::Delivered
+                    } else {
+                        MacAmpduTxResult::Incomplete
+                    };
+                    aggregate.ordinary_retry = Some(ordinary);
+                    self.last_aggregate_status = Some(aggregate);
                 }
                 Ok(progress)
             }
@@ -1136,7 +1176,8 @@ where
             self.cancel_prepared();
             return Err(error);
         }
-        self.last_aggregate_outcome = None;
+        self.last_aggregate_status = None;
+        self.pending_ordinary_retry = None;
         self.active = ConnectedTxActive::Aggregate(active);
         Ok(WifiTxProgress::Pending)
     }
@@ -1251,11 +1292,13 @@ where
                     hardware_mic_length,
                     active.config.rate(),
                 )?;
-                self.last_aggregate_outcome = Some(AggregateTxOutcome::Complete {
-                    original_subframes: active.original_subframes,
+                self.pending_ordinary_retry = Some(MacAmpduTxStatus {
+                    result: MacAmpduTxResult::Incomplete,
+                    original_subframes: u16::from(active.original_subframes),
                     aggregate_attempts: active.retry.aggregate_attempts(),
-                    acknowledged: active.retry.acknowledged(),
-                    individual_retry: true,
+                    aggregate_rate: active.config.rate(),
+                    block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+                    ordinary_retry: None,
                 });
                 if let Some(counters) = self.counters {
                     counters.record_complete(active.retry.acknowledged(), true);
@@ -1266,11 +1309,18 @@ where
             }
 
             self.release_completed()?;
-            self.last_aggregate_outcome = Some(AggregateTxOutcome::Complete {
-                original_subframes: active.original_subframes,
+            let acknowledged = active.retry.acknowledged();
+            self.last_aggregate_status = Some(MacAmpduTxStatus {
+                result: if acknowledged == active.original_subframes {
+                    MacAmpduTxResult::Delivered
+                } else {
+                    MacAmpduTxResult::Incomplete
+                },
+                original_subframes: u16::from(active.original_subframes),
                 aggregate_attempts: active.retry.aggregate_attempts(),
-                acknowledged: active.retry.acknowledged(),
-                individual_retry: false,
+                aggregate_rate: active.config.rate(),
+                block_acknowledged_subframes: u16::from(acknowledged),
+                ordinary_retry: None,
             });
             if let Some(counters) = self.counters {
                 counters.record_complete(active.retry.acknowledged(), false);
@@ -1301,7 +1351,14 @@ where
             self.ordinary
                 .ordinary_mut()
                 .reset_terminal_exchange(LegacyTxQueue::BestEffort);
-            self.last_aggregate_outcome = Some(AggregateTxOutcome::HardwareTimeout);
+            self.last_aggregate_status = Some(MacAmpduTxStatus {
+                result: MacAmpduTxResult::HardwareTimeout,
+                original_subframes: u16::from(active.original_subframes),
+                aggregate_attempts: active.retry.aggregate_attempts(),
+                aggregate_rate: active.config.rate(),
+                block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+                ordinary_retry: None,
+            });
             if let Some(counters) = self.counters {
                 counters.record_hardware_timeout();
                 Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
@@ -1318,7 +1375,14 @@ where
             self.ordinary
                 .ordinary_mut()
                 .reset_terminal_exchange(LegacyTxQueue::BestEffort);
-            self.last_aggregate_outcome = Some(AggregateTxOutcome::Collision);
+            self.last_aggregate_status = Some(MacAmpduTxStatus {
+                result: MacAmpduTxResult::CollisionLimit,
+                original_subframes: u16::from(active.original_subframes),
+                aggregate_attempts: active.retry.aggregate_attempts(),
+                aggregate_rate: active.config.rate(),
+                block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+                ordinary_retry: None,
+            });
             if let Some(counters) = self.counters {
                 counters.record_collision();
                 Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
@@ -1408,6 +1472,7 @@ mod tests {
     use open_esp_radio_ieee80211::station::{
         STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters,
     };
+    use open_esp_radio_ieee80211::{mac_service::MacTxPlan, wmm::WmmAccessCategory};
 
     use crate::{
         ordinary_tx::{WifiTxPowerPair, WifiTxResources},
@@ -1622,9 +1687,12 @@ mod tests {
                     station_address: STATION,
                     bssid: BSSID,
                     peer_qos: true,
-                    rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    attempt_limit: 2,
-                    completion_timeout_us: 250_000,
+                    exchange: MacTxPlan {
+                        access_category: WmmAccessCategory::BestEffort,
+                        initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                        publication_limit: 2,
+                        publication_timeout_micros: 250_000,
+                    },
                 },
             },
         )
@@ -1885,12 +1953,14 @@ mod tests {
             Ok(WifiTxProgress::Complete)
         );
         assert_eq!(
-            tx.take_last_aggregate_outcome(),
-            Some(AggregateTxOutcome::Complete {
+            tx.take_last_aggregate_status(),
+            Some(MacAmpduTxStatus {
+                result: MacAmpduTxResult::Delivered,
                 original_subframes: 2,
                 aggregate_attempts: 1,
-                acknowledged: 2,
-                individual_retry: false,
+                aggregate_rate: TxPhyRate::Ht(TEST_RATE),
+                block_acknowledged_subframes: 2,
+                ordinary_retry: None,
             })
         );
         send_frame(&mut device, 4);
@@ -1957,12 +2027,14 @@ mod tests {
             Ok(WifiTxProgress::Complete)
         );
         assert_eq!(
-            tx.take_last_aggregate_outcome(),
-            Some(AggregateTxOutcome::Complete {
+            tx.take_last_aggregate_status(),
+            Some(MacAmpduTxStatus {
+                result: MacAmpduTxResult::Delivered,
                 original_subframes: 3,
                 aggregate_attempts: 2,
-                acknowledged: 3,
-                individual_retry: false,
+                aggregate_rate: TxPhyRate::Ht(TEST_RATE),
+                block_acknowledged_subframes: 3,
+                ordinary_retry: None,
             })
         );
         send_frame(&mut device, 4);
@@ -2015,15 +2087,7 @@ mod tests {
             )),
             Ok(WifiTxProgress::Pending)
         );
-        assert_eq!(
-            tx.take_last_aggregate_outcome(),
-            Some(AggregateTxOutcome::Complete {
-                original_subframes: 2,
-                aggregate_attempts: 1,
-                acknowledged: 1,
-                individual_retry: true,
-            })
-        );
+        assert_eq!(tx.take_last_aggregate_status(), None);
         assert_eq!(tx.ordinary().peek_qos_sequence(0), Some(9));
 
         // The individual retry uses the private ordinary descriptor. Both
@@ -2051,6 +2115,22 @@ mod tests {
             )),
             Ok(WifiTxProgress::Complete)
         );
+        let aggregate = tx
+            .take_last_aggregate_status()
+            .expect("ordinary retry completes the logical aggregate exchange");
+        assert_eq!(aggregate.result, MacAmpduTxResult::Delivered);
+        assert_eq!(aggregate.original_subframes, 2);
+        assert_eq!(aggregate.aggregate_attempts, 1);
+        assert_eq!(aggregate.aggregate_rate, TxPhyRate::Ht(TEST_RATE));
+        assert_eq!(aggregate.block_acknowledged_subframes, 1);
+        assert_eq!(aggregate.delivered_subframes(), 2);
+        assert_eq!(aggregate.total_publication_attempts(), 2);
+        assert!(matches!(
+            aggregate.ordinary_retry,
+            Some(status) if status.result == MacTxResult::Transmitted
+                && status.final_rate == TxPhyRate::Ht(TEST_RATE)
+                && status.acknowledged == Some(true)
+        ));
         assert!(matches!(
             tx.take_last_ordinary_outcome(),
             Some(SingleMpduTxOutcome::Success(_))

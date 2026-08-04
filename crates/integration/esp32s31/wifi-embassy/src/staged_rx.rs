@@ -13,10 +13,12 @@ use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
+    rx::RxPhyInfo,
     rx_ampdu::{RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderState},
     rx_pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_ieee80211::mac_service::MacRxMetadata;
 
 use crate::{
     embassy_irq::EmbassyMacIrqRuntime,
@@ -98,19 +100,32 @@ impl<S: ConnectedRxSink> ConnectedRxProtocolSink for AlwaysReadyConnectedRxSink<
 struct DeferredEthernetFrames<'storage> {
     storage: &'storage mut [u8],
     used: usize,
+    metadata: Option<MacRxMetadata<RxPhyInfo>>,
 }
 
 impl<'storage> DeferredEthernetFrames<'storage> {
     fn new(storage: &'storage mut [u8]) -> Self {
-        Self { storage, used: 0 }
+        Self {
+            storage,
+            used: 0,
+            metadata: None,
+        }
     }
 }
 
 impl ConnectedRxSink for DeferredEthernetFrames<'_> {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
-        let ConnectedRxEvent::Ethernet { frame, .. } = event else {
+        let ConnectedRxEvent::Ethernet {
+            frame, metadata, ..
+        } = event
+        else {
             return;
         };
+        if let Some(previous) = self.metadata {
+            debug_assert_eq!(previous, metadata);
+        } else {
+            self.metadata = Some(metadata);
+        }
         let encoded_length = u16::try_from(frame.length())
             .expect("staged RX capacity bounds a deferred Ethernet frame");
         let record_length = frame
@@ -144,9 +159,9 @@ pub type Esp32s31StagedRxFrame<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > = NetworkRxFrame<'pool, SLOTS, CAPACITY>;
 
-enum RetainedRxFrame<'pool, const CAPACITY: usize, const SLOTS: usize> {
+enum RetainedRxFrame<'pool, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usize> {
     Hot(Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>),
-    Cold(RxReorderFrame<'pool, CAPACITY>),
+    Cold(RxReorderFrame<'pool, CAPACITY, REORDER_SLOTS>),
 }
 
 /// Static bounded storage for the radio-to-protocol ownership handoff.
@@ -159,6 +174,7 @@ pub struct Esp32s31StagedRxQueue<
     const DEPTH: usize,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     frames: Channel<M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
 }
@@ -210,6 +226,7 @@ pub struct Esp32s31ConnectedRxProtocol<
     const DEPTH: usize,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
     irq: &'irq EmbassyMacIrqRuntime<M>,
@@ -219,12 +236,12 @@ pub struct Esp32s31ConnectedRxProtocol<
     ethernet: &'scratch mut [u8],
     pipeline_counters: Option<&'queue RxPipelineCounters>,
     reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
-    reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY>>,
+    reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>>,
     reorder_scratch: Option<&'scratch mut [u8]>,
     reorders: [Option<RxBlockAckReorderState<RX_REORDER_SLOT_DOMAIN>>; RX_BLOCK_ACK_TID_COUNT],
     reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
     gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
-    retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS>>; RX_REORDER_BACKING_SLOT_COUNT],
+    retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>>; REORDER_SLOTS],
 }
 
 impl<
@@ -237,11 +254,24 @@ impl<
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
-> Esp32s31ConnectedRxProtocol<'queue, 'pool, 'scratch, 'irq, M, S, DEPTH, CAPACITY, SLOTS>
+    const REORDER_SLOTS: usize,
+>
+    Esp32s31ConnectedRxProtocol<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        DEPTH,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >
 where
     S: ConnectedRxProtocolSink,
 {
-    pub fn new(
+    pub fn new_with_reorder_slots(
         frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
         dispatcher: ConnectedRxDispatcher,
@@ -258,6 +288,14 @@ where
             "A-MSDU output scratch must cover one complete staged RX unit"
         );
         assert!(SLOTS != 0, "staged RX pool must not be empty");
+        assert!(
+            REORDER_SLOTS != 0,
+            "RX reorder slot domain must not be empty"
+        );
+        assert!(
+            REORDER_SLOTS <= RX_REORDER_BACKING_SLOT_COUNT,
+            "RX reorder slot domain exceeds the MAC maximum"
+        );
         assert!(
             SLOTS <= usize::from(u8::MAX) + 1,
             "reorder slot identity must fit the MAC token"
@@ -292,7 +330,7 @@ where
     /// In-order frames continue directly from the SRAM staging lease.
     pub fn with_rx_reorder_storage(
         mut self,
-        storage: &'pool RxReorderFrameStorage<CAPACITY>,
+        storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
     ) -> Self {
         self.reorder_storage = Some(storage);
         self
@@ -752,7 +790,7 @@ where
 
     async fn dispatch_retained_frame(
         &mut self,
-        frame: RetainedRxFrame<'pool, CAPACITY, SLOTS>,
+        frame: RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     ) -> ConnectedRxDispatch {
         match frame {
             RetainedRxFrame::Hot(frame) => self.dispatch_owned_frame(frame).await,
@@ -762,7 +800,7 @@ where
 
     async fn dispatch_reordered_frame(
         &mut self,
-        frame: RxReorderFrame<'pool, CAPACITY>,
+        frame: RxReorderFrame<'pool, CAPACITY, REORDER_SLOTS>,
     ) -> ConnectedRxDispatch {
         let source = frame.segment();
         let ordinary = !self.dispatcher.may_publish_amsdu(source);
@@ -831,6 +869,7 @@ where
             .dispatcher
             .dispatch(segment, self.mpdu, &mut [], &mut deferred);
         let used = deferred.used;
+        let metadata = deferred.metadata;
         drop(deferred);
         if let (Some(counters), Some(started)) = (self.pipeline_counters, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
@@ -849,6 +888,7 @@ where
             );
         }
         let raw = segment.buffer;
+        let metadata = metadata.unwrap_or_else(MacRxMetadata::unavailable);
         let mut offset = 0_usize;
         while offset < used {
             let length = usize::from(u16::from_be_bytes([
@@ -876,6 +916,7 @@ where
                 },
                 raw,
                 amsdu: true,
+                metadata,
             });
             offset = end;
         }
@@ -920,6 +961,45 @@ where
             mpdu,
             ethernet,
         }
+    }
+}
+
+impl<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+>
+    Esp32s31ConnectedRxProtocol<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        DEPTH,
+        CAPACITY,
+        SLOTS,
+        RX_REORDER_BACKING_SLOT_COUNT,
+    >
+where
+    S: ConnectedRxProtocolSink,
+{
+    /// Construct the vendor-maximum 64-slot reorder profile.
+    pub fn new(
+        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        irq: &'irq EmbassyMacIrqRuntime<M>,
+        dispatcher: ConnectedRxDispatcher,
+        sink: S,
+        mpdu: &'scratch mut [u8],
+        ethernet: &'scratch mut [u8],
+    ) -> Self {
+        Self::new_with_reorder_slots(frames, irq, dispatcher, sink, mpdu, ethernet)
     }
 }
 
@@ -1003,11 +1083,13 @@ mod tests {
             frame: first,
             raw: &[],
             amsdu: true,
+            metadata: MacRxMetadata::unavailable(),
         });
         deferred.publish(ConnectedRxEvent::Ethernet {
             frame: second,
             raw: &[],
             amsdu: true,
+            metadata: MacRxMetadata::unavailable(),
         });
 
         let first_end = 2 + first.length();

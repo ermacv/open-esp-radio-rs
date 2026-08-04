@@ -8,7 +8,10 @@ use core::{
     fmt::{Arguments, Write},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_futures::{
+    select::{Either, Either3, select, select3},
+    yield_now,
+};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embedded_io_async::{Read as _, Write as _};
 use esp_hal::{
@@ -21,8 +24,9 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
     FrameDecoder, FrameEncoder, NetworkCredentials, PROTOCOL_VERSION, RejectReason, ResultSummary,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
-    StartupArtifactDisposition, StartupArtifactStatus, StateChange, Transport, TransportEvidence,
-    evidence_crc32c, startup_artifact_crc32c,
+    StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
+    StationFaultEvidence, StationLifecycleEvent, Transport, TransportEvidence, evidence_crc32c,
+    startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -34,6 +38,8 @@ const USB_RX_CHUNK_BYTES: usize = 128;
 
 #[unsafe(link_section = ".critical.data.logging")]
 static WRITER_ACTIVE: AtomicBool = AtomicBool::new(false);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_WRITER_WAITING: AtomicBool = AtomicBool::new(false);
 #[unsafe(link_section = ".critical.data.logging")]
 static RUNTIME_ACTIVE: AtomicBool = AtomicBool::new(false);
 #[unsafe(link_section = ".critical.data.logging")]
@@ -50,6 +56,10 @@ static EVENT_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static PROTOCOL_DROPPED: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
+/// One plus the last event sequence fully written to the USB endpoint.
+/// Zero means that no event from the current boot has crossed that boundary.
+#[unsafe(link_section = ".critical.data.logging")]
+static SERIALIZED_STATION_LIFECYCLE_NEXT: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static RECORDS: Channel<CriticalSectionRawMutex, TextBuffer<MESSAGE_CAPACITY>, QUEUE_CAPACITY> =
     Channel::new();
@@ -67,7 +77,7 @@ static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Chan
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
-static STATION_EPOCH_CYCLES: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
+static STATION_EPOCH_CYCLES: Channel<CriticalSectionRawMutex, u32, 1> = Channel::new();
 
 #[derive(Clone, Copy)]
 pub struct ActiveSession {
@@ -235,6 +245,7 @@ pub fn init_protocol(boot_id: u64) {
     BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
     BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
     EVENT_SEQUENCE.store(0, Ordering::Relaxed);
+    SERIALIZED_STATION_LIFECYCLE_NEXT.store(0, Ordering::Relaxed);
 }
 
 fn boot_id() -> u64 {
@@ -303,8 +314,41 @@ pub async fn receive_session_start() -> ActiveSession {
 ///
 /// The production runner observes this only at a hardware-safe transaction
 /// boundary; the console owns command admission and never touches radio state.
-pub async fn receive_station_epoch_cycle() {
+pub async fn receive_station_epoch_cycle() -> u32 {
     STATION_EPOCH_CYCLES.receive().await
+}
+
+/// Reliably acknowledge a completed target-side station ownership cycle.
+///
+/// Unlike text diagnostics, this event is serialized by the protocol owner
+/// and retains the command request ID used by the host qualifier.
+pub async fn complete_station_epoch_cycle(request_id: u32, evidence: StationEpochEvidence) {
+    publish_event_reliably(
+        0,
+        request_id,
+        Event::StationEpochCompleted(evidence),
+    )
+    .await;
+}
+
+/// Reliably publish one unsolicited station generation/link edge.
+///
+/// The caller emits this only after the corresponding ownership transition;
+/// unlike UART text, it cannot be dropped under diagnostic pressure.
+pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
+    let sequence = queue_event_reliably(0, 0, Event::StationLifecycle(event)).await;
+    let target = sequence.wrapping_add(1);
+    // A lifecycle edge is qualification evidence, not a best-effort trace.
+    // Queue admission alone is insufficient at a terminal station exit: the
+    // producing task may return before the independent USB worker runs again.
+    while SERIALIZED_STATION_LIFECYCLE_NEXT.load(Ordering::Acquire) != target {
+        yield_now().await;
+    }
+}
+
+/// Reliably publish the exact terminal owner frontier of one requested fault.
+pub async fn publish_station_fault(request_id: u32, evidence: StationFaultEvidence) {
+    publish_event_reliably(0, request_id, Event::StationFault(evidence)).await;
 }
 
 /// Hands a completed in-memory measurement back to the protocol owner.
@@ -322,6 +366,10 @@ pub async fn complete_session(session_id: u64, evidence: TransportEvidence, pass
 }
 
 async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
+    let _ = queue_event_reliably(session_id, request_id, body).await;
+}
+
+async fn queue_event_reliably(session_id: u64, request_id: u32, body: Event) -> u32 {
     let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     EVENTS
         .send(Envelope::new(
@@ -332,6 +380,7 @@ async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
             body,
         ))
         .await;
+    message_sequence
 }
 
 /// Owns commands while individual benchmark services migrate to
@@ -520,7 +569,24 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             || session_id != 0
                         {
                             Event::Rejected(RejectReason::InvalidState)
-                        } else if STATION_EPOCH_CYCLES.try_send(()).is_err() {
+                        } else if STATION_EPOCH_CYCLES.try_send(request_id).is_err() {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::InjectStationFault(injection) => {
+                        let response = if !capabilities.features.station_fault_injection {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if !crate::radio_fault::STATION_FAULT_CONTROL
+                            .try_arm(request_id, injection)
+                        {
                             Event::Rejected(RejectReason::Busy)
                         } else {
                             Event::Accepted
@@ -697,12 +763,13 @@ async fn write_event_async(
         PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
     };
-    let Ok(_guard) = WriterGuard::acquire() else {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
-        return;
-    };
+    let _guard = WriterGuard::acquire_protocol().await;
     if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
         PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
+        if matches!(&event.body, Event::StationLifecycle(_)) {
+            SERIALIZED_STATION_LIFECYCLE_NEXT
+                .store(event.message_sequence.wrapping_add(1), Ordering::Release);
+        }
     } else {
         PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
     }
@@ -791,10 +858,33 @@ struct WriterGuard;
 
 impl WriterGuard {
     fn acquire() -> Result<Self, ()> {
+        if PROTOCOL_WRITER_WAITING.load(Ordering::Acquire) {
+            return Err(());
+        }
         WRITER_ACTIVE
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .map(|_| Self)
             .map_err(|_| ())
+    }
+
+    /// Give an admitted protocol frame priority over new best-effort text.
+    ///
+    /// The only concurrent holder is the synchronous ROM text writer; it
+    /// cannot await while holding the guard. Once this intent flag is visible,
+    /// new diagnostics fail fast and the protocol owner acquires on the next
+    /// finite release rather than discarding a correlated response.
+    async fn acquire_protocol() -> Self {
+        PROTOCOL_WRITER_WAITING.store(true, Ordering::Release);
+        loop {
+            if WRITER_ACTIVE
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                PROTOCOL_WRITER_WAITING.store(false, Ordering::Release);
+                return Self;
+            }
+            yield_now().await;
+        }
     }
 }
 

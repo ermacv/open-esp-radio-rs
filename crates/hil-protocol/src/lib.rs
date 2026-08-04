@@ -18,6 +18,8 @@ pub use message::{
     NetworkCredentialsError, NetworkInfo, PROTOCOL_VERSION, RejectReason, ResultSummary,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionState, StartupArtifactChunk,
     StartupArtifactChunkError, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    Transport, TransportEvidence, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
-    WPA2_SSID_MAX_LEN,
+    StationAttemptFailureReason, StationDisconnectReason, StationEpochEvidence,
+    StationFailureStage, StationFaultClassification, StationFaultEvidence, StationFaultInjection,
+    StationLifecycleEvent, Transport, TransportEvidence, WPA2_PASSPHRASE_MAX_LEN,
+    WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,
 };

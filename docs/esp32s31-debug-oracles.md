@@ -86,6 +86,27 @@ live in `open-esp-radio-esp32s31-wifi-mac::rx::{HeSuSignal,HeMuSignal,
 HeTriggerBasedSignal}`. This restores passive downlink/TB vector observation;
 it does not by itself qualify payload reception, OFDMA scheduling or MU-MIMO.
 
+The same complete body closes the location of S-MPDU status. At `0xf8` it
+loads RX-prefix byte `0x1f`, at `0x11a` it isolates bit zero, and passes that
+value as the final `cur_single_mpdu` argument of the common PPDU record. The
+pinned Espressif header defines this as the IEEE VHT/HE S-MPDU form, not as
+the inverse of arbitrary A-MPDU membership. A 2026-08-04 HE20 downlink proved
+exact propagation: 117,190 benchmark-port datagrams and 147 connected Beacons
+were not-S-MPDU, with zero unavailable provenance and exact payload delivery.
+The Beacon result rejects the earlier over-broad physical-A-MPDU
+interpretation. The format-two branch independently closes HT aggregation:
+at `0x592..0x5e0` it extracts word bit 27 as the sixth argument named
+`Aggregation`; normalized metadata uses that direct bit for HT. VHT/HE
+A-MPDU containment is separately protocol-validated from the PPDU format,
+because IEEE defines their S-MPDU as the sole MPDU in an A-MPDU; it is not
+misreported as another hardware field. A forced HT20/MCS7/SGI downlink observed the direct
+bit set for all 78,127 benchmark records with zero unavailable provenance.
+See the [S-MPDU qualification](hil/2026-08-04-esp32s31-rx-s-mpdu-metadata.md)
+and the [direct HT aggregation qualification](hil/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md).
+A separate [HE containment qualification](hil/2026-08-04-esp32s31-he-rx-ampdu-containment.md)
+proved 117,190 protocol-sourced true values with zero hardware or unavailable
+classification.
+
 The two complete per-user leaves close the next bounded word format.
 `dbg_dump_musigb_non_mimo` (size `0x6e`) names STA-ID, NSTS, beamformed,
 MCS, DCM and coding in one 21-bit non-MIMO word and treats STA-ID `0x7fe` as

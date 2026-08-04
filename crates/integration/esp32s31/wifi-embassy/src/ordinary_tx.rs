@@ -13,10 +13,11 @@ use open_esp_radio_esp32s31_wifi_mac::{
     edca::EdcaContentionParameters,
     tx::{
         HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie, TxError, TxHardware,
-        TxPhyRate, TxSlot,
+        TxPhyRate, TxSlot, TxSlotState,
     },
     tx_runtime::{StaTxRuntimePolicy, UnicastRetryDecision, UnicastRetryError, UnicastRetryState},
 };
+use open_esp_radio_ieee80211::mac_service::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
 use crate::runner::{WifiTxProgress, WifiTxWake};
 
@@ -83,11 +84,36 @@ impl WifiTxTimer for EmbassyWifiTxTimer {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrdinaryTxReport {
+    /// Portable terminal exchange status consumed by HMAC policy.
+    pub status: MacTxStatus<TxPhyRate>,
+    /// Exact ESP32-S31 completion retained for low-level rate evidence.
+    ///
+    /// Timeout/collision terminal paths have no detached completion record.
+    pub completion: Option<TxCompletion>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryTxOutcome {
-    Success(TxCompletion),
-    HardwareFailure(TxCompletion),
-    HardwareTimeout,
-    CollisionLimit,
+    Success(OrdinaryTxReport),
+    HardwareFailure(OrdinaryTxReport),
+    HardwareTimeout(OrdinaryTxReport),
+    CollisionLimit(OrdinaryTxReport),
+}
+
+impl OrdinaryTxOutcome {
+    pub const fn report(self) -> OrdinaryTxReport {
+        match self {
+            Self::Success(report)
+            | Self::HardwareFailure(report)
+            | Self::HardwareTimeout(report)
+            | Self::CollisionLimit(report) => report,
+        }
+    }
+
+    pub const fn is_success(self) -> bool {
+        matches!(self, Self::Success(_))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -127,10 +153,8 @@ impl From<UnicastRetryError> for OrdinaryTxError {
 pub(crate) struct OrdinaryTxPlan {
     pub frame_length: usize,
     pub descriptor_capacity: Option<u32>,
-    pub queue: LegacyTxQueue,
-    pub rate: TxPhyRate,
-    pub attempt_limit: u8,
-    pub completion_timeout_us: u64,
+    /// Portable exchange policy translated by this ESP32-S31 adapter.
+    pub exchange: MacTxPlan<TxPhyRate>,
     pub hardware_mic_length: usize,
     pub hardware_key_selector: u8,
     pub scheduler_priority: u8,
@@ -205,6 +229,19 @@ where
 
     pub const fn active(&self) -> bool {
         self.active.is_some()
+    }
+
+    /// Portable distinction between normal queue pressure and a quarantined
+    /// descriptor that requires a new radio epoch.
+    pub fn queue_state(&self) -> MacTxQueueState {
+        if self.slot.as_ref().get_ref().state() == TxSlotState::ResetRequired {
+            MacTxQueueState::ResetRequired
+        } else if self.active.is_some() || self.slot.as_ref().get_ref().state() != TxSlotState::Free
+        {
+            MacTxQueueState::Backpressured
+        } else {
+            MacTxQueueState::Ready
+        }
     }
 
     pub const fn policy(&self) -> &StaTxRuntimePolicy {
@@ -295,6 +332,12 @@ where
         self.last_outcome.take()
     }
 
+    /// Borrow the terminal outcome without consuming another owner's public
+    /// observation of it.
+    pub const fn last_outcome(&self) -> Option<OrdinaryTxOutcome> {
+        self.last_outcome
+    }
+
     pub fn buffer_mut(&mut self) -> Result<&mut [u8; BUFFER_SIZE], OrdinaryTxError> {
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
@@ -310,7 +353,7 @@ where
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
         }
-        if matches!(plan.rate, TxPhyRate::He(_)) {
+        if matches!(plan.exchange.initial_rate, TxPhyRate::He(_)) {
             return Err(OrdinaryTxError::UnsupportedHeOrdinaryMpdu);
         }
 
@@ -348,18 +391,22 @@ where
 
         let mut active = ActiveTx {
             cookie: TxCookie(0),
-            retry: UnicastRetryState::new(plan.queue, plan.rate, plan.attempt_limit)?,
+            retry: UnicastRetryState::new(
+                LegacyTxQueue::from_access_category(plan.exchange.access_category),
+                plan.exchange.initial_rate,
+                plan.exchange.publication_limit,
+            )?,
             frame_length: plan.frame_length,
             descriptor_capacity,
             transfer_length: u32::try_from(transfer_length)
                 .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?,
-            queue: plan.queue,
+            queue: LegacyTxQueue::from_access_category(plan.exchange.access_category),
             hardware_mic_length: plan.hardware_mic_length,
             hardware_key_selector: plan.hardware_key_selector,
             scheduler_priority: plan.scheduler_priority,
             packet_priority: plan.packet_priority,
             group_receiver,
-            completion_timeout_us: plan.completion_timeout_us,
+            completion_timeout_us: plan.exchange.publication_timeout_micros,
             deadline_micros: 0,
         };
         self.publish_attempt(hardware, &mut active)?;
@@ -477,15 +524,33 @@ where
         mut active: ActiveTx,
         completion: TxCompletion,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let attempts = active.retry.attempt();
+        let final_rate = active.retry.current_rate()?;
         match active
             .retry
             .observe_completion(&mut self.policy, completion.status)
         {
             UnicastRetryDecision::Complete => {
-                self.last_outcome = Some(if completion.status == 0 {
-                    OrdinaryTxOutcome::Success(completion)
+                let success = completion.status == 0;
+                let report = OrdinaryTxReport {
+                    status: MacTxStatus {
+                        result: if success {
+                            MacTxResult::Transmitted
+                        } else {
+                            MacTxResult::HardwareFailure(completion.status)
+                        },
+                        attempts,
+                        final_rate,
+                        acknowledged: (!active.group_receiver).then_some(success),
+                        ack_snr_db: completion.ack_snr_sample(),
+                        airtime_micros: None,
+                    },
+                    completion: Some(completion),
+                };
+                self.last_outcome = Some(if success {
+                    OrdinaryTxOutcome::Success(report)
                 } else {
-                    OrdinaryTxOutcome::HardwareFailure(completion)
+                    OrdinaryTxOutcome::HardwareFailure(report)
                 });
                 Ok(WifiTxProgress::Complete)
             }
@@ -504,6 +569,8 @@ where
         mut active: ActiveTx,
         timeout: bool,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let attempts = active.retry.attempt();
+        let final_rate = active.retry.current_rate()?;
         let decision = if timeout {
             active.retry.observe_hardware_timeout(&mut self.policy)
         } else {
@@ -519,10 +586,29 @@ where
                 Ok(WifiTxProgress::Pending)
             }
             UnicastRetryDecision::Complete => {
+                let report = OrdinaryTxReport {
+                    status: MacTxStatus {
+                        result: if timeout {
+                            MacTxResult::HardwareTimeout
+                        } else {
+                            MacTxResult::CollisionLimit
+                        },
+                        attempts,
+                        final_rate,
+                        acknowledged: if timeout && !active.group_receiver {
+                            Some(false)
+                        } else {
+                            None
+                        },
+                        ack_snr_db: None,
+                        airtime_micros: None,
+                    },
+                    completion: None,
+                };
                 self.last_outcome = Some(if timeout {
-                    OrdinaryTxOutcome::HardwareTimeout
+                    OrdinaryTxOutcome::HardwareTimeout(report)
                 } else {
-                    OrdinaryTxOutcome::CollisionLimit
+                    OrdinaryTxOutcome::CollisionLimit(report)
                 });
                 Ok(WifiTxProgress::Complete)
             }

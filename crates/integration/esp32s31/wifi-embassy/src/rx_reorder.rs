@@ -60,21 +60,31 @@ unsafe impl<const CAPACITY: usize> Sync for RxReorderSlot<CAPACITY> {}
 /// The ordinary SRAM staging lease remains the zero-extra-copy fast path for
 /// in-order frames. Only a retained frame is copied here, after which its hot
 /// staging credit is returned immediately to the DMA/protocol handoff.
-pub struct RxReorderFrameStorage<const CAPACITY: usize> {
-    slots: [RxReorderSlot<CAPACITY>; RX_REORDER_BACKING_SLOT_COUNT],
+pub struct RxReorderFrameStorage<
+    const CAPACITY: usize,
+    const SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
+    slots: [RxReorderSlot<CAPACITY>; SLOTS],
     claimed: [AtomicUsize; RX_REORDER_BACKING_BITMAP_WORDS],
 }
 
-impl<const CAPACITY: usize> RxReorderFrameStorage<CAPACITY> {
+impl<const CAPACITY: usize, const SLOTS: usize> RxReorderFrameStorage<CAPACITY, SLOTS> {
     pub const fn new() -> Self {
+        assert!(SLOTS != 0, "RX reorder storage must not be empty");
+        assert!(
+            SLOTS <= RX_REORDER_BACKING_SLOT_COUNT,
+            "RX reorder storage exceeds the MAC slot domain"
+        );
         Self {
-            slots: [const { RxReorderSlot::new() }; RX_REORDER_BACKING_SLOT_COUNT],
+            slots: [const { RxReorderSlot::new() }; SLOTS],
             claimed: [const { AtomicUsize::new(0) }; RX_REORDER_BACKING_BITMAP_WORDS],
         }
     }
 
-    pub fn try_reserve(&self) -> Result<RxReorderReservation<'_, CAPACITY>, RxReorderStorageError> {
-        let slot = (0..RX_REORDER_BACKING_SLOT_COUNT)
+    pub fn try_reserve(
+        &self,
+    ) -> Result<RxReorderReservation<'_, CAPACITY, SLOTS>, RxReorderStorageError> {
+        let slot = (0..SLOTS)
             .find(|&slot| self.try_claim(slot))
             .ok_or(RxReorderStorageError::Exhausted)?;
         Ok(RxReorderReservation {
@@ -85,7 +95,7 @@ impl<const CAPACITY: usize> RxReorderFrameStorage<CAPACITY> {
     }
 
     pub fn available_slots(&self) -> usize {
-        RX_REORDER_BACKING_SLOT_COUNT.saturating_sub(
+        SLOTS.saturating_sub(
             self.claimed
                 .iter()
                 .map(|word| word.load(Ordering::Acquire).count_ones() as usize)
@@ -104,7 +114,7 @@ impl<const CAPACITY: usize> RxReorderFrameStorage<CAPACITY> {
     }
 }
 
-impl<const CAPACITY: usize> Default for RxReorderFrameStorage<CAPACITY> {
+impl<const CAPACITY: usize, const SLOTS: usize> Default for RxReorderFrameStorage<CAPACITY, SLOTS> {
     fn default() -> Self {
         Self::new()
     }
@@ -112,13 +122,15 @@ impl<const CAPACITY: usize> Default for RxReorderFrameStorage<CAPACITY> {
 
 /// Claimed logical sequence slot before the reorder state decides whether the
 /// current SRAM staging frame must be retained.
-pub struct RxReorderReservation<'storage, const CAPACITY: usize> {
-    storage: &'storage RxReorderFrameStorage<CAPACITY>,
+pub struct RxReorderReservation<'storage, const CAPACITY: usize, const SLOTS: usize> {
+    storage: &'storage RxReorderFrameStorage<CAPACITY, SLOTS>,
     slot: usize,
     live: bool,
 }
 
-impl<'storage, const CAPACITY: usize> RxReorderReservation<'storage, CAPACITY> {
+impl<'storage, const CAPACITY: usize, const SLOTS: usize>
+    RxReorderReservation<'storage, CAPACITY, SLOTS>
+{
     pub const fn slot(&self) -> usize {
         self.slot
     }
@@ -126,7 +138,7 @@ impl<'storage, const CAPACITY: usize> RxReorderReservation<'storage, CAPACITY> {
     pub fn copy_from(
         mut self,
         segment: RxSegment<'_>,
-    ) -> Result<RxReorderFrame<'storage, CAPACITY>, (RxReorderStorageError, Self)> {
+    ) -> Result<RxReorderFrame<'storage, CAPACITY, SLOTS>, (RxReorderStorageError, Self)> {
         if segment.buffer.len() > CAPACITY {
             return Err((RxReorderStorageError::TooLong(segment.buffer.len()), self));
         }
@@ -148,7 +160,7 @@ impl<'storage, const CAPACITY: usize> RxReorderReservation<'storage, CAPACITY> {
     }
 }
 
-impl<const CAPACITY: usize> Drop for RxReorderReservation<'_, CAPACITY> {
+impl<const CAPACITY: usize, const SLOTS: usize> Drop for RxReorderReservation<'_, CAPACITY, SLOTS> {
     fn drop(&mut self) {
         if self.live {
             let released = self.storage.release(self.slot);
@@ -158,8 +170,8 @@ impl<const CAPACITY: usize> Drop for RxReorderReservation<'_, CAPACITY> {
 }
 
 /// Unique retained MPDU owner in the cold PSRAM reorder backing.
-pub struct RxReorderFrame<'storage, const CAPACITY: usize> {
-    storage: &'storage RxReorderFrameStorage<CAPACITY>,
+pub struct RxReorderFrame<'storage, const CAPACITY: usize, const SLOTS: usize> {
+    storage: &'storage RxReorderFrameStorage<CAPACITY, SLOTS>,
     slot: usize,
     descriptor_address: u32,
     descriptor_word0: u32,
@@ -167,7 +179,7 @@ pub struct RxReorderFrame<'storage, const CAPACITY: usize> {
     length: usize,
 }
 
-impl<const CAPACITY: usize> RxReorderFrame<'_, CAPACITY> {
+impl<const CAPACITY: usize, const SLOTS: usize> RxReorderFrame<'_, CAPACITY, SLOTS> {
     pub const fn slot(&self) -> usize {
         self.slot
     }
@@ -184,7 +196,7 @@ impl<const CAPACITY: usize> RxReorderFrame<'_, CAPACITY> {
     }
 }
 
-impl<const CAPACITY: usize> Drop for RxReorderFrame<'_, CAPACITY> {
+impl<const CAPACITY: usize, const SLOTS: usize> Drop for RxReorderFrame<'_, CAPACITY, SLOTS> {
     fn drop(&mut self) {
         let released = self.storage.release(self.slot);
         debug_assert!(released);
@@ -332,6 +344,26 @@ mod tests {
         assert_eq!(frame.segment().descriptor_word0, 0x2000);
         drop(frame);
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+    }
+
+    #[test]
+    fn board_profile_selects_the_allocated_reorder_slot_count() {
+        let storage = RxReorderFrameStorage::<16, 3>::new();
+        assert_eq!(storage.available_slots(), 3);
+        let first = storage.try_reserve().unwrap();
+        let second = storage.try_reserve().unwrap();
+        let third = storage.try_reserve().unwrap();
+        assert_eq!(storage.available_slots(), 0);
+        assert!(matches!(
+            storage.try_reserve(),
+            Err(RxReorderStorageError::Exhausted)
+        ));
+        drop((first, second, third));
+        assert_eq!(storage.available_slots(), 3);
+        assert_eq!(
+            core::mem::size_of::<RxReorderFrameStorage<16, 3>>(),
+            3 * 16 + 2 * core::mem::size_of::<AtomicUsize>()
+        );
     }
 
     #[test]

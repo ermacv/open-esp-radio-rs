@@ -554,7 +554,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 let outcome = tx
                     .take_last_outcome()
                     .ok_or(ConnectedControlError::MissingTxOutcome)?;
-                let success = matches!(outcome, SingleMpduTxOutcome::Success(_));
+                let success = outcome.is_success();
                 if !success {
                     self.last_tx_failure = Some(ConnectedControlTxFailure {
                         kind: in_flight.kind(),
@@ -939,8 +939,10 @@ mod tests {
         tx::{LegacyRate, TxCompletion, TxSlot},
         tx_runtime::StaTxRuntimePolicy,
     };
+    use open_esp_radio_ieee80211::mac_service::{MacRxMetadata, MacTxPlan};
     use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
     use open_esp_radio_ieee80211::station_beacon::{StaBeaconObservation, StaTimObservation};
+    use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
     use crate::{
         runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
@@ -1125,11 +1127,14 @@ mod tests {
                     station_address: STATION,
                     bssid: BSSID,
                     peer_qos: true,
-                    rate: open_esp_radio_esp32s31_wifi_mac::tx::TxPhyRate::Legacy(
-                        LegacyRate::Ofdm54M,
-                    ),
-                    attempt_limit,
-                    completion_timeout_us: 250_000,
+                    exchange: MacTxPlan {
+                        access_category: WmmAccessCategory::BestEffort,
+                        initial_rate: open_esp_radio_esp32s31_wifi_mac::tx::TxPhyRate::Legacy(
+                            LegacyRate::Ofdm54M,
+                        ),
+                        publication_limit: attempt_limit,
+                        publication_timeout_micros: 250_000,
+                    },
                 },
             },
         )
@@ -1164,6 +1169,13 @@ mod tests {
                 unicast_buffered: false,
                 group_buffered: false,
             }),
+        }
+    }
+
+    fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> {
+        ConnectedRxEvent::Beacon {
+            observation,
+            metadata: MacRxMetadata::unavailable(),
         }
     }
 
@@ -1357,8 +1369,9 @@ mod tests {
             control.last_tx_failure(),
             Some(ConnectedControlTxFailure {
                 kind: ConnectedControlTxKind::RxAddbaResponse { tid: 3 },
-                outcome: SingleMpduTxOutcome::HardwareFailure(TxCompletion { status: 2, .. }),
+                outcome: SingleMpduTxOutcome::HardwareFailure(report),
             })
+            if matches!(report.completion, Some(TxCompletion { status: 2, .. }))
         ));
     }
 
@@ -1520,7 +1533,7 @@ mod tests {
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
             Ok(WifiControlProgress::More)
         );
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
 
         assert_eq!(
             control.shutdown(&mut hardware, &mut tx),
@@ -1584,7 +1597,7 @@ mod tests {
             Ok(WifiControlProgress::Idle)
         );
         embassy_futures::block_on(control.wait_ready(&mut tx));
-        publisher.publish(ConnectedRxEvent::Beacon(StaBeaconObservation {
+        publisher.publish(beacon_event(StaBeaconObservation {
             timestamp_tsf: 123,
             interval_tu: 100,
             capability_information: 0,
@@ -1619,7 +1632,7 @@ mod tests {
             ..Hardware::default()
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
 
         assert_eq!(
             embassy_futures::block_on(control.service_with_context(
@@ -1678,7 +1691,7 @@ mod tests {
             ..Hardware::default()
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
 
         assert_eq!(
             embassy_futures::block_on(control.service_with_context(
@@ -1715,7 +1728,7 @@ mod tests {
             ..Hardware::default()
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
             Ok(WifiControlProgress::TxPending)
@@ -1758,7 +1771,7 @@ mod tests {
             ..Hardware::default()
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
             Ok(WifiControlProgress::TxPending)
@@ -1828,7 +1841,7 @@ mod tests {
             ..Hardware::default()
         };
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-        publisher.publish(ConnectedRxEvent::Beacon(idle_beacon()));
+        publisher.publish(beacon_event(idle_beacon()));
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
             Ok(WifiControlProgress::TxPending)

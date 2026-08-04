@@ -32,5 +32,10 @@ pub mod esp32s31 {
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
         pub use open_esp_radio_esp32s31_wifi_mac as mac;
+
+        #[cfg(feature = "esp32s31-wifi-embassy")]
+        pub mod embassy {
+            pub use open_esp_radio_esp32s31_wifi_embassy::station;
+        }
     }
 }

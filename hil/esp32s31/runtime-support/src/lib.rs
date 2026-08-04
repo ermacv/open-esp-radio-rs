@@ -1,12 +1,8 @@
 #![no_std]
 
-//! Scheduler-free Embassy support for the ESP32-S31 HIL runtime.
+//! Compatibility facade retained for old HIL package paths.
 //!
-//! This remains private test-platform code. Driver crates consume only
-//! executor-neutral delay/event traits.
+//! New board applications and the HIL runtime consume the reusable platform
+//! crate directly. No executor or timer implementation remains HIL-owned.
 
-mod executor;
-mod time_driver;
-
-pub use executor::Executor;
-pub use time_driver::{Timer, init};
+pub use open_esp_radio_esp32s31_embassy_runtime::{Executor, Timer, init};

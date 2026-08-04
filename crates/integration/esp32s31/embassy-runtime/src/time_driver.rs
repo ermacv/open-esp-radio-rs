@@ -13,7 +13,7 @@ use esp_hal::{
 };
 use esp_sync::NonReentrantMutex;
 
-/// Hardware timer type accepted by [`init`].
+/// ESP-HAL timer capability accepted by [`init`].
 pub type Timer = OneShotTimer<'static, Blocking>;
 
 struct State {
@@ -37,30 +37,21 @@ impl State {
         if self.next_wakeup == self.current_alarm {
             return;
         }
-
         let timer = self
             .timer
             .as_mut()
-            .expect("esp32s31_embassy_runtime::init must be called before using embassy-time");
-
+            .expect("open_esp_radio_esp32s31_embassy_runtime::init must run first");
         self.current_alarm = self.next_wakeup;
-
         if self.next_wakeup == u64::MAX {
             timer.stop();
             return;
         }
 
-        // A deadline in the past still has to cause an asynchronous wake-up.
-        // One microsecond is the smallest portable timeout exposed by esp-hal.
-        let timeout_us = self.next_wakeup.saturating_sub(now).max(1);
-        let mut timeout = Duration::from_micros(timeout_us);
-
+        let mut timeout = Duration::from_micros(self.next_wakeup.saturating_sub(now).max(1));
         loop {
             match timer.schedule(timeout) {
                 Ok(()) => break,
                 Err(Error::InvalidTimeout) if timeout > Duration::from_micros(1) => {
-                    // Waking early is valid. The interrupt handler will re-arm
-                    // the timer if the real deadline has not been reached.
                     timeout = timeout / 2;
                 }
                 Err(error) => panic!("failed to schedule Embassy timer: {error:?}"),
@@ -111,8 +102,6 @@ impl EmbassyTimeDriver {
 #[unsafe(link_section = ".critical.data.embassy_time")]
 static ESP32S31_EMBASSY_TIME_DRIVER: EmbassyTimeDriver = EmbassyTimeDriver::new();
 
-// This is the expansion of `embassy_time_driver::time_driver_impl!`, kept
-// local so the driver state can carry the SRAM section contract above.
 #[unsafe(no_mangle)]
 fn _embassy_time_now() -> u64 {
     <EmbassyTimeDriver as Driver>::now(&ESP32S31_EMBASSY_TIME_DRIVER)
@@ -139,11 +128,6 @@ impl Driver for EmbassyTimeDriver {
     }
 }
 
-/// Processes an acknowledged hardware alarm from executor thread mode.
-///
-/// The timer queue owns arbitrary task [`Waker`] values. Calling them here,
-/// rather than in the hardware ISR, means PSRAM-resident Embassy executor
-/// vtables are never part of the interrupt call closure.
 pub(crate) fn dispatch_pending() {
     if ESP32S31_EMBASSY_TIMER_FIRED.swap(false, Ordering::AcqRel) {
         ESP32S31_EMBASSY_TIME_DRIVER.dispatch_expired();
@@ -155,18 +139,10 @@ pub(crate) fn dispatch_pending() {
 extern "C" fn timer_interrupt() {
     ESP32S31_EMBASSY_TIME_DRIVER.acknowledge_interrupt();
     ESP32S31_EMBASSY_TIMER_FIRED.store(true, Ordering::Release);
-    // The global time driver is owned by Executor<0>. The hardware interrupt
-    // itself wakes a sleeping local hart; this flag closes the race where the
-    // interrupt arrives immediately before Executor<0> enters WFI.
     crate::executor::mark_work::<0>();
 }
 
-/// Initializes the global Embassy time driver with a hardware one-shot timer.
-///
-/// This function must be called exactly once, before polling tasks which use
-/// `embassy-time`. The timer interrupt is bound to the core which calls this
-/// function. The timer must be initialized on the same core that runs
-/// [`crate::Executor<0>`].
+/// Install the global Embassy time driver on the calling core.
 pub fn init(mut timer: Timer) {
     timer.stop();
     timer.unlisten();

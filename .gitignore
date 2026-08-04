@@ -4,3 +4,4 @@
 /_oracles/
 hil/esp32s31/target
 /oracle-regression.json
+examples/**/target

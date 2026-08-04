@@ -10,6 +10,7 @@ use open_esp_radio_ieee80211::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
+use open_esp_radio_ieee80211::mac_service::{MacRxEvidence, MacRxMetadata};
 
 /// Semantic ownership boundary for the S31 RX descriptor walker.
 ///
@@ -160,8 +161,11 @@ pub const TAIL_STATE_OFFSET: usize = 0x04;
 pub const TAIL_INTERNAL_OFFSET: usize = 0x05;
 
 const RX_PHY_RATE_OFFSET: usize = 0x01;
+const RX_PHY_RSSI_OFFSET: usize = 0x00;
 const RX_PHY_HE_SIGA1_OFFSET: usize = 0x04;
 const RX_PHY_HE_SIGA2_OFFSET: usize = 0x09;
+const RX_PHY_CHANNEL_OFFSET: usize = 0x1c;
+const RX_PHY_SINGLE_MPDU_OFFSET: usize = 0x1f;
 const RX_PHY_BB_FORMAT_OFFSET: usize = 0x25;
 const RX_PHY_HE_MU_RU_SIZE_OFFSET: usize = 0x1a;
 const RX_PHY_HE_MU_RU_POSITION_OFFSET: usize = 0x1e;
@@ -762,6 +766,39 @@ impl RxPhyInfo {
             _ => None,
         }
     }
+
+    /// HT-SIG Aggregation bit, when the RX vector is an HT PPDU.
+    ///
+    /// SOURCE: complete `_oracles/libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`,
+    /// offsets `0x592..0x5e0`. The format-two branch reads the word at prefix
+    /// bytes `4..8`, shifts bit 27 into the sixth argument of the HT record and
+    /// names it `Aggregation`.
+    pub const fn ht_aggregation(self) -> Option<bool> {
+        match self.baseband_format() {
+            RxBasebandFormat::Ht => Some(self.he_siga1 & (1 << 27) != 0),
+            _ => None,
+        }
+    }
+
+    /// A-MPDU containment established by the decoded PPDU format.
+    ///
+    /// HT carries a dedicated Aggregation bit and is handled separately.
+    /// IEEE 802.11ax-2021 clause 26.6 defines A-MPDU operation in an HE PPDU,
+    /// while the VHT/HE S-MPDU definition is explicitly the sole MPDU in an
+    /// A-MPDU carried by a VHT or HE PPDU. Legacy PPDUs cannot carry an
+    /// A-MPDU. Unknown future formats remain fail-closed.
+    pub const fn protocol_ampdu_containment(self) -> Option<bool> {
+        match self.baseband_format() {
+            RxBasebandFormat::Dot11b | RxBasebandFormat::Ofdm => Some(false),
+            RxBasebandFormat::Vht
+            | RxBasebandFormat::HeSu
+            | RxBasebandFormat::HeMu
+            | RxBasebandFormat::HeExtendedRangeSu
+            | RxBasebandFormat::HeTriggerBased
+            | RxBasebandFormat::VhtMu => Some(true),
+            RxBasebandFormat::Ht | RxBasebandFormat::Unknown(_) => None,
+        }
+    }
 }
 
 /// Decode the finite PHY-rate view without interpreting the format-specific
@@ -782,6 +819,38 @@ pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {
                 .try_into()
                 .ok()?,
         ),
+    })
+}
+
+/// Decode the portable metadata available at the S31 staged-frame boundary.
+///
+/// RSSI, rate and channel come from named fields in the pinned public
+/// `esp_wifi_rxctrl_t` ABI. The adjacent public `cur_single_mpdu` bit is
+/// preserved as S-MPDU evidence: the Espressif header defines it as the IEEE
+/// VHT/HE single-MPDU A-MPDU form, not as the inverse of arbitrary physical
+/// aggregation. Complete vendor `dbg_dump_rx_ppdu` independently proves byte
+/// `0x1f`, bit zero. HT obtains A-MPDU containment from the independently
+/// proved HT-SIG Aggregation bit. VHT/HE format validation establishes that
+/// their MPDUs use an A-MPDU container, while legacy formats establish the
+/// opposite; neither path infers a member count. Crypto and A-MSDU remain
+/// unavailable until a later owner has direct hardware or protocol evidence;
+/// an active BA agreement and the 802.11 Protected bit are not substitutes.
+pub fn decode_normalized_rx_metadata(buffer: &[u8]) -> Option<MacRxMetadata<RxPhyInfo>> {
+    let rate = decode_rx_phy_info(buffer)?;
+    Some(MacRxMetadata {
+        channel: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_CHANNEL_OFFSET)?),
+        rate: MacRxEvidence::HardwareObserved(rate),
+        rssi_dbm: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_RSSI_OFFSET)? as i8),
+        crypto: MacRxEvidence::Unavailable,
+        s_mpdu: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_SINGLE_MPDU_OFFSET)? & 1 != 0),
+        ampdu: match rate.ht_aggregation() {
+            Some(ampdu) => MacRxEvidence::HardwareObserved(ampdu),
+            None => match rate.protocol_ampdu_containment() {
+                Some(ampdu) => MacRxEvidence::ProtocolValidated(ampdu),
+                None => MacRxEvidence::Unavailable,
+            },
+        },
+        amsdu: MacRxEvidence::Unavailable,
     })
 }
 

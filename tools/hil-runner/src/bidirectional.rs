@@ -264,6 +264,8 @@ pub(crate) struct RxQualification {
     pub(crate) dropped: u64,
     pub(crate) he_mcs_histogram: [u64; 12],
     pub(crate) other_phy_frames: u64,
+    pub(crate) s_mpdu: RxSmpduEvidence,
+    pub(crate) ampdu: RxAmpduEvidence,
     pub(crate) pipeline: RxPipelineEvidence,
     pub(crate) irq: MacIrqEvidence,
     pub(crate) task_polls: TaskPollSet,
@@ -272,6 +274,91 @@ pub(crate) struct RxQualification {
     pub(crate) reorder: RxReorderEvidence,
     pub(crate) buffer_full: u64,
     pub(crate) fifo_overflow: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RxSmpduEvidence {
+    pub(crate) s_mpdu_datagrams: u64,
+    pub(crate) not_s_mpdu_datagrams: u64,
+    pub(crate) unavailable_datagrams: u64,
+    pub(crate) s_mpdu_beacons: u64,
+    pub(crate) not_s_mpdu_beacons: u64,
+    pub(crate) unavailable_beacons: u64,
+}
+
+impl RxSmpduEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.s_mpdu_datagrams = self
+            .s_mpdu_datagrams
+            .saturating_add(sample.s_mpdu_datagrams);
+        self.not_s_mpdu_datagrams = self
+            .not_s_mpdu_datagrams
+            .saturating_add(sample.not_s_mpdu_datagrams);
+        self.unavailable_datagrams = self
+            .unavailable_datagrams
+            .saturating_add(sample.unavailable_datagrams);
+        self.s_mpdu_beacons = self.s_mpdu_beacons.saturating_add(sample.s_mpdu_beacons);
+        self.not_s_mpdu_beacons = self
+            .not_s_mpdu_beacons
+            .saturating_add(sample.not_s_mpdu_beacons);
+        self.unavailable_beacons = self
+            .unavailable_beacons
+            .saturating_add(sample.unavailable_beacons);
+    }
+
+    fn observed_datagrams(self) -> u64 {
+        self.s_mpdu_datagrams
+            .saturating_add(self.not_s_mpdu_datagrams)
+    }
+
+    fn observed_beacons(self) -> u64 {
+        self.s_mpdu_beacons.saturating_add(self.not_s_mpdu_beacons)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RxAmpduEvidence {
+    pub(crate) ampdu_datagrams: u64,
+    pub(crate) not_ampdu_datagrams: u64,
+    pub(crate) hardware_ampdu_datagrams: u64,
+    pub(crate) hardware_not_ampdu_datagrams: u64,
+    pub(crate) protocol_ampdu_datagrams: u64,
+    pub(crate) protocol_not_ampdu_datagrams: u64,
+    pub(crate) unavailable_datagrams: u64,
+}
+
+impl RxAmpduEvidence {
+    fn merge(&mut self, sample: Self) {
+        self.ampdu_datagrams = self.ampdu_datagrams.saturating_add(sample.ampdu_datagrams);
+        self.not_ampdu_datagrams = self
+            .not_ampdu_datagrams
+            .saturating_add(sample.not_ampdu_datagrams);
+        self.hardware_ampdu_datagrams = self
+            .hardware_ampdu_datagrams
+            .saturating_add(sample.hardware_ampdu_datagrams);
+        self.hardware_not_ampdu_datagrams = self
+            .hardware_not_ampdu_datagrams
+            .saturating_add(sample.hardware_not_ampdu_datagrams);
+        self.protocol_ampdu_datagrams = self
+            .protocol_ampdu_datagrams
+            .saturating_add(sample.protocol_ampdu_datagrams);
+        self.protocol_not_ampdu_datagrams = self
+            .protocol_not_ampdu_datagrams
+            .saturating_add(sample.protocol_not_ampdu_datagrams);
+        self.unavailable_datagrams = self
+            .unavailable_datagrams
+            .saturating_add(sample.unavailable_datagrams);
+    }
+
+    fn hardware_observed_datagrams(self) -> u64 {
+        self.hardware_ampdu_datagrams
+            .saturating_add(self.hardware_not_ampdu_datagrams)
+    }
+
+    fn protocol_validated_datagrams(self) -> u64 {
+        self.protocol_ampdu_datagrams
+            .saturating_add(self.protocol_not_ampdu_datagrams)
+    }
 }
 
 pub(crate) struct RxAssessment {
@@ -740,6 +827,8 @@ struct DeviceReport {
     ampdu_histograms: Vec<AmpduHistogramSample>,
     ampdu_timings: Vec<AmpduTimingSample>,
     rx_mcs_histograms: Vec<([u64; 12], u64)>,
+    rx_s_mpdu: Vec<RxSmpduEvidence>,
+    rx_ampdu: Vec<RxAmpduEvidence>,
     rx_service: Vec<RxPipelineEvidence>,
     rx_dispatch: Vec<RxPipelineEvidence>,
     rx_frontier: Vec<RxPipelineEvidence>,
@@ -1373,6 +1462,35 @@ fn parse_device_report(log: &str) -> DeviceReport {
             if include_rx_interval_evidence && let Some(sample) = sample {
                 report.mac_irq.push(sample);
             }
+        } else if line.starts_with("ORXSM ") || line.contains(" ORXSM ") {
+            let sample = (|| {
+                Some(RxSmpduEvidence {
+                    s_mpdu_datagrams: field(line, "s_mpdu")?,
+                    not_s_mpdu_datagrams: field(line, "not_s_mpdu")?,
+                    unavailable_datagrams: field(line, "unavailable")?,
+                    s_mpdu_beacons: field(line, "beacon_s_mpdu")?,
+                    not_s_mpdu_beacons: field(line, "beacon_not_s_mpdu")?,
+                    unavailable_beacons: field(line, "beacon_unavailable")?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_s_mpdu.push(sample);
+            }
+        } else if line.starts_with("ORXAG ") || line.contains(" ORXAG ") {
+            let sample = (|| {
+                Some(RxAmpduEvidence {
+                    ampdu_datagrams: field(line, "ampdu")?,
+                    not_ampdu_datagrams: field(line, "not_ampdu")?,
+                    hardware_ampdu_datagrams: field(line, "hardware_ampdu")?,
+                    hardware_not_ampdu_datagrams: field(line, "hardware_not_ampdu")?,
+                    protocol_ampdu_datagrams: field(line, "protocol_ampdu")?,
+                    protocol_not_ampdu_datagrams: field(line, "protocol_not_ampdu")?,
+                    unavailable_datagrams: field(line, "unavailable")?,
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_ampdu.push(sample);
+            }
         } else if line.starts_with("ORXM ") || line.contains(" ORXM ") {
             let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
             if include_rx_interval_evidence
@@ -1669,6 +1787,22 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         )
         .into());
     }
+    if report.rx_s_mpdu.len() != rx.len() {
+        return Err(format!(
+            "incomplete RX S-MPDU evidence: records={} qualified_samples={}",
+            report.rx_s_mpdu.len(),
+            rx.len(),
+        )
+        .into());
+    }
+    if report.rx_ampdu.len() != rx.len() {
+        return Err(format!(
+            "incomplete RX A-MPDU evidence: records={} qualified_samples={}",
+            report.rx_ampdu.len(),
+            rx.len(),
+        )
+        .into());
+    }
     if report.mac_irq.is_empty() {
         return Err("missing MAC interrupt classification telemetry".into());
     }
@@ -1708,6 +1842,81 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
             *total = total.saturating_add(*sample);
         }
         other_phy_frames = other_phy_frames.saturating_add(*other);
+    }
+    let mut s_mpdu = RxSmpduEvidence::default();
+    for sample in &report.rx_s_mpdu {
+        s_mpdu.merge(*sample);
+    }
+    if s_mpdu.observed_datagrams() == 0 {
+        return Err("RX S-MPDU evidence did not observe a benchmark datagram".into());
+    }
+    if s_mpdu.unavailable_datagrams != 0 {
+        return Err(format!(
+            "RX S-MPDU provenance unavailable for {} benchmark datagrams",
+            s_mpdu.unavailable_datagrams,
+        )
+        .into());
+    }
+    if s_mpdu.observed_beacons() == 0 {
+        return Err("RX S-MPDU evidence did not observe a connected beacon".into());
+    }
+    if s_mpdu.unavailable_beacons != 0 {
+        return Err(format!(
+            "RX S-MPDU provenance unavailable for {} connected beacons",
+            s_mpdu.unavailable_beacons,
+        )
+        .into());
+    }
+    let mut ampdu = RxAmpduEvidence::default();
+    for sample in &report.rx_ampdu {
+        ampdu.merge(*sample);
+    }
+    if ampdu.ampdu_datagrams
+        != ampdu
+            .hardware_ampdu_datagrams
+            .saturating_add(ampdu.protocol_ampdu_datagrams)
+        || ampdu.not_ampdu_datagrams
+            != ampdu
+                .hardware_not_ampdu_datagrams
+                .saturating_add(ampdu.protocol_not_ampdu_datagrams)
+    {
+        return Err("RX A-MPDU totals do not match their provenance classes".into());
+    }
+    if expected_format == 2 {
+        if ampdu.hardware_observed_datagrams() == 0 {
+            return Err("HT RX did not carry direct HT-SIG A-MPDU evidence".into());
+        }
+        if ampdu.unavailable_datagrams != 0 {
+            return Err(format!(
+                "HT RX A-MPDU provenance unavailable for {} benchmark datagrams",
+                ampdu.unavailable_datagrams,
+            )
+            .into());
+        }
+        if ampdu.ampdu_datagrams == 0 {
+            return Err("HT RX did not observe an aggregated benchmark MPDU".into());
+        }
+        if ampdu.protocol_validated_datagrams() != 0 {
+            return Err("HT RX A-MPDU evidence did not remain hardware-sourced".into());
+        }
+    } else if matches!(expected_format, 4..=7) {
+        if ampdu.protocol_ampdu_datagrams == 0 {
+            return Err("HE RX did not carry format-validated A-MPDU evidence".into());
+        }
+        if ampdu.protocol_not_ampdu_datagrams != 0
+            || ampdu.hardware_observed_datagrams() != 0
+            || ampdu.unavailable_datagrams != 0
+        {
+            return Err(format!(
+                "HE RX A-MPDU provenance was not exclusively format-validated: \
+                 protocol_ampdu={} protocol_not_ampdu={} hardware={} unavailable={}",
+                ampdu.protocol_ampdu_datagrams,
+                ampdu.protocol_not_ampdu_datagrams,
+                ampdu.hardware_observed_datagrams(),
+                ampdu.unavailable_datagrams,
+            )
+            .into());
+        }
     }
     let mut sequence = UdpSequenceEvidence::default();
     for sample in &report.rx_sequences {
@@ -1772,6 +1981,8 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
             .sum(),
         he_mcs_histogram,
         other_phy_frames,
+        s_mpdu,
+        ampdu,
         pipeline,
         irq,
         task_polls: report.task_polls,
@@ -2143,6 +2354,10 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
+             - Benchmark UDP datagrams marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Connected beacons marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Benchmark UDP datagrams marked A-MPDU / not A-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - A-MPDU provenance hardware true/false, protocol true/false: `{}` / `{}`, `{}` / `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Service-observed BUFFER_FULL increments/samples: `{}` / `{}`; last boot service/counter/frontier/admitted/pool/queue/service time: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{} us`\n\
@@ -2190,6 +2405,19 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
             rx.dropped,
             rx.he_mcs_histogram,
             rx.other_phy_frames,
+            rx.s_mpdu.s_mpdu_datagrams,
+            rx.s_mpdu.not_s_mpdu_datagrams,
+            rx.s_mpdu.unavailable_datagrams,
+            rx.s_mpdu.s_mpdu_beacons,
+            rx.s_mpdu.not_s_mpdu_beacons,
+            rx.s_mpdu.unavailable_beacons,
+            rx.ampdu.ampdu_datagrams,
+            rx.ampdu.not_ampdu_datagrams,
+            rx.ampdu.unavailable_datagrams,
+            rx.ampdu.hardware_ampdu_datagrams,
+            rx.ampdu.hardware_not_ampdu_datagrams,
+            rx.ampdu.protocol_ampdu_datagrams,
+            rx.ampdu.protocol_not_ampdu_datagrams,
             rx.buffer_full,
             rx.fifo_overflow,
             pipeline.service_calls,
@@ -2358,12 +2586,16 @@ mod tests {
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=54 queue_dropped=1 rx_format=4\n\
              ORXQ first=0 highest=0 next=1 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=0 maximum_interarrival_at=4294967295\n\
              ORXO gap_events=0 forward_missing=0 backward=0 adjacent_duplicates=0 backward_mac_backward=0 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
+             ORXSM s_mpdu=0 not_s_mpdu=1 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=1 beacon_unavailable=0\n\
+             ORXAG ampdu=1 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=1 protocol_not_ampdu=0 unavailable=0\n\
              ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
              ORTP task=network polls=2 poll_us=1626 poll_boot_max_us=1582 over_100us=1 over_500us=1 over_1000us=1 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=2 forward_missing=3 maximum_gap=2 maximum_gap_at=100 first_gap_at=100 last_gap_at=3000 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=250 maximum_interarrival_at=100\n\
              ORXO gap_events=2 forward_missing=3 backward=3 adjacent_duplicates=0 backward_mac_backward=3 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
+             ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
+             ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
         );
@@ -2378,6 +2610,12 @@ mod tests {
         assert_eq!(report.rx_sequences[0].forward_missing, 3);
         assert_eq!(report.rx_order.len(), 1);
         assert_eq!(report.rx_order[0].backward_mac_backward, 3);
+        assert_eq!(report.rx_s_mpdu.len(), 1);
+        assert_eq!(report.rx_s_mpdu[0].not_s_mpdu_datagrams, 4_900);
+        assert_eq!(report.rx_s_mpdu[0].not_s_mpdu_beacons, 50);
+        assert_eq!(report.rx_ampdu.len(), 1);
+        assert_eq!(report.rx_ampdu[0].protocol_ampdu_datagrams, 5_000);
+        assert_eq!(report.rx_ampdu[0].unavailable_datagrams, 0);
     }
 
     #[test]
@@ -2390,6 +2628,8 @@ mod tests {
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
+             ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
+             ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
@@ -2425,6 +2665,8 @@ mod tests {
             "OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 receive_errors=0 terminal=1\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path mpdu=5000 data_success=5000 fcs_error=0 buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_irqs=5000 reload_delays=0 rx_format=4\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=2 forward_missing=4 maximum_gap=3 maximum_gap_at=100 first_gap_at=100 last_gap_at=4000 backward=1 adjacent_duplicates=2 unsequenced=0 maximum_interarrival_us=300 maximum_interarrival_at=4000\n\
+             ORXSM s_mpdu=50 not_s_mpdu=4950 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
+             ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
              ORXB increments=2 samples=1 last_service=6123 last_counter=17 last_frontier=7 last_admitted=7 last_pool=60 last_queue=61 last_service_us=73\n\
@@ -2453,6 +2695,11 @@ mod tests {
         );
         let rx = qualify_rx_report(&report, 4).unwrap();
         assert_eq!(rx.he_mcs_histogram[9], 4_950);
+        assert_eq!(rx.s_mpdu.not_s_mpdu_datagrams, 4_950);
+        assert_eq!(rx.s_mpdu.s_mpdu_datagrams, 50);
+        assert_eq!(rx.s_mpdu.not_s_mpdu_beacons, 50);
+        assert_eq!(rx.ampdu.protocol_ampdu_datagrams, 5_000);
+        assert_eq!(rx.ampdu.unavailable_datagrams, 0);
         assert_eq!(rx.pipeline.service_calls, 5_000);
         assert_eq!(rx.pipeline.service_us, 100_000);
         assert_eq!(rx.pipeline.dma_buffer_full_increments, 2);
@@ -2492,6 +2739,53 @@ mod tests {
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);
 
+        report.rx_formats[0] = 2;
+        report.rx_ampdu[0] = RxAmpduEvidence {
+            ampdu_datagrams: 4_500,
+            not_ampdu_datagrams: 500,
+            hardware_ampdu_datagrams: 4_500,
+            hardware_not_ampdu_datagrams: 500,
+            ..RxAmpduEvidence::default()
+        };
+        assert_eq!(
+            qualify_rx_report(&report, 2).unwrap().ampdu.ampdu_datagrams,
+            4_500
+        );
+        report.rx_ampdu[0].unavailable_datagrams = 1;
+        assert!(
+            qualify_rx_report(&report, 2)
+                .unwrap_err()
+                .to_string()
+                .contains("A-MPDU provenance unavailable")
+        );
+        report.rx_ampdu[0] = RxAmpduEvidence {
+            ampdu_datagrams: 0,
+            not_ampdu_datagrams: 5_000,
+            hardware_not_ampdu_datagrams: 5_000,
+            ..RxAmpduEvidence::default()
+        };
+        assert!(
+            qualify_rx_report(&report, 2)
+                .unwrap_err()
+                .to_string()
+                .contains("did not observe an aggregated benchmark MPDU")
+        );
+        report.rx_formats[0] = 4;
+        report.rx_ampdu[0] = RxAmpduEvidence {
+            ampdu_datagrams: 5_000,
+            not_ampdu_datagrams: 0,
+            protocol_ampdu_datagrams: 5_000,
+            ..RxAmpduEvidence::default()
+        };
+
+        report.rx_s_mpdu[0].unavailable_datagrams = 1;
+        assert!(
+            qualify_rx_report(&report, 4)
+                .unwrap_err()
+                .to_string()
+                .contains("S-MPDU provenance unavailable")
+        );
+        report.rx_s_mpdu[0].unavailable_datagrams = 0;
         report.rx_reorder[0].maximum_occupied = 8;
         assert!(
             qualify_rx_report(&report, 4)

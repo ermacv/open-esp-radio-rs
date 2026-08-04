@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 8;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -96,6 +96,13 @@ pub struct FeatureCapabilities {
     /// This image can stop one healthy connected STA epoch at a safe runner
     /// boundary and use the returned owners to exercise reassociation.
     pub station_epoch_control: bool,
+    /// This image reliably reports connected generations and proved peer-loss
+    /// transitions independently of lossy text diagnostics.
+    pub station_lifecycle_events: bool,
+    /// This image can inject one fault below the station lifecycle, after a
+    /// real LMAC transaction has acquired hardware ownership, and report the
+    /// exact terminal owner frontier.
+    pub station_fault_injection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -313,10 +320,59 @@ pub enum Command {
     /// lifecycle operation, not a transport-session stop and not evidence of
     /// peer link loss.
     CycleStationEpoch,
+    /// Arm one deterministic fault below the station lifecycle facade.
+    /// Injection is one-shot and occurs only after the named production
+    /// transaction has crossed its hardware-ownership edge.
+    InjectStationFault(StationFaultInjection),
     Stop,
     Abort,
     GetLastResult,
     AcknowledgeResult,
+}
+
+/// Production transaction edge selected by a HIL fault cell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationFaultInjection {
+    /// After a connected network TX has published a real descriptor, feed its
+    /// service path a contradictory completion/timeout edge. The ordinary or
+    /// aggregate owner must quarantine the descriptor for platform reset.
+    ConnectedTxAfterPublication,
+}
+
+/// Target-independent classification of a completed fault injection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationFaultClassification {
+    /// The LMAC transaction rejected continued use of the radio and marked
+    /// its descriptor owner reset-required.
+    RadioResetRequired,
+    /// The requested injection returned through a different frontier and must
+    /// fail qualification rather than being mislabeled as reset-required.
+    ContractViolation,
+}
+
+/// Reliable evidence for one deliberately terminal station fault cell.
+///
+/// The four booleans describe the exact recoverable frontier before platform
+/// reset. A target must not claim completion merely because the runner
+/// returned an error: task borrows and RX DMA have to be returned first, while
+/// the uncertain TX descriptor must remain quarantined.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationFaultEvidence {
+    pub injection: StationFaultInjection,
+    pub classification: StationFaultClassification,
+    pub runner_returned: bool,
+    pub executor_tasks_stopped: bool,
+    pub rx_dma_stopped: bool,
+    pub tx_owner_reset_required: bool,
+}
+
+impl StationFaultEvidence {
+    pub const fn is_complete(self) -> bool {
+        self.runner_returned
+            && self.executor_tasks_stopped
+            && self.rx_dma_stopped
+            && self.tx_owner_reset_required
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -336,6 +392,102 @@ pub enum SessionState {
 pub struct StateChange {
     pub previous: SessionState,
     pub current: SessionState,
+}
+
+/// Target-observed ownership edges for one requested station epoch cycle.
+///
+/// This is deliberately semantic rather than target-specific: the target
+/// adapter may implement the individual operations differently, but it may
+/// publish completion only after every owned resource crossed these four
+/// finite boundaries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationEpochEvidence {
+    pub runner_stopped: bool,
+    pub scan_owners_returned: bool,
+    pub join_completed: bool,
+    pub connected_runner_started: bool,
+}
+
+impl StationEpochEvidence {
+    pub const COMPLETE: Self = Self {
+        runner_stopped: true,
+        scan_owners_returned: true,
+        join_completed: true,
+        connected_runner_started: true,
+    };
+
+    pub const fn is_complete(self) -> bool {
+        self.runner_stopped
+            && self.scan_owners_returned
+            && self.join_completed
+            && self.connected_runner_started
+    }
+}
+
+/// Why a connected station generation returned to candidate selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationDisconnectReason {
+    /// The connected beacon monitor proved that the selected AP disappeared.
+    BeaconLoss,
+    /// Another connected link policy returned the peer owner without claiming
+    /// a beacon deadline; this must not qualify an AP-loss test.
+    LinkPolicy,
+    /// The host/application requested a healthy connected-epoch cycle.
+    ReconnectRequested,
+}
+
+/// Stable station stage vocabulary used by HIL lifecycle evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationFailureStage {
+    CandidateSelection,
+    Authentication,
+    Association,
+    Security,
+    Connected,
+    Hardware,
+}
+
+/// Target-independent classification of a failed station attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationAttemptFailureReason {
+    /// A complete candidate scan did not find the configured network.
+    NoCandidate,
+    /// A finite peer protocol exchange failed or timed out.
+    PeerProtocol,
+    /// Hardware ownership or a bounded hardware transaction failed.
+    Hardware,
+    /// The adapter observed an impossible production ownership contract.
+    ContractViolation,
+}
+
+/// Reliable target-observed station lifecycle edge.
+///
+/// Generation zero is the initial connection. The outer lifecycle increments
+/// the generation only after a connected epoch returns its owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationLifecycleEvent {
+    Connected {
+        generation: u32,
+    },
+    Disconnected {
+        generation: u32,
+        reason: StationDisconnectReason,
+    },
+    /// One complete attempt returned every owner and was classified for retry.
+    AttemptFailed {
+        generation: u32,
+        attempt: u16,
+        stage: StationFailureStage,
+        reason: StationAttemptFailureReason,
+    },
+    /// The bounded reconnect policy returned the final owner without another
+    /// hidden attempt or backoff.
+    RetryExhausted {
+        generation: u32,
+        attempts: u16,
+        stage: StationFailureStage,
+        reason: StationAttemptFailureReason,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -422,6 +574,14 @@ pub enum Event {
     Accepted,
     Rejected(RejectReason),
     State(StateChange),
+    /// Reliable completion acknowledgement for `CycleStationEpoch`.
+    /// The envelope request ID identifies the command being completed.
+    StationEpochCompleted(StationEpochEvidence),
+    /// Unsolicited, reliable station generation/link transition.
+    StationLifecycle(StationLifecycleEvent),
+    /// Reliable terminal frontier for a requested station fault injection.
+    /// The envelope request ID matches `InjectStationFault`.
+    StationFault(StationFaultEvidence),
     NetworkReady(NetworkInfo),
     ServiceReady(ServiceInfo),
     Evidence(EvidenceRecord),

@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::{StaTxRuntimePolicy, UnicastRetryError},
 };
 use open_esp_radio_ieee80211::{
+    mac_service::MacTxPlan,
     management::{ProbeRequest, ProbeRequestError},
     station::{
         AssociationRequest, AssociationRequestError, OpenAuthenticationRequest, StaDataFrame,
@@ -347,10 +348,12 @@ where
             OrdinaryTxPlan {
                 frame_length,
                 descriptor_capacity: publication.descriptor_capacity,
-                queue: publication.queue,
-                rate: publication.rate,
-                attempt_limit: publication.attempt_limit,
-                completion_timeout_us: self.config.completion_timeout_us,
+                exchange: MacTxPlan {
+                    access_category: publication.queue.access_category(),
+                    initial_rate: publication.rate,
+                    publication_limit: publication.attempt_limit,
+                    publication_timeout_micros: self.config.completion_timeout_us,
+                },
                 hardware_mic_length: publication.hardware_mic_length,
                 hardware_key_selector: publication.hardware_key_selector,
                 scheduler_priority: publication.scheduler_priority,
@@ -366,15 +369,18 @@ where
             {
                 continue;
             }
-            return match self
+            let outcome = self
                 .ordinary
                 .take_last_outcome()
-                .expect("complete control TX retains one terminal outcome")
-            {
-                OrdinaryTxOutcome::Success(completion)
-                | OrdinaryTxOutcome::HardwareFailure(completion) => Ok(completion),
-                OrdinaryTxOutcome::HardwareTimeout => Err(ControlTxError::HardwareTimeout),
-                OrdinaryTxOutcome::CollisionLimit => Err(ControlTxError::CollisionLimit),
+                .expect("complete control TX retains one terminal outcome");
+            return match outcome {
+                OrdinaryTxOutcome::Success(report) | OrdinaryTxOutcome::HardwareFailure(report) => {
+                    Ok(report
+                        .completion
+                        .expect("a detached hardware completion backs this outcome"))
+                }
+                OrdinaryTxOutcome::HardwareTimeout(_) => Err(ControlTxError::HardwareTimeout),
+                OrdinaryTxOutcome::CollisionLimit(_) => Err(ControlTxError::CollisionLimit),
             };
         }
     }
@@ -693,9 +699,12 @@ mod tests {
                     station_address: [2, 3, 4, 5, 6, 7],
                     bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                     peer_qos: true,
-                    rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    attempt_limit: 2,
-                    completion_timeout_us: 10,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::BestEffort.access_category(),
+                        initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                        publication_limit: 2,
+                        publication_timeout_micros: 10,
+                    },
                 },
             })
             .unwrap_or_else(|_| panic!("idle owner must transfer"));
@@ -725,10 +734,12 @@ mod tests {
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    queue: LegacyTxQueue::Voice,
-                    rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                    attempt_limit: 1,
-                    completion_timeout_us: 10,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::Voice.access_category(),
+                        initial_rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+                        publication_limit: 1,
+                        publication_timeout_micros: 10,
+                    },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
                     scheduler_priority: 1,
@@ -750,9 +761,12 @@ mod tests {
                 station_address: [2, 3, 4, 5, 6, 7],
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                 peer_qos: true,
-                rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                attempt_limit: 2,
-                completion_timeout_us: 10,
+                exchange: MacTxPlan {
+                    access_category: LegacyTxQueue::BestEffort.access_category(),
+                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                    publication_limit: 2,
+                    publication_timeout_micros: 10,
+                },
             },
         };
 

@@ -2,14 +2,7 @@
 
 use super::*;
 
-pub(super) struct EmbassyPhyDelay;
-
-impl PhyAsyncDelay for EmbassyPhyDelay {
-    fn after_micros(micros: u64) -> impl core::future::Future<Output = ()> {
-        Timer::after_micros(micros)
-    }
-}
-
+#[derive(Clone, Copy)]
 pub(super) struct HilPhyObserver;
 
 impl PhyTargetObserver for HilPhyObserver {

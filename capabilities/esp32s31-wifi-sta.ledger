@@ -76,6 +76,9 @@ vendor-proof mapped
 hil-proof partial
 async-proof bounded
 owner crates/esp32s31/wifi/mac/src/rx_pool.rs RxStageReloadPending
+owner crates/esp32s31/wifi/mac/src/rx.rs decode_normalized_rx_metadata
+owner crates/esp32s31/wifi/mac/src/rx_pool.rs normalized_metadata
+owner crates/esp32s31/wifi/mac/src/connected_rx.rs ConnectedRxEvent
 owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
 owner crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs await_staged_rx_reload
 owner crates/integration/esp32s31/wifi-embassy/src/runner.rs WifiRunner
@@ -83,21 +86,33 @@ owner crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs Esp32s31Conne
 owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs Esp32s31ConnectedStaPort
 owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_teardown.rs Esp32s31ConnectedStaTeardownPort
 owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs Esp32s31PreparedRx
+owner crates/integration/esp32s31/wifi-embassy/src/rx_reorder.rs RxReorderFrameStorage
 owner crates/integration/esp32s31/wifi-embassy/src/sta_tx_epoch.rs Esp32s31StaTxEpoch
 test crates/esp32s31/wifi/mac/tests/mac.rs staged_rx_frame_remains_private_until_reload_settles
+test crates/esp32s31/wifi/mac/tests/mac.rs staged_rx_metadata_decodes_only_instruction_proved_s31_fields
+test crates/esp32s31/wifi/mac/tests/mac.rs normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit
+test crates/esp32s31/wifi/mac/tests/mac.rs normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_status
 test crates/esp32s31/wifi/mac/tests/mac.rs station_key_teardown_consumes_and_clears_both_hardware_slots
 test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
 test crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs idle_aggregate_returns_ordinary_and_storage_for_station_teardown
 test crates/integration/esp32s31/wifi-embassy/src/connected_sta_teardown.rs teardown_orders_control_rx_tx_and_both_key_clears
 test crates/integration/esp32s31/wifi-embassy/src/preconnected_rx.rs consuming_connected_promotion_returns_live_ring_or_exact_owner
 test crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs connected_rx_stop_confirms_walker_off_and_preserves_static_resources
+test crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs finite_service_discards_oversize_unit_and_keeps_the_ring_live
+test crates/integration/esp32s31/wifi-embassy/src/rx_reorder.rs board_profile_selects_the_allocated_reorder_slot_count
+test crates/esp32s31/wifi/mac/src/connected_rx.rs dispatches_protected_ethernet_and_owns_duplicate_history
 test crates/integration/esp32s31/wifi-embassy/src/sta_tx_epoch.rs epoch_never_overwrites_or_duplicates_the_phase_owner
 test crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs port_binds_rx_and_control_to_one_validated_peer_plan
+test crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs compact_profile_rejects_rx_window_larger_than_reorder_storage
 vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
+vendor-anchor docs/esp32s31-debug-oracles.md dbg_dump_rx_ppdu
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-sta-port.md HIL_ESP32S31_CONNECTED_STA_PORT_2026_08_04
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-epoch-transitions.md HIL_ESP32S31_CONNECTED_EPOCH_TRANSITIONS_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-rx-s-mpdu-metadata.md HIL_ESP32S31_RX_S_MPDU_METADATA_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md HIL_ESP32S31_HT_RX_AGGREGATION_METADATA_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-he-rx-ampdu-containment.md HIL_ESP32S31_HE_RX_AMPDU_CONTAINMENT_2026_08_04
 depends-on interrupt-recovery
 gap vendor dma-root-contracts-not-executable
 gap hil rx-reload-async-boundary-needs-requalification
@@ -231,6 +246,8 @@ owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs Esp32s3
 owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_teardown.rs Esp32s31ConnectedStaTeardownPort
 owner crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs Esp32s31DisconnectedStaEpoch
 owner crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs Esp32s31ReconnectedStaEpoch
+owner crates/integration/esp32s31/wifi-embassy/src/station.rs Esp32s31Station
+owner crates/integration/esp32s31/wifi-embassy/src/station_tasks.rs stop_esp32s31_connected_task_group
 owner crates/integration/esp32s31/wifi-embassy/src/sta_tx_epoch.rs Esp32s31StaTxEpoch
 owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs ConnectedControlResources
 owner crates/integration/esp32s31/wifi-embassy/src/connected_control.rs ConnectedControlShutdown
@@ -259,9 +276,13 @@ test crates/integration/esp32s31/wifi-embassy/src/sta_peer_port.rs port_owns_sca
 test crates/integration/esp32s31/wifi-embassy/src/wpa2_port.rs eapol_copy_accepts_only_the_selected_station_link
 test crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs invalid_config_returns_the_exact_peer_before_owner_handoff
 test crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs running_scan_round_trip_and_reconnect_preserve_every_owner
+test crates/integration/esp32s31/wifi-embassy/src/station.rs peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it
+test crates/integration/esp32s31/wifi-embassy/src/station_tasks.rs missed_group_deadline_requires_platform_reset
+test crates/integration/esp32s31/wifi-embassy/src/station_tasks.rs one_deadline_returns_the_exact_task_owner
 test crates/integration/esp32s31/wifi-embassy/src/control_tx.rs passive_fallback_requires_a_proven_quiescent_tx_owner
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs dwell_failure_still_stops_rx_and_returns_the_exact_owner
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs fatal_probe_failure_still_closes_the_live_rx_epoch
+test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs complete_cold_scan_can_prepare_the_same_ring_for_a_retry
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs scan_rx_hands_the_exact_halted_ring_to_the_next_phase
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs scan_rx_retains_its_typed_phase_across_enable_and_disable_failure
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs running_scan_rx_returns_the_exact_connected_epoch_resources
@@ -275,9 +296,12 @@ hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-sta-port.md HIL_ESP32S31_CONNECTED_STA_PORT_2026_08_04
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-epoch-transitions.md HIL_ESP32S31_CONNECTED_EPOCH_TRANSITIONS_2026_08_04
 hil-evidence docs/hil/2026-08-04-esp32s31-interrupt-epoch.md HIL_ESP32S31_INTERRUPT_EPOCH_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-station-ap-loss.md HIL_ESP32S31_STA_AP_LOSS_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-station-ap-absence.md HIL_ESP32S31_STA_AP_ABSENCE_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-station-tx-fault.md HIL_ESP32S31_STA_TX_FAULT_2026_08_04
 depends-on rx-tx-dma
 depends-on power-management
-gap implementation connected-executor-stop-timeout-reset-policy-missing
+gap implementation connected-task-timeout-platform-reset-action-missing
 gap implementation running-scan-stop-failure-needs-reset-owner
 gap vendor failure-cleanup-contracts-incomplete
-gap hil injected-fault-matrix-missing
+gap hil injected-rx-fault-cell-missing

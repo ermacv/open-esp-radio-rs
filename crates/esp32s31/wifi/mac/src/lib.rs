@@ -9,6 +9,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod capabilities;
 mod cold_antenna;
 mod cold_coex;
 mod cold_crypto;

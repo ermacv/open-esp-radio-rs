@@ -612,6 +612,26 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         self.state.phase()
     }
 
+    /// Admit either the first already-prepared cold scan or a later complete
+    /// retry whose final channel returned the same ring halted.
+    ///
+    /// This is deliberately not an implicit live-ring restart: a caller that
+    /// still owns a live scan epoch has violated the finite scan boundary and
+    /// receives the exact phase error.
+    pub fn prepare_initial_or_retry<H: RxDma>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<(), Esp32s31ScanRxError> {
+        match self.phase() {
+            Esp32s31ScanRxPhase::Prepared => Ok(()),
+            Esp32s31ScanRxPhase::Halted => self.prepare_next(hardware),
+            actual @ Esp32s31ScanRxPhase::Live => Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Prepared,
+                actual,
+            }),
+        }
+    }
+
     pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31ScanRxError> {
         let state = core::mem::replace(&mut self.state, Esp32s31ScanRxState::Vacant);
         let Esp32s31ScanRxState::Prepared(ring) = state else {
@@ -1584,6 +1604,29 @@ mod tests {
         };
         assert_eq!(halted.descriptor_base(), RX_TEST_BASE);
         assert_eq!(halted.buffer_addresses(), &RX_TEST_BUFFERS);
+    }
+
+    #[test]
+    fn complete_cold_scan_can_prepare_the_same_ring_for_a_retry() {
+        let storage =
+            Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+        let mut hardware = MockRxDma::default();
+        let mut rx = Esp32s31ScanRx::prepare_initial(
+            &mut hardware,
+            &storage,
+            RX_TEST_BASE,
+            &RX_TEST_BUFFERS,
+        )
+        .unwrap();
+
+        rx.prepare_initial_or_retry(&mut hardware).unwrap();
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+        rx.start(&mut hardware).unwrap();
+        rx.stop(&mut hardware).unwrap();
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Halted);
+
+        rx.prepare_initial_or_retry(&mut hardware).unwrap();
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
     }
 
     #[test]

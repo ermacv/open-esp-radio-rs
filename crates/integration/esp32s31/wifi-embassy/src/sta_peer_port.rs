@@ -64,9 +64,9 @@ where
 /// Opaque proof that scan-time policy was derived and installed for this
 /// candidate before Association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Esp32s31PreparedStaPeer<'candidate> {
+pub struct Esp32s31PreparedStaPeer {
     policy: StaPeerScanPolicy,
-    access_point: &'candidate ScanRecord,
+    access_point: ScanRecord,
 }
 
 /// Named mutable capabilities used by final associated-peer programming.
@@ -157,10 +157,10 @@ pub struct Esp32s31StaPeerPort;
 impl Esp32s31StaPeerPort {
     /// Derive and install every policy needed before Authentication and
     /// Association can use the selected candidate.
-    pub fn prepare<'candidate, T: Esp32s31StaPeerTransmit>(
+    pub fn prepare<T: Esp32s31StaPeerTransmit>(
         transmit: &mut T,
-        access_point: &'candidate ScanRecord,
-    ) -> Result<Esp32s31PreparedStaPeer<'candidate>, Esp32s31StaPeerPortError> {
+        access_point: &ScanRecord,
+    ) -> Result<Esp32s31PreparedStaPeer, Esp32s31StaPeerPortError> {
         let policy =
             StaPeerScanPolicy::new(access_point).map_err(Esp32s31StaPeerPortError::ScanPolicy)?;
         transmit.install_ht_ampdu_policy(policy.ht_ampdu);
@@ -172,7 +172,7 @@ impl Esp32s31StaPeerPort {
         }
         Ok(Esp32s31PreparedStaPeer {
             policy,
-            access_point,
+            access_point: *access_point,
         })
     }
 
@@ -182,7 +182,7 @@ impl Esp32s31StaPeerPort {
         radio: Esp32s31StaPeerRadio<'_, H, T>,
         station: Esp32s31StaPeerStation,
         response: &AssociationResponse,
-        prepared: Esp32s31PreparedStaPeer<'_>,
+        prepared: Esp32s31PreparedStaPeer,
     ) -> Result<Esp32s31ProgrammedStaPeer, Esp32s31StaPeerPortError>
     where
         H: StaNoiseFloorHardware + He20PeerHardware + BeamformingReportHardware,
@@ -192,7 +192,7 @@ impl Esp32s31StaPeerPort {
         let plan = prepared
             .policy
             .complete(
-                prepared.access_point,
+                &prepared.access_point,
                 response,
                 station.association_phy,
                 noise_floor_dbm,

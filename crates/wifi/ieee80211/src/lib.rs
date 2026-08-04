@@ -14,6 +14,7 @@ pub mod channel;
 pub mod classification;
 pub mod data;
 pub mod he;
+pub mod mac_service;
 pub mod management;
 pub mod ndpa;
 pub mod scan;

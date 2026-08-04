@@ -23,9 +23,11 @@ use crate::{
     descriptor::length as descriptor_length,
     rx::{
         RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit, RxDma,
-        RxReloadObservation, RxRingError, RxRingLive, RxSegment,
+        RxPhyInfo, RxReloadObservation, RxRingError, RxRingLive, RxSegment,
+        decode_normalized_rx_metadata,
     },
 };
+use open_esp_radio_ieee80211::mac_service::MacRxMetadata;
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
 pub const VENDOR_LARGE_RX_PAYLOAD_CAPACITY: usize = 1_700;
@@ -481,6 +483,15 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
         }
     }
 
+    /// Hardware-observed portable metadata copied with this staged lease.
+    ///
+    /// Crypto and A-MSDU remain explicitly unavailable here. Complete vendor
+    /// debug code independently proves the adjacent hardware
+    /// IEEE S-MPDU status and the HT-SIG Aggregation bit when applicable.
+    pub fn normalized_metadata(&self) -> Option<MacRxMetadata<RxPhyInfo>> {
+        decode_normalized_rx_metadata(self.segment().buffer)
+    }
+
     pub const fn length(&self) -> usize {
         self.metadata.length
     }
@@ -562,6 +573,8 @@ impl<'pool, const SLOTS: usize, const CAPACITY: usize> Default
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_ieee80211::mac_service::MacRxEvidence;
+
     use super::*;
 
     fn completed(length: u32) -> RxCompletedDescriptor {
@@ -586,6 +599,31 @@ mod tests {
         drop(network);
         assert_eq!(pool.claimed_slots(), 0);
         assert_eq!(pool.network_slots(), 0);
+    }
+
+    #[test]
+    fn network_owner_exposes_the_metadata_copied_with_its_frame() {
+        let mut bytes = [0_u8; 64];
+        bytes[0] = (-52_i8) as u8;
+        bytes[1] = 9;
+        bytes[0x1c] = 11;
+        bytes[0x1f] = 1;
+        bytes[0x25] = 4 << 4;
+        let pool = RxStagePool::<1, 64>::new();
+        let network = pool
+            .try_stage(completed(64), &bytes)
+            .unwrap()
+            .publish()
+            .ok()
+            .unwrap();
+
+        let metadata = network.normalized_metadata().unwrap();
+        assert_eq!(metadata.channel, MacRxEvidence::HardwareObserved(11));
+        assert_eq!(metadata.rssi_dbm, MacRxEvidence::HardwareObserved(-52));
+        assert_eq!(metadata.crypto, MacRxEvidence::Unavailable);
+        assert_eq!(metadata.s_mpdu, MacRxEvidence::HardwareObserved(true));
+        assert_eq!(metadata.ampdu, MacRxEvidence::ProtocolValidated(true));
+        assert_eq!(metadata.amsdu, MacRxEvidence::Unavailable);
     }
 
     #[test]

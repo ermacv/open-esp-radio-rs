@@ -2,6 +2,8 @@
 
 use core::future::Future;
 
+use embassy_time::Timer;
+
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{RxDma, RxRingLive},
     rx_pool::{NetworkRxFrame, RxStageReloadPending, RxStageTransactionError},
@@ -10,6 +12,20 @@ use open_esp_radio_esp32s31_wifi_mac::{
 /// Timer capability used between two live reload observations.
 pub trait RxReloadDelay {
     fn after_micros(&mut self, micros: u32) -> impl Future<Output = ()> + '_;
+}
+
+/// Executor timer used by a normal ESP32-S31 connected RX owner.
+///
+/// HIL compositions may wrap the same edge to collect timing evidence, but
+/// the driver itself only requires a finite asynchronous delay between PAC
+/// reload observations.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EmbassyEsp32s31RxReloadDelay;
+
+impl RxReloadDelay for EmbassyEsp32s31RxReloadDelay {
+    fn after_micros(&mut self, micros: u32) -> impl Future<Output = ()> + '_ {
+        Timer::after_micros(u64::from(micros))
+    }
 }
 
 /// Complete one typed staged-frame transaction without blocking the executor.

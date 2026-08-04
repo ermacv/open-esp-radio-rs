@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `165ac77c`
+Latest qualified runtime CRC32: `3b6658eb`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -43,15 +43,16 @@ protocol. The lifecycle qualification was then run with:
 cargo hil station reconnect --serial /dev/ttyACM0 --cycles 3 --timeout-seconds 120
 ```
 
-The host accepts the cell only when protocol v4 advertises station epoch
-control, the stop command is acknowledged, the production stop marker is
-observed, the outer attempt advertises `refresh_candidate=1
-phase=running-scan`, all 13 channels complete, RX/TX owners return, fresh Open
-Authentication passes, no reconnect or running-scan failure marker appears,
-and the target reaches both `production-reconnect-connected-enter` and a new
-`embassy-task-topology` marker. Marker counts must advance independently for
-every requested cycle; evidence retained from an earlier cycle cannot satisfy
-a later one. The local transcript is written to
+The host accepts the cell only when protocol v5 advertises station epoch
+control and returns `StationEpochCompleted` with the same request ID. The
+target constructs that acknowledgement only after the production runner and
+teardown return ownership, a complete running scan returns its owners, fresh
+Authentication/Association/WPA2 completes, and the next connected runner is
+started. Terminal lifecycle/exhaustion reports still fail immediately;
+retryable scan/join reports remain under lifecycle policy. Text markers are
+diagnostics and no longer decide PASS because the UART text writer is
+deliberately lossy. Evidence from an earlier request ID cannot satisfy a later
+cycle. The local transcript is written to
 `target/hil/esp32s31/qualification/station-reconnect/uart.log`.
 
 ## Observed evidence
@@ -83,23 +84,46 @@ for the normal completion path before returning ownership.
 
 ## Repeated-cycle evidence
 
-The latest `165ac77c` image completed one initial connection followed by three
-host-requested lifecycle cycles in a single boot. The strengthened runner
-snapshots marker counts before every command, so an earlier generation cannot
-satisfy a later generation. Every cycle reached a newly emitted connected task
-topology with `network_started=0`, confirming that the persistent network
-stack was reused rather than initialized again.
+The latest `3b6658eb` image completed one initial connection followed by three
+host-requested lifecycle cycles in a single boot. Every cycle returned its own
+correlated typed completion and reached a new connected task topology with
+`network_started=0`, confirming that the persistent network stack was reused
+rather than initialized again.
 
 | Generation | Scan | Authentication | Association | WPA2 M3/M4 | Connected topology |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 5,373 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 23 | 11 ms, replay 4 | PASS |
-| 2 | 5,411 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 32 | 10 ms, replay 6 | PASS |
-| 3 | 5,317 ms, 13/13 Probe TX | 52 ms | 21 ms, AID 22 | 9 ms, replay 8 | PASS |
+| 1 | 5,494 ms, 13/13 Probe TX | PASS | status 0, AID 24 | replay 4, M4 status 0 | PASS |
+| 2 | 5,663 ms, 13/13 Probe TX | PASS | status 0, AID 21 | replay 6, M4 status 0 | PASS |
+| 3 | 5,445 ms, 13/13 Probe TX | PASS | status 0, AID 28 | replay 8, M4 status 0 | PASS |
 
-All three scans returned an empty RX queue and the same descriptor base
-`0x2f03ec50`; each reported zero Probe TX failures. No running-scan or
-reconnect failure marker occurred. This closes the repeated healthy-cycle
-qualification gap, but still does not simulate loss of the AP.
+All three typed acknowledgements were complete. The captured text retained
+only one of the three runner-stop markers while reporting 34 dropped text
+records; all three scan-owner-return and connected-entry diagnostics happened
+to survive. The typed PASS therefore remains independent of lossy text. No
+station, task-stop or other `result=FAIL` marker and no panic occurred. The
+UART transcript SHA-256 is
+`7780d607cd2e3e31d38a1b7d61b1aa2083bececf8938f9d5cde78925569f57c8`.
+This closes the repeated healthy-cycle qualification gap, but still does not
+simulate loss of the AP.
+
+The connected benchmark task now initializes its scenario-selected static
+scratch exactly once and remains alive across epochs. This removes the former
+third-cycle `StaticCell is already full` ceiling without allocating every
+scenario's buffers. After each runner return, HIL requests both the benchmark
+and RX-protocol tasks to stop and requires both acknowledgements under one
+two-second deadline. A missed acknowledgement is reported as
+`production-connected-task-stop`, declares `reset_required=1` and preserves
+owners rather than pretending that the epoch can be safely reused. No such
+timeout or panic occurred in this run.
+
+The immediately preceding `57778894` image completed four cycles in one boot,
+so removing the repeated `StaticCell` initialization is also qualified beyond
+the former third-cycle failure point. Its transcript SHA-256 was
+`8385d0f7f2bead8358cbfdc7ba3d059d5605654074c70d4c67a2f5b21d61b3f6`.
+The latest image then moved the common stop/deadline rule into
+`stop_esp32s31_connected_task_group`; HIL now implements only the concrete
+benchmark/protocol signal adapter. Host tests prove both exact owner return
+and the distinct reset-required deadline outcome.
 
 This repetition also qualifies the extracted
 `Esp32s31RunningScanPort`. PHY retune, cooperative register access, stopped RX
@@ -109,7 +133,7 @@ crate. `radio_hil.rs` supplies the returned owners and HIL evidence observer
 but no longer implements the running `Esp32s31StaScanPort`. Removing its
 synchronous per-channel UART diagnostics reduced the observed 13-channel scan
 from roughly 5.8 seconds to 5.3--5.4 seconds without changing the 200-tick
-dwell policy. The release image remained 1,203,712 bytes and passed both
+dwell policy. The latest release image is 1,194,640 bytes and passed both
 placement and autonomous-source-graph audits.
 
 The same cell qualifies the extracted `Esp32s31PreconnectedRx` owner. HIL no
@@ -124,13 +148,13 @@ now returns `Esp32s31DisconnectedStaEpoch`; running scan can move only its
 hardware and stopped RX while the persistent network, A-MPDU and control
 owners remain sealed in a retention value. `prepare_reconnect` consumes the
 restored epoch and returns `Esp32s31ReconnectedStaEpoch`. All three generations
-crossed that exact transition and reused descriptor base `0x2f03ec50`.
+crossed that exact transition and reused descriptor base `0x2f03ea50`.
 
 The same image routes both management-frame and EAPOL descriptor walks through
 `Esp32s31PreconnectedRx::service_completed`. HIL no longer forms unsafe DMA
 buffer references or rearms descriptor halves in either backend. A terminal
 frame still stops before recycle and transfers the observed live-ring frontier
-to the next protocol phase. The release image remains 1,203,712 bytes.
+to the next protocol phase. The release image remains 1,194,640 bytes.
 
 ## Remaining qualification
 

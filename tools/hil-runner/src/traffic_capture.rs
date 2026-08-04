@@ -16,6 +16,7 @@ use std::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
     FrameEncoder, NetworkCredentials, SessionConfig, StartupArtifactChunk, StartupArtifactStatus,
+    StationEpochEvidence, StationFaultEvidence, StationFaultInjection, StationLifecycleEvent,
     Transport, TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
@@ -69,6 +70,18 @@ pub(crate) struct TcpRxReady {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionHandle {
     session_id: u64,
+    first_event: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StationEpochHandle {
+    request_id: u32,
+    first_event: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StationFaultHandle {
+    request_id: u32,
     first_event: usize,
 }
 
@@ -462,8 +475,132 @@ impl SerialCapture {
         )
     }
 
-    pub(crate) fn request_station_epoch_cycle(&self) -> Result<()> {
-        self.expect_accepted(0, Command::CycleStationEpoch, "station epoch cycle")
+    pub(crate) fn request_station_epoch_cycle(&self) -> Result<StationEpochHandle> {
+        let first_event = self.protocol_event_count();
+        let response = self.send_command(0, Command::CycleStationEpoch, PROTOCOL_READY_TIMEOUT)?;
+        match response.body {
+            Event::Accepted => Ok(StationEpochHandle {
+                request_id: response.request_id,
+                first_event,
+            }),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected station epoch cycle: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid station epoch cycle response".into()),
+        }
+    }
+
+    pub(crate) fn observed_station_epoch_completion(
+        &self,
+        handle: StationEpochHandle,
+    ) -> Option<StationEpochEvidence> {
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        messages
+            .get(handle.first_event..)
+            .unwrap_or_default()
+            .iter()
+            .find_map(|message| {
+                if message.request_id != handle.request_id {
+                    return None;
+                }
+                match message.body {
+                    Event::StationEpochCompleted(evidence) => Some(evidence),
+                    _ => None,
+                }
+            })
+    }
+
+    /// Arm one fault below the station facade and retain its correlation ID.
+    pub(crate) fn request_station_fault_injection(
+        &self,
+        injection: StationFaultInjection,
+    ) -> Result<StationFaultHandle> {
+        let first_event = self.protocol_event_count();
+        let response = self.send_command(
+            0,
+            Command::InjectStationFault(injection),
+            PROTOCOL_READY_TIMEOUT,
+        )?;
+        match response.body {
+            Event::Accepted => Ok(StationFaultHandle {
+                request_id: response.request_id,
+                first_event,
+            }),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected station fault injection: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid station fault response".into()),
+        }
+    }
+
+    /// Wait for the reliable owner frontier correlated with one fault command.
+    pub(crate) fn wait_station_fault(
+        &self,
+        handle: StationFaultHandle,
+        timeout: Duration,
+    ) -> Result<StationFaultEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::StationFault(_))
+            })
+            .ok_or("device did not publish the requested station fault frontier")?;
+        match event.body {
+            Event::StationFault(evidence) => Ok(evidence),
+            _ => unreachable!("station fault predicate accepted only StationFault"),
+        }
+    }
+
+    /// Cursor for reliable unsolicited station lifecycle events.
+    pub(crate) fn station_lifecycle_cursor(&self) -> usize {
+        self.protocol_event_count()
+    }
+
+    /// Wait for the next station lifecycle event and advance past it.
+    pub(crate) fn wait_station_lifecycle_event(
+        &self,
+        cursor: &mut usize,
+        timeout: Duration,
+    ) -> Result<StationLifecycleEvent> {
+        let deadline = Instant::now() + timeout;
+        let mut messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some((relative, event)) = messages
+                .get(*cursor..)
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .find_map(|(relative, message)| match &message.body {
+                    Event::StationLifecycle(event) => Some((relative, *event)),
+                    _ => None,
+                })
+            {
+                *cursor += relative + 1;
+                return Ok(event);
+            }
+            *cursor = messages.len();
+            let now = Instant::now();
+            if now >= deadline {
+                return Err("device did not publish the next station lifecycle event".into());
+            }
+            let (next, result) = self
+                .protocol
+                .changed
+                .wait_timeout(messages, deadline - now)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            messages = next;
+            if result.timed_out() {
+                return Err("device did not publish the next station lifecycle event".into());
+            }
+        }
     }
 
     fn latest_boot_id(&self) -> Option<u64> {

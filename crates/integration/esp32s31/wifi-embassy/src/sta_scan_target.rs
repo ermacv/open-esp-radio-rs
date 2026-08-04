@@ -17,8 +17,8 @@ use crate::{
     },
     sta_scan::{
         Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext, Esp32s31ScanProbeReport,
-        Esp32s31ScanProbeRequest, Esp32s31ScanRx, Esp32s31ScanRxError, Esp32s31ScanRxPhase,
-        Esp32s31ScanRxProgress, Esp32s31ScanTxState, Esp32s31ScanTxSummary,
+        Esp32s31ScanProbeRequest, Esp32s31ScanRx, Esp32s31ScanRxError, Esp32s31ScanRxProgress,
+        Esp32s31ScanTxState, Esp32s31ScanTxSummary,
     },
 };
 use open_esp_radio_esp32s31_hal::{
@@ -151,16 +151,8 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
 {
     type Error = Esp32s31ScanRxError;
 
-    fn prepare_initial(&mut self, _hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
-        let actual = self.phase();
-        if actual == Esp32s31ScanRxPhase::Prepared {
-            Ok(())
-        } else {
-            Err(Esp32s31ScanRxError::InvalidPhase {
-                expected: Esp32s31ScanRxPhase::Prepared,
-                actual,
-            })
-        }
+    fn prepare_initial(&mut self, hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
+        self.prepare_initial_or_retry(hardware)
     }
 
     fn start<'a>(

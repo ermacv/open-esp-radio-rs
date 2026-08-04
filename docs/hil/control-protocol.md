@@ -25,6 +25,38 @@ adds one opaque startup artifact. The protocol defines only ordered chunks,
 the total length and a transfer CRC32C. Its meaning and exact length belong to
 the selected target adapter, not to the shared wire crate.
 
+Protocol version 5 adds a correlated station-epoch completion. Acceptance of
+`CycleStationEpoch` means only that the bounded command was admitted. A later
+`StationEpochCompleted` with the same `request_id` is emitted reliably after
+the target adapter has observed runner/teardown return, scan-owner return, a
+fresh join, and startup of the replacement connected runner. Diagnostic text
+may be dropped or truncated and is not accepted as lifecycle evidence.
+
+Protocol version 6 adds reliable unsolicited `StationLifecycle` events.
+`Connected` identifies the outer station generation. `Disconnected` preserves
+whether the edge was a proved `BeaconLoss`, another link-policy decision, or a
+healthy controller reconnect. This lets AP-loss qualification reject a
+synthetic cycle even when both paths execute the same teardown and rescan.
+
+Protocol version 7 keeps those link edges and adds typed `AttemptFailed` and
+`RetryExhausted` events. They carry generation, one-based attempt, stable
+station stage and a target-independent reason. A prolonged-absence cell can
+therefore prove complete `NoCandidate` scans and the exact bounded exhaustion
+edge without accepting lossy text as evidence. A station lifecycle publisher
+also waits for the exact lifecycle sequence to be written by the USB protocol
+owner. Merely entering the bounded event queue is insufficient, especially at
+a terminal station exit.
+
+Protocol version 8 adds a one-shot, correlated `InjectStationFault` command.
+The current ESP32-S31 cell arms `ConnectedTxAfterPublication`: a real network
+lease and MAC descriptor cross into the production LMAC transaction before
+the HIL decorator replaces its next service wake with a contradictory TX
+event image. `StationFault` is emitted with the same `request_id` only after
+the runner returned, executor-task borrows were acknowledged, RX DMA stopped,
+and the TX owner was observed in its reset-required quarantine. This is a
+terminal owner-frontier test; the host performs a cold target reset and proves
+a new network-ready epoch instead of reusing the quarantined descriptor.
+
 The protocol contains no expected firmware hashes, ELF paths, vendor ABI
 versions or target-specific register layouts. The firmware publishes actual
 capabilities; the calling qualification manifest decides whether that image is
@@ -85,6 +117,45 @@ artifact CRC is transport integrity, not a firmware/oracle identity hash.
   retain evidence for later delivery.
 - One host worker owns reset, reads, writes and frame decoding. Requests are
   correlated by boot and request identity.
+
+The station epoch lifecycle is intentionally separate from transport-session
+state:
+
+```text
+Idle
+  <- CycleStationEpoch(request_id)
+  -> Accepted(request_id)
+  -> stop connected runner and return teardown owners
+  -> scan and return scan owners
+  -> Authentication / Association / WPA2
+  -> start replacement connected runner
+  -> StationEpochCompleted(request_id, complete ownership evidence)
+```
+
+Real peer-loss qualification uses unsolicited events rather than a command:
+
+```text
+-> StationLifecycle(Connected { generation: 0 })
+   [host removes the controlled AP]
+-> StationLifecycle(Disconnected { generation: 0, BeaconLoss })
+   [host restores the controlled AP]
+-> StationLifecycle(Connected { generation: 1 })
+```
+
+Fault injection is a separate correlated terminal flow:
+
+```text
+Idle
+  <- InjectStationFault(ConnectedTxAfterPublication, request_id)
+  -> Accepted(request_id)
+  <- Configure / Arm / Start(UDP TX)
+  -> real TX descriptor publication
+  -> production RadioResetRequired
+  -> stop executor tasks and RX DMA
+  -> StationFault(request_id, exact owner frontier)
+  [host cold-resets target]
+  -> fresh NetworkReady / ServiceReady
+```
 
 ## UDP RX session
 

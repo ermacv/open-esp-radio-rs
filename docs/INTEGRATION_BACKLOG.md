@@ -2,10 +2,11 @@
 
 Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-04.
 
-The HIL workspace owns board clocks and boot, PSRAM/flash placement, the
-executor, concrete `embassy-net` scenarios, credentials, traffic generation
-and reporting. Reusable radio behavior belongs in a driver, protocol or
-integration crate.
+Composition roots own board clocks and boot, memory placement, the executor,
+credentials and concrete `embassy-net` services. The normal root is
+`examples/esp32s31-station`; HIL additionally owns qualification traffic,
+fault injection and reporting. Reusable radio behavior belongs in a driver,
+protocol or integration crate.
 
 The production path now has reusable owners for generated PAC register leaves,
 MAC IRQ dispatch, RX/DMA frontier and recycle, ordinary connected TX,
@@ -453,33 +454,88 @@ This is now a bounded controlled rescan and re-authentication implementation
 with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
 waits for an active TX to release hardware, publishes link-down and returns the
-distinct `Stopped` outcome. HIL protocol v4 advertises this capability and
+distinct `Stopped` outcome. HIL protocol v7 advertises this capability and
 `cargo hil station reconnect` requests it without calling the stop a beacon
 loss. The 2026-08-04 ESP32-S31 run completed the first teardown, a second
 Association, WPA2 M1--M4 and entry into the second connected epoch; see the
 [qualification report](hil/2026-08-04-esp32s31-station-reconnect.md).
 
-This evidence deliberately has a narrower meaning than automatic recovery
-from an unavailable AP. The controlled cycle now performs and observes a real
-multi-channel rescan and feeds the selected candidate through fresh Open
-Authentication. The trigger is still a host-requested healthy runner stop, and
-the selected AP remains available throughout. It therefore does not prove AP
-disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
+Controlled reconnect deliberately remains distinct from automatic peer-loss
+recovery. The separate `cargo hil station ap-loss` cell now removes the local
+HE20 AP, observes protocol-v6 `BeaconLoss`, returns the complete connected
+epoch, performs a multi-channel rescan and feeds the restored candidate
+through fresh Authentication, Association and WPA2 into generation one. See
+the [AP-loss qualification](hil/2026-08-04-esp32s31-station-ap-loss.md).
+The production `Esp32s31StaAttempt` and application-facing
+`Esp32s31Station` facade now own the shared pre-connected transaction and
+outer lifecycle. The prolonged-absence cell closes the bounded no-peer policy:
+protocol v7 observed `BeaconLoss`, three exact `NoCandidate` attempts and
+`RetryExhausted` in 17,658 ms. Every 13-channel scan returned the same DMA
+owner with an empty queue and zero Probe TX failures. Lifecycle publication
+now waits until the exact typed edge has been serialized, rather than merely
+admitted to the UART queue. See the
+[AP-absence qualification](hil/2026-08-04-esp32s31-station-ap-absence.md).
 The next slices, in order, are:
 
-1. extract one production pre-connected station-attempt transaction shared by
-   the initial and reconnect paths: channel retune, Authentication,
-   Association, selected-peer programming, WPA2 handshake and key install.
-   The primitive ports already live outside HIL, but their composition and
-   owner/error mapping are still duplicated there;
+1. add the complementary deterministic RX failure cell without conflating a
+   dropped/corrupt frame with a reset-required DMA owner. RX A-MPDU
+   containment is now closed without inventing a common hardware bit. The direct HT-SIG
+   Aggregation bit is qualified on an actual HT20/MCS7/SGI downlink:
+   78,127 benchmark observations were A-MPDU with zero unavailable
+   provenance; see the
+   [HT RX aggregation record](hil/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md). The prior
+   tentative inversion of `cur_single_mpdu` was rejected: Espressif defines it
+   as IEEE S-MPDU status, and real HE20 data, ARP and Beacon management frames
+   all carried a clear value. Its exact propagation is now board-qualified,
+   while HE PPDU format now supplies `ProtocolValidated(true)` containment
+   rather than pretending to be another hardware field; see the
+   [S-MPDU record](hil/2026-08-04-esp32s31-rx-s-mpdu-metadata.md) and
+   [HE containment record](hil/2026-08-04-esp32s31-he-rx-ampdu-containment.md);
 2. split the remaining HIL facade by fixture responsibility (station
    qualification, connected traffic, diagnostics and board bootstrap) while
-   keeping only scenario policy, task placement, static storage and reporting;
-3. route real beacon loss through candidate selection and Authentication, then
-   qualify AP loss/recovery and one injected TX/RX failure.
+   keeping only scenario policy, task placement, static storage and reporting.
 
-Executor-stop timeout/reset policy and image-size classification are deferred
-work. They must not interrupt the current driver/HIL separation pass.
+The connected-TX fault frontier is now qualified. HIL protocol v8 arms one
+fault only after the production backend has published a real network TX
+descriptor. Its contradictory completion/timeout edge crosses the ordinary
+or aggregate `require_reset` path; typed evidence is published only after the
+runner, executor tasks and RX DMA have returned while the TX owner remains
+quarantined. The host then cold-resets the same image and proves a fresh
+network-ready epoch. See the
+[TX fault qualification](hil/2026-08-04-esp32s31-station-tx-fault.md). This
+does not close the separate in-place platform reset or RX fault gaps.
+
+The RX failure classes are no longer conceptually merged. Host coverage now
+feeds the production service an over-capacity completed unit, observes one
+typed discard, and then proves that the immediately following valid descriptor
+is staged while the same ring remains live. A real RX HIL fault cell must
+inject or receive such a completed descriptor before production staging; a
+decorator that merely returns an error after `service_rx()` would test only
+the runner and is not acceptable evidence. Errors after ownership becomes
+ambiguous (reload failure, corrupt ring, source/descriptor disagreement) stay
+reset-required candidates and need their own typed frontier rather than the
+drop-and-continue result.
+
+The first capability-driven HMAC/LMAC contract is now source owned.
+`ieee80211::mac_service` represents granular operation ownership and resource
+limits without chip conditionals, while
+`ESP32S31_MAC_SERVICE_CAPABILITIES` derives BA and aggregate limits from the
+owners that enforce them. `Esp32s31ConnectedStaPort` publishes that profile.
+Ordinary TX also distinguishes the raw completion of one S31 hardware attempt
+from `MacTxStatus` for the complete retried exchange; the latter retains total
+attempts, final typed rate, ACK meaning and ACK SNR. Aggregate TX now publishes
+one `MacAmpduTxStatus` only after BlockAck retry policy and any detached
+ordinary retry have both terminated; it preserves their separate rates and
+publication counts. Do not add a broad
+`hardware_retry`, `hardware_crypto` or `hardware_ampdu` flag: each of those is
+currently split across hardware and software.
+
+The executor stop deadline is now production API:
+`stop_esp32s31_connected_task_group` returns all task-owned scratch or a
+distinct reset-required outcome under one group deadline. The HIL task group
+contains only its benchmark/protocol signals. A complete platform radio-reset
+implementation from that terminal frontier and image-size classification
+remain deferred.
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
@@ -495,13 +551,65 @@ same boundary through `Esp32s31ConnectedStaTeardownPort`; runtime CRC32
 `EspHalMacInterruptRoute` now own stable ISR storage, CPU route activation,
 finite hard-handler service, route quiescence and stale wake drain; runtime
 CRC32 `02cbd34c` completed three more cycles without increasing the encoded
-image. The remaining connected architectural gap is a bounded executor
-acknowledgement/reset policy for the HIL-composed protocol and benchmark
-tasks, not another hardware-driver transition.
+image. The bounded executor acknowledgement is now shared production behavior
+and has both host and repeated-board evidence. The remaining recovery gap is
+the platform action after `ResetRequired`, not another hardware-driver
+transition.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable
 vendor-style context.
+
+## Standalone production composition
+
+`examples/esp32s31-station` is now a real non-HIL consumer of the public
+driver graph. On ESP32-S31 hardware it completed cold PHY/MAC, active scan,
+Open Authentication, HE20 Association, WPA2 M1--M4, interrupt-epoch
+activation and DHCP. Its application-owned UDP echo service then returned
+200/200 sequential packets, including payloads above one KiB. The dependency
+tree contains no HIL protocol, runner, benchmark or telemetry crate.
+
+This target exposed a real board-memory failure: a 64-slot hot RX pool with
+32/32 network queues plus the formerly unconditional 64-slot cold reorder
+backing raised `.bss` to roughly 405 KiB and made pre-connected WPA2 progress
+unreliable. The internal-SRAM baseline now uses 16 stage slots, 8/8 network
+queues and an 8-slot typed reorder backing. Before the finite application
+reconnect state was added that reduced `.bss` to roughly 176 KiB; the current
+complete same-candidate lifecycle is roughly 182 KiB. Large throughput
+profiles require explicit PSRAM/internal-SRAM placement and a linked-image
+budget.
+
+Connected teardown and candidate-refresh reconnect are now part of the
+standalone production application. `run_connected` stops at a safe runner boundary,
+quiesces and drains the interrupt epoch, obtains the stopped staged-RX owner,
+then uses `Esp32s31ConnectedStaTeardownPort` to stop DMA, return TX resources
+and sequences and clear both CCMP slots. Network stack/socket tasks remain
+alive while only the radio endpoint crosses link-down/link-up. A temporary
+application-controller trigger (removed after the run) proved a complete
+13-channel running scan in 5,389 ms, 13 successful Probe transmissions with
+zero TX failures, and a without-reset second
+Authentication/Association/WPA2/ConnectedEntry sequence. UDP echo after the
+second epoch returned 100/100 packets in 847 ms.
+
+The cold candidate loop now also preserves its descriptor frontier across a
+complete `NoCandidate` result. `Esp32s31ScanRx::prepare_initial_or_retry`
+accepts only the original prepared ring or the halted ring returned by the
+last channel; a live frontier still fails closed. With a deliberately absent
+SSID, hardware completed three consecutive 13-channel scans and retries using
+the same owner instead of the previous second-pass `Prepared/Halted` panic.
+
+That ownership path raises the final linked `.bss` baseline to roughly 182
+KiB. `prepare_with_storage` additionally rejects a configured RX Block Ack
+window larger than the board-selected `RxReorderFrameStorage` slot count, so
+the compact 8-slot profile is no longer held together by convention.
+
+The application candidate-refresh composition gap is closed. Its typed owner
+now remains disconnected until `Esp32s31RunningScanPort` returns hardware, RX,
+ordinary TX, scan scratch and a fresh candidate; only then may
+`prepare_reconnect` split the stopped RX resources for the next join. The smoke
+test rediscovered the same AP, so cross-BSSID and changed-channel recovery are
+not yet separately qualified. The next bounded qualification debt remains the
+deterministic injected RX-fault HIL cell.
 
 ## Completion gate
 

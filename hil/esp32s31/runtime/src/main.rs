@@ -32,13 +32,15 @@ use esp_hal::{
 };
 #[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
-use open_esp_radio_hil_esp32s31_runtime_support::Executor;
+use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use static_cell::StaticCell;
 
 #[cfg(feature = "open-radio-hil")]
 mod console;
 #[cfg(feature = "open-radio-hil")]
 mod radio_hil;
+#[cfg(feature = "open-radio-hil")]
+mod radio_fault;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -257,7 +259,7 @@ extern "C" fn runtime_main() -> ! {
 
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    open_esp_radio_hil_esp32s31_runtime_support::init(OneShotTimer::new(timer_group.timer0));
+    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
 
     #[cfg(feature = "open-radio-hil")]
     let app_spawner = {

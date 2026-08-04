@@ -13,6 +13,7 @@ use open_esp_radio_ieee80211::trigger::{
     TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
     TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
 };
+use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
 use crate::{
     descriptor::{Descriptor, descriptor_address_valid, tx_owned_word},
@@ -103,6 +104,28 @@ pub enum LegacyTxQueue {
 impl LegacyTxQueue {
     pub(crate) const fn index(self) -> u8 {
         self as u8
+    }
+
+    /// Translate the portable EDCA category into the ESP32-S31 queue order.
+    ///
+    /// The hardware order is VO/VI/BE/BK rather than the standard ACI order,
+    /// so this mapping belongs in the chip-specific MAC adapter.
+    pub const fn from_access_category(category: WmmAccessCategory) -> Self {
+        match category {
+            WmmAccessCategory::Voice => Self::Voice,
+            WmmAccessCategory::Video => Self::Video,
+            WmmAccessCategory::BestEffort => Self::BestEffort,
+            WmmAccessCategory::Background => Self::Background,
+        }
+    }
+
+    pub const fn access_category(self) -> WmmAccessCategory {
+        match self {
+            Self::Voice => WmmAccessCategory::Voice,
+            Self::Video => WmmAccessCategory::Video,
+            Self::BestEffort => WmmAccessCategory::BestEffort,
+            Self::Background => WmmAccessCategory::Background,
+        }
     }
 
     /// Packet PTI assigned by complete vendor data encapsulation.

@@ -45,9 +45,9 @@ embedded-io-async = { workspace = true, optional = true }
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 log = { workspace = true, optional = true }
 open-esp-radio = { workspace = true, optional = true }
+open-esp-radio-esp32s31-embassy-runtime.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 open-esp-radio-hil-protocol = { workspace = true, optional = true }
-open-esp-radio-hil-esp32s31-runtime-support = { path = "../runtime-support" }
 static_cell.workspace = true
 
 [lints.rust]

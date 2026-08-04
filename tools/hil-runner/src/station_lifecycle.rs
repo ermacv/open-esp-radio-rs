@@ -8,22 +8,24 @@ use std::{
 };
 
 use crate::{Result, traffic_capture::SerialCapture};
+use open_esp_radio_hil_protocol::StationEpochEvidence;
 
 const DEFAULT_SERIAL: &str = "/dev/ttyACM0";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_CYCLES: u8 = 1;
 const MAX_CYCLES: u8 = 8;
-const RECONNECTED_MARKER: &str = "result=PASS stage=production-reconnect-connected-enter";
 const RECONNECT_FAILURE_MARKER: &str = "result=FAIL stage=production-reconnect";
 const RUNNING_SCAN_FAILURE_MARKER: &str = "result=FAIL stage=production-running-scan";
-const RUNNER_STOP_MARKER: &str = "result=PASS stage=production-runner-stop";
-const RUNNING_SCAN_MARKER: &str = "result=PASS stage=production-running-scan channels=13";
-const RUNNING_SCAN_LIFECYCLE_MARKER: &str = "refresh_candidate=1 phase=running-scan";
-const RUNNING_SCAN_OWNER_RETURN_MARKER: &str =
-    "result=PASS stage=production-running-scan-owner-return";
-const RECONNECT_AUTHENTICATION_MARKER: &str =
-    "result=PASS stage=production-reconnect-authentication";
-const CONNECTED_READY_MARKER: &str = "result=PASS stage=embassy-task-topology";
+const LIFECYCLE_EXHAUSTED_MARKER: &str = "result=FAIL stage=production-sta-lifecycle-exhausted";
+const LIFECYCLE_TERMINAL_MARKER: &str = "result=FAIL stage=production-sta-lifecycle-terminal";
+const FATAL_STARTUP_FAILURE_MARKERS: &[&str] = &[
+    "result=FAIL stage=mac-cold-start",
+    "result=FAIL stage=rx-ring-stage",
+    "result=FAIL stage=cold-scan-service-stop",
+    "result=FAIL stage=cold-scan-service ",
+    "result=FAIL stage=cold-scan-plan",
+    "result=FAIL stage=production-connected-task-stop",
+];
 
 struct Options {
     serial: PathBuf,
@@ -33,29 +35,19 @@ struct Options {
 
 #[derive(Clone, Copy)]
 struct CycleEvidence {
-    reconnected: usize,
     reconnect_failure: usize,
-    runner_stop: usize,
-    running_scan: usize,
     running_scan_failure: usize,
-    running_scan_lifecycle: usize,
-    running_scan_owner_return: usize,
-    reconnect_authentication: usize,
-    connected_ready: usize,
+    lifecycle_exhausted: usize,
+    lifecycle_terminal: usize,
 }
 
 impl CycleEvidence {
     fn capture(serial: &SerialCapture) -> Self {
         Self {
-            reconnected: serial.marker_count(RECONNECTED_MARKER),
             reconnect_failure: serial.marker_count(RECONNECT_FAILURE_MARKER),
-            runner_stop: serial.marker_count(RUNNER_STOP_MARKER),
-            running_scan: serial.marker_count(RUNNING_SCAN_MARKER),
             running_scan_failure: serial.marker_count(RUNNING_SCAN_FAILURE_MARKER),
-            running_scan_lifecycle: serial.marker_count(RUNNING_SCAN_LIFECYCLE_MARKER),
-            running_scan_owner_return: serial.marker_count(RUNNING_SCAN_OWNER_RETURN_MARKER),
-            reconnect_authentication: serial.marker_count(RECONNECT_AUTHENTICATION_MARKER),
-            connected_ready: serial.marker_count(CONNECTED_READY_MARKER),
+            lifecycle_exhausted: serial.marker_count(LIFECYCLE_EXHAUSTED_MARKER),
+            lifecycle_terminal: serial.marker_count(LIFECYCLE_TERMINAL_MARKER),
         }
     }
 }
@@ -95,11 +87,31 @@ fn qualify(capture: &SerialCapture, timeout: Duration, cycles: u8) -> Result<()>
 
 fn qualify_cycle(capture: &SerialCapture, timeout: Duration, cycle: u8) -> Result<()> {
     let before = CycleEvidence::capture(capture);
-    capture.request_station_epoch_cycle()?;
+    let handle = capture.request_station_epoch_cycle()?;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        if let Some(marker) = FATAL_STARTUP_FAILURE_MARKERS
+            .iter()
+            .find(|marker| capture.contains(marker))
+        {
+            return Err(format!(
+                "target reported fatal station startup failure in cycle {cycle}: {marker}"
+            )
+            .into());
+        }
         let after = CycleEvidence::capture(capture);
-        if validate_cycle_progress(before, after, cycle)? {
+        let completion = capture.observed_station_epoch_completion(handle);
+        if validate_cycle_progress(before, after, completion, cycle)? {
+            println!(
+                "station_reconnect_cycle_retry_evidence={cycle} \
+                 running_scan_failures={} reconnect_failures={}",
+                after
+                    .running_scan_failure
+                    .saturating_sub(before.running_scan_failure),
+                after
+                    .reconnect_failure
+                    .saturating_sub(before.reconnect_failure),
+            );
             return Ok(());
         }
         thread::sleep(Duration::from_millis(20));
@@ -111,55 +123,28 @@ fn qualify_cycle(capture: &SerialCapture, timeout: Duration, cycle: u8) -> Resul
     .into())
 }
 
-fn validate_cycle_progress(before: CycleEvidence, after: CycleEvidence, cycle: u8) -> Result<bool> {
-    if after.reconnect_failure > before.reconnect_failure {
-        return Err(format!("target reported a reconnect failure in cycle {cycle}").into());
+fn validate_cycle_progress(
+    before: CycleEvidence,
+    after: CycleEvidence,
+    completion: Option<StationEpochEvidence>,
+    cycle: u8,
+) -> Result<bool> {
+    if after.lifecycle_terminal > before.lifecycle_terminal {
+        return Err(format!("station lifecycle reported terminal failure in cycle {cycle}").into());
     }
-    if after.running_scan_failure > before.running_scan_failure {
-        return Err(format!("target reported a running-scan failure in cycle {cycle}").into());
+    if after.lifecycle_exhausted > before.lifecycle_exhausted {
+        return Err(format!("station lifecycle exhausted retries in cycle {cycle}").into());
     }
-    if after.reconnected <= before.reconnected || after.connected_ready <= before.connected_ready {
+    let Some(completion) = completion else {
         return Ok(false);
+    };
+    if !completion.is_complete() {
+        return Err(format!(
+            "station epoch cycle {cycle} completed with incomplete typed evidence: {completion:?}"
+        )
+        .into());
     }
-    require_new_marker(
-        after.runner_stop,
-        before.runner_stop,
-        cycle,
-        "qualified runner stop",
-    )?;
-    require_new_marker(
-        after.running_scan,
-        before.running_scan,
-        cycle,
-        "complete running scan",
-    )?;
-    require_new_marker(
-        after.running_scan_lifecycle,
-        before.running_scan_lifecycle,
-        cycle,
-        "outer lifecycle scan phase",
-    )?;
-    require_new_marker(
-        after.running_scan_owner_return,
-        before.running_scan_owner_return,
-        cycle,
-        "returned running-scan owners",
-    )?;
-    require_new_marker(
-        after.reconnect_authentication,
-        before.reconnect_authentication,
-        cycle,
-        "refreshed Open Authentication",
-    )?;
     Ok(true)
-}
-
-fn require_new_marker(after: usize, before: usize, cycle: u8, evidence: &str) -> Result<()> {
-    if after > before {
-        Ok(())
-    } else {
-        Err(format!("cycle {cycle} entered reconnect without {evidence}").into())
-    }
 }
 
 fn parse_options(arguments: &[String]) -> Result<Options> {
@@ -215,8 +200,9 @@ fn print_help() {
          --timeout-seconds <n>    per-cycle deadline, 10..=300 (default 90)\n\
          --cycles <n>             sequential lifecycle cycles, 1..=8 (default 1)\n\n\
          Resets the flashed radio image, provisions credentials through the \n\
-         typed UART protocol, and qualifies every requested stop, running scan,\n\
-         fresh Authentication/Association/WPA2, and connected epoch."
+         typed UART protocol, and requires a reliable target acknowledgement\n\
+         covering runner stop, returned scan owners, fresh join, and the next\n\
+         connected runner. Text logs remain diagnostic-only."
     );
 }
 
@@ -224,17 +210,12 @@ fn print_help() {
 mod tests {
     use super::*;
 
-    fn cycle_evidence(count: usize) -> CycleEvidence {
+    fn cycle_evidence() -> CycleEvidence {
         CycleEvidence {
-            reconnected: count,
             reconnect_failure: 0,
-            runner_stop: count,
-            running_scan: count,
             running_scan_failure: 0,
-            running_scan_lifecycle: count,
-            running_scan_owner_return: count,
-            reconnect_authentication: count,
-            connected_ready: count,
+            lifecycle_exhausted: 0,
+            lifecycle_terminal: 0,
         }
     }
 
@@ -267,24 +248,48 @@ mod tests {
 
     #[test]
     fn stale_cycle_markers_cannot_qualify_another_cycle() {
-        let evidence = cycle_evidence(1);
-        assert!(!validate_cycle_progress(evidence, evidence, 2).unwrap());
+        let evidence = cycle_evidence();
+        assert!(!validate_cycle_progress(evidence, evidence, None, 2).unwrap());
     }
 
     #[test]
-    fn connected_entry_waits_for_the_new_task_topology() {
-        let before = cycle_evidence(1);
-        let mut after = cycle_evidence(2);
-        after.connected_ready = before.connected_ready;
-        assert!(!validate_cycle_progress(before, after, 2).unwrap());
+    fn typed_completion_requires_every_owner_edge() {
+        let evidence = cycle_evidence();
+        let mut incomplete = StationEpochEvidence::COMPLETE;
+        incomplete.scan_owners_returned = false;
+        assert!(validate_cycle_progress(evidence, evidence, Some(incomplete), 2).is_err());
+        assert!(
+            validate_cycle_progress(evidence, evidence, Some(StationEpochEvidence::COMPLETE), 2,)
+                .unwrap()
+        );
     }
 
     #[test]
-    fn each_completed_cycle_requires_fresh_owner_evidence() {
-        let before = cycle_evidence(1);
-        let mut after = cycle_evidence(2);
-        after.running_scan_owner_return = before.running_scan_owner_return;
-        assert!(validate_cycle_progress(before, after, 2).is_err());
-        assert!(validate_cycle_progress(before, cycle_evidence(2), 2).unwrap());
+    fn retryable_scan_and_reconnect_failures_do_not_preempt_lifecycle_policy() {
+        let before = cycle_evidence();
+        let mut retrying = before;
+        retrying.running_scan_failure += 1;
+        retrying.reconnect_failure += 1;
+        assert!(!validate_cycle_progress(before, retrying, None, 2).unwrap());
+
+        let mut recovered = cycle_evidence();
+        recovered.running_scan_failure = retrying.running_scan_failure;
+        recovered.reconnect_failure = retrying.reconnect_failure;
+        assert!(
+            validate_cycle_progress(before, recovered, Some(StationEpochEvidence::COMPLETE), 2,)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn terminal_or_exhausted_lifecycle_still_fails_immediately() {
+        let before = cycle_evidence();
+        let mut terminal = before;
+        terminal.lifecycle_terminal += 1;
+        assert!(validate_cycle_progress(before, terminal, None, 2).is_err());
+
+        let mut exhausted = before;
+        exhausted.lifecycle_exhausted += 1;
+        assert!(validate_cycle_progress(before, exhausted, None, 2).is_err());
     }
 }

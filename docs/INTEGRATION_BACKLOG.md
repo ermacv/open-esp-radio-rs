@@ -155,14 +155,14 @@ Stable diagnostic register meanings move to SVD/PAC with provenance. Raw
 reads may remain only when they are explicit comparison evidence and cannot
 affect runtime transitions.
 
-PHY observer callbacks, RF/TXDC/authentication register snapshots and the two
-qualification-only channel wrappers now live in
-`radio_hil/phy_diagnostics.rs`. This is intentionally still HIL code: it
-observes production transitions but cannot initiate a scan, join, key install
-or connected epoch. The main facade fell from 6,850 to 6,501 lines without
-moving raw diagnostic addresses into a driver crate. Runtime CRC32
-`882f93b8` completed the cold scan and three controlled reconnect cycles after
-the source split.
+PHY observer callbacks and RF/TXDC/authentication register snapshots now live
+in `radio_hil/phy_diagnostics.rs`. This is intentionally still HIL code: it
+observes production transitions but cannot initiate a channel change, scan,
+join, key install or connected epoch. Both stopped-MAC and restart-aware
+channel changes now cross `Esp32s31ScanPhy`; HIL only supplies its diagnostic
+observer. The main facade fell from 6,850 to 6,501 lines without moving raw
+diagnostic addresses into a driver crate. Runtime CRC32 `882f93b8` completed
+the cold scan and three controlled reconnect cycles after the source split.
 
 The WPA2/connected transition no longer exposes 23–28 positional arguments.
 After extracting key/M4 and peer orchestration, its entry points take coherent

@@ -57,3 +57,13 @@ snapshots into `radio_hil/phy_diagnostics.rs`. The resulting release layout
 had CRC32 `882f93b8`; placement/source-graph audits and another three reconnect
 cycles passed. Its UART evidence had SHA-256
 `927d23a0c87d70a85e50278742edae06bf1bec3002c2d57d24bc1fbcb3cd15db`.
+
+The remaining qualification-only channel wrappers were then deleted. Initial
+stopped-MAC selection and restart-aware retuning both execute through
+`Esp32s31ScanPhy`; `phy_diagnostics.rs` supplies only the observer and cannot
+initiate either transition. This is the final PHY seam required before the
+initial and reconnect join sequences can share one production station-attempt
+transaction. Release CRC32 `c108c993` passed placement and autonomous
+source-graph audits, then completed three more controlled reconnect cycles.
+The UART evidence had SHA-256
+`15cd697716ff52d57f15362b5473d1d6cc8c032ce57fea7be1dcdb897fdba6df`.

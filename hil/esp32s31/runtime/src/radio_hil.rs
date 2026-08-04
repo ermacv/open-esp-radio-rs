@@ -34,7 +34,7 @@ use open_esp_radio::{
             PhyRfBoundary, PhyTargetObserver, TargetPhyRegisterPort,
             phy_cold::{PhyCalibrationRecord, PhyColdState},
             phy_rfpll::phy_get_rf_cal_version,
-            run_phy_register, select_phy_channel, switch_phy_channel_with_mac_restart,
+            run_phy_register,
             target_executor::{PhyAsyncDelay, PhyTargetPortError},
         },
         wifi::mac::{
@@ -4760,11 +4760,14 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     let channel_result = {
         let registers = hardware.register_cell();
         let mut registers = registers.borrow_mut();
-        switch_channel_with_mac_restart(
+        let mut phy = Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(
             &mut *ready.fixture.state,
+            &mut *ready.fixture.platform,
+            HilPhyObserver,
+        );
+        phy.switch_channel(
             selection.channel_or_frequency,
             selection.cbw,
-            &mut *ready.fixture.platform,
             &mut registers,
         )
         .await
@@ -5187,9 +5190,8 @@ async fn authenticate_target(
         access_point.he_capability_ie_bytes(),
         access_point.he_operation_ie_bytes(),
     ));
-    if let Err(error) =
-        switch_channel_with_mac_restart(state, channel_or_frequency, cbw, platform, mmio).await
-    {
+    let mut phy = Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(state, platform, HilPhyObserver);
+    if let Err(error) = phy.switch_channel(channel_or_frequency, cbw, mmio).await {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-auth-channel \
              channel={} error={error:?}",
@@ -6431,8 +6433,9 @@ pub async fn run(
         powered.enable_wifi_rx();
         let (platform, registers) = powered.parts_mut();
         set_diagnostic_stage(210);
-        if let Err(error) = select_channel(&mut state, LISTEN_CHANNEL, 0, platform, registers).await
-        {
+        let mut phy =
+            Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(&mut state, platform, HilPhyObserver);
+        if let Err(error) = phy.select_channel(LISTEN_CHANNEL, 0, registers).await {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel \
                          error={error:?}"

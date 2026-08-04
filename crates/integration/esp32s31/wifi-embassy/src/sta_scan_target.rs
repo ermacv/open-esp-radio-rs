@@ -62,6 +62,24 @@ where
         }
     }
 
+    /// Retune the PHY while the caller still owns a cold, stopped MAC.
+    pub async fn select_channel(
+        &mut self,
+        channel_or_frequency: u16,
+        cbw: u8,
+        registers: &mut RadioRegisters,
+    ) -> Result<(), PhyTargetPortError> {
+        open_esp_radio_esp32s31_phy::select_phy_channel::<D, _, _>(
+            self.state,
+            channel_or_frequency,
+            cbw,
+            self.platform,
+            registers,
+            &mut self.observer,
+        )
+        .await
+    }
+
     /// Stop the MAC, retune the PHY and restore the qualified REGDMA link.
     pub async fn switch_channel(
         &mut self,

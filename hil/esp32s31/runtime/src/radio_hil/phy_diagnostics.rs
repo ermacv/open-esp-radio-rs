@@ -129,44 +129,6 @@ impl PhyTargetObserver for HilPhyObserver {
     }
 }
 
-pub(super) async fn select_channel(
-    state: &mut PhyColdState,
-    channel_or_frequency: u16,
-    cbw: u8,
-    platform: &mut EspHalRadioPeripheral,
-    registers: &mut RadioRegisters,
-) -> Result<(), PhyTargetPortError> {
-    let mut observer = HilPhyObserver;
-    select_phy_channel::<EmbassyPhyDelay, _, _>(
-        state,
-        channel_or_frequency,
-        cbw,
-        platform,
-        registers,
-        &mut observer,
-    )
-    .await
-}
-
-pub(super) async fn switch_channel_with_mac_restart(
-    state: &mut PhyColdState,
-    channel_or_frequency: u16,
-    cbw: u8,
-    platform: &mut EspHalRadioPeripheral,
-    registers: &mut RadioRegisters,
-) -> Result<(), PhyTargetPortError> {
-    let mut observer = HilPhyObserver;
-    switch_phy_channel_with_mac_restart::<EmbassyPhyDelay, _, _>(
-        state,
-        channel_or_frequency,
-        cbw,
-        platform,
-        registers,
-        &mut observer,
-    )
-    .await
-}
-
 fn log_open_txdc_entry_mmio() {
     const ADDRESSES: [usize; 18] = [
         0x2010_001c,
@@ -353,4 +315,3 @@ pub(super) fn log_open_auth_register_snapshot() {
         ));
     }
 }
-

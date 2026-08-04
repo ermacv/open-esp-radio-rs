@@ -15,6 +15,7 @@ mod paced_tcp;
 mod paced_udp;
 mod rx_traffic;
 mod startup_artifact;
+mod station_lifecycle;
 mod tcp_rx;
 mod traffic_capture;
 mod trigger;
@@ -112,6 +113,10 @@ fn run() -> Result<()> {
                     .into(),
             ),
         },
+        Some("station") => match arguments.next().as_deref() {
+            Some("reconnect") => station_lifecycle::run(arguments.collect(), &root),
+            _ => Err("usage: cargo hil station reconnect [options]".into()),
+        },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
             print_help();
@@ -165,6 +170,7 @@ fn print_help() {
          cargo hil traffic tcp-rx <device-ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
+         cargo hil station reconnect [options]\n\
          cargo hil oracle verify\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\

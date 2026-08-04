@@ -38,6 +38,7 @@ cargo hil scenarios
 cargo hil doctor
 cargo hil build radio
 cargo hil flash radio --port /dev/ttyACM0
+cargo hil station reconnect --serial /dev/ttyACM0
 cargo hil build udp-tx
 cargo hil traffic trigger <monitor-interface> --transmitter <bssid> --aid <aid>
 cargo hil oracle verify
@@ -84,6 +85,13 @@ connected power planner also ACK-gates PM=1 and restores PM=0 before queued
 network data, but the HIL does not enable it or consume its doze permit. Actual
 modem sleep remains disabled until its complete PAC sleep/wakeup transaction
 is qualified.
+
+`cargo hil station reconnect` provisions credentials over HIL protocol v4,
+requests one hardware-safe `WifiRunner` stop and waits for a second
+Association/WPA2/connected epoch on the same selected peer. The stop has its
+own `Stopped` outcome and is never reported as beacon loss. This qualifies
+resource reuse and same-peer reassociation, not scan/re-authentication after an
+AP disappears.
 
 Build and flash a named scenario with the same identifier:
 

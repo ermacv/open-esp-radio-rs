@@ -25,8 +25,9 @@ use crate::interface_address::program_cold_receive_addresses;
 pub use crate::low_rate::MacLowRateHardware;
 pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{
-    StaLinkRxPolicyHardware, StaPeerAssociationPlan, StaPeerAssociationPlanError,
-    StaPeerScanPolicy, StaWmmPolicy, StaWmmSource, configure_sta_link_receive_policy,
+    StaLinkRxPolicyHardware, StaNoiseFloorHardware, StaPeerAssociationPlan,
+    StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmPolicy, StaWmmSource,
+    configure_sta_link_receive_policy,
 };
 pub use open_esp_radio_esp32s31_pac::{MacTxPowerPair, MacTxPowerTable};
 

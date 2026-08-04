@@ -23,9 +23,20 @@ pub trait StaLinkRxPolicyHardware {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]);
 }
 
+/// Read-only PHY observation used to complete associated-peer rate policy.
+pub trait StaNoiseFloorHardware {
+    fn read_noise_floor_dbm(&self) -> i8;
+}
+
 impl StaLinkRxPolicyHardware for RadioRegisters {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
         self.apply_sta_link_receive_policy(bssid);
+    }
+}
+
+impl StaNoiseFloorHardware for RadioRegisters {
+    fn read_noise_floor_dbm(&self) -> i8 {
+        RadioRegisters::read_noise_floor_dbm(self)
     }
 }
 

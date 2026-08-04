@@ -270,32 +270,50 @@ The first reconnect seam is now production-owned:
   sink and reorder bindings and returns the exact MPDU/Ethernet scratch
   buffers before the connected runner publishes `RadioHilReconnectReady`;
   that owner also retains the board fixture, target, persistent network,
-  cooperative hardware epoch, PMK/nonce and updated sequence counters.
+  cooperative hardware epoch, PMK/nonce and updated sequence counters;
+- the remaining synchronous Association hardware leaves now expose narrow
+  reusable traits: link RX policy, noise-floor observation, HE20 peer
+  programming and beamforming report-rate programming. Both `RadioRegisters`
+  and `CooperativeTxHardware` implement the same contracts, in addition to
+  their existing MMIO/RX-DMA/TX/CCMP traits; no finite Association operation
+  now intrinsically requires the cold PAC-owner type;
+- the HIL now consumes `RadioHilReconnectReady` instead of parking it. It runs
+  the same production Association, peer programming, WPA2 handshake/key
+  install and connected `WifiRunner` on the cooperative hardware, halted RX,
+  persistent network stack, A-MPDU arena and control mailbox returned by the
+  first epoch. A second connected teardown recreates the same typed frontier
+  once more, proving at compile time that no reconnect phase needs another
+  PAC singleton or static allocation.
 
-This is necessary but not yet a reconnect implementation. The next slices,
-in order, are:
+This is now a bounded same-peer reconnect implementation with board evidence.
+`WifiRunner::run_until` observes an outer stop only at a transaction boundary,
+waits for an active TX to release hardware, publishes link-down and returns the
+distinct `Stopped` outcome. HIL protocol v4 advertises this capability and
+`cargo hil station reconnect` requests it without calling the stop a beacon
+loss. The 2026-08-04 ESP32-S31 run completed the first teardown, a second
+Association, WPA2 M1--M4 and entry into the second connected epoch; see the
+[qualification report](hil/2026-08-04-esp32s31-station-reconnect.md).
 
-1. compose the existing protocol/RX/TX/control/key/interrupt edges above
-   scan/join/WPA2 as one
-   allocation-free STA service
-   with explicit `Disconnected`, `Reconnecting` and terminal hardware-failure
+This evidence deliberately has a narrower meaning than automatic recovery
+from an unavailable AP. The controlled cycle retains the selected same-channel
+peer and begins again at Association; it does not yet prove rescanning,
+candidate selection, re-authentication, AP disappearance or retry/backoff.
+The next slices, in order, are:
+
+1. compose the proven edges as one allocation-free STA service with explicit
+   `Disconnected`, `Reconnecting`, `Stopped` and terminal hardware-failure
    outcomes;
-2. make the HIL consume that service, then qualify disconnect/reassociation
-   and one injected TX/RX failure before resuming feature expansion.
+2. route real beacon loss through candidate selection and Authentication, and
+   preserve the complete retry owner across each bounded failure/backoff edge;
+3. qualify repeated controlled cycles, real AP loss/recovery and one injected
+   TX/RX failure before resuming feature expansion.
 
-The current HIL converts the returned bundle into the exact typed input of a
-later connected epoch, but still retains that input in its WPA2 parent instead
-of entering a second scan/join epoch. Network stack/report lifetime,
-per-epoch benchmark lifetime and connected static-resource lifetime are now
-separated correctly. The remaining incompatibility is earlier in the chain:
-the successful initial join/WPA2 chain preserves RX ownership, its finite
-backends accept both cold and cooperative hardware, every returning error has
-a complete retry owner, and connected teardown now assembles one complete
-`RadioHilReconnectReady` frontier. Board Association orchestration still
-accepts only its initial raw-register fixture, however. It must next consume
-that frontier through a cold/cooperative hardware abstraction and drive a
-bounded second Association/WPA2 attempt. Therefore HIL cannot yet serve as
-evidence for reassociation.
+Network stack/report lifetime, per-epoch benchmark lifetime and connected
+static-resource lifetime are separated correctly. The remaining gap is now
+outer lifecycle policy: today the HIL owns the one controlled transition and
+parks after entering the second connected epoch. Move that loop, retry budget
+and candidate policy into a reusable STA service; do not turn the HIL command
+or its PASS markers into driver state.
 
 ## Completion gate
 

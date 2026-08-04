@@ -9,14 +9,60 @@ pub enum He20InstallError {
     Hardware(MacHe20PeerError),
 }
 
+/// Finite PAC transactions required to install one parsed HE20 peer.
+pub trait He20PeerHardware {
+    fn program_he20_peer(
+        &mut self,
+        config: MacHe20PeerConfig,
+        rts_threshold: Option<u16>,
+    ) -> Result<(), MacHe20PeerError>;
+
+    fn program_he20_association(
+        &mut self,
+        association_id: u16,
+        minimum_mpdu_start_spacing: u8,
+        bssid_index: u8,
+    ) -> Result<(), MacHe20PeerError>;
+
+    fn initialize_he_buffer_status_report(&mut self);
+}
+
+impl He20PeerHardware for RadioRegisters {
+    fn program_he20_peer(
+        &mut self,
+        config: MacHe20PeerConfig,
+        rts_threshold: Option<u16>,
+    ) -> Result<(), MacHe20PeerError> {
+        RadioRegisters::program_he20_peer(self, config, rts_threshold)
+    }
+
+    fn program_he20_association(
+        &mut self,
+        association_id: u16,
+        minimum_mpdu_start_spacing: u8,
+        bssid_index: u8,
+    ) -> Result<(), MacHe20PeerError> {
+        RadioRegisters::program_he20_association(
+            self,
+            association_id,
+            minimum_mpdu_start_spacing,
+            bssid_index,
+        )
+    }
+
+    fn initialize_he_buffer_status_report(&mut self) {
+        RadioRegisters::initialize_he_buffer_status_report(self);
+    }
+}
+
 /// Parse and install one associated HE20 peer without retaining vendor node
 /// layout or exposing raw MMIO above the PAC.
 ///
 /// SOURCE: complete pinned `_oracles/libnet80211.a[ieee80211_he.o]`
 /// capability/operation parsers and `_oracles/libpp.a[hal_mac_ctl.o]`
 /// hardware leaves. The former migration copy is not an oracle.
-pub fn install_he20_peer(
-    registers: &mut RadioRegisters,
+pub fn install_he20_peer<H: He20PeerHardware>(
+    hardware: &mut H,
     capability: &[u8],
     operation: &[u8],
     association_id: u16,
@@ -25,7 +71,7 @@ pub fn install_he20_peer(
 ) -> Result<He20PeerState, He20InstallError> {
     let state = parse_he20_peer_state(capability, operation).map_err(He20InstallError::Element)?;
     program_he20_peer_state(
-        registers,
+        hardware,
         state,
         association_id,
         minimum_mpdu_start_spacing,
@@ -40,14 +86,14 @@ pub fn install_he20_peer(
 /// hardware. Reusing that value here guarantees that rate control, HE-SIG
 /// color/ER-SU policy and the programmed S31 registers cannot be derived from
 /// different parses of mutable application storage.
-pub fn program_he20_peer_state(
-    registers: &mut RadioRegisters,
+pub fn program_he20_peer_state<H: He20PeerHardware>(
+    hardware: &mut H,
     state: He20PeerState,
     association_id: u16,
     minimum_mpdu_start_spacing: u8,
     bssid_index: u8,
 ) -> Result<(), He20InstallError> {
-    registers
+    hardware
         .program_he20_peer(
             MacHe20PeerConfig {
                 packet_padding_eight_us: state.packet_padding_eight_us,
@@ -58,9 +104,9 @@ pub fn program_he20_peer_state(
             state.rts_threshold,
         )
         .map_err(He20InstallError::Hardware)?;
-    registers
+    hardware
         .program_he20_association(association_id, minimum_mpdu_start_spacing, bssid_index)
         .map_err(He20InstallError::Hardware)?;
-    registers.initialize_he_buffer_status_report();
+    hardware.initialize_he_buffer_status_report();
     Ok(())
 }

@@ -505,6 +505,22 @@ pub struct BeamformingReportRate {
     ersu_ack: bool,
 }
 
+/// Ordered PAC leaves used by the association rate-control transition.
+pub trait BeamformingReportHardware {
+    fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile);
+    fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile);
+}
+
+impl BeamformingReportHardware for RadioRegisters {
+    fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
+        RadioRegisters::set_he_beamforming_report_profile(self, profile);
+    }
+
+    fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
+        RadioRegisters::set_he_ersu_ack_rate_profile(self, profile);
+    }
+}
+
 impl BeamformingReportRate {
     pub const fn signal_mode(self) -> u8 {
         self.mode
@@ -536,9 +552,9 @@ impl BeamformingReportRate {
     /// `trc_set_bf_report_rate`, size `0x52`, and its complete
     /// `_oracles/libpp.a[hal_mac_ctl.o]` children
     /// `hal_he_set_bf_report_rate` and `hal_he_set_ersu_ack_rate`.
-    pub fn program(
+    pub fn program<H: BeamformingReportHardware>(
         self,
-        registers: &mut RadioRegisters,
+        hardware: &mut H,
     ) -> Result<(), MacHeBeamformingReportProfileError> {
         let profile = MacHeBeamformingReportProfile::from_hal_arguments(
             self.mode, self.rate, self.dcm, self.ersu,
@@ -551,8 +567,8 @@ impl BeamformingReportRate {
 
         // Preserve the complete blob's transaction order: three report-rate
         // RMWs first, then the four ER-SU ACK-rate RMWs.
-        registers.set_he_beamforming_report_profile(profile);
-        registers.set_he_ersu_ack_rate_profile(ack_profile);
+        hardware.set_he_beamforming_report_profile(profile);
+        hardware.set_he_ersu_ack_rate_profile(ack_profile);
         Ok(())
     }
 }
@@ -995,11 +1011,11 @@ impl StaRateControlAssociation {
     }
 
     /// Reproduce the sole hardware side effect of the association transition.
-    pub fn program_hardware(
+    pub fn program_hardware<H: BeamformingReportHardware>(
         &self,
-        registers: &mut RadioRegisters,
+        hardware: &mut H,
     ) -> Result<(), MacHeBeamformingReportProfileError> {
-        self.beamforming_report.program(registers)
+        self.beamforming_report.program(hardware)
     }
 }
 

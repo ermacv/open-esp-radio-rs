@@ -116,7 +116,7 @@ scope Finite selected-peer Open Authentication and Association epochs through ac
 implementation complete
 host-proof covered
 vendor-proof mapped
-hil-proof partial
+hil-proof qualified
 async-proof bounded
 owner crates/wifi/ieee80211/src/station.rs StaAuthenticationRuntime
 owner crates/wifi/ieee80211/src/station.rs StaAssociationRuntime
@@ -124,11 +124,10 @@ owner crates/wifi/ieee80211/src/station.rs select_sta_association
 test crates/wifi/ieee80211/src/station.rs authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit
 test crates/wifi/ieee80211/src/station.rs association_runtime_owns_epoch_schedule_sequence_and_timeout
 vendor-anchor crates/wifi/ieee80211/src/station.rs ieee80211_sta_new_state
-hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence docs/hil/2026-08-04-esp32s31-station-reconnect.md HIL_ESP32S31_STA_RECONNECT_2026_08_04
 depends-on channel-selection-switch
 depends-on rx-tx-dma
 gap vendor net80211-auth-association-contract-not-executable
-gap hil connected-auth-needs-post-rx-requalification
 
 capability wpa2
 title WPA2 Personal station handshake
@@ -136,7 +135,7 @@ scope Four-way handshake replay protection key installation response deadline an
 implementation complete
 host-proof covered
 vendor-proof mapped
-hil-proof partial
+hil-proof qualified
 async-proof bounded
 owner crates/wifi/wpa2/src/supplicant.rs Wpa2StaSupplicant
 owner crates/wifi/wpa2/src/state.rs Wpa2StaState
@@ -144,10 +143,9 @@ owner crates/wifi/wpa2/src/supplicant.rs Wpa2StaResponseDeadline
 test crates/wifi/wpa2/src/supplicant.rs resolves_m1_through_typed_install_and_authenticated_m4
 test crates/wifi/wpa2/src/supplicant.rs response_deadlines_preserve_total_wait_without_spontaneous_m2_retry
 vendor-anchor crates/wifi/wpa2/src/supplicant.rs wpa_supplicant_process_1_of_4
-hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence docs/hil/2026-08-04-esp32s31-station-reconnect.md HIL_ESP32S31_STA_RECONNECT_2026_08_04
 depends-on authentication-association
 gap vendor supplicant-contract-not-executable
-gap hil connected-wpa2-needs-post-rx-requalification
 
 capability async-deadlines
 title Bounded asynchronous hardware deadlines

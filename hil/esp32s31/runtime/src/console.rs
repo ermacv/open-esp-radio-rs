@@ -66,6 +66,8 @@ static STARTUP_CONFIGURATIONS: Channel<CriticalSectionRawMutex, StartupConfigura
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Channel::new();
+#[unsafe(link_section = ".critical.data.logging")]
+static STATION_EPOCH_CYCLES: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
 
 #[derive(Clone, Copy)]
 pub struct ActiveSession {
@@ -297,6 +299,14 @@ pub async fn receive_session_start() -> ActiveSession {
     SESSION_STARTS.receive().await
 }
 
+/// Wait until the host requests one finite connected-STA lifecycle cycle.
+///
+/// The production runner observes this only at a hardware-safe transaction
+/// boundary; the console owns command admission and never touches radio state.
+pub async fn receive_station_epoch_cycle() {
+    STATION_EPOCH_CYCLES.receive().await
+}
+
 /// Hands a completed in-memory measurement back to the protocol owner.
 ///
 /// USB serialization happens in another task and therefore cannot extend the
@@ -501,6 +511,21 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             )
                             .await;
                         }
+                    }
+                    Command::CycleStationEpoch => {
+                        let response = if !capabilities.features.station_epoch_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if STATION_EPOCH_CYCLES.try_send(()).is_err() {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::Stop => {
                         publish_event_reliably(

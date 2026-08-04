@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -93,6 +93,9 @@ pub struct FeatureCapabilities {
     /// This image accepts one opaque, host-owned startup artifact and can
     /// return its current value after initialization.
     pub startup_artifact: bool,
+    /// This image can stop one healthy connected STA epoch at a safe runner
+    /// boundary and use the returned owners to exercise reassociation.
+    pub station_epoch_control: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -306,6 +309,10 @@ pub enum Command {
     Configure(SessionConfig),
     Arm,
     Start,
+    /// Request one connected STA teardown/reassociation cycle. This is a HIL
+    /// lifecycle operation, not a transport-session stop and not evidence of
+    /// peer link loss.
+    CycleStationEpoch,
     Stop,
     Abort,
     GetLastResult,

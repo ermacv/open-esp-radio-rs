@@ -1,0 +1,75 @@
+# ESP32-S31 controlled STA epoch reconnect
+
+Date: 2026-08-04  
+Board: ESP32-S31 revision 0  
+Scenario: `radio` / `open-radio-hil`  
+Profile: `psram-code-psram-data`  
+Runtime CRC32: `5d5b575d`
+
+Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
+
+## Claim
+
+One healthy connected epoch can be stopped at a production runner transaction
+boundary, fully torn down, and reconstructed on the same peer without another
+PAC singleton or static allocation. The returned cooperative hardware, RX DMA
+frontier, network stack, TX/A-MPDU resources, control mailbox, PMK, nonce and
+sequence owners complete a second Association, WPA2 four-way handshake and
+entry into the production connected runner.
+
+This does not claim recovery from AP disappearance. The controlled run retains
+the scanned peer and channel, starts again at Association, and intentionally
+distinguishes `WifiRunnerExit::Stopped` from beacon-loss `Disconnected`.
+
+## Procedure
+
+The image was built and flashed with:
+
+```text
+cargo hil build radio
+cargo hil flash radio --port /dev/ttyACM0
+```
+
+Credentials remained host-owned and were provisioned over the framed UART
+protocol. The lifecycle qualification was then run with:
+
+```text
+cargo hil station reconnect --serial /dev/ttyACM0 --timeout-seconds 120
+```
+
+The host accepts the cell only when protocol v4 advertises station epoch
+control, the stop command is acknowledged, the production stop marker is
+observed, no reconnect failure marker appears, and the target reaches
+`production-reconnect-connected-enter`. The local transcript is written to
+`target/hil/esp32s31/qualification/station-reconnect/uart.log`.
+
+## Observed evidence
+
+| Transition | Result |
+| --- | --- |
+| Initial Open Authentication | PASS, 167 ms |
+| Initial Association | status 0, AID 32, HE20/WMM, 21 ms |
+| Initial WPA2 M3 | one M2 transmission, replay 2, 9 ms |
+| Initial WPA2 M4 | TX status 0 |
+| Initial protected data | ARP TX/RX PASS with CCMP RX |
+| Controlled runner stop | PASS, source `host-station-epoch-cycle` |
+| Connected owner return | PASS, halted RX queue empty |
+| Second Association | status 0, AID 32, one response frame, 21 ms |
+| Second peer programming | HE20, QoS, noise floor -93 dBm, metric 70 |
+| Second WPA2 M3 | one M2 transmission, replay 4, 10 ms |
+| Second WPA2 M4/key install | TX status 0, pairwise slot 4, group slot 1 |
+| Second connected entry | PASS |
+
+The image also passed the SRAM/PSRAM placement audit and autonomous source
+graph audit. Host tests prove that a stop already ready at idle publishes
+link-down and returns `Stopped`, while a stop raised during an active TX waits
+for the normal completion path before returning ownership.
+
+## Remaining qualification
+
+- repeat several controlled cycles instead of parking in epoch two;
+- route real beacon loss through scan/candidate selection and Authentication;
+- qualify AP loss and recovery, retry/backoff exhaustion, and an injected
+  TX/RX hardware failure;
+- move the outer lifecycle loop and policy from HIL composition into a reusable
+  allocation-free STA service.

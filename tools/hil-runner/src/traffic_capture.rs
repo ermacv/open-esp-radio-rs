@@ -203,7 +203,7 @@ impl SerialCapture {
     /// Establishes the typed link and provisions this boot from host-owned
     /// environment secrets. The passphrase is never echoed by the target or
     /// appended to the UART capture.
-    fn prepare_protocol(&self) -> Result<Capabilities> {
+    pub(crate) fn prepare_protocol(&self) -> Result<Capabilities> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
         let artifact_path = startup_artifact::configured_path()?;
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
@@ -460,6 +460,10 @@ impl SerialCapture {
             Command::AcknowledgeResult,
             "acknowledgement",
         )
+    }
+
+    pub(crate) fn request_station_epoch_cycle(&self) -> Result<()> {
+        self.expect_accepted(0, Command::CycleStationEpoch, "station epoch cycle")
     }
 
     fn latest_boot_id(&self) -> Option<u64> {

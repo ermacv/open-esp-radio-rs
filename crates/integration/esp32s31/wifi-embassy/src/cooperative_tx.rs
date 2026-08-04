@@ -9,6 +9,7 @@ use core::cell::RefCell;
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
 use open_esp_radio_esp32s31_pac::{
+    MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
@@ -16,6 +17,9 @@ use open_esp_radio_esp32s31_pac::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
+    he::He20PeerHardware,
+    init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    rate_control::BeamformingReportHardware,
     registers::Mmio,
     rx::RxDma,
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
@@ -81,6 +85,66 @@ impl CcmpKeyHardware for CooperativeTxHardware<'_, '_> {
 
     fn clear_ccmp_entry(&mut self, index: u8) {
         CcmpKeyHardware::clear_ccmp_entry(&mut **self.registers.borrow_mut(), index);
+    }
+}
+
+impl He20PeerHardware for CooperativeTxHardware<'_, '_> {
+    fn program_he20_peer(
+        &mut self,
+        config: MacHe20PeerConfig,
+        rts_threshold: Option<u16>,
+    ) -> Result<(), MacHe20PeerError> {
+        He20PeerHardware::program_he20_peer(
+            &mut **self.registers.borrow_mut(),
+            config,
+            rts_threshold,
+        )
+    }
+
+    fn program_he20_association(
+        &mut self,
+        association_id: u16,
+        minimum_mpdu_start_spacing: u8,
+        bssid_index: u8,
+    ) -> Result<(), MacHe20PeerError> {
+        He20PeerHardware::program_he20_association(
+            &mut **self.registers.borrow_mut(),
+            association_id,
+            minimum_mpdu_start_spacing,
+            bssid_index,
+        )
+    }
+
+    fn initialize_he_buffer_status_report(&mut self) {
+        He20PeerHardware::initialize_he_buffer_status_report(&mut **self.registers.borrow_mut());
+    }
+}
+
+impl BeamformingReportHardware for CooperativeTxHardware<'_, '_> {
+    fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
+        BeamformingReportHardware::set_he_beamforming_report_profile(
+            &mut **self.registers.borrow_mut(),
+            profile,
+        );
+    }
+
+    fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
+        BeamformingReportHardware::set_he_ersu_ack_rate_profile(
+            &mut **self.registers.borrow_mut(),
+            profile,
+        );
+    }
+}
+
+impl StaLinkRxPolicyHardware for CooperativeTxHardware<'_, '_> {
+    fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
+        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut **self.registers.borrow_mut(), bssid);
+    }
+}
+
+impl StaNoiseFloorHardware for CooperativeTxHardware<'_, '_> {
+    fn read_noise_floor_dbm(&self) -> i8 {
+        StaNoiseFloorHardware::read_noise_floor_dbm(&**self.registers.borrow())
     }
 }
 

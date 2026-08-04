@@ -48,17 +48,20 @@ use open_esp_radio::{
             },
             descriptor::{DESCRIPTOR_BYTES, length as descriptor_length, rx_done},
             edca::EdcaParametersError,
-            he::program_he20_peer_state,
+            he::{He20PeerHardware, program_he20_peer_state},
             init::{
-                MAC_COLD_RX_INTERRUPT_MASK, StaPeerScanPolicy, StaWmmSource,
-                configure_sta_link_receive_policy, initialize_promiscuous_receive,
+                MAC_COLD_RX_INTERRUPT_MASK, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
+                StaPeerScanPolicy, StaWmmSource, configure_sta_link_receive_policy,
+                initialize_promiscuous_receive,
             },
             irq::{
                 IrqSink, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
                 MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, handle_mac_irq,
                 handle_power_irq,
             },
-            rate_control::{StaRateControlAssociation, StaTxRatePolicy},
+            rate_control::{
+                BeamformingReportHardware, StaRateControlAssociation, StaTxRatePolicy,
+            },
             rate_schedule::schedule_state,
             registers::{
                 MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
@@ -321,6 +324,7 @@ pub const fn hil_capabilities() -> Capabilities {
             runtime_configuration: OPEN_RADIO_RUNTIME_SESSIONS,
             structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
             startup_artifact: true,
+            station_epoch_control: true,
         },
         maximum_payload_bytes: if OPEN_RADIO_TCP_RX_BENCH {
             OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
@@ -957,7 +961,19 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
 type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
 
-fn assert_join_hardware_capabilities<H: Mmio + RxDma + TxHardware + CcmpKeyHardware>(_: &H) {}
+fn assert_join_hardware_capabilities<
+    H: Mmio
+        + RxDma
+        + TxHardware
+        + CcmpKeyHardware
+        + He20PeerHardware
+        + BeamformingReportHardware
+        + StaLinkRxPolicyHardware
+        + StaNoiseFloorHardware,
+>(
+    _: &H,
+) {
+}
 
 type ConnectedStoppedRx = Esp32s31StoppedRx<
     'static,
@@ -5426,7 +5442,12 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     // disconnect returns RX/TX/control ownership into the same scope that
     // retains the GTK and platform token. A spawned task could only report
     // the edge and would strand those values in its private task storage.
-    match observe_open_radio_task_polls(radio_runner.run(), &OPEN_RADIO_TASK_POLLS.radio).await {
+    match observe_open_radio_task_polls(
+        radio_runner.run_until(crate::console::receive_station_epoch_cycle()),
+        &OPEN_RADIO_TASK_POLLS.radio,
+    )
+    .await
+    {
         Ok(WifiRunnerExit::Disconnected) => {
             let control = radio_runner.backend().control();
             let beacon_monitor = control.beacon_monitor();
@@ -5441,6 +5462,10 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                 control.last_tx_failure(),
             ));
         }
+        Ok(WifiRunnerExit::Stopped) => emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
+             source=host-station-epoch-cycle"
+        )),
         Err(error) => emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
         )),
@@ -5663,6 +5688,362 @@ async fn qualify_disconnected_rx_restart(
         ampdu,
         control_resources,
     }
+}
+
+/// Execute a complete Association/WPA2/connected epoch on the exact owners
+/// returned by the preceding connected epoch.
+///
+/// This is not a parallel station implementation: all three finite protocol
+/// transitions and the connected runner are the same production owners used
+/// by the initial path. The only new composition is that their hardware
+/// capability is `CooperativeTxHardware`, their network stack is already
+/// running with link-down, and their RX frontier came from connected teardown.
+async fn qualify_reconnected_epoch<'fixture, 'security>(
+    mut ready: RadioHilReconnectReady<'fixture, 'security>,
+) -> (RadioHilReconnectReady<'fixture, 'security>, bool) {
+    let StaJoinTarget {
+        station_address,
+        access_point,
+    } = ready.target;
+    let peer_scan_policy = match StaPeerScanPolicy::new(&access_point) {
+        Ok(policy) => policy,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-peer-scan-policy error={error:?}"
+            ));
+            return (ready, false);
+        }
+    };
+    ready
+        .fixture
+        .tx_storage
+        .install_ht_ampdu_policy(peer_scan_policy.ht_ampdu);
+    ready
+        .fixture
+        .tx_storage
+        .install_he_bss_color(peer_scan_policy.he_bss_color);
+    if let Some(parameters) = peer_scan_policy.wmm.parameters() {
+        if let Err(error) = ready.fixture.tx_storage.install_wmm_edca(parameters) {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wmm-edca source=scan error={error:?}"
+            ));
+            return (ready, false);
+        }
+    }
+
+    let RadioHilConnectedEpochResources::Reconnected {
+        hardware,
+        rx,
+        rx_resources: _,
+        ampdu: _,
+        control_resources: _,
+    } = &mut ready.epoch
+    else {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL \
+             stage=production-reconnect-association error=initial-epoch-owner"
+        ));
+        return (ready, false);
+    };
+    let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
+    let backend = RadioHilStaJoinBackend {
+        mmio: hardware,
+        rx_storage: ready.fixture.rx_storage,
+        tx_storage: &mut *ready.fixture.tx_storage,
+        descriptor_base: ready.fixture.descriptor_base,
+        buffer_addresses: ready.fixture.buffer_addresses,
+        frame: &mut *ready.fixture.frame,
+        station_address,
+        access_point,
+        rx: join_rx,
+    };
+    let mut runner = StaJoinRunner::new(backend, EmbassyStaJoinTimer);
+    let association_started = Instant::now();
+    let result = runner
+        .associate(
+            station_address,
+            access_point.bssid,
+            ready.security.sequences.non_qos_mut(),
+        )
+        .await;
+    let (backend, _) = runner.into_parts();
+    *rx = backend.into_rx();
+    let success = match result {
+        Ok(success) => success,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-association error={error:?} \
+                 elapsed_ms={} bssid={:02x?}",
+                association_started.elapsed().as_millis(),
+                access_point.bssid,
+            ));
+            return (ready, false);
+        }
+    };
+    let response = success.response;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-association status={} aid={} \
+         frames={} elapsed_ms={} bssid={:02x?}",
+        response.status_code,
+        response.association_id,
+        success.total_received_frames,
+        association_started.elapsed().as_millis(),
+        access_point.bssid,
+    ));
+
+    let selected_rsn = match select_wpa2_psk_rsn(&access_point) {
+        Ok(rsn) => rsn,
+        Err(error) => {
+            let _ = rx.stop(hardware);
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-rsn-select error={error:?}"
+            ));
+            return (ready, false);
+        }
+    };
+    let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
+    let noise_floor_dbm = hardware.read_noise_floor_dbm();
+    let mut peer_plan = match peer_scan_policy.complete(
+        &access_point,
+        &response,
+        association_phy,
+        noise_floor_dbm,
+    ) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = rx.stop(hardware);
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-peer-plan error={error:?}"
+            ));
+            return (ready, false);
+        }
+    };
+    ready
+        .fixture
+        .tx_storage
+        .install_ht_ampdu_policy(peer_plan.ht_ampdu);
+    ready
+        .fixture
+        .tx_storage
+        .install_he_bss_color(peer_plan.he_bss_color);
+    if peer_plan.wmm.source() == StaWmmSource::AssociationResponse {
+        let Some(parameters) = peer_plan.wmm.parameters() else {
+            let _ = rx.stop(hardware);
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wmm-edca \
+                 source=association-response error=missing-parameters"
+            ));
+            return (ready, false);
+        };
+        if let Err(error) = ready.fixture.tx_storage.install_wmm_edca(parameters) {
+            let _ = rx.stop(hardware);
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wmm-edca \
+                 source=association-response error={error:?}"
+            ));
+            return (ready, false);
+        }
+    }
+    if let Some(state) = peer_plan.he_peer_state
+        && let Err(error) =
+            program_he20_peer_state(hardware, state, response.association_id, 0, 0)
+    {
+        let _ = rx.stop(hardware);
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL \
+             stage=production-reconnect-he20-peer error={error:?}"
+        ));
+        return (ready, false);
+    }
+    if let Err(error) = peer_plan.rate_control.program_hardware(hardware) {
+        let _ = rx.stop(hardware);
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL \
+             stage=production-reconnect-rate-control error={error:?}"
+        ));
+        return (ready, false);
+    }
+    let peer_he_capabilities = peer_plan.he_capabilities;
+    let link = StaConnectedLink {
+        station_address,
+        bssid: access_point.bssid,
+        association_id: response.association_id,
+        beacon_interval_tu: access_point.beacon_interval_tu,
+        peer_qos: peer_plan.peer_qos,
+        association_phy,
+        peer_supports_one_ltf_800ns_gi: peer_he_capabilities
+            .is_some_and(|capability| capability.supports_one_ltf_800ns_gi()),
+        peer_supports_ldpc: peer_he_capabilities
+            .is_some_and(|capability| capability.supports_ldpc_coding_in_payload()),
+        peer_dcm_receive: peer_he_capabilities.map_or(
+            HeDcmConstellation::NotSupported,
+            |capability| capability.dcm_receive_constellation(),
+        ),
+    };
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-peer-programmed phy={association_phy:?} \
+         qos={} noise_floor_dbm={} metric={} \
+         bf_mode={} bf_rate={}",
+        u8::from(link.peer_qos),
+        noise_floor_dbm,
+        peer_plan.link_metric.value(),
+        peer_plan.rate_control.beamforming_report().signal_mode(),
+        peer_plan.rate_control.beamforming_report().rate_code(),
+    ));
+
+    let handshake = Wpa2HandshakeConfig {
+        local: station_address,
+        authenticator: access_point.bssid,
+        supplicant_nonce: ready.security.supplicant_nonce,
+        association_security_ies: selected_rsn.as_bytes(),
+        authenticator_rsn_ie: access_point.rsn_ie_bytes(),
+        authenticator_rsnxe: access_point.rsnxe_bytes(),
+        pmk: ready.security.pmk,
+    };
+    let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
+    let backend = RadioHilWpa2Backend {
+        mmio: hardware,
+        rx_storage: ready.fixture.rx_storage,
+        tx_storage: &mut *ready.fixture.tx_storage,
+        descriptor_base: ready.fixture.descriptor_base,
+        buffer_addresses: ready.fixture.buffer_addresses,
+        frame: &mut *ready.fixture.frame,
+        station_address,
+        bssid: access_point.bssid,
+        rx: join_rx,
+        message2_transmissions: 0,
+    };
+    let mut runner =
+        Wpa2HandshakeRunner::new(backend, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
+    let handshake_started = Instant::now();
+    let pending = match runner
+        .run(handshake, ready.security.sequences.non_qos_mut())
+        .await
+    {
+        Ok(pending) => pending,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wpa2-handshake error={error:?} \
+                 elapsed_ms={}",
+                handshake_started.elapsed().as_millis(),
+            ));
+            let (backend, _, _) = runner.into_parts();
+            *rx = backend.into_rx();
+            return (ready, false);
+        }
+    };
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-wpa2-message3 frames={} \
+         message2_transmissions={} replay={} elapsed_ms={}",
+        pending.completed_frames(),
+        pending.message2_transmissions(),
+        pending.request().replay_counter(),
+        handshake_started.elapsed().as_millis(),
+    ));
+    let (backend, _, _) = runner.into_parts();
+    *rx = backend.into_rx();
+
+    let backend = RadioHilWpa2KeyBackend {
+        mmio: hardware,
+        tx_storage: &mut *ready.fixture.tx_storage,
+        station_address,
+        bssid: access_point.bssid,
+        peer_qos: link.peer_qos,
+        sequences: ready.security.sequences,
+        completion: None,
+    };
+    let mut runner = Wpa2KeyInstallRunner::new(backend);
+    let established = match runner.run(pending).await {
+        Ok(established) => established,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wpa2-key-install error={error:?}"
+            ));
+            return (ready, false);
+        }
+    };
+    let metadata = established.metadata();
+    let backend = runner.into_backend();
+    let completion = backend
+        .completion
+        .expect("successful reconnect WPA2 key runner retains Message 4 completion");
+    let RadioHilInstalledWpa2Keys { pairwise, group } = established.into_keys();
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-wpa2-complete replay={} \
+         message4_status={} message4_primary={:#010x} \
+         pairwise_slot={} group_slot={}",
+        metadata.replay_counter,
+        completion.status,
+        completion.primary_word,
+        pairwise.hardware_index(),
+        group.hardware_index(),
+    ));
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-protected-data-deferred \
+         reason=persistent-stack"
+    ));
+
+    let RadioHilReconnectReady {
+        fixture,
+        target,
+        network,
+        epoch,
+        security,
+    } = ready;
+    let StaAssociationSecurity {
+        pmk,
+        supplicant_nonce,
+        sequences,
+    } = security;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-connected-enter"
+    ));
+    let returned = run_connected_network(
+        fixture,
+        epoch,
+        StaConnectedSession {
+            link,
+            network,
+            rate_control: &mut peer_plan.rate_control,
+            pmk,
+            supplicant_nonce,
+            sequences,
+        },
+        pairwise,
+        group,
+    )
+    .await;
+    let disconnected = qualify_disconnected_rx_restart(returned.disconnected).await;
+    let (network, epoch) = disconnected.into_reconnected_resources();
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS \
+         stage=production-reconnect-connected-returned"
+    ));
+    (
+        RadioHilReconnectReady {
+            fixture: returned.fixture,
+            target,
+            network: RadioHilStaNetwork::Running(network),
+            epoch,
+            security: returned.security,
+        },
+        true,
+    )
 }
 
 async fn authenticate_target(
@@ -6428,6 +6809,12 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         };
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready"
+        ));
+        let (ready, reconnected) = qualify_reconnected_epoch(ready).await;
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result={} \
+             stage=production-reconnect-epoch-qualified",
+            if reconnected { "PASS" } else { "FAIL" },
         ));
         let RadioHilReconnectReady {
             fixture,

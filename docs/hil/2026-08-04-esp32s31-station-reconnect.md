@@ -4,7 +4,7 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `912f48a3`
+Latest qualified runtime CRC32: `7fd7f293`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
@@ -17,9 +17,11 @@ frontier, network stack, TX/A-MPDU resources, control mailbox, PMK, nonce and
 sequence owners complete a second Association, WPA2 four-way handshake and
 entry into the production connected runner.
 
-This does not claim recovery from AP disappearance. The controlled run retains
-the scanned peer and channel, starts again at Association, and intentionally
-distinguishes `WifiRunnerExit::Stopped` from beacon-loss `Disconnected`.
+This does not claim recovery from AP disappearance. The latest controlled run
+performs a full running scan, then deliberately restores the retained peer and
+starts again at Association. It intentionally distinguishes
+`WifiRunnerExit::Stopped` from beacon-loss `Disconnected` and does not feed the
+new scan result into Authentication yet.
 
 ## Procedure
 
@@ -47,16 +49,18 @@ observed, no reconnect failure marker appears, and the target reaches
 
 | Transition | Result |
 | --- | --- |
-| Initial Open Authentication | PASS, 167 ms |
-| Initial Association | status 0, AID 32, HE20/WMM, 21 ms |
+| Initial Open Authentication | PASS, 168 ms |
+| Initial Association | status 0, AID 30, HE20/WMM, 21 ms |
 | Initial WPA2 M3 | one M2 transmission, replay 2, 9 ms |
 | Initial WPA2 M4 | TX status 0 |
-| Initial protected data | ARP TX/RX PASS with CCMP RX |
+| Initial protected data | ARP TX/RX PASS with CCMP RX after one bounded retry |
 | Controlled runner stop | PASS, source `host-station-epoch-cycle` |
 | Connected owner return | PASS, halted RX queue empty |
-| Second Association | status 0, AID 32, one response frame, 21 ms |
-| Second peer programming | HE20, QoS, noise floor -93 dBm, metric 70 |
-| Second WPA2 M3 | one M2 transmission, replay 4, 10 ms |
+| Running candidate scan | 13 channels, 13/13 Probe TX, target on channel 1 |
+| Running owner return | halted RX/control TX returned, retained channel restored |
+| Second Association | status 0, AID 30, two response frames, 21 ms |
+| Second peer programming | HE20, QoS, noise floor -90 dBm, metric 63 |
+| Second WPA2 M3 | one M2 transmission, replay 4, 11 ms |
 | Second WPA2 M4/key install | TX status 0, pairwise slot 4, group slot 1 |
 | Second connected entry | PASS |
 
@@ -71,8 +75,8 @@ for the normal completion path before returning ownership.
 - route real beacon loss through scan/candidate selection and Authentication;
 - qualify AP loss and recovery, retry/backoff exhaustion, and an injected
   TX/RX hardware failure;
-- move cold scan into the reusable allocation-free STA service which now owns
-  Open Authentication, initial Association/WPA2 and later reconnect attempts.
+- move both scan modes into the reusable allocation-free STA service which now
+  owns Open Authentication, initial Association/WPA2 and reconnect attempts.
 
 ## Production lifecycle addendum
 
@@ -160,3 +164,31 @@ sub-owners on hardware. It deliberately does not claim a channel scan after
 disconnect: PHY retune and observation/candidate ownership still need to be
 composed into an `Esp32s31StaScanPort` and routed through the outer lifecycle
 before AP-loss rescan can be qualified.
+
+## Multi-channel running-scan addendum
+
+The cell was repeated with runtime CRC32 `7fd7f293`; the image grew from
+1,129,104 to 1,194,640 bytes after both cold and running concrete scan/PHY
+compositions became reachable. It remained within the image budget and passed
+the SRAM/PSRAM placement and autonomous-source-graph audits. The approximately
+64 KiB increase is a code-size deduplication target, not a RAM reservation or a
+qualification failure.
+
+The controlled disconnected epoch assembled `Esp32s31ScanPhy`,
+`Esp32s31RunningScanRx`, `Esp32s31RunningScanTx` and the persistent scan table
+into a concrete HIL `Esp32s31StaScanPort`. The unchanged production
+`StaCandidateScanService` and `Esp32s31StaScanBackend` completed all 13 channel
+transactions in 5,827 ms. Active Probe Requests completed 13/13 with no TX
+failure. The target was observed on channel 1 at -27 dBm; the scan processed 10
+raw management frames, retained one Probe Response and crossed 7 ring-recycle
+epochs. The exact halted RX and control-TX owners were returned, the PHY was
+explicitly retuned from the end of the scan plan to the retained channel 1,
+and the subsequent Association/WPA2 transaction reached
+`production-reconnect-connected-enter`.
+
+This qualifies a real multi-channel running-scan transaction and its ownership
+round trip. It still does not qualify AP-loss recovery: the fixture deliberately
+restores and reconnects the retained peer, while the newly selected candidate
+is only checked as scan evidence. The next lifecycle slice must carry that
+candidate into fresh Open Authentication on `CooperativeTxHardware`, then the
+board can qualify actual AP disappearance and recovery.

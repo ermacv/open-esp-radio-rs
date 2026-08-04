@@ -1351,6 +1351,7 @@ struct RadioHilConnectedFixture<'a> {
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
+    scan_table: &'static mut ScanTable,
     frame: &'static mut [u8],
     ethernet: &'static mut [u8],
 }
@@ -1369,6 +1370,7 @@ struct RadioHilConnectedTaskFixture<'a> {
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
     buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
+    scan_table: &'static mut ScanTable,
     frame: &'static mut [u8],
     ethernet: &'static mut [u8],
 }
@@ -1391,6 +1393,7 @@ impl<'a> RadioHilConnectedFixture<'a> {
                 tx_storage: self.tx_storage,
                 descriptor_base: self.descriptor_base,
                 buffer_addresses: self.buffer_addresses,
+                scan_table: self.scan_table,
                 frame: self.frame,
                 ethernet: self.ethernet,
             },
@@ -5018,6 +5021,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
         tx_storage,
         descriptor_base,
         buffer_addresses,
+        scan_table,
         frame,
         ethernet,
     } = fixture;
@@ -5505,6 +5509,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                             tx_storage,
                             descriptor_base,
                             buffer_addresses,
+                            scan_table,
                             frame,
                             ethernet,
                         },
@@ -5550,108 +5555,190 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     }
 }
 
-/// Prove that one disconnected owner can open a finite running-scan RX/TX
-/// epoch and return every resource without reinitializing static storage.
-async fn qualify_disconnected_rx_restart(
-    epoch: RadioHilDisconnectedEpoch,
-    tx_storage: &mut TxStorage,
-    interrupt_setup: &MacInterruptSetup,
+/// Borrowed board context for one running candidate scan.
+///
+/// Keeping the borrowed capabilities together prevents the scan entry point
+/// from regrowing a positional argument list while the disconnected epoch
+/// itself remains one separately owned value.
+struct RadioHilRunningScanContext<'fixture, 'ssid> {
+    state: &'fixture mut PhyColdState,
+    platform: &'fixture mut EspHalRadioPeripheral,
+    tx_storage: &'fixture mut TxStorage,
+    interrupt_setup: &'fixture MacInterruptSetup,
+    scan_table: &'fixture mut ScanTable,
+    scan_frame: &'fixture mut [u8],
     station_address: [u8; 6],
-    channel: u8,
-    sequence: &mut StaSequenceCounter,
+    target_ssid: &'ssid [u8],
+    target_channel: u8,
+    sequence: &'fixture mut StaSequenceCounter,
+}
+
+/// Prove that one disconnected owner can complete a finite multi-channel
+/// running scan and return every resource without reinitializing static
+/// storage.
+async fn qualify_disconnected_running_scan(
+    epoch: RadioHilDisconnectedEpoch,
+    context: RadioHilRunningScanContext<'_, '_>,
 ) -> RadioHilDisconnectedEpoch {
+    let RadioHilRunningScanContext {
+        state,
+        platform,
+        tx_storage,
+        interrupt_setup,
+        scan_table,
+        scan_frame,
+        station_address,
+        target_ssid,
+        target_channel,
+        sequence,
+    } = context;
     let RadioHilDisconnectedEpoch {
         network,
-        mut hardware,
+        hardware,
         rx,
         ampdu,
         control_resources,
     } = epoch;
-    let mut rx = RunningScanRx::from_stopped(rx);
-    if let Err(error) = rx.prepare_initial(&mut hardware) {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-prepare \
-             error={error:?}"
-        ));
-        let _owners = (network, hardware, rx, ampdu, control_resources);
-        loop {
-            Timer::after_secs(60).await;
-        }
-    }
-    if let Err(error) = rx.start(&mut hardware).await {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-enable \
-             error={error:?}"
-        ));
-        let _owners = (network, hardware, rx, ampdu, control_resources);
-        loop {
-            Timer::after_secs(60).await;
-        }
-    }
     let control = tx_storage
         .control
         .take()
         .expect("connected teardown returned the ordinary TX owner");
-    let mut tx: RunningScanTx<'_> = RunningScanTx::new(control, interrupt_setup);
-    tx.begin_scan();
-    match tx
-        .transmit_probe_request(
-            &mut hardware,
-            Esp32s31ScanProbeRequest {
-                source: station_address,
-                sequence_number: sequence.take(),
-                ssid: b"",
-                supported_rates: &PROBE_REQUEST_RATES,
-                current_channel: Some(channel),
-                descriptor_capacity: Some(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
-            },
-        )
+    let scan_owner = RadioHilRunningScanOwner {
+        phy: Esp32s31ScanPhy::new(state, platform, HilPhyObserver),
+        hardware,
+        rx: RunningScanRx::from_stopped(rx),
+        tx: RunningScanTx::new(control, interrupt_setup),
+        scan_table,
+        scan_frame,
+        station_address,
+        target_ssid,
+        sequence,
+        raw_frames: 0,
+        probe_responses: 0,
+        ring_epochs: 0,
+        channel_records_before: 0,
+        channel_frames_before: 0,
+    };
+    let scan_config = Esp32s31StaScanConfig::new(SCAN_DWELL_MS)
+        .expect("fixed HIL scan dwell policy is nonzero");
+    let scan_backend = Esp32s31StaScanBackend::new(scan_config);
+    let mut scan_service = StaCandidateScanService::new(scan_backend);
+    let scan_started = Instant::now();
+    let (mut scan_owner, candidate) = match scan_service
+        .run(scan_owner, &STA_SCAN_CHANNELS)
         .await
     {
-        Ok(Esp32s31ScanProbeReport::Transmitted(completion)) => {
+        StaCandidateScanExit::Selected {
+            owner,
+            candidate,
+            progress,
+        } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-probe \
-                 channel={channel} status={} primary={:#010x}",
-                completion.status, completion.primary_word,
+                "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan \
+                 channels={} elapsed_ms={} candidate_channel={} candidate_rssi={}",
+                progress.channels_completed,
+                scan_started.elapsed().as_millis(),
+                candidate.channel,
+                candidate.rssi,
             ));
+            (owner, candidate)
         }
-        Ok(report) => {
+        StaCandidateScanExit::NoCandidate { owner, progress } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-probe \
-                 channel={channel} report={report:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan \
+                 channels={} error=no-candidate",
+                progress.channels_completed,
             ));
-            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+            let _owners = (owner, network, ampdu, control_resources);
             loop {
                 Timer::after_secs(60).await;
             }
         }
-        Err(error) => {
+        StaCandidateScanExit::Stopped { owner, progress } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-probe \
-                 channel={channel} error={error:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan \
+                 channels={} error=stopped",
+                progress.channels_completed,
             ));
-            let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+            let _owners = (owner, network, ampdu, control_resources);
             loop {
                 Timer::after_secs(60).await;
             }
         }
-    }
-    if let Err(error) = rx.stop(&mut hardware) {
+        StaCandidateScanExit::Failed {
+            owner,
+            error,
+            progress,
+        } => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan \
+                 channels={} error={error:?}",
+                progress.channels_completed,
+            ));
+            let _owners = (owner, network, ampdu, control_resources);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+        StaCandidateScanExit::InvalidPlan {
+            owner,
+            error,
+            progress,
+        } => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan-plan \
+                 channels={} error={error:?}",
+                progress.channels_planned,
+            ));
+            let _owners = (owner, network, ampdu, control_resources);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+
+    // This qualification still reconnects through the retained candidate.
+    // Restore its channel explicitly after proving all 13 running visits so
+    // the subsequent same-peer Association cannot inherit channel 13.
+    if let Err(error) = scan_owner.switch_phy_channel(target_channel).await {
         emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-restart-stop \
-             error={error:?}"
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan-return-channel \
+             channel={target_channel} error={error:?}"
         ));
-        let _owners = (network, hardware, rx, tx, ampdu, control_resources);
+        let _owners = (scan_owner, network, ampdu, control_resources);
         loop {
             Timer::after_secs(60).await;
         }
     }
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-return-channel \
+         channel={target_channel} selected_bssid={:02x?}",
+        candidate.bssid,
+    ));
+
+    let RadioHilRunningScanOwner {
+        phy,
+        hardware,
+        rx,
+        tx,
+        scan_table: _,
+        scan_frame: _,
+        station_address: _,
+        target_ssid: _,
+        sequence: _,
+        raw_frames,
+        probe_responses,
+        ring_epochs,
+        channel_records_before: _,
+        channel_frames_before: _,
+    } = scan_owner;
+    let (_state, _platform, _observer) = phy.into_parts();
     let rx = match rx.into_stopped() {
         Ok(rx) => rx,
         Err(rx) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-rx-restart-return phase={:?}",
+                 stage=production-running-scan-return phase={:?}",
                 rx.phase(),
             ));
             let _owners = (network, hardware, rx, tx, ampdu, control_resources);
@@ -5663,12 +5750,16 @@ async fn qualify_disconnected_rx_restart(
     let (control, tx_summary) = tx.into_parts();
     tx_storage.control = Some(control);
     emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-restart \
-         descriptor_base={:#010x} queued_frames={} probe_completions={} probe_failures={}",
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-owner-return \
+         descriptor_base={:#010x} queued_frames={} probe_completions={} probe_failures={} \
+         raw_frames={} probe_responses={} ring_epochs={}",
         rx.ring().descriptor_base(),
         rx.queued_frames(),
         tx_summary.completions,
         tx_summary.failures,
+        raw_frames,
+        probe_responses,
+        ring_epochs,
     ));
     RadioHilDisconnectedEpoch {
         network,
@@ -6299,16 +6390,23 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         security,
         exit,
     } = returned;
-    let disconnected = qualify_disconnected_rx_restart(
+    let disconnected = qualify_disconnected_running_scan(
         disconnected,
-        &mut *fixture.tx_storage,
-        fixture
-            .interrupt_setup
-            .as_ref()
-            .expect("connected teardown returned the quiesced interrupt owner"),
-        target.station_address,
-        target.access_point.channel,
-        security.sequences.non_qos_mut(),
+        RadioHilRunningScanContext {
+            state: &mut *fixture.state,
+            platform: &mut *fixture.platform,
+            tx_storage: &mut *fixture.tx_storage,
+            interrupt_setup: fixture
+                .interrupt_setup
+                .as_ref()
+                .expect("connected teardown returned the quiesced interrupt owner"),
+            scan_table: &mut *fixture.scan_table,
+            scan_frame: &mut *fixture.frame,
+            station_address: target.station_address,
+            target_ssid: target.access_point.ssid_bytes(),
+            target_channel: target.access_point.channel,
+            sequence: security.sequences.non_qos_mut(),
+        },
     )
     .await;
     let (network, epoch) = disconnected.into_reconnected_resources();
@@ -6782,6 +6880,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         tx_storage,
         descriptor_base,
         buffer_addresses,
+        scan_table,
         frame,
         ethernet,
     } = fixture;
@@ -6845,6 +6944,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                         tx_storage,
                         descriptor_base,
                         buffer_addresses,
+                        scan_table,
                         frame,
                         ethernet,
                     },
@@ -7060,6 +7160,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             tx_storage,
             descriptor_base,
             buffer_addresses,
+            scan_table,
             frame,
             ethernet,
         }
@@ -7088,16 +7189,23 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             security,
             exit,
         } = returned;
-        let disconnected = qualify_disconnected_rx_restart(
+        let disconnected = qualify_disconnected_running_scan(
             disconnected,
-            &mut *fixture.tx_storage,
-            fixture
-                .interrupt_setup
-                .as_ref()
-                .expect("connected teardown returned the quiesced interrupt owner"),
-            target.station_address,
-            target.access_point.channel,
-            security.sequences.non_qos_mut(),
+            RadioHilRunningScanContext {
+                state: &mut *fixture.state,
+                platform: &mut *fixture.platform,
+                tx_storage: &mut *fixture.tx_storage,
+                interrupt_setup: fixture
+                    .interrupt_setup
+                    .as_ref()
+                    .expect("connected teardown returned the quiesced interrupt owner"),
+                scan_table: &mut *fixture.scan_table,
+                scan_frame: &mut *fixture.frame,
+                station_address: target.station_address,
+                target_ssid: target.access_point.ssid_bytes(),
+                target_channel: target.access_point.channel,
+                sequence: security.sequences.non_qos_mut(),
+            },
         )
         .await;
         emergency_log(format_args!(
@@ -7154,6 +7262,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                 tx_storage,
                 descriptor_base,
                 buffer_addresses,
+                scan_table,
                 frame,
                 ethernet,
             },
@@ -7171,6 +7280,226 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
         false,
     )
     .into()
+}
+
+/// Complete running-scan transaction assembled from one quiesced connected
+/// epoch.
+///
+/// The production RX/TX/PHY owners remain distinct fields; this HIL
+/// composition root only supplies board observation storage, timing and
+/// logging. `StaCandidateScanService` consumes and returns the complete value
+/// on every finite edge.
+struct RadioHilRunningScanOwner<'fixture, 'ssid> {
+    phy: Esp32s31ScanPhy<'fixture, EspHalRadioPeripheral, HilPhyObserver, EmbassyPhyDelay>,
+    hardware: ConnectedHardware,
+    rx: RunningScanRx,
+    tx: RunningScanTx<'fixture>,
+    scan_table: &'fixture mut ScanTable,
+    scan_frame: &'fixture mut [u8],
+    station_address: [u8; 6],
+    target_ssid: &'ssid [u8],
+    sequence: &'fixture mut StaSequenceCounter,
+    raw_frames: u32,
+    probe_responses: u32,
+    ring_epochs: u32,
+    channel_records_before: usize,
+    channel_frames_before: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilRunningScanPortError {
+    ChannelSwitch,
+    Rx(Esp32s31ScanRxError),
+    Tx(ActiveScanTxError),
+}
+
+impl RadioHilRunningScanOwner<'_, '_> {
+    fn observe_scan_rx(&mut self, channel: u8) -> Result<(), RadioHilRunningScanPortError> {
+        let mut observer = RadioHilColdScanFrameObserver {
+            station_address: self.station_address,
+            probe_responses: &mut self.probe_responses,
+        };
+        let mut context = Esp32s31ScanObservationContext::new(
+            channel,
+            self.scan_frame,
+            self.scan_table,
+            &mut observer,
+        );
+        let progress = self
+            .rx
+            .observe_management(&mut self.hardware, &mut context)
+            .map_err(RadioHilRunningScanPortError::Rx)?;
+        self.raw_frames = self
+            .raw_frames
+            .saturating_add(progress.completed_descriptors);
+        if progress.recycled_descriptors != 0 {
+            self.ring_epochs = self.ring_epochs.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    async fn switch_phy_channel(&mut self, channel: u8) -> Result<(), PhyTargetPortError> {
+        let registers = self.hardware.register_cell();
+        let mut registers = registers.borrow_mut();
+        self.phy
+            .switch_channel(u16::from(channel), 0, &mut registers)
+            .await
+    }
+}
+
+impl Esp32s31StaScanPort for RadioHilRunningScanOwner<'_, '_> {
+    type Channel = u8;
+    type Candidate = ScanRecord;
+    type Error = RadioHilRunningScanPortError;
+
+    fn begin_scan(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        async {
+            self.scan_table.clear();
+            self.raw_frames = 0;
+            self.probe_responses = 0;
+            self.tx.begin_scan();
+            self.ring_epochs = 0;
+            self.channel_records_before = 0;
+            self.channel_frames_before = 0;
+            self.rx
+                .prepare_initial(&mut self.hardware)
+                .map_err(RadioHilRunningScanPortError::Rx)
+        }
+    }
+
+    fn switch_channel(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        async move {
+            let channel = context.channel;
+            self.switch_phy_channel(channel).await.map_err(|error| {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=running-scan-channel \
+                     channel={channel} error={error:?}"
+                ));
+                RadioHilRunningScanPortError::ChannelSwitch
+            })
+        }
+    }
+
+    fn start_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        async move {
+            self.channel_records_before = self.scan_table.summary().records;
+            self.channel_frames_before = self.raw_frames;
+            self.rx.start(&mut self.hardware).await.map_err(|error| {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=running-scan-rx-start \
+                     channel={} error={error:?}",
+                    context.channel,
+                ));
+                RadioHilRunningScanPortError::Rx(error)
+            })
+        }
+    }
+
+    fn transmit_active_probe(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<Esp32s31ActiveProbeOutcome, Self::Error>> + '_ {
+        async move {
+            let channel = context.channel;
+            match self
+                .tx
+                .transmit_probe_request(
+                    &mut self.hardware,
+                    Esp32s31ScanProbeRequest {
+                        source: self.station_address,
+                        sequence_number: self.sequence.take(),
+                        ssid: b"",
+                        supported_rates: &PROBE_REQUEST_RATES,
+                        current_channel: Some(channel),
+                        descriptor_capacity: Some(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
+                    },
+                )
+                .await
+            {
+                Ok(report) => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL stage=running-scan-probe \
+                         channel={channel} report={report:?}"
+                    ));
+                    Ok(report.outcome())
+                }
+                Err(error) => {
+                    let error = ActiveScanTxError::Control(error);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=running-scan-probe-owner \
+                         channel={channel} error={error:?}"
+                    ));
+                    Err(RadioHilRunningScanPortError::Tx(error))
+                }
+            }
+        }
+    }
+
+    fn observe_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> Result<(), Self::Error> {
+        self.observe_scan_rx(context.channel)
+    }
+
+    fn wait_dwell_tick(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        async {
+            Timer::after_millis(1).await;
+            Ok(())
+        }
+    }
+
+    fn stop_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> Result<(), Self::Error> {
+        let channel = context.channel;
+        let observe_error = self.observe_scan_rx(channel).err();
+        self.rx.stop(&mut self.hardware).map_err(|error| {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=running-scan-rx-stop \
+                 channel={channel} error={error:?}"
+            ));
+            RadioHilRunningScanPortError::Rx(error)
+        })?;
+        if let Some(error) = observe_error {
+            return Err(error);
+        }
+        let summary = self.scan_table.summary();
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL stage=running-scan-channel-complete channel={channel} \
+             raw_frames={} new_records={}",
+            self.raw_frames - self.channel_frames_before,
+            summary.records - self.channel_records_before,
+        ));
+        Ok(())
+    }
+
+    fn prepare_next_ring(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> Result<(), Self::Error> {
+        self.rx
+            .prepare_next(&mut self.hardware)
+            .map_err(|error| {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=running-scan-rx-prepare \
+                     channel={} error={error:?}",
+                    context.channel,
+                ));
+                RadioHilRunningScanPortError::Rx(error)
+            })
+    }
+
+    fn select_candidate(&mut self) -> Result<Option<Self::Candidate>, Self::Error> {
+        Ok(best_matching_ssid(self.scan_table.records(), self.target_ssid).copied())
+    }
 }
 
 /// Borrowed owner for the currently qualified cold scan transaction.
@@ -7757,6 +8086,7 @@ async fn run_promiscuous_rx_hil(
                 tx_storage,
                 descriptor_base,
                 buffer_addresses,
+                scan_table,
                 frame: scan_frame,
                 ethernet: ethernet_frame,
             };

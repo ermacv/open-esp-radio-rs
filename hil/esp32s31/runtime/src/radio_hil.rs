@@ -152,6 +152,10 @@ use open_esp_radio::{
         StaBackoffReason, StaFailureDisposition, StaLifecycleBackend, StaLifecycleExit,
         StaLifecycleService, StaLifecycleStage, StaNextCandidate, StaReconnectPolicy,
     },
+    wifi::lifecycle::scan::{
+        StaCandidateScanBackend, StaCandidateScanExit, StaCandidateScanService,
+        StaScanChannelContext, StaScanSelectionOutcome, StaScanStepOutcome,
+    },
     wifi::wpa2::{
         OwnedEapolFrame, Pmk, Wpa2Interface, aes::Wpa2SoftwareAes, frames::Wpa2TxFrame,
         keys::Wpa2KeyKind,
@@ -685,6 +689,18 @@ const fn sta_scan_channel(index: usize) -> u8 {
         }
     }
 }
+
+const fn sta_scan_channels() -> [u8; STA_SCAN_CHANNEL_COUNT] {
+    let mut channels = [0; STA_SCAN_CHANNEL_COUNT];
+    let mut index = 0;
+    while index < STA_SCAN_CHANNEL_COUNT {
+        channels[index] = sta_scan_channel(index);
+        index += 1;
+    }
+    channels
+}
+
+const STA_SCAN_CHANNELS: [u8; STA_SCAN_CHANNEL_COUNT] = sta_scan_channels();
 const WPA2_PROTECTED_ARP_TIMEOUT_MS: u32 = 1_500;
 const WPA2_CONTROLLED_PORT_SETTLE_MS: u64 = 10;
 const WPA2_PROTECTED_ARP_ATTEMPTS: u8 = 3;
@@ -7241,6 +7257,287 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
     .into()
 }
 
+/// Borrowed owner for the currently qualified cold scan transaction.
+///
+/// This is deliberately not the future running-rescan owner. It retains the
+/// cold PAC view and the staged raw RX ring used before the one-way
+/// `ColdRadioRegisters::into_running` transition.
+struct RadioHilColdScanOwner<'hardware, 'ssid> {
+    state: &'hardware mut PhyColdState,
+    platform: &'hardware mut EspHalRadioPeripheral,
+    mmio: ColdRadioRegisters,
+    storage: &'static RxStorage,
+    tx_storage: &'static mut TxStorage,
+    descriptor_base: u32,
+    buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
+    scan_table: &'static mut ScanTable,
+    scan_frame: &'static mut [u8; RX_STAGE_CAPACITY],
+    station_address: [u8; 6],
+    target_ssid: &'ssid [u8],
+    raw_frames: u32,
+    probe_responses: u32,
+    tx_completions: u32,
+    tx_failures: u32,
+    active_tx_available: bool,
+    ring_epochs: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilColdScanError {
+    ChannelSwitch,
+    ReceiveStart,
+    ReceiveStop,
+    RingRebuild,
+    RingRestart,
+}
+
+struct RadioHilColdScanBackend<O> {
+    _owner: PhantomData<fn() -> O>,
+}
+
+impl<O> RadioHilColdScanBackend<O> {
+    const fn new() -> Self {
+        Self {
+            _owner: PhantomData,
+        }
+    }
+}
+
+impl<'hardware, 'ssid> StaCandidateScanBackend
+    for RadioHilColdScanBackend<RadioHilColdScanOwner<'hardware, 'ssid>>
+{
+    type Owner = RadioHilColdScanOwner<'hardware, 'ssid>;
+    type Channel = u8;
+    type Candidate = ScanRecord;
+    type Error = RadioHilColdScanError;
+
+    fn begin_scan(
+        &mut self,
+        mut owner: Self::Owner,
+    ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
+        async move {
+            owner.scan_table.clear();
+            owner.raw_frames = 0;
+            owner.probe_responses = 0;
+            owner.tx_completions = 0;
+            owner.tx_failures = 0;
+            owner.active_tx_available = true;
+            owner.ring_epochs = 0;
+            StaScanStepOutcome::Completed { owner }
+        }
+    }
+
+    fn scan_channel(
+        &mut self,
+        mut owner: Self::Owner,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
+        async move {
+            let channel = context.channel;
+            if let Err(error) = switch_channel_with_mac_restart(
+                owner.state,
+                u16::from(channel),
+                0,
+                owner.platform,
+                &mut owner.mmio,
+            )
+            .await
+            {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=scan-channel \
+                     channel={channel} error={error:?}"
+                ));
+                return StaScanStepOutcome::Failed {
+                    owner,
+                    error: RadioHilColdScanError::ChannelSwitch,
+                };
+            }
+            let rx_start = if context.index == 0 {
+                enable_receive(&mut owner.mmio)
+            } else {
+                publish_cold_ring(&mut owner.mmio, owner.descriptor_base, true)
+            };
+            if let Err(error) = rx_start {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-start \
+                     channel={channel} error={error:?}"
+                ));
+                return StaScanStepOutcome::Failed {
+                    owner,
+                    error: RadioHilColdScanError::ReceiveStart,
+                };
+            }
+
+            if owner.active_tx_available {
+                owner.mmio.clear_mac_interrupts(u32::MAX);
+                match transmit_probe_request(
+                    &mut owner.mmio,
+                    owner.tx_storage,
+                    owner.station_address,
+                    u16::from(channel),
+                )
+                .await
+                {
+                    Ok(completion) => {
+                        owner.tx_completions = owner.tx_completions.saturating_add(1);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL stage=probe-request-tx channel={channel} \
+                             status={} alternate={} trigger={} primary={:#010x} alternate_word={:#010x}",
+                            completion.status,
+                            completion.used_alternate,
+                            completion.trigger_flow,
+                            completion.primary_word,
+                            completion.alternate_word,
+                        ));
+                        if completion.status != 0 {
+                            owner.tx_failures = owner.tx_failures.saturating_add(1);
+                            owner.active_tx_available = false;
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL stage=passive-fallback \
+                                 channel={channel} tx_status={}",
+                                completion.status,
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        owner.tx_failures = owner.tx_failures.saturating_add(1);
+                        owner.active_tx_available = false;
+                        let control = owner.mmio.read32(TX_Q_CONTROL[0]);
+                        owner
+                            .mmio
+                            .write32(TX_Q_CONTROL[0], control & !TX_Q_ENABLE_VALID);
+                        Mmio::fence(&mut owner.mmio);
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL stage=passive-fallback \
+                             channel={channel} tx_error={error:?}"
+                        ));
+                    }
+                }
+            }
+
+            let records_before = owner.scan_table.summary().records;
+            let frames_before = owner.raw_frames;
+            let mut observed_mask = 0_u64;
+            for _ in 0..SCAN_DWELL_MS {
+                observe_scan_descriptors(
+                    &mut owner.mmio,
+                    owner.storage,
+                    owner.descriptor_base,
+                    owner.scan_table,
+                    owner.scan_frame,
+                    owner.station_address,
+                    channel,
+                    &mut observed_mask,
+                    &mut owner.raw_frames,
+                    &mut owner.probe_responses,
+                );
+                if observed_mask == RX_DESCRIPTOR_COMPLETE_MASK {
+                    if let Err(error) = disable_receive(&mut owner.mmio) {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
+                             channel={channel} error={error:?}"
+                        ));
+                        return StaScanStepOutcome::Failed {
+                            owner,
+                            error: RadioHilColdScanError::ReceiveStop,
+                        };
+                    }
+                    if let Err(error) = build_cold_ring(
+                        owner.storage.descriptors(),
+                        owner.descriptor_base,
+                        owner.buffer_addresses,
+                        RX_BUFFER_SIZE as u32,
+                    ) {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
+                             channel={channel} error={error:?}"
+                        ));
+                        return StaScanStepOutcome::Failed {
+                            owner,
+                            error: RadioHilColdScanError::RingRebuild,
+                        };
+                    }
+                    if let Err(error) =
+                        publish_cold_ring(&mut owner.mmio, owner.descriptor_base, true)
+                    {
+                        emergency_log(format_args!(
+                            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-restart \
+                             channel={channel} error={error:?}"
+                        ));
+                        return StaScanStepOutcome::Failed {
+                            owner,
+                            error: RadioHilColdScanError::RingRestart,
+                        };
+                    }
+                    observed_mask = 0;
+                    owner.ring_epochs = owner.ring_epochs.saturating_add(1);
+                }
+                Timer::after_millis(1).await;
+            }
+
+            if let Err(error) = disable_receive(&mut owner.mmio) {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
+                     channel={channel} error={error:?}"
+                ));
+                return StaScanStepOutcome::Failed {
+                    owner,
+                    error: RadioHilColdScanError::ReceiveStop,
+                };
+            }
+            observe_scan_descriptors(
+                &mut owner.mmio,
+                owner.storage,
+                owner.descriptor_base,
+                owner.scan_table,
+                owner.scan_frame,
+                owner.station_address,
+                channel,
+                &mut observed_mask,
+                &mut owner.raw_frames,
+                &mut owner.probe_responses,
+            );
+            let channel_summary = owner.scan_table.summary();
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL stage=scan-channel-complete channel={channel} \
+                 raw_frames={} new_records={} mask={observed_mask:#010x}",
+                owner.raw_frames - frames_before,
+                channel_summary.records - records_before,
+            ));
+
+            if !context.is_last()
+                && let Err(error) = build_cold_ring(
+                    owner.storage.descriptors(),
+                    owner.descriptor_base,
+                    owner.buffer_addresses,
+                    RX_BUFFER_SIZE as u32,
+                )
+            {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
+                     channel={channel} error={error:?}"
+                ));
+                return StaScanStepOutcome::Failed {
+                    owner,
+                    error: RadioHilColdScanError::RingRebuild,
+                };
+            }
+            StaScanStepOutcome::Completed { owner }
+        }
+    }
+
+    fn select_candidate(
+        &mut self,
+        owner: Self::Owner,
+    ) -> StaScanSelectionOutcome<Self::Owner, Self::Candidate, Self::Error> {
+        let candidate = best_matching_ssid(owner.scan_table.records(), owner.target_ssid).copied();
+        match candidate {
+            Some(candidate) => StaScanSelectionOutcome::Selected { owner, candidate },
+            None => StaScanSelectionOutcome::NoCandidate { owner },
+        }
+    }
+}
+
 async fn run_promiscuous_rx_hil(
     spawner: Spawner,
     protocol_spawner: SendSpawner,
@@ -7383,171 +7680,91 @@ async fn run_promiscuous_rx_hil(
         read_diagnostic_mmio(0x2010_78c8),
     ));
 
-    let mut raw_frames = 0_u32;
-    let mut probe_responses = 0_u32;
-    let mut tx_completions = 0_u32;
-    let mut tx_failures = 0_u32;
-    let mut active_tx_available = true;
-    let mut ring_epochs = 0_u32;
     let scan_started = Instant::now();
-    for channel_index in 0..STA_SCAN_CHANNEL_COUNT {
-        let channel = sta_scan_channel(channel_index);
-        if let Err(error) =
-            switch_channel_with_mac_restart(state, u16::from(channel), 0, platform, mmio).await
-        {
+    let scan_owner = RadioHilColdScanOwner {
+        state,
+        platform,
+        mmio: cold_mmio,
+        storage,
+        tx_storage,
+        descriptor_base,
+        buffer_addresses,
+        scan_table,
+        scan_frame,
+        station_address,
+        target_ssid: network_credentials.ssid(),
+        raw_frames: 0,
+        probe_responses: 0,
+        tx_completions: 0,
+        tx_failures: 0,
+        active_tx_available: true,
+        ring_epochs: 0,
+    };
+    let mut scan_service = StaCandidateScanService::new(RadioHilColdScanBackend::new());
+    let (scan_owner, primary_target) = match scan_service
+        .run(scan_owner, &STA_SCAN_CHANNELS)
+        .await
+    {
+        StaCandidateScanExit::Selected {
+            owner, candidate, ..
+        } => (owner, Some(candidate)),
+        StaCandidateScanExit::NoCandidate { owner, .. } => (owner, None),
+        StaCandidateScanExit::Stopped { owner, progress } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=scan-channel \
-                 channel={channel} error={error:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=cold-scan-service-stop \
+                 channels_completed={}",
+                progress.channels_completed,
             ));
+            let _owner = owner;
             return false;
         }
-        let rx_start = if channel_index == 0 {
-            enable_receive(mmio)
-        } else {
-            publish_cold_ring(mmio, descriptor_base, true)
-        };
-        if let Err(error) = rx_start {
+        StaCandidateScanExit::Failed {
+            owner,
+            error,
+            progress,
+        } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-start \
-                 channel={channel} error={error:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=cold-scan-service \
+                 channels_completed={} error={error:?}",
+                progress.channels_completed,
             ));
+            let _owner = owner;
             return false;
         }
-
-        if active_tx_available {
-            mmio.clear_mac_interrupts(u32::MAX);
-            match transmit_probe_request(mmio, tx_storage, station_address, u16::from(channel))
-                .await
-            {
-                Ok(completion) => {
-                    tx_completions = tx_completions.saturating_add(1);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL stage=probe-request-tx channel={channel} \
-                         status={} alternate={} trigger={} primary={:#010x} alternate_word={:#010x}",
-                        completion.status,
-                        completion.used_alternate,
-                        completion.trigger_flow,
-                        completion.primary_word,
-                        completion.alternate_word,
-                    ));
-                    if completion.status != 0 {
-                        tx_failures = tx_failures.saturating_add(1);
-                        active_tx_available = false;
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL stage=passive-fallback \
-                             channel={channel} tx_status={}",
-                            completion.status,
-                        ));
-                    }
-                }
-                Err(error) => {
-                    tx_failures = tx_failures.saturating_add(1);
-                    active_tx_available = false;
-                    // Close the timed-out hardware edge before continuing with
-                    // passive RX. The TxSlot remains non-reusable, so no later
-                    // channel can accidentally republish the same descriptor.
-                    let control = mmio.read32(TX_Q_CONTROL[0]);
-                    mmio.write32(TX_Q_CONTROL[0], control & !TX_Q_ENABLE_VALID);
-                    Mmio::fence(mmio);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL stage=passive-fallback \
-                         channel={channel} tx_error={error:?}"
-                    ));
-                }
-            }
-        }
-
-        let records_before = scan_table.summary().records;
-        let frames_before = raw_frames;
-        let mut observed_mask = 0_u64;
-        for _ in 0..SCAN_DWELL_MS {
-            observe_scan_descriptors(
-                mmio,
-                storage,
-                descriptor_base,
-                scan_table,
-                scan_frame,
-                station_address,
-                channel,
-                &mut observed_mask,
-                &mut raw_frames,
-                &mut probe_responses,
-            );
-            if observed_mask == RX_DESCRIPTOR_COMPLETE_MASK {
-                if let Err(error) = disable_receive(mmio) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
-                         channel={channel} error={error:?}"
-                    ));
-                    return false;
-                }
-                if let Err(error) = build_cold_ring(
-                    storage.descriptors(),
-                    descriptor_base,
-                    buffer_addresses,
-                    RX_BUFFER_SIZE as u32,
-                ) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
-                         channel={channel} error={error:?}"
-                    ));
-                    return false;
-                }
-                if let Err(error) = publish_cold_ring(mmio, descriptor_base, true) {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-restart \
-                         channel={channel} error={error:?}"
-                    ));
-                    return false;
-                }
-                observed_mask = 0;
-                ring_epochs += 1;
-            }
-            Timer::after_millis(1).await;
-        }
-
-        if let Err(error) = disable_receive(mmio) {
+        StaCandidateScanExit::InvalidPlan {
+            owner,
+            error,
+            progress,
+        } => {
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
-                 channel={channel} error={error:?}"
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=cold-scan-plan \
+                 channels_planned={} error={error:?}",
+                progress.channels_planned,
             ));
+            let _owner = owner;
             return false;
         }
-        observe_scan_descriptors(
-            mmio,
-            storage,
-            descriptor_base,
-            scan_table,
-            scan_frame,
-            station_address,
-            channel,
-            &mut observed_mask,
-            &mut raw_frames,
-            &mut probe_responses,
-        );
-        let channel_summary = scan_table.summary();
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=scan-channel-complete channel={channel} \
-             raw_frames={} new_records={} mask={observed_mask:#010x}",
-            raw_frames - frames_before,
-            channel_summary.records - records_before,
-        ));
-
-        if channel_index + 1 != STA_SCAN_CHANNEL_COUNT {
-            if let Err(error) = build_cold_ring(
-                storage.descriptors(),
-                descriptor_base,
-                buffer_addresses,
-                RX_BUFFER_SIZE as u32,
-            ) {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
-                     channel={channel} error={error:?}"
-                ));
-                return false;
-            }
-        }
-    }
+    };
+    let RadioHilColdScanOwner {
+        state,
+        platform,
+        mmio: mut cold_mmio,
+        storage,
+        tx_storage,
+        descriptor_base,
+        buffer_addresses,
+        scan_table,
+        scan_frame,
+        station_address,
+        target_ssid: _,
+        mut raw_frames,
+        mut probe_responses,
+        mut tx_completions,
+        mut tx_failures,
+        active_tx_available: _,
+        ring_epochs,
+    } = scan_owner;
+    let mmio = &mut cold_mmio;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=OBSERVE stage=active-scan-timing channels={} elapsed_ms={}",
         STA_SCAN_CHANNEL_COUNT,
@@ -7768,7 +7985,9 @@ async fn run_promiscuous_rx_hil(
     let rx_dma_pass = summary.records != 0 && raw_frames != 0;
     let active_scan_pass =
         tx_completions >= STA_SCAN_CHANNEL_COUNT as u32 && probe_responses != 0 && tx_failures == 0;
-    let target = best_matching_ssid(scan_table.records(), network_credentials.ssid()).copied();
+    let target = primary_target.or_else(|| {
+        best_matching_ssid(scan_table.records(), network_credentials.ssid()).copied()
+    });
     // No cold MAC operation is permitted beyond this point. Consume the cold
     // owner before authentication and retain the inactive interrupt setup
     // token until WPA2 has opened the controlled port.

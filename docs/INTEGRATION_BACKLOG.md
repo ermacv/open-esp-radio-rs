@@ -296,9 +296,12 @@ The first reconnect seam is now production-owned:
   transaction: one explicit preparation edge, a finite caller-supplied channel
   plan, and a distinct candidate-selection edge. Every channel failure, stop,
   empty plan and no-candidate result returns the exact caller owner with
-  bounded progress. Cold and running ESP32-S31 adapters are intentionally not
-  conflated; neither exists yet, so this interface does not widen the current
-  HIL evidence.
+  bounded progress. The ESP32-S31 HIL cold adapter now carries
+  `ColdRadioRegisters` by value together with PHY, DMA, TX and observation
+  ownership through all 13 channel transactions and candidate selection. The
+  returned PAC owner alone crosses the one-way `into_running` transition. This
+  exact adapter has board evidence; a reusable production cold adapter and a
+  distinct running-rescan adapter do not yet exist.
 
 This is now a bounded same-peer reconnect implementation with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
@@ -315,9 +318,9 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. implement separate ESP32-S31 cold and running backends for
-   `StaCandidateScanService`, then add their owner variants to the outer
-   service. Open Authentication already begins as
+1. move the qualified ESP32-S31 cold backend out of HIL composition, implement
+   a separate running backend for `StaCandidateScanService`, then add their
+   owner variants to the outer service. Open Authentication already begins as
    `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
    RX, network and security frontier through bounded backoff;
 2. route real beacon loss through candidate selection and Authentication, and
@@ -327,9 +330,10 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is now the ESP32-S31 adapter, not generic scan policy. Initial scan still
-runs outside the service and produces a copied `ScanRecord`; later disconnects
-have no running-scan owner. The already composed `Authenticate`, `Join` and
+gap is now production placement and running rescan, not generic scan policy or
+the cold hardware transaction. Initial HIL scan uses `StaCandidateScanService`
+but still runs before the outer station service; later disconnects have no
+running-scan owner. The already composed `Authenticate`, `Join` and
 `Reconnect` variants deliberately retain their different types. Extend that
 sum type with real cold/running scan owners instead of hiding the phases inside
 a mutable vendor-style context or claiming that a retained record is a

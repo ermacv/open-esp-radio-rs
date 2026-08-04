@@ -78,15 +78,15 @@ for the normal completion path before returning ownership.
 
 The reconnect cell was repeated after introducing the executor- and
 chip-independent `StaLifecycleService`. The qualified runtime CRC32 was
-`f974a540`; image size remained exactly 1,129,104 bytes and both
+`675a4826`; image size remained exactly 1,129,104 bytes and both
 placement/source-graph
 audits passed. The UART trace proved that generation 0, attempt 1 began with
 `refresh_candidate=0 phase=authentication`, completed Open Authentication in
-168 ms, initial Association (status 0, AID 34) and WPA2 Message 3 (one Message
+168 ms, initial Association (status 0, AID 36) and WPA2 Message 3 (one Message
 2 transmission, replay 2), then returned the exact connected owner. After the
 explicit 100 ms disconnect backoff, generation 1,
 attempt 1 began with `refresh_candidate=0 phase=reconnect`, completed
-reassociation (AID 34), WPA2 (one Message 2 transmission, replay 4) and entry
+reassociation (AID 36), WPA2 (one Message 2 transmission, replay 4) and entry
 into the second connected epoch.
 
 An earlier image had stopped after initial WPA2 timed out waiting three seconds
@@ -95,5 +95,11 @@ Association/WPA2 now runs inside `StaLifecycleService`, so this failure is
 bounded and retryable without rebuilding hardware. The error path has host
 ownership tests and target compilation, but still needs an injected board
 failure to qualify the retry itself. Open Authentication now also runs inside
-the lifecycle and preserves its complete owner on failure. Cold scan remains
-outside the service and is the next composition boundary.
+the lifecycle and preserves its complete owner on failure.
+
+The same image also moved the initial cold scan under
+`StaCandidateScanService`. Its ESP32-S31 owner carried the cold PAC token by
+value across the complete channel order 6, 1--5, 7--13, returned that token
+after candidate selection, and only then crossed `into_running`. All 13 channel
+transactions completed without a scan-service failure in 5,792 ms. This
+qualifies the HIL cold adapter, not a running rescan after AP loss.

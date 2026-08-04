@@ -35,6 +35,9 @@ live-frontier promotion. HIL only maps typed failures to qualification output.
 the ESP-HAL route lends stable MAC/power PAC owners to the hard handlers,
 recovers them before draining Embassy wakes and returns the inactive setup
 token for running scan. HIL retains handler observations and executor policy.
+`Esp32s31ScanPort` now owns the complete cold and running scan transaction;
+HIL supplies only the different typed hardware epochs, storage, policy and a
+non-retaining evidence observer.
 
 ## 1. Completed: concrete WPA2 TX backend
 
@@ -367,10 +370,10 @@ The first reconnect seam is now production-owned:
   active-probe failure may fall back to passive scan only when `ControlTxError`
   proves that the descriptor owner is quiescent; a busy, unclassified or
   reset-required TX owner closes RX and returns a fatal scan error. Host tests
-  cover all three cleanup edges. The HIL cold port carries
-  `ColdRadioRegisters` by value together with the production
+  cover all three cleanup edges. The shared production `Esp32s31ScanPort`
+  carries `ColdRadioRegisters` by value together with
   `Esp32s31ScanPhy`, `Esp32s31ColdScanTx`, DMA and observation ownership
-  through all 13 channel transactions and candidate selection.
+  through all 13 cold channel transactions and candidate selection.
   `Esp32s31ScanPhy` now owns persistent PHY state, platform control, target
   delay and observer outside HIL. `Esp32s31ColdScanTx` owns the exact
   polling-only control descriptor, TSF/interrupt preparation, passive-fallback
@@ -384,7 +387,12 @@ The first reconnect seam is now production-owned:
   `into_running` transition. The board fixture now also retains the unique
   `PhyColdState` after Authentication and throughout both connected epochs;
   it is no longer dropped at the first Association boundary. This concrete
-  cold port has board evidence. The controlled reconnect fixture now also
+  cold port has board evidence. The former HIL `Esp32s31StaScanPort`
+  implementation and `RadioHilColdScanOwner` are now deleted. Runtime CRC32
+  `d4b41d11` completed the initial scan with 13 successful Probe Requests,
+  then three controlled reconnect cycles; see the
+  [shared scan-port qualification](hil/2026-08-04-esp32s31-cold-scan-port.md).
+  The controlled reconnect fixture also
   assembles the persistent PHY, production running RX/TX sub-owners and its
   scan table into a concrete running `Esp32s31StaScanPort`. The same backend
   completed the full 6, 1--5, 7--13 channel plan, selected the target network,
@@ -450,19 +458,19 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. add a compact bounded executor stop acknowledgement and reset frontier.
-   Task allocation/core placement remain HIL fixture policy; the driver now
-   owns the complete hardware interrupt epoch, RX entry, connected teardown,
-   disconnected/running-scan/reconnected resource transitions,
-   Authentication/Association, selected-peer hardware programming, complete
-   WPA2 ports and connected RX/TX/control/backend composition. Do not carry
-   the large stopped protocol owner through another timeout/select state: the
-   prototype crossed the current image boundary and added 56,464 encoded
-   bytes;
-2. route real beacon loss through candidate selection and Authentication, and
-   preserve the complete retry owner across each bounded failure/backoff edge;
-3. qualify real AP loss/recovery and one injected TX/RX failure before
-   resuming feature expansion.
+1. extract one production pre-connected station-attempt transaction shared by
+   the initial and reconnect paths: channel retune, Authentication,
+   Association, selected-peer programming, WPA2 handshake and key install.
+   The primitive ports already live outside HIL, but their composition and
+   owner/error mapping are still duplicated there;
+2. split the remaining HIL facade by fixture responsibility (station
+   qualification, connected traffic, diagnostics and board bootstrap) while
+   keeping only scenario policy, task placement, static storage and reporting;
+3. route real beacon loss through candidate selection and Authentication, then
+   qualify AP loss/recovery and one injected TX/RX failure.
+
+Executor-stop timeout/reset policy and image-size classification are deferred
+work. They must not interrupt the current driver/HIL separation pass.
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is

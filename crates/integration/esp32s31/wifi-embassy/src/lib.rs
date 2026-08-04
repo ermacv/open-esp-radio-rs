@@ -27,6 +27,7 @@ pub mod running_scan;
 pub mod rx_backend;
 pub mod rx_reorder;
 pub mod rx_telemetry;
+pub mod scan_port;
 pub mod single_mpdu_tx;
 pub mod sta_join;
 pub mod sta_join_port;

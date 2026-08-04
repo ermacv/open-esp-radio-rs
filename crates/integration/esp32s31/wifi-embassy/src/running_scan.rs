@@ -111,19 +111,21 @@ impl<P, H, R, T> Esp32s31RunningScanRadio<P, H, R, T> {
 }
 
 /// Borrowed allocation-free storage for one running scan.
-pub struct Esp32s31RunningScanStorage<'resources, O, const RECORDS: usize> {
+pub struct Esp32s31RunningScanStorage<'resources, 'sequence, O, const RECORDS: usize> {
     table: &'resources mut ScanTable<RECORDS>,
     frame: &'resources mut [u8],
     observer: O,
-    sequence: &'resources mut StaSequenceCounter,
+    sequence: &'sequence mut StaSequenceCounter,
 }
 
-impl<'resources, O, const RECORDS: usize> Esp32s31RunningScanStorage<'resources, O, RECORDS> {
+impl<'resources, 'sequence, O, const RECORDS: usize>
+    Esp32s31RunningScanStorage<'resources, 'sequence, O, RECORDS>
+{
     pub fn new(
         table: &'resources mut ScanTable<RECORDS>,
         frame: &'resources mut [u8],
         observer: O,
-        sequence: &'resources mut StaSequenceCounter,
+        sequence: &'sequence mut StaSequenceCounter,
     ) -> Self {
         Self {
             table,
@@ -178,13 +180,16 @@ pub enum Esp32s31RunningScanPortError<P, R, T> {
 }
 
 /// Owners returned after the scan service has stopped RX.
-pub struct Esp32s31RunningScanParts<P, H, R, T, W, O> {
+pub struct Esp32s31RunningScanParts<'resources, 'sequence, P, H, R, T, W, O, const RECORDS: usize> {
     pub phy: P,
     pub hardware: H,
     pub rx: R,
     pub tx: T,
     pub timer: W,
     pub observer: O,
+    pub table: &'resources mut ScanTable<RECORDS>,
+    pub frame: &'resources mut [u8],
+    pub sequence: &'sequence mut StaSequenceCounter,
     pub telemetry: Esp32s31RunningScanTelemetry,
 }
 
@@ -195,6 +200,7 @@ pub struct Esp32s31RunningScanParts<P, H, R, T, W, O> {
 /// inside this value.
 pub struct Esp32s31RunningScanPort<
     'resources,
+    'sequence,
     'ssid,
     'rates,
     P,
@@ -206,18 +212,18 @@ pub struct Esp32s31RunningScanPort<
     const RECORDS: usize,
 > {
     radio: Esp32s31RunningScanRadio<P, H, R, T>,
-    storage: Esp32s31RunningScanStorage<'resources, O, RECORDS>,
+    storage: Esp32s31RunningScanStorage<'resources, 'sequence, O, RECORDS>,
     station: Esp32s31RunningScanStation<'ssid, 'rates>,
     timer: W,
     telemetry: Esp32s31RunningScanTelemetry,
 }
 
-impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
-    Esp32s31RunningScanPort<'resources, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
+impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
+    Esp32s31RunningScanPort<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
 {
     pub const fn new(
         radio: Esp32s31RunningScanRadio<P, H, R, T>,
-        storage: Esp32s31RunningScanStorage<'resources, O, RECORDS>,
+        storage: Esp32s31RunningScanStorage<'resources, 'sequence, O, RECORDS>,
         station: Esp32s31RunningScanStation<'ssid, 'rates>,
         timer: W,
     ) -> Self {
@@ -233,7 +239,9 @@ impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
         }
     }
 
-    pub fn into_parts(self) -> Esp32s31RunningScanParts<P, H, R, T, W, O> {
+    pub fn into_parts(
+        self,
+    ) -> Esp32s31RunningScanParts<'resources, 'sequence, P, H, R, T, W, O, RECORDS> {
         let Self {
             radio,
             storage,
@@ -248,10 +256,10 @@ impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
             tx,
         } = radio;
         let Esp32s31RunningScanStorage {
-            table: _,
-            frame: _,
+            table,
+            frame,
             observer,
-            sequence: _,
+            sequence,
         } = storage;
         Esp32s31RunningScanParts {
             phy,
@@ -260,6 +268,9 @@ impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
             tx,
             timer,
             observer,
+            table,
+            frame,
+            sequence,
             telemetry,
         }
     }
@@ -296,8 +307,9 @@ impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
     }
 }
 
-impl<'resources, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize> Esp32s31StaScanPort
-    for Esp32s31RunningScanPort<'resources, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
+impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
+    Esp32s31StaScanPort
+    for Esp32s31RunningScanPort<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
 where
     P: Esp32s31RunningScanPhy<H>,
     R: Esp32s31RunningScanReceive<H>,
@@ -713,7 +725,8 @@ mod tests {
                 Action::Stop,
             ]
         );
-        assert_eq!(sequence.peek(), 8);
-        assert_eq!(table.summary().records, 1);
+        assert_eq!(parts.sequence.peek(), 8);
+        assert_eq!(parts.table.summary().records, 1);
+        assert_eq!(parts.frame.len(), 128);
     }
 }

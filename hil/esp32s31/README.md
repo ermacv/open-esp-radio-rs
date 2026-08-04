@@ -125,8 +125,11 @@ reported as beacon loss. The outer lifecycle then enters its `RunningScan`
 owner with `refresh_candidate=1`. This qualifies repeated resource reuse and
 controlled rescan/re-authentication, not recovery after an AP disappears.
 The finite PHY/RX/TX/dwell/candidate transaction is composed by the reusable
-`Esp32s31RunningScanPort`; HIL retains only the board epoch bundle, station
-policy, fixed storage and UART evidence observer.
+`Esp32s31ScanPort` for both the initial cold scan and later running rescans.
+The cold binding carries `ColdRadioRegisters`; the running binding carries the
+cooperative connected-epoch owners and quiesced interrupt token. HIL retains
+only the board epoch bundle, station policy, fixed storage and UART evidence
+observer; it no longer implements a private cold scan port.
 `Esp32s31PreconnectedRx` likewise owns the halted/prepared/live RX frontier
 across Authentication, Association and WPA2; HIL provides its fixed buffer
 storage but no longer carries a parallel RX type-state machine or descriptor

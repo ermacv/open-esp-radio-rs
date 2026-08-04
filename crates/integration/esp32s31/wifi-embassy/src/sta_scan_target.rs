@@ -12,10 +12,13 @@ use crate::{
     control_tx::{ControlTxError, Esp32s31ControlTx},
     cooperative_tx::CooperativeTxHardware,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    running_scan::Esp32s31RunningScanPhy,
+    running_scan::{
+        Esp32s31RunningScanPhy, Esp32s31RunningScanReceive, Esp32s31RunningScanTransmit,
+    },
     sta_scan::{
-        Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
-        Esp32s31ScanTxSummary,
+        Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext, Esp32s31ScanProbeReport,
+        Esp32s31ScanProbeRequest, Esp32s31ScanRx, Esp32s31ScanRxError, Esp32s31ScanRxPhase,
+        Esp32s31ScanRxProgress, Esp32s31ScanTxState, Esp32s31ScanTxSummary,
     },
 };
 use open_esp_radio_esp32s31_hal::{
@@ -107,6 +110,68 @@ where
     }
 }
 
+impl<P, O, D> Esp32s31RunningScanPhy<ColdRadioRegisters> for Esp32s31ScanPhy<'_, P, O, D>
+where
+    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    O: PhyTargetObserver,
+    D: PhyAsyncDelay,
+{
+    type Error = PhyTargetPortError;
+
+    fn switch_channel<'a>(
+        &'a mut self,
+        hardware: &'a mut ColdRadioRegisters,
+        channel: u8,
+    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
+        async move { self.switch_channel(u16::from(channel), 0, hardware).await }
+    }
+}
+
+impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
+    Esp32s31RunningScanReceive<ColdRadioRegisters>
+    for Esp32s31ScanRx<'_, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+{
+    type Error = Esp32s31ScanRxError;
+
+    fn prepare_initial(&mut self, _hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
+        let actual = self.phase();
+        if actual == Esp32s31ScanRxPhase::Prepared {
+            Ok(())
+        } else {
+            Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Prepared,
+                actual,
+            })
+        }
+    }
+
+    fn start<'a>(
+        &'a mut self,
+        hardware: &'a mut ColdRadioRegisters,
+    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
+        async move { Esp32s31ScanRx::start(self, hardware) }
+    }
+
+    fn observe_management<O, const RECORDS: usize>(
+        &mut self,
+        hardware: &mut ColdRadioRegisters,
+        context: &mut Esp32s31ScanObservationContext<'_, O, RECORDS>,
+    ) -> Result<Esp32s31ScanRxProgress, Self::Error>
+    where
+        O: Esp32s31ScanFrameObserver,
+    {
+        Esp32s31ScanRx::observe_management(self, hardware, context)
+    }
+
+    fn stop(&mut self, hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
+        Esp32s31ScanRx::stop(self, hardware)
+    }
+
+    fn prepare_next(&mut self, hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
+        Esp32s31ScanRx::prepare_next(self, hardware)
+    }
+}
+
 /// Unique polling-only TX owner for a cold active scan.
 ///
 /// Running rescan cannot use this owner because the one-way PAC transition
@@ -187,5 +252,27 @@ where
         Esp32s31ScanTxSummary,
     ) {
         (self.control, self.state.summary())
+    }
+}
+
+impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31RunningScanTransmit<ColdRadioRegisters>
+    for Esp32s31ColdScanTx<'slot, P, E, T, BUFFER_SIZE>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+{
+    type Error = ControlTxError;
+
+    fn begin_scan(&mut self) {
+        Esp32s31ColdScanTx::begin_scan(self);
+    }
+
+    fn transmit_probe_request<'a>(
+        &'a mut self,
+        hardware: &'a mut ColdRadioRegisters,
+        request: Esp32s31ScanProbeRequest<'a>,
+    ) -> impl core::future::Future<Output = Result<Esp32s31ScanProbeReport, Self::Error>> + 'a {
+        Esp32s31ColdScanTx::transmit_probe_request(self, hardware, request)
     }
 }

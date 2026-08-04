@@ -92,8 +92,12 @@ configuration. It owns rate selection, staged RX dispatcher/protocol policy,
 the control-to-ordinary/A-MPDU TX handoff, TX/RX BlockAck and beacon control,
 and final `Esp32s31WifiBackend` assembly. HIL provides fixed resources,
 `embassy-net` endpoints, task placement and observations; it does not recreate
-those driver constructors. RX-DMA activation, the platform interrupt epoch and
-ordered teardown remain the next production-boundary extraction.
+those driver constructors. `Esp32s31StaTxEpoch` now retains the ordinary TX
+policy while connected service owns its descriptor. Pre-connected RX consumes
+its own live promotion, while `Esp32s31ConnectedStaTeardownPort` orders control
+shutdown, RX-DMA stop, TX return and PTK/GTK clear. HIL only reports the typed
+result and restores its network fixture. The platform interrupt epoch and
+executor task-stop acknowledgement remain the next production boundary.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise

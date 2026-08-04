@@ -65,6 +65,13 @@ pub struct StaGroupCcmpSlot {
     key_id: u8,
 }
 
+/// Hardware indices cleared at the connected-to-disconnected boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaCcmpClearReport {
+    pub pairwise_hardware_index: u8,
+    pub group_hardware_index: u8,
+}
+
 impl StaGroupCcmpSlot {
     pub const fn hardware_index(&self) -> u8 {
         STA_GROUP_HARDWARE_INDEX
@@ -102,6 +109,25 @@ impl StaPairwiseCcmpSlot {
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
         hardware.clear_ccmp_entry(STA_PAIRWISE_HARDWARE_INDEX);
     }
+}
+
+/// Consume and clear both association-scoped station key authorities.
+///
+/// Group is cleared before pairwise to match the recovered station teardown
+/// order. The returned indices are observations only; they cannot authorize a
+/// later clear or key use.
+pub fn clear_sta_ccmp_slots<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    pairwise: StaPairwiseCcmpSlot,
+    group: StaGroupCcmpSlot,
+) -> StaCcmpClearReport {
+    let report = StaCcmpClearReport {
+        pairwise_hardware_index: pairwise.hardware_index(),
+        group_hardware_index: group.hardware_index(),
+    };
+    group.clear(hardware);
+    pairwise.clear(hardware);
+    report
 }
 
 /// Installs the WPA2 temporal key into the recovered STA pairwise slot.

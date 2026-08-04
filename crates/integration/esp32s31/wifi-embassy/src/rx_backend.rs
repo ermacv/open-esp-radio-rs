@@ -504,6 +504,33 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// Bind board-allocated DMA/staging resources before the first connected
+    /// epoch. Later epochs recover this same owner from [`Esp32s31StoppedRx`].
+    pub fn new(
+        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        delay: D,
+    ) -> Self {
+        Self {
+            buffers,
+            pool,
+            frames,
+            delay,
+            pipeline_counters: None,
+        }
+    }
+
+    pub fn with_pipeline_counters(mut self, counters: &'pool RxPipelineCounters) -> Self {
+        self.pipeline_counters = Some(counters);
+        self
+    }
+
     pub const fn buffers(
         &self,
     ) -> &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT] {

@@ -63,6 +63,18 @@ pub enum Esp32s31PreconnectedRxError {
     Ring(RxRingError),
 }
 
+/// Complete owner return when a finite pre-connected frontier cannot be
+/// promoted into the connected live ring.
+pub struct Esp32s31PreconnectedRxIntoLiveFailure<
+    'storage,
+    D,
+    const COUNT: usize,
+    const DMA_BUFFER_SIZE: usize,
+> {
+    pub owner: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub error: Esp32s31PreconnectedRxError,
+}
+
 /// Decision made while observing one completed pre-connected descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31PreconnectedRxDirective {
@@ -276,6 +288,35 @@ where
             }
         }
     }
+
+    /// Consume a finite protocol owner, start its DMA frontier if necessary,
+    /// and return the exact live ring required by connected RX.
+    ///
+    /// The complete pre-connected owner is returned on every failure. The
+    /// application/HIL therefore cannot strand a halted or prepared ring
+    /// between the WPA2 and connected phases.
+    #[allow(clippy::result_large_err)]
+    pub async fn try_into_live_with_storage<M, const DMA_STORAGE_SIZE: usize>(
+        mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Result<
+        RxRingLive<'storage, COUNT>,
+        Esp32s31PreconnectedRxIntoLiveFailure<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    >
+    where
+        M: RxDma,
+    {
+        if self.phase() != Esp32s31PreconnectedRxPhase::Live
+            && let Err(error) = self.start_with_storage(hardware, storage).await
+        {
+            return Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error });
+        }
+        match self.take_live() {
+            Ok(ring) => Ok(ring),
+            Err(error) => Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -399,5 +440,45 @@ mod tests {
         assert_eq!(moved.phase(), Esp32s31PreconnectedRxPhase::Halted);
         rx = moved;
         assert_eq!(rx.phase(), Esp32s31PreconnectedRxPhase::Halted);
+    }
+
+    #[test]
+    fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
+        let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+        let mut hardware = Hardware::default();
+        let rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(
+            halted_ring(&mut hardware, &storage),
+        );
+        let live =
+            embassy_futures::block_on(rx.try_into_live_with_storage(&mut hardware, &storage))
+                .unwrap_or_else(|_| panic!("fresh halted owner must become live"));
+        assert_eq!(live.descriptor_base(), BASE);
+
+        let halted = match live.try_stop(&mut hardware) {
+            Ok(halted) => halted,
+            Err(_) => panic!("mock walker must stop before the failure case"),
+        };
+        let mut already_live =
+            Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted);
+        embassy_futures::block_on(already_live.start_with_storage(&mut hardware, &storage))
+            .expect("finite protocol phase starts the ring");
+        let live = embassy_futures::block_on(
+            already_live.try_into_live_with_storage(&mut hardware, &storage),
+        )
+        .unwrap_or_else(|_| panic!("an existing live frontier must not start twice"));
+        let halted = match live.try_stop(&mut hardware) {
+            Ok(halted) => halted,
+            Err(_) => panic!("mock walker must stop after the live handoff"),
+        };
+        let mut vacant =
+            Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted);
+        let retained = vacant.take().expect("test retains the exact halted owner");
+        let failure =
+            embassy_futures::block_on(vacant.try_into_live_with_storage(&mut hardware, &storage))
+                .err()
+                .expect("vacant frontier must return its placeholder owner");
+        assert_eq!(failure.error, Esp32s31PreconnectedRxError::OwnerUnavailable);
+        assert_eq!(failure.owner.phase(), Esp32s31PreconnectedRxPhase::Vacant);
+        assert_eq!(retained.phase(), Esp32s31PreconnectedRxPhase::Halted);
     }
 }

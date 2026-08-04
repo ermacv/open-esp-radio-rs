@@ -6,7 +6,10 @@ use open_esp_radio_esp32s31_pac::{
     mac::{self, init as mac_init},
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CcmpKeyHardware, CryptoKeyError, install_sta_group_ccmp, install_sta_pairwise_ccmp},
+    crypto::{
+        CcmpKeyHardware, CryptoKeyError, clear_sta_ccmp_slots, install_sta_group_ccmp,
+        install_sta_pairwise_ccmp,
+    },
     descriptor::{
         BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
         dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
@@ -1842,6 +1845,34 @@ fn sta_group_ccmp_install_matches_the_migration_slot_and_control_word() {
         install_sta_group_ccmp(&mut mmio, 4, &temporal_key).err(),
         Some(CryptoKeyError::InvalidGroupKeyId)
     );
+}
+
+#[test]
+fn station_key_teardown_consumes_and_clears_both_hardware_slots() {
+    let mut mmio = MockMmio::default();
+    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
+    let pairwise = install_sta_pairwise_ccmp(&mut mmio, [1, 2, 3, 4, 5, 6], &[0x55; 16]).unwrap();
+    let group = install_sta_group_ccmp(&mut mmio, 2, &[0xaa; 16]).unwrap();
+    assert_eq!(
+        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
+        Some(&((1 << 4) | (1 << 1)))
+    );
+
+    let report = clear_sta_ccmp_slots(&mut mmio, pairwise, group);
+    assert_eq!(report.pairwise_hardware_index, 4);
+    assert_eq!(report.group_hardware_index, 1);
+    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
+    let clears: std::vec::Vec<_> = mmio
+        .operations()
+        .iter()
+        .filter_map(|operation| match operation {
+            Operation::Write(address, value) if *address == mac::CRYPTO_KEY_VALID_BITMAP => {
+                Some(*value)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(clears.ends_with(&[1 << 4, 0]));
 }
 
 fn single_frame_segment<'a>(storage: &'a mut [u8; 128], frame_control_low: u8) -> RxSegment<'a> {

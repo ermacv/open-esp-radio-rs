@@ -15,6 +15,7 @@ use core::{
 
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::StaPairwiseCcmpSlot,
     irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HtAmpduTxConfig, LegacyTxQueue, TxCookie,
@@ -25,7 +26,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     data::DataHeControl,
-    station::{STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StationFrameError},
+    station::{STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError},
     station_power_save::StaPowerManagement,
 };
 
@@ -42,6 +43,15 @@ use crate::{
 
 const AMPDU_ABORT_SETTLE_US: u64 = 16;
 const DATA_TID: u8 = 0;
+
+/// Peer-independent TX resources returned at the connected-to-disconnected
+/// station boundary.
+pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
+    pub resources: R,
+    pub pairwise_key: StaPairwiseCcmpSlot,
+    pub sequences: StaTxSequenceCounters,
+    pub aggregate: A,
+}
 
 /// Finite aggregate publication policy installed after Association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -714,6 +724,32 @@ where
             Err(_) => unreachable!("aggregate idle invariant admitted an active ordinary TX"),
         };
         Ok((resources, handoff, ampdu))
+    }
+
+    /// Return a named station-lifecycle owner instead of exposing the nested
+    /// ordinary-TX handoff representation to application/HIL code.
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn try_into_station_parts(
+        self,
+    ) -> Result<
+        Esp32s31ConnectedTxTeardownParts<
+            WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+        >,
+        Self,
+    > {
+        let (resources, handoff, aggregate) = self.try_into_teardown_parts()?;
+        let ConnectedTxHandoff {
+            key,
+            sequences,
+            config: _,
+        } = handoff;
+        Ok(Esp32s31ConnectedTxTeardownParts {
+            resources,
+            pairwise_key: key,
+            sequences,
+            aggregate,
+        })
     }
 
     pub async fn wait_deadline(&mut self) {
@@ -1693,13 +1729,14 @@ mod tests {
         )
         .unwrap();
 
-        let (resources, handoff, ampdu) = match tx.try_into_teardown_parts() {
+        let returned = match tx.try_into_station_parts() {
             Ok(parts) => parts,
             Err(_) => panic!("idle aggregate must decompose"),
         };
-        assert_eq!(ampdu.state(), TxSlotState::Free);
-        assert_eq!(resources.slot.state(), TxSlotState::Free);
-        handoff.key.clear(&mut hardware);
+        assert_eq!(returned.aggregate.state(), TxSlotState::Free);
+        assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
+        assert_eq!(returned.sequences.peek_non_qos(), 7);
+        returned.pairwise_key.clear(&mut hardware);
     }
 
     #[test]

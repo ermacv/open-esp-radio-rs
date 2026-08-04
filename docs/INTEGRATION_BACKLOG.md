@@ -26,6 +26,11 @@ Connected entry now has the same production boundary. The reusable
 selects ordinary and aggregate rates, constructs staged RX, ordinary/A-MPDU
 TX and BlockAck/beacon control, and assembles the production backend. HIL only
 supplies storage, network/executor adapters and scenario policy at this edge.
+`Esp32s31ConnectedStaTeardownPort` now owns the reverse transition: control
+shutdown, RX-DMA stop, idle TX/resource recovery and pairwise/group key clear.
+`Esp32s31StaTxEpoch` retains the control construction policy while that owner
+is lent to connected TX, and the pre-connected RX owner consumes its own
+live-frontier promotion. HIL only maps typed failures to qualification output.
 
 ## 1. Completed: concrete WPA2 TX backend
 
@@ -441,11 +446,12 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract connected RX-DMA entry, MAC interrupt epoch activation and ordered
-   teardown from HIL. The reusable Embassy layer now owns disconnected/
-   running-scan/reconnected resource transition, Authentication/Association,
-   selected-peer hardware programming, complete WPA2 ports and the connected
-   RX/TX/control/backend composition;
+1. extract MAC interrupt epoch activation/quiescence and the executor stop
+   acknowledgement boundary from HIL into the ESP-HAL/Embassy adapter. The
+   reusable Embassy layer now owns RX entry, connected teardown,
+   disconnected/running-scan/reconnected resource transitions,
+   Authentication/Association, selected-peer hardware programming, complete
+   WPA2 ports and connected RX/TX/control/backend composition;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -459,9 +465,12 @@ and rate-control activation now live behind `Esp32s31StaPeerPort`.
 `Esp32s31ConnectedStaPort` now owns rate selection, RX protocol,
 ordinary/aggregate TX, control/BlockAck and final backend assembly; runtime
 CRC32 `c7a6b50b` completed three controlled reconnect cycles through that
-port. The remaining architectural gap is narrower: initial/reconnected RX-DMA
-activation, interrupt activation/quiescence and the ordered control/RX/TX/key
-teardown still live in `radio_hil.rs`.
+port. RX live promotion and ordered control/RX/TX/key teardown now follow the
+same boundary through `Esp32s31ConnectedStaTeardownPort`; runtime CRC32
+`c51449b4` completed another three cycles. The remaining connected
+architectural gap is MAC interrupt activation/quiescence plus executor
+acknowledgement that the protocol and benchmark tasks released their epoch
+borrows.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

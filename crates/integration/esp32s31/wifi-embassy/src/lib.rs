@@ -13,6 +13,7 @@ pub mod aggregate_tx;
 pub mod backend;
 pub mod connected_control;
 pub mod connected_sta_port;
+pub mod connected_sta_teardown;
 pub mod control_tx;
 pub mod cooperative_tx;
 pub mod embassy_irq;
@@ -33,6 +34,7 @@ pub mod sta_peer_port;
 pub mod sta_scan;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_scan_target;
+pub mod sta_tx_epoch;
 pub mod staged_rx;
 pub mod station_epoch;
 pub mod station_power_save;

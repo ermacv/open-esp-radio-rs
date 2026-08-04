@@ -39,9 +39,7 @@ use open_esp_radio::{
         },
         wifi::mac::{
             connected_rx::{ConnectedRxEvent, ConnectedRxSink},
-            crypto::{
-                CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
-            },
+            crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
             he::He20PeerHardware,
             init::{
                 MAC_COLD_RX_INTERRUPT_MASK, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
@@ -69,7 +67,6 @@ use open_esp_radio::{
                 HtMcs, LegacyRate, TxCompletion, TxHardware, TxPhyRate, TxSlot,
             },
             tx_ampdu::HtAmpduTxStorage,
-            tx_runtime::StaTxRuntimePolicy,
         },
     },
     integration::{
@@ -81,10 +78,10 @@ use open_esp_radio::{
                 Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaRateConfig,
                 Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxResources,
             },
-            control_tx::{
-                ConnectedTxHandoff, ControlTxConfig, ControlTxError, Esp32s31ControlTx,
-                WifiTxResources,
+            connected_sta_teardown::{
+                Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
             },
+            control_tx::{ControlTxConfig, ControlTxError, Esp32s31ControlTx},
             cooperative_tx::CooperativeTxHardware,
             embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
             embassy_rx::RxReloadDelay,
@@ -98,8 +95,8 @@ use open_esp_radio::{
             },
             rx_backend::{
                 ConnectedControlPublisher, ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE,
-                EmbassyNetConnectedRxSink, Esp32s31ConnectedRx, Esp32s31RxDmaStorage,
-                Esp32s31RxEpochResources, Esp32s31StoppedRx, RxEnqueueCounters,
+                EmbassyNetConnectedRxSink, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
+                Esp32s31StoppedRx, RxEnqueueCounters,
             },
             rx_reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
@@ -129,6 +126,7 @@ use open_esp_radio::{
                 Esp32s31StaScanError, Esp32s31StaScanPort,
             },
             sta_scan_target::{Esp32s31ColdScanTx, Esp32s31ScanPhy},
+            sta_tx_epoch::Esp32s31StaTxEpoch,
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol,
                 Esp32s31StagedRxQueue,
@@ -810,53 +808,7 @@ type ScanTx = Esp32s31ColdScanTx<
     EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
-
-struct TxStorage {
-    control: Option<ControlTx>,
-}
-
-impl TxStorage {
-    fn new(
-        slot: Pin<&'static mut TxSlot<TX_BUFFER_SIZE>>,
-        tx_power_profile: PhyTxTargetPowerProfile,
-    ) -> Self {
-        Self {
-            control: Some(Esp32s31ControlTx::new(
-                WifiTxResources {
-                    slot,
-                    policy: StaTxRuntimePolicy::vendor_defaults(),
-                    power: tx_power_profile,
-                    entropy: open_radio_tx_entropy as fn() -> u32,
-                    timer: EmbassyWifiTxTimer,
-                },
-                ControlTxConfig {
-                    unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
-                    completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
-                    poll_interval_us: 1,
-                },
-            )),
-        }
-    }
-
-    fn control_mut(&mut self) -> &mut ControlTx {
-        self.control
-            .as_mut()
-            .expect("control TX owner has not moved into the connected runner")
-    }
-
-    fn take_control(&mut self) -> ControlTx {
-        self.control
-            .take()
-            .expect("control TX owner is already held by another phase")
-    }
-
-    fn restore_control(&mut self, control: ControlTx) {
-        assert!(
-            self.control.replace(control).is_none(),
-            "control TX owner cannot be restored over a live phase"
-        );
-    }
-}
+type TxStorage = Esp32s31StaTxEpoch<ControlTx>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActiveScanTxError {
@@ -4234,8 +4186,7 @@ async fn run_connected_network<'fixture, 'security>(
     let data_tx_rate = connected_plan.data_tx_rate();
     let benchmark_tx_rate = connected_plan.aggregate_tx_rate();
     let peer_ampdu_limit = tx_storage
-        .control
-        .as_ref()
+        .control()
         .expect("control TX owner is present before connected handoff")
         .policy()
         .ht_ampdu()
@@ -4265,40 +4216,32 @@ async fn run_connected_network<'fixture, 'security>(
 
     let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
-        RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
-            if let Err(error) = rx.start_with_storage(registers, rx_storage).await
+        RadioHilConnectedEpochResources::Initial { registers, rx } => {
+            let rx_ring = match rx
+                .try_into_live_with_storage(registers, rx_storage)
+                .await
             {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL \
-                     stage=production-runner-rx-arm epoch=initial error={error:?}"
-                ));
-                let _owner = rx;
-                loop {
-                    Timer::after_secs(60).await;
-                }
-            }
-            let rx_ring = match rx.take_live() {
                 Ok(ring) => ring,
-                Err(error) => {
+                Err(failure) => {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-runner-rx-arm epoch=initial \
-                         transition=take-live error={error:?}"
+                         stage=production-runner-rx-arm epoch=initial error={:?}",
+                        failure.error,
                     ));
-                    let _owner = rx;
+                    let _owner = failure.owner;
                     loop {
                         Timer::after_secs(60).await;
                     }
                 }
             };
-            let rx = Esp32s31ConnectedRx::new(
-                rx_ring,
+            let rx = Esp32s31RxEpochResources::new(
                 rx_storage.buffers(),
                 &OPEN_RADIO_RX_STAGE_POOL,
-                OpenRadioRxReloadDelay,
                 staged_rx_sender,
+                OpenRadioRxReloadDelay,
             )
-            .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
+            .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS)
+            .with_live_ring(rx_ring);
             // The production aggregate owner is descriptor-only
             // (`BUFFER_SIZE == 0`), so constructing it in the static cell does
             // not materialize the former 55-KiB payload arena on this task's
@@ -4318,41 +4261,26 @@ async fn run_connected_network<'fixture, 'security>(
         RadioHilConnectedEpochResources::Reconnected(epoch) => {
             let Esp32s31ReconnectedStaEpochParts {
                 mut hardware,
-                mut rx,
+                rx,
                 rx_resources,
                 aggregate_tx: ampdu,
                 control: control_resources,
             } = epoch.into_parts();
-            if let Err(error) = rx.start_with_storage(&mut hardware, rx_storage).await
+            let rx_ring = match rx
+                .try_into_live_with_storage(&mut hardware, rx_storage)
+                .await
             {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL \
-                     stage=production-runner-rx-arm epoch=reconnected \
-                     transition=start error={error:?}"
-                ));
-                let _owners = (
-                    hardware,
-                    rx,
-                    rx_resources,
-                    ampdu,
-                    control_resources,
-                    network_runner,
-                );
-                loop {
-                    Timer::after_secs(60).await;
-                }
-            }
-            let rx_ring = match rx.take_live() {
                 Ok(ring) => ring,
-                Err(error) => {
+                Err(failure) => {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL \
                          stage=production-runner-rx-arm epoch=reconnected \
-                         transition=take-live error={error:?}"
+                         error={:?}",
+                        failure.error,
                     ));
                     let _owners = (
                         hardware,
-                        rx,
+                        failure.owner,
                         rx_resources,
                         ampdu,
                         control_resources,
@@ -4398,8 +4326,7 @@ async fn run_connected_network<'fixture, 'security>(
 
     let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
     let control_tx = tx_storage
-        .control
-        .take()
+        .take_control()
         .expect("control TX owner moves into the connected runner exactly once");
     let tx = Esp32s31ConnectedStaPort::build_tx(
         &connected_plan,
@@ -4548,124 +4475,121 @@ async fn run_connected_network<'fixture, 'security>(
     ));
     let (frame, ethernet) = stopped_protocol.into_scratch();
     let (network, backend) = radio_runner.into_parts();
-    let (mut hardware, rx, mut tx, mut control) = backend.into_parts();
-    match control.shutdown(&mut hardware, &mut tx) {
-        Ok(shutdown) => emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=production-control-stop \
-             rx_ba={} tx_ba={} discarded_events={} in_flight={:?}",
-            shutdown.rx_block_ack_agreements,
-            shutdown.tx_block_ack_sessions,
-            shutdown.discarded_events,
-            shutdown.in_flight,
-        )),
-        Err(error) => {
+    let mut teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(backend, group_slot) {
+        Ok(teardown) => teardown,
+        Err(Esp32s31ConnectedStaTeardownFailure::Control {
+            error,
+            backend,
+            group_key,
+        }) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-control-stop error={error:?}"
             ));
-            let _owners = (network, hardware, rx, tx, control, group_slot);
+            let _owners = (network, backend, group_key);
             loop {
                 Timer::after_secs(60).await;
             }
         }
-    }
-    match rx.try_stop(&mut hardware) {
-        Ok(stopped_rx) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-dma-stop \
-                 descriptor_base={:#010x} queued_frames={}",
-                stopped_rx.ring().descriptor_base(),
-                stopped_rx.queued_frames(),
-            ));
-            match tx.try_into_teardown_parts() {
-                Ok((resources, handoff, ampdu)) => {
-                    let ConnectedTxHandoff {
-                        key,
-                        sequences: connected_sequences,
-                        config: _,
-                    } = handoff;
-                    let pairwise_hardware_index = key.hardware_index();
-                    let group_hardware_index = group_slot.hardware_index();
-                    group_slot.clear(&mut hardware);
-                    key.clear(&mut hardware);
-                    let key_bitmap = hardware.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP);
-                    let keys_cleared = key_bitmap
-                        & ((1 << pairwise_hardware_index) | (1 << group_hardware_index))
-                        == 0;
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result={} stage=production-connected-key-clear \
-                         pairwise_slot={} group_slot={} valid_bitmap={key_bitmap:#010x}",
-                        if keys_cleared { "PASS" } else { "FAIL" },
-                        pairwise_hardware_index,
-                        group_hardware_index,
-                    ));
-                    *sequences = connected_sequences;
-                    tx_storage.control = Some(Esp32s31ControlTx::new(
-                        resources,
-                        ControlTxConfig {
-                            unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
-                            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
-                            poll_interval_us: 1,
-                        },
-                    ));
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=PASS \
-                         stage=production-connected-tx-return"
-                    ));
-                    drop(control);
-                    return RadioHilConnectedEpochReturn {
-                        fixture: RadioHilConnectedTaskFixture {
-                            spawner,
-                            protocol_spawner,
-                            state,
-                            platform,
-                            interrupt_setup,
-                            rx_storage,
-                            tx_storage,
-                            descriptor_base,
-                            buffer_addresses,
-                            scan_table,
-                            frame,
-                            ethernet,
-                        },
-                        disconnected: RadioHilDisconnectedEpoch::new(
-                            RadioHilRunningNetwork {
-                                stack,
-                                runner: network,
-                            },
-                            hardware,
-                            stopped_rx,
-                            ampdu,
-                            control_resources,
-                        ),
-                        security: StaAssociationSecurity {
-                            pmk,
-                            supplicant_nonce,
-                            sequences,
-                        },
-                        exit: runner_exit,
-                    };
-                }
-                Err(tx) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-connected-tx-return error=aggregate-active"
-                    ));
-                    let _owners = (network, hardware, stopped_rx, tx, control, group_slot);
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
-                }
-            }
-        }
-        Err((live_rx, error)) => {
+        Err(Esp32s31ConnectedStaTeardownFailure::Rx {
+            error,
+            hardware,
+            rx,
+            tx,
+            control,
+            group_key,
+        }) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-dma-stop error={error:?}"
             ));
-            let _owners = (network, hardware, live_rx, tx, control, group_slot);
+            let _owners = (network, hardware, rx, tx, control, group_key);
             loop {
                 Timer::after_secs(60).await;
             }
         }
+        Err(Esp32s31ConnectedStaTeardownFailure::TxActive {
+            hardware,
+            stopped_rx,
+            tx,
+            control,
+            group_key,
+        }) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-connected-tx-return error=aggregate-active"
+            ));
+            let _owners = (network, hardware, stopped_rx, tx, control, group_key);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+    let control_shutdown = teardown.control;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-control-stop \
+         rx_ba={} tx_ba={} discarded_events={} in_flight={:?}",
+        control_shutdown.rx_block_ack_agreements,
+        control_shutdown.tx_block_ack_sessions,
+        control_shutdown.discarded_events,
+        control_shutdown.in_flight,
+    ));
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-dma-stop \
+         descriptor_base={:#010x} queued_frames={}",
+        teardown.stopped_rx.ring().descriptor_base(),
+        teardown.stopped_rx.queued_frames(),
+    ));
+    let key_bitmap = teardown
+        .hardware
+        .read32(mac_pac::CRYPTO_KEY_VALID_BITMAP);
+    let keys_cleared = key_bitmap
+        & ((1 << teardown.keys.pairwise_hardware_index)
+            | (1 << teardown.keys.group_hardware_index))
+        == 0;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result={} stage=production-connected-key-clear \
+         pairwise_slot={} group_slot={} valid_bitmap={key_bitmap:#010x}",
+        if keys_cleared { "PASS" } else { "FAIL" },
+        teardown.keys.pairwise_hardware_index,
+        teardown.keys.group_hardware_index,
+    ));
+    *sequences = teardown.sequences;
+    tx_storage
+        .restore_resources(teardown.tx_resources)
+        .unwrap_or_else(|_| panic!("connected TX return found a live owner"));
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-tx-return"
+    ));
+    RadioHilConnectedEpochReturn {
+        fixture: RadioHilConnectedTaskFixture {
+            spawner,
+            protocol_spawner,
+            state,
+            platform,
+            interrupt_setup,
+            rx_storage,
+            tx_storage,
+            descriptor_base,
+            buffer_addresses,
+            scan_table,
+            frame,
+            ethernet,
+        },
+        disconnected: RadioHilDisconnectedEpoch::new(
+            RadioHilRunningNetwork {
+                stack,
+                runner: network,
+            },
+            teardown.hardware,
+            teardown.stopped_rx,
+            teardown.aggregate,
+            control_resources,
+        ),
+        security: StaAssociationSecurity {
+            pmk,
+            supplicant_nonce,
+            sequences,
+        },
+        exit: runner_exit,
     }
 }
 
@@ -4758,8 +4682,7 @@ async fn qualify_disconnected_running_scan(
         rx,
     } = epoch.into_running_scan_parts();
     let control = tx_storage
-        .control
-        .take()
+        .take_control()
         .expect("connected teardown returned the ordinary TX owner");
     let scan_owner = Esp32s31RunningScanPort::new(
         Esp32s31RunningScanRadio::new(
@@ -4896,7 +4819,9 @@ async fn qualify_disconnected_running_scan(
         }
     };
     let (control, tx_summary) = tx.into_parts();
-    tx_storage.control = Some(control);
+    tx_storage
+        .restore_control(control)
+        .unwrap_or_else(|_| panic!("running scan returned over a live TX owner"));
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-owner-return \
          descriptor_base={:#010x} queued_frames={} probe_completions={} probe_failures={} \
@@ -5262,7 +5187,11 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         access_point,
     } = ready.target;
     let prepared_peer = match Esp32s31StaPeerPort::prepare(
-        ready.fixture.tx_storage.control_mut(),
+        ready
+            .fixture
+            .tx_storage
+            .control_mut()
+            .expect("reconnect peer preparation owns control TX"),
         &access_point,
     ) {
         Ok(prepared) => prepared,
@@ -5341,7 +5270,11 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         radio_hil_sta_join_port(
             hardware,
             ready.fixture.rx_storage,
-            ready.fixture.tx_storage.control_mut(),
+            ready
+                .fixture
+                .tx_storage
+                .control_mut()
+                .expect("reconnect authentication owns control TX"),
             &mut *ready.fixture.frame,
             station_address,
             access_point,
@@ -5392,7 +5325,11 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     let backend = radio_hil_sta_join_port(
         hardware,
         ready.fixture.rx_storage,
-        ready.fixture.tx_storage.control_mut(),
+        ready
+            .fixture
+            .tx_storage
+            .control_mut()
+            .expect("reconnect association owns control TX"),
         &mut *ready.fixture.frame,
         station_address,
         access_point,
@@ -5457,7 +5394,14 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     };
     let association_phy = selection.phy;
     let programmed_peer = match Esp32s31StaPeerPort::program(
-        Esp32s31StaPeerRadio::new(hardware, ready.fixture.tx_storage.control_mut()),
+        Esp32s31StaPeerRadio::new(
+            hardware,
+            ready
+                .fixture
+                .tx_storage
+                .control_mut()
+                .expect("reconnect peer programming owns control TX"),
+        ),
         Esp32s31StaPeerStation::new(station_address, association_phy),
         &response,
         prepared_peer,
@@ -5518,7 +5462,11 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     let backend = radio_hil_wpa2_handshake_port(
         hardware,
         ready.fixture.rx_storage,
-        ready.fixture.tx_storage.control_mut(),
+        ready
+            .fixture
+            .tx_storage
+            .control_mut()
+            .expect("reconnect WPA2 handshake owns control TX"),
         &mut *ready.fixture.frame,
         station_address,
         access_point.bssid,
@@ -5562,7 +5510,14 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
     *rx = backend.into_receive().into_owner();
 
     let backend = Esp32s31Wpa2KeyPort::new(
-        Esp32s31Wpa2KeyRadio::new(hardware, ready.fixture.tx_storage.control_mut()),
+        Esp32s31Wpa2KeyRadio::new(
+            hardware,
+            ready
+                .fixture
+                .tx_storage
+                .control_mut()
+                .expect("reconnect key install owns control TX"),
+        ),
         Esp32s31Wpa2KeySession::new(
             Esp32s31Wpa2Station::new(station_address, access_point.bssid),
             link.peer_qos,
@@ -5716,7 +5671,10 @@ async fn authenticate_target(
         radio_hil_sta_join_port(
             mmio,
             fixture.rx_storage,
-            fixture.tx_storage.control_mut(),
+            fixture
+                .tx_storage
+                .control_mut()
+                .expect("initial authentication owns control TX"),
             &mut *fixture.frame,
             station_address,
             access_point,
@@ -5824,7 +5782,10 @@ async fn associate_target<'fixture, 'security>(
     } = target;
     let association_phy = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE).phy;
     let prepared_peer = match Esp32s31StaPeerPort::prepare(
-        fixture.tx_storage.control_mut(),
+        fixture
+            .tx_storage
+            .control_mut()
+            .expect("initial peer preparation owns control TX"),
         &access_point,
     ) {
         Ok(prepared) => prepared,
@@ -5838,7 +5799,10 @@ async fn associate_target<'fixture, 'security>(
     let backend = radio_hil_sta_join_port(
         &mut *fixture.mmio,
         fixture.rx_storage,
-        fixture.tx_storage.control_mut(),
+        fixture
+            .tx_storage
+            .control_mut()
+            .expect("initial association owns control TX"),
         &mut *fixture.frame,
         station_address,
         access_point,
@@ -5899,7 +5863,10 @@ async fn associate_target<'fixture, 'security>(
         let programmed_peer = match Esp32s31StaPeerPort::program(
             Esp32s31StaPeerRadio::new(
                 fixture.mmio,
-                fixture.tx_storage.control_mut(),
+                fixture
+                    .tx_storage
+                    .control_mut()
+                    .expect("initial peer programming owns control TX"),
             ),
             Esp32s31StaPeerStation::new(station_address, association_phy),
             &response,
@@ -6004,7 +5971,10 @@ async fn await_wpa2_message_1<'fixture, 'security>(
     let backend = radio_hil_wpa2_handshake_port(
         &mut *fixture.mmio,
         fixture.rx_storage,
-        fixture.tx_storage.control_mut(),
+        fixture
+            .tx_storage
+            .control_mut()
+            .expect("initial WPA2 handshake owns control TX"),
         &mut *fixture.frame,
         link.station_address,
         link.bssid,
@@ -6089,7 +6059,12 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'security>(
         peer_dcm_receive: _,
     } = peer.link;
     let backend = Esp32s31Wpa2KeyPort::new(
-        Esp32s31Wpa2KeyRadio::new(mmio, tx_storage.control_mut()),
+        Esp32s31Wpa2KeyRadio::new(
+            mmio,
+            tx_storage
+                .control_mut()
+                .expect("initial key install owns control TX"),
+        ),
         Esp32s31Wpa2KeySession::new(
             Esp32s31Wpa2Station::new(station_address, bssid),
             peer_qos,
@@ -6533,11 +6508,18 @@ async fn run_promiscuous_rx_hil(
     let mmio = &mut cold_mmio;
     let storage = RxStorage::init_in_place(OPEN_RADIO_RX_DMA_STORAGE.uninit());
     let tx_slot = TxSlot::pin_static(TxSlot::init_in_place(OPEN_RADIO_TX_DMA_STORAGE.uninit()));
-    let tx_storage = OPEN_RADIO_TX_STATE.init(TxStorage::new(
+    let tx_storage = OPEN_RADIO_TX_STATE.init(TxStorage::from_slot(
         tx_slot,
         state
             .tx_target_power_profile()
             .with_maximum_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM),
+        open_radio_tx_entropy as fn() -> u32,
+        EmbassyWifiTxTimer,
+        ControlTxConfig {
+            unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
+            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
+            poll_interval_us: 1,
+        },
     ));
     let descriptor_base = storage.descriptors().as_ptr().addr() as u32;
     let buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT] =
@@ -6657,7 +6639,11 @@ async fn run_promiscuous_rx_hil(
     ));
 
     let scan_started = Instant::now();
-    let scan_tx = ScanTx::new(tx_storage.take_control());
+    let scan_tx = ScanTx::new(
+        tx_storage
+            .take_control()
+            .expect("cold scan owns the initial control TX owner"),
+    );
     let scan_owner = RadioHilColdScanOwner {
         phy: Esp32s31ScanPhy::new(state, platform, HilPhyObserver),
         mmio: cold_mmio,
@@ -6742,7 +6728,9 @@ async fn run_promiscuous_rx_hil(
     } = scan_owner;
     let (state, platform, _observer) = phy.into_parts();
     let (control_tx, tx_summary) = scan_tx.into_parts();
-    tx_storage.restore_control(control_tx);
+    tx_storage
+        .restore_control(control_tx)
+        .unwrap_or_else(|_| panic!("cold scan returned over a live TX owner"));
     let tx_completions = tx_summary.completions;
     let tx_failures = tx_summary.failures;
     emergency_log(format_args!(

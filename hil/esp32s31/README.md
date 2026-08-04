@@ -98,6 +98,9 @@ controlled rescan/re-authentication, not recovery after an AP disappears.
 The finite PHY/RX/TX/dwell/candidate transaction is composed by the reusable
 `Esp32s31RunningScanPort`; HIL retains only the board epoch bundle, station
 policy, fixed storage and UART evidence observer.
+`Esp32s31PreconnectedRx` likewise owns the halted/prepared/live RX frontier
+across Authentication, Association and WPA2; HIL provides its fixed buffer
+recycle capability but no longer carries a parallel RX type-state machine.
 
 Build and flash a named scenario with the same identifier:
 

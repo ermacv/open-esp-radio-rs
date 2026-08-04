@@ -235,13 +235,19 @@ The first reconnect seam is now production-owned:
   scope, opens a second and proves FIFO delivery again. The HIL does not open
   the next scope until the RX protocol stop acknowledgement and connected
   control shutdown have completed;
-- pre-connected RX now has one explicit HIL type-state owner:
-  `Initial → Prepared → Live → Halted`. Authentication returns its halted
+- pre-connected RX now has one explicit production type-state owner,
+  `Esp32s31PreconnectedRx`:
+  `Halted → Prepared → Live → Halted`. Authentication returns its halted
   frontier to Association; Association transfers the live frontier into WPA2;
   WPA2 restart/stop and the protected ARP probe preserve the same owner; and
   the initial connected epoch consumes it instead of reconstructing a ring
   from static addresses. Failed prepare/start/stop transitions retain the
-  last hardware-valid owner for fail-closed handling;
+  last hardware-valid owner for fail-closed handling. The owner now lives in
+  the ESP32-S31 Embassy integration crate; HIL supplies only its static DMA
+  buffer recycle closure. Its host test moves the live frontier between
+  protocol phases and returns it to halted, and runtime CRC32 `4331250c`
+  repeated the complete scan/Authentication/Association/WPA2 transition three
+  times on hardware;
 - network frame queues and their pinned TX pool are now initialized by one
   explicit `initialize_sta_network` edge outside Association. Association
   consumes either that `Unstarted` owner or, in a later reconnect composition,

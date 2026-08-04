@@ -19,6 +19,7 @@ pub mod embassy_rx;
 pub mod embassy_tx;
 pub mod link_monitor;
 mod ordinary_tx;
+pub mod preconnected_rx;
 pub mod runner;
 pub mod running_scan;
 pub mod rx_backend;

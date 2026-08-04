@@ -69,7 +69,7 @@ use open_esp_radio::{
             },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
-                RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+                RxRingError, RxSegment,
                 decode_rx_phy_info, extract_ccmp_data, extract_data, extract_management,
                 first_segment_layout,
             },
@@ -100,6 +100,10 @@ use open_esp_radio::{
             embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
             embassy_rx::RxReloadDelay,
             link_monitor::StaBeaconLossConfig,
+            preconnected_rx::{
+                EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx,
+                Esp32s31PreconnectedRxError,
+            },
             runner::{WifiRunner, WifiRunnerExit},
             running_scan::{
                 EmbassyEsp32s31RunningScanTimer, Esp32s31RunningScanParts,
@@ -1066,6 +1070,12 @@ type RunningScanTx<'interrupt> = Esp32s31RunningScanTx<
     EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
+type RadioHilJoinRx<'storage> = Esp32s31PreconnectedRx<
+    'storage,
+    EmbassyEsp32s31PreconnectedRxDelay,
+    RX_DESCRIPTOR_COUNT,
+    RX_BUFFER_SIZE,
+>;
 type RadioHilRunningScanPortError =
     Esp32s31RunningScanPortError<PhyTargetPortError, Esp32s31ScanRxError, ControlTxError>;
 type ConnectedRxEpochResources = Esp32s31RxEpochResources<
@@ -1081,6 +1091,19 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
+
+async fn start_preconnected_rx<'storage, M: RxDma>(
+    rx: &mut RadioHilJoinRx<'storage>,
+    hardware: &mut M,
+    storage: &'storage RxStorage,
+) -> Result<(), Esp32s31PreconnectedRxError> {
+    rx.start(hardware, |index| {
+        // SAFETY: the halted RX owner invokes this only after DMA released
+        // the matching static buffer.
+        unsafe { storage.buffers()[index].prepare_for_recycle() }
+    })
+    .await
+}
 
 /// Hardware/storage input for one production connected epoch.
 ///
@@ -1172,7 +1195,7 @@ impl RadioHilDisconnectedEpoch {
             self.network,
             RadioHilConnectedEpochResources::Reconnected {
                 hardware: self.hardware,
-                rx: RadioHilJoinRx::Halted(rx),
+                rx: RadioHilJoinRx::from_halted(rx),
                 rx_resources,
                 ampdu: self.ampdu,
                 control_resources: self.control_resources,
@@ -2000,107 +2023,6 @@ static OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegist
 static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
     AtomicPtr::new(core::ptr::null_mut());
 
-/// RX descriptor authority carried through pre-connected STA phases.
-///
-/// The initial cold scan and every later connected epoch return a
-/// hardware-confirmed `Halted` owner. A retry may retain an already published
-/// `Prepared` owner. `Vacant` exists only while a transition has moved the
-/// non-Copy authority out of this enum; it is never an externally observable
-/// station state.
-enum RadioHilJoinRx<'storage> {
-    Halted(RxRingHalted<'storage, RX_DESCRIPTOR_COUNT>),
-    Prepared(RxRingStopped<'storage, RX_DESCRIPTOR_COUNT>),
-    Live(RxRingLive<'storage, RX_DESCRIPTOR_COUNT>),
-    Vacant,
-}
-
-impl<'storage> RadioHilJoinRx<'storage> {
-    async fn start<M: RxDma>(
-        &mut self,
-        mmio: &mut M,
-        rx_storage: &'storage RxStorage,
-    ) -> Result<(), RadioHilStaJoinError> {
-        let state = core::mem::replace(self, Self::Vacant);
-        let prepared = match state {
-            Self::Halted(halted) => match halted.prepare(
-                mmio,
-                RX_BUFFER_SIZE as u32,
-                |index| {
-                    // SAFETY: `RxRingHalted` proves that DMA released the
-                    // matching buffer before invoking this closure.
-                    unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
-                },
-            ) {
-                Ok(prepared) => prepared,
-                Err((halted, error)) => {
-                    *self = Self::Halted(halted);
-                    return Err(error.into());
-                }
-            },
-            Self::Prepared(prepared) => prepared,
-            live @ Self::Live(_) => {
-                *self = live;
-                return Err(RadioHilStaJoinError::ReceiveAlreadyStarted);
-            }
-            Self::Vacant => {
-                *self = Self::Vacant;
-                return Err(RadioHilStaJoinError::ReceiveNotStarted);
-            }
-        };
-        Timer::after_micros(5).await;
-        match prepared.try_start(mmio) {
-            Ok(live) => {
-                *self = Self::Live(live);
-                Ok(())
-            }
-            Err((prepared, error)) => {
-                *self = Self::Prepared(prepared);
-                Err(error.into())
-            }
-        }
-    }
-
-    fn stop<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RadioHilStaJoinError> {
-        let state = core::mem::replace(self, Self::Vacant);
-        let Self::Live(live) = state else {
-            *self = state;
-            return Err(RadioHilStaJoinError::ReceiveNotStarted);
-        };
-        match live.try_stop(mmio) {
-            Ok(halted) => {
-                *self = Self::Halted(halted);
-                Ok(())
-            }
-            Err((live, error)) => {
-                *self = Self::Live(live);
-                Err(error.into())
-            }
-        }
-    }
-
-    fn live_mut(
-        &mut self,
-    ) -> Result<&mut RxRingLive<'storage, RX_DESCRIPTOR_COUNT>, RadioHilStaJoinError> {
-        match self {
-            Self::Live(ring) => Ok(ring),
-            _ => Err(RadioHilStaJoinError::ReceiveNotStarted),
-        }
-    }
-
-    fn take_live(
-        &mut self,
-    ) -> Result<RxRingLive<'storage, RX_DESCRIPTOR_COUNT>, RadioHilStaJoinError> {
-        let state = core::mem::replace(self, Self::Vacant);
-        match state {
-            Self::Live(ring) => Ok(ring),
-            state => {
-                *self = state;
-                Err(RadioHilStaJoinError::ReceiveNotStarted)
-            }
-        }
-    }
-}
-
 /// HIL fixture which supplies the production STA join runner with the current
 /// S31 PAC/DMA owners. Protocol retry/deadline state lives in `StaJoinRunner`;
 /// this adapter performs only finite hardware operations and frame extraction.
@@ -2116,10 +2038,15 @@ struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RadioHilStaJoinError {
-    ReceiveAlreadyStarted,
-    ReceiveNotStarted,
+    Receive(Esp32s31PreconnectedRxError),
     Rx(RxRingError),
     Tx(ActiveScanTxError),
+}
+
+impl From<Esp32s31PreconnectedRxError> for RadioHilStaJoinError {
+    fn from(error: Esp32s31PreconnectedRxError) -> Self {
+        Self::Receive(error)
+    }
 }
 
 impl From<RxRingError> for RadioHilStaJoinError {
@@ -2150,14 +2077,14 @@ where
 
     fn start_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            self.rx
-                .start(self.mmio, self.rx_storage)
+            start_preconnected_rx(&mut self.rx, self.mmio, self.rx_storage)
                 .await
+                .map_err(Into::into)
         }
     }
 
     fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move { self.rx.stop(self.mmio) }
+        async move { self.rx.stop(self.mmio).map_err(Into::into) }
     }
 
     fn transmit_open_authentication(
@@ -2202,7 +2129,7 @@ where
         O: StaJoinRxObserver + 'a,
     {
         async move {
-            let ring = self.rx.live_mut()?;
+            let ring = self.rx.live_mut().map_err(RadioHilStaJoinError::from)?;
             for index in 0..RX_DESCRIPTOR_COUNT {
                 let Some(completed) = ring.take_completed(index) else {
                     continue;
@@ -2342,13 +2269,15 @@ where
 
     fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            self.rx.stop(self.mmio)?;
-            self.rx.start(self.mmio, self.rx_storage).await
+            self.rx.stop(self.mmio).map_err(RadioHilStaJoinError::from)?;
+            start_preconnected_rx(&mut self.rx, self.mmio, self.rx_storage)
+                .await
+                .map_err(Into::into)
         }
     }
 
     fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async move { self.rx.stop(self.mmio) }
+        async move { self.rx.stop(self.mmio).map_err(Into::into) }
     }
 
     fn transmit_message2<'a>(
@@ -5146,9 +5075,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
         RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
-            if let Err(error) = rx
-                .start(registers, rx_storage)
-                .await
+            if let Err(error) = start_preconnected_rx(&mut rx, registers, rx_storage).await
             {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -5204,9 +5131,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
             ampdu,
             control_resources,
         } => {
-            if let Err(error) = rx
-                .start(&mut hardware, rx_storage)
-                .await
+            if let Err(error) = start_preconnected_rx(&mut rx, &mut hardware, rx_storage).await
             {
                     emergency_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -6265,7 +6190,21 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
             RadioHilStaLifecycleFailure::Authentication,
         );
     }
-    let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
+    let join_rx = match rx.take() {
+        Ok(rx) => rx,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-authentication error={error:?}"
+            ));
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Hardware,
+                StaFailureDisposition::Terminal,
+                RadioHilStaLifecycleFailure::InvalidEpochOwner,
+            );
+        }
+    };
     let (authenticated, returned_rx) = run_open_authentication(
         RadioHilStaJoinBackend {
             mmio: hardware,
@@ -6301,7 +6240,21 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         access_point.bssid,
     ));
 
-    let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
+    let join_rx = match rx.take() {
+        Ok(rx) => rx,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-association error={error:?}"
+            ));
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Hardware,
+                StaFailureDisposition::Terminal,
+                RadioHilStaLifecycleFailure::InvalidEpochOwner,
+            );
+        }
+    };
     let backend = RadioHilStaJoinBackend {
         mmio: hardware,
         rx_storage: ready.fixture.rx_storage,
@@ -6496,7 +6449,21 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         authenticator_rsnxe: access_point.rsnxe_bytes(),
         pmk: ready.security.pmk,
     };
-    let join_rx = core::mem::replace(rx, RadioHilJoinRx::Vacant);
+    let join_rx = match rx.take() {
+        Ok(rx) => rx,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-reconnect-wpa2 error={error:?}"
+            ));
+            return failed_reconnect(
+                ready,
+                StaLifecycleStage::Hardware,
+                StaFailureDisposition::Terminal,
+                RadioHilStaLifecycleFailure::InvalidEpochOwner,
+            );
+        }
+    };
     let backend = RadioHilWpa2Backend {
         mmio: hardware,
         rx_storage: ready.fixture.rx_storage,
@@ -7294,7 +7261,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                 network_runner.set_link_state(LinkState::Up);
                 let mut passed = false;
                 for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-                    if let Err(error) = rx.start(mmio, rx_storage).await
+                    if let Err(error) = start_preconnected_rx(&mut rx, mmio, rx_storage).await
                     {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -8089,7 +8056,7 @@ async fn run_promiscuous_rx_hil(
             let owner = RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
                 fixture,
                 target,
-                rx: RadioHilJoinRx::Halted(scan_ring),
+                rx: RadioHilJoinRx::from_halted(scan_ring),
                 network: initialize_sta_network(station_address),
                 security: StaAssociationSecurity {
                     pmk: &pmk,

@@ -47,7 +47,6 @@ use open_esp_radio::{
                 CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
                 install_sta_group_ccmp, install_sta_pairwise_ccmp,
             },
-            descriptor::{DESCRIPTOR_BYTES, length as descriptor_length, rx_done},
             edca::EdcaParametersError,
             he::{He20PeerHardware, program_he20_peer_state},
             init::{
@@ -71,9 +70,9 @@ use open_esp_radio::{
             },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxError, RxIngressConfig,
-                RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment, build_cold_ring,
-                decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data, extract_data,
-                extract_management, first_segment_layout, publish_cold_ring,
+                RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+                decode_rx_phy_info, extract_ccmp_data, extract_data, extract_management,
+                first_segment_layout,
             },
             rx_pool::RxStagePool,
             scan::{ScanObservation, ScanRecord, ScanTable},
@@ -118,8 +117,9 @@ use open_esp_radio::{
                 StaJoinRxObserver,
             },
             sta_scan::{
-                Esp32s31ActiveProbeOutcome, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
-                Esp32s31StaScanPort,
+                Esp32s31ActiveProbeOutcome, Esp32s31ScanFrameObserver,
+                Esp32s31ScanObservationContext, Esp32s31ScanRx, Esp32s31ScanRxError,
+                Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanPort,
             },
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol,
@@ -208,7 +208,6 @@ const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
 // delivered every datagram). Keep one complete 32-member A-MPDU here; more
 // DMA descriptors are not useful without increasing downstream ownership too.
 const RX_DESCRIPTOR_COUNT: usize = 32;
-const RX_DESCRIPTOR_COMPLETE_MASK: u64 = (1_u64 << RX_DESCRIPTOR_COUNT) - 1;
 // Match the recovered vendor large-RX payload object. A larger MPDU is carried
 // by a bounded descriptor chain and becomes one contiguous staged unit before
 // any descriptor is returned to DMA. This avoids reserving 4,608 bytes in all
@@ -790,6 +789,12 @@ const PROBE_REQUEST_RATES: [u8; 12] = [
 
 type RxStorage =
     Esp32s31RxDmaStorage<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
+type ScanRx = Esp32s31ScanRx<
+    'static,
+    RX_DESCRIPTOR_COUNT,
+    RX_BUFFER_SIZE,
+    RX_BUFFER_STORAGE_SIZE,
+>;
 const _: () = assert!(RX_BUFFER_SIZE <= ESP32S31_RX_BUFFER_SIZE);
 
 type ControlTx = Esp32s31ControlTx<
@@ -1940,13 +1945,12 @@ static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
 
 /// RX descriptor authority carried through pre-connected STA phases.
 ///
-/// `Initial` is the one cold handoff from scan. Every later start must consume
-/// a hardware-confirmed `Halted` owner or retry an already published
+/// The initial cold scan and every later connected epoch return a
+/// hardware-confirmed `Halted` owner. A retry may retain an already published
 /// `Prepared` owner. `Vacant` exists only while a transition has moved the
 /// non-Copy authority out of this enum; it is never an externally observable
 /// station state.
 enum RadioHilJoinRx<'storage> {
-    Initial,
     Halted(RxRingHalted<'storage, RX_DESCRIPTOR_COUNT>),
     Prepared(RxRingStopped<'storage, RX_DESCRIPTOR_COUNT>),
     Live(RxRingLive<'storage, RX_DESCRIPTOR_COUNT>),
@@ -1958,30 +1962,9 @@ impl<'storage> RadioHilJoinRx<'storage> {
         &mut self,
         mmio: &mut M,
         rx_storage: &'storage RxStorage,
-        descriptor_base: u32,
-        buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
     ) -> Result<(), RadioHilStaJoinError> {
         let state = core::mem::replace(self, Self::Vacant);
         let prepared = match state {
-            Self::Initial => match RxRingStopped::prepare(
-                mmio,
-                rx_storage.descriptors(),
-                descriptor_base,
-                buffer_addresses,
-                RX_BUFFER_SIZE as u32,
-                |index| {
-                    // SAFETY: the prepare transaction first confirms that the
-                    // walker is stopped, then transfers this buffer index to
-                    // its caller before the recycle guards are restored.
-                    unsafe { rx_storage.buffers()[index].prepare_for_recycle() }
-                },
-            ) {
-                Ok(prepared) => prepared,
-                Err(error) => {
-                    *self = Self::Initial;
-                    return Err(error.into());
-                }
-            },
             Self::Halted(halted) => match halted.prepare(
                 mmio,
                 RX_BUFFER_SIZE as u32,
@@ -2068,8 +2051,6 @@ struct RadioHilStaJoinBackend<'hardware, 'storage, 'scratch, H> {
     mmio: &'hardware mut H,
     rx_storage: &'storage RxStorage,
     tx_storage: &'hardware mut TxStorage,
-    descriptor_base: u32,
-    buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
     frame: &'scratch mut [u8],
     station_address: [u8; 6],
     access_point: ScanRecord,
@@ -2113,12 +2094,7 @@ where
     fn start_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
             self.rx
-                .start(
-                    self.mmio,
-                    self.rx_storage,
-                    self.descriptor_base,
-                    self.buffer_addresses,
-                )
+                .start(self.mmio, self.rx_storage)
                 .await
         }
     }
@@ -2220,8 +2196,6 @@ struct RadioHilWpa2Backend<'hardware, 'storage, 'scratch, H> {
     mmio: &'hardware mut H,
     rx_storage: &'storage RxStorage,
     tx_storage: &'hardware mut TxStorage,
-    descriptor_base: u32,
-    buffer_addresses: &'storage [u32; RX_DESCRIPTOR_COUNT],
     frame: &'scratch mut [u8],
     station_address: [u8; 6],
     bssid: [u8; 6],
@@ -2312,14 +2286,7 @@ where
     fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
             self.rx.stop(self.mmio)?;
-            self.rx
-                .start(
-                    self.mmio,
-                    self.rx_storage,
-                    self.descriptor_base,
-                    self.buffer_addresses,
-                )
-                .await
+            self.rx.start(self.mmio, self.rx_storage).await
         }
     }
 
@@ -2858,117 +2825,6 @@ fn log_open_rf_boundary_mmio(source: &str) {
         read_diagnostic_mmio(0x2010_08a4),
         read_diagnostic_mmio(0x2010_0c04),
     ));
-}
-
-fn observe_scan_descriptors<M: Mmio>(
-    mmio: &mut M,
-    storage: &RxStorage,
-    descriptor_base: u32,
-    scan_table: &mut ScanTable,
-    scan_frame: &mut [u8; RX_STAGE_CAPACITY],
-    station_address: [u8; 6],
-    channel: u8,
-    observed_mask: &mut u64,
-    raw_frames: &mut u32,
-    probe_responses: &mut u32,
-) {
-    for (index, descriptor) in storage.descriptors().iter().enumerate() {
-        let word0 = descriptor.word0();
-        let bit = 1_u64 << index;
-        if !rx_done(word0) || *observed_mask & bit != 0 {
-            continue;
-        }
-        *observed_mask |= bit;
-        *raw_frames = raw_frames.saturating_add(1);
-        if *raw_frames == 1 {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=rx-frame \
-                 channel={channel} descriptor={index} word0={word0:#010x} \
-                 length={} control={:#010x} next={:#010x} last={:#010x}",
-                descriptor_length(word0),
-                mmio.read32(RX_CONTROL),
-                mmio.read32(RX_NEXT_DESCRIPTOR),
-                mmio.read32(RX_LAST_DESCRIPTOR),
-            ));
-        }
-
-        let segment = RxSegment {
-            descriptor_address: descriptor_base + index as u32 * DESCRIPTOR_BYTES,
-            descriptor_word0: word0,
-            buffer: unsafe {
-                // The completed descriptor has returned this buffer to the
-                // sole radio task for the duration of parsing.
-                storage.buffers()[index].completed()
-            },
-            next_descriptor_address: descriptor.next_address(),
-        };
-        match extract_management(
-            core::slice::from_ref(&segment),
-            RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-            scan_frame,
-        ) {
-            Ok(frame) => {
-                let rssi = unsafe { storage.buffers()[index].read_byte(0) as i8 };
-                if frame.length >= 10
-                    && scan_frame[0] & 0xfc == 0x50
-                    && scan_frame[4..10] == station_address
-                {
-                    *probe_responses = probe_responses.saturating_add(1);
-                    if *probe_responses <= 3 {
-                        emergency_log(format_args!(
-                            "OPEN_RADIO_PHY_HIL probe=addressed-probe-response \
-                             channel={channel} count={} da={:02x?} sa={:02x?}",
-                            *probe_responses,
-                            &scan_frame[4..10],
-                            &scan_frame[10..16],
-                        ));
-                    }
-                }
-                let observation =
-                    scan_table.observe_management(&scan_frame[..frame.length], channel, rssi);
-                if matches!(
-                    observation,
-                    ScanObservation::Inserted { .. } | ScanObservation::Updated { .. }
-                ) {
-                    let record_index = match observation {
-                        ScanObservation::Inserted { index }
-                        | ScanObservation::Updated { index } => index,
-                        _ => unreachable!(),
-                    };
-                    let record = &scan_table.records()[record_index];
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL stage=scan-record index={record_index} \
-                         ssid={:?} bssid={:02x?} channel={} rssi={} \
-                         privacy={} rsn={} ht={} ht40={:?} he={} truncated={}",
-                        record.ssid_bytes(),
-                        record.bssid,
-                        record.channel,
-                        record.rssi,
-                        record.privacy,
-                        record.rsn,
-                        record.ht_capability_ie_present,
-                        record.ht40_secondary_channel(),
-                        !record.he_capability_ie_bytes().is_empty(),
-                        record.information_elements_truncated,
-                    ));
-                }
-            }
-            Err(error) if *raw_frames <= 2 => {
-                let boundary: [u32; 12] = core::array::from_fn(|word| unsafe {
-                    storage.buffers()[index].read_word(0x28 + word * 4)
-                });
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL probe=rx-extract descriptor={index} \
-                     error={error:?} boundary={boundary:08x?}"
-                ));
-            }
-            Err(_) => {}
-        }
-    }
 }
 
 async fn transmit_probe_request(
@@ -5276,7 +5132,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
         RadioHilConnectedEpochResources::Initial { registers, mut rx } => {
             if let Err(error) = rx
-                .start(registers, rx_storage, descriptor_base, buffer_addresses)
+                .start(registers, rx_storage)
                 .await
             {
                         emergency_log(format_args!(
@@ -5334,12 +5190,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
             control_resources,
         } => {
             if let Err(error) = rx
-                .start(
-                    &mut hardware,
-                    rx_storage,
-                    descriptor_base,
-                    buffer_addresses,
-                )
+                .start(&mut hardware, rx_storage)
                 .await
             {
                     emergency_log(format_args!(
@@ -6080,8 +5931,6 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         mmio: hardware,
         rx_storage: ready.fixture.rx_storage,
         tx_storage: &mut *ready.fixture.tx_storage,
-        descriptor_base: ready.fixture.descriptor_base,
-        buffer_addresses: ready.fixture.buffer_addresses,
         frame: &mut *ready.fixture.frame,
         station_address,
         access_point,
@@ -6277,8 +6126,6 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         mmio: hardware,
         rx_storage: ready.fixture.rx_storage,
         tx_storage: &mut *ready.fixture.tx_storage,
-        descriptor_base: ready.fixture.descriptor_base,
-        buffer_addresses: ready.fixture.buffer_addresses,
         frame: &mut *ready.fixture.frame,
         station_address,
         bssid: access_point.bssid,
@@ -6454,8 +6301,6 @@ async fn authenticate_target(
     let mmio = &mut *radio.mmio;
     let rx_storage = radio.rx_storage;
     let tx_storage = &mut *radio.tx_storage;
-    let descriptor_base = radio.descriptor_base;
-    let buffer_addresses = radio.buffer_addresses;
     let frame = &mut *radio.frame;
     let selection = select_sta_association(&access_point, STA_ASSOCIATION_PREFERENCE);
     let association_phy = selection.phy;
@@ -6504,8 +6349,6 @@ async fn authenticate_target(
         mmio,
         rx_storage,
         tx_storage,
-        descriptor_base,
-        buffer_addresses,
         frame,
         station_address,
         access_point,
@@ -6593,8 +6436,6 @@ async fn associate_target<'fixture, 'security>(
         mmio: &mut *fixture.mmio,
         rx_storage: fixture.rx_storage,
         tx_storage: &mut *fixture.tx_storage,
-        descriptor_base: fixture.descriptor_base,
-        buffer_addresses: fixture.buffer_addresses,
         frame: &mut *fixture.frame,
         station_address,
         access_point,
@@ -6824,8 +6665,6 @@ async fn await_wpa2_message_1<'fixture, 'rate, 'security>(
         mmio: &mut *fixture.mmio,
         rx_storage: fixture.rx_storage,
         tx_storage: &mut *fixture.tx_storage,
-        descriptor_base: fixture.descriptor_base,
-        buffer_addresses: fixture.buffer_addresses,
         frame: &mut *fixture.frame,
         station_address: link.station_address,
         bssid: link.bssid,
@@ -7061,9 +6900,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
                 network_runner.set_link_state(LinkState::Up);
                 let mut passed = false;
                 for attempt in 1..=WPA2_PROTECTED_ARP_ATTEMPTS {
-                    if let Err(error) = rx
-                        .start(mmio, rx_storage, descriptor_base, buffer_addresses)
-                        .await
+                    if let Err(error) = rx.start(mmio, rx_storage).await
                     {
                         emergency_log(format_args!(
                             "OPEN_RADIO_PHY_HIL result=FAIL \
@@ -7270,9 +7107,8 @@ struct RadioHilColdScanOwner<'hardware, 'ssid> {
     platform: &'hardware mut EspHalRadioPeripheral,
     mmio: ColdRadioRegisters,
     storage: &'static RxStorage,
+    rx: ScanRx,
     tx_storage: &'static mut TxStorage,
-    descriptor_base: u32,
-    buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT],
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8; RX_STAGE_CAPACITY],
     station_address: [u8; 6],
@@ -7283,7 +7119,6 @@ struct RadioHilColdScanOwner<'hardware, 'ssid> {
     tx_failures: u32,
     active_tx_available: bool,
     ring_epochs: u32,
-    observed_mask: u64,
     channel_records_before: usize,
     channel_frames_before: u32,
 }
@@ -7291,10 +7126,55 @@ struct RadioHilColdScanOwner<'hardware, 'ssid> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RadioHilColdScanPortError {
     ChannelSwitch,
-    ReceiveStart,
-    ReceiveStop,
-    RingRebuild,
-    RingRestart,
+    Rx(Esp32s31ScanRxError),
+}
+
+struct RadioHilColdScanFrameObserver<'a> {
+    station_address: [u8; 6],
+    probe_responses: &'a mut u32,
+}
+
+impl Esp32s31ScanFrameObserver for RadioHilColdScanFrameObserver<'_> {
+    fn observe(&mut self, frame: &[u8], _rssi: i8, table_outcome: ScanObservation) {
+        if frame.len() >= 10 && frame[0] & 0xfc == 0x50 && frame[4..10] == self.station_address {
+            *self.probe_responses = self.probe_responses.saturating_add(1);
+            if *self.probe_responses <= 3 {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL probe=addressed-probe-response \
+                     count={} da={:02x?} sa={:02x?} table={table_outcome:?}",
+                    *self.probe_responses,
+                    &frame[4..10],
+                    &frame[10..16],
+                ));
+            }
+        }
+    }
+}
+
+impl RadioHilColdScanOwner<'_, '_> {
+    fn observe_scan_rx(&mut self, channel: u8) -> Result<(), RadioHilColdScanPortError> {
+        let mut observer = RadioHilColdScanFrameObserver {
+            station_address: self.station_address,
+            probe_responses: &mut self.probe_responses,
+        };
+        let mut context = Esp32s31ScanObservationContext::new(
+            channel,
+            self.scan_frame,
+            self.scan_table,
+            &mut observer,
+        );
+        let progress = self
+            .rx
+            .observe_management(&mut self.mmio, &mut context)
+            .map_err(RadioHilColdScanPortError::Rx)?;
+        self.raw_frames = self
+            .raw_frames
+            .saturating_add(progress.completed_descriptors);
+        if progress.recycled_descriptors != 0 {
+            self.ring_epochs = self.ring_epochs.saturating_add(1);
+        }
+        Ok(())
+    }
 }
 
 impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
@@ -7313,7 +7193,6 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
             self.tx_failures = 0;
             self.active_tx_available = true;
             self.ring_epochs = 0;
-            self.observed_mask = 0;
             self.channel_records_before = 0;
             self.channel_frames_before = 0;
             Ok(())
@@ -7351,20 +7230,14 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
             let channel = context.channel;
-            self.observed_mask = 0;
             self.channel_records_before = self.scan_table.summary().records;
             self.channel_frames_before = self.raw_frames;
-            let rx_start = if context.index == 0 {
-                enable_receive(&mut self.mmio)
-            } else {
-                publish_cold_ring(&mut self.mmio, self.descriptor_base, true)
-            };
-            if let Err(error) = rx_start {
+            if let Err(error) = self.rx.start(&mut self.mmio) {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-start \
                      channel={channel} error={error:?}"
                 ));
-                return Err(RadioHilColdScanPortError::ReceiveStart);
+                return Err(RadioHilColdScanPortError::Rx(error));
             }
             Ok(())
         }
@@ -7434,52 +7307,7 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
     ) -> Result<(), Self::Error> {
-        let channel = context.channel;
-        observe_scan_descriptors(
-            &mut self.mmio,
-            self.storage,
-            self.descriptor_base,
-            self.scan_table,
-            self.scan_frame,
-            self.station_address,
-            channel,
-            &mut self.observed_mask,
-            &mut self.raw_frames,
-            &mut self.probe_responses,
-        );
-        if self.observed_mask != RX_DESCRIPTOR_COMPLETE_MASK {
-            return Ok(());
-        }
-
-        if let Err(error) = disable_receive(&mut self.mmio) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
-                 channel={channel} error={error:?}"
-            ));
-            return Err(RadioHilColdScanPortError::ReceiveStop);
-        }
-        if let Err(error) = build_cold_ring(
-            self.storage.descriptors(),
-            self.descriptor_base,
-            self.buffer_addresses,
-            RX_BUFFER_SIZE as u32,
-        ) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
-                 channel={channel} error={error:?}"
-            ));
-            return Err(RadioHilColdScanPortError::RingRebuild);
-        }
-        if let Err(error) = publish_cold_ring(&mut self.mmio, self.descriptor_base, true) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-restart \
-                 channel={channel} error={error:?}"
-            ));
-            return Err(RadioHilColdScanPortError::RingRestart);
-        }
-        self.observed_mask = 0;
-        self.ring_epochs = self.ring_epochs.saturating_add(1);
-        Ok(())
+        self.observe_scan_rx(context.channel)
     }
 
     fn wait_dwell_tick(
@@ -7496,32 +7324,23 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
         context: StaScanChannelContext<Self::Channel>,
     ) -> Result<(), Self::Error> {
         let channel = context.channel;
-        if let Err(error) = disable_receive(&mut self.mmio) {
+        let observe_error = self.observe_scan_rx(channel).err();
+        if let Err(error) = self.rx.stop(&mut self.mmio) {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-disable \
                  channel={channel} error={error:?}"
             ));
-            return Err(RadioHilColdScanPortError::ReceiveStop);
+            return Err(RadioHilColdScanPortError::Rx(error));
         }
-        observe_scan_descriptors(
-            &mut self.mmio,
-            self.storage,
-            self.descriptor_base,
-            self.scan_table,
-            self.scan_frame,
-            self.station_address,
-            channel,
-            &mut self.observed_mask,
-            &mut self.raw_frames,
-            &mut self.probe_responses,
-        );
+        if let Some(error) = observe_error {
+            return Err(error);
+        }
         let channel_summary = self.scan_table.summary();
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL stage=scan-channel-complete channel={channel} \
-             raw_frames={} new_records={} mask={:#010x}",
+             raw_frames={} new_records={}",
             self.raw_frames - self.channel_frames_before,
             channel_summary.records - self.channel_records_before,
-            self.observed_mask,
         ));
         Ok(())
     }
@@ -7531,18 +7350,12 @@ impl Esp32s31StaScanPort for RadioHilColdScanOwner<'_, '_> {
         context: StaScanChannelContext<Self::Channel>,
     ) -> Result<(), Self::Error> {
         let channel = context.channel;
-        build_cold_ring(
-            self.storage.descriptors(),
-            self.descriptor_base,
-            self.buffer_addresses,
-            RX_BUFFER_SIZE as u32,
-        )
-        .map_err(|error| {
+        self.rx.prepare_next(&mut self.mmio).map_err(|error| {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-rebuild \
                  channel={channel} error={error:?}"
             ));
-            RadioHilColdScanPortError::RingRebuild
+            RadioHilColdScanPortError::Rx(error)
         })
     }
 
@@ -7576,19 +7389,6 @@ async fn run_promiscuous_rx_hil(
             storage.buffers()[index].dma_address().unwrap()
         }));
 
-    if let Err(error) = build_cold_ring(
-        storage.descriptors(),
-        descriptor_base,
-        buffer_addresses,
-        RX_BUFFER_SIZE as u32,
-    ) {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-build error={error:?} \
-             descriptor_base={descriptor_base:#010x}"
-        ));
-        return false;
-    }
-
     let mut station_address = [0_u8; 6];
     station_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
@@ -7617,17 +7417,24 @@ async fn run_promiscuous_rx_hil(
     let cold_interrupt_mask = mmio.mac_interrupt_enable();
     mmio.mask_and_clear_mac_interrupts(u32::MAX);
     // Match the vendor cold path rather than collapsing two independently
-    // recovered hardware edges. `wDev_AppendRxBlocks` publishes the base first;
-    // the later `chip_enable` path opens RX only after the remaining MAC/channel
-    // setup. The first-boot failure was localized to this exact boundary:
-    // rewriting the same base followed by a fresh enable edge restored RX
-    // without resetting either PHY or MAC.
-    if let Err(error) = publish_cold_ring(mmio, descriptor_base, false) {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-stage error={error:?}"
-        ));
-        return false;
-    }
+    // recovered hardware edges. `Esp32s31ScanRx` prepares and publishes the
+    // stopped ring here; the scan executor opens it only after each channel
+    // switch. The returned type-state owner is later handed directly to
+    // Authentication instead of reconstructing descriptor authority.
+    let scan_rx = match ScanRx::prepare_initial(
+        mmio,
+        storage,
+        descriptor_base,
+        buffer_addresses,
+    ) {
+        Ok(rx) => rx,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-ring-stage error={error:?}"
+            ));
+            return false;
+        }
+    };
     let scan_table = SCAN_TABLE.init(ScanTable::new());
     scan_table.clear();
     let scan_frame = SCAN_FRAME.init([0; RX_STAGE_CAPACITY]);
@@ -7699,9 +7506,8 @@ async fn run_promiscuous_rx_hil(
         platform,
         mmio: cold_mmio,
         storage,
+        rx: scan_rx,
         tx_storage,
-        descriptor_base,
-        buffer_addresses,
         scan_table,
         scan_frame,
         station_address,
@@ -7712,7 +7518,6 @@ async fn run_promiscuous_rx_hil(
         tx_failures: 0,
         active_tx_available: true,
         ring_epochs: 0,
-        observed_mask: 0,
         channel_records_before: 0,
         channel_frames_before: 0,
     };
@@ -7767,241 +7572,28 @@ async fn run_promiscuous_rx_hil(
     let RadioHilColdScanOwner {
         state,
         platform,
-        mmio: mut cold_mmio,
+        mmio: cold_mmio,
         storage,
+        rx: scan_rx,
         tx_storage,
-        descriptor_base,
-        buffer_addresses,
         scan_table,
         scan_frame,
         station_address,
         target_ssid: _,
-        mut raw_frames,
-        mut probe_responses,
-        mut tx_completions,
-        mut tx_failures,
+        raw_frames,
+        probe_responses,
+        tx_completions,
+        tx_failures,
         active_tx_available: _,
         ring_epochs,
-        observed_mask: _,
         channel_records_before: _,
         channel_frames_before: _,
     } = scan_owner;
-    let mmio = &mut cold_mmio;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=OBSERVE stage=active-scan-timing channels={} elapsed_ms={}",
         STA_SCAN_CHANNEL_COUNT,
         scan_started.elapsed().as_millis(),
     ));
-
-    // First isolate the RX descriptor publication edge. This does not reset or
-    // reconfigure either PHY or MAC; it only returns ownership of the stopped
-    // walker to Rust, rebuilds the same ring, and republishes it.
-    if raw_frames == 0 {
-        let channel = sta_scan_channel(0);
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=rx-dma-rearm-start channel={channel} \
-             control={:#010x} base={:#010x} next={:#010x} last={:#010x} \
-             int_raw={:#010x}",
-            mmio.read32(RX_CONTROL),
-            mmio.read32(RX_DESCRIPTOR_BASE),
-            mmio.read32(RX_NEXT_DESCRIPTOR),
-            mmio.read32(RX_LAST_DESCRIPTOR),
-            mmio.read32(MAC_INT_RAW),
-        ));
-        if disable_receive(mmio).is_err()
-            || build_cold_ring(
-                storage.descriptors(),
-                descriptor_base,
-                buffer_addresses,
-                RX_BUFFER_SIZE as u32,
-            )
-            .is_err()
-            || publish_cold_ring(mmio, descriptor_base, true).is_err()
-        {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-dma-rearm-ring"
-            ));
-            return false;
-        }
-
-        mmio.clear_mac_interrupts(u32::MAX);
-        match transmit_probe_request(mmio, tx_storage, station_address, u16::from(channel)).await {
-            Ok(completion) => {
-                tx_completions = tx_completions.saturating_add(1);
-                if completion.status != 0 {
-                    tx_failures = tx_failures.saturating_add(1);
-                }
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=rx-dma-rearm-probe channel={channel} \
-                     status={}",
-                    completion.status,
-                ));
-            }
-            Err(error) => {
-                tx_failures = tx_failures.saturating_add(1);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=rx-dma-rearm-probe error={error:?}"
-                ));
-            }
-        }
-
-        let records_before = scan_table.summary().records;
-        let mut observed_mask = 0_u64;
-        for _ in 0..SCAN_DWELL_MS {
-            observe_scan_descriptors(
-                mmio,
-                storage,
-                descriptor_base,
-                scan_table,
-                scan_frame,
-                station_address,
-                channel,
-                &mut observed_mask,
-                &mut raw_frames,
-                &mut probe_responses,
-            );
-            Timer::after_millis(1).await;
-        }
-        let _ = disable_receive(mmio);
-        observe_scan_descriptors(
-            mmio,
-            storage,
-            descriptor_base,
-            scan_table,
-            scan_frame,
-            station_address,
-            channel,
-            &mut observed_mask,
-            &mut raw_frames,
-            &mut probe_responses,
-        );
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result={} stage=rx-dma-rearm \
-             raw_frames={raw_frames} new_records={} mask={observed_mask:#010x}",
-            if raw_frames == 0 { "FAIL" } else { "PASS" },
-            scan_table.summary().records - records_before,
-        ));
-    }
-
-    // A first boot immediately following OTA selection has intermittently
-    // completed PHY calibration and TX while producing no RX descriptors.
-    // If republishing the DMA edge alone did not recover it, reset only
-    // WIFIMAC, repeat MAC initialization, and retain the calibrated PHY.
-    if raw_frames == 0 {
-        let channel = sta_scan_channel(0);
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL stage=mac-rx-recovery-start channel={channel} \
-             control={:#010x} base={:#010x} next={:#010x} last={:#010x} \
-             int_raw={:#010x}",
-            mmio.read32(RX_CONTROL),
-            mmio.read32(RX_DESCRIPTOR_BASE),
-            mmio.read32(RX_NEXT_DESCRIPTOR),
-            mmio.read32(RX_LAST_DESCRIPTOR),
-            mmio.read32(MAC_INT_RAW),
-        ));
-
-        if disable_receive(mmio).is_err()
-            || build_cold_ring(
-                storage.descriptors(),
-                descriptor_base,
-                buffer_addresses,
-                RX_BUFFER_SIZE as u32,
-            )
-            .is_err()
-        {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-rx-recovery-ring"
-            ));
-            return false;
-        }
-        let recovery = match initialize_promiscuous_receive(
-            platform,
-            mmio,
-            MAC_HANDSHAKE_SAMPLE_LIMIT,
-            station_address,
-            access_point_address,
-        ) {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-rx-recovery-init error={error:?}"
-                ));
-                return false;
-            }
-        };
-        if let Err(error) =
-            switch_channel_with_mac_restart(state, u16::from(channel), 0, platform, mmio).await
-        {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-rx-recovery-channel error={error:?}"
-            ));
-            return false;
-        }
-        if let Err(error) = publish_cold_ring(mmio, descriptor_base, true) {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-rx-recovery-publish error={error:?}"
-            ));
-            return false;
-        }
-
-        mmio.clear_mac_interrupts(u32::MAX);
-        match transmit_probe_request(mmio, tx_storage, station_address, u16::from(channel)).await {
-            Ok(completion) => {
-                tx_completions = tx_completions.saturating_add(1);
-                if completion.status != 0 {
-                    tx_failures = tx_failures.saturating_add(1);
-                }
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL stage=mac-rx-recovery-probe channel={channel} \
-                     status={} handshake_samples={}",
-                    completion.status, recovery.handshake_samples,
-                ));
-            }
-            Err(error) => {
-                tx_failures = tx_failures.saturating_add(1);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-rx-recovery-probe error={error:?}"
-                ));
-            }
-        }
-
-        let records_before = scan_table.summary().records;
-        let mut observed_mask = 0_u64;
-        for _ in 0..SCAN_DWELL_MS {
-            observe_scan_descriptors(
-                mmio,
-                storage,
-                descriptor_base,
-                scan_table,
-                scan_frame,
-                station_address,
-                channel,
-                &mut observed_mask,
-                &mut raw_frames,
-                &mut probe_responses,
-            );
-            Timer::after_millis(1).await;
-        }
-        let _ = disable_receive(mmio);
-        observe_scan_descriptors(
-            mmio,
-            storage,
-            descriptor_base,
-            scan_table,
-            scan_frame,
-            station_address,
-            channel,
-            &mut observed_mask,
-            &mut raw_frames,
-            &mut probe_responses,
-        );
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result={} stage=mac-rx-recovery \
-             raw_frames={raw_frames} new_records={} mask={observed_mask:#010x}",
-            if raw_frames == 0 { "FAIL" } else { "PASS" },
-            scan_table.summary().records - records_before,
-        ));
-    }
 
     let summary = scan_table.summary();
     let rx_dma_pass = summary.records != 0 && raw_frames != 0;
@@ -8010,6 +7602,18 @@ async fn run_promiscuous_rx_hil(
     let target = primary_target.or_else(|| {
         best_matching_ssid(scan_table.records(), network_credentials.ssid()).copied()
     });
+    let scan_ring = match scan_rx.into_halted() {
+        Ok(ring) => ring,
+        Err(rx) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=scan-rx-handoff phase={:?}",
+                rx.phase(),
+            ));
+            return false;
+        }
+    };
+    let descriptor_base = scan_ring.descriptor_base();
+    let buffer_addresses = scan_ring.buffer_addresses();
     // No cold MAC operation is permitted beyond this point. Consume the cold
     // owner before authentication and retain the inactive interrupt setup
     // token until WPA2 has opened the controlled port.
@@ -8090,7 +7694,7 @@ async fn run_promiscuous_rx_hil(
             let owner = RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
                 fixture: join_fixture,
                 target,
-                rx: RadioHilJoinRx::Initial,
+                rx: RadioHilJoinRx::Halted(scan_ring),
                 network: initialize_sta_network(station_address),
                 security: StaAssociationSecurity {
                     pmk: &pmk,
@@ -8178,6 +7782,7 @@ async fn run_promiscuous_rx_hil(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=sta-target ssid={:?}",
                 network_credentials.ssid(),
             ));
+            let _ring = scan_ring;
             (false, false, false, false)
         }
     };

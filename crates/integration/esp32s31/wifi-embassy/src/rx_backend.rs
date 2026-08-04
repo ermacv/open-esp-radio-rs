@@ -98,6 +98,20 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         unsafe { self.0.get().cast::<u8>().add(offset).read_volatile() }
     }
 
+    #[cfg(test)]
+    pub(crate) unsafe fn write_test_bytes(&self, offset: usize, bytes: &[u8]) {
+        assert!(offset + bytes.len() <= BUFFER_SIZE);
+        // SAFETY: tests hold the only ring/storage owner and never run a DMA
+        // writer concurrently with this synthetic completion fixture.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                self.0.get().cast::<u8>().add(offset),
+                bytes.len(),
+            )
+        }
+    }
+
     /// Whether DMA has overwritten the leading recycle guard.
     ///
     /// This is observation only: it never transfers buffer ownership. It is

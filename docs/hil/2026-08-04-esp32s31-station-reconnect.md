@@ -78,15 +78,15 @@ for the normal completion path before returning ownership.
 
 The reconnect cell was repeated after introducing the executor- and
 chip-independent `StaLifecycleService`. The latest qualified runtime CRC32 was
-`b6792ff6`; image size remained exactly 1,129,104 bytes and both
+`34c3a724`; image size remained exactly 1,129,104 bytes and both
 placement/source-graph
 audits passed. The UART trace proved that generation 0, attempt 1 began with
 `refresh_candidate=0 phase=authentication`, completed Open Authentication in
-168 ms, initial Association (status 0, AID 28) and WPA2 Message 3 (one Message
+168 ms, initial Association (status 0, AID 23) and WPA2 Message 3 (one Message
 2 transmission, replay 2), then returned the exact connected owner. After the
 explicit 100 ms disconnect backoff, generation 1,
 attempt 1 began with `refresh_candidate=0 phase=reconnect`, completed
-reassociation (AID 28), WPA2 (one Message 2 transmission, replay 4) and entry
+reassociation (AID 23), WPA2 (one Message 2 transmission, replay 4) and entry
 into the second connected epoch.
 
 An earlier image had stopped after initial WPA2 timed out waiting three seconds
@@ -103,6 +103,11 @@ across the complete channel order 6, 1--5, 7--13, returned that token after
 candidate selection, and only then crossed `into_running`. The production
 executor owns mandatory RX-stop cleanup after every bounded dwell and its host
 tests also cover a drain failure followed by stop and stop-failure precedence.
-All 13 board channel transactions completed without a scan-service failure in
-5,839 ms. This qualifies the shared transaction executor and HIL cold port,
-not production cold/running ports or a rescan after AP loss.
+`Esp32s31ScanRx` additionally retained the descriptor capability through
+`Prepared -> Live -> Halted`, recycled completed prefixes without the former
+full-ring mask, and transferred the exact halted ring into Authentication.
+`RadioHilJoinRx::Initial` and both raw-address recovery loops were absent from
+this image. All 13 board channel transactions completed without a scan-service
+failure in 5,641 ms. This qualifies the shared transaction/RX owners and HIL
+cold port, not production placement of cold PHY/TX, a running port or a rescan
+after AP loss.

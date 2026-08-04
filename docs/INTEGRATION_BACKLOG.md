@@ -304,9 +304,14 @@ The first reconnect seam is now production-owned:
   Host tests cover both cleanup edges. The HIL cold port carries
   `ColdRadioRegisters` by value together with PHY, DMA, TX and observation
   ownership through all 13 channel transactions and candidate selection. The
-  returned PAC owner alone crosses the one-way `into_running` transition. This
-  concrete cold port has board evidence; production cold/running ports and
-  their outer lifecycle variants do not yet exist.
+  production `Esp32s31ScanRx` now carries the descriptor authority through
+  `Prepared -> Live -> Halted`, promptly recycles each completed prefix during
+  dwell and hands that exact `RxRingHalted` to Authentication. The former
+  `RadioHilJoinRx::Initial` reconstruction and two raw-address HIL recovery
+  loops have been removed. The returned PAC owner alone crosses the one-way
+  `into_running` transition. This concrete cold port has board evidence;
+  production placement of its PHY/TX edges, a running port and their outer
+  lifecycle variants do not yet exist.
 
 This is now a bounded same-peer reconnect implementation with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
@@ -323,9 +328,9 @@ peer and begins again at Association; it does not yet prove rescanning,
 candidate selection, re-authentication, AP disappearance or retry/backoff.
 The next slices, in order, are:
 
-1. implement production cold and running ports for the shared
-   `Esp32s31StaScanBackend`, then add their distinct owner variants to the
-   outer service. Open Authentication already begins as
+1. move the remaining cold PHY/TX port edges out of HIL, implement the running
+   port for the shared `Esp32s31StaScanBackend`, then add their distinct owner
+   variants to the outer service. Open Authentication already begins as
    `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
    RX, network and security frontier through bounded backoff;
 2. route real beacon loss through candidate selection and Authentication, and
@@ -335,11 +340,12 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is now the two concrete production ports and outer lifecycle composition,
-not generic scan policy or ESP32-S31 transaction ordering. Initial HIL scan
-uses `StaCandidateScanService` plus `Esp32s31StaScanBackend` but still runs
-before the outer station service; later disconnects have no running-scan
-owner. The already composed `Authenticate`, `Join` and
+gap is now cold PHY/TX placement, the running port and outer lifecycle
+composition, not generic scan policy, ESP32-S31 transaction ordering or RX
+ring ownership. Initial HIL scan uses `StaCandidateScanService` plus
+`Esp32s31StaScanBackend` but still runs before the outer station service; later
+disconnects have no running-scan owner. The already composed `Authenticate`,
+`Join` and
 `Reconnect` variants deliberately retain their different types. Extend that
 sum type with real cold/running scan owners instead of hiding the phases inside
 a mutable vendor-style context or claiming that a retained record is a

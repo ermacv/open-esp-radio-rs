@@ -8,9 +8,16 @@
 
 use core::{future::Future, marker::PhantomData};
 
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    RxDma, RxIngressConfig, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive,
+    RxRingStopped, RxSegment, extract_management,
+};
+use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 use open_esp_radio_wifi_lifecycle::scan::{
     StaCandidateScanBackend, StaScanChannelContext, StaScanSelectionOutcome, StaScanStepOutcome,
 };
+
+use crate::rx_backend::{Esp32s31RxDmaBuffer, Esp32s31RxDmaStorage};
 
 /// Result of the optional active-probe edge.
 ///
@@ -225,6 +232,331 @@ where
                 owner,
                 error: Esp32s31StaScanError::CandidateSelection(error),
             },
+        }
+    }
+}
+
+/// Hardware state held by [`Esp32s31ScanRx`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ScanRxPhase {
+    Prepared,
+    Live,
+    Halted,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ScanRxError {
+    InvalidPhase {
+        expected: Esp32s31ScanRxPhase,
+        actual: Esp32s31ScanRxPhase,
+    },
+    Ring(RxRingError),
+}
+
+impl From<RxRingError> for Esp32s31ScanRxError {
+    fn from(error: RxRingError) -> Self {
+        Self::Ring(error)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31ScanRxProgress {
+    pub completed_descriptors: u32,
+    pub parsed_management_frames: u32,
+    pub inserted_records: u32,
+    pub updated_records: u32,
+    pub malformed_or_irrelevant_frames: u32,
+    pub recycled_descriptors: u32,
+    pub reload_pending: bool,
+}
+
+/// Optional observer for successfully extracted scan frames.
+///
+/// The frame borrow ends before any descriptor can be recycled. Production
+/// policy should normally use the owned `ScanTable`; this hook exists for
+/// qualification counters and diagnostics which must inspect the addressed
+/// Probe Response without retaining DMA-backed memory.
+pub trait Esp32s31ScanFrameObserver {
+    fn observe(&mut self, frame: &[u8], rssi: i8, table_outcome: ScanObservation);
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoopEsp32s31ScanFrameObserver;
+
+impl Esp32s31ScanFrameObserver for NoopEsp32s31ScanFrameObserver {
+    fn observe(&mut self, _frame: &[u8], _rssi: i8, _table_outcome: ScanObservation) {}
+}
+
+/// One channel's borrowed observation destinations.
+///
+/// Bundling them prevents the RX hot path from growing another positional
+/// argument list as scan telemetry evolves.
+pub struct Esp32s31ScanObservationContext<'a, O, const RECORDS: usize> {
+    channel: u8,
+    frame: &'a mut [u8],
+    table: &'a mut ScanTable<RECORDS>,
+    observer: &'a mut O,
+}
+
+impl<'a, O, const RECORDS: usize> Esp32s31ScanObservationContext<'a, O, RECORDS> {
+    pub fn new(
+        channel: u8,
+        frame: &'a mut [u8],
+        table: &'a mut ScanTable<RECORDS>,
+        observer: &'a mut O,
+    ) -> Self {
+        Self {
+            channel,
+            frame,
+            table,
+            observer,
+        }
+    }
+}
+
+enum Esp32s31ScanRxState<'storage, const COUNT: usize> {
+    Prepared(RxRingStopped<'storage, COUNT>),
+    Live(RxRingLive<'storage, COUNT>),
+    Halted(RxRingHalted<'storage, COUNT>),
+    Vacant,
+}
+
+impl<const COUNT: usize> Esp32s31ScanRxState<'_, COUNT> {
+    const fn phase(&self) -> Esp32s31ScanRxPhase {
+        match self {
+            Self::Prepared(_) => Esp32s31ScanRxPhase::Prepared,
+            Self::Live(_) => Esp32s31ScanRxPhase::Live,
+            Self::Halted(_) => Esp32s31ScanRxPhase::Halted,
+            Self::Vacant => unreachable!(),
+        }
+    }
+}
+
+/// Production RX-ring owner shared by cold scan and running rescan.
+///
+/// Unlike the former HIL mask, this value carries the MAC crate's unique ring
+/// capability across `Prepared -> Live -> Halted`. A completed scan can hand
+/// the exact halted ring to Authentication; no later phase needs to recreate
+/// descriptor authority from addresses.
+pub struct Esp32s31ScanRx<
+    'storage,
+    const COUNT: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+> {
+    state: Esp32s31ScanRxState<'storage, COUNT>,
+    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+}
+
+impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
+    Esp32s31ScanRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+{
+    /// Prepare the first cold scan epoch under the caller's unique PAC owner.
+    pub fn prepare_initial<H: RxDma>(
+        hardware: &mut H,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; COUNT],
+    ) -> Result<Self, RxRingError> {
+        if DMA_BUFFER_SIZE > u32::MAX as usize {
+            return Err(RxRingError::Size);
+        }
+        let ring = RxRingStopped::prepare(
+            hardware,
+            storage.descriptors(),
+            descriptor_base,
+            buffer_addresses,
+            DMA_BUFFER_SIZE as u32,
+            |index| {
+                // SAFETY: `prepare` first confirms that the walker is stopped
+                // and transfers each matching buffer to this closure.
+                unsafe { storage.buffers()[index].prepare_for_recycle() }
+            },
+        )?;
+        Ok(Self {
+            state: Esp32s31ScanRxState::Prepared(ring),
+            buffers: storage.buffers(),
+        })
+    }
+
+    /// Reuse a hardware-confirmed halted ring for a running rescan.
+    pub const fn from_halted(
+        ring: RxRingHalted<'storage, COUNT>,
+        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    ) -> Self {
+        Self {
+            state: Esp32s31ScanRxState::Halted(ring),
+            buffers,
+        }
+    }
+
+    pub const fn phase(&self) -> Esp32s31ScanRxPhase {
+        self.state.phase()
+    }
+
+    pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31ScanRxError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31ScanRxState::Vacant);
+        let Esp32s31ScanRxState::Prepared(ring) = state else {
+            let actual = state.phase();
+            self.state = state;
+            return Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Prepared,
+                actual,
+            });
+        };
+        match ring.try_start(hardware) {
+            Ok(ring) => {
+                self.state = Esp32s31ScanRxState::Live(ring);
+                Ok(())
+            }
+            Err((ring, error)) => {
+                self.state = Esp32s31ScanRxState::Prepared(ring);
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Drain the current completion frontier, copy scan frames into bounded
+    /// caller storage and promptly recycle the contiguous observed prefix.
+    pub fn observe_management<H, O, const RECORDS: usize>(
+        &mut self,
+        hardware: &mut H,
+        context: &mut Esp32s31ScanObservationContext<'_, O, RECORDS>,
+    ) -> Result<Esp32s31ScanRxProgress, Esp32s31ScanRxError>
+    where
+        H: RxDma,
+        O: Esp32s31ScanFrameObserver,
+    {
+        let actual = self.state.phase();
+        let Esp32s31ScanRxState::Live(ring) = &mut self.state else {
+            return Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Live,
+                actual,
+            });
+        };
+        let mut progress = Esp32s31ScanRxProgress::default();
+        progress.reload_pending =
+            ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending;
+
+        for index in 0..COUNT {
+            let Some(completed) = ring.take_completed(index) else {
+                continue;
+            };
+            progress.completed_descriptors = progress.completed_descriptors.saturating_add(1);
+            let buffer = unsafe {
+                // The live ring transferred this completed descriptor and its
+                // matching buffer to the unique scan owner.
+                self.buffers[completed.index()].completed()
+            };
+            let rssi = buffer[0] as i8;
+            let segment = RxSegment {
+                descriptor_address: completed.descriptor_address(),
+                descriptor_word0: completed.word0(),
+                buffer,
+                next_descriptor_address: completed.next_descriptor_address(),
+            };
+            match extract_management(
+                core::slice::from_ref(&segment),
+                RxIngressConfig {
+                    ring_entry_limit: 1,
+                    csi_config: 0,
+                    flags: 0,
+                },
+                context.frame,
+            ) {
+                Ok(frame) => {
+                    progress.parsed_management_frames =
+                        progress.parsed_management_frames.saturating_add(1);
+                    let frame = &context.frame[..frame.length];
+                    let table_outcome =
+                        context
+                            .table
+                            .observe_management(frame, context.channel, rssi);
+                    match table_outcome {
+                        ScanObservation::Inserted { .. } => {
+                            progress.inserted_records = progress.inserted_records.saturating_add(1)
+                        }
+                        ScanObservation::Updated { .. } => {
+                            progress.updated_records = progress.updated_records.saturating_add(1)
+                        }
+                        _ => {}
+                    }
+                    context.observer.observe(frame, rssi, table_outcome);
+                }
+                Err(_) => {
+                    progress.malformed_or_irrelevant_frames =
+                        progress.malformed_or_irrelevant_frames.saturating_add(1);
+                }
+            }
+        }
+
+        if !progress.reload_pending
+            && let Some(append) =
+                ring.recycle_completed_prefix::<COUNT, _, _>(hardware, |index| {
+                    // SAFETY: the live ring invokes this only for an observed
+                    // descriptor immediately before republishing it to DMA.
+                    unsafe { self.buffers[index].prepare_for_recycle() }
+                })?
+        {
+            progress.recycled_descriptors = append.descriptor_count as u32;
+        }
+        Ok(progress)
+    }
+
+    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31ScanRxError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31ScanRxState::Vacant);
+        let Esp32s31ScanRxState::Live(ring) = state else {
+            let actual = state.phase();
+            self.state = state;
+            return Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Live,
+                actual,
+            });
+        };
+        match ring.try_stop(hardware) {
+            Ok(ring) => {
+                self.state = Esp32s31ScanRxState::Halted(ring);
+                Ok(())
+            }
+            Err((ring, error)) => {
+                self.state = Esp32s31ScanRxState::Live(ring);
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn prepare_next<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31ScanRxError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31ScanRxState::Vacant);
+        let Esp32s31ScanRxState::Halted(ring) = state else {
+            let actual = state.phase();
+            self.state = state;
+            return Err(Esp32s31ScanRxError::InvalidPhase {
+                expected: Esp32s31ScanRxPhase::Halted,
+                actual,
+            });
+        };
+        match ring.prepare(hardware, DMA_BUFFER_SIZE as u32, |index| {
+            // SAFETY: the halted ring proves that DMA released this buffer.
+            unsafe { self.buffers[index].prepare_for_recycle() }
+        }) {
+            Ok(ring) => {
+                self.state = Esp32s31ScanRxState::Prepared(ring);
+                Ok(())
+            }
+            Err((ring, error)) => {
+                self.state = Esp32s31ScanRxState::Halted(ring);
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
+        match self.state {
+            Esp32s31ScanRxState::Halted(ring) => Ok(ring),
+            state => Err(Self {
+                state,
+                buffers: self.buffers,
+            }),
         }
     }
 }
@@ -530,5 +862,185 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    const RX_TEST_COUNT: usize = 2;
+    const RX_TEST_BUFFER_SIZE: usize = 128;
+    const RX_TEST_STORAGE_SIZE: usize = RX_TEST_BUFFER_SIZE + 4;
+    const RX_TEST_BASE: u32 = 0x2f00_1000;
+    const RX_TEST_BUFFERS: [u32; RX_TEST_COUNT] = [0x2f00_2000, 0x2f00_2080];
+
+    #[derive(Default)]
+    struct MockRxDma {
+        walker: bool,
+        fail_enable: bool,
+        fail_disable: bool,
+        descriptor_base: u32,
+        reload_requests: u32,
+    }
+
+    impl RxDma for MockRxDma {
+        fn last_descriptor_low(&mut self) -> u32 {
+            0
+        }
+
+        fn next_descriptor_low(&mut self) -> u32 {
+            RX_TEST_BASE + 12
+        }
+
+        fn walker_enabled(&mut self) -> bool {
+            self.walker
+        }
+
+        fn reload_pending(&mut self) -> bool {
+            false
+        }
+
+        fn set_descriptor_high_window(&mut self, _address_high: u16) {}
+
+        fn write_descriptor_base(&mut self, address: u32) {
+            self.descriptor_base = address;
+        }
+
+        fn publish_walker_enable(&mut self) {
+            self.walker = true;
+        }
+
+        fn request_reload(&mut self) {
+            self.reload_requests = self.reload_requests.saturating_add(1);
+        }
+
+        fn try_enable_walker(&mut self) -> bool {
+            if self.fail_enable {
+                false
+            } else {
+                self.walker = true;
+                true
+            }
+        }
+
+        fn try_disable_walker(&mut self) -> bool {
+            if self.fail_disable {
+                false
+            } else {
+                self.walker = false;
+                true
+            }
+        }
+
+        fn fence(&mut self) {}
+    }
+
+    #[derive(Default)]
+    struct FrameObserver {
+        frames: u32,
+    }
+
+    impl Esp32s31ScanFrameObserver for FrameObserver {
+        fn observe(&mut self, _frame: &[u8], _rssi: i8, _table_outcome: ScanObservation) {
+            self.frames = self.frames.saturating_add(1);
+        }
+    }
+
+    fn complete_test_beacon(
+        storage: &Esp32s31RxDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
+    ) {
+        use open_esp_radio_esp32s31_wifi_mac::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+
+        const FRAME_LENGTH: usize = 43;
+        const SIGNAL_LENGTH: usize = FRAME_LENGTH + 4;
+        const FRAME_OFFSET: usize = 0x40;
+        const RECEIVED_LENGTH: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+        let mut bytes = [0_u8; RX_TEST_BUFFER_SIZE];
+        bytes[0] = (-42_i8) as u8;
+        bytes[0x38..0x3c].copy_from_slice(
+            &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+        );
+        let frame = &mut bytes[FRAME_OFFSET..FRAME_OFFSET + FRAME_LENGTH];
+        frame[0] = 0x80;
+        frame[10..16].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        frame[32..34].copy_from_slice(&100_u16.to_le_bytes());
+        frame[36..40].copy_from_slice(&[0, 2, b'a', b'p']);
+        frame[40..43].copy_from_slice(&[3, 1, 6]);
+        unsafe { storage.buffers()[0].write_test_bytes(0, &bytes) };
+        storage.descriptors()[0].write_word0(
+            RX_TEST_BUFFER_SIZE as u32 | (RECEIVED_LENGTH as u32) << LENGTH_SHIFT | BIT_30 | BIT_31,
+        );
+    }
+
+    #[test]
+    fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
+        let storage =
+            Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+        let mut hardware = MockRxDma::default();
+        let mut rx = Esp32s31ScanRx::prepare_initial(
+            &mut hardware,
+            &storage,
+            RX_TEST_BASE,
+            &RX_TEST_BUFFERS,
+        )
+        .unwrap();
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+
+        rx.start(&mut hardware).unwrap();
+        complete_test_beacon(&storage);
+        let mut table = ScanTable::<4>::new();
+        let mut frame = [0_u8; 64];
+        let mut observer = FrameObserver::default();
+        let mut context =
+            Esp32s31ScanObservationContext::new(6, &mut frame, &mut table, &mut observer);
+        let progress = rx.observe_management(&mut hardware, &mut context).unwrap();
+
+        assert_eq!(progress.completed_descriptors, 1);
+        assert_eq!(progress.parsed_management_frames, 1);
+        assert_eq!(progress.inserted_records, 1);
+        assert_eq!(progress.recycled_descriptors, 1);
+        assert_eq!(observer.frames, 1);
+        assert_eq!(table.records()[0].ssid_bytes(), b"ap");
+        assert_eq!(table.records()[0].channel, 6);
+
+        rx.stop(&mut hardware).unwrap();
+        let halted = match rx.into_halted() {
+            Ok(halted) => halted,
+            Err(_) => panic!("completed scan must expose its halted owner"),
+        };
+        assert_eq!(halted.descriptor_base(), RX_TEST_BASE);
+        assert_eq!(halted.buffer_addresses(), &RX_TEST_BUFFERS);
+    }
+
+    #[test]
+    fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
+        let storage =
+            Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+        let mut hardware = MockRxDma::default();
+        let mut rx = Esp32s31ScanRx::prepare_initial(
+            &mut hardware,
+            &storage,
+            RX_TEST_BASE,
+            &RX_TEST_BUFFERS,
+        )
+        .unwrap();
+
+        hardware.fail_enable = true;
+        assert_eq!(
+            rx.start(&mut hardware),
+            Err(Esp32s31ScanRxError::Ring(RxRingError::Busy))
+        );
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+
+        hardware.fail_enable = false;
+        rx.start(&mut hardware).unwrap();
+        hardware.fail_disable = true;
+        assert_eq!(
+            rx.stop(&mut hardware),
+            Err(Esp32s31ScanRxError::Ring(RxRingError::Busy))
+        );
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Live);
+
+        hardware.fail_disable = false;
+        rx.stop(&mut hardware).unwrap();
+        assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Halted);
     }
 }

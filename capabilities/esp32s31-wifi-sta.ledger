@@ -104,21 +104,26 @@ gap hil rx-reload-async-boundary-needs-requalification
 
 capability interrupt-recovery
 title Interrupt acknowledgement and recovery ordering
-scope Hard MAC snapshot acknowledgement priority dispatch and Embassy wake coalescing
+scope Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing
 implementation complete
 host-proof covered
 vendor-proof mapped
-hil-proof partial
+hil-proof qualified
 async-proof bounded
 owner crates/esp32s31/wifi/mac/src/irq.rs IrqState
+owner crates/esp32s31/wifi/mac/src/irq.rs MacInterruptRoute
 owner crates/esp32s31/pac/src/mac_interrupt.rs MacInterruptRegisters
 owner crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs EmbassyMacIrqRuntime
+owner crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs Esp32s31MacInterruptEpoch
+owner crates/integration/esp32s31/wifi-esp-hal/src/mac_interrupt_epoch.rs EspHalMacInterruptRoute
+test crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs irq_epoch_recovers_setup_before_draining_every_executor_wake
+test crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs irq_epoch_retains_the_exact_frontier_on_each_route_failure
 test crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes
 test crates/integration/esp32s31/wifi-embassy/src/embassy_irq.rs quiesced_epoch_drain_removes_every_coalesced_wake
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_interrupt_get_event
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence docs/hil/2026-08-04-esp32s31-interrupt-epoch.md HIL_ESP32S31_INTERRUPT_EPOCH_2026_08_04
 gap vendor libpp-interrupt-contract-not-executable
-gap hil connected-irq-order-needs-post-rx-requalification
 
 capability authentication-association
 title Open authentication and STA association
@@ -269,9 +274,10 @@ vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeo
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-sta-port.md HIL_ESP32S31_CONNECTED_STA_PORT_2026_08_04
 hil-evidence docs/hil/2026-08-04-esp32s31-connected-epoch-transitions.md HIL_ESP32S31_CONNECTED_EPOCH_TRANSITIONS_2026_08_04
+hil-evidence docs/hil/2026-08-04-esp32s31-interrupt-epoch.md HIL_ESP32S31_INTERRUPT_EPOCH_2026_08_04
 depends-on rx-tx-dma
 depends-on power-management
-gap implementation connected-irq-executor-quiescence-remains-in-hil
+gap implementation connected-executor-stop-timeout-reset-policy-missing
 gap implementation running-scan-stop-failure-needs-reset-owner
 gap vendor failure-cleanup-contracts-incomplete
 gap hil injected-fault-matrix-missing

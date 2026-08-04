@@ -3,7 +3,7 @@ use core::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
-    sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use crate::console::emergency_log;
@@ -26,7 +26,7 @@ use open_esp_radio::{
     esp32s31::{
         hal::{ColdRadioRegisters, Radio, RadioRegisters},
         pac::{
-            MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
+            MacInterruptSetup,
             mac::{self as mac_pac, init as mac_registers},
         },
         phy::{
@@ -47,8 +47,7 @@ use open_esp_radio::{
             },
             irq::{
                 IrqSink, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
-                MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, handle_mac_irq,
-                handle_power_irq,
+                MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
             },
             rate_control::BeamformingReportHardware,
             rate_schedule::schedule_state,
@@ -83,7 +82,9 @@ use open_esp_radio::{
             },
             control_tx::{ControlTxConfig, ControlTxError, Esp32s31ControlTx},
             cooperative_tx::CooperativeTxHardware,
-            embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
+            embassy_irq::{
+                EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
+            },
             embassy_rx::RxReloadDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             runner::{WifiRunner, WifiRunnerExit},
@@ -166,7 +167,12 @@ use open_esp_radio::{
     },
     wifi::wpa2::{Pmk, aes::Wpa2SoftwareAes},
 };
-use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use open_esp_radio_esp32s31_wifi_esp_hal::{
+    EspHalRadioPeripheral,
+    mac_interrupt_epoch::{
+        EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
+    },
+};
 use open_esp_radio_hil_protocol::{
     Capabilities, Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
     FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
@@ -809,6 +815,11 @@ type ScanTx = Esp32s31ColdScanTx<
     TX_BUFFER_SIZE,
 >;
 type TxStorage = Esp32s31StaTxEpoch<ControlTx>;
+type RadioHilMacInterruptEpoch = Esp32s31MacInterruptEpoch<
+    'static,
+    EspHalMacInterruptRoute,
+    CriticalSectionRawMutex,
+>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActiveScanTxError {
@@ -1255,7 +1266,7 @@ struct RadioHilConnectedFixture<'a> {
     state: &'a mut PhyColdState,
     platform: &'a mut EspHalRadioPeripheral,
     mmio: &'static mut RadioRegisters,
-    interrupt_setup: &'a mut Option<MacInterruptSetup>,
+    interrupt_epoch: &'a mut RadioHilMacInterruptEpoch,
     rx_storage: &'static RxStorage,
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
@@ -1274,7 +1285,7 @@ struct RadioHilConnectedTaskFixture<'a> {
     protocol_spawner: SendSpawner,
     state: &'a mut PhyColdState,
     platform: &'a mut EspHalRadioPeripheral,
-    interrupt_setup: &'a mut Option<MacInterruptSetup>,
+    interrupt_epoch: &'a mut RadioHilMacInterruptEpoch,
     rx_storage: &'static RxStorage,
     tx_storage: &'static mut TxStorage,
     descriptor_base: u32,
@@ -1297,7 +1308,7 @@ impl<'a> RadioHilConnectedFixture<'a> {
                 protocol_spawner: self.protocol_spawner,
                 state: self.state,
                 platform: self.platform,
-                interrupt_setup: self.interrupt_setup,
+                interrupt_epoch: self.interrupt_epoch,
                 rx_storage: self.rx_storage,
                 tx_storage: self.tx_storage,
                 descriptor_base: self.descriptor_base,
@@ -1871,21 +1882,6 @@ static OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED: Signal<
 static OPEN_RADIO_CONNECTED_BENCHMARK_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_CONNECTED_BENCHMARK_STOPPED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-static OPEN_RADIO_MAC_INTERRUPT_REGISTERS: StaticCell<MacInterruptRegisters> = StaticCell::new();
-// Storage addresses remain stable across connected epochs. ACTIVE_PTR is
-// cleared before task-side code moves the values out; STORAGE_PTR retains the
-// exact location that must be reinitialized before the next ISR route opens.
-static OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR: AtomicPtr<MacInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static OPEN_RADIO_MAC_INTERRUPT_PTR: AtomicPtr<MacInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static OPEN_RADIO_POWER_INTERRUPT_REGISTERS: StaticCell<MacPowerInterruptRegisters> =
-    StaticCell::new();
-static OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static OPEN_RADIO_POWER_INTERRUPT_PTR: AtomicPtr<MacPowerInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-
 /// HIL diagnostics attached to the production join port. These callbacks do
 /// not select policy, access DMA ownership or wrap a driver transaction.
 #[derive(Clone, Copy, Debug, Default)]
@@ -2013,33 +2009,11 @@ const fn radio_hil_message4_protection() -> Esp32s31Wpa2Message4Protection {
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn open_radio_mac_interrupt() {
     OPEN_RADIO_MAC_IRQ_ENTRIES.fetch_add(1, Ordering::Relaxed);
-    let registers = OPEN_RADIO_MAC_INTERRUPT_PTR.load(Ordering::Acquire);
-    if registers.is_null() {
-        return;
-    }
-    // SAFETY: the parent STA owner publishes this epoch's split capability
-    // before binding this handler. The S31 masks the active interrupt while
-    // its handler runs, and task-side code moves the capability only after
-    // disabling the CPU route, so calls cannot overlap.
-    let interrupt = unsafe { &mut *registers };
-    let mut first_status = 0;
-    let mut observed_status = 0;
-    let mut nonzero_snapshots = 0;
-    for _ in 0..32 {
-        let (_, snapshot) = handle_mac_irq(&mut *interrupt, &OpenRadioMacIrqSink);
-        if snapshot.status == 0 {
-            break;
-        }
-        if nonzero_snapshots == 0 {
-            first_status = snapshot.status;
-        }
-        observed_status |= snapshot.status;
-        nonzero_snapshots += 1;
-    }
+    let report = service_mac_interrupt(&OpenRadioMacIrqSink);
     OPEN_RADIO_MAC_IRQ_CLASSIFICATION.record(
-        first_status,
-        observed_status,
-        nonzero_snapshots,
+        report.first_status,
+        report.observed_status,
+        u32::from(report.nonzero_snapshots),
     );
 }
 
@@ -2065,95 +2039,10 @@ impl IrqSink for OpenRadioMacIrqSink {
     }
 }
 
-/// Publish one task-owned interrupt setup into the stable ISR storage.
-///
-/// The first epoch initializes the `StaticCell`s. Later epochs reuse their
-/// addresses after [`deactivate_open_radio_interrupts`] has moved the previous
-/// values out and cleared the active pointers. No ISR route is opened until
-/// both banks are fully initialized and published.
-fn activate_open_radio_interrupts(
-    platform: &EspHalRadioPeripheral,
-    setup: MacInterruptSetup,
-    event_mask: u32,
-) {
-    let (mac, power) = setup.activate(event_mask);
-    let mac_storage = OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
-    let power_storage = OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
-    let (mac_storage, power_storage) = if mac_storage.is_null() && power_storage.is_null() {
-        let mac_storage = OPEN_RADIO_MAC_INTERRUPT_REGISTERS.init(mac) as *mut _;
-        let power_storage = OPEN_RADIO_POWER_INTERRUPT_REGISTERS.init(power) as *mut _;
-        OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.store(mac_storage, Ordering::Release);
-        OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.store(power_storage, Ordering::Release);
-        (mac_storage, power_storage)
-    } else {
-        assert!(!mac_storage.is_null() && !power_storage.is_null());
-        assert!(OPEN_RADIO_MAC_INTERRUPT_PTR.load(Ordering::Acquire).is_null());
-        assert!(
-            OPEN_RADIO_POWER_INTERRUPT_PTR
-                .load(Ordering::Acquire)
-                .is_null()
-        );
-        // SAFETY: the active pointers are null and the CPU routes remain
-        // disabled after the preceding deactivation. That transition moved
-        // both old values out of these exact cells, so each location is
-        // uninitialized and uniquely owned until publication below.
-        unsafe {
-            mac_storage.write(mac);
-            power_storage.write(power);
-        }
-        (mac_storage, power_storage)
-    };
-    OPEN_RADIO_MAC_INTERRUPT_PTR.store(mac_storage, Ordering::Release);
-    OPEN_RADIO_POWER_INTERRUPT_PTR.store(power_storage, Ordering::Release);
-    platform.bind_interrupts(open_radio_mac_interrupt, open_radio_power_interrupt);
-}
-
-/// Close the active CPU/peripheral interrupt epoch and recover setup ownership.
-fn deactivate_open_radio_interrupts(
-    platform: &EspHalRadioPeripheral,
-) -> MacInterruptSetup {
-    // The handlers are bound on the parent STA task's core. Disabling both CPU
-    // routes there proves that neither handler can begin while the task moves
-    // the PAC values out of their stable storage. A handler already executing
-    // on this same core must have returned before this task can run.
-    platform.disable_interrupts();
-    let mac = OPEN_RADIO_MAC_INTERRUPT_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
-    let power = OPEN_RADIO_POWER_INTERRUPT_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
-    assert!(!mac.is_null() && !power.is_null());
-    assert_eq!(
-        mac,
-        OPEN_RADIO_MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
-    );
-    assert_eq!(
-        power,
-        OPEN_RADIO_POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
-    );
-    // SAFETY: the CPU routes are disabled on their binding core, both active
-    // pointers are null, and these stable locations contain the unique values
-    // installed by `activate_open_radio_interrupts`. Reading moves each value
-    // out exactly once; the next activation writes them back before routing.
-    let mac = unsafe { mac.read() };
-    let power = unsafe { power.read() };
-    mac.deactivate(power)
-}
-
 #[esp_hal::handler]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn open_radio_power_interrupt() {
-    let registers = OPEN_RADIO_POWER_INTERRUPT_PTR.load(Ordering::Acquire);
-    if registers.is_null() {
-        return;
-    }
-    // SAFETY: both ISR capabilities are published before either interrupt is
-    // routed. The platform masks this active interrupt while the handler runs,
-    // and task-side code cannot access the disjoint power STATUS/CLEAR bank.
-    let interrupt = unsafe { &mut *registers };
-    for _ in 0..32 {
-        let (_, snapshot) = handle_power_irq(interrupt, &OPEN_RADIO_POWER_IRQ_RUNTIME);
-        if snapshot.status == 0 {
-            break;
-        }
-    }
+    let _report = service_power_interrupt(&OPEN_RADIO_POWER_IRQ_RUNTIME);
 }
 
 fn read_diagnostic_mmio(address: usize) -> u32 {
@@ -4118,7 +4007,7 @@ async fn run_connected_network<'fixture, 'security>(
         protocol_spawner,
         state,
         platform,
-        interrupt_setup,
+        interrupt_epoch,
         rx_storage,
         tx_storage,
         descriptor_base,
@@ -4150,10 +4039,9 @@ async fn run_connected_network<'fixture, 'security>(
     // connected path enables the ISR-owned RX/TX Signal sink.
     // After `activate`, ordinary `RadioRegisters` cannot touch those
     // registers.
-    let interrupt_epoch = interrupt_setup
-        .take()
-        .expect("MAC interrupt setup has no concurrent active epoch");
-    activate_open_radio_interrupts(platform, interrupt_epoch, MAC_COLD_RX_INTERRUPT_MASK);
+    interrupt_epoch
+        .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
+        .unwrap_or_else(|error| panic!("MAC interrupt epoch activation failed: {error:?}"));
 
     let (stack, network_runner, stack_runner) = match network {
         RadioHilStaNetwork::Unstarted { device, runner } => {
@@ -4443,16 +4331,16 @@ async fn run_connected_network<'fixture, 'security>(
     // radio runner no longer schedules RX/control; masking both CPU and
     // peripheral routes now makes the command/frame drain finite and prevents
     // a stale wake from leaking into the next connected epoch.
-    *interrupt_setup = Some(deactivate_open_radio_interrupts(platform));
-    let irq_drain = OPEN_RADIO_IRQ_RUNTIME.drain_pending();
-    let power_irq_drain = OPEN_RADIO_POWER_IRQ_RUNTIME.try_take().unwrap_or(0);
+    let interrupt_drain = interrupt_epoch
+        .quiesce(platform)
+        .unwrap_or_else(|error| panic!("MAC interrupt epoch quiescence failed: {error:?}"));
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-interrupt-stop \
          rx_wake={} rx_capacity_wake={} tx_events={:#010x} power_events={:#010x}",
-        u8::from(irq_drain.rx),
-        u8::from(irq_drain.rx_capacity),
-        irq_drain.tx_events,
-        power_irq_drain,
+        u8::from(interrupt_drain.mac.rx),
+        u8::from(interrupt_drain.mac.rx_capacity),
+        interrupt_drain.mac.tx_events,
+        interrupt_drain.power_events,
     ));
     // No spawned task may retain a PAC borrow when this epoch returns. The
     // benchmark is the only task besides the radio runner that receives the
@@ -4565,7 +4453,7 @@ async fn run_connected_network<'fixture, 'security>(
             protocol_spawner,
             state,
             platform,
-            interrupt_setup,
+            interrupt_epoch,
             rx_storage,
             tx_storage,
             descriptor_base,
@@ -4869,8 +4757,8 @@ async fn run_running_scan_attempt<'fixture, 'security>(
             platform: &mut *fixture.platform,
             tx_storage: &mut *fixture.tx_storage,
             interrupt_setup: fixture
-                .interrupt_setup
-                .as_ref()
+                .interrupt_epoch
+                .setup()
                 .expect("connected teardown returned the quiesced interrupt owner"),
             scan_table: &mut *fixture.scan_table,
             scan_frame: &mut *fixture.frame,
@@ -6031,7 +5919,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'security>(
         state,
         platform,
         mmio,
-        interrupt_setup,
+        interrupt_epoch,
         rx_storage,
         tx_storage,
         descriptor_base,
@@ -6094,7 +5982,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'security>(
                         state,
                         platform,
                         mmio,
-                        interrupt_setup,
+                        interrupt_epoch,
                         rx_storage,
                         tx_storage,
                         descriptor_base,
@@ -6185,7 +6073,7 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'security>(
         state,
         platform,
         mmio,
-        interrupt_setup,
+        interrupt_epoch,
         rx_storage,
         tx_storage,
         descriptor_base,
@@ -6763,7 +6651,12 @@ async fn run_promiscuous_rx_hil(
     // token until WPA2 has opened the controlled port.
     let (running_mmio, interrupt_setup) = cold_mmio.into_running();
     let mmio: &'static mut RadioRegisters = OPEN_RADIO_RUNNING_REGISTERS.init(running_mmio);
-    let mut interrupt_setup = Some(interrupt_setup);
+    let mut interrupt_epoch = Esp32s31MacInterruptEpoch::new(
+        EspHalMacInterruptRoute::new(open_radio_mac_interrupt, open_radio_power_interrupt),
+        interrupt_setup,
+        &OPEN_RADIO_IRQ_RUNTIME,
+        &OPEN_RADIO_POWER_IRQ_RUNTIME,
+    );
     let (sta_auth_pass, sta_assoc_pass, wpa2_message_1_pass, wpa2_message_3_pass) = match target {
         Some(access_point) => {
             emergency_log(format_args!(
@@ -6825,7 +6718,7 @@ async fn run_promiscuous_rx_hil(
                 protocol_spawner,
                 platform,
                 mmio,
-                interrupt_setup: &mut interrupt_setup,
+                interrupt_epoch: &mut interrupt_epoch,
                 rx_storage: storage,
                 tx_storage,
                 descriptor_base,

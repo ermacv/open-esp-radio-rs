@@ -1321,8 +1321,10 @@ version = "0.1.0"
 dependencies = [
  "esp-hal",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
+ "static_cell",
 ]
 
 [[package]]

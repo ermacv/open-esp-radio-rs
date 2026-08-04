@@ -31,6 +31,10 @@ shutdown, RX-DMA stop, idle TX/resource recovery and pairwise/group key clear.
 `Esp32s31StaTxEpoch` retains the control construction policy while that owner
 is lent to connected TX, and the pre-connected RX owner consumes its own
 live-frontier promotion. HIL only maps typed failures to qualification output.
+`Esp32s31MacInterruptEpoch` now owns the connected interrupt phase as well:
+the ESP-HAL route lends stable MAC/power PAC owners to the hard handlers,
+recovers them before draining Embassy wakes and returns the inactive setup
+token for running scan. HIL retains handler observations and executor policy.
 
 ## 1. Completed: concrete WPA2 TX backend
 
@@ -446,12 +450,15 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract MAC interrupt epoch activation/quiescence and the executor stop
-   acknowledgement boundary from HIL into the ESP-HAL/Embassy adapter. The
-   reusable Embassy layer now owns RX entry, connected teardown,
+1. add a compact bounded executor stop acknowledgement and reset frontier.
+   Task allocation/core placement remain HIL fixture policy; the driver now
+   owns the complete hardware interrupt epoch, RX entry, connected teardown,
    disconnected/running-scan/reconnected resource transitions,
    Authentication/Association, selected-peer hardware programming, complete
-   WPA2 ports and connected RX/TX/control/backend composition;
+   WPA2 ports and connected RX/TX/control/backend composition. Do not carry
+   the large stopped protocol owner through another timeout/select state: the
+   prototype crossed the current image boundary and added 56,464 encoded
+   bytes;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -467,10 +474,13 @@ ordinary/aggregate TX, control/BlockAck and final backend assembly; runtime
 CRC32 `c7a6b50b` completed three controlled reconnect cycles through that
 port. RX live promotion and ordered control/RX/TX/key teardown now follow the
 same boundary through `Esp32s31ConnectedStaTeardownPort`; runtime CRC32
-`c51449b4` completed another three cycles. The remaining connected
-architectural gap is MAC interrupt activation/quiescence plus executor
-acknowledgement that the protocol and benchmark tasks released their epoch
-borrows.
+`c51449b4` completed another three cycles. `Esp32s31MacInterruptEpoch` and
+`EspHalMacInterruptRoute` now own stable ISR storage, CPU route activation,
+finite hard-handler service, route quiescence and stale wake drain; runtime
+CRC32 `02cbd34c` completed three more cycles without increasing the encoded
+image. The remaining connected architectural gap is a bounded executor
+acknowledgement/reset policy for the HIL-composed protocol and benchmark
+tasks, not another hardware-driver transition.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

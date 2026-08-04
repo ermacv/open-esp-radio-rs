@@ -96,8 +96,11 @@ those driver constructors. `Esp32s31StaTxEpoch` now retains the ordinary TX
 policy while connected service owns its descriptor. Pre-connected RX consumes
 its own live promotion, while `Esp32s31ConnectedStaTeardownPort` orders control
 shutdown, RX-DMA stop, TX return and PTK/GTK clear. HIL only reports the typed
-result and restores its network fixture. The platform interrupt epoch and
-executor task-stop acknowledgement remain the next production boundary.
+result and restores its network fixture. `Esp32s31MacInterruptEpoch` plus the
+ESP-HAL route now own stable PAC storage, CPU route activation/quiescence,
+hard-handler service and Embassy wake drain. HIL retains only handler
+observations, task placement and stop signals. A compact bounded task-stop
+acknowledgement/reset policy remains the next fixture/recovery boundary.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise

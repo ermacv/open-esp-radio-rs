@@ -31,6 +31,8 @@ use open_esp_radio_esp32s31_wifi_mac::init::{
     MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
 };
 
+pub mod mac_interrupt_epoch;
+
 /// Complete platform capability needed by the open radio power transition.
 ///
 /// Keeping these singleton tokens together prevents the application from

@@ -4,6 +4,26 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_pac::{MacInterruptRegisters, MacPowerInterruptRegisters};
 
+/// Platform route which lends both interrupt-register capabilities to hard
+/// handlers for one finite connected epoch.
+///
+/// Implementations own CPU routing and stable ISR storage. They must disable
+/// the routes and recover both PAC values before `quiesce` returns.
+pub trait MacInterruptRoute {
+    type Platform: ?Sized;
+    type Setup;
+    type Error;
+
+    fn activate(
+        &mut self,
+        platform: &Self::Platform,
+        setup: Self::Setup,
+        event_mask: u32,
+    ) -> Result<(), (Self::Error, Self::Setup)>;
+
+    fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
+}
+
 pub const MAC_INT_TX_COMPLETE: u32 = 0x0000_0080;
 pub const MAC_INT_COLLISION: u32 = 0x0000_0100;
 pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;

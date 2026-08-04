@@ -7,7 +7,9 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_embassy_net::{RawMutex, Signal};
-use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork, PowerIrqSink};
+use open_esp_radio_esp32s31_wifi_mac::irq::{
+    IrqSink, IrqState, IrqWork, MacInterruptRoute, PowerIrqSink,
+};
 
 /// Driver-owned S31 MAC interrupt handoff for one Embassy radio task.
 ///
@@ -40,6 +42,116 @@ pub struct EmbassyMacIrqDrain {
     pub rx: bool,
     pub rx_capacity: bool,
     pub tx_events: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31MacInterruptEpochStateError {
+    Active,
+    Quiesced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31MacInterruptEpochActivateError<E> {
+    AlreadyActive,
+    Route(E),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31MacInterruptEpochQuiesceError<E> {
+    AlreadyQuiesced,
+    Route(E),
+}
+
+/// Complete stale executor publication removed after a hardware interrupt
+/// epoch is closed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31MacInterruptEpochDrain {
+    pub mac: EmbassyMacIrqDrain,
+    pub power_events: u32,
+}
+
+/// Persistent setup owner for repeated connected MAC interrupt epochs.
+///
+/// The inactive state contains the task-side setup token. The active state
+/// lends that token to a platform route. Quiescence first recovers the exact
+/// token and only then drains coalesced Embassy publications, preventing one
+/// epoch's wake from becoming work in the next epoch.
+pub struct Esp32s31MacInterruptEpoch<'runtime, R, M: RawMutex>
+where
+    R: MacInterruptRoute,
+{
+    route: R,
+    setup: Option<R::Setup>,
+    mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
+    power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+}
+
+impl<'runtime, R, M> Esp32s31MacInterruptEpoch<'runtime, R, M>
+where
+    R: MacInterruptRoute,
+    M: RawMutex,
+{
+    pub const fn new(
+        route: R,
+        setup: R::Setup,
+        mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
+        power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+    ) -> Self {
+        Self {
+            route,
+            setup: Some(setup),
+            mac_runtime,
+            power_runtime,
+        }
+    }
+
+    pub const fn is_active(&self) -> bool {
+        self.setup.is_none()
+    }
+
+    /// Borrow the task-side capability for polling-only scan/auth phases.
+    pub fn setup(&self) -> Result<&R::Setup, Esp32s31MacInterruptEpochStateError> {
+        self.setup
+            .as_ref()
+            .ok_or(Esp32s31MacInterruptEpochStateError::Active)
+    }
+
+    pub fn activate(
+        &mut self,
+        platform: &R::Platform,
+        event_mask: u32,
+    ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>> {
+        let setup = self
+            .setup
+            .take()
+            .ok_or(Esp32s31MacInterruptEpochActivateError::AlreadyActive)?;
+        match self.route.activate(platform, setup, event_mask) {
+            Ok(()) => Ok(()),
+            Err((error, setup)) => {
+                self.setup = Some(setup);
+                Err(Esp32s31MacInterruptEpochActivateError::Route(error))
+            }
+        }
+    }
+
+    pub fn quiesce(
+        &mut self,
+        platform: &R::Platform,
+    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError<R::Error>>
+    {
+        if self.setup.is_some() {
+            return Err(Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced);
+        }
+        let setup = self
+            .route
+            .quiesce(platform)
+            .map_err(Esp32s31MacInterruptEpochQuiesceError::Route)?;
+        self.setup = Some(setup);
+        Ok(Esp32s31MacInterruptEpochDrain {
+            mac: self.mac_runtime.drain_pending(),
+            power_events: self.power_runtime.drain_pending(),
+        })
+    }
 }
 
 impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
@@ -201,6 +313,13 @@ impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
         self.signal.try_take()?;
         Some(self.pending.swap(0, Ordering::Acquire))
     }
+
+    /// Remove one stale power wake and its complete coalesced event image
+    /// after the platform interrupt route has been quiesced.
+    pub fn drain_pending(&self) -> u32 {
+        let _wake = self.signal.try_take();
+        self.pending.swap(0, Ordering::Acquire)
+    }
 }
 
 impl<M: RawMutex> PowerIrqSink for EmbassyPowerIrqRuntime<M> {
@@ -223,11 +342,55 @@ mod tests {
     use open_esp_radio_embassy_net::NoopRawMutex;
     use open_esp_radio_esp32s31_wifi_mac::irq::{
         IrqDisposition, IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
-        MAC_INT_TX_TIMEOUT, MacInterrupt, MacPowerInterrupt, PowerIrqDisposition, handle_mac_irq,
-        handle_power_irq,
+        MAC_INT_TX_TIMEOUT, MacInterrupt, MacInterruptRoute, MacPowerInterrupt,
+        PowerIrqDisposition, handle_mac_irq, handle_power_irq,
     };
 
-    use super::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
+    use super::{
+        EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
+        Esp32s31MacInterruptEpochActivateError, Esp32s31MacInterruptEpochQuiesceError,
+        Esp32s31MacInterruptEpochStateError,
+    };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RouteError {
+        Activation,
+        Quiescence,
+    }
+
+    struct Route {
+        active: bool,
+    }
+
+    impl MacInterruptRoute for Route {
+        type Platform = Cell<u8>;
+        type Setup = u8;
+        type Error = RouteError;
+
+        fn activate(
+            &mut self,
+            platform: &Self::Platform,
+            setup: Self::Setup,
+            _event_mask: u32,
+        ) -> Result<(), (Self::Error, Self::Setup)> {
+            if platform.get() == 10 {
+                return Err((RouteError::Activation, setup));
+            }
+            self.active = true;
+            platform.set(1);
+            Ok(())
+        }
+
+        fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
+            if platform.get() == 20 {
+                return Err(RouteError::Quiescence);
+            }
+            assert!(self.active);
+            self.active = false;
+            platform.set(2);
+            Ok(7)
+        }
+    }
 
     #[test]
     fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
@@ -276,6 +439,68 @@ mod tests {
         assert_eq!(runtime.drain_pending(), Default::default());
         assert!(!runtime.rx_signaled());
         assert_eq!(runtime.try_take_tx(), None);
+    }
+
+    #[test]
+    fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
+        let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+        let platform = Cell::new(0);
+        let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
+
+        assert_eq!(epoch.setup(), Ok(&7));
+        epoch.activate(&platform, 0x1234).unwrap();
+        assert!(epoch.is_active());
+        assert_eq!(
+            epoch.setup(),
+            Err(Esp32s31MacInterruptEpochStateError::Active)
+        );
+        mac.publish(MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE);
+        mac.notify_rx_capacity();
+        power.publish(0x55);
+
+        let drained = epoch.quiesce(&platform).unwrap();
+        assert_eq!(platform.get(), 2);
+        assert_eq!(drained.mac.rx, true);
+        assert_eq!(drained.mac.rx_capacity, true);
+        assert_eq!(drained.mac.tx_events, MAC_INT_TX_COMPLETE);
+        assert_eq!(drained.power_events, 0x55);
+        assert_eq!(epoch.setup(), Ok(&7));
+        assert_eq!(mac.drain_pending(), Default::default());
+        assert_eq!(power.drain_pending(), 0);
+    }
+
+    #[test]
+    fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
+        let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+        let platform = Cell::new(10);
+        let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
+
+        assert_eq!(
+            epoch.activate(&platform, 0x1234),
+            Err(Esp32s31MacInterruptEpochActivateError::Route(
+                RouteError::Activation
+            ))
+        );
+        assert_eq!(epoch.setup(), Ok(&7));
+        platform.set(0);
+        epoch.activate(&platform, 0x1234).unwrap();
+        platform.set(20);
+        assert_eq!(
+            epoch.quiesce(&platform),
+            Err(Esp32s31MacInterruptEpochQuiesceError::Route(
+                RouteError::Quiescence
+            ))
+        );
+        assert!(epoch.is_active());
+        platform.set(0);
+        epoch.quiesce(&platform).unwrap();
+        assert_eq!(epoch.setup(), Ok(&7));
+        assert_eq!(
+            epoch.quiesce(&platform),
+            Err(Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced)
+        );
     }
 
     #[test]

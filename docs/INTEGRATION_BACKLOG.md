@@ -343,12 +343,14 @@ The first reconnect seam is now production-owned:
   assembles the persistent PHY, production running RX/TX sub-owners and its
   scan table into a concrete running `Esp32s31StaScanPort`. The same backend
   completed the full 6, 1--5, 7--13 channel plan, selected the target network,
-  restored the retained peer channel, returned every RX/TX owner and completed
-  the second Association/WPA2 epoch. This proves the running transaction and
-  HIL composition root, but that port is not yet a distinct variant of the
-  outer lifecycle owner.
+  returned every RX/TX owner and transferred the selected `ScanRecord` into a
+  fresh Open Authentication transaction on `CooperativeTxHardware`. The
+  resulting target then completed the second Association/WPA2 epoch. This
+  proves the running transaction, candidate transfer and HIL composition root,
+  but that port is not yet a distinct variant of the outer lifecycle owner.
 
-This is now a bounded same-peer reconnect implementation with board evidence.
+This is now a bounded controlled rescan and re-authentication implementation
+with board evidence.
 `WifiRunner::run_until` observes an outer stop only at a transaction boundary,
 waits for an active TX to release hardware, publishes link-down and returns the
 distinct `Stopped` outcome. HIL protocol v4 advertises this capability and
@@ -359,17 +361,16 @@ Association, WPA2 M1--M4 and entry into the second connected epoch; see the
 
 This evidence deliberately has a narrower meaning than automatic recovery
 from an unavailable AP. The controlled cycle now performs and observes a real
-multi-channel rescan, but then restores the retained peer/channel and begins
-again at Association. The newly selected candidate is evidence, not yet the
-input to a fresh Authentication transaction. It therefore does not prove AP
-disappearance, refreshed-candidate Authentication or retry/backoff recovery.
+multi-channel rescan and feeds the selected candidate through fresh Open
+Authentication. The trigger is still a host-requested healthy runner stop, and
+the selected AP remains available throughout. It therefore does not prove AP
+disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. add a running scan owner variant to the outer service and transfer the
-   candidate selected by that transaction into a fresh Authentication owner.
-   Open Authentication already begins as
-   `RadioHilStaLifecycleOwner::Authenticate`; failure returns the exact PHY,
-   RX, network and security frontier through bounded backoff;
+1. add a running scan owner variant to the outer service so
+   `StaAttemptContext::refresh_candidate` invokes this transaction explicitly
+   and scan/Auth failures return exact PHY, RX, network and security ownership
+   through bounded backoff;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify repeated controlled cycles, real AP loss/recovery and one injected
@@ -377,10 +378,10 @@ The next slices, in order, are:
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The remaining composition
-gap is now only the outer lifecycle transition from disconnected hardware to a
-running scan and then refreshed Authentication, not the running scan port,
-generic scan policy, ESP32-S31 transaction ordering, persistent PHY state or
-RX/TX epoch ownership. Both cold and running HIL scans use
+gap is now only the outer lifecycle transition which selects a running scan
+from `refresh_candidate`, not the running scan port, candidate transfer,
+refreshed Authentication, generic scan policy, ESP32-S31 transaction ordering,
+persistent PHY state or RX/TX epoch ownership. Both cold and running HIL scans use
 `StaCandidateScanService` plus `Esp32s31StaScanBackend`, but neither scan is yet
 a phase owned by the outer station service.
 The already composed `Authenticate`,

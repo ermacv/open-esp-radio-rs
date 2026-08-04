@@ -14,6 +14,11 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const RECONNECTED_MARKER: &str = "result=PASS stage=production-reconnect-connected-enter";
 const RECONNECT_FAILURE_MARKER: &str = "result=FAIL stage=production-reconnect";
 const RUNNER_STOP_MARKER: &str = "result=PASS stage=production-runner-stop";
+const RUNNING_SCAN_MARKER: &str = "result=PASS stage=production-running-scan channels=13";
+const RUNNING_SCAN_OWNER_RETURN_MARKER: &str =
+    "result=PASS stage=production-running-scan-owner-return";
+const RECONNECT_AUTHENTICATION_MARKER: &str =
+    "result=PASS stage=production-reconnect-authentication";
 
 struct Options {
     serial: PathBuf,
@@ -55,6 +60,19 @@ fn qualify(capture: &SerialCapture, timeout: Duration) -> Result<()> {
         if capture.contains(RECONNECTED_MARKER) {
             if !capture.contains(RUNNER_STOP_MARKER) {
                 return Err("target entered reconnect without a qualified runner stop".into());
+            }
+            if !capture.contains(RUNNING_SCAN_MARKER) {
+                return Err("target entered reconnect without a complete running scan".into());
+            }
+            if !capture.contains(RUNNING_SCAN_OWNER_RETURN_MARKER) {
+                return Err(
+                    "target entered reconnect without returning running-scan owners".into(),
+                );
+            }
+            if !capture.contains(RECONNECT_AUTHENTICATION_MARKER) {
+                return Err(
+                    "target entered reconnect without refreshed Open Authentication".into(),
+                );
             }
             return Ok(());
         }

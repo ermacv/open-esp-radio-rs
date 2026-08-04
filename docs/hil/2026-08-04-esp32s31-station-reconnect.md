@@ -4,24 +4,26 @@ Date: 2026-08-04
 Board: ESP32-S31 revision 0  
 Scenario: `radio` / `open-radio-hil`  
 Profile: `psram-code-psram-data`  
-Latest qualified runtime CRC32: `7fd7f293`
+Latest qualified runtime CRC32: `dbd998d5`
 
 Qualification ID: `HIL_ESP32S31_STA_RECONNECT_2026_08_04`
 
 ## Claim
 
 One healthy connected epoch can be stopped at a production runner transaction
-boundary, fully torn down, and reconstructed on the same peer without another
-PAC singleton or static allocation. The returned cooperative hardware, RX DMA
-frontier, network stack, TX/A-MPDU resources, control mailbox, PMK, nonce and
-sequence owners complete a second Association, WPA2 four-way handshake and
-entry into the production connected runner.
+boundary, fully torn down, scanned again and reconstructed on the selected
+same-SSID candidate without another PAC singleton or static allocation. The
+returned cooperative hardware, RX DMA frontier, network stack, TX/A-MPDU
+resources, control mailbox, PMK, nonce and sequence owners complete fresh Open
+Authentication, a second Association, WPA2 four-way handshake and entry into
+the production connected runner. The available candidate happened to be the
+same peer in this cell.
 
 This does not claim recovery from AP disappearance. The latest controlled run
-performs a full running scan, then deliberately restores the retained peer and
-starts again at Association. It intentionally distinguishes
-`WifiRunnerExit::Stopped` from beacon-loss `Disconnected` and does not feed the
-new scan result into Authentication yet.
+performs a full running scan and feeds the selected candidate into fresh Open
+Authentication before Association. It intentionally distinguishes
+`WifiRunnerExit::Stopped` from beacon-loss `Disconnected`; the trigger is still
+a healthy host-requested stop rather than AP disappearance.
 
 ## Procedure
 
@@ -41,26 +43,28 @@ cargo hil station reconnect --serial /dev/ttyACM0 --timeout-seconds 120
 
 The host accepts the cell only when protocol v4 advertises station epoch
 control, the stop command is acknowledged, the production stop marker is
-observed, no reconnect failure marker appears, and the target reaches
-`production-reconnect-connected-enter`. The local transcript is written to
-`target/hil/esp32s31/qualification/station-reconnect/uart.log`.
+observed, all 13 running-scan channels complete, RX/TX owners return, fresh
+Open Authentication passes, no reconnect failure marker appears, and the
+target reaches `production-reconnect-connected-enter`. The local transcript is
+written to `target/hil/esp32s31/qualification/station-reconnect/uart.log`.
 
 ## Observed evidence
 
 | Transition | Result |
 | --- | --- |
 | Initial Open Authentication | PASS, 168 ms |
-| Initial Association | status 0, AID 30, HE20/WMM, 21 ms |
-| Initial WPA2 M3 | one M2 transmission, replay 2, 9 ms |
+| Initial Association | status 0, AID 24, HE20/WMM, 23 ms |
+| Initial WPA2 M3 | one M2 transmission, replay 6, 9 ms |
 | Initial WPA2 M4 | TX status 0 |
-| Initial protected data | ARP TX/RX PASS with CCMP RX after one bounded retry |
+| Initial protected data | ARP TX/RX PASS with CCMP RX |
 | Controlled runner stop | PASS, source `host-station-epoch-cycle` |
 | Connected owner return | PASS, halted RX queue empty |
 | Running candidate scan | 13 channels, 13/13 Probe TX, target on channel 1 |
-| Running owner return | halted RX/control TX returned, retained channel restored |
-| Second Association | status 0, AID 30, two response frames, 21 ms |
-| Second peer programming | HE20, QoS, noise floor -90 dBm, metric 63 |
-| Second WPA2 M3 | one M2 transmission, replay 4, 11 ms |
+| Running owner return | halted RX/control TX returned, selected record transferred |
+| Second Open Authentication | PASS on cooperative hardware, 52 ms |
+| Second Association | status 0, AID 21, two response frames, 21 ms |
+| Second peer programming | HE20, QoS, noise floor -92 dBm, metric 65 |
+| Second WPA2 M3 | one M2 transmission, replay 8, 9 ms |
 | Second WPA2 M4/key install | TX status 0, pairwise slot 4, group slot 1 |
 | Second connected entry | PASS |
 
@@ -167,7 +171,7 @@ before AP-loss rescan can be qualified.
 
 ## Multi-channel running-scan addendum
 
-The cell was repeated with runtime CRC32 `7fd7f293`; the image grew from
+The latest cell used runtime CRC32 `dbd998d5`; the image grew from
 1,129,104 to 1,194,640 bytes after both cold and running concrete scan/PHY
 compositions became reachable. It remained within the image budget and passed
 the SRAM/PSRAM placement and autonomous-source-graph audits. The approximately
@@ -178,17 +182,19 @@ The controlled disconnected epoch assembled `Esp32s31ScanPhy`,
 `Esp32s31RunningScanRx`, `Esp32s31RunningScanTx` and the persistent scan table
 into a concrete HIL `Esp32s31StaScanPort`. The unchanged production
 `StaCandidateScanService` and `Esp32s31StaScanBackend` completed all 13 channel
-transactions in 5,827 ms. Active Probe Requests completed 13/13 with no TX
-failure. The target was observed on channel 1 at -27 dBm; the scan processed 10
-raw management frames, retained one Probe Response and crossed 7 ring-recycle
+transactions in 5,903 ms. Active Probe Requests completed 13/13 with no TX
+failure. The target was observed on channel 1 at -27 dBm; the scan processed 13
+raw management frames, retained one Probe Response and crossed 10 ring-recycle
 epochs. The exact halted RX and control-TX owners were returned, the PHY was
-explicitly retuned from the end of the scan plan to the retained channel 1,
-and the subsequent Association/WPA2 transaction reached
+retuned from the end of the scan plan to the selected candidate, and fresh
+Open Authentication on `CooperativeTxHardware` completed in 52 ms. The
+subsequent Association/WPA2 transaction reached
 `production-reconnect-connected-enter`.
 
 This qualifies a real multi-channel running-scan transaction and its ownership
-round trip. It still does not qualify AP-loss recovery: the fixture deliberately
-restores and reconnects the retained peer, while the newly selected candidate
-is only checked as scan evidence. The next lifecycle slice must carry that
-candidate into fresh Open Authentication on `CooperativeTxHardware`, then the
-board can qualify actual AP disappearance and recovery.
+round trip, including transfer of its result into a fresh Authentication
+transaction. It still does not qualify AP-loss recovery: the fixture initiates
+the scan after a controlled healthy stop and the AP remains available. The next
+lifecycle slice must expose running scan as an outer owner selected by
+`refresh_candidate`; only then can the board qualify actual AP disappearance
+and recovery.

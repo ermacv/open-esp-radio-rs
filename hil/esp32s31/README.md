@@ -87,11 +87,11 @@ modem sleep remains disabled until its complete PAC sleep/wakeup transaction
 is qualified.
 
 `cargo hil station reconnect` provisions credentials over HIL protocol v4,
-requests one hardware-safe `WifiRunner` stop and waits for a second
-Association/WPA2/connected epoch on the same selected peer. The stop has its
-own `Stopped` outcome and is never reported as beacon loss. This qualifies
-resource reuse and same-peer reassociation, not scan/re-authentication after an
-AP disappears.
+requests one hardware-safe `WifiRunner` stop and waits for a full running scan,
+fresh Open Authentication and a second Association/WPA2/connected epoch on the
+selected same-SSID candidate. The stop has its own `Stopped` outcome and is
+never reported as beacon loss. This qualifies resource reuse and controlled
+rescan/re-authentication, not recovery after an AP disappears.
 
 Build and flash a named scenario with the same identifier:
 

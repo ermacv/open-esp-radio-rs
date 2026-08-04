@@ -346,8 +346,10 @@ The first reconnect seam is now production-owned:
   returned every RX/TX owner and transferred the selected `ScanRecord` into a
   fresh Open Authentication transaction on `CooperativeTxHardware`. The
   resulting target then completed the second Association/WPA2 epoch. This
-  proves the running transaction, candidate transfer and HIL composition root,
-  but that port is not yet a distinct variant of the outer lifecycle owner.
+  proves the running transaction, candidate transfer and HIL composition root.
+  `RadioHilStaLifecycleOwner::RunningScan` is now a distinct outer owner:
+  generation 1 entered it only with `refresh_candidate=1`, and the successful
+  transaction produced the separate `Reconnect` owner.
 
 This is now a bounded controlled rescan and re-authentication implementation
 with board evidence.
@@ -367,29 +369,25 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. add a running scan owner variant to the outer service so
-   `StaAttemptContext::refresh_candidate` invokes this transaction explicitly
-   and scan/Auth failures return exact PHY, RX, network and security ownership
-   through bounded backoff;
+1. extract the now-proven ESP32-S31 running-scan/reconnect composition from HIL
+   into the reusable Embassy integration layer. Recoverable scan failures
+   already reconstruct `RadioHilDisconnectedEpoch`; an RX-stop failure remains
+   terminal because DMA ownership is unconfirmed;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify repeated controlled cycles, real AP loss/recovery and one injected
    TX/RX failure before resuming feature expansion.
 
 Network stack/report lifetime, per-epoch benchmark lifetime and connected
-static-resource lifetime are separated correctly. The remaining composition
-gap is now only the outer lifecycle transition which selects a running scan
-from `refresh_candidate`, not the running scan port, candidate transfer,
-refreshed Authentication, generic scan policy, ESP32-S31 transaction ordering,
-persistent PHY state or RX/TX epoch ownership. Both cold and running HIL scans use
-`StaCandidateScanService` plus `Esp32s31StaScanBackend`, but neither scan is yet
-a phase owned by the outer station service.
-The already composed `Authenticate`,
-`Join` and
-`Reconnect` variants deliberately retain their different types. Extend that
-sum type with real cold/running scan owners instead of hiding the phases inside
-a mutable vendor-style context or claiming that a retained record is a
-refreshed candidate.
+static-resource lifetime are separated correctly. The outer lifecycle gap is
+closed for running scan: `refresh_candidate` selects a distinct owner, and the
+scan result crosses fresh Authentication before Association. The remaining
+architectural gap is location rather than ordering: that concrete composition
+still lives in `radio_hil.rs` and must move to the ESP32-S31 Embassy adapter.
+Cold scan still precedes the outer station service, while running scan is now a
+real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
+deliberately retain different owner types instead of sharing a mutable
+vendor-style context.
 
 ## Completion gate
 

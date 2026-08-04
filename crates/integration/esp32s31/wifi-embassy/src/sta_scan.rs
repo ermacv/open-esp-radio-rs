@@ -756,6 +756,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
     pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
         match self.state {
             Esp32s31ScanRxState::Halted(ring) => Ok(ring),
+            Esp32s31ScanRxState::Prepared(ring) => Ok(ring.into_halted()),
             state => Err(Self {
                 state,
                 buffers: self.buffers,
@@ -1702,6 +1703,15 @@ mod tests {
         assert_eq!(running.phase(), Esp32s31ScanRxPhase::Halted);
         running.prepare_initial(&mut hardware).unwrap();
         assert_eq!(running.phase(), Esp32s31ScanRxPhase::Prepared);
+
+        let stopped = running
+            .into_stopped()
+            .unwrap_or_else(|_| panic!("prepared running scan must discard its unstarted epoch"));
+        assert_eq!(stopped.pool() as *const _, pool_address);
+        assert_eq!(stopped.ring().descriptor_base(), RX_TEST_BASE);
+
+        let mut running = Esp32s31RunningScanRx::from_stopped(stopped);
+        running.prepare_initial(&mut hardware).unwrap();
         block_on(running.start(&mut hardware)).unwrap();
         running.stop(&mut hardware).unwrap();
 

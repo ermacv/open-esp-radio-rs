@@ -15,6 +15,7 @@ const RECONNECTED_MARKER: &str = "result=PASS stage=production-reconnect-connect
 const RECONNECT_FAILURE_MARKER: &str = "result=FAIL stage=production-reconnect";
 const RUNNER_STOP_MARKER: &str = "result=PASS stage=production-runner-stop";
 const RUNNING_SCAN_MARKER: &str = "result=PASS stage=production-running-scan channels=13";
+const RUNNING_SCAN_LIFECYCLE_MARKER: &str = "refresh_candidate=1 phase=running-scan";
 const RUNNING_SCAN_OWNER_RETURN_MARKER: &str =
     "result=PASS stage=production-running-scan-owner-return";
 const RECONNECT_AUTHENTICATION_MARKER: &str =
@@ -63,6 +64,11 @@ fn qualify(capture: &SerialCapture, timeout: Duration) -> Result<()> {
             }
             if !capture.contains(RUNNING_SCAN_MARKER) {
                 return Err("target entered reconnect without a complete running scan".into());
+            }
+            if !capture.contains(RUNNING_SCAN_LIFECYCLE_MARKER) {
+                return Err(
+                    "target entered reconnect without an outer lifecycle scan phase".into(),
+                );
             }
             if !capture.contains(RUNNING_SCAN_OWNER_RETURN_MARKER) {
                 return Err(

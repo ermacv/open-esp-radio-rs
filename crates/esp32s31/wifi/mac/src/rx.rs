@@ -1072,6 +1072,21 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
 }
 
 impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
+    /// Discard a prepared-but-never-started epoch while retaining descriptor
+    /// storage authority.
+    ///
+    /// `RxRingStopped` can exist only after the walker was observed disabled.
+    /// No descriptor has crossed back to hardware until `try_start` succeeds,
+    /// so a higher-level scan failure may safely return to the peer-neutral
+    /// halted frontier without manufacturing or re-reading static addresses.
+    pub fn into_halted(self) -> RxRingHalted<'a, COUNT> {
+        RxRingHalted {
+            descriptors: self.descriptors,
+            descriptor_base: self.descriptor_base,
+            buffer_addresses: self.buffer_addresses,
+        }
+    }
+
     /// Stops the walker, prepares all buffers and publishes a rotated cold
     /// list beginning after the descriptor retained by the previous owner.
     ///

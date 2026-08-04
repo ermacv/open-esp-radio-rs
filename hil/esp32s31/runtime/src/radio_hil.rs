@@ -120,7 +120,7 @@ use open_esp_radio::{
                 Esp32s31RunningScanRx, Esp32s31RunningScanTx, Esp32s31ScanObservationContext,
                 Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanRx,
                 Esp32s31ScanRxError, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
-                Esp32s31StaScanPort,
+                Esp32s31StaScanError, Esp32s31StaScanPort,
             },
             sta_scan_target::{Esp32s31ColdScanTx, Esp32s31ScanPhy},
             staged_rx::{
@@ -158,7 +158,7 @@ use open_esp_radio::{
         StaLifecycleService, StaLifecycleStage, StaNextCandidate, StaReconnectPolicy,
     },
     wifi::lifecycle::scan::{
-        StaCandidateScanExit, StaCandidateScanService, StaScanChannelContext,
+        StaCandidateScanExit, StaCandidateScanService, StaScanChannelContext, StaScanPlanError,
     },
     wifi::wpa2::{
         OwnedEapolFrame, Pmk, Wpa2Interface, aes::Wpa2SoftwareAes, frames::Wpa2TxFrame,
@@ -1127,7 +1127,7 @@ struct RadioHilConnectedEpochReturn<'fixture, 'security> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RadioHilConnectedExit {
     Disconnected,
-    Stopped,
+    CycleRequested,
     HardwareFailure,
 }
 
@@ -1138,6 +1138,19 @@ struct RadioHilReconnectReady<'fixture, 'security> {
     target: StaJoinTarget,
     network: RadioHilStaNetwork,
     epoch: RadioHilConnectedEpochResources,
+    security: StaAssociationSecurity<'security>,
+}
+
+/// Disconnected hardware frontier which must refresh its candidate before the
+/// next Authentication/Association/WPA2 epoch.
+///
+/// Unlike `RadioHilReconnectReady`, this owner still carries the connected
+/// teardown bundle. Only the `RunningScan` lifecycle branch may split it into
+/// polling RX/TX owners and produce a refreshed reconnect target.
+struct RadioHilRunningScanReady<'fixture, 'security> {
+    fixture: RadioHilConnectedTaskFixture<'fixture>,
+    previous_target: StaJoinTarget,
+    disconnected: RadioHilDisconnectedEpoch,
     security: StaAssociationSecurity<'security>,
 }
 
@@ -1237,7 +1250,7 @@ struct RadioHilJoinFailure<'fixture, 'security> {
 /// policy without reconstructing any board resource.
 enum RadioHilJoinOutcome<'fixture, 'security> {
     Connected {
-        ready: RadioHilReconnectReady<'fixture, 'security>,
+        ready: RadioHilRunningScanReady<'fixture, 'security>,
         exit: RadioHilConnectedExit,
     },
     Failed(RadioHilJoinFailure<'fixture, 'security>),
@@ -1257,6 +1270,7 @@ impl<'fixture, 'security> From<RadioHilJoinFailure<'fixture, 'security>>
 enum RadioHilStaLifecycleOwner<'fixture, 'security> {
     Authenticate(RadioHilAuthenticationReady<'fixture, 'security>),
     Join(RadioHilJoinRetry<'fixture, 'security>),
+    RunningScan(RadioHilRunningScanReady<'fixture, 'security>),
     Reconnect(RadioHilReconnectReady<'fixture, 'security>),
 }
 
@@ -5390,7 +5404,7 @@ async fn run_connected_network<'fixture, 'rate, 'security>(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
                  source=host-station-epoch-cycle"
             ));
-            RadioHilConnectedExit::Stopped
+            RadioHilConnectedExit::CycleRequested
         }
         Err(error) => {
             emergency_log(format_args!(
@@ -5579,13 +5593,33 @@ struct RadioHilRunningScanReturn {
     candidate: ScanRecord,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RadioHilRunningScanFailure {
+    NoCandidate {
+        channels_completed: u16,
+    },
+    Stopped {
+        channels_completed: u16,
+    },
+    Transaction {
+        error: Esp32s31StaScanError<RadioHilRunningScanPortError>,
+        channels_completed: u16,
+    },
+    InvalidPlan(StaScanPlanError),
+}
+
+struct RadioHilRunningScanRecovery {
+    disconnected: RadioHilDisconnectedEpoch,
+    failure: RadioHilRunningScanFailure,
+}
+
 /// Prove that one disconnected owner can complete a finite multi-channel
 /// running scan and return every resource without reinitializing static
 /// storage.
 async fn qualify_disconnected_running_scan(
     epoch: RadioHilDisconnectedEpoch,
     context: RadioHilRunningScanContext<'_, '_>,
-) -> RadioHilRunningScanReturn {
+) -> Result<RadioHilRunningScanReturn, RadioHilRunningScanRecovery> {
     let RadioHilRunningScanContext {
         state,
         platform,
@@ -5629,7 +5663,7 @@ async fn qualify_disconnected_running_scan(
     let scan_backend = Esp32s31StaScanBackend::new(scan_config);
     let mut scan_service = StaCandidateScanService::new(scan_backend);
     let scan_started = Instant::now();
-    let (scan_owner, candidate) = match scan_service
+    let (scan_owner, outcome) = match scan_service
         .run(scan_owner, &STA_SCAN_CHANNELS)
         .await
     {
@@ -5646,7 +5680,7 @@ async fn qualify_disconnected_running_scan(
                 candidate.channel,
                 candidate.rssi,
             ));
-            (owner, candidate)
+            (owner, Ok(candidate))
         }
         StaCandidateScanExit::NoCandidate { owner, progress } => {
             emergency_log(format_args!(
@@ -5654,10 +5688,12 @@ async fn qualify_disconnected_running_scan(
                  channels={} error=no-candidate",
                 progress.channels_completed,
             ));
-            let _owners = (owner, network, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
+            (
+                owner,
+                Err(RadioHilRunningScanFailure::NoCandidate {
+                    channels_completed: progress.channels_completed,
+                }),
+            )
         }
         StaCandidateScanExit::Stopped { owner, progress } => {
             emergency_log(format_args!(
@@ -5665,10 +5701,12 @@ async fn qualify_disconnected_running_scan(
                  channels={} error=stopped",
                 progress.channels_completed,
             ));
-            let _owners = (owner, network, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
+            (
+                owner,
+                Err(RadioHilRunningScanFailure::Stopped {
+                    channels_completed: progress.channels_completed,
+                }),
+            )
         }
         StaCandidateScanExit::Failed {
             owner,
@@ -5680,10 +5718,13 @@ async fn qualify_disconnected_running_scan(
                  channels={} error={error:?}",
                 progress.channels_completed,
             ));
-            let _owners = (owner, network, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
+            (
+                owner,
+                Err(RadioHilRunningScanFailure::Transaction {
+                    error,
+                    channels_completed: progress.channels_completed,
+                }),
+            )
         }
         StaCandidateScanExit::InvalidPlan {
             owner,
@@ -5695,10 +5736,10 @@ async fn qualify_disconnected_running_scan(
                  channels={} error={error:?}",
                 progress.channels_planned,
             ));
-            let _owners = (owner, network, ampdu, control_resources);
-            loop {
-                Timer::after_secs(60).await;
-            }
+            (
+                owner,
+                Err(RadioHilRunningScanFailure::InvalidPlan(error)),
+            )
         }
     };
 
@@ -5747,16 +5788,122 @@ async fn qualify_disconnected_running_scan(
         probe_responses,
         ring_epochs,
     ));
-    RadioHilRunningScanReturn {
-        disconnected: RadioHilDisconnectedEpoch {
-            network,
-            hardware,
-            rx,
-            ampdu,
-            control_resources,
-        },
-        candidate,
+    let disconnected = RadioHilDisconnectedEpoch {
+        network,
+        hardware,
+        rx,
+        ampdu,
+        control_resources,
+    };
+    match outcome {
+        Ok(candidate) => Ok(RadioHilRunningScanReturn {
+            disconnected,
+            candidate,
+        }),
+        Err(failure) => Err(RadioHilRunningScanRecovery {
+            disconnected,
+            failure,
+        }),
     }
+}
+
+/// Execute the explicit candidate-refresh phase selected by the outer STA
+/// lifecycle, then continue with fresh Authentication on the returned
+/// cooperative hardware owner.
+async fn run_running_scan_attempt<'fixture, 'security>(
+    ready: RadioHilRunningScanReady<'fixture, 'security>,
+) -> StaAttemptOutcome<
+    RadioHilStaLifecycleOwner<'fixture, 'security>,
+    RadioHilStaLifecycleFailure,
+> {
+    let RadioHilRunningScanReady {
+        fixture,
+        previous_target,
+        disconnected,
+        security,
+    } = ready;
+    let scan_result = qualify_disconnected_running_scan(
+        disconnected,
+        RadioHilRunningScanContext {
+            state: &mut *fixture.state,
+            platform: &mut *fixture.platform,
+            tx_storage: &mut *fixture.tx_storage,
+            interrupt_setup: fixture
+                .interrupt_setup
+                .as_ref()
+                .expect("connected teardown returned the quiesced interrupt owner"),
+            scan_table: &mut *fixture.scan_table,
+            scan_frame: &mut *fixture.frame,
+            station_address: previous_target.station_address,
+            target_ssid: previous_target.access_point.ssid_bytes(),
+            sequence: security.sequences.non_qos_mut(),
+        },
+    )
+    .await;
+    let scan_return = match scan_result {
+        Ok(scan_return) => scan_return,
+        Err(recovery) => {
+            let owner = RadioHilStaLifecycleOwner::RunningScan(RadioHilRunningScanReady {
+                fixture,
+                previous_target,
+                disconnected: recovery.disconnected,
+                security,
+            });
+            let (disposition, error) = match recovery.failure {
+                RadioHilRunningScanFailure::NoCandidate { .. } => (
+                    StaFailureDisposition::RefreshCandidate,
+                    RadioHilStaLifecycleFailure::RunningScanNoCandidate,
+                ),
+                RadioHilRunningScanFailure::Stopped { .. } => {
+                    return StaAttemptOutcome::Stopped { owner };
+                }
+                RadioHilRunningScanFailure::Transaction { error, .. } => {
+                    let disposition = match error {
+                        Esp32s31StaScanError::ActiveProbe(RadioHilRunningScanPortError::Tx(_))
+                        | Esp32s31StaScanError::ReceiveStop(_) => {
+                            StaFailureDisposition::Terminal
+                        }
+                        _ => StaFailureDisposition::RefreshCandidate,
+                    };
+                    (
+                        disposition,
+                        RadioHilStaLifecycleFailure::RunningScanTransaction(error),
+                    )
+                }
+                RadioHilRunningScanFailure::InvalidPlan(error) => (
+                    StaFailureDisposition::Terminal,
+                    RadioHilStaLifecycleFailure::RunningScanPlan(error),
+                ),
+            };
+            return StaAttemptOutcome::Failed {
+                owner,
+                failure: StaAttemptFailure::new(
+                    StaLifecycleStage::CandidateSelection,
+                    disposition,
+                    error,
+                ),
+            };
+        }
+    };
+    let target = StaJoinTarget {
+        station_address: previous_target.station_address,
+        access_point: scan_return.candidate,
+    };
+    let (network, epoch) = scan_return.disconnected.into_reconnected_resources();
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready \
+         candidate_channel={} candidate_bssid={:02x?}",
+        target.access_point.channel,
+        target.access_point.bssid,
+    ));
+    qualify_reconnected_epoch(RadioHilReconnectReady {
+        fixture,
+        target,
+        network: RadioHilStaNetwork::Running(network),
+        epoch,
+        security,
+    })
+    .await
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5768,6 +5915,10 @@ enum RadioHilStaLifecycleFailure {
         message3: bool,
     },
     PeerScanPolicy,
+    CandidateRefreshContract,
+    RunningScanNoCandidate,
+    RunningScanTransaction(Esp32s31StaScanError<RadioHilRunningScanPortError>),
+    RunningScanPlan(StaScanPlanError),
     ScanWmmPolicy,
     InvalidEpochOwner,
     Association,
@@ -5786,9 +5937,12 @@ fn failed_reconnect<'fixture, 'security>(
     stage: StaLifecycleStage,
     disposition: StaFailureDisposition,
     error: RadioHilStaLifecycleFailure,
-) -> StaAttemptOutcome<RadioHilReconnectReady<'fixture, 'security>, RadioHilStaLifecycleFailure> {
+) -> StaAttemptOutcome<
+    RadioHilStaLifecycleOwner<'fixture, 'security>,
+    RadioHilStaLifecycleFailure,
+> {
     StaAttemptOutcome::Failed {
-        owner: ready,
+        owner: RadioHilStaLifecycleOwner::Reconnect(ready),
         failure: StaAttemptFailure::new(stage, disposition, error),
     }
 }
@@ -5822,23 +5976,17 @@ fn initial_join_outcome<'fixture, 'security>(
         }
         RadioHilJoinOutcome::Connected { ready, exit } => match exit {
             RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
-                owner: RadioHilStaLifecycleOwner::Reconnect(ready),
+                owner: RadioHilStaLifecycleOwner::RunningScan(ready),
                 failure: StaAttemptFailure::new(
                     StaLifecycleStage::Hardware,
                     StaFailureDisposition::Terminal,
                     RadioHilStaLifecycleFailure::ConnectedHardware,
                 ),
             },
-            RadioHilConnectedExit::Disconnected | RadioHilConnectedExit::Stopped => {
-                // The HIL's first controlled runner stop is an explicit
-                // request to cross the reconnect boundary. The returned owner
-                // already contains the candidate selected by its running scan,
-                // so `Reuse` prevents a second hidden scan before it performs
-                // fresh Authentication. Production callers preserve the exit
-                // distinction in `RadioHilConnectedExit`.
+            RadioHilConnectedExit::Disconnected | RadioHilConnectedExit::CycleRequested => {
                 StaAttemptOutcome::Disconnected {
-                    owner: RadioHilStaLifecycleOwner::Reconnect(ready),
-                    next_candidate: StaNextCandidate::Reuse,
+                    owner: RadioHilStaLifecycleOwner::RunningScan(ready),
+                    next_candidate: StaNextCandidate::Refresh,
                 }
             }
         },
@@ -5872,6 +6020,7 @@ impl<'fixture, 'security> StaLifecycleBackend
             let phase = match &owner {
                 RadioHilStaLifecycleOwner::Authenticate(_) => "authentication",
                 RadioHilStaLifecycleOwner::Join(_) => "join",
+                RadioHilStaLifecycleOwner::RunningScan(_) => "running-scan",
                 RadioHilStaLifecycleOwner::Reconnect(_) => "reconnect",
             };
             emergency_log(format_args!(
@@ -5940,25 +6089,22 @@ impl<'fixture, 'security> StaLifecycleBackend
                         associate_target(fixture, target, rx, network, security).await,
                     )
                 }
-                RadioHilStaLifecycleOwner::Reconnect(ready) => {
-                    match qualify_reconnected_epoch(ready).await {
-                        StaAttemptOutcome::Disconnected {
-                            owner,
-                            next_candidate,
-                        } => StaAttemptOutcome::Disconnected {
-                            owner: RadioHilStaLifecycleOwner::Reconnect(owner),
-                            next_candidate,
-                        },
-                        StaAttemptOutcome::Stopped { owner } => StaAttemptOutcome::Stopped {
-                            owner: RadioHilStaLifecycleOwner::Reconnect(owner),
-                        },
-                        StaAttemptOutcome::Failed { owner, failure } => {
-                            StaAttemptOutcome::Failed {
-                                owner: RadioHilStaLifecycleOwner::Reconnect(owner),
-                                failure,
-                            }
+                RadioHilStaLifecycleOwner::RunningScan(ready) => {
+                    if context.refresh_candidate {
+                        run_running_scan_attempt(ready).await
+                    } else {
+                        StaAttemptOutcome::Failed {
+                            owner: RadioHilStaLifecycleOwner::RunningScan(ready),
+                            failure: StaAttemptFailure::new(
+                                StaLifecycleStage::CandidateSelection,
+                                StaFailureDisposition::Terminal,
+                                RadioHilStaLifecycleFailure::CandidateRefreshContract,
+                            ),
                         }
                     }
+                }
+                RadioHilStaLifecycleOwner::Reconnect(ready) => {
+                    qualify_reconnected_epoch(ready).await
                 }
             }
         }
@@ -5992,7 +6138,10 @@ impl<'fixture, 'security> StaLifecycleBackend
 /// running with link-down, and their RX frontier came from connected teardown.
 async fn qualify_reconnected_epoch<'fixture, 'security>(
     mut ready: RadioHilReconnectReady<'fixture, 'security>,
-) -> StaAttemptOutcome<RadioHilReconnectReady<'fixture, 'security>, RadioHilStaLifecycleFailure> {
+) -> StaAttemptOutcome<
+    RadioHilStaLifecycleOwner<'fixture, 'security>,
+    RadioHilStaLifecycleFailure,
+> {
     let StaJoinTarget {
         station_address,
         access_point,
@@ -6446,56 +6595,31 @@ async fn qualify_reconnected_epoch<'fixture, 'security>(
         security,
         exit,
     } = returned;
-    let scan_return = qualify_disconnected_running_scan(
-        disconnected,
-        RadioHilRunningScanContext {
-            state: &mut *fixture.state,
-            platform: &mut *fixture.platform,
-            tx_storage: &mut *fixture.tx_storage,
-            interrupt_setup: fixture
-                .interrupt_setup
-                .as_ref()
-                .expect("connected teardown returned the quiesced interrupt owner"),
-            scan_table: &mut *fixture.scan_table,
-            scan_frame: &mut *fixture.frame,
-            station_address: target.station_address,
-            target_ssid: target.access_point.ssid_bytes(),
-            sequence: security.sequences.non_qos_mut(),
-        },
-    )
-    .await;
-    let refreshed_target = StaJoinTarget {
-        station_address: target.station_address,
-        access_point: scan_return.candidate,
-    };
-    let (network, epoch) = scan_return.disconnected.into_reconnected_resources();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS \
          stage=production-reconnect-connected-returned"
     ));
-    let owner = RadioHilReconnectReady {
+    let owner = RadioHilRunningScanReady {
         fixture,
-        target: refreshed_target,
-        network: RadioHilStaNetwork::Running(network),
-        epoch,
+        previous_target: target,
+        disconnected,
         security,
     };
     match exit {
-        RadioHilConnectedExit::Disconnected => StaAttemptOutcome::Disconnected {
-            owner,
-            // The running scan and candidate transfer have already completed
-            // inside this finite board attempt. The remaining architectural
-            // slice moves that transaction to an explicit outer owner variant
-            // selected by `refresh_candidate` instead of repeating it here.
-            next_candidate: StaNextCandidate::Reuse,
+        RadioHilConnectedExit::Disconnected | RadioHilConnectedExit::CycleRequested => {
+            StaAttemptOutcome::Disconnected {
+                owner: RadioHilStaLifecycleOwner::RunningScan(owner),
+                next_candidate: StaNextCandidate::Refresh,
+            }
         },
-        RadioHilConnectedExit::Stopped => StaAttemptOutcome::Stopped { owner },
-        RadioHilConnectedExit::HardwareFailure => failed_reconnect(
-            owner,
-            StaLifecycleStage::Hardware,
-            StaFailureDisposition::Terminal,
-            RadioHilStaLifecycleFailure::ConnectedHardware,
-        ),
+        RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
+            owner: RadioHilStaLifecycleOwner::RunningScan(owner),
+            failure: StaAttemptFailure::new(
+                StaLifecycleStage::Hardware,
+                StaFailureDisposition::Terminal,
+                RadioHilStaLifecycleFailure::ConnectedHardware,
+            ),
+        },
     }
 }
 
@@ -7268,45 +7392,20 @@ async fn complete_wpa2_key_install_and_connect<'fixture, 'rate, 'security>(
             security,
             exit,
         } = returned;
-        let scan_return = qualify_disconnected_running_scan(
-            disconnected,
-            RadioHilRunningScanContext {
-                state: &mut *fixture.state,
-                platform: &mut *fixture.platform,
-                tx_storage: &mut *fixture.tx_storage,
-                interrupt_setup: fixture
-                    .interrupt_setup
-                    .as_ref()
-                    .expect("connected teardown returned the quiesced interrupt owner"),
-                scan_table: &mut *fixture.scan_table,
-                scan_frame: &mut *fixture.frame,
-                station_address: target.station_address,
-                target_ssid: target.access_point.ssid_bytes(),
-                sequence: security.sequences.non_qos_mut(),
-            },
-        )
-        .await;
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-epoch-returned \
              descriptor_base={:#010x} queued_frames={}",
-            scan_return.disconnected.rx.ring().descriptor_base(),
-            scan_return.disconnected.rx.queued_frames(),
+            disconnected.rx.ring().descriptor_base(),
+            disconnected.rx.queued_frames(),
         ));
-        let refreshed_target = StaJoinTarget {
-            station_address: target.station_address,
-            access_point: scan_return.candidate,
-        };
-        let (network, reconnect_resources) =
-            scan_return.disconnected.into_reconnected_resources();
-        let ready = RadioHilReconnectReady {
+        let ready = RadioHilRunningScanReady {
             fixture,
-            target: refreshed_target,
-            network: RadioHilStaNetwork::Running(network),
-            epoch: reconnect_resources,
+            previous_target: target,
+            disconnected,
             security,
         };
         emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=production-reconnect-owner-ready"
+            "OPEN_RADIO_PHY_HIL result=PASS stage=production-running-scan-owner-ready"
         ));
         return RadioHilJoinOutcome::Connected {
             ready,

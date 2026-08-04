@@ -90,8 +90,10 @@ is qualified.
 requests one hardware-safe `WifiRunner` stop and waits for a full running scan,
 fresh Open Authentication and a second Association/WPA2/connected epoch on the
 selected same-SSID candidate. The stop has its own `Stopped` outcome and is
-never reported as beacon loss. This qualifies resource reuse and controlled
-rescan/re-authentication, not recovery after an AP disappears.
+converted by the qualification adapter into the distinct `CycleRequested`
+edge; it is never reported as beacon loss. The outer lifecycle then enters its
+`RunningScan` owner with `refresh_candidate=1`. This qualifies resource reuse
+and controlled rescan/re-authentication, not recovery after an AP disappears.
 
 Build and flash a named scenario with the same identifier:
 

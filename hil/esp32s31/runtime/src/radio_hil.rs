@@ -38,9 +38,7 @@ use open_esp_radio::{
             target_executor::{PhyAsyncDelay, PhyTargetPortError},
         },
         wifi::mac::{
-            connected_rx::{
-                ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
-            },
+            connected_rx::{ConnectedRxEvent, ConnectedRxSink},
             crypto::{
                 CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
             },
@@ -54,7 +52,7 @@ use open_esp_radio::{
                 MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, handle_mac_irq,
                 handle_power_irq,
             },
-            rate_control::{BeamformingReportHardware, StaTxRatePolicy},
+            rate_control::BeamformingReportHardware,
             rate_schedule::schedule_state,
             registers::{
                 MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
@@ -70,18 +68,19 @@ use open_esp_radio::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
                 HtMcs, LegacyRate, TxCompletion, TxHardware, TxPhyRate, TxSlot,
             },
-            tx_ampdu::{HtAmpduTxStorage, StaTxBlockAckSessions},
+            tx_ampdu::HtAmpduTxStorage,
             tx_runtime::StaTxRuntimePolicy,
         },
     },
     integration::{
         esp32s31::wifi_embassy::{
-            aggregate_tx::{
-                AggregateTxConfig, AggregateTxCounterSnapshot, AggregateTxCounters,
-                Esp32s31ConnectedTx,
+            aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
+            connected_sta_port::{
+                Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaControlResources,
+                Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaPort,
+                Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaRateConfig,
+                Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxResources,
             },
-            backend::Esp32s31WifiBackend,
-            connected_control::Esp32s31ConnectedControl,
             control_tx::{
                 ConnectedTxHandoff, ControlTxConfig, ControlTxError, Esp32s31ControlTx,
                 WifiTxResources,
@@ -89,7 +88,6 @@ use open_esp_radio::{
             cooperative_tx::CooperativeTxHardware,
             embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
             embassy_rx::RxReloadDelay,
-            link_monitor::StaBeaconLossConfig,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             runner::{WifiRunner, WifiRunnerExit},
             running_scan::{
@@ -107,7 +105,7 @@ use open_esp_radio::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
             },
             rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
-            single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxConfig},
+            single_mpdu_tx::EmbassyWifiTxTimer,
             sta_join::{EmbassyStaJoinTimer, StaJoinRunner},
             sta_join_port::{
                 Esp32s31StaAssociationProfile, Esp32s31StaJoinObserver, Esp32s31StaJoinPort,
@@ -153,7 +151,6 @@ use open_esp_radio::{
         },
     },
     wifi::ieee80211::{
-        he::HeDcmConstellation,
         scan::best_matching_ssid,
         station::{
             STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPhy, StaAssociationPreference,
@@ -2575,59 +2572,51 @@ const STA_ASSOCIATION_PREFERENCE: StaAssociationPreference =
         StaAssociationPreference::Automatic
     };
 
-const fn configured_sta_tx_rate_policy(
-    association_phy: StaAssociationPhy,
-    peer_qos: bool,
-    peer_supports_one_ltf_800ns_gi: bool,
-    peer_supports_ldpc: bool,
-    peer_dcm_receive: HeDcmConstellation,
-) -> StaTxRatePolicy {
-    StaTxRatePolicy {
-        association_phy,
-        high_throughput_enabled: option_env!("OPEN_RADIO_FORCE_LEGACY_TX").is_none() && peer_qos,
-        fallback_legacy_rate: OPEN_RADIO_DATA_RATE,
-        fallback_ht_mcs: OPEN_RADIO_HT_MCS,
-        fallback_ht_guard_interval: OPEN_RADIO_HT_GI,
-        ht_mcs_override: if option_env!("OPEN_RADIO_HT_MCS").is_some() {
-            Some(OPEN_RADIO_HT_MCS)
-        } else {
-            None
+const fn radio_hil_connected_sta_config() -> Esp32s31ConnectedStaConfig {
+    Esp32s31ConnectedStaConfig {
+        rate: Esp32s31ConnectedStaRateConfig {
+            high_throughput_enabled: option_env!("OPEN_RADIO_FORCE_LEGACY_TX").is_none(),
+            fallback_legacy_rate: OPEN_RADIO_DATA_RATE,
+            fallback_ht_mcs: OPEN_RADIO_HT_MCS,
+            fallback_ht_guard_interval: OPEN_RADIO_HT_GI,
+            ht_mcs_override: if option_env!("OPEN_RADIO_HT_MCS").is_some() {
+                Some(OPEN_RADIO_HT_MCS)
+            } else {
+                None
+            },
+            ht_guard_interval_override: if option_env!("OPEN_RADIO_HT_SGI").is_some() {
+                Some(HtGuardInterval::Short400Ns)
+            } else {
+                None
+            },
+            he_mcs_override: if option_env!("OPEN_RADIO_HE_MCS").is_some() {
+                Some(OPEN_RADIO_HE_MCS)
+            } else {
+                None
+            },
+            he_guard_interval_and_ltf_override: if option_env!("OPEN_RADIO_HE_GI_LTF").is_some() {
+                Some(OPEN_RADIO_HE_GI_LTF)
+            } else {
+                None
+            },
+            he_dcm_override: OPEN_RADIO_HE_DCM_RATE,
         },
-        ht_guard_interval_override: if option_env!("OPEN_RADIO_HT_SGI").is_some() {
-            Some(HtGuardInterval::Short400Ns)
-        } else {
-            None
+        rx_ingress: RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: 0,
         },
-        he_mcs_override: if option_env!("OPEN_RADIO_HE_MCS").is_some() {
-            Some(OPEN_RADIO_HE_MCS)
-        } else {
-            None
-        },
-        he_guard_interval_and_ltf_override: if option_env!("OPEN_RADIO_HE_GI_LTF").is_some() {
-            Some(OPEN_RADIO_HE_GI_LTF)
-        } else {
-            None
-        },
-        he_dcm_override: OPEN_RADIO_HE_DCM_RATE,
-        he_800ns_gi_ltf: if peer_supports_one_ltf_800ns_gi {
-            HeGuardIntervalAndLtf::OneLtf800Ns
-        } else {
-            HeGuardIntervalAndLtf::TwoLtf800Ns
-        },
-        peer_supports_ldpc,
-        peer_dcm_receive,
+        unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
+        completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
+        aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
+        aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        tx_block_ack_window: TX_BLOCK_ACK_WINDOW as u16,
+        tx_block_ack_negotiation_timeout_us: 500_000,
+        tid0_amsdu: OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
+        rx_block_ack_maximum_window: RX_BLOCK_ACK_SOFTWARE_WINDOW as u16,
+        beacon_miss_limit: CONNECTED_BEACON_MISS_LIMIT,
+        request_initial_tx_block_ack: true,
     }
-}
-
-const fn selected_data_tx_rate(association_phy: StaAssociationPhy, peer_qos: bool) -> TxPhyRate {
-    configured_sta_tx_rate_policy(
-        association_phy,
-        peer_qos,
-        false,
-        false,
-        HeDcmConstellation::NotSupported,
-    )
-    .fallback_rate()
 }
 
 fn open_radio_tx_entropy() -> u32 {
@@ -4193,20 +4182,16 @@ async fn run_connected_network<'fixture, 'security>(
         supplicant_nonce,
         sequences,
     } = session;
-    let Esp32s31ConnectedStaPeer {
-        link,
-        rate_control,
-    } = peer;
+    let connected_plan = Esp32s31ConnectedStaPort::prepare::<TX_AMPDU_FRAME_COUNT>(
+        peer,
+        radio_hil_connected_sta_config(),
+    )
+    .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
+    let link = connected_plan.link();
     let Esp32s31StaConnectedLink {
         station_address,
-        bssid,
-        association_id,
-        beacon_interval_tu,
-        peer_qos,
         association_phy,
-        peer_supports_one_ltf_800ns_gi,
-        peer_supports_ldpc,
-        peer_dcm_receive,
+        ..
     } = link;
     // The polling-only scan/auth path kept every MAC interrupt masked. Consume
     // the last task-side enable/clear capability immediately before the
@@ -4246,14 +4231,8 @@ async fn run_connected_network<'fixture, 'security>(
         RadioHilStaNetwork::Running(network) => (network.stack, network.runner, None),
     };
     network_runner.set_link_state(LinkState::Up);
-    let data_tx_rate = selected_data_tx_rate(association_phy, peer_qos);
-    let benchmark_tx_rate = rate_control.ampdu_tx_rate(configured_sta_tx_rate_policy(
-        association_phy,
-        peer_qos,
-        peer_supports_one_ltf_800ns_gi,
-        peer_supports_ldpc,
-        peer_dcm_receive,
-    ));
+    let data_tx_rate = connected_plan.data_tx_rate();
+    let benchmark_tx_rate = connected_plan.aggregate_tx_rate();
     let peer_ampdu_limit = tx_storage
         .control
         .as_ref()
@@ -4402,89 +4381,63 @@ async fn run_connected_network<'fixture, 'security>(
     .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS)
     .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
     let (rx_reorder_sender, rx_reorder_receiver) = OPEN_RADIO_RX_REORDER_COMMANDS.split();
-    let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-        station_address,
-        bssid,
-        association_id,
-        ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
+    let rx_protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
+        &connected_plan,
+        Esp32s31ConnectedStaRxProtocolResources {
+            frames: staged_rx_receiver,
+            irq: &OPEN_RADIO_IRQ_RUNTIME,
+            sink: rx_sink,
+            mpdu: frame,
+            ethernet,
+            reorder_commands: rx_reorder_receiver,
+            reorder_storage: &OPEN_RADIO_RX_REORDER_STORAGE,
+            reorder_scratch: None,
+            pipeline_counters: &OPEN_RADIO_RX_PIPELINE_COUNTERS,
         },
-    });
-    let rx_protocol = Esp32s31ConnectedRxProtocol::new(
-        staged_rx_receiver,
-        &OPEN_RADIO_IRQ_RUNTIME,
-        dispatcher,
-        rx_sink,
-        frame,
-        ethernet,
-    )
-    .with_rx_reorder_commands(rx_reorder_receiver)
-    .with_rx_reorder_storage(&OPEN_RADIO_RX_REORDER_STORAGE)
-    .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
+    );
 
     let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
     let control_tx = tx_storage
         .control
         .take()
         .expect("control TX owner moves into the connected runner exactly once");
-    let ordinary_tx = match control_tx.try_into_connected(ConnectedTxHandoff {
-        key: pairwise_slot,
-        sequences: tx_sequences,
-        config: SingleMpduTxConfig {
-            station_address,
-            bssid,
-            peer_qos,
-            rate: data_tx_rate,
-            attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
-            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
-        },
-    }) {
-        Ok(tx) => tx,
-        Err((_control, _handoff)) => {
-            panic!("connected handoff requires an idle control TX owner")
-        }
-    };
-    let tx = Esp32s31ConnectedTx::new(
-        ordinary_tx,
-        tx_ampdu_storage,
-        AggregateTxConfig {
-            rate: benchmark_tx_rate,
-            frame_limit: TX_AMPDU_FRAME_COUNT as u8,
-            attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
-            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
-            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+    let tx = Esp32s31ConnectedStaPort::build_tx(
+        &connected_plan,
+        Esp32s31ConnectedStaTxResources {
+            control: control_tx,
+            aggregate: tx_ampdu_storage,
+            pairwise_key: pairwise_slot,
+            sequences: tx_sequences,
+            counters: Some(&OPEN_RADIO_TX_AGGREGATE_COUNTERS),
+            network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
         },
     )
-    .expect("fixed connected aggregate TX configuration")
-    .with_counters(&OPEN_RADIO_TX_AGGREGATE_COUNTERS);
-    let tx_block_ack = StaTxBlockAckSessions::new(
-        TX_BLOCK_ACK_WINDOW as u16,
-        500_000,
-        OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
-    )
-    .expect("fixed three-TID TX BlockAck configuration");
-    let mut control = Esp32s31ConnectedControl::new(
-        control_receiver,
-        bssid,
-        association_phy == StaAssociationPhy::He20,
-        tx_block_ack,
-    )
-    .with_rx_block_ack_maximum_window(RX_BLOCK_ACK_SOFTWARE_WINDOW as u16)
-    .expect("staging-derived RX BlockAck window is valid")
-    .with_rx_reorder_commands(rx_reorder_sender);
-    control.enable_beacon_loss(
-        StaBeaconLossConfig::new(beacon_interval_tu, CONNECTED_BEACON_MISS_LIMIT)
-            .expect("scan admitted a nonzero connected beacon interval"),
+    .unwrap_or_else(|_failure| panic!("connected handoff requires an idle control TX owner"));
+    let control = Esp32s31ConnectedStaPort::build_control(
+        &connected_plan,
+        Esp32s31ConnectedStaControlResources {
+            receiver: control_receiver,
+            reorder_commands: rx_reorder_sender,
+        },
     );
-    if peer_qos && matches!(benchmark_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_)) {
-        control.queue_initial_tx_block_ack();
-    }
 
     let registers = hardware.register_cell();
-    let backend = Esp32s31WifiBackend::with_control(hardware, rx, tx, control);
-    let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
+    let drivers = Esp32s31ConnectedStaPort::assemble(
+        connected_plan,
+        Esp32s31ConnectedStaDriverParts {
+            hardware,
+            rx,
+            tx,
+            control,
+            protocol: rx_protocol,
+        },
+    );
+    let rx_protocol = drivers.protocol;
+    let mut radio_runner = WifiRunner::new(
+        &OPEN_RADIO_IRQ_RUNTIME,
+        network_runner,
+        drivers.backend,
+    );
 
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {

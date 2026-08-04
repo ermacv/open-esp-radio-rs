@@ -87,6 +87,13 @@ hardware, and returns `Esp32s31ConnectedStaPeer` by value. Initial and
 reconnected HIL paths consume that same owner and only report its value-only
 diagnostics; they do not recreate peer policy or a private connected-link
 model.
+`Esp32s31ConnectedStaPort` consumes that peer and one coherent connected
+configuration. It owns rate selection, staged RX dispatcher/protocol policy,
+the control-to-ordinary/A-MPDU TX handoff, TX/RX BlockAck and beacon control,
+and final `Esp32s31WifiBackend` assembly. HIL provides fixed resources,
+`embassy-net` endpoints, task placement and observations; it does not recreate
+those driver constructors. RX-DMA activation, the platform interrupt epoch and
+ordered teardown remain the next production-boundary extraction.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise

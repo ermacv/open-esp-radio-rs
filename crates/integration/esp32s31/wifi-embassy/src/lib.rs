@@ -12,6 +12,7 @@ extern crate std;
 pub mod aggregate_tx;
 pub mod backend;
 pub mod connected_control;
+pub mod connected_sta_port;
 pub mod control_tx;
 pub mod cooperative_tx;
 pub mod embassy_irq;

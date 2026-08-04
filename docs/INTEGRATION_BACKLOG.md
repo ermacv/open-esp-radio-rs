@@ -21,6 +21,12 @@ Authentication, Association, WPA2 response-deadline or key-install state
 machines. Completed transfer history is archived in the
 [2026-07-31 integration report](archive/integration/2026-07-31-esp32s31-rust-integration-audit.md).
 
+Connected entry now has the same production boundary. The reusable
+`Esp32s31ConnectedStaPort` validates one coherent peer/configuration plan,
+selects ordinary and aggregate rates, constructs staged RX, ordinary/A-MPDU
+TX and BlockAck/beacon control, and assembles the production backend. HIL only
+supplies storage, network/executor adapters and scenario policy at this edge.
+
 ## 1. Completed: concrete WPA2 TX backend
 
 `Wpa2HandshakeRunner` now accepts the still-live RX ring through a finite
@@ -71,8 +77,9 @@ a second sequence number or CCMP PN. The connected control owner mirrors
 ADDBA response, rejection, timeout and DELBA state directly into this TX
 scheduler.
 
-The production HIL constructs this owner and runs it through the same
-`WifiRunner`; both debug and optimized RISC-V images link successfully. Host
+`Esp32s31ConnectedStaPort` constructs this owner and the HIL runs it through
+the same `WifiRunner`; both debug and optimized RISC-V images link
+successfully. Host
 tests cover full BlockAck release, partial-BlockAck compaction/republication
 and the individual retry handoff. The former raw-MAC, A-MSDU and HE matrix
 traffic scenarios remain disabled until their workload/reporting layer is
@@ -434,10 +441,11 @@ the selected AP remains available throughout. It therefore does not prove AP
 disappearance, a beacon-loss-triggered rescan or retry/backoff recovery.
 The next slices, in order, are:
 
-1. extract the remaining connected-entry/teardown resource composition from
-   HIL. The reusable Embassy layer now owns disconnected/running-scan/
-   reconnected resource transition, Authentication/Association, selected-peer
-   hardware programming and complete WPA2 ports;
+1. extract connected RX-DMA entry, MAC interrupt epoch activation and ordered
+   teardown from HIL. The reusable Embassy layer now owns disconnected/
+   running-scan/reconnected resource transition, Authentication/Association,
+   selected-peer hardware programming, complete WPA2 ports and the connected
+   RX/TX/control/backend composition;
 2. route real beacon loss through candidate selection and Authentication, and
    preserve the complete retry owner across each bounded failure/backoff edge;
 3. qualify real AP loss/recovery and one injected TX/RX failure before
@@ -447,12 +455,13 @@ Network stack/report lifetime, per-epoch benchmark lifetime and connected
 static-resource lifetime are separated correctly. The outer lifecycle gap is
 closed for running scan: `refresh_candidate` selects a distinct owner, and the
 scan result crosses fresh Authentication before Association. Peer programming
-and rate-control activation now live behind `Esp32s31StaPeerPort`. The
-remaining architectural gap is connected-entry sequencing: RX protocol,
-ordinary/aggregate TX, control/BlockAck, interrupt activation and teardown are
-still assembled inside `radio_hil.rs`; qualification tasks and network policy
-must be separated from that production owner graph before moving the latter to
-the ESP32-S31 Embassy layer.
+and rate-control activation now live behind `Esp32s31StaPeerPort`.
+`Esp32s31ConnectedStaPort` now owns rate selection, RX protocol,
+ordinary/aggregate TX, control/BlockAck and final backend assembly; runtime
+CRC32 `c7a6b50b` completed three controlled reconnect cycles through that
+port. The remaining architectural gap is narrower: initial/reconnected RX-DMA
+activation, interrupt activation/quiescence and the ordered control/RX/TX/key
+teardown still live in `radio_hil.rs`.
 Cold scan still precedes the outer station service, while running scan is now a
 real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable

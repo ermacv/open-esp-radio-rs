@@ -80,14 +80,17 @@ owner crates/esp32s31/wifi/mac/src/tx.rs TxSlot
 owner crates/integration/esp32s31/wifi-embassy/src/embassy_rx.rs await_staged_rx_reload
 owner crates/integration/esp32s31/wifi-embassy/src/runner.rs WifiRunner
 owner crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs Esp32s31ConnectedTx
+owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs Esp32s31ConnectedStaPort
 owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs Esp32s31PreparedRx
 test crates/esp32s31/wifi/mac/tests/mac.rs staged_rx_frame_remains_private_until_reload_settles
 test crates/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
 test crates/integration/esp32s31/wifi-embassy/src/aggregate_tx.rs idle_aggregate_returns_ordinary_and_storage_for_station_teardown
 test crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs connected_rx_stop_confirms_walker_off_and_preserves_static_resources
+test crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs port_binds_rx_and_control_to_one_validated_peer_plan
 vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence docs/hil/2026-08-04-esp32s31-connected-sta-port.md HIL_ESP32S31_CONNECTED_STA_PORT_2026_08_04
 depends-on interrupt-recovery
 gap vendor dma-root-contracts-not-executable
 gap hil rx-reload-async-boundary-needs-requalification
@@ -212,6 +215,7 @@ owner crates/integration/esp32s31/wifi-embassy/src/sta_join_port.rs Esp32s31StaJ
 owner crates/integration/esp32s31/wifi-embassy/src/sta_peer_port.rs Esp32s31StaPeerPort
 owner crates/integration/esp32s31/wifi-embassy/src/wpa2_port.rs Esp32s31Wpa2HandshakePort
 owner crates/integration/esp32s31/wifi-embassy/src/wpa2_port.rs Esp32s31Wpa2KeyPort
+owner crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs Esp32s31ConnectedStaPort
 owner crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs Esp32s31DisconnectedStaEpoch
 owner crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs Esp32s31ReconnectedStaEpoch
 owner crates/integration/esp32s31/wifi-embassy/src/rx_backend.rs ConnectedControlResources
@@ -234,6 +238,7 @@ test crates/integration/esp32s31/wifi-embassy/src/preconnected_rx.rs owner_servi
 test crates/integration/esp32s31/wifi-embassy/src/sta_join_port.rs port_orders_driver_edges_and_keeps_diagnostics_external
 test crates/integration/esp32s31/wifi-embassy/src/sta_peer_port.rs port_owns_scan_and_association_peer_programming
 test crates/integration/esp32s31/wifi-embassy/src/wpa2_port.rs eapol_copy_accepts_only_the_selected_station_link
+test crates/integration/esp32s31/wifi-embassy/src/connected_sta_port.rs invalid_config_returns_the_exact_peer_before_owner_handoff
 test crates/integration/esp32s31/wifi-embassy/src/station_epoch.rs running_scan_round_trip_and_reconnect_preserve_every_owner
 test crates/integration/esp32s31/wifi-embassy/src/control_tx.rs passive_fallback_requires_a_proven_quiescent_tx_owner
 test crates/integration/esp32s31/wifi-embassy/src/sta_scan.rs dwell_failure_still_stops_rx_and_returns_the_exact_owner
@@ -248,9 +253,10 @@ test crates/wifi/lifecycle/src/scan.rs channel_failure_returns_the_exact_owner_a
 test crates/wifi/lifecycle/src/station.rs terminal_failure_and_backoff_stop_both_return_hardware_ownership
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
 hil-evidence docs/hil/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence docs/hil/2026-08-04-esp32s31-connected-sta-port.md HIL_ESP32S31_CONNECTED_STA_PORT_2026_08_04
 depends-on rx-tx-dma
 depends-on power-management
-gap implementation connected-entry-runtime-composition-remains-in-hil
+gap implementation connected-rx-irq-teardown-orchestration-remains-in-hil
 gap implementation running-scan-stop-failure-needs-reset-owner
 gap vendor failure-cleanup-contracts-incomplete
 gap hil injected-fault-matrix-missing

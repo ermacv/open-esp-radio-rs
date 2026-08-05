@@ -291,6 +291,12 @@ fn parse_u64(value: &str, what: &str) -> Result<u64, Box<dyn Error>> {
         .or_else(|| value.strip_prefix("0X"))
     {
         u64::from_str_radix(hex, 16)
+    } else if let Some(binary) = value
+        .strip_prefix("0b")
+        .or_else(|| value.strip_prefix("0B"))
+        .or_else(|| value.strip_prefix('#'))
+    {
+        u64::from_str_radix(binary, 2)
     } else {
         value.parse()
     };
@@ -557,6 +563,157 @@ fn validate_register_layout(document: &Document<'_>) -> Result<(), Box<dyn Error
                 .into());
             }
             occupied |= mask;
+        }
+    }
+    Ok(())
+}
+
+fn maximum_unsigned_value(width: u64) -> u64 {
+    if width >= 64 {
+        u64::MAX
+    } else {
+        (1_u64 << width) - 1
+    }
+}
+
+fn exact_enumerated_value(
+    value: &str,
+    width: u64,
+    identity: &str,
+) -> Result<Option<u64>, Box<dyn Error>> {
+    let value = value.trim();
+    let binary = value
+        .strip_prefix("0b")
+        .or_else(|| value.strip_prefix("0B"))
+        .or_else(|| value.strip_prefix('#'));
+    if let Some(binary) = binary
+        && binary.bytes().any(|byte| matches!(byte, b'x' | b'X'))
+    {
+        if binary.len() as u64 > width
+            || binary
+                .bytes()
+                .any(|byte| !matches!(byte, b'0' | b'1' | b'x' | b'X'))
+        {
+            return Err(format!(
+                "field {identity} has invalid {width}-bit enumerated pattern {value}"
+            )
+            .into());
+        }
+        return Ok(None);
+    }
+    Ok(Some(parse_u64(value, "enumerated value")?))
+}
+
+fn validate_write_semantics(document: &Document<'_>) -> Result<(), Box<dyn Error>> {
+    for field in document
+        .descendants()
+        .filter(|node| node.has_tag_name("field"))
+    {
+        let field_name = child_text(field, "name")?;
+        let register_name = field
+            .ancestors()
+            .find(|node| node.has_tag_name("register"))
+            .map(|register| child_text(register, "name"))
+            .transpose()?
+            .unwrap_or("<unknown-register>");
+        let identity = format!("{register_name}.{field_name}");
+        let width = parse_u64(child_text(field, "bitWidth")?, "field bitWidth")?;
+        let maximum = maximum_unsigned_value(width);
+
+        let enumerations = field
+            .children()
+            .filter(|node| node.has_tag_name("enumeratedValues"))
+            .collect::<Vec<_>>();
+        for enumeration in &enumerations {
+            let mut names = BTreeSet::new();
+            let mut values = BTreeSet::new();
+            let mut default_count = 0;
+            for variant in enumeration
+                .children()
+                .filter(|node| node.has_tag_name("enumeratedValue"))
+            {
+                let name = child_text(variant, "name")?;
+                if !names.insert(name) {
+                    return Err(format!(
+                        "field {identity} contains duplicate enumerated name {name}"
+                    )
+                    .into());
+                }
+                if optional_child_text(variant, "isDefault") == Some("true") {
+                    default_count += 1;
+                }
+                let Some(value) = optional_child_text(variant, "value") else {
+                    continue;
+                };
+                let Some(value) = exact_enumerated_value(value, width, &identity)? else {
+                    continue;
+                };
+                if value > maximum {
+                    return Err(format!(
+                        "field {identity} enumerated value {value} exceeds its {width}-bit width"
+                    )
+                    .into());
+                }
+                if !values.insert(value) {
+                    return Err(format!(
+                        "field {identity} contains duplicate enumerated value {value}"
+                    )
+                    .into());
+                }
+            }
+            if default_count > 1 {
+                return Err(format!(
+                    "field {identity} contains more than one default enumerated value"
+                )
+                .into());
+            }
+        }
+
+        let Some(constraint) = field
+            .children()
+            .find(|node| node.has_tag_name("writeConstraint"))
+        else {
+            continue;
+        };
+        if let Some(use_enumerated) = optional_child_text(constraint, "useEnumeratedValues") {
+            if use_enumerated != "true" {
+                return Err(format!(
+                    "field {identity} has non-operative useEnumeratedValues={use_enumerated}"
+                )
+                .into());
+            }
+            let has_write_enumeration = enumerations.iter().any(|enumeration| {
+                matches!(
+                    optional_child_text(*enumeration, "usage"),
+                    None | Some("write" | "read-write")
+                )
+            });
+            if !has_write_enumeration {
+                return Err(format!(
+                    "field {identity} requires enumerated writes but defines no write enumeration"
+                )
+                .into());
+            }
+        }
+        if let Some(write_as_read) = optional_child_text(constraint, "writeAsRead")
+            && write_as_read != "true"
+        {
+            return Err(
+                format!("field {identity} has non-operative writeAsRead={write_as_read}").into(),
+            );
+        }
+        if let Some(range) = constraint
+            .children()
+            .find(|node| node.has_tag_name("range"))
+        {
+            let minimum = parse_u64(child_text(range, "minimum")?, "write minimum")?;
+            let maximum_constraint = parse_u64(child_text(range, "maximum")?, "write maximum")?;
+            if minimum > maximum_constraint || maximum_constraint > maximum {
+                return Err(format!(
+                    "field {identity} has invalid write range {minimum}..={maximum_constraint} for its {width}-bit width"
+                )
+                .into());
+            }
         }
     }
     Ok(())
@@ -1093,6 +1250,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     let document = Document::parse(input)?;
     validate_dimension_order(&document)?;
     validate_register_layout(&document)?;
+    validate_write_semantics(&document)?;
     validate_names(&document)?;
     validate_provenance(&document, input)?;
     validate_confidence(input)?;
@@ -1183,7 +1341,7 @@ mod tests {
         member_binding_name, mmio_window, parse_mmio_windows, type_binding_name,
         validate_alias_group, validate_confidence, validate_dimension_order,
         validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
-        validate_register_layout,
+        validate_register_layout, validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -1259,6 +1417,50 @@ mod tests {
         )
         .unwrap();
         assert!(validate_register_layout(&document).is_err());
+    }
+
+    #[test]
+    fn write_enum_constraint_requires_a_write_capable_enumeration() {
+        let missing = Document::parse(
+            "<root><register><name>CONTROL</name><field><name>MODE</name>\
+             <bitOffset>0</bitOffset><bitWidth>2</bitWidth>\
+             <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>\
+             </field></register></root>",
+        )
+        .unwrap();
+        assert!(validate_write_semantics(&missing).is_err());
+
+        let read_only = Document::parse(
+            "<root><register><name>CONTROL</name><field><name>MODE</name>\
+             <bitOffset>0</bitOffset><bitWidth>2</bitWidth>\
+             <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>\
+             <enumeratedValues><usage>read</usage>\
+             <enumeratedValue><name>OFF</name><value>0</value></enumeratedValue>\
+             </enumeratedValues></field></register></root>",
+        )
+        .unwrap();
+        assert!(validate_write_semantics(&read_only).is_err());
+    }
+
+    #[test]
+    fn write_semantics_must_fit_the_field_width() {
+        let range = Document::parse(
+            "<root><register><name>CONTROL</name><field><name>MODE</name>\
+             <bitOffset>0</bitOffset><bitWidth>2</bitWidth>\
+             <writeConstraint><range><minimum>0</minimum><maximum>4</maximum></range>\
+             </writeConstraint></field></register></root>",
+        )
+        .unwrap();
+        assert!(validate_write_semantics(&range).is_err());
+
+        let enumeration = Document::parse(
+            "<root><register><name>CONTROL</name><field><name>MODE</name>\
+             <bitOffset>0</bitOffset><bitWidth>2</bitWidth><enumeratedValues>\
+             <enumeratedValue><name>TOO_WIDE</name><value>4</value></enumeratedValue>\
+             </enumeratedValues></field></register></root>",
+        )
+        .unwrap();
+        assert!(validate_write_semantics(&enumeration).is_err());
     }
 
     #[test]

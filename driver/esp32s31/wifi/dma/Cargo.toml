@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Audited ESP32-S31 Wi-Fi MAC DMA ownership and descriptor ring"
 
 [dependencies]
+open-esp-radio-dma = { path = "../../../dma" }
 open-esp-radio-esp32s31-registers = { path = "../../registers" }
 vcell = "0.1.3"
 

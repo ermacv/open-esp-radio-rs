@@ -570,7 +570,7 @@ mod tests {
         task::{Context, Poll},
     };
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use open_esp_radio_esp32s31_wifi_lmac::rx_pool::RxStagePool;
+    use open_esp_radio_esp32s31_wifi_lmac::{rx::RxDmaBinding, rx_pool::RxStagePool};
 
     fn block_on<F: Future>(future: F) -> F::Output {
         let mut future = pin!(future);
@@ -615,21 +615,21 @@ mod tests {
             false
         }
 
-        fn set_descriptor_high_window(&mut self, _address_high: u16) {}
+        fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
 
-        fn write_descriptor_base(&mut self, address: u32) {
+        fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
             self.descriptor_base = address;
         }
 
-        fn publish_walker_enable(&mut self) {
+        fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
             self.walker = true;
         }
 
-        fn request_reload(&mut self) {
+        fn request_reload(&mut self, _: &RxDmaBinding) {
             self.reload_requests = self.reload_requests.saturating_add(1);
         }
 
-        fn try_enable_walker(&mut self) -> bool {
+        fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
             if self.fail_enable {
                 false
             } else {

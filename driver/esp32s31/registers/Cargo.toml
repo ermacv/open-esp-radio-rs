@@ -11,6 +11,7 @@ description = "Handwritten typed ESP32-S31 radio register transactions"
 validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
 
 [dependencies]
+open-esp-radio-dma = { path = "../../dma" }
 open-esp-radio-esp32s31-pac = { path = "../pac", features = ["critical-section"] }
 
 [dev-dependencies]

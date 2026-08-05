@@ -338,7 +338,7 @@ mod tests {
 
     use open_esp_radio_esp32s31_wifi_lmac::{
         descriptor::{BIT_30, DESCRIPTOR_BYTES},
-        rx::{RxDma, RxRingStopped},
+        rx::{RxDma, RxDmaBinding, RxRingStopped},
     };
 
     use super::*;
@@ -377,15 +377,15 @@ mod tests {
         fn reload_pending(&mut self) -> bool {
             false
         }
-        fn set_descriptor_high_window(&mut self, _address_high: u16) {}
-        fn write_descriptor_base(&mut self, address: u32) {
+        fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
+        fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
             self.descriptor_base = address;
         }
-        fn publish_walker_enable(&mut self) {
+        fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
             self.walker = true;
         }
-        fn request_reload(&mut self) {}
-        fn try_enable_walker(&mut self) -> bool {
+        fn request_reload(&mut self, _: &RxDmaBinding) {}
+        fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
             if self.walker {
                 false
             } else {

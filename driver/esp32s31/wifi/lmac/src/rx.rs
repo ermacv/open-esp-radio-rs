@@ -4,7 +4,7 @@ use crate::descriptor::{
     BIT_31, descriptor_address_valid, length as descriptor_length, rx_done, size as descriptor_size,
 };
 pub use crate::{
-    rx_dma::RxDma,
+    rx_dma::{RxDma, RxDmaBinding},
     rx_ring::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
         RxCompletedUnit, RxCompletedUnitFrontier, RxLiveAppend, RxReloadObservation, RxRingError,

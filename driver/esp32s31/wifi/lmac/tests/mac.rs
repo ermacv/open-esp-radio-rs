@@ -33,7 +33,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
         HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxError,
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxDmaBinding, RxError,
         RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError,
         RxRingStopped, RxSegment, build_cold_ring, decode_normalized_rx_metadata,
         decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive, enable_receive,
@@ -155,7 +155,7 @@ impl RxDma for MockMmio {
         self.read32(RX_CONTROL) & RX_RELOAD != 0
     }
 
-    fn set_descriptor_high_window(&mut self, address_high: u16) {
+    fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, address_high: u16) {
         let previous = self.read32(RX_LAST_DESCRIPTOR_HIGH);
         self.write32(
             RX_LAST_DESCRIPTOR_HIGH,
@@ -163,21 +163,21 @@ impl RxDma for MockMmio {
         );
     }
 
-    fn write_descriptor_base(&mut self, address: u32) {
+    fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
         self.write32(RX_DESCRIPTOR_BASE, address);
     }
 
-    fn publish_walker_enable(&mut self) {
+    fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
         let control = self.read32(RX_CONTROL);
         self.write32(RX_CONTROL, control | RX_ENABLE);
     }
 
-    fn request_reload(&mut self) {
+    fn request_reload(&mut self, _: &RxDmaBinding) {
         let control = self.read32(RX_CONTROL);
         self.write32(RX_CONTROL, control | RX_RELOAD);
     }
 
-    fn try_enable_walker(&mut self) -> bool {
+    fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
         let control = self.read32(RX_CONTROL);
         if control & RX_ENABLE != 0 {
             return false;

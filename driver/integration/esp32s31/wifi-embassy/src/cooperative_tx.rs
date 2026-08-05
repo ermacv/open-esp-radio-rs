@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
-    rx::RxDma,
+    rx::{RxDma, RxDmaBinding},
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::TxHardware,
     tx_ampdu::HtAmpduHardware,
@@ -246,24 +246,28 @@ impl RxDma for CooperativeTxHardware<'_, '_> {
         RxDma::reload_pending(&mut **self.registers.borrow_mut())
     }
 
-    fn set_descriptor_high_window(&mut self, address_high: u16) {
-        RxDma::set_descriptor_high_window(&mut **self.registers.borrow_mut(), address_high);
+    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
+        RxDma::set_descriptor_high_window(
+            &mut **self.registers.borrow_mut(),
+            binding,
+            address_high,
+        );
     }
 
-    fn write_descriptor_base(&mut self, address: u32) {
-        RxDma::write_descriptor_base(&mut **self.registers.borrow_mut(), address);
+    fn write_descriptor_base(&mut self, binding: &RxDmaBinding, address: u32) {
+        RxDma::write_descriptor_base(&mut **self.registers.borrow_mut(), binding, address);
     }
 
-    fn publish_walker_enable(&mut self) {
-        RxDma::publish_walker_enable(&mut **self.registers.borrow_mut());
+    fn publish_walker_enable(&mut self, binding: &RxDmaBinding) {
+        RxDma::publish_walker_enable(&mut **self.registers.borrow_mut(), binding);
     }
 
-    fn request_reload(&mut self) {
-        RxDma::request_reload(&mut **self.registers.borrow_mut());
+    fn request_reload(&mut self, binding: &RxDmaBinding) {
+        RxDma::request_reload(&mut **self.registers.borrow_mut(), binding);
     }
 
-    fn try_enable_walker(&mut self) -> bool {
-        RxDma::try_enable_walker(&mut **self.registers.borrow_mut())
+    fn try_enable_walker(&mut self, binding: &RxDmaBinding) -> bool {
+        RxDma::try_enable_walker(&mut **self.registers.borrow_mut(), binding)
     }
 
     fn try_disable_walker(&mut self) -> bool {

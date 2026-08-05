@@ -1282,6 +1282,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-registers"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-pac",
 ]
 
@@ -1289,6 +1290,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-registers",
  "vcell",
 ]

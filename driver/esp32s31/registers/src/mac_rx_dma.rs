@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_dma::StableDmaRange;
+
 use super::{RadioRegisters, device_fence, svd};
 
 #[inline(always)]
@@ -104,27 +106,38 @@ impl RadioRegisters {
         descriptor_reload_pending(&self.peripherals.wifi_mac_rx_dma)
     }
 
-    pub fn set_mac_rx_descriptor_high_window(&mut self, address_high: u16) {
+    /// Select the address window carried by a retained descriptor range.
+    pub fn set_mac_rx_descriptor_high_window(
+        &mut self,
+        binding: &StableDmaRange<'_>,
+        address_high: u16,
+    ) {
         assert!(address_high <= 0x0fff);
+        assert_eq!(address_high, (binding.start() >> 20) as u16);
         self.peripherals
             .wifi_mac_rx_dma
             .rx_descriptor_high_window()
             .modify(|_, w| w.address_high().set(address_high));
     }
 
-    pub fn write_mac_rx_descriptor_base(&mut self, address: u32) {
+    /// Publish a descriptor head contained by the retained DMA range.
+    pub fn write_mac_rx_descriptor_base(&mut self, binding: &StableDmaRange<'_>, address: u32) {
+        assert!(binding.contains(address, 1));
         write_descriptor_base(&self.peripherals.wifi_mac_rx_dma, address);
     }
 
-    pub fn publish_mac_rx_walker_enable(&mut self) {
+    /// Start the walker only while its descriptor backing authority is held.
+    pub fn publish_mac_rx_walker_enable(&mut self, _binding: &StableDmaRange<'_>) {
         set_walker_enabled(&self.peripherals.wifi_mac_rx_dma, true);
     }
 
-    pub fn request_mac_rx_descriptor_reload(&mut self) {
+    /// Ask the live walker to follow newly published descriptor links.
+    pub fn request_mac_rx_descriptor_reload(&mut self, _binding: &StableDmaRange<'_>) {
         request_descriptor_reload(&self.peripherals.wifi_mac_rx_dma);
     }
 
-    pub fn try_enable_mac_rx_walker(&mut self) -> bool {
+    /// Start and confirm the walker while descriptor authority is retained.
+    pub fn try_enable_mac_rx_walker(&mut self, _binding: &StableDmaRange<'_>) -> bool {
         let control = self.peripherals.wifi_mac_rx_dma.rx_control();
         let previous = control.read();
         if previous.walker_enable().bit() {

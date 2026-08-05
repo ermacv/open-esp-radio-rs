@@ -79,10 +79,17 @@ descriptor/buffer arena underneath DMA. Native host models retain a borrowed
 constructor because they have no asynchronous hardware actor. Raw RX-DMA
 construction, cold-ring publication and standalone walker enable are unsafe on
 32-bit targets and remain safe only in native models with no DMA actor. The
-validation probes state their synthetic/static-address proof explicitly. The
-remaining public `RxDma` backend trait still exposes address-level operations;
-replacing its production implementation with a storage-bound capability is the
-next remaining part of this audit.
+validation probes state their synthetic/static-address proof explicitly.
+
+RX walker mutation now also requires a non-forgeable `StableDmaRange` produced
+by the audited DMA leaves. `RxRingStopped` creates a private `RxDmaBinding`
+from its retained descriptor arena and moves that authority through stopped
+and live typestates. The public `RxDma` backend and the lower
+`RadioRegisters` descriptor-base, enable and reload methods all require the
+binding/range; owning a register singleton or implementing a mock backend is
+no longer enough to publish an arbitrary safe-Rust address. Only the existing
+raw target validation entry points manufacture synthetic authority, under
+their explicit unsafe contract.
 
 ## Layer rules
 

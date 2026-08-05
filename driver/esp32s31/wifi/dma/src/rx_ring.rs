@@ -10,7 +10,7 @@ use crate::{
         descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word,
         rx_done, rx_rearm_word, size as descriptor_size,
     },
-    rx_dma::RxDma,
+    rx_dma::{RxDma, RxDmaBinding},
 };
 
 /// Guard value restored by the ROM RX recycler at both DMA-buffer bounds.
@@ -178,6 +178,7 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
     initial_start: usize,
     accepted_tail: usize,
     retained_last_low: u32,
+    binding: RxDmaBinding<'a>,
 }
 
 /// Sole software owner of one running S31 RX descriptor frontier.
@@ -194,6 +195,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     recycle_start: usize,
     accepted_tail: usize,
     pending_tail: Option<usize>,
+    binding: RxDmaBinding<'a>,
 }
 
 /// Descriptor storage authority after the hardware walker is confirmed off.
@@ -347,6 +349,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
         validate_live_ring_geometry::<COUNT>()?;
+        let binding = RxDmaBinding::new(descriptors, descriptor_base).ok_or(RxRingError::Count)?;
         let retained_last_low = mmio.last_descriptor_low();
         let initial_start = descriptor_index(retained_last_low, descriptor_base, COUNT)
             .map_or(0, |index| if index + 1 == COUNT { 0 } else { index + 1 });
@@ -365,7 +368,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             initial_start,
         )?;
         let head = descriptor_address(descriptor_base, initial_start)?;
-        publish_cold_ring_inner(mmio, head, false)?;
+        publish_cold_ring_inner(mmio, &binding, head, false)?;
 
         Ok(Self {
             descriptors,
@@ -374,6 +377,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             initial_start,
             accepted_tail: wrap_sub_one::<COUNT>(initial_start),
             retained_last_low,
+            binding,
         })
     }
 
@@ -397,7 +401,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self,
         mmio: &mut M,
     ) -> Result<RxRingLive<'a, COUNT>, (Self, RxRingError)> {
-        if let Err(error) = enable_receive_inner(mmio) {
+        if let Err(error) = enable_receive_inner(mmio, &self.binding) {
             return Err((self, error));
         }
         Ok(RxRingLive {
@@ -408,6 +412,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             recycle_start: self.initial_start,
             accepted_tail: self.accepted_tail,
             pending_tail: None,
+            binding: self.binding,
         })
     }
 
@@ -843,7 +848,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         // unreachable until this old-tail link and the following doorbell.
         accepted_tail.publish_next_address(head_address);
         mmio.fence();
-        mmio.request_reload();
+        mmio.request_reload(&self.binding);
         mmio.fence();
 
         self.pending_tail = Some(tail_index);
@@ -920,7 +925,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 if repair_head == 0 {
                     return Err(RxRingError::Corrupt);
                 }
-                mmio.write_descriptor_base(repair_head);
+                mmio.write_descriptor_base(&self.binding, repair_head);
                 mmio.fence();
             }
         }
@@ -1060,7 +1065,8 @@ pub fn publish_cold_ring<M: RxDma>(
     descriptor_dma_base: u32,
     enable_rx: bool,
 ) -> Result<(), RxRingError> {
-    publish_cold_ring_inner(mmio, descriptor_dma_base, enable_rx)
+    let binding = RxDmaBinding::raw_validation(descriptor_dma_base);
+    publish_cold_ring_inner(mmio, &binding, descriptor_dma_base, enable_rx)
 }
 
 /// Publish raw target addresses outside the owned storage path.
@@ -1080,11 +1086,13 @@ pub unsafe fn publish_cold_ring<M: RxDma>(
     descriptor_dma_base: u32,
     enable_rx: bool,
 ) -> Result<(), RxRingError> {
-    publish_cold_ring_inner(mmio, descriptor_dma_base, enable_rx)
+    let binding = RxDmaBinding::raw_validation(descriptor_dma_base);
+    publish_cold_ring_inner(mmio, &binding, descriptor_dma_base, enable_rx)
 }
 
 fn publish_cold_ring_inner<M: RxDma>(
     mmio: &mut M,
+    binding: &RxDmaBinding<'_>,
     descriptor_dma_base: u32,
     enable_rx: bool,
 ) -> Result<(), RxRingError> {
@@ -1092,10 +1100,10 @@ fn publish_cold_ring_inner<M: RxDma>(
         return Err(RxRingError::Address);
     }
     mmio.fence();
-    mmio.set_descriptor_high_window(0x02f0);
-    mmio.write_descriptor_base(descriptor_dma_base);
+    mmio.set_descriptor_high_window(binding, 0x02f0);
+    mmio.write_descriptor_base(binding, descriptor_dma_base);
     if enable_rx {
-        mmio.publish_walker_enable();
+        mmio.publish_walker_enable(binding);
     }
     mmio.fence();
     Ok(())
@@ -1110,7 +1118,7 @@ fn publish_cold_ring_inner<M: RxDma>(
 /// settle while the caller completes channel/MAC setup.
 #[cfg(not(target_pointer_width = "32"))]
 pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
-    enable_receive_inner(mmio)
+    enable_receive_inner(mmio, &RxDmaBinding::raw_validation(0))
 }
 
 /// Open a target walker whose raw published base is owned by the caller.
@@ -1126,11 +1134,14 @@ pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
     reason = "raw target enable makes its DMA lifetime contract explicit"
 )]
 pub unsafe fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
-    enable_receive_inner(mmio)
+    enable_receive_inner(mmio, &RxDmaBinding::raw_validation(0))
 }
 
-fn enable_receive_inner<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
-    if mmio.try_enable_walker() {
+fn enable_receive_inner<M: RxDma>(
+    mmio: &mut M,
+    binding: &RxDmaBinding<'_>,
+) -> Result<(), RxRingError> {
+    if mmio.try_enable_walker(binding) {
         Ok(())
     } else {
         Err(RxRingError::Busy)

@@ -6,8 +6,12 @@
 //! This crate deliberately does not know about a chip, executor, network
 //! stack, descriptor layout or allocator. [`StableDmaBacking`] proves that a
 //! retained TX allocation cannot move, while [`RxHandoffPool`] transfers one
-//! final receive buffer through finite state-specific leases. Higher protocol
+//! final receive buffer through finite state-specific leases.
+//! [`StableDmaRange`] carries an unforgeable address/lifetime proof from those
+//! audited storage leaves into otherwise safe register APIs. Higher protocol
 //! and integration crates use only these safe capabilities.
+
+use core::marker::PhantomData;
 
 mod pinned_tx;
 mod rx_handoff;
@@ -17,6 +21,80 @@ pub use pinned_tx::{
     PinnedDmaTxRadioLease, ReturningStableDmaBacking,
 };
 pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
+
+/// Non-forgeable proof that one address range remains valid for DMA.
+///
+/// The value deliberately exposes observation but no safe constructor. A
+/// chip storage leaf establishes the allocation, aliasing and hardware
+/// lifetime proof once; safe register APIs can then require this capability
+/// instead of accepting an unqualified integer address.
+pub struct StableDmaRange<'storage> {
+    start: u32,
+    len: u32,
+    _storage: PhantomData<&'storage mut ()>,
+}
+
+impl<'storage> StableDmaRange<'storage> {
+    /// Bind a DMA range to an owner borrow after validating its lifecycle.
+    ///
+    /// # Safety
+    ///
+    /// `start..start + len` must name storage governed by `owner`. That
+    /// storage must remain at the same address, and all CPU/hardware access
+    /// must remain synchronized, for the hardware's complete use of the
+    /// range. If a safe owner may be dropped or forgotten while DMA remains
+    /// active, the backing allocation must remain valid independently (for
+    /// example, static storage).
+    #[allow(
+        unsafe_code,
+        reason = "constructor is the audited DMA-address authority boundary"
+    )]
+    pub unsafe fn from_owner<T: ?Sized>(_owner: &'storage T, start: u32, len: u32) -> Option<Self> {
+        start.checked_add(len)?;
+        (len != 0).then_some(Self {
+            start,
+            len,
+            _storage: PhantomData,
+        })
+    }
+
+    /// Construct synthetic/raw authority for a target validation boundary.
+    ///
+    /// # Safety
+    ///
+    /// The complete range must remain valid and exclusively governed by the
+    /// caller until the hardware walker is stopped. Native models may use
+    /// this only when no asynchronous DMA actor exists.
+    #[allow(
+        unsafe_code,
+        reason = "raw validation harnesses cannot carry a Rust storage owner"
+    )]
+    pub unsafe fn from_raw_parts(start: u32, len: u32) -> Option<StableDmaRange<'static>> {
+        start.checked_add(len)?;
+        (len != 0).then_some(StableDmaRange {
+            start,
+            len,
+            _storage: PhantomData,
+        })
+    }
+
+    pub const fn start(&self) -> u32 {
+        self.start
+    }
+
+    pub const fn contains(&self, address: u32, len: u32) -> bool {
+        if len == 0 {
+            return false;
+        }
+        let Some(offset) = address.checked_sub(self.start) else {
+            return false;
+        };
+        let Some(end) = offset.checked_add(len) else {
+            return false;
+        };
+        end <= self.len
+    }
+}
 
 /// Exclusive view of one DMA-capable region at its stable address.
 ///

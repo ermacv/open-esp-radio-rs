@@ -1,0 +1,448 @@
+//! Relocated, direct, table and external-ABI call semantics.
+
+use super::state::StructuralTraceState;
+use super::*;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StructuralCallControl {
+    NotCall,
+    Advance(usize),
+    Stop,
+}
+
+fn structural_finish_call(
+    values: &mut [SymbolicValue; 32],
+    return_address: u32,
+    call_token: u32,
+    target: u32,
+    pointer_context: &StructuralPointerContext,
+) {
+    structural_finish_call_with_result(
+        values,
+        return_address,
+        SymbolicValue::CallResult(call_token),
+    );
+    if pointer_context
+        .summary_hooks
+        .is_some_and(|hooks| (hooks.secondary_return_target)(target))
+    {
+        structural_set(
+            values,
+            Reg::A1,
+            SymbolicValue::CallResult(call_token | SECONDARY_CALL_RESULT_TOKEN_FLAG),
+        );
+    }
+}
+
+fn structural_finish_call_with_result(
+    values: &mut [SymbolicValue; 32],
+    return_address: u32,
+    result: SymbolicValue,
+) {
+    for register in [
+        Reg::RA,
+        Reg::T0,
+        Reg::T1,
+        Reg::T2,
+        Reg::A0,
+        Reg::A1,
+        Reg::A2,
+        Reg::A3,
+        Reg::A4,
+        Reg::A5,
+        Reg::A6,
+        Reg::A7,
+        Reg::T3,
+        Reg::T4,
+        Reg::T5,
+        Reg::T6,
+    ] {
+        structural_set(values, register, SymbolicValue::Unknown);
+    }
+    structural_set(values, Reg::RA, SymbolicValue::Constant(return_address));
+    structural_set(values, Reg::A0, result);
+}
+
+pub(super) fn apply_relocated_call(
+    decoded: artifact::DecodedInstruction,
+    next_instruction: Option<artifact::DecodedInstruction>,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    state: &mut StructuralTraceState,
+) -> StructuralCallControl {
+    let pc = decoded.address;
+    let Some((name, target)) = relocated_calls.get(&StructuralCallSite::new(symbol, pc as u32))
+    else {
+        return StructuralCallControl::NotCall;
+    };
+
+    state.blockers.push(format!(
+        "call/jump instruction at {pc:#x}: relocated call to {name}"
+    ));
+    let Some(jalr) = next_instruction else {
+        state.reference_blockers.push(format!(
+            "malformed-call-relocation at {pc:#x}: {name} has no following JALR"
+        ));
+        return StructuralCallControl::Stop;
+    };
+    if jalr.address != pc.wrapping_add(4) {
+        state.reference_blockers.push(format!(
+            "malformed-call-relocation at {pc:#x}: {name} is not a two-instruction call"
+        ));
+        return StructuralCallControl::Stop;
+    }
+    let Inst::Jalr { dest, .. } = jalr.instruction else {
+        state.reference_blockers.push(format!(
+            "malformed-call-relocation at {pc:#x}: {name} is not followed by JALR"
+        ));
+        return StructuralCallControl::Stop;
+    };
+
+    if target.is_none()
+        && let Some(result) = inline_standard_memory_intrinsic(
+            name,
+            &core::array::from_fn(|index| {
+                if index < RV32_REGISTER_ARGUMENT_COUNT {
+                    state.values[10 + index].clone()
+                } else {
+                    SymbolicValue::Unknown
+                }
+            }),
+            symbol,
+            &mut state.stack,
+            &mut state.reference_events,
+            &mut state.next_memory_read_token,
+        )
+    {
+        if !matches!(dest, Reg::ZERO | Reg::RA) {
+            state.reference_blockers.push(format!(
+                "unsupported-memory-intrinsic-link-register at {pc:#x}: {name} uses {dest}"
+            ));
+            return StructuralCallControl::Stop;
+        }
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                state
+                    .reference_blockers
+                    .push(format!("standard-memory-intrinsic at {pc:#x}: {error}"));
+                return StructuralCallControl::Stop;
+            }
+        };
+        let removed = state.blockers.pop();
+        debug_assert!(removed.is_some_and(|blocker| blocker.starts_with("call/jump instruction")));
+        state.blockers.push(format!(
+            "{REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER} at {pc:#x}: {name}"
+        ));
+        if dest == Reg::ZERO {
+            state.return_value = result;
+            return StructuralCallControl::Stop;
+        }
+        structural_finish_call_with_result(&mut state.values, (pc as u32).wrapping_add(8), result);
+        return StructuralCallControl::Advance(2);
+    }
+
+    if target.is_none()
+        && let Some(&argument_count) = pointer_context.diagnostic_calls.get(name)
+    {
+        if dest != Reg::RA {
+            state.reference_blockers.push(format!(
+                "unsupported-diagnostic-call-link-register at {pc:#x}: {name} uses {dest}"
+            ));
+            return StructuralCallControl::Stop;
+        }
+        let arguments = (0..usize::from(argument_count))
+            .map(|index| state.values[10 + index].clone())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        state
+            .reference_events
+            .push(DraftReferenceEvent::DiagnosticCall {
+                function: name.clone(),
+                argument_count,
+                arguments,
+            });
+        structural_finish_call_with_result(
+            &mut state.values,
+            (pc as u32).wrapping_add(8),
+            SymbolicValue::Unknown,
+        );
+        return StructuralCallControl::Advance(2);
+    }
+
+    let Some(target) = *target else {
+        state
+            .reference_blockers
+            .push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
+        return StructuralCallControl::Stop;
+    };
+    let arguments = structural_call_arguments(
+        &state.values,
+        &state.stack,
+        state.private_stack_may_be_modified_by_call,
+    );
+    state.private_stack_may_be_modified_by_call |= arguments
+        .iter()
+        .any(|argument| argument.private_stack_offset().is_some());
+    if dest == Reg::ZERO {
+        let call_token = state.next_call_token;
+        state.reference_events.push(DraftReferenceEvent::TailCall {
+            token: call_token,
+            site: pc as u32,
+            target,
+            arguments,
+        });
+        state.return_value = SymbolicValue::CallResult(call_token);
+        return StructuralCallControl::Stop;
+    }
+    if dest == Reg::RA {
+        let call_token = state.next_call_token;
+        state.next_call_token += 1;
+        state.reference_events.push(DraftReferenceEvent::Call {
+            token: call_token,
+            site: pc as u32,
+            target,
+            arguments,
+        });
+        structural_finish_call(
+            &mut state.values,
+            (pc as u32).wrapping_add(8),
+            call_token,
+            target,
+            pointer_context,
+        );
+    } else {
+        state.reference_blockers.push(format!(
+            "unsupported-call-link-register at {pc:#x}: {name} uses {dest}"
+        ));
+    }
+    StructuralCallControl::Advance(2)
+}
+
+pub(super) fn apply_call_instruction(
+    decoded: artifact::DecodedInstruction,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    pointer_context: &StructuralPointerContext,
+    state: &mut StructuralTraceState,
+) -> StructuralCallControl {
+    let pc = decoded.address;
+    let width = decoded.width;
+    let instruction = decoded.instruction;
+    match instruction {
+        Inst::Jal { offset, dest } => {
+            let target = (pc as u32).wrapping_add(offset.as_u32());
+            let symbol_start = symbol.address as u32;
+            let symbol_end = symbol_start.wrapping_add(symbol.bytes.len() as u32);
+            if dest == Reg::ZERO && target >= symbol_start && target < symbol_end {
+                return StructuralCallControl::NotCall;
+            }
+            state
+                .blockers
+                .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+            if target < symbol_start || target >= symbol_end {
+                let arguments = structural_call_arguments(
+                    &state.values,
+                    &state.stack,
+                    state.private_stack_may_be_modified_by_call,
+                );
+                state.private_stack_may_be_modified_by_call |= arguments
+                    .iter()
+                    .any(|argument| argument.private_stack_offset().is_some());
+                if dest == Reg::ZERO {
+                    let call_token = state.next_call_token;
+                    state.reference_events.push(DraftReferenceEvent::TailCall {
+                        token: call_token,
+                        site: pc as u32,
+                        target,
+                        arguments,
+                    });
+                    state.return_value = SymbolicValue::CallResult(call_token);
+                    return StructuralCallControl::Stop;
+                }
+                if dest == Reg::RA {
+                    let call_token = state.next_call_token;
+                    state.next_call_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Call {
+                        token: call_token,
+                        site: pc as u32,
+                        target,
+                        arguments,
+                    });
+                    structural_finish_call(
+                        &mut state.values,
+                        (pc as u32).wrapping_add(u32::from(width)),
+                        call_token,
+                        target,
+                        pointer_context,
+                    );
+                }
+            }
+            StructuralCallControl::Advance(1)
+        }
+        Inst::Jalr { offset, base, dest }
+            if matches!(
+                &state.values[usize::from(base.0)],
+                SymbolicValue::FunctionPointer { .. }
+            ) =>
+        {
+            let SymbolicValue::FunctionPointer { table, target } =
+                state.values[usize::from(base.0)].clone()
+            else {
+                unreachable!()
+            };
+            state
+                .blockers
+                .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+            if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+                state.reference_blockers.push(format!(
+                    "unsupported function-table call shape at {pc:#x}: {}::{target:#010x}",
+                    table.id()
+                ));
+                return StructuralCallControl::Stop;
+            }
+            let arguments = structural_call_arguments(
+                &state.values,
+                &state.stack,
+                state.private_stack_may_be_modified_by_call,
+            );
+            state.private_stack_may_be_modified_by_call |= arguments
+                .iter()
+                .any(|argument| argument.private_stack_offset().is_some());
+            let call_token = state.next_call_token;
+            if dest == Reg::ZERO {
+                state.reference_events.push(DraftReferenceEvent::TailCall {
+                    token: call_token,
+                    site: pc as u32,
+                    target,
+                    arguments,
+                });
+                state.return_value = SymbolicValue::CallResult(call_token);
+                return StructuralCallControl::Stop;
+            }
+            state.next_call_token += 1;
+            state.reference_events.push(DraftReferenceEvent::Call {
+                token: call_token,
+                site: pc as u32,
+                target,
+                arguments,
+            });
+            structural_finish_call(
+                &mut state.values,
+                (pc as u32).wrapping_add(u32::from(width)),
+                call_token,
+                target,
+                pointer_context,
+            );
+            StructuralCallControl::Advance(1)
+        }
+        Inst::Jalr { offset, base, dest }
+            if matches!(
+                &state.values[usize::from(base.0)],
+                SymbolicValue::ExternalFunction { .. }
+            ) =>
+        {
+            let SymbolicValue::ExternalFunction { table, function } =
+                state.values[usize::from(base.0)].clone()
+            else {
+                unreachable!()
+            };
+            let slot = function.spec();
+            if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+                state.blockers.push(format!(
+                    "unsupported external ABI call shape at {pc:#x}: {instruction}"
+                ));
+                return StructuralCallControl::Stop;
+            }
+            let mut arguments = (0..usize::from(slot.argument_count))
+                .map(|index| state.values[10 + index].clone())
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            let mut private_stack_output = None;
+            let result = match slot.return_model {
+                ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
+                ExternalReturnModel::SymbolicU32 => {
+                    SymbolicValue::ExternalResult(state.next_external_call_token)
+                }
+                ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
+                    let Some(SymbolicValue::StackAddress(offset)) =
+                        arguments.get(usize::from(pointer_argument))
+                    else {
+                        state.blockers.push(format!(
+                            "call/jump instruction at {pc:#x}: external ABI {}::{}",
+                            table.spec().id,
+                            slot.c_name
+                        ));
+                        state.reference_blockers.push(format!(
+                            "unsupported-external-output-pointer at {pc:#x}: {}::{} argument a{pointer_argument} is not private stack",
+                            table.spec().id,
+                            slot.c_name
+                        ));
+                        return StructuralCallControl::Stop;
+                    };
+                    let output =
+                        SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
+                    state.stack.store(*offset, 8, &output);
+                    private_stack_output = Some((*offset, output));
+                    // The validated private pointer has already been consumed by
+                    // the internal stack effect. Do not let a callee-local
+                    // address escape into call composition or generated behavior.
+                    arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
+                    // The C callback returns an int, but this model only claims
+                    // its output-byte effect. Later use of a0 remains fail-closed.
+                    SymbolicValue::Unknown
+                }
+                ExternalReturnModel::Unmodeled => {
+                    state.reference_blockers.push(format!(
+                        "unmodeled-external-semantics at {pc:#x}: {}::{} ({})",
+                        table.spec().id,
+                        slot.c_name,
+                        slot.semantic.operation,
+                    ));
+                    SymbolicValue::ExternalResult(state.next_external_call_token)
+                }
+            };
+            state
+                .reference_events
+                .push(DraftReferenceEvent::ExternalCall {
+                    token: state.next_external_call_token,
+                    table,
+                    function,
+                    arguments,
+                });
+            if let Some((offset, value)) = private_stack_output {
+                state
+                    .reference_events
+                    .push(DraftReferenceEvent::PrivateStackStore {
+                        offset,
+                        width: 8,
+                        value,
+                    });
+            }
+            state.next_external_call_token += 1;
+            if dest == Reg::ZERO {
+                state.return_value = result;
+                return StructuralCallControl::Stop;
+            }
+            structural_finish_call_with_result(
+                &mut state.values,
+                (pc as u32).wrapping_add(u32::from(width)),
+                result,
+            );
+            StructuralCallControl::Advance(1)
+        }
+        Inst::Jalr { offset, base, dest }
+            if dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0 =>
+        {
+            state.return_value = state.values[usize::from(Reg::A0.0)].clone();
+            StructuralCallControl::Stop
+        }
+        Inst::Jalr { .. } => {
+            state
+                .blockers
+                .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+            StructuralCallControl::Advance(1)
+        }
+        _ => StructuralCallControl::NotCall,
+    }
+}

@@ -92,6 +92,7 @@ that do not need to control that walk:
 | Module | Responsibility |
 | --- | --- |
 | `alu.rs` | Register-only RV32 integer semantics and ALU-related relocations |
+| `calls.rs` | Relocated, direct, function-table, and external-ABI call semantics |
 | `context.rs` | Relocated calls, pointer cells, tables, and harness summary context |
 | `memory.rs` | Effective addresses, data relocations, indexed-memory proofs, and bounded memory intrinsics |
 | `memory_access.rs` | Load/store effects over MMIO, ELF memory, caller RAM, and private stack |
@@ -103,7 +104,9 @@ ALU evaluation cannot emit effects or change instruction traversal. Memory
 dispatch mutates one `StructuralTraceState` and cannot select the next PC.
 Poll recovery consumes immutable trace prefixes plus an explicit checkpoint,
 which the state owner restores atomically. The orchestrator retains only call
-and control-flow decisions plus instruction traversal.
+control results, branch/local-jump decisions, and instruction traversal. Call
+semantics return `NotCall`, `Advance(n)`, or `Stop`; they cannot mutate the
+orchestrator's instruction index.
 
 ## RISC-V reference-analysis layout
 
@@ -168,9 +171,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/static_analysis/mod.rs`: move relocated, direct, table,
-  and external call dispatch behind the shared trace state while keeping PC
-  traversal and branch selection in the orchestrator.
+- `backend-riscv/src/execution/image.rs`: separate ELF/relocation loading,
+  code-closure identity, coverage traversal, and byte/instruction access while
+  retaining `ExecutableImage` as the stable facade.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

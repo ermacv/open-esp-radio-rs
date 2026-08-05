@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod alu;
+mod calls;
 mod context;
 mod memory;
 mod memory_access;
@@ -23,6 +24,7 @@ mod stack;
 mod state;
 
 use alu::apply_alu_instruction;
+use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
 pub use context::{StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls};
 use memory::*;
 use memory_access::apply_memory_instruction;
@@ -76,59 +78,6 @@ fn structural_set(values: &mut [SymbolicValue; 32], register: Reg, value: Symbol
     if register != Reg::ZERO {
         values[usize::from(register.0)] = value;
     }
-}
-
-fn structural_finish_call(
-    values: &mut [SymbolicValue; 32],
-    return_address: u32,
-    call_token: u32,
-    target: u32,
-    pointer_context: &StructuralPointerContext,
-) {
-    structural_finish_call_with_result(
-        values,
-        return_address,
-        SymbolicValue::CallResult(call_token),
-    );
-    if pointer_context
-        .summary_hooks
-        .is_some_and(|hooks| (hooks.secondary_return_target)(target))
-    {
-        structural_set(
-            values,
-            Reg::A1,
-            SymbolicValue::CallResult(call_token | SECONDARY_CALL_RESULT_TOKEN_FLAG),
-        );
-    }
-}
-
-fn structural_finish_call_with_result(
-    values: &mut [SymbolicValue; 32],
-    return_address: u32,
-    result: SymbolicValue,
-) {
-    for register in [
-        Reg::RA,
-        Reg::T0,
-        Reg::T1,
-        Reg::T2,
-        Reg::A0,
-        Reg::A1,
-        Reg::A2,
-        Reg::A3,
-        Reg::A4,
-        Reg::A5,
-        Reg::A6,
-        Reg::A7,
-        Reg::T3,
-        Reg::T4,
-        Reg::T5,
-        Reg::T6,
-    ] {
-        structural_set(values, register, SymbolicValue::Unknown);
-    }
-    structural_set(values, Reg::RA, SymbolicValue::Constant(return_address));
-    structural_set(values, Reg::A0, result);
 }
 
 pub fn trace_binary_symbol(
@@ -187,158 +136,21 @@ pub fn trace_binary_symbol_with_branches(
         }
         *visits += 1;
         checkpoints.insert(pc as u32, state.checkpoint());
-        if let Some((name, target)) =
-            relocated_calls.get(&StructuralCallSite::new(symbol, pc as u32))
-        {
-            state.blockers.push(format!(
-                "call/jump instruction at {pc:#x}: relocated call to {name}"
-            ));
-            let Some(jalr) = instructions.get(instruction_index + 1).copied() else {
-                state.reference_blockers.push(format!(
-                    "malformed-call-relocation at {pc:#x}: {name} has no following JALR"
-                ));
-                break;
-            };
-            if jalr.address != pc.wrapping_add(4) {
-                state.reference_blockers.push(format!(
-                    "malformed-call-relocation at {pc:#x}: {name} is not a two-instruction call"
-                ));
-                break;
-            }
-            let Inst::Jalr { dest, .. } = jalr.instruction else {
-                state.reference_blockers.push(format!(
-                    "malformed-call-relocation at {pc:#x}: {name} is not followed by JALR"
-                ));
-                break;
-            };
-            if target.is_none()
-                && let Some(result) = inline_standard_memory_intrinsic(
-                    name,
-                    &core::array::from_fn(|index| {
-                        if index < RV32_REGISTER_ARGUMENT_COUNT {
-                            state.values[10 + index].clone()
-                        } else {
-                            SymbolicValue::Unknown
-                        }
-                    }),
-                    symbol,
-                    &mut state.stack,
-                    &mut state.reference_events,
-                    &mut state.next_memory_read_token,
-                )
-            {
-                if !matches!(dest, Reg::ZERO | Reg::RA) {
-                    state.reference_blockers.push(format!(
-                        "unsupported-memory-intrinsic-link-register at {pc:#x}: {name} uses {dest}"
-                    ));
-                    break;
-                }
-                let result = match result {
-                    Ok(result) => result,
-                    Err(error) => {
-                        state
-                            .reference_blockers
-                            .push(format!("standard-memory-intrinsic at {pc:#x}: {error}"));
-                        break;
-                    }
-                };
-                let removed = state.blockers.pop();
-                debug_assert!(
-                    removed.is_some_and(|blocker| { blocker.starts_with("call/jump instruction") })
-                );
-                state.blockers.push(format!(
-                    "{REFERENCE_ONLY_MEMORY_INTRINSIC_BLOCKER} at {pc:#x}: {name}"
-                ));
-                if dest == Reg::ZERO {
-                    state.return_value = result;
-                    break;
-                }
-                structural_finish_call_with_result(
-                    &mut state.values,
-                    (pc as u32).wrapping_add(8),
-                    result,
-                );
+        match apply_relocated_call(
+            decoded,
+            instructions.get(instruction_index + 1).copied(),
+            symbol,
+            relocated_calls,
+            pointer_context,
+            &mut state,
+        ) {
+            StructuralCallControl::NotCall => {}
+            StructuralCallControl::Advance(count) => {
                 state.values[0] = SymbolicValue::Constant(0);
-                instruction_index += 2;
+                instruction_index += count;
                 continue;
             }
-            if target.is_none()
-                && let Some(&argument_count) = pointer_context.diagnostic_calls.get(name)
-            {
-                if dest != Reg::RA {
-                    state.reference_blockers.push(format!(
-                        "unsupported-diagnostic-call-link-register at {pc:#x}: {name} uses {dest}"
-                    ));
-                    break;
-                }
-                let arguments = (0..usize::from(argument_count))
-                    .map(|index| state.values[10 + index].clone())
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
-                state
-                    .reference_events
-                    .push(DraftReferenceEvent::DiagnosticCall {
-                        function: name.clone(),
-                        argument_count,
-                        arguments,
-                    });
-                structural_finish_call_with_result(
-                    &mut state.values,
-                    (pc as u32).wrapping_add(8),
-                    SymbolicValue::Unknown,
-                );
-                state.values[0] = SymbolicValue::Constant(0);
-                instruction_index += 2;
-                continue;
-            }
-            let Some(target) = *target else {
-                state
-                    .reference_blockers
-                    .push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
-                break;
-            };
-            let arguments = structural_call_arguments(
-                &state.values,
-                &state.stack,
-                state.private_stack_may_be_modified_by_call,
-            );
-            state.private_stack_may_be_modified_by_call |= arguments
-                .iter()
-                .any(|argument| argument.private_stack_offset().is_some());
-            if dest == Reg::ZERO {
-                let call_token = state.next_call_token;
-                state.reference_events.push(DraftReferenceEvent::TailCall {
-                    token: call_token,
-                    site: pc as u32,
-                    target,
-                    arguments,
-                });
-                state.return_value = SymbolicValue::CallResult(call_token);
-                break;
-            } else if dest == Reg::RA {
-                let call_token = state.next_call_token;
-                state.next_call_token += 1;
-                state.reference_events.push(DraftReferenceEvent::Call {
-                    token: call_token,
-                    site: pc as u32,
-                    target,
-                    arguments,
-                });
-                structural_finish_call(
-                    &mut state.values,
-                    (pc as u32).wrapping_add(8),
-                    call_token,
-                    target,
-                    pointer_context,
-                );
-            } else {
-                state.reference_blockers.push(format!(
-                    "unsupported-call-link-register at {pc:#x}: {name} uses {dest}"
-                ));
-            }
-            state.values[0] = SymbolicValue::Constant(0);
-            instruction_index += 2;
-            continue;
+            StructuralCallControl::Stop => break,
         }
         if apply_alu_instruction(
             decoded,
@@ -354,6 +166,15 @@ pub fn trace_binary_symbol_with_branches(
             state.values[0] = SymbolicValue::Constant(0);
             instruction_index += 1;
             continue;
+        }
+        match apply_call_instruction(decoded, symbol, pointer_context, &mut state) {
+            StructuralCallControl::NotCall => {}
+            StructuralCallControl::Advance(count) => {
+                state.values[0] = SymbolicValue::Constant(0);
+                instruction_index += count;
+                continue;
+            }
+            StructuralCallControl::Stop => break,
         }
         match instruction {
             Inst::Beq { offset, src1, src2 }
@@ -474,224 +295,17 @@ pub fn trace_binary_symbol_with_branches(
                 continue;
             }
             Inst::Jal { offset, dest } => {
+                debug_assert_eq!(dest, Reg::ZERO);
                 let target = (pc as u32).wrapping_add(offset.as_u32());
-                let symbol_start = symbol.address as u32;
-                let symbol_end = symbol_start.wrapping_add(symbol.bytes.len() as u32);
-                if dest == Reg::ZERO && target >= symbol_start && target < symbol_end {
-                    let Some(target_index) = instruction_indices.get(&target).copied() else {
-                        state.blockers.push(format!(
-                            "invalid local jump target at {pc:#x}: {instruction}"
-                        ));
-                        break;
-                    };
-                    instruction_index = target_index;
-                    state.values[0] = SymbolicValue::Constant(0);
-                    continue;
-                }
-                state
-                    .blockers
-                    .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
-                if target < symbol_start || target >= symbol_end {
-                    let arguments = structural_call_arguments(
-                        &state.values,
-                        &state.stack,
-                        state.private_stack_may_be_modified_by_call,
-                    );
-                    state.private_stack_may_be_modified_by_call |= arguments
-                        .iter()
-                        .any(|argument| argument.private_stack_offset().is_some());
-                    if dest == Reg::ZERO {
-                        let call_token = state.next_call_token;
-                        state.reference_events.push(DraftReferenceEvent::TailCall {
-                            token: call_token,
-                            site: pc as u32,
-                            target,
-                            arguments,
-                        });
-                        state.return_value = SymbolicValue::CallResult(call_token);
-                        break;
-                    } else if dest == Reg::RA {
-                        let call_token = state.next_call_token;
-                        state.next_call_token += 1;
-                        state.reference_events.push(DraftReferenceEvent::Call {
-                            token: call_token,
-                            site: pc as u32,
-                            target,
-                            arguments,
-                        });
-                        structural_finish_call(
-                            &mut state.values,
-                            (pc as u32).wrapping_add(u32::from(width)),
-                            call_token,
-                            target,
-                            pointer_context,
-                        );
-                    }
-                }
-            }
-            Inst::Jalr { offset, base, dest }
-                if matches!(
-                    &state.values[usize::from(base.0)],
-                    SymbolicValue::FunctionPointer { .. }
-                ) =>
-            {
-                let SymbolicValue::FunctionPointer { table, target } =
-                    state.values[usize::from(base.0)].clone()
-                else {
-                    unreachable!()
-                };
-                state
-                    .blockers
-                    .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
-                if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
-                    state.reference_blockers.push(format!(
-                        "unsupported function-table call shape at {pc:#x}: {}::{target:#010x}",
-                        table.id()
-                    ));
-                    break;
-                }
-                let arguments = structural_call_arguments(
-                    &state.values,
-                    &state.stack,
-                    state.private_stack_may_be_modified_by_call,
-                );
-                state.private_stack_may_be_modified_by_call |= arguments
-                    .iter()
-                    .any(|argument| argument.private_stack_offset().is_some());
-                let call_token = state.next_call_token;
-                if dest == Reg::ZERO {
-                    state.reference_events.push(DraftReferenceEvent::TailCall {
-                        token: call_token,
-                        site: pc as u32,
-                        target,
-                        arguments,
-                    });
-                    state.return_value = SymbolicValue::CallResult(call_token);
-                    break;
-                }
-                state.next_call_token += 1;
-                state.reference_events.push(DraftReferenceEvent::Call {
-                    token: call_token,
-                    site: pc as u32,
-                    target,
-                    arguments,
-                });
-                structural_finish_call(
-                    &mut state.values,
-                    (pc as u32).wrapping_add(u32::from(width)),
-                    call_token,
-                    target,
-                    pointer_context,
-                );
-            }
-            Inst::Jalr { offset, base, dest }
-                if matches!(
-                    &state.values[usize::from(base.0)],
-                    SymbolicValue::ExternalFunction { .. }
-                ) =>
-            {
-                let SymbolicValue::ExternalFunction { table, function } =
-                    state.values[usize::from(base.0)].clone()
-                else {
-                    unreachable!()
-                };
-                let slot = function.spec();
-                if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+                let Some(target_index) = instruction_indices.get(&target).copied() else {
                     state.blockers.push(format!(
-                        "unsupported external ABI call shape at {pc:#x}: {instruction}"
+                        "invalid local jump target at {pc:#x}: {instruction}"
                     ));
                     break;
-                }
-                let mut arguments = (0..usize::from(slot.argument_count))
-                    .map(|index| state.values[10 + index].clone())
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
-                let mut private_stack_output = None;
-                let result = match slot.return_model {
-                    ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
-                    ExternalReturnModel::SymbolicU32 => {
-                        SymbolicValue::ExternalResult(state.next_external_call_token)
-                    }
-                    ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
-                        let Some(SymbolicValue::StackAddress(offset)) =
-                            arguments.get(usize::from(pointer_argument))
-                        else {
-                            state.blockers.push(format!(
-                                "call/jump instruction at {pc:#x}: external ABI {}::{}",
-                                table.spec().id,
-                                slot.c_name
-                            ));
-                            state.reference_blockers.push(format!(
-                                "unsupported-external-output-pointer at {pc:#x}: {}::{} argument a{pointer_argument} is not private stack",
-                                table.spec().id,
-                                slot.c_name
-                            ));
-                            break;
-                        };
-                        let output =
-                            SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
-                        state.stack.store(*offset, 8, &output);
-                        private_stack_output = Some((*offset, output));
-                        // The validated private pointer has already been
-                        // consumed by the internal stack effect. Do not let a
-                        // callee-local address escape into call composition or
-                        // generated behavior.
-                        arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
-                        // The C callback returns an int, but this model only
-                        // claims its output-byte effect. Any later use of a0
-                        // therefore remains fail-closed.
-                        SymbolicValue::Unknown
-                    }
-                    ExternalReturnModel::Unmodeled => {
-                        state.reference_blockers.push(format!(
-                            "unmodeled-external-semantics at {pc:#x}: {}::{} ({})",
-                            table.spec().id,
-                            slot.c_name,
-                            slot.semantic.operation,
-                        ));
-                        // Preserve opaque return-value data flow for manual IR
-                        // without claiming the call's effects are modeled.
-                        SymbolicValue::ExternalResult(state.next_external_call_token)
-                    }
                 };
-                state
-                    .reference_events
-                    .push(DraftReferenceEvent::ExternalCall {
-                        token: state.next_external_call_token,
-                        table,
-                        function,
-                        arguments,
-                    });
-                if let Some((offset, value)) = private_stack_output {
-                    state
-                        .reference_events
-                        .push(DraftReferenceEvent::PrivateStackStore {
-                            offset,
-                            width: 8,
-                            value,
-                        });
-                }
-                state.next_external_call_token += 1;
-                if dest == Reg::ZERO {
-                    state.return_value = result;
-                    break;
-                }
-                structural_finish_call_with_result(
-                    &mut state.values,
-                    (pc as u32).wrapping_add(u32::from(width)),
-                    result,
-                );
-            }
-            Inst::Jalr { offset, base, dest }
-                if dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0 =>
-            {
-                state.return_value = state.values[usize::from(Reg::A0.0)].clone();
-                break;
-            }
-            Inst::Jalr { .. } => {
-                state
-                    .blockers
-                    .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
+                instruction_index = target_index;
+                state.values[0] = SymbolicValue::Constant(0);
+                continue;
             }
             Inst::Fence { fence } => {
                 let event = ObservableEvent::Fence {

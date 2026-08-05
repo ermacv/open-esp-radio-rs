@@ -1,5 +1,3 @@
-#![allow(unsafe_code, reason = "ESP-HAL executor and interrupt binding")]
-
 use core::marker::PhantomData;
 
 use embassy_executor::{Spawner, raw};
@@ -14,11 +12,19 @@ const THREAD_MODE_CONTEXT: usize = 16;
 const UNASSIGNED_CORE: usize = usize::MAX;
 
 #[used]
+#[allow(
+    unsafe_code,
+    reason = "board linker owns this exported executor wake-state section"
+)]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.bss.embassy_executor")]
 static ESP32S31_EMBASSY_WORK_PENDING: [AtomicBool; SOFTWARE_INTERRUPT_COUNT] =
     [const { AtomicBool::new(false) }; SOFTWARE_INTERRUPT_COUNT];
 #[used]
+#[allow(
+    unsafe_code,
+    reason = "board linker owns this exported executor core-state section"
+)]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.data.embassy_executor")]
 static ESP32S31_EMBASSY_EXECUTOR_CORE: [AtomicUsize; SOFTWARE_INTERRUPT_COUNT] =
@@ -71,7 +77,13 @@ impl<const SWI: u8> Executor<SWI> {
             if SWI == 0 {
                 crate::time_driver::dispatch_pending();
             }
-            unsafe { self.inner.poll() };
+            #[allow(
+                unsafe_code,
+                reason = "the static executor owner is polled only by its run loop"
+            )]
+            unsafe {
+                self.inner.poll()
+            };
             wait_for_work::<SWI>();
         }
     }
@@ -79,6 +91,10 @@ impl<const SWI: u8> Executor<SWI> {
 
 #[esp_hal::ram]
 extern "C" fn wake_handler<const SWI: u8>() {
+    #[allow(
+        unsafe_code,
+        reason = "the executor permanently owns this reserved software interrupt"
+    )]
     unsafe { SoftwareInterrupt::<SWI>::steal() }.reset();
 }
 
@@ -92,6 +108,10 @@ fn pend<const SWI: u8>() {
     mark_work::<SWI>();
     let target_core = ESP32S31_EMBASSY_EXECUTOR_CORE[SWI as usize].load(Ordering::Acquire);
     if target_core != UNASSIGNED_CORE && target_core != Cpu::current() as usize {
+        #[allow(
+            unsafe_code,
+            reason = "the executor permanently owns this reserved software interrupt"
+        )]
         unsafe { SoftwareInterrupt::<SWI>::steal() }.raise();
     }
 }
@@ -105,6 +125,10 @@ fn wait_for_work<const SWI: u8>() {
 }
 
 #[esp_hal::ram]
+#[allow(
+    unsafe_code,
+    reason = "Embassy requires this unique global pender ABI symbol"
+)]
 #[unsafe(export_name = "__pender")]
 fn embassy_pender(context: *mut ()) {
     match context as usize {

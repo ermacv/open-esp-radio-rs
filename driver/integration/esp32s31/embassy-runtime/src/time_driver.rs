@@ -1,5 +1,3 @@
-#![allow(unsafe_code, reason = "Embassy global time-driver interrupt binding")]
-
 use core::{
     sync::atomic::{AtomicBool, Ordering},
     task::Waker,
@@ -67,6 +65,10 @@ struct EmbassyTimeDriver {
 }
 
 #[used]
+#[allow(
+    unsafe_code,
+    reason = "board linker owns this exported timer interrupt-state section"
+)]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.bss.embassy_time")]
 static ESP32S31_EMBASSY_TIMER_FIRED: AtomicBool = AtomicBool::new(false);
@@ -100,15 +102,27 @@ impl EmbassyTimeDriver {
 }
 
 #[used]
+#[allow(
+    unsafe_code,
+    reason = "Embassy requires one exported global time-driver instance"
+)]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.data.embassy_time")]
 static ESP32S31_EMBASSY_TIME_DRIVER: EmbassyTimeDriver = EmbassyTimeDriver::new();
 
+#[allow(
+    unsafe_code,
+    reason = "Embassy time ABI requires this unique global symbol"
+)]
 #[unsafe(no_mangle)]
 fn _embassy_time_now() -> u64 {
     <EmbassyTimeDriver as Driver>::now(&ESP32S31_EMBASSY_TIME_DRIVER)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "Embassy time ABI requires this unique global symbol"
+)]
 #[unsafe(no_mangle)]
 fn _embassy_time_schedule_wake(at: u64, waker: &Waker) {
     <EmbassyTimeDriver as Driver>::schedule_wake(&ESP32S31_EMBASSY_TIME_DRIVER, at, waker);
@@ -137,6 +151,10 @@ pub(crate) fn dispatch_pending() {
 }
 
 #[esp_hal::ram]
+#[allow(
+    unsafe_code,
+    reason = "the board interrupt table binds this unique exported handler"
+)]
 #[unsafe(export_name = "esp32s31_embassy_timer_interrupt")]
 extern "C" fn timer_interrupt() {
     ESP32S31_EMBASSY_TIME_DRIVER.acknowledge_interrupt();

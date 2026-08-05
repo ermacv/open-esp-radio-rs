@@ -60,6 +60,29 @@ owns the action codec and one generic agreement state machine, while
 completion-register normalization and fixed TX-slot batch. Neither layer owns
 DMA backing; that authority remains in the chip DMA leaf.
 
+The S31 TX A-MPDU path is split by execution phase under
+`esp32s31/wifi/lmac/src/tx_ampdu/`:
+
+- `request` defines typed frame layout, size and HE policy inputs;
+- `capacity` performs read-only slot, backing, APEP and TXOP admission;
+- `length` owns incremental and replayed aggregate byte accounting;
+- `commit` is the only safe LMAC module that encodes the private S31 TX
+  metadata prefix and advances per-slot metadata;
+- `submission` validates the complete batch and produces typed HT/HE register
+  programs without publishing DMA or touching hardware;
+- `owner` couples that plan to the lower DMA crate's retained backing and
+  descriptor authority;
+- `hardware` is the safe register-transaction trait implemented by the S31
+  register layer;
+- `lifecycle` owns completion, timeout, reset and release transitions;
+- `retry` owns detached-frame inspection and bounded retry compaction;
+- `model` remains host-only qualification code and is absent from 32-bit
+  production builds.
+
+`tx_ampdu.rs` is the compatibility facade and storage declaration. New chip
+backends may reuse portable BlockAck semantics, but must supply their own
+metadata, queue geometry, register planning and DMA ownership adapters.
+
 `wifi/lmac` owns only the portable boundary: VIF/channel-context identity,
 implemented-role capabilities and normalized TX/RX plans/status. It does not
 own a scheduler, DMA buffers or an executor. The current S31 station plan is a

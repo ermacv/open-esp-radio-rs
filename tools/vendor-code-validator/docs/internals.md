@@ -126,6 +126,24 @@ does not resolve symbols, `flatten` does not explore branches, and `resolver`
 does not implement event semantics. Recursive callee analysis returns through
 the facade so the same selection and blocker rules apply at every call depth.
 
+## RISC-V executable-image layout
+
+`backend-riscv/src/execution/image.rs` is the stable model and method facade
+for a linked diagnostic image. The algorithms operating on that model are
+split by the evidence they produce:
+
+| Module | Responsibility |
+| --- | --- |
+| `image/loader.rs` | ELF segments, symbols, companion images, and fail-closed relocation collection |
+| `image/access.rs` | Symbol extents, relocation queries, loaded bytes, memory ranges, and instruction decoding |
+| `image/closure_identity.rs` | Address-independent local code-closure identity and symbolic call edges |
+| `image/coverage.rs` | Conservative direct-control-flow and conditional-branch inventory |
+
+Loading does not perform control-flow analysis, and byte/instruction access
+does not choose either identity or coverage policy. Both analyses consume the
+same relocation-aware access facade, so an unresolved reachable relocation is
+rejected consistently. The public `ExecutableImage` API remains unchanged.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -171,9 +189,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/execution/image.rs`: separate ELF/relocation loading,
-  code-closure identity, coverage traversal, and byte/instruction access while
-  retaining `ExecutableImage` as the stable facade.
+- `backend-riscv/src/execution/machine.rs`: separate execution memory and
+  event/call accounting from instruction dispatch while retaining `Machine`
+  as the state owner.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

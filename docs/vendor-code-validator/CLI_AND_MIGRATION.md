@@ -98,6 +98,12 @@ and artifact symbol resolution. Its facade retains the fail-closed choice
 between reviewed, structural, and symbolic-CFG paths and is also the recursive
 entry point for callee analysis.
 
+The linked RISC-V executable image is now a stable facade over four explicit
+phases: ELF/relocation loading, symbol and instruction access, canonical code
+closure identity, and conservative branch-coverage inventory. They share one
+relocation-aware image model, so this source split changes neither CLI behavior
+nor fail-closed handling of unresolved reachable data.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

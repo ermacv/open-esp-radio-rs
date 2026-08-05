@@ -72,6 +72,30 @@ fn unknown_wifi_osi_slot_fails_closed() {
 }
 
 #[test]
+fn semantic_only_rtos_slot_is_visible_but_remains_a_reference_blocker() {
+    let symbol = wifi_osi_tail_symbol(0x068);
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        None,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert_eq!(trace.return_value, SymbolicValue::ExternalResult(0));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ExternalCall { function, .. }]
+            if function.spec().semantic.operation == "rtos.queue.send-from-isr"
+    ));
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("unmodeled-external-semantics") && blocker.contains("_queue_send_from_isr")
+    }));
+}
+
+#[test]
 fn wifi_osi_output_pointer_outside_private_stack_fails_closed() {
     let symbol = wifi_osi_tail_symbol(0x1a8);
     let trace = trace_binary_symbol(

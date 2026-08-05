@@ -9,7 +9,39 @@ use std::cmp::Ordering;
 pub enum ExternalReturnModel {
     Constant(u32),
     SymbolicU32,
-    PrivateStackOutputU8 { pointer_argument: u8 },
+    PrivateStackOutputU8 {
+        pointer_argument: u8,
+    },
+    /// The ABI identity and human semantics are known, but observable effects
+    /// and return propagation are not modeled for validation.
+    Unmodeled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalArgumentDirection {
+    Input,
+    Output,
+    InputOutput,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExternalArgumentSpec {
+    pub name: &'static str,
+    pub c_type: &'static str,
+    pub direction: ExternalArgumentDirection,
+}
+
+/// Reviewed meaning attached to one external ABI slot.
+///
+/// Operation and replacement names are deliberately opaque strings. Core can
+/// carry platform knowledge without acquiring an RTOS, NVS or chip-specific
+/// semantic enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExternalSemanticSpec {
+    pub operation: &'static str,
+    pub arguments: &'static [ExternalArgumentSpec],
+    pub return_type: &'static str,
+    pub replacement: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,6 +51,7 @@ pub struct ExternalFunctionSpec {
     pub c_name: &'static str,
     pub argument_count: u8,
     pub return_model: ExternalReturnModel,
+    pub semantic: ExternalSemanticSpec,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

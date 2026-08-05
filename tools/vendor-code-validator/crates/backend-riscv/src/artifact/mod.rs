@@ -123,6 +123,7 @@ fn collect_object_symbols(
     data: &[u8],
     member: Option<&str>,
     prefix: &str,
+    include_local: bool,
     output: &mut Vec<ArtifactSymbolDefinition>,
 ) -> Result<()> {
     let file = object::File::parse(data)?;
@@ -167,7 +168,7 @@ fn collect_object_symbols(
     for symbol in file.symbols() {
         if symbol.kind() != SymbolKind::Text
             || !symbol.is_definition()
-            || !(symbol.is_global() || symbol.is_weak())
+            || (!include_local && !(symbol.is_global() || symbol.is_weak()))
             || symbol.size() == 0
         {
             continue;
@@ -240,7 +241,11 @@ fn collect_object_symbols(
     Ok(())
 }
 
-pub fn load_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefinition>> {
+fn load_symbols_with_visibility(
+    path: &Path,
+    prefix: &str,
+    include_local: bool,
+) -> Result<Vec<ArtifactSymbolDefinition>> {
     let data = fs::read(path)?;
     let mut symbols = Vec::new();
     match FileKind::parse(data.as_slice())? {
@@ -251,15 +256,42 @@ pub fn load_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefin
                 let name = String::from_utf8_lossy(member.name()).into_owned();
                 let member_data = member.data(data.as_slice())?;
                 if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
-                    collect_object_symbols(member_data, Some(&name), prefix, &mut symbols)?;
+                    collect_object_symbols(
+                        member_data,
+                        Some(&name),
+                        prefix,
+                        include_local,
+                        &mut symbols,
+                    )?;
                 }
             }
         }
-        FileKind::Elf32 => collect_object_symbols(&data, None, prefix, &mut symbols)?,
+        FileKind::Elf32 => {
+            collect_object_symbols(&data, None, prefix, include_local, &mut symbols)?
+        }
         kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
-    symbols.sort_by(|left, right| (&left.member, &left.name).cmp(&(&right.member, &right.name)));
+    symbols.sort_by(|left, right| {
+        (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
+    });
     Ok(symbols)
+}
+
+/// Load exported (global or weak) code symbols.
+///
+/// This remains the default inventory for validation and qualification: adding
+/// private implementation details must not silently broaden evidence scope.
+pub fn load_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefinition>> {
+    load_symbols_with_visibility(path, prefix, false)
+}
+
+/// Load every named, non-empty code symbol, including local/private functions.
+///
+/// This broader catalog is intended for exploratory IR and call-graph export.
+/// It is not a completeness guarantee: stripped functions and executable bytes
+/// without a sized text symbol still have no function boundary here.
+pub fn load_all_code_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefinition>> {
+    load_symbols_with_visibility(path, prefix, true)
 }
 
 /// Load every executable section from a fully linked RV32 ELF image.

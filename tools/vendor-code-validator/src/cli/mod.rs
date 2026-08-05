@@ -15,7 +15,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND --target-spec PATH [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  inspect   analyze | trace | compare\n  reference generate | generate-batch\n  driver    generate\n  execute   run | compare\n  verify    profiles | source | inventory | contract channel | contract rf-init\n  image     audit-targets\n\nThe target spec supplies architecture, calling convention, SVDs and checked harness data.\nA caller-owned run spec may bind input roles to local artifact paths. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND --target-spec PATH [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  inspect   analyze | trace | compare\n  mmio      discover\n  ir        export\n  reference generate | generate-batch\n  driver    generate\n  execute   run | compare\n  verify    profiles | source | inventory | contract channel | contract rf-init\n  image     audit-targets\n\nThe target spec supplies architecture, calling convention, SVDs and checked harness data.\nA caller-owned run spec may bind input roles to local artifact paths. Legacy flat command names are temporarily accepted."
     );
 }
 

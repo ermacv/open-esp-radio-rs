@@ -29,7 +29,7 @@ pub mod execution;
 pub mod reference_analysis;
 pub mod static_analysis;
 
-pub use reference_analysis::ReferenceResolver;
+pub use reference_analysis::{ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{
     RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite, StructuralPointerContext,
     SymbolicStack, trace_binary_symbol,

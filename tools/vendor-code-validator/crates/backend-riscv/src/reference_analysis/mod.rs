@@ -6,7 +6,7 @@ use flow::{
     ReferenceCalleeContext, compose_calls_in_reference_flow, explore_reference_flow,
     resolve_reference_callee, trace_into_reference_flow,
 };
-pub use resolver::ReferenceResolver;
+pub use resolver::{ReferenceResolver, ReferenceSymbolKey};
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},

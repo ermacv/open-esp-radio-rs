@@ -13,5 +13,8 @@ object = { version = "=0.39.1", default-features = false, features = ["archive",
 open-radio-vendor-validator-model = { path = "../model" }
 rv-asm = "=0.2.1"
 
+[dev-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
+
 [lints]
 workspace = true

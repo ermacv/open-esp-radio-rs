@@ -7,6 +7,8 @@ use crate::Result;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
     AuditDirectTargets,
+    DiscoverMmio,
+    ExportIr,
     QualifyContractChannel,
     QualifyContractRfInit,
     Execute,
@@ -25,6 +27,14 @@ pub(crate) enum Command {
 impl Command {
     fn parse(value: &str, remaining: &mut Vec<String>) -> Result<Self> {
         Ok(match (value, remaining.first().map(String::as_str)) {
+            ("mmio", Some("discover")) => {
+                remaining.remove(0);
+                Self::DiscoverMmio
+            }
+            ("ir", Some("export")) => {
+                remaining.remove(0);
+                Self::ExportIr
+            }
             ("image", Some("audit-targets")) => {
                 remaining.remove(0);
                 Self::AuditDirectTargets
@@ -90,10 +100,10 @@ impl Command {
                     None => return Err("verify contract requires a contract name".into()),
                 }
             }
-            ("image" | "inspect" | "reference" | "driver", Some(command)) => {
+            ("image" | "inspect" | "reference" | "driver" | "mmio" | "ir", Some(command)) => {
                 return Err(format!("unknown {value} command: {command}").into());
             }
-            ("image" | "inspect" | "reference" | "driver", None) => {
+            ("image" | "inspect" | "reference" | "driver" | "mmio" | "ir", None) => {
                 return Err(format!("{value} requires a command").into());
             }
             ("audit-direct-targets", _) => Self::AuditDirectTargets,
@@ -236,5 +246,49 @@ mod tests {
         assert_eq!(invocation.command, Command::GenerateReference);
         assert_eq!(invocation.run_spec, None);
         assert_eq!(invocation.arguments, ["--artifact", "input.elf"]);
+
+        let invocation = Invocation::parse([
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--target-spec".to_owned(),
+            "target.spec".to_owned(),
+            "--artifact".to_owned(),
+            "rom=rom.elf".to_owned(),
+            "--range".to_owned(),
+            "radio=0x20000000..0x20010000".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::DiscoverMmio);
+        assert_eq!(
+            invocation.arguments,
+            [
+                "--artifact",
+                "rom=rom.elf",
+                "--range",
+                "radio=0x20000000..0x20010000"
+            ]
+        );
+
+        let invocation = Invocation::parse([
+            "ir".to_owned(),
+            "export".to_owned(),
+            "--target-spec".to_owned(),
+            "target.spec".to_owned(),
+            "--artifact".to_owned(),
+            "vendor.a".to_owned(),
+            "--pseudo-rust".to_owned(),
+            "vendor.pseudo.rs".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::ExportIr);
+        assert_eq!(
+            invocation.arguments,
+            [
+                "--artifact",
+                "vendor.a",
+                "--pseudo-rust",
+                "vendor.pseudo.rs"
+            ]
+        );
     }
 }

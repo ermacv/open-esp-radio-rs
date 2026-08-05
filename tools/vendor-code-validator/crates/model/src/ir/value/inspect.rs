@@ -33,24 +33,45 @@ impl SymbolicValue {
     }
 
     pub fn caller_memory_address(&self) -> bool {
-        if self.direct_input_index().is_some() {
-            return true;
+        self.caller_memory_location().is_some()
+    }
+
+    /// Return `(argument index, byte offset)` for an affine address rooted in
+    /// one ABI argument.
+    ///
+    /// The intentionally narrow form is enough for compiler-generated struct
+    /// field accesses and remains safe to substitute while composing calls.
+    pub fn caller_memory_location(&self) -> Option<(u8, i32)> {
+        if let Some(index) = self.direct_input_index() {
+            return Some((index, 0));
         }
         match self {
             Self::Expression {
                 operation: ExpressionOperation::Add,
                 left,
                 right,
-            } => {
-                (left.caller_memory_address() && matches!(right.as_ref(), Self::Constant(_)))
-                    || (right.caller_memory_address() && matches!(left.as_ref(), Self::Constant(_)))
-            }
+            } => match (left.caller_memory_location(), right.as_constant()) {
+                (Some((index, offset)), Some(constant)) => {
+                    Some((index, offset.wrapping_add(constant as i32)))
+                }
+                _ => match (right.caller_memory_location(), left.as_constant()) {
+                    (Some((index, offset)), Some(constant)) => {
+                        Some((index, offset.wrapping_add(constant as i32)))
+                    }
+                    _ => None,
+                },
+            },
             Self::Expression {
                 operation: ExpressionOperation::Subtract,
                 left,
                 right,
-            } => left.caller_memory_address() && matches!(right.as_ref(), Self::Constant(_)),
-            _ => false,
+            } => match (left.caller_memory_location(), right.as_constant()) {
+                (Some((index, offset)), Some(constant)) => {
+                    Some((index, offset.wrapping_sub(constant as i32)))
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -380,5 +401,30 @@ impl SymbolicValue {
                 format!("bits:{terms}")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caller_memory_location_recovers_nested_struct_offsets() {
+        let address = SymbolicValue::input(2)
+            .add_constant(0x20)
+            .add_constant((-4_i32) as u32);
+
+        assert_eq!(address.caller_memory_location(), Some((2, 0x1c)));
+    }
+
+    #[test]
+    fn caller_memory_location_rejects_dynamic_indexing() {
+        let address = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            SymbolicValue::input(0),
+            SymbolicValue::input(1),
+        );
+
+        assert_eq!(address.caller_memory_location(), None);
     }
 }

@@ -1343,6 +1343,17 @@ pub fn trace_binary_symbol_with_branches(
                         // therefore remains fail-closed.
                         SymbolicValue::Unknown
                     }
+                    ExternalReturnModel::Unmodeled => {
+                        reference_blockers.push(format!(
+                            "unmodeled-external-semantics at {pc:#x}: {}::{} ({})",
+                            table.spec().id,
+                            slot.c_name,
+                            slot.semantic.operation,
+                        ));
+                        // Preserve opaque return-value data flow for manual IR
+                        // without claiming the call's effects are modeled.
+                        SymbolicValue::ExternalResult(next_external_call_token)
+                    }
                 };
                 reference_events.push(DraftReferenceEvent::ExternalCall {
                     token: next_external_call_token,

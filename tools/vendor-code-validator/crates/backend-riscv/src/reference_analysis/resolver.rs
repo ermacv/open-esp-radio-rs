@@ -3,12 +3,38 @@
 use super::*;
 use crate::{EntryContractRef, FunctionTarget, RiscvHarnessSpec};
 
+pub type ReferenceSymbolKey = (Option<String>, String, u64);
+
 pub struct ReferenceResolver {
     pub symbols: Vec<artifact::ArtifactSymbolDefinition>,
     pub symbols_by_address: BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
-    pub symbol_ids: BTreeMap<(Option<String>, String), u32>,
+    pub symbol_ids: BTreeMap<ReferenceSymbolKey, u32>,
+    pub exported_symbol_keys: BTreeSet<ReferenceSymbolKey>,
     pub relocated_calls: StructuralRelocatedCalls,
     pub pointer_context: StructuralPointerContext,
+}
+
+fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> ReferenceSymbolKey {
+    (symbol.member.clone(), symbol.name.clone(), symbol.address)
+}
+
+fn insert_preferred_symbol(
+    output: &mut BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
+    symbol: artifact::ArtifactSymbolDefinition,
+    exported_symbol_keys: &BTreeSet<ReferenceSymbolKey>,
+) {
+    let address = symbol.address as u32;
+    let replace = output.get(&address).is_none_or(|current| {
+        let candidate_exported = exported_symbol_keys.contains(&symbol_key(&symbol));
+        let current_exported = exported_symbol_keys.contains(&symbol_key(current));
+        (candidate_exported && !current_exported)
+            || (candidate_exported == current_exported
+                && (&symbol.member, &symbol.name, symbol.address)
+                    < (&current.member, &current.name, current.address))
+    });
+    if replace {
+        output.insert(address, symbol);
+    }
 }
 
 impl ReferenceResolver {
@@ -30,28 +56,63 @@ impl ReferenceResolver {
         harness: &'static RiscvHarnessSpec,
         entry_contract: EntryContractRef,
     ) -> Result<Self> {
-        let symbols = artifact::load_symbols(artifact, "")?;
-        let mut symbols_by_address = symbols
+        Self::load_catalog_with_entry_contract(artifact, companions, harness, entry_contract, false)
+    }
+
+    /// Load the broader exploratory catalog used by IR export.
+    ///
+    /// Unlike validation inventory, this includes local/private sized text
+    /// symbols. Stripped code remains outside the catalog.
+    pub fn load_all_code_with_entry_contract(
+        artifact: &Path,
+        companions: &[PathBuf],
+        harness: &'static RiscvHarnessSpec,
+        entry_contract: EntryContractRef,
+    ) -> Result<Self> {
+        Self::load_catalog_with_entry_contract(artifact, companions, harness, entry_contract, true)
+    }
+
+    fn load_catalog_with_entry_contract(
+        artifact: &Path,
+        companions: &[PathBuf],
+        harness: &'static RiscvHarnessSpec,
+        entry_contract: EntryContractRef,
+        include_local: bool,
+    ) -> Result<Self> {
+        let exported_symbols = artifact::load_symbols(artifact, "")?;
+        let exported_symbol_keys = exported_symbols
+            .iter()
+            .map(symbol_key)
+            .collect::<BTreeSet<_>>();
+        let mut address_preferred_symbol_keys = exported_symbol_keys.clone();
+        let symbols = if include_local {
+            artifact::load_all_code_symbols(artifact, "")?
+        } else {
+            exported_symbols
+        };
+        let mut symbols_by_address = BTreeMap::new();
+        for symbol in symbols
             .iter()
             .filter(|symbol| symbol.addresses_resolved)
-            .map(|symbol| (symbol.address as u32, symbol.clone()))
-            .collect::<BTreeMap<_, _>>();
+            .cloned()
+        {
+            insert_preferred_symbol(
+                &mut symbols_by_address,
+                symbol,
+                &address_preferred_symbol_keys,
+            );
+        }
         let mut symbol_ids = symbols
             .iter()
             .filter(|symbol| symbol.addresses_resolved)
-            .map(|symbol| {
-                (
-                    (symbol.member.clone(), symbol.name.clone()),
-                    symbol.address as u32,
-                )
-            })
+            .map(|symbol| (symbol_key(symbol), symbol.address as u32))
             .collect::<BTreeMap<_, _>>();
         let mut next_archive_symbol_id = 0x8000_0000_u32;
         for symbol in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
             while symbols_by_address.contains_key(&next_archive_symbol_id) {
                 next_archive_symbol_id = next_archive_symbol_id.wrapping_add(1);
             }
-            let identity = (symbol.member.clone(), symbol.name.clone());
+            let identity = symbol_key(symbol);
             if symbol_ids
                 .insert(identity.clone(), next_archive_symbol_id)
                 .is_some()
@@ -79,12 +140,23 @@ impl ReferenceResolver {
                 .into());
             };
             image.add_companion(companion)?;
-            symbols_by_address.extend(
-                artifact::load_symbols(companion, "")?
-                    .into_iter()
-                    .filter(|symbol| symbol.addresses_resolved)
-                    .map(|symbol| (symbol.address as u32, symbol)),
-            );
+            let companion_exported_symbols = artifact::load_symbols(companion, "")?;
+            address_preferred_symbol_keys.extend(companion_exported_symbols.iter().map(symbol_key));
+            let companion_symbols = if include_local {
+                artifact::load_all_code_symbols(companion, "")?
+            } else {
+                companion_exported_symbols
+            };
+            for symbol in companion_symbols
+                .into_iter()
+                .filter(|symbol| symbol.addresses_resolved)
+            {
+                insert_preferred_symbol(
+                    &mut symbols_by_address,
+                    symbol,
+                    &address_preferred_symbol_keys,
+                );
+            }
         }
         let mut pointer_context = StructuralPointerContext::from_harness(harness);
         for &table in harness.contracts.external_tables {
@@ -194,7 +266,7 @@ impl ReferenceResolver {
 
         let mut archive_definitions = BTreeMap::<String, Vec<(Option<String>, u32)>>::new();
         for symbol in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
-            let identity = (symbol.member.clone(), symbol.name.clone());
+            let identity = symbol_key(symbol);
             archive_definitions
                 .entry(symbol.name.clone())
                 .or_default()
@@ -240,6 +312,7 @@ impl ReferenceResolver {
             symbols,
             symbols_by_address,
             symbol_ids,
+            exported_symbol_keys,
             relocated_calls,
             pointer_context,
         })
@@ -259,7 +332,15 @@ impl ReferenceResolver {
                     && member.is_none_or(|member| candidate.member.as_deref() == Some(member))
             })
             .ok_or_else(|| format!("symbol {name} in member {member:?} was not found"))?;
-        let identity = (symbol.member.clone(), symbol.name.clone());
+        self.trace_symbol(symbol, svd)
+    }
+
+    pub fn trace_symbol(
+        &self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+        svd: &MmioRegisterMap,
+    ) -> Result<FunctionAnalysis> {
+        let identity = symbol_key(symbol);
         let symbol_id = *self
             .symbol_ids
             .get(&identity)
@@ -274,5 +355,9 @@ impl ReferenceResolver {
             svd,
             &mut visiting,
         )
+    }
+
+    pub fn symbol_is_exported(&self, symbol: &artifact::ArtifactSymbolDefinition) -> bool {
+        self.exported_symbol_keys.contains(&symbol_key(symbol))
     }
 }

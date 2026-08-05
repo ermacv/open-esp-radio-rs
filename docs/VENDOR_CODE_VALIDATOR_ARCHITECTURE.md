@@ -79,6 +79,10 @@ The first two boundary slices are complete:
 - shared call/reference IR stores a variable-length argument list and a
   generic modeled return word; the 8 register + 8 stack-word layout is owned
   only by the RISC-V backend;
+- exploratory linked IR recovers affine caller-memory locations as
+  `(ABI argument, byte offset)` context fields, preserves conditional paths,
+  and derives RMW write/preserve/forced-bit masks without assigning semantic
+  field names;
 - semantic-contract and driver-adapter IDs are opaque manifest strings in the
   verifier; their registry and dispatch live in the platform harness.
 
@@ -132,6 +136,8 @@ driver because comparing its typed state is the harness's purpose.
 ### Core
 
 - opaque external callback-table and function references;
+- harness-owned external semantic overlays with opaque operation IDs, C types,
+  argument directions and replacement hints;
 - immutable ABI table descriptions and return models;
 - entry lifecycle, pointer-cell and function-table contracts;
 - platform-independent contract lookup by caller-supplied string identity.
@@ -140,10 +146,23 @@ Core is deliberately dependency-free. Its identifiers are opaque strings
 supplied by configuration. It must not have enums such as
 `Esp32s31Eco0Rom`, `Esp32s31WifiOsiV9` or `Esp32s31Channel`.
 
+An external slot may be ABI- and semantics-known while still using the
+`Unmodeled` effect model. The backend preserves its call and opaque result in
+exploratory IR, but emits a reference blocker. This separation is important:
+adding a friendly `rtos.event.post` or `nvs.blob.read` label must never make an
+effect-equivalence proof accept scheduler, storage or pointer effects that it
+does not model.
+
+Linked IR aggregates those labels into a report-level semantic-boundary index
+containing callers, ABI targets and replacement hints. This index is a
+migration inventory for manual analysis; it does not weaken the per-function
+completeness or reference-eligibility checks.
+
 ### Shared model
 
 - observable effect IR: memory, MMIO, calls, delays, fences and state ranges;
 - symbolic values that do not name physical argument registers;
+- affine caller-memory provenance used to recover context-structure offsets;
 - SVD/register catalogs;
 - draft and resolved reference-control-flow types shared between analysis and
   code generation;
@@ -242,6 +261,8 @@ The flat command list is replaced with workflow groups:
 ```text
 vendor-code-validator inspect analyze
 vendor-code-validator inspect trace
+vendor-code-validator mmio discover
+vendor-code-validator ir export
 vendor-code-validator reference generate
 vendor-code-validator reference generate-batch
 vendor-code-validator execute run
@@ -256,6 +277,16 @@ Common artifact, SVD, architecture and ABI options come from the target/run
 manifests. A command accepts only workflow-specific overrides. The dedicated
 `qualify-esp32s31-*` commands become named contracts selected from the
 ESP32-S31 harness.
+
+The artifact layer exposes two intentionally separate symbol inventories.
+Evidence-producing validation/qualification uses only global and weak code
+definitions, preserving its reviewed scope. Exploratory `ir export` opts into
+all named, sized text definitions, including local/private functions. Resolver
+identity is `(archive member, symbol name, object address)`; the presentation
+layer adds an address suffix only when two definitions would otherwise have the
+same readable identity. Direct ELF targets and archive call relocations share
+that canonical catalog. Neither inventory recovers stripped function
+boundaries, so the IR report makes no completeness claim.
 
 ## Migration order
 

@@ -33,6 +33,114 @@ pointers are intentionally outside this binary check and must be governed by
 the platform/effect contract. `tools/audit-source-only.sh` applies the pinned
 ESP32-S31 ECO0 radio ranges to the final normal HIL ELF.
 
+## MMIO discovery
+
+`mmio discover` is a best-effort, artifact-wide inventory for reverse
+engineering register blocks. It accepts multiple ELF/ar inputs and explicit
+half-open address ranges independently of whether every address already has an
+SVD register name:
+
+```console
+cargo vendor-code-validator mmio discover \
+  --target-spec validation/esp32s31/target.spec \
+  --artifact rom="$ESP32S31_ROM_ELF" \
+  --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
+  --range phy=0x20100000..0x20110000 \
+  --json-report /tmp/esp32s31-phy-mmio.json
+```
+
+The report groups statically addressed 8/16/32-bit reads and writes by
+address, names known SVD registers, assigns stable `RANGE.REG_ADDRESS`
+candidate names to unknown addresses, and lists every artifact/member/function
+that used each register. For writes it reports output-bit provenance as
+preserved, inverted, forced zero, forced one, derived from a register read, or
+dynamic. `modified_mask` and `candidate_bit_ranges` are mechanical data-flow
+facts; they do not claim field names, reset values, W1C semantics or any other
+peripheral behavior.
+
+Discovery deliberately retains events recovered before unsupported control
+flow and emits per-function diagnostics without failing the run. Its JSON says
+`"analysis_mode": "best-effort"` and `"completeness_claim": false`. Use the
+existing reference/verification workflows when a fail-closed completeness
+claim is required. The initial discovery slice covers statically resolved
+addresses; indexed and pointer-derived range recovery remains part of the
+reference analyzer rather than this inventory.
+
+Input-dependent conditional branches are explored in both directions with
+explicit bounds of 127 symbolic states and 12 decisions per path. Artifact
+summaries report explored states, terminal paths and distinct branch sites;
+exhausting either bound produces an `exploration` diagnostic. Access counts use
+the maximum multiplicity of an observable shape on any explored path, rather
+than summing paths and double-counting their common prefix. The JSON records
+this as `"access_count_mode": "maximum-per-path"`.
+
+## Linked function IR
+
+`ir export` produces a separate best-effort representation for manual code
+reading. It uses the reference resolver to link direct ELF targets, archive
+`R_RISCV_CALL`/`R_RISCV_CALL_PLT` relocations, structured conditional flows,
+and harness-known external function-table calls:
+
+```console
+cargo vendor-code-validator ir export \
+  --target-spec validation/esp32s31/target.spec \
+  --artifact "$ESP32S31_LIBPHY_ARCHIVE" \
+  --symbol-prefix phy_ \
+  --pseudo-rust /tmp/libphy.pseudo.rs \
+  --json-report /tmp/libphy.ir.json
+```
+
+The pseudo-Rust intentionally uses `u32` argument placeholders and is not
+compilable output. It renders recovered MMIO/RAM effects, delays, polls,
+branches, internal calls, diagnostic calls, scratch buffers, and named
+external ABI calls. External call records include the table version, slot,
+argument count and reviewed return model. Unsupported instructions and
+incomplete control flow remain adjacent `DIRECT-BLOCKER` or
+`REFERENCE-BLOCKER` comments instead of being guessed.
+
+External ABI slots carry a harness-owned semantic overlay: an opaque operation
+name, typed/named input/output arguments, return type and optional replacement
+hint. The ESP32-S31 Wi-Fi OSI v9 contract currently identifies ISR queue
+notifications, task delays, event posting, microsecond timers, NVS
+open/commit/blob operations, logging, randomness, clock calibration and
+coexistence PTI queries. Pseudo-Rust renders these as calls such as
+`semantic.rtos_queue_send_from_isr(...)` while retaining table version and
+slot. Slots whose meaning is known but whose complete memory/scheduler effects
+are not modeled emit `unmodeled-external-semantics`; their opaque return data
+flow is preserved for reading, but the function remains incomplete for
+validation and reference generation.
+
+The report also builds a top-level `semantic_boundaries` index. It groups each
+operation across artifacts by calling functions, concrete ABI targets and
+replacement hints, so RTOS, timer, NVS and logging dependencies can be audited
+without first reading every recovered function body.
+
+Pointer-relative RAM is rendered as an inferred context view. For example, an
+access rooted at ABI argument 0 becomes `ctx0.read16(+0x8)` or
+`ctx0.write32(+0x4, value)`. Each function also receives `context_fields` and
+`context_accesses` JSON records. A field groups `(argument, byte offset,
+width)`, counts reads/writes and unions the observed write mask; individual
+accesses preserve their branch/call path, symbolic value and, for recognized
+read-modify-write values, preserved/forced-zero/forced-one masks. These are
+layout and data-flow facts only: the tool does not infer a C type name, field
+name, ownership, validity invariant or concurrency semantics.
+
+The JSON is the machine-readable linked view: each function contains artifact
+identity, `global-or-weak` or `local` binding, address or relocatable object
+offset, flow quality, dependencies, direct call edges, symbolic arguments,
+blockers and the same pseudo body. `ir export` deliberately loads sized local
+text symbols as well as exported global/weak functions, while validation and
+qualification commands retain their narrower exported-symbol inventory. A
+local call resolved through an archive `R_RISCV_CALL` relocation is therefore
+linked to its private callee. Repeated local names in a linked ELF are given an
+`@0x...` address suffix so identities and call targets remain deterministic.
+
+This is still symbol-guided recovery, not a proof that every executable byte
+has a function boundary: stripped functions, zero-sized labels, hand-written
+code without `STT_FUNC` metadata, jump tables, and undiscovered indirect calls
+can be absent. As with MMIO discovery, the report declares
+`"completeness_claim": false`.
+
 ## Internal architecture
 
 The binary entry point only translates the library result into an exit code.
@@ -64,7 +172,7 @@ typed `RiscvHarnessSpec`; the backend contains no platform registry. The
 facade does not depend directly on the production PHY: that dependency ends at
 the ESP32-S31 semantic harness boundary.
 
-The hierarchical workflows are `inspect`, `reference`, `execute`,
+The hierarchical workflows are `inspect`, `mmio`, `ir`, `reference`, `execute`,
 `verify`, and `image`. Legacy flat command spellings remain accepted during
 the migration. The remaining orchestration and additional-backend work is
 tracked in

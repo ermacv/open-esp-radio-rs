@@ -3,8 +3,10 @@
 mod analyze;
 mod audit_direct_targets;
 mod compare;
+mod discover_mmio;
 mod execute;
 mod execute_compare;
+mod export_ir;
 mod extract;
 mod generate_driver;
 mod generate_reference;
@@ -25,6 +27,8 @@ pub(super) fn run(
 ) -> Result<bool> {
     match command {
         Command::AuditDirectTargets => audit_direct_targets::run(arguments),
+        Command::DiscoverMmio => discover_mmio::run(arguments, svd),
+        Command::ExportIr => export_ir::run(arguments, svd, target),
         Command::QualifyContractChannel => qualify_channel::run(arguments, svd, &target.harness),
         Command::QualifyContractRfInit => qualify_rf_init::run(arguments, svd, &target.harness),
         Command::Execute => execute::run(arguments, svd),
